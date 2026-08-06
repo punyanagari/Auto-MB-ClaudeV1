@@ -1,0 +1,835 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL270-CRB parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19085606 dated 09/10/2025",
+    "value": "2025-10-09",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19085606 dated 09/10/2025",
+    "value": "19085606",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 12 month from the date of issue",
+    "unit": "month",
+    "value": 12,
+  },
+  "consignee": {
+    "needsReview": true,
+    "raw": "Consignee: Sr.DSTE/Co/BB will be Engineering Incharge. Sr.DFM/BB will be bill paying authority. ADSTE/T/BY will be the field in charge & SSE/T/WL/KYN will be supervisory in- charge of the work. The work of Sch A(CSMT, DR & Thane stations) and SCH B(AMC of Sch A) will be supervised by SSE/T/CLA, and the corresponding reports taking billing into account for that schedule will be submitted to SSE/T/WL/KYN. The measurements (MB) for the overall work will be recorded by SSE/T/WL/KYN. Consignee Depot for receipt and issue of materials will be SSE/Tele/Stores/KYN only",
+    "value": "Sr.DSTE/Co/BB will be Engineering Incharge. Sr.DFM/BB will be bill paying authority. ADSTE/T/BY will be the field in charge & SSE/T/WL/KYN will be supervisory in- charge of the work. The work of Sch A(CSMT, DR & Thane stations) and SCH B(AMC of Sch A) will be supervised by SSE/T/CLA, and the corresponding reports taking billing into account for that schedule will be submitted to SSE/T/WL/KYN. The measurements (MB) for the overall work will be recorded by SSE/T/WL/KYN. Consignee Depot for receipt and issue of materials will be SSE/Tele/Stores/KYN only",
+  },
+  "contractValue": {
+    "figures": 169228497.35,
+    "needsReview": false,
+    "raw": "works out to Rs. 169228497.35 (Rupees Sixteen Crore Ninety-Two Lakh Twenty-Eight Thousand Four Hundred And Ninety-Seven Rupees And Thirty-Five Paise Only)",
+    "words": "Rupees Sixteen Crore Ninety-Two Lakh Twenty-Eight Thousand Four Hundred And Ninety-Seven Rupees And Thirty-Five Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune-
+411023 Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s ParElectronics
+(Joint Venture)",
+    "value": "M/s ParElectronics (Joint Venture)",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "MUMBAI-CST-
+DIVISION-S AND T",
+    "value": "MUMBAI-CST-DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 1127900,
+    "irepsReferenceId": "PE514428316551, PE793028316475",
+    "needsReview": false,
+    "raw": "A sum of Rs.1127900 deposited as Earnest Money vide IREPS reference ID PE514428316551, PE793028316475 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": null,
+    "value": null,
+  },
+  "gccVersion": {
+    "needsReview": true,
+    "raw": "in terms of clause 2.7 of Chapter II of Tender Document.",
+    "value": null,
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 01/01/2026",
+    "value": "2026-01-01",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                               Letter No: MUMBAI-CST-DIVISION-S AND T / CR-BB-
+Dated: 01/01/2026
+TELE-2025-46 / 00341490147964",
+    "value": "MUMBAI-CST-DIVISION-S AND T / CR-BB-TELE-2025-46 / 00341490147964",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "Sr.DSTE OFFICE, 1st
+Floor Parcel Office
+Bldg, Central Railway,
+Mumbai CST
+Mumbai, 400001
+Maharashtra, India",
+    "value": "Sr.DSTE OFFICE, 1st Floor Parcel Office Bldg, Central Railway, Mumbai CST Mumbai, 400001 Maharashtra, India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "Consignee: Sr.DSTE/Co/BB will be Engineering Incharge. Sr.DFM/BB will be bill paying authority. ADSTE/T/BY will be the field in charge & SSE/T/WL/KYN will be supervisory in- charge of the work. The work of Sch A(CSMT, DR & Thane stations) and SCH B(AMC of Sch A) will be supervised by SSE/T/CLA, and the corresponding reports taking billing into account for that schedule will be submitted to SSE/T/WL/KYN. The measurements (MB) for the overall work will be recorded by SSE/T/WL/KYN. Consignee Depot for receipt and issue of materials will be SSE/Tele/Stores/KYN only",
+    "value": "Sr.DSTE/Co/BB",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 8461424.87,
+    "amountWords": "Rupees Eighty-Four Lakh Sixty-One Thousand Four Hundred And Twenty-Four Rupees And Eighty-Seven Paise Only",
+    "extensionDays": 60,
+    "needsReview": false,
+    "penalInterestPercent": 12,
+    "raw": "amounting to Rs. 8461424.87 (Rupees Eighty-Four Lakh Sixty-One Thousand Four Hundred And Twenty-Four Rupees And Eighty-Seven Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 2.7 of Chapter II of Tender Document",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 2.7 of Chapter II of Tender Document.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "Sr.DSTE/Co",
+    "value": "Sr.DSTE/Co",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "NISHANT K DWIVEDI",
+    "value": "NISHANT K DWIVEDI",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. CR-BB-TELE-2025-46 closing date 09-10-2025",
+    "value": "2025-10-09",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. CR-BB-TELE-2025-46 closing date 09-10-2025",
+    "value": "CR-BB-TELE-2025-46",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 09-10-2025 15:30 for Supply, installation, testing and commissioning of additional train information display boards and other telecom assets at CSMT, Dadar,Thane, Kalyan, Panvel and Roha stations in Mumbai division. 2. Your bid ID",
+    "value": "Supply, installation, testing and commissioning of additional train information display boards and other telecom assets at CSMT, Dadar,Thane, Kalyan, Panvel and Roha stations in Mumbai division.",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "CENTRAL RLY",
+    "value": "CENTRAL RLY",
+  },
+}
+`;
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL273-JHS parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19509825 dated 15/01/2026",
+    "value": "2026-01-15",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19509825 dated 15/01/2026",
+    "value": "19509825",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 24 month from the date of issue",
+    "unit": "month",
+    "value": 24,
+  },
+  "consignee": {
+    "needsReview": true,
+    "raw": "Consignee: : SSE/TELE/ML/JHS and SSE/TELE/GWL will be consignee and DSTE/JHS & ADSTE/GWL will be the Officer incharge of the work. You are required to be in touch with them for timely execution of work. You are also advised to submit time bound program for completion of the work within the completion period itself. Work will be executed under strict supervision of SSE/Tele/ML/JHS & SSE/Tele/GWL.",
+    "value": "SSE/TELE/ML/JHS and SSE/TELE/GWL will be consignee and DSTE/JHS & ADSTE/GWL will be the Officer incharge of the work. You are required to be in touch with them for timely execution of work. You are also advised to submit time bound program for completion of the work within the completion period itself. Work will be executed under strict supervision of SSE/Tele/ML/JHS & SSE/Tele/GWL.",
+  },
+  "contractValue": {
+    "figures": 3046426.56,
+    "needsReview": false,
+    "raw": "works out to Rs. 3046426.56 (Rupees Thirty Lakh Fourty-Six Thousand Four Hundred And Twenty-Six Rupees And Fifty- Six Paise Only)",
+    "words": "Rupees Thirty Lakh Fourty-Six Thousand Four Hundred And Twenty-Six Rupees And Fifty- Six Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society
+NDA Road, Shivane
+Pune- 411023
+Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s PARTRONICS EBOARDS PRIVATE
+LIMITED-PUNE",
+    "value": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "JHANSI DIVISION-S
+AND T",
+    "value": "JHANSI DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 60900,
+    "irepsReferenceId": "PE443329448008",
+    "needsReview": false,
+    "raw": "A sum of Rs.60900 deposited as Earnest Money vide IREPS reference ID PE443329448008 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": null,
+    "value": null,
+  },
+  "gccVersion": {
+    "needsReview": false,
+    "raw": "GCC-2022",
+    "value": "GCC-2022",
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 09/02/2026",
+    "value": "2026-02-09",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                               Letter No: JHANSI DIVISION-S AND T / JHS-N-
+Dated: 09/02/2026
+W-71-25 / 00341490150678",
+    "value": "JHANSI DIVISION-S AND T / JHS-N-W-71-25 / 00341490150678",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "office of DRM JHS,
+JHANSI, 284003
+Uttar Pradesh, India",
+    "value": "office of DRM JHS, JHANSI, 284003 Uttar Pradesh, India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "Consignee: : SSE/TELE/ML/JHS and SSE/TELE/GWL will be consignee and DSTE/JHS & ADSTE/GWL will be the Officer incharge of the work. You are required to be in touch with them for timely execution of work. You are also advised to submit time bound program for completion of the work within the completion period itself. Work will be executed under strict supervision of SSE/Tele/ML/JHS & SSE/Tele/GWL.",
+    "value": "DSTE/JHS & ADSTE/GWL",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 152321.33,
+    "amountWords": "Rupees One Lakh Fifty-Two Thousand Three Hundred And Twenty-One Rupees And Thirty-Three Paise Only",
+    "extensionDays": 60,
+    "needsReview": false,
+    "penalInterestPercent": 12,
+    "raw": "amounting to Rs. 152321.33 (Rupees One Lakh Fifty-Two Thousand Three Hundred And Twenty-One Rupees And Thirty-Three Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 16.1 of GCC-2022",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 16.1 of GCC-2022.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "Sr.DSTE/CO",
+    "value": "Sr.DSTE/CO",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "NARENDRA SINGH",
+    "value": "NARENDRA SINGH",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. JHS-N-W-71-25 closing date 15-01-2026",
+    "value": "2026-01-15",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. JHS-N-W-71-25 closing date 15-01-2026",
+    "value": "JHS-N-W-71-25",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 15-01-2026 15:00 for Comprehensive Annual maintenance contract of OVD & IVD at VGLJ & GWL station of Jhansi division(for two years). 2. Your bid ID",
+    "value": "Comprehensive Annual maintenance contract of OVD & IVD at VGLJ & GWL station of Jhansi division(for two years).",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "NORTH CENTRAL RLY",
+    "value": "NORTH CENTRAL RLY",
+  },
+}
+`;
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL275-BKN parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19514963 dated 16/01/2026",
+    "value": "2026-01-16",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19514963 dated 16/01/2026",
+    "value": "19514963",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 6 month from the date of issue",
+    "unit": "month",
+    "value": 6,
+  },
+  "consignee": {
+    "needsReview": false,
+    "raw": "5: The consignee of the work will be SSE/Tele/HSR.",
+    "value": "SSE/Tele/HSR",
+  },
+  "contractValue": {
+    "figures": 5676351.44,
+    "needsReview": false,
+    "raw": "works out to Rs. 5676351.44 (Rupees Fifty-Six Lakh Seventy- Six Thousand Three Hundred And Fifty-One Rupees And Fourty-Four Paise Only)",
+    "words": "Rupees Fifty-Six Lakh Seventy- Six Thousand Three Hundred And Fifty-One Rupees And Fourty-Four Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society
+NDA Road, Shivane
+Pune- 411023
+Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+    "value": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "BIKANER DIVISION-S AND T",
+    "value": "BIKANER DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 159900,
+    "irepsReferenceId": "PE650929459220",
+    "needsReview": false,
+    "raw": "A sum of Rs.159900 deposited as Earnest Money vide IREPS reference ID PE650929459220 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": null,
+    "value": null,
+  },
+  "gccVersion": {
+    "needsReview": true,
+    "raw": "in terms of clause 20 of Part II of tender document.",
+    "value": null,
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 15/02/2026",
+    "value": "2026-02-15",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                            Letter No: BIKANER DIVISION-S AND T / SnT-BKN-25-26-26 /
+Dated: 15/02/2026
+00341490151147",
+    "value": "BIKANER DIVISION-S AND T / SnT-BKN-25-26-26 / 00341490151147",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "S T Branch,, DRM Office
+Bikaner, 334001
+Rajasthan, India",
+    "value": "S T Branch,, DRM Office Bikaner, 334001 Rajasthan, India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "4: The Officer In Charge of the Work will be ADSTE/HSR.",
+    "value": "ADSTE/HSR",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 283817.57,
+    "amountWords": "Rupees Two Lakh Eighty- Three Thousand Eight Hundred And Seventeen Rupees And Fifty-Seven Paise Only",
+    "extensionDays": 60,
+    "needsReview": false,
+    "penalInterestPercent": 12,
+    "raw": "amounting to Rs. 283817.57 (Rupees Two Lakh Eighty- Three Thousand Eight Hundred And Seventeen Rupees And Fifty-Seven Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 20 of Part II of tender document",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 20 of Part II of tender document.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "ADSTEHSR",
+    "value": "ADSTEHSR",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "AKHIL GUPTA",
+    "value": "AKHIL GUPTA",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. SnT-BKN-25-26-26 closing date 16-01-2026",
+    "value": "2026-01-16",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. SnT-BKN-25-26-26 closing date 16-01-2026",
+    "value": "SnT-BKN-25-26-26",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 16-01-2026 15:00 for Provision and augmentation of passenger amenities i.e. Coach Guidance System, Train display boards and Public address system at Bhiwani City Railway station. 2. Your bid ID",
+    "value": "Provision and augmentation of passenger amenities i.e. Coach Guidance System, Train display boards and Public address system at Bhiwani City Railway station.",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "NORTH WESTERN RLY",
+    "value": "NORTH WESTERN RLY",
+  },
+}
+`;
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL276-GTL parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19737241 dated 06/03/2026",
+    "value": "2026-03-06",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19737241 dated 06/03/2026",
+    "value": "19737241",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 12 month from the date of issue",
+    "unit": "month",
+    "value": 12,
+  },
+  "consignee": {
+    "needsReview": true,
+    "raw": "Incharges: (1) For Supply Portion - Supervisor Incharge shall be SSE/Tele/WL/GTL & Officer In-charge Shall be DSTE/M/GTL (2) For Labour Portion - Concerned SSE's and Officers are In-charges of the work in their jurisdiction.",
+    "value": null,
+  },
+  "contractValue": {
+    "figures": 46727651.87,
+    "needsReview": false,
+    "raw": "works out to Rs. 46727651.87 (Rupees Four Crore Sixty-Seven Lakh Twenty-Seven Thousand Six Hundred And Fifty-One Rupees And Eighty-Seven Paise Only)",
+    "words": "Rupees Four Crore Sixty-Seven Lakh Twenty-Seven Thousand Six Hundred And Fifty-One Rupees And Eighty-Seven Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society
+NDA Road, Shivane
+Pune- 411023
+Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s PARTRONICS EBOARDS PRIVATE
+LIMITED-PUNE",
+    "value": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "GUNTAKAL
+DIVISION-S AND T",
+    "value": "GUNTAKAL DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 468200,
+    "irepsReferenceId": "PE897030049815",
+    "needsReview": false,
+    "raw": "A sum of Rs.468200 deposited as Earnest Money vide IREPS reference ID PE897030049815 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": null,
+    "value": null,
+  },
+  "gccVersion": {
+    "needsReview": false,
+    "raw": "IRGCC April 2022",
+    "value": "IRGCC April 2022",
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 24/04/2026",
+    "value": "2026-04-24",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                              Letter No: GUNTAKAL DIVISION-S AND T / 01-SNT-
+Dated: 24/04/2026
+03-2026 / 00341490156039",
+    "value": "GUNTAKAL DIVISION-S AND T / 01-SNT-03-2026 / 00341490156039",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "Sr DSTE/M/O, DRM
+COMPOUND
+GUNTAKAL, 515801
+Andhra Pradesh, India",
+    "value": "Sr DSTE/M/O, DRM COMPOUND GUNTAKAL, 515801 Andhra Pradesh, India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "Incharges: (1) For Supply Portion - Supervisor Incharge shall be SSE/Tele/WL/GTL & Officer In-charge Shall be DSTE/M/GTL (2) For Labour Portion - Concerned SSE's and Officers are In-charges of the work in their jurisdiction.",
+    "value": "DSTE/M/GTL (2) For Labour Portion - Concerned SSE's and Officers are In-charges of the work in their jurisdiction",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 2336382.59,
+    "amountWords": "Rupees Twenty-Three Lakh Thirty-Six Thousand Three Hundred And Eighty-Two Rupees And Fifty-Nine Paise Only",
+    "extensionDays": 60,
+    "needsReview": false,
+    "penalInterestPercent": 12,
+    "raw": "amounting to Rs. 2336382.59 (Rupees Twenty-Three Lakh Thirty-Six Thousand Three Hundred And Eighty-Two Rupees And Fifty-Nine Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 16(1) of IRGCC April 2022",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 16(1) of IRGCC April 2022.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "Sr.DSTE/GTL",
+    "value": "Sr.DSTE/GTL",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "BOMMA CHANDRA SHEKHAR",
+    "value": "BOMMA CHANDRA SHEKHAR",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. 01-SNT-03-2026 closing date 06-03-2026",
+    "value": "2026-03-06",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. 01-SNT-03-2026 closing date 06-03-2026",
+    "value": "01-SNT-03-2026",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 06-03-2026 15:00 for Provision of AI infrastructure at 20 PRS locations over Guntakal division for real time monitoring. (Vendodu, Venkatagiri, Srikalahasti, Renigunta, Tirupati, Chandrairi, Pakala, Chittoor, Piler, Kalikiri, Vayalpad, Madanapalle road, Mulacalacheruvu, Kadiri, Mudigubba, Dharmavaram, Anantapur, Kalluru, Proddaturu, Jammalamadugu) 2. Your bid ID",
+    "value": "Provision of AI infrastructure at 20 PRS locations over Guntakal division for real time monitoring. (Vendodu, Venkatagiri, Srikalahasti, Renigunta, Tirupati, Chandrairi, Pakala, Chittoor, Piler, Kalikiri, Vayalpad, Madanapalle road, Mulacalacheruvu, Kadiri, Mudigubba, Dharmavaram, Anantapur, Kalluru, Proddaturu, Jammalamadugu)",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "SOUTH CENTRAL RLY",
+    "value": "SOUTH CENTRAL RLY",
+  },
+}
+`;
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL280-ADI parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19814398 dated 23/03/2026",
+    "value": "2026-03-23",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19814398 dated 23/03/2026",
+    "value": "19814398",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 36 month from the date of issue",
+    "unit": "month",
+    "value": 36,
+  },
+  "consignee": {
+    "needsReview": true,
+    "raw": "Consignee: MATERIALS (Supply, Transportation, Inspection, Handling, return & Safe Custody): a. Coordinating Consignee for material supply and its billing will be SSE/Tele/MSH b. Consignee in charge for execution of work and execution related billing will be SSE/Tele/MSH c. Engineer In charge will be ADSTE/MSH",
+    "value": "MATERIALS (Supply, Transportation, Inspection, Handling, return & Safe Custody): a. Coordinating Consignee for material supply and its billing will be SSE/Tele/MSH b. Consignee in charge for execution of work and execution related billing will be SSE/Tele/MSH c. Engineer In charge will be ADSTE/MSH",
+  },
+  "contractValue": {
+    "figures": 4144775.3,
+    "needsReview": false,
+    "raw": "works out to Rs. 4144775.3 (Rupees Fourty-One Lakh Fourty-Four Thousand Seven Hundred And Seventy-Five Rupees And Thirty Paise Only)",
+    "words": "Rupees Fourty-One Lakh Fourty-Four Thousand Seven Hundred And Seventy-Five Rupees And Thirty Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society
+NDA Road, Shivane
+Pune- 411023
+Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-
+PUNE",
+    "value": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "AHMEDABAD
+DIVISION-S AND T",
+    "value": "AHMEDABAD DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 83300,
+    "irepsReferenceId": "PE949530245927",
+    "needsReview": false,
+    "raw": "A sum of Rs.83300 deposited as Earnest Money vide IREPS reference ID PE949530245927 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": "File No : Computer file no.713979 WR-ADI0SnT(STMC)/3/2026",
+    "value": "Computer file no.713979 WR-ADI0SnT(STMC)/3/2026",
+  },
+  "gccVersion": {
+    "needsReview": false,
+    "raw": "General Condition of Contract APRIL- 2022",
+    "value": "General Condition of Contract APRIL-2022",
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 12/05/2026",
+    "value": "2026-05-12",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                              Letter No: AHMEDABAD DIVISION-S AND T / DRM-
+Dated: 12/05/2026
+SnT-ADI-Tele12of25-26 / 00341490157359",
+    "value": "AHMEDABAD DIVISION-S AND T / DRM-SnT-ADI-Tele12of25-26 / 00341490157359",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "DRM Office SnT
+Department Near
+Chamunda Bridge,
+Amdupura
+Ahmedabad, 380006
+Gujarat , India",
+    "value": "DRM Office SnT Department Near Chamunda Bridge, Amdupura Ahmedabad, 380006 Gujarat , India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "Consignee: MATERIALS (Supply, Transportation, Inspection, Handling, return & Safe Custody): a. Coordinating Consignee for material supply and its billing will be SSE/Tele/MSH b. Consignee in charge for execution of work and execution related billing will be SSE/Tele/MSH c. Engineer In charge will be ADSTE/MSH",
+    "value": "ADSTE/MSH",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 207238.77,
+    "amountWords": "Rupees Two Lakh Seven Thousand Two Hundred And Thirty-Eight Rupees And Seventy-Seven Paise Only",
+    "extensionDays": 60,
+    "needsReview": false,
+    "penalInterestPercent": 12,
+    "raw": "amounting to Rs. 207238.77 (Rupees Two Lakh Seven Thousand Two Hundred And Thirty-Eight Rupees And Seventy-Seven Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 16(1) of General Condition of Contract APRIL- 2022",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 16(1) of General Condition of Contract APRIL- 2022.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "Sr.DSTE ADI",
+    "value": "Sr.DSTE ADI",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "VIKAS KUMAR",
+    "value": "VIKAS KUMAR",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. DRM-SnT-ADI-Tele12of25-26 closing date 23-03- 2026",
+    "value": "2026-03-23",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. DRM-SnT-ADI-Tele12of25-26 closing date 23-03- 2026",
+    "value": "DRM-SnT-ADI-Tele12of25-26",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 23-03- 2026 15:00 for Comprehensive Annual Maintenance Contract of Passenger Information System i.e. Coach Guidance Display Boards, Train Arrival/ Departure Display Boards, Auto Announcement System & Digital Clocks etc. for a period of three years at Mehsana and Patan station of Ahmedabad Division. 2. Your bid ID",
+    "value": "Comprehensive Annual Maintenance Contract of Passenger Information System i.e. Coach Guidance Display Boards, Train Arrival/ Departure Display Boards, Auto Announcement System & Digital Clocks etc. for a period of three years at Mehsana and Patan station of Ahmedabad Division.",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "WESTERN RLY",
+    "value": "WESTERN RLY",
+  },
+}
+`;
+
+exports[`every fixture parses without throwing; snapshot pins the full header per letter > PL281-BB parses without throwing and matches its snapshot 1`] = `
+{
+  "bidDate": {
+    "needsReview": false,
+    "raw": "Your bid ID 19514943 dated 16/01/2026",
+    "value": "2026-01-16",
+  },
+  "bidId": {
+    "needsReview": false,
+    "raw": "Your bid ID 19514943 dated 16/01/2026",
+    "value": "19514943",
+  },
+  "completionPeriod": {
+    "needsReview": false,
+    "raw": "entire work shall be completed within 108 month from the date of issue",
+    "unit": "month",
+    "value": 108,
+  },
+  "consignee": {
+    "needsReview": false,
+    "raw": "Consignee: SSE/Tele/Store/BCT & Valsad",
+    "value": "SSE/Tele/Store/BCT & Valsad",
+  },
+  "contractValue": {
+    "figures": 147535947.85,
+    "needsReview": false,
+    "raw": "works out to Rs. 147535947.85 (Rupees Fourteen Crore Seventy-Five Lakh Thirty-Five Thousand Nine Hundred And Fourty-Seven Rupees And Eighty-Five Paise Only)",
+    "words": "Rupees Fourteen Crore Seventy-Five Lakh Thirty-Five Thousand Nine Hundred And Fourty-Seven Rupees And Eighty-Five Paise Only",
+  },
+  "contractorAddress": {
+    "needsReview": false,
+    "raw": "S.No 81/5, NR Samarth Society
+NDA Road, Shivane
+Pune- 411023
+Maharashtra, India",
+    "value": "S.No 81/5, NR Samarth Society NDA Road, Shivane Pune- 411023 Maharashtra, India",
+  },
+  "contractorName": {
+    "needsReview": false,
+    "raw": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-
+PUNE",
+    "value": "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE",
+  },
+  "division": {
+    "needsReview": false,
+    "raw": "MUMBAI CENTRAL
+DIVISION-S AND T",
+    "value": "MUMBAI CENTRAL DIVISION-S AND T",
+  },
+  "emd": {
+    "amount": 742500,
+    "irepsReferenceId": "PE572429466356",
+    "needsReview": false,
+    "raw": "A sum of Rs.742500 deposited as Earnest Money vide IREPS reference ID PE572429466356 has been retained",
+  },
+  "fileNo": {
+    "needsReview": false,
+    "raw": null,
+    "value": null,
+  },
+  "gccVersion": {
+    "needsReview": true,
+    "raw": "in terms of clause 6.2 of Chapter 6 of Tender document.",
+    "value": null,
+  },
+  "letterDate": {
+    "needsReview": false,
+    "raw": "Dated: 25/05/2026",
+    "value": "2026-05-25",
+  },
+  "letterNumber": {
+    "needsReview": false,
+    "raw": "                             Letter No: MUMBAI CENTRAL DIVISION-S AND T / WR-
+Dated: 25/05/2026
+MMCT-SnT-STTD-34-2025 / 00341490158364",
+    "value": "MUMBAI CENTRAL DIVISION-S AND T / WR-MMCT-SnT-STTD-34-2025 / 00341490158364",
+  },
+  "officeAddress": {
+    "needsReview": false,
+    "raw": "Signal and Telcom
+Departemnt, 2 nd floor,
+DRM Office, Mumbai
+Central
+Mumbai, 400008
+Maharashtra, India",
+    "value": "Signal and Telcom Departemnt, 2 nd floor, DRM Office, Mumbai Central Mumbai, 400008 Maharashtra, India",
+  },
+  "officerInCharge": {
+    "needsReview": false,
+    "raw": "Engineer Incharge: ADSTE/Tele1/Mumbai Central",
+    "value": "ADSTE/Tele1/Mumbai Central",
+  },
+  "performanceGuarantee": {
+    "amountFigures": 7376797.39,
+    "amountWords": "Rupees Seventy-Three Lakh Seventy-Six Thousand Seven Hundred And Ninety-Seven Rupees And Thirty-Nine Paise Only",
+    "extensionDays": 60,
+    "needsReview": true,
+    "penalInterestPercent": null,
+    "raw": "amounting to Rs. 7376797.39 (Rupees Seventy-Three Lakh Seventy-Six Thousand Seven Hundred And Ninety-Seven Rupees And Thirty-Nine Paise Only) within 21 days from the date of issue of Letter of Acceptance, valid up to stipulated date of completion plus 60 days",
+    "submissionDays": 21,
+  },
+  "securityDeposit": {
+    "capPercent": 5,
+    "clauseReference": "clause 6.2 of Chapter 6 of Tender document",
+    "needsReview": false,
+    "raw": "recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 % of the contract value in terms of clause 6.2 of Chapter 6 of Tender document.",
+    "recoveryPercent": 6,
+  },
+  "signatoryDesignation": {
+    "needsReview": false,
+    "raw": "Sr.DSTE/Co./BCT",
+    "value": "Sr.DSTE/Co./BCT",
+  },
+  "signatoryName": {
+    "needsReview": false,
+    "raw": "ASHISH TIWARI",
+    "value": "ASHISH TIWARI",
+  },
+  "tenderClosingDate": {
+    "needsReview": false,
+    "raw": "Tender No. WR-MMCT-SnT-STTD-34-2025 closing date 16-01-2026",
+    "value": "2026-01-16",
+  },
+  "tenderNumber": {
+    "needsReview": false,
+    "raw": "Tender No. WR-MMCT-SnT-STTD-34-2025 closing date 16-01-2026",
+    "value": "WR-MMCT-SnT-STTD-34-2025",
+  },
+  "workDescription": {
+    "needsReview": false,
+    "raw": "closing date 16-01-2026 15:00 for Upgradation of manual announcement system to automatic announcement at stations of non-suburban sections and replacement of Public Address System with IP based Public Address System installed at CCG, MX, DDR, ADH, RMAR, GMN, BVI & NSP stations of Churchgate - Virar section of Mumbai Division on age cum condition basis along with Comprehensive Annual Maintenance Contract (CAMC) after warranty. 2. Your bid ID",
+    "value": "Upgradation of manual announcement system to automatic announcement at stations of non-suburban sections and replacement of Public Address System with IP based Public Address System installed at CCG, MX, DDR, ADH, RMAR, GMN, BVI & NSP stations of Churchgate - Virar section of Mumbai Division on age cum condition basis along with Comprehensive Annual Maintenance Contract (CAMC) after warranty.",
+  },
+  "zone": {
+    "needsReview": false,
+    "raw": "WESTERN RLY",
+    "value": "WESTERN RLY",
+  },
+}
+`;

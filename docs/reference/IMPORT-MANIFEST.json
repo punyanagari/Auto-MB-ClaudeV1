@@ -1,0 +1,198 @@
+{
+  "source_archive": "Auto-MB-main.zip",
+  "source_commit_from_archive_comment": "a39d2f7e442df64c88663785fb9168fe49990c7a",
+  "generated_at": "2026-08-06",
+  "note": "Hashes describe the imported files as committed in this clean-sheet repository; package-name and whitespace-only provenance edits may differ from the source archive.",
+  "files": [
+    {
+      "path": "packages/loa-parser/README.md",
+      "sha256": "98d2626d0dedbcd35042ed6e2068db2927723507cad5f0668def637a7215b9ef",
+      "bytes": 551
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL270-CRB.txt",
+      "sha256": "0442186671d213934664c7c3071d8b24328910906923372c7ef0eb9891c1dae2",
+      "bytes": 73214
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL273-JHS.txt",
+      "sha256": "4c26af57988f250f1ca9b4db461558caa223bfe001f8a2c57d8f6818d321ac25",
+      "bytes": 17839
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL275-BKN.txt",
+      "sha256": "9687e4b7dbb35eee0524e0a84fbaa5000d6316baa50aae052e9f4eda017552dd",
+      "bytes": 38469
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL276-GTL.txt",
+      "sha256": "7c617835e719efcc881b8225fe88d87dd17509dc40bbc3470e6ad6b5423f7ca7",
+      "bytes": 33327
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL280-ADI.txt",
+      "sha256": "89de8ba96306265264acae26a170319b8acd27e9085a0bfe82dfdf1bf88da64a",
+      "bytes": 20585
+    },
+    {
+      "path": "packages/loa-parser/fixtures/PL281-BB.txt",
+      "sha256": "9443b9cef6b428ac09bfdb370f7395c8df9f36e0c1fcdbf8579990a51904415b",
+      "bytes": 32001
+    },
+    {
+      "path": "packages/loa-parser/fixtures/corpus.json",
+      "sha256": "23aa6363fa66e8dcc6fd4445e72cf7d2e214105cab84016ffc6249f67434e706",
+      "bytes": 2669
+    },
+    {
+      "path": "packages/loa-parser/package.json",
+      "sha256": "635c7b64c9912f567d66296f49d8f384df2d29b9cc7caf0b96f027b835be15e9",
+      "bytes": 296
+    },
+    {
+      "path": "packages/loa-parser/src/dates.ts",
+      "sha256": "47cdd7776e8ed5f513450fa91f408240992115b49ea26778551fe6e589754b77",
+      "bytes": 2530
+    },
+    {
+      "path": "packages/loa-parser/src/decimal.ts",
+      "sha256": "017fd1e57ca5cff22e428606ae4ec02fc475c0df4d37fcba052beb0426145fd5",
+      "bytes": 3448
+    },
+    {
+      "path": "packages/loa-parser/src/field.ts",
+      "sha256": "a63bc3368278d77898944b38f68ceabfdfb9717de40aca25fe7cd33d6bccd28e",
+      "bytes": 2086
+    },
+    {
+      "path": "packages/loa-parser/src/furniture.ts",
+      "sha256": "6412207750fca927e7a5ae2e787d1080c22156a1d9c92deef258585fbe559b25",
+      "bytes": 3468
+    },
+    {
+      "path": "packages/loa-parser/src/header.ts",
+      "sha256": "5811111cf9aebb17c8586cc5234a673899c0e56ba54e9c20543546aaf41bda4a",
+      "bytes": 31953
+    },
+    {
+      "path": "packages/loa-parser/src/index.ts",
+      "sha256": "b1551ab1790845d57902cd0eda33eeed28945ab2b844481dd6e40d4a8a4b6d5f",
+      "bytes": 9890
+    },
+    {
+      "path": "packages/loa-parser/src/items.ts",
+      "sha256": "e2f13b68085bf0272401a32c106d0d86f22f86603538f5d7f29e257571c48e5b",
+      "bytes": 33328
+    },
+    {
+      "path": "packages/loa-parser/src/letter-number.ts",
+      "sha256": "c71a7876b15c8bae4dbcb2fc92ee20c19c74e0487ea0e0765b5f1829f1f626d7",
+      "bytes": 3525
+    },
+    {
+      "path": "packages/loa-parser/src/needs-review.ts",
+      "sha256": "e751182bd06bfc6a414ffd59436e248b864f574535f0af7a3455f333db1d6ee3",
+      "bytes": 39265
+    },
+    {
+      "path": "packages/loa-parser/src/pricing-shape.ts",
+      "sha256": "34af1ac4ed01bc2c347e866d616315fcbc5d4abe07b6f4b671676d95fb54114a",
+      "bytes": 31069
+    },
+    {
+      "path": "packages/loa-parser/src/text.ts",
+      "sha256": "8f8787e2606d4358baf08ab2e758c2d1dcc7b0077bc39768ed473bc047c4843a",
+      "bytes": 2986
+    },
+    {
+      "path": "packages/loa-parser/src/words-to-number.ts",
+      "sha256": "896433f128b169ccad1b073cdd71f214eb43f7f22993ac8d9f1fce03e16de17e",
+      "bytes": 4336
+    },
+    {
+      "path": "packages/loa-parser/test/__snapshots__/header-normalise.test.ts.snap",
+      "sha256": "c22c23ca496ff0566276aa51a8ecc5862f29221aafd1966fed93703b0e33f98d",
+      "bytes": 34142
+    },
+    {
+      "path": "packages/loa-parser/test/corpus-manifest.test.ts",
+      "sha256": "7abbe1849cbabb79173c83e7b231a551ae122435d50e695a7ce2bdd7b5bb1b0d",
+      "bytes": 14956
+    },
+    {
+      "path": "packages/loa-parser/test/header-normalise.test.ts",
+      "sha256": "a86c29d650555c9b1001daf24523f32b7400b03c5e7bd0827ce232e05c967ab7",
+      "bytes": 33894
+    },
+    {
+      "path": "packages/loa-parser/test/item-anchor.test.ts",
+      "sha256": "11697e469d07fd7d39add0a81386cc6cd62d0f7e88dca6615949668bd4f37ca6",
+      "bytes": 23990
+    },
+    {
+      "path": "packages/loa-parser/test/needs-review.test.ts",
+      "sha256": "d3e80336ee3cd6319108d056d00c6476fbf6c55191f6f683533be4b20f425269",
+      "bytes": 44420
+    },
+    {
+      "path": "packages/loa-parser/test/pricing-shape.test.ts",
+      "sha256": "164f0a5178e8a9afafb9afb6f00e90b7dc2827b2d57759ca747aa172f83d661a",
+      "bytes": 24841
+    },
+    {
+      "path": "packages/loa-parser/tsconfig.json",
+      "sha256": "3b323de8fa48f859311b46e5aa1b417f7e9d205fd3d5173bd0633848e7ddd940",
+      "bytes": 115
+    },
+    {
+      "path": "packages/loa-parser/vitest.config.ts",
+      "sha256": "e2a675066ef179567002dbafeaedef0a4f7142cd1610d8608fbbef4215c55bbd",
+      "bytes": 741
+    },
+    {
+      "path": "docs/reference/README.md",
+      "sha256": "a8c26bf558ecf6cc0f6a0156f82a021c20ddc98616f96b9273ab8ad347525740",
+      "bytes": 452
+    },
+    {
+      "path": "docs/reference/legacy-architecture.md",
+      "sha256": "e91bb8a699026a64d4a86bfcd13c2b0204c77a8db752034b826d9b75595103c9",
+      "bytes": 15074
+    },
+    {
+      "path": "docs/reference/legacy-decisions/APPROVED-015-final-stack.md",
+      "sha256": "b781a7cbc708ed71a5d74f1ee4f6cd315f85eb1f07621d088e2e16f3fc056ce1",
+      "bytes": 4460
+    },
+    {
+      "path": "docs/reference/legacy-decisions/APPROVED-026-tenancy-model-and-jv-identity.md",
+      "sha256": "6dbc586f9015d06c398192c2729947103f1c14eaaabe3bab5f3a1b621f05ff85",
+      "bytes": 8229
+    },
+    {
+      "path": "docs/reference/legacy-decisions/APPROVED-032-production-readiness-posture.md",
+      "sha256": "d977357485ae1c6a2cc17ba928c40cc187a79c690478c860be30cae84031adfb",
+      "bytes": 13428
+    },
+    {
+      "path": "docs/reference/legacy-decisions/APPROVED-085-gstin-uniqueness-hard-constraint-or-service-detection.md",
+      "sha256": "e388d741cc43f7cb9336da0e9a87ccf5d10416f05ee02faf400443ad0e9ec7b2",
+      "bytes": 2214
+    },
+    {
+      "path": "docs/reference/legacy-product-spec.md",
+      "sha256": "d13ac9396a50d4fc525b194e5896d23e82598e4e97dbb2a0607e592329bb591b",
+      "bytes": 53333
+    },
+    {
+      "path": "docs/reference/legacy-security.md",
+      "sha256": "ec754a5abb0037dd8d8e8b0b69127bbdb46e9a8b7c18b30a1480e58c5ef9aed7",
+      "bytes": 478245
+    },
+    {
+      "path": "docs/reference/loa-parser-contract.md",
+      "sha256": "0f8d1055b25ba7cd267ebf5e8674b8d61cd6a72123d79976e9f99cea520ee2cc",
+      "bytes": 13918
+    }
+  ]
+}

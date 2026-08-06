@@ -1,0 +1,34 @@
+name: Product change
+about: A bounded user outcome for Auto-MB
+labels: ["product"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: What will the user be able to complete?
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: Business rules and acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+    validations:
+      required: true
+  - type: checkboxes
+    id: risk
+    attributes:
+      label: Risk surfaces
+      options:
+        - label: Database or migration
+        - label: Tenant isolation
+        - label: Authentication or authorisation
+        - label: Uploads or documents
+        - label: Money, quantity, date, or numbering
+        - label: Infrastructure or operations

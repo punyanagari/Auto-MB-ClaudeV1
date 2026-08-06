@@ -1,0 +1,35 @@
+{
+  "name": "auto-mb-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Clean-sheet shared multi-tenant Auto-MB implementation led by Codex.",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint": "eslint . --cache --cache-strategy content",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @auto-mb/db migrate",
+    "db:check": "pnpm --filter @auto-mb/db check:migrations",
+    "architecture:check": "node scripts/check-architecture.mjs",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm db:check && pnpm architecture:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.20.1",
+    "eslint": "9.39.5",
+    "globals": "17.8.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}

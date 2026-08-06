@@ -1,0 +1,29 @@
+name: Defect
+about: Reproducible incorrect behaviour
+labels: ["bug"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Use synthetic/redacted data only.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: User and security impact
+    validations:
+      required: true

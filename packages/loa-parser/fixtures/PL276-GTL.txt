@@ -1,0 +1,675 @@
+4/24/26, 5:34 PM       ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+
+
+
+
+                                                             SOUTH CENTRAL RLY
+                                                                                                       GUNTAKAL
+                                                                                                DIVISION-S AND T
+                                                                                              Sr DSTE/M/O, DRM
+                                                                                                     COMPOUND
+                                                                                             GUNTAKAL, 515801
+                                                                                            Andhra Pradesh, India
+
+
+                              Letter No: GUNTAKAL DIVISION-S AND T / 01-SNT-
+                                                                                              Dated: 24/04/2026
+                              03-2026 / 00341490156039
+
+
+                              M/s PARTRONICS EBOARDS PRIVATE
+                              LIMITED-PUNE
+                              S.No 81/5, NR Samarth Society
+                              NDA Road, Shivane
+                              Pune- 411023
+                              Maharashtra, India
+
+                                   Sub:        Letter Of Acceptance
+
+                                   Ref:     1.   Tender No. 01-SNT-03-2026 closing date 06-03-2026 15:00
+                                                 for Provision of AI infrastructure at 20 PRS locations over
+                                                 Guntakal division for real time monitoring. (Vendodu,
+                                                 Venkatagiri, Srikalahasti, Renigunta, Tirupati, Chandrairi, Pakala,
+                                                 Chittoor, Piler, Kalikiri, Vayalpad, Madanapalle road,
+                                                 Mulacalacheruvu,      Kadiri,     Mudigubba,       Dharmavaram,
+                                                 Anantapur, Kalluru, Proddaturu, Jammalamadugu)
+                                            2.   Your bid ID 19737241 dated 06/03/2026 14:51
+
+
+
+                                    The Competent Authority has accepted your offered rates in connection
+                                with the subject work. The total cost of the work at the accepted rates works
+                                out to Rs. 46727651.87 (Rupees Four Crore Sixty-Seven Lakh Twenty-Seven
+                                Thousand Six Hundred And Fifty-One Rupees And Eighty-Seven Paise Only)
+
+                                     A sum of Rs.468200 deposited as Earnest Money vide IREPS reference
+                                ID PE897030049815 has been retained towards initial Security Money for due
+                                and faithful fulfillment of the contract, and the balance Security Money will be
+                                recovered from the progressive bills @ 6 % of the bill amount till it reaches 5 %
+                                of the contract value in terms of clause 16(1) of IRGCC April 2022.
+
+                                     You are requested to submit Performance Guarantee in the form as given in
+                                Clause 16(2) of IRGCC April 2022 equivalent to 5 % of the contract value
+                                amounting to Rs. 2336382.59 (Rupees Twenty-Three Lakh Thirty-Six
+                                Thousand Three Hundred And Eighty-Two Rupees And Fifty-Nine Paise Only)
+                                within 21 days from the date of issue of Letter of Acceptance, valid up to
+                                stipulated date of completion plus 60 days so that contract agreement can be
+                                executed. As perclause62 -part II of SGCC, April 2022, the extension of time
+                                for submission of PG beyond 21(Twenty one) days and up to 60 days from the
+                                date of issue of LOA may be given by the Authority who is competent to sign
+                                the contract agreement. However, a penal interest of 12% per annum shall be
+                                charged for the delay beyond 21 (Twenty one)days, i.e. from 22nd day after the
+                                date of issue of LOA. Further, if the 60th day happens to be a declared holiday
+                                in the concerned office of the Railway, submission of PG can be accepted on
+                                the next working day. In all other cases, if the Contractor fails to submit the
+                                requisite PG even after 60 da from the date of issue of LOA, the contract is
+
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   1/9
+4/24/26, 5:34 PM       ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                                liable to be terminated. In case contract is terminated railway shall be entitled to
+                                forfeit Earnest Money Deposit and other dues payable against that contract.
+
+                                    The entire work shall be completed within 12 month from the date of issue
+                                of Letter of Acceptance. The work to be commenced as per clause 19(2) of
+                                GCC, April2022 from the date of issue of Letter of Acceptance.
+
+                                Incharges: (1) For Supply Portion - Supervisor Incharge shall be
+                                SSE/Tele/WL/GTL & Officer In-charge Shall be DSTE/M/GTL (2) For Labour
+                                Portion - Concerned SSE's and Officers are In-charges of the work in their
+                                jurisdiction.
+
+                                    All Other terms and conditions, as stipulated in the tender documents shall
+                                be applicable.
+
+
+                              BOMMA CHANDRA SHEKHAR
+                              Sr.DSTE/GTL
+                              Digitally Signed
+                              View Signature Details
+
+
+
+
+        Awarded Quantities And Rates
+
+         Item Item Desc                     Item Item Qty              Unit          Escl. Advt.Value         Bid Rate/      Bid Amount
+         Sno.                               Code Qty  Unit             Rate(Rs)      (%) (Rs)                 Unit Rate      (Rs)
+         Schedule A1-Supply Portion (SOR Items) (Item Directory - Not                    %
+                                                                         7516440.00 7.77                                        8100467.39
+        Applicable)                                                                      Above
+              Supply of UTP CAT 6
+              Cable (Roll is 305 Mtr)
+              of D.LINK/AMP/KRONE
+        1                              1 12200 Metre        37.00 At Par   451400.00
+              or similar make.
+              Inspection by
+              Consignee.
+              Supply of HDPE pipe of
+              110mm Dia with
+              material grade PE 100
+              as per specification IS
+        2     Specification 4984:      2  5000 Metre       358.00 At Par  1790000.00
+              1995 up to latest
+              amendment.
+              Inspection by
+              Consignee.
+              Supply of 50 Pair cable
+              of 0.5mm dia,
+              polythene insulated,
+              polythene sheathed,
+              jelly filled underground
+              telephone cable with
+              poly aluminium
+              moisture barrier,
+        3                              3  4000 Metre       304.00 At Par  1216000.00
+              annealed copper
+              conductor, polythene
+              jacketed double steel
+              tape armoured as per
+              specification IRS: TC
+              41/97 Amd. 3 or
+              latest. Inspection by
+              Consignee.
+        4     Supply of Permanently 4       20 Kilometre 66223.00 At Par  1324460.00
+              lubricated HDPE Duct
+              with outer diameter of
+              40mm and inner
+              diameter of 33mm as
+              per specification
+              RDSO/SPN/TC/45/2013
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   2/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   Revision 2.0. The
+                   length of the duct
+                   shall be 1km. Two end
+                   plugs shall be provided
+                   along with the drum.
+                   Inspection by
+                   Consignee.
+                   Supply of 8 port with
+                   2 SFP networking
+                   switch with POE (8
+                   Port Managed PoE +
+                   Layer 2 access
+        5          Switch) as per          5             80 Numbers        9440.00 At Par        755200.00
+                   specification of
+                   make/model: cisco or
+                   D-Link or Netgear or
+                   similar. Inspection by
+                   Consignee.
+                   Supply of Manageable
+                   non-POE 24 port
+                   switch with minimum
+        6                                  6             40 Numbers       15930.00 At Par        637200.00
+                   02 SFP ports of D-Link
+                   or similar. Inspection
+                   by Consignee.
+                   Supply of 10TB
+                   internal hard disc with
+                   power and SATA data
+                   cables suitable for 16
+        7                                  7             40 Numbers       29349.00 At Par       1173960.00
+                   channel super NVR of
+                   reputed make.
+                   Inspection by
+                   Consignee.
+                   Supply of 2 TB
+                   external hard disc of
+        8          Seagate/WD make or 8                  20 Numbers        8411.00 At Par        168220.00
+                   similar. Inspection by
+                   Consignee.
+                                                                          Schedule Totals                                     8100467.39
+         Schedule A2-Supply Portion (Non SOR Items) (Item Directory -                  %
+                                                                       3688780.00 8.88                                          4016343.66
+        Not Applicable)                                                                Above
+              Supply of 24 U Rack
+              BESTNET Make or
+        1                            1     20 Numbers  20060.00 At Par   401200.00
+              similar. Inspection by
+              Consignee.
+              Supply of 10/100Mbps
+              single mode media
+        2     converter as per spec. 2     40 Pair      7500.00 At Par   300000.00
+              Inspection by
+              Consignee.
+              Supply of RJ 45 Jacks
+              of Make:AMP /Dlink/
+        3     ADC/ Krone.            3   2000 Numbers      4.99 At Par     9980.00
+              Inspection by
+              Consignee.
+              Supply of SC-PC to
+              SC-PC patch cards (5
+        4     mtrs length) with 0dB 4     960 Numbers    480.00 At Par   460800.00
+              coupler. Inspection by
+              Consignee.
+        5     Supply of 2w/4w Fast 5       40 Pair     34150.00 At Par  1366000.00
+              Ethernet/LAN
+              extenders 30 Mbps
+              works up to 10 Km or
+              more with Built-in
+              internal dual AC 230V/
+              DC-48V power supply
+              from a single socket
+              as per specs make:
+              MROTEK WL-LG or
+              Cisco or Perle.
+
+
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   3/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   Inspection by
+                   Consignee.
+                   Supply of Patch Cards
+                   7' (DAX make).
+        6                                  6            160 Numbers          130.00 At Par         20800.00
+                   Inspection by
+                   Consignee.
+                   Supply of 3 core,
+                   2.5sqmm PVC
+                   insulated flexible fire
+                   resistant Power Cable
+                   of Spec.No.
+                   IS:694:1990
+        7                                  7         10000 Metre              90.00 At Par       900000.00
+                   reaffirmed 1995 or
+                   latest of reputed make
+                   like Havells, finolex
+                   fine cap etc.,
+                   Inspection by
+                   Consignee.
+                   Supply of 22 inch
+                   monitor with HDMI
+        8          port Samsung/Dell or 8                20 Numbers       11500.00 At Par        230000.00
+                   equalent. Inspection
+                   by Consignee.
+                                                                          Schedule Totals                                     4016343.66
+         Schedule B1-Labour Portion (SOR Items) (Item Directory - Not                    %
+                                                                       14097280.00 49.49                                        7120536.13
+        Applicable)                                                                      Below
+        1     Supply and installation 1     20 Numbers 41962.00 At Par    839240.00
+              of 19" - 42 U Rack
+              complete with fittings
+              for housing SDH
+              equipment, FDMS, DDF
+              and other equipment
+              like cable managers,
+              completely wired using
+              krone module and
+              other equipment like
+              runaway ladders etc.,
+              as per technical
+              specification below. It
+              should be able to lock
+              all the equipment with
+              only order wire
+              Telephone outside the
+              rack. The rack should
+              be of APW President /
+              Rittal make or similar.
+              The components of
+              the rack are specified
+              below. It includes
+              transportation and
+              installation of rack in
+              prefab/building at
+              specified stations. 1.
+              Rack S33 42U 600'W x
+              600D - 1 No. 2. Fixed
+              side panels 42U x 600
+              D - 2 Nos. 3. Front
+              Glass door plain
+              42U/600W - 1 No. 4.
+              Rear MS Door Plain
+              42U/600W - 1 No. 5.
+              Castor with brakes-2
+              Nos. 6 Fans directly
+              mounted on the top
+              48V DC 90 CFM-2 Nos.
+              7. Krone mounting
+              bracket - 01 Nos. 8.
+              MCB Mounting panel
+              with MCBs - a. 32
+              Amps, MCBs(DP) - 2
+              Nos. & 6Amps MCBs
+              (DP) - 6 Nos. 9. Earth
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   4/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   continuity Kit - 01 No.
+                   10. Equipment Trays -
+                   5 Nos. 11. Channel
+                   with cable loops 42U -
+                   2 Nos " Inspection by
+                   Consignee.
+                   Supply and Installation
+                   of OFC joint enclosure
+                   and splicing of Optic
+                   fibre cable (24 fibres)
+                   and testing as per
+                   technical specification
+                   No. GR OJC-2/02 Sept
+                   2003. Supply of Splice
+                   Enclosure (24 fibre)
+                   shall be of TVS make
+                   Part No.1500-L18X-XX
+                   or similar as per Board
+                   specification of TEC.&
+        2                                   2            80 Numbers        9398.00 At Par        751840.00
+                   as per
+                   RDSO/SPN/TC/68/2014
+                   Revision 1.0 amd 1 or
+                   latest . All materials
+                   including Fusion
+                   splicing machine used
+                   for fibre splicing and,
+                   OTDR for testing and
+                   other testing materials
+                   if any shall be
+                   arranged by the
+                   contractor. Inspection
+                   by Consignee.
+                   Supply and installation
+                   of rack mounted 24
+                   fibre Distribution
+                   Management System
+                   (FDMS) of size 1U, of
+                   Reputed/Branded
+                   company make as per
+                   specification
+                   RDSO/SPN/TC/37/2020
+        3          Revision 4.0 with        3            80 Numbers       23712.00 At Par       1896960.00
+                   latest amendments.
+                   The FDMS shall include
+                   24 SC-PC/Required
+                   adaptors having
+                   insertion loss less than
+                   or equal to 0.1dB and
+                   24 numbers 900
+                   micron 1.5m SC-
+                   PC/Required pigtails.
+                   Track crossing/ Road
+                   Crossing by Horizontal
+                   Boring method at
+                   culverts/track/pucca
+                   road as per SCR Drg.
+                   No. 5770. This also
+        4          includes insertion of    4         2000 RMT             2264.00 At Par       4528000.00
+                   HDPE pipe of 110
+                   mm/G.I Pipe of 100
+                   mm in the bore drilled
+                   (HDPE pipe/ GI pipe is
+                   to be supplied by
+                   Railway).
+        5          Breaking of metal/ tar 5           5000 RMT               211.00 At Par      1055000.00
+                   road and refilling after
+                   laying the cables as
+                   per drawing no.
+                   SDO/CABLE
+                   LAYING/010. The
+                   surface of the road
+                   shall be concreted to
+
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   5/9
+4/24/26, 5:34 PM        ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   match with the old
+                   surface.
+                   Laying different type
+        6          of cables in the         6         4000 RMT                 7.00 At Par         28000.00
+                   trench.
+                   "Supply & installation
+                   of Rack 19"" wall
+                   mount 6U/500MM D
+                   with front glass door
+                   and lock and key
+                   including the following:
+                   1. 1U Cable manager -
+        7          1 No. 2. 1U Cantilever 7             40 Numbers         7739.00 At Par        309560.00
+                   tray - 1 No. 3. AC
+                   distribution box 5X5
+                   amps - 1 No. 4. Front
+                   panel H/W PKT of 10
+                   Sets - 1No. 5. Cooling
+                   fan of 230V AC
+                   operated"
+                   Laying of HDPE duct
+                   40/33 mm dia in the
+        8          trenches and in          8           20 Kilometre       7410.00 At Par        148200.00
+                   protective works
+                   already provided.
+                   Blowing of armoured
+                   optic fibre cable (OFC
+                   Cable supplied by
+                   Railways) into the
+                   duct supplied vide
+                   other NS item of
+                   supply portion by
+                   using blowing machine
+                   and associated works.
+                   10% of OFC length to
+                   be blown extra on
+                   both ends of Duct i.e.
+                   total 20% of Duct
+                   length. Before blowing
+        9                                   9           20 Kilometre      10956.00 At Par        219120.00
+                   the duct integrity shall
+                   be tested. If any
+                   defect is found during
+                   duct integrity test,
+                   the entire length of
+                   HDPE duct from one
+                   chamber to another
+                   chamber is to be
+                   replaced by the
+                   contractor at his own
+                   cost. Payment will be
+                   made as per the
+                   length of Duct from
+                   which OFC is Blown.
+        10         Trenching under Rails 10            500 RMT             1139.00 At Par        569500.00
+                   for crossing the track
+                   (Track Crossing) and
+                   refilling of trenches as
+                   per SCR Drg. No.
+                   5768. The track
+                   crossing shall be done
+                   at right angles. The
+                   depth of cable trench
+                   shall be 1.2 meter
+                   below the rail flange.
+                   The depth between
+                   top cable and the
+                   level of rail flange of
+                   the rail shall never be
+                   less than 1.0 meter.
+                   The ballast shall be
+                   stacked separately
+                   while making the
+
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   6/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   trench and the earth
+                   soil shall be stacked
+                   separately. While re-
+                   filling the trench, the
+                   earth soil has to be
+                   filled first to the
+                   ground level and the
+                   ballast has to be
+                   properly put in the
+                   track. This work has
+                   to be done under
+                   supervision of
+                   supervisor of S&T and
+                   supervisor of P.Way.
+                   Supply and fixing of
+                   different sizes of PVC
+                   casing /Pipes as
+                   required by Railway at
+                   site by fixing /clamping
+                   to the wall for indoor
+        11         wiring purposes. All     11        4000 RMT                48.00 At Par       192000.00
+                   the material required
+                   for fixing PVC
+                   casing/Pipes are to be
+                   supplied by contractor.
+                   Inspection by
+                   Consignee.
+                   Supply & Laying of G.I
+                   Pipes 100mm diametre
+                   with medium and
+                   threaded collar &
+                   coupler, quality to
+        12         specification IS.1239 12           1000 RMT             1993.00 At Par       1993000.00
+                   (part-I) 1990 and
+                   galvanised to
+                   specification IS.4736-
+                   1986. Inspection by
+                   Consignee.
+                   Excavation of trench,
+                   including marking of
+                   cable alignment,
+                   clearing of jungle,
+                   roots of trees, bushes,
+                   trial pits if required,
+                   refilling with
+                   excavated soil,
+                   ramming and
+                   consolidation after
+                   laying of cables                         Route
+                   complete to the                          Kilo
+        13                                  13           10               98750.00 At Par        987500.00
+                   finished item of work                    Meter
+                   in all type of Soil                      (RKM)
+                   including soft rocky
+                   area as per RDSO
+                   Sketch No.
+                   SDO/CABLE
+                   LAYING/003, as
+                   directed by engineer
+                   in-charge. Depth of
+                   1200mm and width of
+                   300mm. Inspection by
+                   Consignee.
+        14         Excavation of jointing 14             80 Numbers        6344.00 At Par        507520.00
+                   pit and provision of
+                   RCC/FRP joint / Loop
+                   chambers of 90 Cms.
+                   Inner dia 60 Cms
+                   depth and 3mm
+                   thickness with two
+                   pieces of top cover
+                   with hooks each and
+                   bottom cover with
+                   hole for drainage and
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   7/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   cable entry as per
+                   Drg. No.
+                   RAILTEL/SR/OFC/
+                   2009/12 and as
+                   directed by Engineer
+                   to be provided at
+                   every joint location
+                   and at every Kilometre
+                   loop etc., The
+                   chamber shall be filled
+                   with sand mixed with
+                   anti-stermic power,
+                   back filling and
+                   ramming of trench
+                   after HDPE duct
+                   laying, splicing and
+                   commissioning.
+                   Excavation of coil pit
+                   up to a depth of 1
+                   meter and dia of 1.5
+                   meter for providing coil
+                   at location box, point,
+        15         signals etc., This       15           40 Numbers        1796.00 At Par          71840.00
+                   includes back filling
+                   and ramming of trench
+                   / pit after laying the
+                   cable and
+                   consolidation of soil.
+                                                                          Schedule Totals                                     7120536.13
+         Schedule B2-Labour Portion (Non SOR Items) (Item Directory -                    %
+                                                                       38330040.00 28.28                                       27490304.69
+        Not Applicable)                                                                  Below
+              Laying of data cable /
+              power cable/CAT-6
+        1                              1 22200 RMT         3.50 At Par     77700.00
+              cable/PA System
+              cable/OFC.
+              Supply and installation
+              of 1KVA line
+              interactive UPS
+        2                              2    40 Numbers  7500.00 At Par    300000.00
+              system with built in
+              batteries. Inspection
+              by Consignee.
+              Supply & installation of
+              2KVA capacity online
+              UPS systems with
+              battery of 12V-65 AH
+              capacity-06 Nos for
+              battery back up of
+              120 mins, with
+              isolation transformer,
+              True On-Line double
+              Conversion UPS with
+              PWM-IGBT technology
+              with cold start facility
+              ,suitable for single
+              phase AC input &
+        3                              3    20 Numbers 57907.00 At Par   1158140.00
+              single phase AC
+              output, Mains On,
+              Inverter On, Overload,
+              Load On Mains, Load
+              On Battery, Battery
+              Low with Sealed
+              Maintenance Free
+              (SMF) Battery with
+              stand and Floor
+              mounted type of
+              make:
+              APC/Numeric/Emerson.
+              Inspection by
+              Consignee.
+        4     Supply &                 4   120 Numbers  3835.00 At Par    460200.00
+              Transportation of 12
+              Port LIU fully loaded
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   8/9
+4/24/26, 5:34 PM         ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&lette…
+                   with 12 simplex SC
+                   couplers and 12 SC
+                   connectors.
+                   Inspection by
+                   Consignee.
+                   Cutting of trench
+                   across / on platform
+                   for a depth 10cm and
+                   width of 10cm with
+                   marble cutting
+        5                                   5         4000 Metre             133.50 At Par       534000.00
+                   machine and filling the
+                   trench after laying the
+                   cables and restoring
+                   the surface with
+                   marbles.
+                   "Design, development,
+                   supply, installation of
+                   MVIS (Machine Vision
+                   based Inspection
+                   System). • 3 Full HD
+                   Ultra High-Speed with
+                   motion blur-free
+                   Camera Edge Analytics
+                   Systems and long
+                   range Laser sensor
+                   which can perform
+                   detection of defects
+                   and abnormalities on
+                   Body/Doors/ Floor
+                   visible parts at running
+                   trains. • 1 Night Vision
+                   long range camera for
+                   train detection. •
+                   Residual Material
+                   Detection • Door
+        6                                   6            20 Lumpsum 1790000.00 At Par 35800000.00
+                   condition
+                   assessments. •
+                   Uneven loading
+                   Detection. • 180 days
+                   of media storage with
+                   Wagon Number Scan,
+                   multiple alerts, web
+                   portal with edit and
+                   user input options.
+                   WhatsApp Alert
+                   system. • Filter and
+                   search on at
+                   webportal+ Smart
+                   Analytical
+                   Visualization. • 7 Hr
+                   backup & 8 high-
+                   power LED lights, GI
+                   poles and other civil
+                   material and
+                   construction."
+                                                                          Schedule Totals                                    27490304.69
+                                                                              Total Value 63632540.00                        46727651.87
+                                                                                          Rebate on Total Value
+                                                                                                                                        0.00
+                                                                                          (%)
+                                                                                             Net Bid Value                   46727651.87
+
+
+       Item Breakup
+                                                            No break up item added
+
+
+
+
+https://w w w .ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=87204351&tdId=2805732&letterId=1…   9/9
+
