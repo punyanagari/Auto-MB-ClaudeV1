@@ -9,9 +9,10 @@ corepack prepare pnpm@11.17.0 --activate
 pnpm install --frozen-lockfile
 
 # Not every base VM ships Docker (verified: just-in-time boots have no
-# docker binary), so bake it into the snapshot. cloud-start.sh repeats this
-# check as a fallback for boots that never went through a build.
-if ! command -v docker >/dev/null 2>&1; then
+# docker binary), and a VM can carry docker without the Compose plugin, so
+# bake both into the snapshot. cloud-start.sh repeats this check as a
+# fallback for boots that never went through a build.
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   sudo apt-get update -qq
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-v2
 fi
