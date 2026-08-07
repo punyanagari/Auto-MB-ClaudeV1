@@ -53,10 +53,11 @@ Then open:
 ## Verification
 
 ```bash
+docker compose up -d postgres
 pnpm verify
 ```
 
-The first database-backed feature must additionally pass tenant-isolation and concurrency tests against a real PostgreSQL instance.
+`pnpm verify` runs formatting, lint, typecheck, tests, migration checks, and architecture checks. The database package's tenant-isolation tests run against a real PostgreSQL instance and apply the migrations themselves, so PostgreSQL must be reachable (CI provisions the same PostgreSQL 17 service). Database-backed features must keep extending these tenant-isolation and concurrency suites.
 
 ## Authoritative documents
 

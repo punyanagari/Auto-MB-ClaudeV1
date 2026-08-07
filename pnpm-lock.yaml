@@ -95,6 +95,10 @@ importers:
       postgres:
         specifier: 3.4.9
         version: 3.4.9
+    devDependencies:
+      '@auto-mb/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/documents: {}
 
