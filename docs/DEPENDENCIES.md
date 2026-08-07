@@ -16,18 +16,19 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 
 ## Adopt with the relevant milestone
 
-| Dependency                 | Trigger                                       |
-| -------------------------- | --------------------------------------------- |
-| Better Auth                | Identity milestone                            |
-| pg-boss                    | First asynchronous extraction/PDF job         |
-| Testcontainers             | First database integration tests              |
-| Playwright + axe           | First user workflow UI                        |
-| ClamAV                     | Upload quarantine before design-partner pilot |
-| OpenTelemetry              | Staging deployment                            |
-| k6                         | Published capacity benchmark                  |
-| OpenTofu                   | AWS staging infrastructure                    |
-| Semgrep/Gitleaks/Trivy/ZAP | Security-hardening workflow                   |
-| Renovate                   | Lockfile exists and CI is stable              |
+| Dependency        | Trigger                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| Better Auth       | Identity milestone                                                                              |
+| pg-boss           | First asynchronous extraction/PDF job                                                           |
+| Testcontainers    | Only if the compose/CI-service model for database tests becomes insufficient (it is in use now) |
+| Playwright + axe  | First user workflow UI                                                                          |
+| ClamAV            | Upload quarantine before design-partner pilot                                                   |
+| OpenTelemetry     | Staging deployment                                                                              |
+| k6                | Published capacity benchmark                                                                    |
+| OpenTofu          | AWS staging infrastructure                                                                      |
+| Semgrep/Trivy/ZAP | Deeper SAST at first authenticated endpoint; container scan at first image; DAST at staging     |
+
+Already adopted: Renovate (pin strategy with cooldown), secretlint (secret scan in `pnpm verify`), eslint-plugin-security (static security lint).
 
 ## Explicit non-defaults
 
@@ -36,7 +37,6 @@ Redis, Kafka, Temporal, Kubernetes, OpenSearch, a policy engine, and enterprise 
 ## Versioning
 
 - application and production dependencies are exact-pinned;
-- a committed lockfile is required after the first online install;
-- CI switches to `--frozen-lockfile` once the lockfile exists;
+- the committed lockfile is authoritative; CI installs with `--frozen-lockfile`;
 - dependency updates arrive through reviewed PRs;
 - security upgrades may bypass the normal schedule but still require tests.

@@ -30,12 +30,13 @@ It does **not** yet claim a complete LOA-to-DC workflow or STQC certification.
 
 Requirements:
 
-- Node.js 22.12+
+- Node.js 22.13+
 - pnpm 11+
 - Docker with Compose
 
 ```bash
 cp .env.example .env
+set -a; . ./.env; set +a   # export configuration; db:migrate and dev read it
 corepack enable
 pnpm install
 
@@ -43,6 +44,8 @@ docker compose up -d postgres gotenberg
 pnpm db:migrate
 pnpm dev
 ```
+
+Or run `bash scripts/bootstrap.sh`, which performs the same steps.
 
 Then open:
 
@@ -61,7 +64,7 @@ docker compose up -d postgres
 pnpm verify
 ```
 
-`pnpm verify` runs formatting, lint, typecheck, tests, migration checks, and architecture checks. The database package's tenant-isolation tests run against a real PostgreSQL instance and apply the migrations themselves, so PostgreSQL must be reachable (CI provisions the same PostgreSQL 17 service). Database-backed features must keep extending these tenant-isolation and concurrency suites.
+`pnpm verify` runs formatting, lint (including static security rules), typecheck, the web production build, tests, migration checks, architecture checks, configuration parse checks, and the secret scan. The database package's tenant-isolation tests run against a real PostgreSQL instance and apply the migrations themselves, so PostgreSQL must be reachable (CI provisions the same PostgreSQL 17 service). Database-backed features must keep extending these tenant-isolation and concurrency suites.
 
 ## Authoritative documents
 

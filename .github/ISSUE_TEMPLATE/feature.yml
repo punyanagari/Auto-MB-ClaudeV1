@@ -1,5 +1,5 @@
 name: Product change
-about: A bounded user outcome for Auto-MB
+description: A bounded user outcome for Auto-MB
 labels: ['product']
 body:
   - type: textarea

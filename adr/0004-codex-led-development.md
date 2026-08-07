@@ -1,6 +1,6 @@
 # ADR-0004: Codex is the primary coding agent, not the authority
 
-- Status: Accepted
+- Status: Accepted, amended 2026-08-07 — Claude Code is now the primary coding agent (see Amendment below)
 - Date: 2026-08-06
 
 ## Context

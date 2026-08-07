@@ -1,5 +1,5 @@
 name: Defect
-about: Reproducible incorrect behaviour
+description: Reproducible incorrect behaviour
 labels: ['bug']
 body:
   - type: textarea

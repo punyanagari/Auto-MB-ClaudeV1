@@ -16,6 +16,7 @@ Exit criteria:
 
 - Better Auth integration;
 - organisation creation and selection;
+- a database-enforced membership floor: tenant context binds only when the authenticated user holds an active membership in the selected organisation, so a compromised or buggy handler cannot stamp an arbitrary organisation id;
 - four roles, Work scope, issue/cancel authority;
 - session revocation and privileged-user MFA path;
 - RLS tests through the real application role and pool;

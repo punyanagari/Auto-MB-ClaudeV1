@@ -30,7 +30,7 @@ Reference material is not automatically authoritative. A new ADR or active docum
 - frozen-path and decision-binding guard system;
 - vendored design-skill trees;
 - single-tenant-per-deployment launch model;
-- absent generic kernel package;
+- the legacy plan's generic security-kernel package (its useful properties — RLS binding, advisory-lock numbering — are rebuilt as plain modules instead);
 - speculative scale infrastructure;
 - hundreds of historical governance documents.
 

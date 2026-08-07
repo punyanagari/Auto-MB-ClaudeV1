@@ -11,7 +11,7 @@ This is initially a private product repository.
 
 ## Branch and commit
 
-- branch: `codex/<issue>-<description>`
+- branch: `claude/<issue>-<description>`
 - commits: small, intentional, and reviewable
 - no direct commits to protected `main`
 

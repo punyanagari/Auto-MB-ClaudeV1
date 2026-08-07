@@ -73,10 +73,12 @@ Enforced by CI today, with what each control proves:
 - static security analysis (`eslint-plugin-security` at zero warnings) —
   catches known-dangerous JavaScript patterns; it is not a full SAST and
   proves nothing about logic-level vulnerabilities;
-- secret scan (`secretlint` with the recommend preset over the whole tree)
-  — catches committed credentials matching known formats; it cannot detect
-  novel secret formats;
-- production build — the deployable artifacts compile;
+- secret scan (`secretlint` with the recommend preset; `.secretlintignore`
+  excludes the lockfile, the imported LOA fixtures, historical reference
+  docs, and the untracked local `.env`) — catches committed credentials
+  matching known formats; it cannot detect novel secret formats;
+- web production bundle build (server and worker run from source via tsx
+  and have no separate build artifact yet);
 - unit and PostgreSQL integration tests, including tenant-isolation and
   concurrent-migration proofs against the real application role on every
   tenant-owned table;
