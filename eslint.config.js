@@ -62,9 +62,12 @@ export default tseslint.config(
     },
   },
   {
-    // Standalone config and script files sit outside every package tsconfig,
-    // so the type-aware project service cannot parse them.
+    // Standalone config and script files that sit outside every package
+    // tsconfig, so the type-aware project service cannot parse them.
+    // apps/web/vite.config.ts is excluded: its tsconfig includes it, so it
+    // keeps full type-aware linting.
     files: ['**/*.config.{js,ts,mjs}', 'eslint.config.js', 'scripts/**/*.mjs'],
+    ignores: ['apps/web/vite.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
   },
 );

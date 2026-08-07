@@ -11,10 +11,19 @@ const errors = [];
 const jsonFiles = [
   '.cursor/environment.json',
   '.secretlintrc.json',
+  '.prettierrc.json',
   'renovate.json',
   'package.json',
+  'docs/reference/IMPORT-MANIFEST.json',
 ];
-for await (const match of glob(['apps/*/package.json', 'packages/*/package.json'])) {
+const jsonGlobs = [
+  'apps/*/package.json',
+  'packages/*/package.json',
+  'tsconfig.base.json',
+  'apps/*/tsconfig.json',
+  'packages/*/tsconfig.json',
+];
+for await (const match of glob(jsonGlobs)) {
   jsonFiles.push(match);
 }
 
@@ -26,12 +35,17 @@ for (const file of jsonFiles) {
   }
 }
 
-const shellScripts = [
-  'scripts/bootstrap.sh',
-  'scripts/cloud-install.sh',
-  'scripts/cloud-start.sh',
-  'docker/postgres/init-app-role.sh',
-];
+// Globbed (not hand-listed) so a new script anywhere under scripts/ or
+// docker/ cannot silently escape validation.
+const shellScripts = [];
+for await (const match of glob(['scripts/**/*.sh', 'docker/**/*.sh'])) {
+  shellScripts.push(match);
+}
+if (shellScripts.length < 4) {
+  errors.push(
+    `expected at least 4 shell scripts, found ${shellScripts.length} — glob broken?`,
+  );
+}
 for (const script of shellScripts) {
   const result = spawnSync('bash', ['-n', script], { cwd: root });
   if (result.status !== 0) {
