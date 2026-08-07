@@ -15,14 +15,20 @@ fi
 # The agent user is not guaranteed docker-group membership, so every docker
 # invocation here goes through sudo.
 if ! sudo docker info >/dev/null 2>&1; then
-  sudo service docker start >/dev/null 2>&1 || sudo systemctl start docker >/dev/null 2>&1 || true
-  for _ in $(seq 1 30); do
+  # These VMs are containerized without systemd (PID 1 is tini), so the
+  # daemon is launched directly. The vfs storage driver is required: nested
+  # overlayfs cannot create whiteout nodes, which breaks extraction of some
+  # images (verified with gotenberg:8) while letting others through.
+  sudo install -d -m 0755 /etc/docker
+  printf '{"storage-driver":"vfs"}\n' | sudo tee /etc/docker/daemon.json >/dev/null
+  sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'
+  for _ in $(seq 1 60); do
     sudo docker info >/dev/null 2>&1 && break
     sleep 1
   done
 fi
 sudo docker info >/dev/null 2>&1 || {
-  echo "Docker daemon did not start" >&2
+  echo "Docker daemon did not start; see /var/log/dockerd.log" >&2
   exit 1
 }
 
