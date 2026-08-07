@@ -40,11 +40,7 @@ function nextNonBlankLines(
   count: number,
 ): string[] {
   const collected: string[] = [];
-  for (
-    let i = fromIndex;
-    i < lines.length && collected.length < count;
-    i += 1
-  ) {
+  for (let i = fromIndex; i < lines.length && collected.length < count; i += 1) {
     const line = (lines[i] ?? '').trim();
     if (line.length > 0) {
       collected.push(line);
@@ -58,9 +54,7 @@ function nextNonBlankLines(
  * header text. Operates on physical lines (not flattened prose) because the
  * rejoin depends on exactly which two lines interleave.
  */
-export function extractLetterNumberAndDate(
-  headerText: string,
-): LetterNumberAndDate {
+export function extractLetterNumberAndDate(headerText: string): LetterNumberAndDate {
   const lines = headerText.split('\n');
   const letterNoIdx = lines.findIndex((l) => LETTER_NO_RE.test(l));
 
@@ -72,11 +66,7 @@ export function extractLetterNumberAndDate(
   const letterNoLine = lines[letterNoIdx] ?? '';
   const leftFragment = letterNoLine.replace(/^.*?Letter No\s*:\s*/, '').trim();
 
-  const [datedLine, continuationLine] = nextNonBlankLines(
-    lines,
-    letterNoIdx + 1,
-    2,
-  );
+  const [datedLine, continuationLine] = nextNonBlankLines(lines, letterNoIdx + 1, 2);
 
   if (datedLine === undefined || !DATED_RE.test(datedLine)) {
     const raw = preview(lines.slice(letterNoIdx, letterNoIdx + 4).join('\n'));
@@ -86,9 +76,7 @@ export function extractLetterNumberAndDate(
   const dateRaw = datedLine.replace(/^.*?Dated\s*:\s*/, '').trim();
   const letterDateIso = parseDdMmYyyy(dateRaw);
   const letterDate: FieldResult<string> =
-    letterDateIso === null
-      ? notFound(dateRaw)
-      : found(letterDateIso, datedLine);
+    letterDateIso === null ? notFound(dateRaw) : found(letterDateIso, datedLine);
 
   if (continuationLine === undefined) {
     const raw = preview([letterNoLine, datedLine].join('\n'));

@@ -1,6 +1,6 @@
 name: Defect
 about: Reproducible incorrect behaviour
-labels: ["bug"]
+labels: ['bug']
 body:
   - type: textarea
     id: observed

@@ -1,7 +1,14 @@
 const controller = new AbortController();
 
 function stop(signal: string): void {
-  console.info(JSON.stringify({ level: 'info', service: 'auto-mb-worker', signal, message: 'stopping' }));
+  console.info(
+    JSON.stringify({
+      level: 'info',
+      service: 'auto-mb-worker',
+      signal,
+      message: 'stopping',
+    }),
+  );
   controller.abort();
 }
 

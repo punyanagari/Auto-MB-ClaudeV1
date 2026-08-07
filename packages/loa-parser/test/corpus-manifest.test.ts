@@ -3,11 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import {
-  loadCorpus,
-  loadLetter,
-  type CorpusManifestEntry,
-} from '../src/index.js';
+import { loadCorpus, loadLetter, type CorpusManifestEntry } from '../src/index.js';
 
 // research/DC-32-loa-parser-contract.md §0: "281 items total ... Treat any
 // future extraction that does not total 281 on this corpus as a regression."
@@ -24,12 +20,7 @@ const EXPECTED_TOTAL_ITEMS = 281;
 // research §1: PL273/PL280/PL275/PL281 are Shape A; of those four, three
 // (PL280, PL275, PL281) declare a letter-level percentage and one (PL273,
 // %At Par) declares none. PL276/PL270 are Shape B and declare none.
-const SHAPE_A_IDS = new Set([
-  'PL273-JHS',
-  'PL280-ADI',
-  'PL275-BKN',
-  'PL281-BB',
-]);
+const SHAPE_A_IDS = new Set(['PL273-JHS', 'PL280-ADI', 'PL275-BKN', 'PL281-BB']);
 const SHAPE_B_IDS = new Set(['PL276-GTL', 'PL270-CRB']);
 const PERCENTAGE_BEARING_IDS = new Set(['PL280-ADI', 'PL275-BKN', 'PL281-BB']);
 const AT_PAR_NO_PERCENTAGE_ID = 'PL273-JHS';
@@ -138,13 +129,11 @@ describe('loa corpus manifest (DC-22)', () => {
       }
     }
     const shapeAWithPercentage = manifest.filter(
-      (entry) =>
-        entry.pricing_shape === 'A' && entry.letter_percentage !== null,
+      (entry) => entry.pricing_shape === 'A' && entry.letter_percentage !== null,
     );
     expect(shapeAWithPercentage.length).toBe(3);
     const shapeAWithoutPercentage = manifest.filter(
-      (entry) =>
-        entry.pricing_shape === 'A' && entry.letter_percentage === null,
+      (entry) => entry.pricing_shape === 'A' && entry.letter_percentage === null,
     );
     expect(shapeAWithoutPercentage.length).toBe(1);
   });
@@ -193,9 +182,7 @@ describe('loa corpus manifest (DC-22)', () => {
       ).toBe(true);
 
       const buf = readFileSync(filePath);
-      expect(buf.length, `${entry.id}: fixture file is empty`).toBeGreaterThan(
-        0,
-      );
+      expect(buf.length, `${entry.id}: fixture file is empty`).toBeGreaterThan(0);
 
       // { fatal: true } makes TextDecoder THROW on any invalid UTF-8 byte
       // sequence instead of silently replacing it with U+FFFD — decode()
@@ -205,10 +192,9 @@ describe('loa corpus manifest (DC-22)', () => {
       // change relaxed `fatal` to its default (false, which DOES substitute
       // U+FFFD instead of throwing) without this comment being updated too.
       const text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
-      expect(
-        text.includes('�'),
-        `${entry.id}: fixture file is not valid UTF-8`,
-      ).toBe(false);
+      expect(text.includes('�'), `${entry.id}: fixture file is not valid UTF-8`).toBe(
+        false,
+      );
     }
   });
 
@@ -227,9 +213,7 @@ describe('loa corpus manifest (DC-22)', () => {
       const filePath = path.join(FIXTURES_DIR, entry.fixture_file);
       const raw = readFileSync(filePath);
       const digest = createHash('sha256').update(raw).digest('hex');
-      expect(digest, `${entry.id}: sha256 of ${entry.fixture_file}`).toBe(
-        entry.sha256,
-      );
+      expect(digest, `${entry.id}: sha256 of ${entry.fixture_file}`).toBe(entry.sha256);
     }
   });
 
@@ -316,9 +300,7 @@ describe('loa corpus manifest (DC-22)', () => {
         letter.manifest.schedule_count,
         `${letter.manifest.id}: schedule_count`,
       ).toBe(exp.schedules);
-      expect(letter.manifest.zone, `${letter.manifest.id}: zone`).toBe(
-        exp.zone,
-      );
+      expect(letter.manifest.zone, `${letter.manifest.id}: zone`).toBe(exp.zone);
       expect(letter.manifest.division, `${letter.manifest.id}: division`).toBe(
         exp.division,
       );

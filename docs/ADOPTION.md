@@ -2,16 +2,16 @@
 
 ## Adopted now
 
-| Asset | Treatment |
-|---|---|
-| Architecture-independent product specification | Preserved as historical reference; distilled into `docs/PRODUCT.md` |
-| Six real IREPS LOA fixtures and corpus manifest | Copied into `packages/loa-parser/fixtures` |
-| LOA parser source and tests | Copied with minimal package renaming; behaviour preserved |
-| Work-code validation and challan-prefix concepts | Re-expressed in the active product contract; port during Work module |
-| Tenant-owned rows and PostgreSQL RLS intent | Strengthened into shared multi-tenancy from first pilot |
-| Date-only, decimal-money, immutable-snapshot rules | Retained as non-negotiable invariants |
-| Gap-free numbering and one-draft rules | Retained; implementation deferred to DC milestone with concurrency tests |
-| Security traceability idea | Retained in smaller evidence-driven form |
+| Asset                                              | Treatment                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| Architecture-independent product specification     | Preserved as historical reference; distilled into `docs/PRODUCT.md`      |
+| Six real IREPS LOA fixtures and corpus manifest    | Copied into `packages/loa-parser/fixtures`                               |
+| LOA parser source and tests                        | Copied with minimal package renaming; behaviour preserved                |
+| Work-code validation and challan-prefix concepts   | Re-expressed in the active product contract; port during Work module     |
+| Tenant-owned rows and PostgreSQL RLS intent        | Strengthened into shared multi-tenancy from first pilot                  |
+| Date-only, decimal-money, immutable-snapshot rules | Retained as non-negotiable invariants                                    |
+| Gap-free numbering and one-draft rules             | Retained; implementation deferred to DC milestone with concurrency tests |
+| Security traceability idea                         | Retained in smaller evidence-driven form                                 |
 
 ## Preserved only as reference
 

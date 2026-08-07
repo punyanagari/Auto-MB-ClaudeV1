@@ -589,8 +589,7 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
   const headers: ScheduleHeaderBlock[] = headerStartIdxs
     .map((startIdx, hi) => {
       const nextHeaderIdx = headerStartIdxs[hi + 1] ?? lines.length;
-      const nextAnchorIdx =
-        anchorIdxs.find((a) => a > startIdx) ?? lines.length;
+      const nextAnchorIdx = anchorIdxs.find((a) => a > startIdx) ?? lines.length;
       const endBound = Math.min(nextHeaderIdx, nextAnchorIdx);
       return parseScheduleHeaderBlock(lines, startIdx, endBound);
     })
@@ -612,19 +611,15 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
     const anchorLine = lines[a] ?? '';
     const schedule = scheduleFor(a);
     const scheduleBinding: ItemScheduleBinding | null =
-      schedule === null
-        ? null
-        : { id: schedule.id, directory: schedule.directory };
+      schedule === null ? null : { id: schedule.id, directory: schedule.directory };
 
     const prevAnchorIdx = ai > 0 ? (anchorIdxs[ai - 1] as number) : -1;
     const headerBlockEnd = schedule === null ? -1 : schedule.blockEndIdx;
     const aboveStart = Math.max(prevAnchorIdx, headerBlockEnd) + 1;
     const nextAnchorIdx = anchorIdxs[ai + 1] ?? lines.length;
     const nextHeaderStart = headerStartIdxs.find((h) => h > a) ?? lines.length;
-    const nextScheduleTotals =
-      scheduleTotalsIdxs.find((s) => s > a) ?? lines.length;
-    const belowEnd =
-      Math.min(nextAnchorIdx, nextHeaderStart, nextScheduleTotals) - 1;
+    const nextScheduleTotals = scheduleTotalsIdxs.find((s) => s > a) ?? lines.length;
+    const belowEnd = Math.min(nextAnchorIdx, nextHeaderStart, nextScheduleTotals) - 1;
 
     const rawAboveLines = lines.slice(aboveStart, a);
     const rawBelowLines = lines.slice(a + 1, Math.max(belowEnd + 1, a + 1));
@@ -669,8 +664,7 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
       );
     }
 
-    let qtyUnit: string | null =
-      peeled.qtyUnit.length > 0 ? peeled.qtyUnit : null;
+    let qtyUnit: string | null = peeled.qtyUnit.length > 0 ? peeled.qtyUnit : null;
     let qtyUnitWrapped = false;
     if (qtyUnit === null) {
       const qtyEndInRest = preDesc.length;
@@ -749,11 +743,9 @@ function malformedItem(
     schedule,
     itemSno,
     itemCode: '',
-    description: nonBlankTrimmed([
-      ...rawAboveLines,
-      anchorLine,
-      ...rawBelowLines,
-    ]).join(' '),
+    description: nonBlankTrimmed([...rawAboveLines, anchorLine, ...rawBelowLines]).join(
+      ' ',
+    ),
     qty: '',
     qtyUnit: null,
     qtyUnitWrapped: false,

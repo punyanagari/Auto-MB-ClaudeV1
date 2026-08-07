@@ -60,15 +60,15 @@ The first database-backed feature must additionally pass tenant-isolation and co
 
 ## Authoritative documents
 
-| File | Authority |
-|---|---|
-| `docs/PRODUCT.md` | Current product boundary and business invariants |
-| `docs/ARCHITECTURE.md` | Current implementation architecture |
-| `docs/SECURITY.md` | Threat model, required controls, and audit posture |
-| `docs/OPERATIONS.md` | Deployment, backup, restore, monitoring, and incidents |
-| `docs/ROADMAP.md` | Delivery sequence and release gates |
-| `adr/` | Expensive-to-reverse decisions only |
-| `docs/reference/` | Historical evidence; never authoritative by itself |
+| File                   | Authority                                              |
+| ---------------------- | ------------------------------------------------------ |
+| `docs/PRODUCT.md`      | Current product boundary and business invariants       |
+| `docs/ARCHITECTURE.md` | Current implementation architecture                    |
+| `docs/SECURITY.md`     | Threat model, required controls, and audit posture     |
+| `docs/OPERATIONS.md`   | Deployment, backup, restore, monitoring, and incidents |
+| `docs/ROADMAP.md`      | Delivery sequence and release gates                    |
+| `adr/`                 | Expensive-to-reverse decisions only                    |
+| `docs/reference/`      | Historical evidence; never authoritative by itself     |
 
 ## Development model
 

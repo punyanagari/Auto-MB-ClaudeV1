@@ -97,9 +97,7 @@ describe('item-row parsing (DC-25)', () => {
     });
 
     it("the digit-leading continuation line is absorbed into item 1's description, not split into a new item", () => {
-      const item1 = items.find(
-        (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-      );
+      const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
       expect(item1).toBeDefined();
       expect(item1?.description).toContain(
         '10 sq. mm multi strand single core PVC insulated',
@@ -107,9 +105,7 @@ describe('item-row parsing (DC-25)', () => {
     });
 
     it('item 10 is still the real item 10 (sno "10" is a legitimate item elsewhere, not confused with the phantom trap)', () => {
-      const item10 = items.find(
-        (it) => it.schedule?.id === 'A' && it.itemSno === '10',
-      );
+      const item10 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '10');
       expect(item10).toBeDefined();
       expect(item10?.itemCode).toBe('15014800');
       expect(item10?.bidAmount).toBe('831.60');
@@ -119,9 +115,7 @@ describe('item-row parsing (DC-25)', () => {
   describe('anchor-line parse direction: right-to-left for the numeric tail, left-to-right for item_sno', () => {
     it('PL275 Schedule A item 1 decomposes exactly as printed', () => {
       const items = parseItems(loadLetter('PL275-BKN').text);
-      const item1 = items.find(
-        (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-      );
+      const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
       expect(item1).toBeDefined();
       expect(item1).toMatchObject({
         itemSno: '1',
@@ -147,9 +141,7 @@ describe('item-row parsing (DC-25)', () => {
     // ~24 lines with the data line 14th. The test asserts both the first
     // line above and the last line below the anchor are present."
     const items = parseItems(loadLetter('PL275-BKN').text);
-    const item1 = items.find(
-      (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-    );
+    const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
 
     it('item 1 exists', () => {
       expect(item1).toBeDefined();
@@ -190,30 +182,22 @@ describe('item-row parsing (DC-25)', () => {
       expect(item2).toBeDefined();
 
       // item 1's OWN decomposition clause (PL273-JHS.txt:199-201).
-      expect(item1?.description).toContain(
-        '(Qty = 2 set x 24 month = 48 month)',
-      );
+      expect(item1?.description).toContain('(Qty = 2 set x 24 month = 48 month)');
       // item 2's description contains BOTH item 1's clause (leaked in via
       // item 2's aboveLines, which cover the identical physical-line range
       // as item 1's belowLines) AND item 2's own (in its belowLines,
       // PL273-JHS.txt:208-210) -- by construction of `parseItems`'
       // aboveStart/belowEnd, which derive from the SAME
       // prevAnchorIdx/nextAnchorIdx pair for both neighbours.
-      expect(item2?.description).toContain(
-        '(Qty = 2 set x 24 month = 48 month)',
-      );
-      expect(item2?.description).toContain(
-        '(Qty = 2 nos x 24 month = 48 month)',
-      );
+      expect(item2?.description).toContain('(Qty = 2 set x 24 month = 48 month)');
+      expect(item2?.description).toContain('(Qty = 2 nos x 24 month = 48 month)');
     });
   });
 
   describe('descriptions are preserved verbatim — never cleaned (research §4.6)', () => {
     it('the stray "©" (research\'s "M-BM-)" byte pair, U+00A9) mid-sentence in PL275 survives byte-for-byte', () => {
       const items = parseItems(loadLetter('PL275-BKN').text);
-      const item1 = items.find(
-        (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-      );
+      const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
       // PL275-BKN.txt:144 reads "...= 3 nos. © \nCopper strip of..." — the
       // raw fixture bytes are 0xC2 0xA9 (UTF-8 for U+00A9 COPYRIGHT SIGN),
       // which `pdftotext -layout` printed mid-sentence as stray layout

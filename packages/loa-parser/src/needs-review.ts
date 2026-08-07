@@ -35,10 +35,7 @@ import { preview } from './field.js';
 import { stripPrintFurniture } from './furniture.js';
 import { extractHeader, type LoaHeader } from './header.js';
 import { type ParsedItem, parseItems } from './items.js';
-import {
-  classifyPricingShape,
-  type PricingShapeResult,
-} from './pricing-shape.js';
+import { classifyPricingShape, type PricingShapeResult } from './pricing-shape.js';
 import { flatten, paragraphs } from './text.js';
 
 const ITEM_TABLE_MARKER = 'Awarded Quantities And Rates';
@@ -106,9 +103,7 @@ export interface ReviewFlag {
   readonly rawBlock: string;
   readonly message: string;
   readonly detail?:
-    | ProposedUnitCorrection
-    | QtyDecomposition
-    | Readonly<Record<string, unknown>>;
+    ProposedUnitCorrection | QtyDecomposition | Readonly<Record<string, unknown>>;
 }
 
 /** "Extraction output carries a `needsReview` roll-up: total flag count,
@@ -443,17 +438,13 @@ const CANONICAL_UNIT_CODES: ReadonlyMap<string, string> = new Map([
  * same order as the DC-45 migration's seed — exposed so a test can assert
  * `.length === 12` against DC-45's own count without hand-copying the
  * list twice. */
-export const CANONICAL_UNIT_NAMES: readonly string[] = [
-  ...CANONICAL_UNIT_CODES.keys(),
-];
+export const CANONICAL_UNIT_NAMES: readonly string[] = [...CANONICAL_UNIT_CODES.keys()];
 
 /** Resolves `printedUnit` to its DC-45 canonical CODE on an EXACT match
  * only, or `null` — never a guess, never an alias lookup (module doc
  * above). `null` input (the unresolved-wrapped-unit-harvest case items.ts
  * itself can produce) resolves to `null`, not a thrown error. */
-export function resolveCanonicalUnitCode(
-  printedUnit: string | null,
-): string | null {
+export function resolveCanonicalUnitCode(printedUnit: string | null): string | null {
   if (printedUnit === null) {
     return null;
   }
@@ -587,9 +578,7 @@ const LAYOUT_JUNK_GLYPHS_RE = /[©]/;
  * anchor line is retained either way; the description, when present, is
  * never cleaned.
  */
-export function detectLayoutJunk(
-  items: readonly ParsedItem[],
-): readonly ReviewFlag[] {
+export function detectLayoutJunk(items: readonly ParsedItem[]): readonly ReviewFlag[] {
   const flags: ReviewFlag[] = [];
   for (const item of items) {
     if (LAYOUT_JUNK_GLYPHS_RE.test(item.description)) {
@@ -790,8 +779,7 @@ export function detectBannedItemsBranch(
   if (detection === null || !detection.populated) {
     return [];
   }
-  const spellingLabel =
-    detection.spelling === 'item' ? '"Banned item:"' : '"Banned :"';
+  const spellingLabel = detection.spelling === 'item' ? '"Banned item:"' : '"Banned :"';
   return [
     {
       code: 'banned_items_block',

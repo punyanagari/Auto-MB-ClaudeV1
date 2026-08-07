@@ -30,19 +30,14 @@
  * Returns null — never a partial/guessed value — for anything that isn't a
  * non-negative decimal with at most `scale` fractional digits.
  */
-export function parseDecimalToMinorUnits(
-  raw: string,
-  scale: number,
-): bigint | null {
+export function parseDecimalToMinorUnits(raw: string, scale: number): bigint | null {
   const cleaned = raw.replace(/,/g, '').trim();
   // scale=0 (a plain integer column, e.g. qty) never carries a fractional
   // part at all — `{1,0}` is not a legal regex quantifier, so that case is
   // built as a separate, simpler pattern rather than degenerating the
   // general one.
   const re =
-    scale === 0
-      ? /^(\d+)$/
-      : new RegExp(`^(\\d+)(?:\\.(\\d{1,${String(scale)}}))?$`);
+    scale === 0 ? /^(\d+)$/ : new RegExp(`^(\\d+)(?:\\.(\\d{1,${String(scale)}}))?$`);
   const m = re.exec(cleaned);
   if (m === null) {
     return null;

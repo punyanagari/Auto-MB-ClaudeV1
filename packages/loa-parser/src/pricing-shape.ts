@@ -107,8 +107,7 @@ const ITEM_TABLE_MARKER = 'Awarded Quantities And Rates';
 const SCHEDULE_HEADER_START_RE = /^\s*Schedule\s+([A-Z][A-Za-z0-9]*)-/;
 const SCHEDULE_TOTALS_LINE_RE = /^Schedule Totals\s+(-?[\d,]+\.\d{2})\s*$/;
 const TOTAL_VALUE_LINE_TEST_RE = /^Total Value\s+-?[\d,]+\.\d{2}/;
-const TOTAL_VALUE_LINE_PARSE_RE =
-  /^Total Value\s+(-?[\d,]+\.\d{2})(?:\s+(.*))?$/;
+const TOTAL_VALUE_LINE_PARSE_RE = /^Total Value\s+(-?[\d,]+\.\d{2})(?:\s+(.*))?$/;
 const DECIMAL_TOKEN_RE = /-?[\d,]+\.\d{2}/g;
 const REBATE_LABEL = 'Rebate on Total Value';
 const NET_BID_LABEL = 'Net Bid Value';
@@ -253,9 +252,7 @@ function reconstructWrappedToken(
   const above = (lines[totalValueLineIdx - 1] ?? '').trim();
   const below = (lines[totalValueLineIdx + 1] ?? '').trim();
   const combined = `${above} ${below}`.trim();
-  return (
-    normalizeToken(combined) ?? normalizeToken(above) ?? normalizeToken(below)
-  );
+  return normalizeToken(combined) ?? normalizeToken(above) ?? normalizeToken(below);
 }
 
 /** `true` iff `raw` parses as exactly zero to the paisa (bigint-exact, never
@@ -308,8 +305,7 @@ function extractRebateRaw(region: string): string | null {
   }
   const searchFrom = labelIdx + REBATE_LABEL.length;
   const netIdx = region.indexOf(NET_BID_LABEL, searchFrom);
-  const windowEnd =
-    netIdx === -1 ? Math.min(region.length, searchFrom + 400) : netIdx;
+  const windowEnd = netIdx === -1 ? Math.min(region.length, searchFrom + 400) : netIdx;
   const window = region.slice(searchFrom, windowEnd);
   const m = DECIMAL_TOKEN_RE.exec(flatten(window));
   return m === null ? null : m[0];
@@ -346,9 +342,7 @@ function captureRawBlock(
  * every figure/token it finds as a printed STRING or presence flag — no
  * addition, multiplication, or rounding happens here.
  */
-export function parseTotalsBlockStructure(
-  rawText: string,
-): TotalsBlockStructure {
+export function parseTotalsBlockStructure(rawText: string): TotalsBlockStructure {
   const stripped = stripPrintFurniture(rawText);
   const markerIdx = stripped.indexOf(ITEM_TABLE_MARKER);
   const region = markerIdx === -1 ? stripped : stripped.slice(markerIdx);
@@ -415,11 +409,7 @@ export function parseTotalsBlockStructure(
   }
 
   const rebateRaw = extractRebateRaw(region);
-  const rawBlockText = captureRawBlock(
-    lines,
-    scheduleTotalsLineIdx,
-    totalValueLineIdx,
-  );
+  const rawBlockText = captureRawBlock(lines, scheduleTotalsLineIdx, totalValueLineIdx);
 
   return {
     found: totalValueLineIdx !== -1 && advertisedRaw !== null,
@@ -468,8 +458,7 @@ export function classifyShapeKind(structure: TotalsBlockStructure): ShapeKind {
     structure.percentRaw !== null &&
     structure.percentTokenDirection !== null &&
     structure.netRaw !== null;
-  const hasBareNetOnly =
-    structure.percentRaw === null && structure.netRaw !== null;
+  const hasBareNetOnly = structure.percentRaw === null && structure.netRaw !== null;
 
   if (hasPercentToken && allZero) {
     return 'letter_percentage';
@@ -569,9 +558,7 @@ function isContradictingRebate(rebateRaw: string | null): boolean {
  * `needsReview: true`. Used both when phase 2 could not classify at all AND
  * when phase 3's arithmetic failed to reconcile with the printed figure
  * (`diff > 0.01`). */
-function unrecognizedResult(
-  structure: TotalsBlockStructure,
-): PricingShapeResult {
+function unrecognizedResult(structure: TotalsBlockStructure): PricingShapeResult {
   return {
     advertised_value: toNumberOrNull(structure.advertisedRaw),
     contract_value: toNumberOrNull(structure.netRaw),
@@ -608,10 +595,7 @@ function buildDivergence(
 function computeLetterPercentageResult(
   structure: TotalsBlockStructure,
 ): PricingShapeResult {
-  const advertisedPaisa = parseDecimalToMinorUnits(
-    structure.advertisedRaw ?? '',
-    2,
-  );
+  const advertisedPaisa = parseDecimalToMinorUnits(structure.advertisedRaw ?? '', 2);
   const printedNetPaisa = parseDecimalToMinorUnits(structure.netRaw ?? '', 2);
   const direction = structure.percentTokenDirection;
   const pctRaw = structure.percentRaw;
@@ -644,12 +628,7 @@ function computeLetterPercentageResult(
   const divergence =
     diff === 0n
       ? null
-      : buildDivergence(
-          printedNetPaisa,
-          computedPaisa,
-          diff,
-          structure.rawBlockText,
-        );
+      : buildDivergence(printedNetPaisa, computedPaisa, diff, structure.rawBlockText);
   // n1: `At Par` declares no percentage at all -- a nonzero printed pct
   // alongside it is a data contradiction even though the figures reconcile.
   const atParContradiction = direction === 'at_par' && pctMilli !== 0n;
@@ -670,9 +649,7 @@ function computeLetterPercentageResult(
   };
 }
 
-function computeScheduleSumResult(
-  structure: TotalsBlockStructure,
-): PricingShapeResult {
+function computeScheduleSumResult(structure: TotalsBlockStructure): PricingShapeResult {
   const printedNetPaisa = parseDecimalToMinorUnits(structure.netRaw ?? '', 2);
   const sumPaisa = computeScheduleSumContract(structure.scheduleTotals);
   if (printedNetPaisa === null || sumPaisa === null) {
@@ -685,20 +662,14 @@ function computeScheduleSumResult(
   const divergence =
     diff === 0n
       ? null
-      : buildDivergence(
-          printedNetPaisa,
-          sumPaisa,
-          diff,
-          structure.rawBlockText,
-        );
+      : buildDivergence(printedNetPaisa, sumPaisa, diff, structure.rawBlockText);
   return {
     advertised_value: toNumberOrNull(structure.advertisedRaw),
     contract_value: minorToNumber(printedNetPaisa, 2),
     pricing_shape: 'per_schedule',
     letter_percentage: null,
     letter_percentage_direction: null,
-    needsReview:
-      divergence !== null || isContradictingRebate(structure.rebateRaw),
+    needsReview: divergence !== null || isContradictingRebate(structure.rebateRaw),
     divergence,
     scheduleTotals: toScheduleTotalsOutput(structure),
     rebateOnTotalValue: toNumberOrNull(structure.rebateRaw),

@@ -95,10 +95,7 @@ describe('criterion 1: prose corrigenda that contradict the table', () => {
           expect(flags[0]?.scope).toBe('letter');
           expect(flags[0]?.code).toBe('prose_corrigendum');
         } else {
-          expect(
-            flags,
-            `${id}: expected no prose_corrigendum flag`,
-          ).toHaveLength(0);
+          expect(flags, `${id}: expected no prose_corrigendum flag`).toHaveLength(0);
         }
       }
     });
@@ -178,9 +175,7 @@ describe('criterion 1: prose corrigenda that contradict the table', () => {
 
   describe('parseItemNumberList', () => {
     it('parses "1 to 6 and 12" as [1,2,3,4,5,6,12]', () => {
-      expect(parseItemNumberList('1 to 6 and 12')).toEqual([
-        1, 2, 3, 4, 5, 6, 12,
-      ]);
+      expect(parseItemNumberList('1 to 6 and 12')).toEqual([1, 2, 3, 4, 5, 6, 12]);
     });
 
     it('parses a comma-separated list and de-duplicates', () => {
@@ -288,9 +283,7 @@ describe('criterion 3: payment terms embedded in description prose', () => {
     const flaggedTargetIds = new Set(flags.map((f) => f.targetId));
     for (const item of independentlyMeasured) {
       expect(
-        flaggedTargetIds.has(
-          `${item.schedule?.id ?? 'UNBOUND'}#${item.itemSno}`,
-        ),
+        flaggedTargetIds.has(`${item.schedule?.id ?? 'UNBOUND'}#${item.itemSno}`),
       ).toBe(true);
     }
     for (const flag of flags) {
@@ -303,9 +296,7 @@ describe('criterion 3: payment terms embedded in description prose', () => {
   it("item 1's description carries the ticket's exact quoted example verbatim", () => {
     const { text } = loadLetter('PL275-BKN');
     const items = parseItems(text);
-    const item1 = items.find(
-      (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-    );
+    const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
     expect(item1).toBeDefined();
     expect(item1?.description).toContain(
       'Inspection: RDSO Inspection Charges:Borne by Railways Payment Terms: 100%',
@@ -411,14 +402,7 @@ describe('criterion 4: dirty unit vocabulary', () => {
       const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
       const withoutComments = withoutBlockComments.replace(/\/\/.*$/gm, '');
       expect(withoutComments.length).toBeGreaterThan(0);
-      for (const alias of [
-        "'Mtr'",
-        '"Mtr"',
-        "'Nos'",
-        '"Nos"',
-        "'Km'",
-        '"Km"',
-      ]) {
+      for (const alias of ["'Mtr'", '"Mtr"', "'Nos'", '"Nos"', "'Km'", '"Km"']) {
         expect(withoutComments.includes(alias)).toBe(false);
       }
     });
@@ -485,9 +469,7 @@ describe('criterion 5: item-code namespace mismatch', () => {
     // -- proves the 260/281 figure the amendment cites is real, not
     // asserted on faith, and that THIS specific narrower trigger avoids it.
     const literalReadingCount = loadCorpus().flatMap(({ text }) =>
-      parseItems(text).filter(
-        (it) => (it.schedule?.directory ?? null) === null,
-      ),
+      parseItems(text).filter((it) => (it.schedule?.directory ?? null) === null),
     ).length;
     expect(literalReadingCount).toBe(260);
   });
@@ -558,9 +540,7 @@ describe('criterion 6: layout junk / unparseable token', () => {
     it('PL275 Schedule A item 1 carries a stray "©" glyph mid-sentence, retained verbatim and flagged', () => {
       const { text } = loadLetter('PL275-BKN');
       const items = parseItems(text);
-      const item1 = items.find(
-        (it) => it.schedule?.id === 'A' && it.itemSno === '1',
-      );
+      const item1 = items.find((it) => it.schedule?.id === 'A' && it.itemSno === '1');
       expect(item1).toBeDefined();
       expect(item1?.description).toContain('©');
       // Never cleaned: the glyph survives byte-for-byte in the description
@@ -795,12 +775,8 @@ describe('Banned-items block: both spellings recognised against the real corpus 
     // literal word "item", so the colon-arm regex requires ":" to follow
     // "Banned" with nothing but whitespace between, which "Banned item:"
     // does not satisfy either.
-    expect(bannedItemLabel.test('Banned : Rates of the following items')).toBe(
-      false,
-    );
-    expect(bannedColonLabel.test('Banned item: Rates of item no 2,6,8')).toBe(
-      false,
-    );
+    expect(bannedItemLabel.test('Banned : Rates of the following items')).toBe(false);
+    expect(bannedColonLabel.test('Banned item: Rates of item no 2,6,8')).toBe(false);
   });
 });
 
@@ -960,8 +936,7 @@ describe('never auto-commit (PRODUCT-SPEC §5.1 step 2)', () => {
     // persistence sense) alongside a write verb. None of this package's
     // exports may match -- it is a pure, read-only extraction library
     // (module doc, packages/loa/src/index.ts).
-    const writeVerbRe =
-      /(write|create|persist|save|commit|insert|update|delete)/i;
+    const writeVerbRe = /(write|create|persist|save|commit|insert|update|delete)/i;
     const workNounRe = /(work|challan)/i;
     const offenders = exportedNames.filter(
       (name) => writeVerbRe.test(name) && workNounRe.test(name),
@@ -1003,41 +978,35 @@ describe('needs-review.ts purity', () => {
 
 describe('reviewLoaLetter over the whole corpus', () => {
   it("never throws, and every letter's flag count/byCode matches the measured baseline exactly", () => {
-    const expected: Record<
-      string,
-      { total: number; byCode: Record<string, number> }
-    > = {
-      'PL273-JHS': {
-        total: 5,
-        byCode: { prose_corrigendum: 1, prose_qty_decomposition: 4 },
-      },
-      'PL280-ADI': {
-        total: 8,
-        byCode: { prose_corrigendum: 1, prose_unit_correction: 7 },
-      },
-      'PL275-BKN': {
-        total: 44,
-        byCode: {
-          prose_corrigendum: 1,
-          prose_payment_terms: 42,
-          layout_junk: 1,
+    const expected: Record<string, { total: number; byCode: Record<string, number> }> =
+      {
+        'PL273-JHS': {
+          total: 5,
+          byCode: { prose_corrigendum: 1, prose_qty_decomposition: 4 },
         },
-      },
-      'PL276-GTL': { total: 1, byCode: { unresolved_unit: 1 } },
-      'PL270-CRB': { total: 0, byCode: {} },
-      'PL281-BB': { total: 1, byCode: { banned_items_block: 1 } },
-    };
+        'PL280-ADI': {
+          total: 8,
+          byCode: { prose_corrigendum: 1, prose_unit_correction: 7 },
+        },
+        'PL275-BKN': {
+          total: 44,
+          byCode: {
+            prose_corrigendum: 1,
+            prose_payment_terms: 42,
+            layout_junk: 1,
+          },
+        },
+        'PL276-GTL': { total: 1, byCode: { unresolved_unit: 1 } },
+        'PL270-CRB': { total: 0, byCode: {} },
+        'PL281-BB': { total: 1, byCode: { banned_items_block: 1 } },
+      };
 
     for (const { manifest, text } of loadCorpus()) {
       const exp = expected[manifest.id];
       expect(exp, `unexpected letter id ${manifest.id}`).toBeDefined();
       const payload = reviewLoaLetter(text);
-      expect(payload.needsReview.total, `${manifest.id}: total`).toBe(
-        exp?.total,
-      );
-      expect(payload.needsReview.byCode, `${manifest.id}: byCode`).toEqual(
-        exp?.byCode,
-      );
+      expect(payload.needsReview.total, `${manifest.id}: total`).toBe(exp?.total);
+      expect(payload.needsReview.byCode, `${manifest.id}: byCode`).toEqual(exp?.byCode);
     }
   });
 });

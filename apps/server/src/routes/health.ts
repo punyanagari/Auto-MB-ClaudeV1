@@ -23,7 +23,9 @@ export async function registerHealthRoutes(
 
   app.get('/api/ready', async (_request, reply) => {
     if (!database) {
-      return reply.status(503).send({ status: 'not-ready', reason: 'database-not-configured' });
+      return reply
+        .status(503)
+        .send({ status: 'not-ready', reason: 'database-not-configured' });
     }
     await database`select 1 as ready`;
     return { status: 'ready' };

@@ -62,26 +62,26 @@ The system must prevent issue above the awarded quantity unless the Work explici
 
 ## 3. Domain glossary
 
-| Term | Meaning |
-|---|---|
-| Organisation | A tenant/legal entity using Auto-MB |
-| LOA | Railway Letter of Acceptance defining the awarded contract |
-| Work | One awarded contract created from one confirmed LOA |
-| Schedule | A grouping of awarded lines inside a Work |
-| Work item | One awarded description, unit, quantity, and effective rate |
-| DC | Delivery Challan accompanying delivered material |
-| Consignee | Railway/site party receiving material |
-| MB | Measurement Book used for staged/partial billing; later milestone |
-| PBG/PAC/DOC | Guarantee, acceptance, and completion lifecycle records; later milestone |
+| Term         | Meaning                                                                  |
+| ------------ | ------------------------------------------------------------------------ |
+| Organisation | A tenant/legal entity using Auto-MB                                      |
+| LOA          | Railway Letter of Acceptance defining the awarded contract               |
+| Work         | One awarded contract created from one confirmed LOA                      |
+| Schedule     | A grouping of awarded lines inside a Work                                |
+| Work item    | One awarded description, unit, quantity, and effective rate              |
+| DC           | Delivery Challan accompanying delivered material                         |
+| Consignee    | Railway/site party receiving material                                    |
+| MB           | Measurement Book used for staged/partial billing; later milestone        |
+| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records; later milestone |
 
 ## 4. Initial roles
 
-| Role | Default authority |
-|---|---|
-| Owner | Organisation, users, all Works, sensitive actions |
-| Office | LOA, Works, Delivery Challans, documents |
-| Site | Assigned Works, receipts, delivery/installation evidence |
-| Viewer | Read-only |
+| Role   | Default authority                                        |
+| ------ | -------------------------------------------------------- |
+| Owner  | Organisation, users, all Works, sensitive actions        |
+| Office | LOA, Works, Delivery Challans, documents                 |
+| Site   | Assigned Works, receipts, delivery/installation evidence |
+| Viewer | Read-only                                                |
 
 Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-action flags for issue and cancel.
 

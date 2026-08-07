@@ -7,12 +7,16 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-local-owner-change-me}
       AUTO_MB_APP_DB_PASSWORD: ${AUTO_MB_APP_DB_PASSWORD:-local-app-change-me}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init-app-role.sh:/docker-entrypoint-initdb.d/10-init-app-role.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-auto_mb_owner} -d ${POSTGRES_DB:-auto_mb}"]
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_ADMIN_USER:-auto_mb_owner} -d ${POSTGRES_DB:-auto_mb}',
+        ]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -27,7 +31,7 @@ services:
       - --chromium-disable-javascript=true
       - --chromium-allow-list=file:///tmp/.*
     ports:
-      - "3001:3000"
+      - '3001:3000'
     security_opt:
       - no-new-privileges:true
 

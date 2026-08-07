@@ -1,6 +1,6 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 
 # esbuild's postinstall compiles its platform binary; every other dependency
 # is denied install-time scripts (pnpm 11 default-deny posture).

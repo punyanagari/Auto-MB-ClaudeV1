@@ -6,7 +6,6 @@ import type { Sql } from 'postgres';
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_]+\.sql$/;
 const FORBIDDEN_TRANSACTION_CONTROL = /^\s*(begin|commit|rollback)\b.*;?\s*$/im;
 
-
 function stripDollarQuotedBodies(input: string): string {
   let output = '';
   let index = 0;
@@ -27,7 +26,8 @@ function stripDollarQuotedBodies(input: string): string {
     }
 
     const end = input.indexOf(tag, index + tag.length);
-    if (end === -1) throw new Error(`unterminated dollar-quoted body beginning at byte ${index}`);
+    if (end === -1)
+      throw new Error(`unterminated dollar-quoted body beginning at byte ${index}`);
 
     output += ' '.repeat(end + tag.length - index);
     index = end + tag.length;
@@ -51,7 +51,9 @@ export interface MigrationFile {
 }
 
 export async function readMigrations(directory: string): Promise<MigrationFile[]> {
-  const names = (await readdir(directory)).filter((name) => MIGRATION_FILE.test(name)).sort();
+  const names = (await readdir(directory))
+    .filter((name) => MIGRATION_FILE.test(name))
+    .sort();
   const migrations: MigrationFile[] = [];
 
   for (const fileName of names) {
