@@ -76,14 +76,22 @@ export async function readMigrations(directory: string): Promise<MigrationFile[]
 }
 
 export async function runMigrations(sql: Sql, directory: string): Promise<void> {
-  await sql`
-    create table if not exists schema_migrations (
-      id text primary key,
-      file_name text not null unique,
-      sha256 text not null,
-      applied_at timestamptz not null default now()
-    )
+  // Checked before creating so repeat runs stay silent; `if not exists`
+  // emits a NOTICE that postgres.js prints as an alarming object dump.
+  const [ledger] = await sql`
+    select 1 as present from pg_catalog.pg_tables
+    where schemaname = 'public' and tablename = 'schema_migrations'
   `;
+  if (!ledger) {
+    await sql`
+      create table schema_migrations (
+        id text primary key,
+        file_name text not null unique,
+        sha256 text not null,
+        applied_at timestamptz not null default now()
+      )
+    `;
+  }
 
   const applied = await sql<{ id: string; sha256: string }[]>`
     select id, sha256 from schema_migrations order by id
