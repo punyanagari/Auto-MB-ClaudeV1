@@ -1,4 +1,4 @@
-import { buildApp } from './app.js';
+import { assertProductionSecret, buildApp } from './app.js';
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? '3000');
@@ -12,9 +12,18 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
   throw new Error('API_PORT must be a valid TCP port');
 }
 
+const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+
 const app = await buildApp({
   logger: true,
-  ...(process.env.DATABASE_URL ? { databaseUrl: process.env.DATABASE_URL } : {}),
+  ...(process.env.DATABASE_URL
+    ? {
+        databaseUrl: process.env.DATABASE_URL,
+        authSecret: assertProductionSecret(process.env.AUTH_SECRET),
+        baseUrl: `http://${host}:${String(port)}`,
+        trustedOrigins: [webOrigin],
+      }
+    : {}),
 });
 
 const stop = async (signal: string): Promise<void> => {

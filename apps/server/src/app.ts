@@ -1,13 +1,21 @@
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
+import pg from 'pg';
 import { createDatabasePool } from '@auto-mb/db';
+import { assertProductionSecret, createAuth, type Auth } from './auth.js';
+import { toWebRequest } from './http.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerIdentityRoutes } from './routes/identity.js';
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
   readonly databaseUrl?: string;
   readonly enableDocsUi?: boolean;
+  /** Enables authentication and the identity routes; requires databaseUrl. */
+  readonly authSecret?: string;
+  readonly baseUrl?: string;
+  readonly trustedOrigins?: readonly string[];
 }
 
 export async function buildApp(
@@ -29,10 +37,29 @@ export async function buildApp(
       })
     : undefined;
 
+  let auth: Auth | undefined;
+  let authPool: pg.Pool | undefined;
+
   try {
     if (database) {
       app.addHook('onClose', async () => {
         await database.end();
+      });
+    }
+
+    if (options.authSecret !== undefined && options.databaseUrl !== undefined) {
+      // Better Auth manages its own tables through node-postgres; the pool
+      // is separate from the app's postgres.js pool and closed with it.
+      authPool = new pg.Pool({ connectionString: options.databaseUrl, max: 5 });
+      const pool = authPool;
+      app.addHook('onClose', async () => {
+        await pool.end();
+      });
+      auth = createAuth({
+        pool,
+        secret: options.authSecret,
+        baseUrl: options.baseUrl ?? 'http://127.0.0.1:3000',
+        ...(options.trustedOrigins ? { trustedOrigins: options.trustedOrigins } : {}),
       });
     }
 
@@ -57,6 +84,7 @@ export async function buildApp(
   } catch (error) {
     // The caller never receives the instance, so onClose will not run.
     await database?.end();
+    await authPool?.end();
     await app.close();
     throw error;
   }
@@ -92,5 +120,28 @@ export async function buildApp(
   });
 
   registerHealthRoutes(app, database);
+
+  if (auth && database) {
+    const authInstance = auth;
+    app.route({
+      method: ['GET', 'POST'],
+      url: '/api/auth/*',
+      handler: async (request, reply) => {
+        const response = await authInstance.handler(toWebRequest(request));
+        reply.status(response.status);
+        response.headers.forEach((value, key) => {
+          if (key.toLowerCase() !== 'set-cookie') void reply.header(key, value);
+        });
+        const cookies = response.headers.getSetCookie();
+        if (cookies.length > 0) void reply.header('set-cookie', cookies);
+        const text = await response.text();
+        return reply.send(text.length > 0 ? text : null);
+      },
+    });
+    registerIdentityRoutes(app, authInstance, database);
+  }
+
   return app;
 }
+
+export { assertProductionSecret };
