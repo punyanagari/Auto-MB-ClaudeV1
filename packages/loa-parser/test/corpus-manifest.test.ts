@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -41,7 +42,7 @@ describe('loa corpus manifest (DC-22)', () => {
     expect(ids).toEqual(Object.keys(EXPECTED_ITEM_COUNTS).sort());
   });
 
-  it('item counts are 4 + 12 + 45 + 37 + 129 + 54, per letter', () => {
+  it('manifest declares item counts 4 + 12 + 45 + 37 + 129 + 54, per letter', () => {
     const manifest = loadManifestDirect();
     for (const entry of manifest) {
       const expected = EXPECTED_ITEM_COUNTS[entry.id];
@@ -85,7 +86,7 @@ describe('loa corpus manifest (DC-22)', () => {
     }
   });
 
-  it('classifies the four Shape-A and two Shape-B letters correctly', () => {
+  it('manifest declares the four Shape-A and two Shape-B letters as expected', () => {
     const manifest = loadManifestDirect();
     const shapeA = manifest
       .filter((entry) => entry.pricing_shape === 'A')
@@ -147,16 +148,6 @@ describe('loa corpus manifest (DC-22)', () => {
       value: 24.5,
       direction: 'Above',
     });
-  });
-
-  it('every entry declares a redaction mode', () => {
-    const manifest = loadManifestDirect();
-    for (const entry of manifest) {
-      expect(
-        typeof entry.redaction === 'string' && entry.redaction.length > 0,
-        `${entry.id}: redaction mode must be a non-empty string`,
-      ).toBe(true);
-    }
   });
 
   it("declares the same redaction mode consistently ('verbatim-names-retained', per the CEO decision)", () => {
@@ -326,7 +317,7 @@ describe('loa corpus manifest (DC-22)', () => {
 });
 
 describe('loa package purity (DC-22)', () => {
-  it('package.json declares no runtime dependency on @auto-mb/db or @auto-mb/api', () => {
+  it('package.json declares no dependency on any other workspace package', () => {
     const pkgPath = path.join(PACKAGE_DIR, 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
       dependencies?: Record<string, string>;
@@ -334,22 +325,21 @@ describe('loa package purity (DC-22)', () => {
       optionalDependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
-    const sections = [
-      pkg.dependencies,
-      pkg.devDependencies,
-      pkg.optionalDependencies,
-      pkg.peerDependencies,
-    ];
-    for (const section of sections) {
-      if (section === undefined) {
-        continue;
-      }
-      expect(Object.keys(section)).not.toContain('@auto-mb/db');
-      expect(Object.keys(section)).not.toContain('@auto-mb/api');
-    }
+    // Merged across every section so an empty manifest cannot pass
+    // vacuously and a dependency under any section name is caught.
+    const all = {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+      ...pkg.optionalDependencies,
+      ...pkg.peerDependencies,
+    };
+    const workspaceDeps = Object.keys(all).filter((name) =>
+      name.startsWith('@auto-mb/'),
+    );
+    expect(workspaceDeps).toEqual([]);
   });
 
-  it('the entry module (src/index.ts) imports nothing from @auto-mb/db or @auto-mb/api', () => {
+  it('the entry module (src/index.ts) imports nothing from any @auto-mb/* package', () => {
     const entryPath = path.join(PACKAGE_DIR, 'src', 'index.ts');
     const source = readFileSync(entryPath, 'utf8');
     const importRe =
@@ -362,19 +352,20 @@ describe('loa package purity (DC-22)', () => {
         specs.push(spec);
       }
     }
+    expect(specs.length).toBeGreaterThan(0);
     for (const spec of specs) {
-      expect(spec.startsWith('@auto-mb/db')).toBe(false);
-      expect(spec.startsWith('@auto-mb/api')).toBe(false);
+      expect(spec.startsWith('@auto-mb/')).toBe(false);
     }
   });
 
   it('loadCorpus() resolves fixtures relative to the package, not process.cwd()', () => {
-    // Regression guard for the cwd-vs-package-relative requirement: the
-    // fixtures directory must be reachable from a cwd far outside the repo.
-    // The package's own resolution logic (import.meta.url-based) is exercised
-    // by every other test in this file already succeeding when the root
-    // suite runs this file from the repo root while `pnpm --filter` runs it
-    // from packages/loa — both pass only if resolution is cwd-independent.
-    expect(loadCorpus().length).toBe(6);
+    // Proven by actually moving the cwd somewhere the fixtures are not.
+    const original = process.cwd();
+    try {
+      process.chdir(os.tmpdir());
+      expect(loadCorpus().length).toBe(6);
+    } finally {
+      process.chdir(original);
+    }
   });
 });

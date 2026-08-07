@@ -946,11 +946,11 @@ describe('never auto-commit (PRODUCT-SPEC §5.1 step 2)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// purity: this module stays free of @auto-mb/db and @auto-mb/api
+// purity: this module stays free of every @auto-mb/* workspace package
 // ---------------------------------------------------------------------------
 
 describe('needs-review.ts purity', () => {
-  it('imports nothing from @auto-mb/db or @auto-mb/api -- source-scan proof (n2 pattern; corpus-manifest.test.ts / pricing-shape.test.ts precedent)', () => {
+  it('imports nothing from any @auto-mb/* package -- source-scan proof (n2 pattern; corpus-manifest.test.ts / pricing-shape.test.ts precedent)', () => {
     const sourcePath = path.join(SRC_DIR, 'needs-review.ts');
     const source = readFileSync(sourcePath, 'utf8');
     const importRe =

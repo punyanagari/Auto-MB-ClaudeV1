@@ -2,7 +2,7 @@
  * @auto-mb/loa-parser — the field-result contract every header/normalisation
  * extractor in this package returns (DC-23; legacy ticket DC-23 criterion
  * "Nothing is discarded and nothing is guessed"; PRODUCT-SPEC §5.1 step 3;
- * docs/reference/loa-parser-contract.md §4).
+ * docs/reference/loa-parser-contract.md §3).
  *
  * A field the parser cannot confidently locate is NEVER partially guessed —
  * it is emitted as `value: null` with its candidate raw text retained (so a

@@ -12,10 +12,9 @@ import { fileURLToPath } from 'node:url';
  * on any @auto-mb/* package (test/corpus-manifest.test.ts and
  * scripts/check-architecture.mjs both enforce this).
  * The fixtures directory is resolved relative to THIS file (import.meta.url),
- * never process.cwd() — root `pnpm test` collects this package's tests from
- * the repo root while `pnpm --filter @auto-mb/loa-parser test` runs them from the
- * package directory, and the fixture path must resolve identically either
- * way.
+ * never process.cwd(): fixture resolution must not depend on the caller's
+ * working directory (test/corpus-manifest.test.ts proves this by moving the
+ * cwd off-repo).
  */
 
 // DC-23 — text normalisation and header extraction. Re-exported here so the

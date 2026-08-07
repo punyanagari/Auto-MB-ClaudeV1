@@ -2,7 +2,7 @@
   "source_archive": "Auto-MB-main.zip",
   "source_commit_from_archive_comment": "a39d2f7e442df64c88663785fb9168fe49990c7a",
   "generated_at": "2026-08-06",
-  "note": "Hashes describe the imported files as committed in this clean-sheet repository; package-name and whitespace-only provenance edits may differ from the source archive.",
+  "note": "Hashes describe the files as imported from the source archive. Comment-provenance rewrites after import (legacy path citations updated to this repository layout) mean current hashes of rewritten .ts files differ; fixtures and corpus.json remain byte-identical. See docs/reference/README.md.",
   "files": [
     {
       "path": "packages/loa-parser/README.md",

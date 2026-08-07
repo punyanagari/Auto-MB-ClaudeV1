@@ -1,4 +1,4 @@
-# `@auto-mb/loa-parser-parser`
+# `@auto-mb/loa-parser`
 
 Pure deterministic parser and regression corpus adopted from the original Auto-MB snapshot.
 

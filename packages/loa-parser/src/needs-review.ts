@@ -388,7 +388,7 @@ export function detectPaymentTermsProse(
 
 /**
  * DESIGN CHOICE (ticket criterion 4, "pick the design that keeps
- * normalisation OUT of the parser; document the choice"): `packages/loa`
+ * normalisation OUT of the parser; document the choice"): `packages/loa-parser`
  * cannot import `packages/db` (this package's purity contract,
  * `test/corpus-manifest.test.ts`'s purity block), so "resolves against the
  * units master" cannot mean querying it. Of the two designs the ticket

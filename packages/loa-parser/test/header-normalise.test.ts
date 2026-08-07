@@ -22,9 +22,9 @@ const ALL_LETTER_IDS = [
 ] as const;
 
 // CORPUS COUNT CORRECTION (dispatch note): the corpus is SIX letters, not
-// five — loadCorpus() is the source of truth (DC-22; research
-// /DC-32-loa-parser-contract.md §0). Every criterion below runs over all six,
-// including PL281-BB, the only %Above letter.
+// five — loadCorpus() is the source of truth (DC-22;
+// docs/reference/loa-parser-contract.md §0). Every criterion below runs over
+// all six, including PL281-BB, the only %Above letter.
 it('sanity: the corpus is six letters', () => {
   expect(loadCorpus().length).toBe(6);
   expect(
