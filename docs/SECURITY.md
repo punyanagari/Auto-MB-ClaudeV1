@@ -103,12 +103,18 @@ Activated with Milestone 1 (authenticated endpoints exist):
 - the database membership floor — `current_organisation_id()` binds only
   for an active membership of the session user, proven by live tests.
 
+Activated with the first browser workflow (the Milestone 1 screens):
+
+- browser accessibility/security smoke — Playwright + axe against the
+  production bundle as a blocking CI job; it proves the auth, organisation,
+  and member screens render with no serious axe violations and that the
+  frontend sends the tenant header on scoped requests. The API is mocked
+  there; server-side authorisation is proven by the integration tests.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 
 - container image scan — when an Auto-MB application image exists;
-- browser security/accessibility smoke tests — with the first accepted
-  browser workflow;
 - upload malware scanning (ClamAV) — before user uploads are accepted.
 
 Before paid production:

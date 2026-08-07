@@ -34,6 +34,31 @@ jobs:
           --exclude packages/loa-parser/fixtures
           --exclude pnpm-lock.yaml
 
+  # Browser accessibility/security smoke (docs/SECURITY.md: activates with
+  # the first accepted browser workflow). Proves the production bundle
+  # renders the auth/org/member screens with no serious axe violations and
+  # keeps the tenant header on scoped requests; the API is mocked, so this
+  # proves frontend behaviour, not server authorisation (the verify job's
+  # integration tests prove that).
+  accessibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @auto-mb/web exec playwright install --with-deps chromium
+      - name: Accessibility smoke
+        run: pnpm --filter @auto-mb/web test:e2e
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20

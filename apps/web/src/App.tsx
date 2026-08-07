@@ -1,61 +1,147 @@
-import { useEffect, useState } from 'react';
-import { isHealthResponse, type HealthResponse } from '@auto-mb/contracts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Organisation } from '@auto-mb/contracts';
+import { createApiClient, type ApiClient, type MeResponse } from './api.js';
+import { Members } from './views/Members.js';
+import { OrgPicker } from './views/OrgPicker.js';
+import { SignIn } from './views/SignIn.js';
 
-export function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+const ORGANISATION_STORAGE_KEY = 'auto-mb.organisation';
+
+type Phase =
+  | { name: 'loading' }
+  | { name: 'signed-out' }
+  | { name: 'pick-organisation'; me: MeResponse }
+  | { name: 'workspace'; me: MeResponse; organisation: Organisation };
+
+function storedOrganisation(): Organisation | null {
+  try {
+    const raw = localStorage.getItem(ORGANISATION_STORAGE_KEY);
+    return raw === null ? null : (JSON.parse(raw) as Organisation);
+  } catch {
+    return null;
+  }
+}
+
+interface AppProps {
+  readonly api?: ApiClient;
+}
+
+export function App({ api: providedApi }: AppProps) {
+  const api = useMemo(() => providedApi ?? createApiClient(), [providedApi]);
+  const [phase, setPhase] = useState<Phase>({ name: 'loading' });
+  const mainRef = useRef<HTMLElement>(null);
+
+  const refreshSession = useCallback(async () => {
+    const me = await api.me();
+    if (me === null) {
+      setPhase({ name: 'signed-out' });
+      return;
+    }
+    const remembered = storedOrganisation();
+    const activeMembership =
+      remembered !== null &&
+      me.memberships.some(
+        (membership) =>
+          membership.organisationId === remembered.id && membership.status === 'active',
+      );
+    setPhase(
+      activeMembership
+        ? { name: 'workspace', me, organisation: remembered }
+        : { name: 'pick-organisation', me },
+    );
+  }, [api]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void fetch('/api/health', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`API returned ${response.status}`);
-        const payload: unknown = await response.json();
-        if (!isHealthResponse(payload)) {
-          throw new Error('API returned an unexpected payload');
-        }
-        return payload;
-      })
-      .then((payload) => {
-        setHealth(payload);
-        setError(null);
-      })
-      .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === 'AbortError') return;
-        setHealth(null);
-        setError(reason instanceof Error ? reason.message : 'Unknown API error');
-      });
+    refreshSession().catch(() => {
+      setPhase({ name: 'signed-out' });
+    });
+  }, [refreshSession]);
 
-    return () => controller.abort();
-  }, []);
+  // Screen-reader and keyboard users land on the new view's heading.
+  useEffect(() => {
+    mainRef.current?.querySelector('h1')?.focus();
+  }, [phase.name]);
+
+  function selectOrganisation(organisation: Organisation) {
+    localStorage.setItem(ORGANISATION_STORAGE_KEY, JSON.stringify(organisation));
+    setPhase((current) =>
+      current.name === 'pick-organisation' || current.name === 'workspace'
+        ? { name: 'workspace', me: current.me, organisation }
+        : current,
+    );
+  }
+
+  async function signOut() {
+    try {
+      await api.signOut();
+    } finally {
+      localStorage.removeItem(ORGANISATION_STORAGE_KEY);
+      setPhase({ name: 'signed-out' });
+    }
+  }
 
   return (
-    <main className="shell">
-      <section className="hero" aria-labelledby="page-title">
-        <p className="eyebrow">POST-AWARD WORKS EXECUTION</p>
-        <h1 id="page-title">Auto-MB</h1>
-        <p className="lede">
-          LOA to Delivery Challan, quantity ledger, and audit-ready document history.
-        </p>
-        <div className="status" role="status" aria-live="polite">
-          <span className={health ? 'dot dot--ok' : error ? 'dot dot--error' : 'dot'} />
-          {health
-            ? `API online · ${health.version}`
-            : error
-              ? `API unavailable · ${error}`
-              : 'Checking API…'}
-        </div>
-      </section>
+    <div className="shell">
+      <header className="topbar">
+        <span className="topbar__brand">Auto-MB</span>
+        {(phase.name === 'workspace' || phase.name === 'pick-organisation') && (
+          <div className="topbar__session">
+            {phase.name === 'workspace' && (
+              <>
+                <span className="topbar__org">{phase.organisation.name}</span>
+                <button
+                  type="button"
+                  className="button--ghost"
+                  onClick={() => {
+                    setPhase({ name: 'pick-organisation', me: phase.me });
+                  }}
+                >
+                  Switch organisation
+                </button>
+              </>
+            )}
+            <span className="muted">{phase.me.user.email}</span>
+            <button
+              type="button"
+              className="button--ghost"
+              onClick={() => void signOut()}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </header>
 
-      <section className="workflow" aria-labelledby="workflow-title">
-        <h2 id="workflow-title">First release path</h2>
-        <ol>
-          <li>Upload and review an LOA</li>
-          <li>Confirm the Work and awarded items</li>
-          <li>Draft and issue a Delivery Challan</li>
-          <li>Track issued and remaining quantities</li>
-        </ol>
-      </section>
-    </main>
+      <main ref={mainRef}>
+        {phase.name === 'loading' && (
+          <p className="muted centered" role="status">
+            Loading…
+          </p>
+        )}
+        {phase.name === 'signed-out' && (
+          <SignIn api={api} onSignedIn={() => void refreshSession()} />
+        )}
+        {phase.name === 'pick-organisation' && (
+          <OrgPicker
+            api={api}
+            onSelect={selectOrganisation}
+            onCreated={(organisation) => {
+              // The new membership must be in the session snapshot before
+              // the workspace binds to the organisation.
+              void refreshSession().then(() => {
+                selectOrganisation(organisation);
+              });
+            }}
+          />
+        )}
+        {phase.name === 'workspace' && (
+          <Members
+            api={api}
+            organisationId={phase.organisation.id}
+            currentUserId={phase.me.user.id}
+          />
+        )}
+      </main>
+    </div>
   );
 }

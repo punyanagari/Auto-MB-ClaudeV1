@@ -21,7 +21,8 @@ Delivered:
 - the database-enforced membership floor: tenant context binds only when the authenticated user holds an active membership in the selected organisation, so a compromised or buggy handler cannot stamp an arbitrary organisation id — proven live at both the SQL and HTTP layers;
 - four roles with Work scope and issue/cancel authority stored per membership; member management is owner-only;
 - RLS and authorisation tests through the real application role, pool, and HTTP endpoints;
-- audit events for organisation creation and membership changes.
+- audit events for organisation creation and membership changes;
+- web screens for sign-in/sign-up, organisation selection and creation, and member management — token-based design system, print-aware styles, component tests, and a blocking Playwright + axe accessibility smoke against the production bundle.
 
 Remaining before Milestone 1 closes:
 
