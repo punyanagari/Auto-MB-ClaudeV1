@@ -1,0 +1,11 @@
+{
+  "install": "bash scripts/cloud-install.sh",
+  "start": "bash scripts/cloud-start.sh",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "set -a; [ -f .env ] && . ./.env; set +a; pnpm dev",
+      "description": "Web (5173), API (3000), and worker dev processes."
+    }
+  ]
+}
