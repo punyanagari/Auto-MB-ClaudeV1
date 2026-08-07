@@ -21,18 +21,77 @@ const migrationsDirectory = path.resolve(here, '..', 'migrations');
 const userA = 'integration-user-a';
 const userB = 'integration-user-b';
 
+/** Every tenant-owned table, children after parents. Additions to the
+ * schema must be added here so the isolation proofs stay complete; the
+ * completeness test below fails if this list drifts from the database. */
+const TENANT_TABLES = [
+  'organisations',
+  'organisation_memberships',
+  'works',
+  'work_schedules',
+  'work_items',
+  'loa_documents',
+  'delivery_challans',
+  'delivery_challan_items',
+  'delivery_challan_counters',
+  'audit_events',
+] as const;
+
+type TenantTable = (typeof TENANT_TABLES)[number];
+
+/** audit_events has its own append-only proof: the application role has no
+ * UPDATE/DELETE privilege at all, so generic zero-row mutation assertions
+ * (which expect privilege to exist but RLS to hide rows) do not apply. */
+const GENERIC_MUTATION_TABLES = TENANT_TABLES.filter(
+  (table) => table !== 'audit_events',
+);
+
+/** organisations carries the tenant id in `id`; every other table in
+ * `organisation_id`. */
+function organisationColumn(table: TenantTable): string {
+  return table === 'organisations' ? 'id' : 'organisation_id';
+}
+
+interface TenantGraph {
+  readonly workId: string;
+  readonly scheduleId: string;
+  readonly workItemId: string;
+  readonly challanId: string;
+  readonly auditEventId: string;
+}
+
 let admin: Sql;
 let app: Sql;
-let workAId: string;
-let workBId: string;
+let graphA: TenantGraph;
+let graphB: TenantGraph;
 
-async function seedOrganisation(
+async function countAs(
+  pool: Sql,
+  table: TenantTable,
+  organisationId: string,
+): Promise<number> {
+  // Table and column names come from the hard-coded list above, never from
+  // input; only the organisation id is parameterised.
+  const rows = (await pool.unsafe(
+    `select count(*)::int as count from ${table} where ${organisationColumn(table)} = $1`,
+    [organisationId],
+  )) as unknown as { count: number }[];
+  return rows[0]?.count ?? 0;
+}
+
+/**
+ * Seeds one organisation with a row in every tenant-owned table, inserted
+ * through the application role inside a tenant-scoped transaction — the
+ * same path product code will use.
+ */
+async function seedTenantGraph(
   organisationId: string,
   name: string,
   slug: string,
   userId: string,
   workCode: string,
-): Promise<string> {
+  shaFill: string,
+): Promise<TenantGraph> {
   return withTenant(app, { organisationId, userId }, async (tx) => {
     await tx`
       insert into organisations (id, name, slug)
@@ -55,7 +114,78 @@ async function seedOrganisation(
       returning id
     `;
     if (!work) throw new Error('seed work insert returned no row');
-    return work.id;
+
+    const [schedule] = await tx<{ id: string }[]>`
+      insert into work_schedules (organisation_id, work_id, schedule_code, title, position)
+      values (${organisationId}, ${work.id}, 'SCH-1', 'Integration schedule', 1)
+      returning id
+    `;
+    if (!schedule) throw new Error('seed schedule insert returned no row');
+
+    const [workItem] = await tx<{ id: string }[]>`
+      insert into work_items (
+        organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${organisationId}, ${work.id}, ${schedule.id}, '1',
+        'Integration test item', 'Nos', '10.000', '100.00'
+      )
+      returning id
+    `;
+    if (!workItem) throw new Error('seed work item insert returned no row');
+
+    await tx`
+      insert into loa_documents (
+        organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${`loa/${workCode}.pdf`}, ${`${workCode}.pdf`},
+        ${shaFill.repeat(64)}, 'application/pdf', 1024, ${userId}
+      )
+    `;
+
+    const [challan] = await tx<{ id: string }[]>`
+      insert into delivery_challans (
+        organisation_id, work_id, challan_date, prefix, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2026-02-01', 'DC', ${userId})
+      returning id
+    `;
+    if (!challan) throw new Error('seed challan insert returned no row');
+
+    await tx`
+      insert into delivery_challan_items (
+        organisation_id, delivery_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, rate_snapshot,
+        line_amount, position
+      )
+      values (
+        ${organisationId}, ${challan.id}, ${work.id}, ${workItem.id},
+        'Integration test item', 'Nos', '1.000', '100.00', '100.00', 1
+      )
+    `;
+
+    await tx`
+      insert into delivery_challan_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    const [auditEvent] = await tx<{ id: string }[]>`
+      insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id)
+      values (${organisationId}, ${userId}, 'integration.seed', 'works', ${work.id})
+      returning id
+    `;
+    if (!auditEvent) throw new Error('seed audit insert returned no row');
+
+    return {
+      workId: work.id,
+      scheduleId: schedule.id,
+      workItemId: workItem.id,
+      challanId: challan.id,
+      auditEventId: auditEvent.id,
+    };
   });
 }
 
@@ -101,24 +231,28 @@ beforeAll(async () => {
 
   // Remove residue from earlier runs, children first (admin bypasses RLS).
   const organisationIds = [organisationA.id, organisationB.id];
-  await admin`delete from audit_events where organisation_id in ${admin(organisationIds)}`;
-  await admin`delete from works where organisation_id in ${admin(organisationIds)}`;
-  await admin`delete from organisation_memberships where organisation_id in ${admin(organisationIds)}`;
-  await admin`delete from organisations where id in ${admin(organisationIds)}`;
+  for (const table of [...TENANT_TABLES].reverse()) {
+    await admin.unsafe(
+      `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
+      [organisationIds],
+    );
+  }
 
-  workAId = await seedOrganisation(
+  graphA = await seedTenantGraph(
     organisationA.id,
     organisationA.name,
     'integration-org-a',
     userA,
     'INT-A-1',
+    'a',
   );
-  workBId = await seedOrganisation(
+  graphB = await seedTenantGraph(
     organisationB.id,
     organisationB.name,
     'integration-org-b',
     userB,
     'INT-B-1',
+    'b',
   );
 });
 
@@ -135,62 +269,118 @@ describe('application role security posture', () => {
     expect(role).toEqual({ rolsuper: false, rolbypassrls: false });
   });
 
-  it('is subject to forced RLS: without tenant context every table is empty', async () => {
-    const [force] = await admin<
-      { relforcerowsecurity: boolean }[]
-    >`select relforcerowsecurity from pg_class where relname = 'works'`;
-    expect(force?.relforcerowsecurity).toBe(true);
-
-    const [adminCount] = await admin<{ count: string }[]>`
-      select count(*) as count from works
-      where organisation_id in ${admin([organisationA.id, organisationB.id])}
+  it('does not own any tenant table', async () => {
+    const rows = await admin<{ tablename: string; tableowner: string }[]>`
+      select tablename, tableowner from pg_tables
+      where schemaname = 'public' and tablename = any(${admin.array([...TENANT_TABLES])})
+      order by tablename
     `;
-    expect(Number(adminCount?.count)).toBe(2);
+    expect(rows.map((row) => row.tablename).sort()).toEqual([...TENANT_TABLES].sort());
+    for (const row of rows) {
+      expect(row.tableowner).not.toBe('auto_mb_app');
+    }
+  });
 
-    // Same query through the application role with no organisation context.
-    const rows = await app`select id from works`;
-    expect(rows).toHaveLength(0);
+  it('has RLS enabled and forced on every tenant table, live in the catalog', async () => {
+    const rows = await admin<
+      { relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }[]
+    >`
+      select relname, relrowsecurity, relforcerowsecurity
+      from pg_class
+      where relnamespace = 'public'::regnamespace
+        and relname = any(${admin.array([...TENANT_TABLES])})
+      order by relname
+    `;
+    expect(rows).toHaveLength(TENANT_TABLES.length);
+    for (const row of rows) {
+      expect(row, row.relname).toMatchObject({
+        relrowsecurity: true,
+        relforcerowsecurity: true,
+      });
+    }
+  });
+
+  it('covers every organisation-scoped table in the database with this suite', async () => {
+    // If a new table with an organisation_id column lands without being
+    // added to TENANT_TABLES, this fails instead of silently narrowing the
+    // proofs below.
+    const rows = await admin<{ table_name: string }[]>`
+      select table_name from information_schema.columns
+      where table_schema = 'public' and column_name = 'organisation_id'
+      order by table_name
+    `;
+    const expected = TENANT_TABLES.filter((table) => table !== 'organisations');
+    expect(rows.map((row) => row.table_name).sort()).toEqual([...expected].sort());
   });
 });
 
-describe('cross-tenant isolation', () => {
-  it('hides Organisation B rows from Organisation A reads', async () => {
+describe('no-context behaviour on every tenant table', () => {
+  it('returns zero rows from every tenant table without organisation context', async () => {
+    for (const table of TENANT_TABLES) {
+      // The data exists (verified through the admin connection)…
+      const adminVisible =
+        (await countAs(admin, table, organisationA.id)) +
+        (await countAs(admin, table, organisationB.id));
+      expect(adminVisible, `${table} seed data`).toBeGreaterThanOrEqual(2);
+
+      // …but the application role sees none of it without tenant context.
+      const rows = (await app.unsafe(
+        `select count(*)::int as count from ${table}`,
+      )) as unknown as { count: number }[];
+      expect(rows[0]?.count, table).toBe(0);
+    }
+  });
+});
+
+describe('cross-tenant isolation on every tenant table', () => {
+  it('hides Organisation B rows from Organisation A reads on every tenant table', async () => {
     await withTenant(
       app,
       { organisationId: organisationA.id, userId: userA },
       async (tx) => {
+        for (const table of TENANT_TABLES) {
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationA.id),
+            `${table} own rows`,
+          ).toBeGreaterThanOrEqual(1);
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationB.id),
+            `${table} foreign rows`,
+          ).toBe(0);
+        }
+
         const works = await tx<{ id: string }[]>`select id from works`;
-        expect(works.map((row) => row.id)).toEqual([workAId]);
-
-        const foreignWork = await tx`select id from works where id = ${workBId}`;
-        expect(foreignWork).toHaveLength(0);
-
-        const organisations = await tx<{ id: string }[]>`select id from organisations`;
-        expect(organisations.map((row) => row.id)).toEqual([organisationA.id]);
+        expect(works.map((row) => row.id)).toEqual([graphA.workId]);
       },
     );
   });
 
-  it('makes Organisation B rows unreachable for Organisation A mutations', async () => {
+  it('makes Organisation B rows unreachable for Organisation A updates and deletes', async () => {
     await withTenant(
       app,
       { organisationId: organisationA.id, userId: userA },
       async (tx) => {
-        const updated = await tx`
-        update works set title = 'tampered by organisation A'
-        where id = ${workBId}
-      `;
-        expect(updated.count).toBe(0);
+        for (const table of GENERIC_MUTATION_TABLES) {
+          const column = organisationColumn(table);
+          const updated = await tx.unsafe(
+            `update ${table} set ${column} = ${column} where ${column} = $1`,
+            [organisationB.id],
+          );
+          expect(updated.count, `${table} update`).toBe(0);
 
-        const deleted = await tx`delete from works where id = ${workBId}`;
-        expect(deleted.count).toBe(0);
+          const deleted = await tx.unsafe(`delete from ${table} where ${column} = $1`, [
+            organisationB.id,
+          ]);
+          expect(deleted.count, `${table} delete`).toBe(0);
+        }
       },
     );
 
     const [untouched] = await admin<
       { title: string }[]
-    >`select title from works where id = ${workBId}`;
+    >`select title from works where id = ${graphB.workId}`;
     expect(untouched?.title).toBe('Integration test work for tenant isolation');
+    expect(await countAs(admin, 'delivery_challan_items', organisationB.id)).toBe(1);
   });
 
   it('rejects writing rows stamped with another organisation id', async () => {
@@ -209,6 +399,19 @@ describe('cross-tenant isolation', () => {
             'Attempted cross-tenant insert', '1.00', '1.00', 'per_schedule', ${userA}
           )
         `;
+        },
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          await tx`
+            insert into audit_events (organisation_id, action, entity_type)
+            values (${organisationB.id}, 'integration.evil', 'works')
+          `;
         },
       ),
     ).rejects.toMatchObject({ code: '42501' });
@@ -232,14 +435,14 @@ describe('membership listing before organisation selection', () => {
 });
 
 describe('audit trail append-only guarantee', () => {
-  it('accepts inserts but refuses update and delete from the application role', async () => {
+  it('accepts inserts but refuses update, delete, and truncate from the application role', async () => {
     const eventId = await withTenant(
       app,
       { organisationId: organisationA.id, userId: userA },
       async (tx) => {
         const [event] = await tx<{ id: string }[]>`
           insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id)
-          values (${organisationA.id}, ${userA}, 'integration.test', 'works', ${workAId})
+          values (${organisationA.id}, ${userA}, 'integration.test', 'works', ${graphA.workId})
           returning id
         `;
         if (!event) throw new Error('audit insert returned no row');
@@ -266,5 +469,9 @@ describe('audit trail append-only guarantee', () => {
         },
       ),
     ).rejects.toMatchObject({ code: '42501' });
+
+    await expect(app.unsafe('truncate audit_events')).rejects.toMatchObject({
+      code: '42501',
+    });
   });
 });
