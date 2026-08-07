@@ -16,10 +16,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
-  },
-  "devDependencies": {
-    "@auto-mb/testkit": "workspace:*"
   }
 }

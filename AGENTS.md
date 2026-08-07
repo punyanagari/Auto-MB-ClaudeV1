@@ -1,4 +1,4 @@
-# Auto-MB Codex — repository instructions
+# Auto-MB ClaudeV1 — repository instructions
 
 ## Mission
 
@@ -54,10 +54,8 @@ High-risk work requires a fresh review pass: RLS, authentication, authorization,
 - `packages/db`: connections, migrations, transaction/tenant primitives.
 - `packages/contracts`: shared API schemas and types.
 - `packages/loa-parser`: pure LOA parsing and regression corpus.
-- `packages/documents`: rendering contracts and deterministic snapshot-to-document logic.
-- `packages/testkit`: reusable test infrastructure.
 
-Do not create a new package until there is a real second consumer or independent release boundary.
+Do not create a new package until there is a real second consumer or independent release boundary. Document rendering and shared test infrastructure stay inside the module that needs them until that bar is met.
 
 ## Definition of done
 

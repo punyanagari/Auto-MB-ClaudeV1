@@ -1,6 +1,6 @@
 /**
- * @auto-mb/loa-parser — the split letter-number rejoin (DC-23; tickets/DC-23.md;
- * research/DC-32-loa-parser-contract.md §3 "Letter-number wrap trap").
+ * @auto-mb/loa-parser — the split letter-number rejoin (DC-23; legacy ticket DC-23;
+ * docs/reference/loa-parser-contract.md §3 "Letter-number wrap trap").
  *
  * The letter number is interrupted mid-word by the interleaved `Dated:`
  * line:

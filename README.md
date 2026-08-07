@@ -1,4 +1,4 @@
-# Auto-MB Codex
+# Auto-MB ClaudeV1
 
 A clean-sheet implementation of Auto-MB: the post-award works-contract execution system for Indian government contractors, beginning with Indian Railways.
 
@@ -22,7 +22,7 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
 - PostgreSQL migrations for organisations, memberships, works, LOA intake, Delivery Challans, RLS, and audit events;
 - the six-letter / 281-item LOA parser corpus adopted from the original project;
 - concise product, architecture, security, operations, and roadmap contracts;
-- Codex instructions and CI.
+- agent instructions and CI.
 
 It does **not** yet claim a complete LOA-to-DC workflow or STQC certification.
 
@@ -77,6 +77,6 @@ pnpm verify
 
 ## Development model
 
-Codex is the primary coding agent. Product decisions remain human-owned; deterministic tests prove code properties; qualified external reviewers validate security, operations, and compliance before production.
+Claude Code is the primary coding agent (see ADR-0004 amendment). Product decisions remain human-owned; deterministic tests prove code properties; qualified external reviewers validate security, operations, and compliance before production.
 
 Read `AGENTS.md` before making changes.

@@ -18,13 +18,20 @@ export function registerHealthRoutes(app: FastifyInstance, database?: Sql): void
     }),
   );
 
-  app.get('/api/ready', async (_request, reply) => {
+  app.get('/api/ready', async (request, reply) => {
     if (!database) {
       return reply
         .status(503)
         .send({ status: 'not-ready', reason: 'database-not-configured' });
     }
-    await database`select 1 as ready`;
+    try {
+      await database`select 1 as ready`;
+    } catch (error) {
+      request.log.error({ err: error }, 'readiness check failed');
+      return reply
+        .status(503)
+        .send({ status: 'not-ready', reason: 'database-unreachable' });
+    }
     return { status: 'ready' };
   });
 }

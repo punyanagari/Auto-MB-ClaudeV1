@@ -1,8 +1,8 @@
 /**
  * @auto-mb/loa-parser — the field-result contract every header/normalisation
- * extractor in this package returns (DC-23; tickets/DC-23.md criterion
+ * extractor in this package returns (DC-23; legacy ticket DC-23 criterion
  * "Nothing is discarded and nothing is guessed"; PRODUCT-SPEC §5.1 step 3;
- * research/DC-32-loa-parser-contract.md §4).
+ * docs/reference/loa-parser-contract.md §4).
  *
  * A field the parser cannot confidently locate is NEVER partially guessed —
  * it is emitted as `value: null` with its candidate raw text retained (so a
@@ -32,7 +32,7 @@ export function notFound<T>(raw: string | null): FieldResult<T> {
 /** A field that is legitimately OPTIONAL in the source template (e.g. the
  * LOA `File No`, research §3: "present only in PL280") — absence here is
  * normal, not an anomaly, so it must NOT raise `needsReview` the way a
- * missing REQUIRED field does (tickets/DC-23.md: "an absent field is null,
+ * missing REQUIRED field does (legacy ticket DC-23: "an absent field is null,
  * not an error"). */
 export function optionalAbsent<T>(): FieldResult<T> {
   return { value: null, raw: null, needsReview: false };

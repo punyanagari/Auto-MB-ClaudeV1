@@ -67,17 +67,24 @@ Primary risks:
 
 ## 3. CI security baseline
 
-Before merge:
+Enforced by CI today:
 
 - TypeScript type check;
 - lint and format check;
+- production build;
 - unit and PostgreSQL integration tests;
-- tenant-isolation and authorisation tests where applicable;
+- tenant-isolation tests against the real application role;
+- dependency audit (`pnpm audit --audit-level=high`);
+- migration validation;
+- architecture boundary checks.
+
+Required before the first authenticated endpoint merges (not yet wired; treat as blocking debt for Milestone 1):
+
 - secret scan;
 - SAST;
-- dependency and container scan;
-- migration validation;
-- browser security/accessibility smoke tests.
+- container scan;
+- browser security/accessibility smoke tests;
+- authorisation tests.
 
 Before paid production:
 

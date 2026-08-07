@@ -1,6 +1,6 @@
 /**
- * @auto-mb/loa-parser — the `needsReview` trigger set (DC-26; tickets/DC-26.md;
- * research/DC-32-loa-parser-contract.md §4 "Traps that must raise
+ * @auto-mb/loa-parser — the `needsReview` trigger set (DC-26; legacy ticket DC-26;
+ * docs/reference/loa-parser-contract.md §4 "Traps that must raise
  * `needsReview` rather than parse silently", §5 "Unexercised template
  * branches").
  *
@@ -495,7 +495,7 @@ const SOR_SHAPED_CODE_RE = /^\d{8}$/;
  * ambiguity per AGENTS.md non-negotiable 6 -- a data-quality heuristic, not
  * a numbering/challan/invoice/approval decision, so resolved here rather
  * than escalated to the CEO; the manager RATIFIED this reading 2026-08-05
- * and amended tickets/DC-26.md criterion 5 to state it directly, replacing
+ * and amended legacy ticket DC-26 criterion 5 to state it directly, replacing
  * the originally ambiguous disjunctive sentence): the trigger is ONE
  * condition -- an 8-digit SOR-shaped code found under a schedule whose
  * `Item Directory` is null (`Not Applicable`) or otherwise non-SOR -- never

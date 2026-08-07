@@ -9,9 +9,9 @@ import {
 } from '../src/index.js';
 
 /**
- * tickets/DC-25.md — item-row parsing: par-token anchoring, wrapped
+ * legacy ticket DC-25 — item-row parsing: par-token anchoring, wrapped
  * descriptions, schedule binding. Input contract:
- * research/DC-32-loa-parser-contract.md §2 (item-row geometry), §4.5
+ * docs/reference/loa-parser-contract.md §2 (item-row geometry), §4.5
  * (item-code namespaces), §4.6 (verbatim descriptions), §6 (schedule
  * identity). verify: `pnpm --filter @auto-mb/loa-parser --fail-if-no-match test
  * item-anchor` (a filename-substring filter on `vitest run`, matching only
@@ -19,7 +19,7 @@ import {
  * exercises all of them).
  */
 
-// research §0 / tickets/DC-25.md: "Counting anchors per letter yields
+// research §0 / legacy ticket DC-25: "Counting anchors per letter yields
 // 4/12/45/37/129/54 and 281 in total across the corpus. Any total other
 // than 281 fails the suite."
 const EXPECTED_ITEM_COUNTS: Record<string, number> = {
@@ -83,7 +83,7 @@ describe('item-row parsing (DC-25)', () => {
   });
 
   describe('never anchors on the leading serial number (PL275 Schedule A, real fixture)', () => {
-    // research §2 / tickets/DC-25.md: PL275-BKN.txt:155 — inside item 1's
+    // research §2 / legacy ticket DC-25: PL275-BKN.txt:155 — inside item 1's
     // wrapped description, wrap-broken so its own continuation line begins
     // "10 sq. mm multi strand single core PVC insulated" (a fragment of
     // "...(iv) Supply of 10 sq. mm..."). A serial-number-anchored parser
@@ -137,7 +137,7 @@ describe('item-row parsing (DC-25)', () => {
   });
 
   describe('description collected from lines both above AND below the anchor', () => {
-    // tickets/DC-25.md: "PL275 Schedule A item 1, whose description spans
+    // legacy ticket DC-25: "PL275 Schedule A item 1, whose description spans
     // ~24 lines with the data line 14th. The test asserts both the first
     // line above and the last line below the anchor are present."
     const items = parseItems(loadLetter('PL275-BKN').text);
@@ -268,7 +268,7 @@ describe('item-row parsing (DC-25)', () => {
   });
 
   describe('item codes are unique only within a directory', () => {
-    // research §4.5 / tickets/DC-25.md: "Item codes are unique only within
+    // research §4.5 / legacy ticket DC-25: "Item codes are unique only within
     // a directory (SOR 8-digit 13010300 vs non-SOR S01)." The six-letter
     // corpus never happens to print the SAME code under two DIFFERENT
     // directories (verified: no natural collision exists), so this test

@@ -1,6 +1,6 @@
 /**
  * @auto-mb/loa-parser — Indian-numbering currency words -> number (DC-23;
- * tickets/DC-23.md: "Contract value in figures vs words are both captured;
+ * legacy ticket DC-23: "Contract value in figures vs words are both captured;
  * a mismatch raises needsReview rather than the parser picking one").
  *
  * Detecting a mismatch requires actually comparing the two representations,

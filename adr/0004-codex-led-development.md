@@ -14,3 +14,7 @@ Use Codex as the sole required AI development system initially. Use concise `AGE
 ## Consequences
 
 No custom agent hierarchy, routing framework, or persistent chat-memory system is built. Codex output is always reviewed and verified; qualified external humans remain required for security, operations, and compliance assurance.
+
+## Amendment — 2026-08-07
+
+Claude Code replaces Codex as the primary coding agent. The substance of the decision is unchanged: one primary agent, concise `AGENTS.md`, deterministic CI, human ownership of product and high-risk decisions, and no custom agent hierarchy, routing, or memory system.

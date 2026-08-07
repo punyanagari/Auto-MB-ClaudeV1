@@ -1,5 +1,5 @@
 /**
- * @auto-mb/loa-parser — date normalisation (DC-23; tickets/DC-23.md criterion
+ * @auto-mb/loa-parser — date normalisation (DC-23; legacy ticket DC-23 criterion
  * "Dates are parsed DD/MM/YYYY -> YYYY-MM-DD date-only strings, with no
  * timezone-aware datetime anywhere on the path").
  *
@@ -7,7 +7,7 @@
  * no `Intl`. A DD/MM/YYYY or DD-MM-YYYY triple is zero-padded and
  * concatenated into an ISO date-only string; there is no wall-clock, no
  * offset, and therefore nothing for a process timezone to perturb. This is
- * the property packages/loa/test/header-normalise.test.ts's TZ-invariance
+ * the property test/header-normalise.test.ts's TZ-invariance
  * case exercises (running the same input under TZ=UTC and
  * TZ=Asia/Kolkata and asserting byte-identical output).
  */

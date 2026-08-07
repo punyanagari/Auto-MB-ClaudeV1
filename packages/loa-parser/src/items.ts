@@ -1,7 +1,7 @@
 /**
  * @auto-mb/loa-parser — item-row parsing: par-token anchoring, wrapped
- * descriptions, schedule binding (DC-25; tickets/DC-25.md;
- * research/DC-32-loa-parser-contract.md §2 "Item-row geometry", §4.5
+ * descriptions, schedule binding (DC-25; legacy ticket DC-25;
+ * docs/reference/loa-parser-contract.md §2 "Item-row geometry", §4.5
  * "Item-code namespaces differ", §4.6 "Layout junk inside descriptions",
  * §6 "Schema consequences").
  *
@@ -111,7 +111,7 @@ export interface ItemScheduleBinding {
    * the letter prints `Not Applicable` (research §4.5). Item codes are
    * unique only WITHIN a directory — a printed code repeating under a
    * DIFFERENT directory is a different item, never merged (research §4.5;
-   * tickets/DC-25.md). */
+   * legacy ticket DC-25). */
   readonly directory: string | null;
 }
 
@@ -136,7 +136,7 @@ export interface ItemReconciliation {
    * extraction. This is a HINT for the human reviewer, never applied as a
    * correction: `ok` stays false and every printed field is retained
    * unmodified either way (PRODUCT-SPEC §5.1.3 "arithmetic recovery ...
-   * never discards information"; tickets/DC-25.md "Failure retains the raw
+   * never discards information"; legacy ticket DC-25 "Failure retains the raw
    * block and raises needsReview — never a silent correction"). Unexercised
    * by the real corpus (all 281 rows reconcile exactly) — defensive only.
    */

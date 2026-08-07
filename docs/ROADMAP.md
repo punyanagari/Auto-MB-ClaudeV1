@@ -10,7 +10,7 @@ Exit criteria:
 - CI runs from a clean checkout;
 - shared multi-tenant schema and RLS baseline exist;
 - LOA parser corpus runs unchanged;
-- authoritative documentation and Codex instructions are in place.
+- authoritative documentation and agent instructions are in place.
 
 ## Milestone 1 — organisation, identity, and isolation
 

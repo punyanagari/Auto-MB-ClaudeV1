@@ -7,6 +7,7 @@ import { registerHealthRoutes } from './routes/health.js';
 export interface BuildAppOptions {
   readonly logger?: boolean;
   readonly databaseUrl?: string;
+  readonly enableDocsUi?: boolean;
 }
 
 export async function buildApp(
@@ -43,15 +44,38 @@ export async function buildApp(
       },
     },
   });
-  await app.register(swaggerUi, { routePrefix: '/documentation' });
+  const enableDocsUi = options.enableDocsUi ?? process.env.NODE_ENV !== 'production';
+  if (enableDocsUi) {
+    await app.register(swaggerUi, { routePrefix: '/documentation' });
+  }
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error, requestId: request.id }, 'request failed');
-    void reply.status(500).send({
-      code: 'INTERNAL_ERROR',
-      message: 'The request could not be completed.',
-      requestId: request.id,
-    });
+    const statusCode =
+      error instanceof Error &&
+      'statusCode' in error &&
+      typeof error.statusCode === 'number' &&
+      error.statusCode >= 400
+        ? error.statusCode
+        : 500;
+    void reply.status(statusCode).send(
+      statusCode >= 500
+        ? {
+            code: 'INTERNAL_ERROR',
+            message: 'The request could not be completed.',
+            requestId: request.id,
+          }
+        : {
+            code:
+              error instanceof Error &&
+              'code' in error &&
+              typeof error.code === 'string'
+                ? error.code
+                : 'REQUEST_ERROR',
+            message: error instanceof Error ? error.message : 'Request failed.',
+            requestId: request.id,
+          },
+    );
   });
 
   registerHealthRoutes(app, database);

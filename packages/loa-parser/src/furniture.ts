@@ -1,6 +1,6 @@
 /**
- * @auto-mb/loa-parser — print-furniture stripping (DC-23; tickets/DC-23.md;
- * research/DC-32-loa-parser-contract.md §3 "Print-furniture noise").
+ * @auto-mb/loa-parser — print-furniture stripping (DC-23; legacy ticket DC-23;
+ * docs/reference/loa-parser-contract.md §3 "Print-furniture noise").
  *
  * Every fixture is a browser "print to PDF" of the IREPS
  * `publishLOAWorksLetter.do` page, which repeats a browser page HEADER
@@ -10,7 +10,7 @@
  * description/header text blocks (research §3).
  *
  * The fixtures preserve this noise verbatim BY DESIGN (DC-22's sha256 guard,
- * packages/loa/test/corpus-manifest.test.ts, goes red on any byte edit) — so
+ * test/corpus-manifest.test.ts, goes red on any byte edit) — so
  * stripping happens at parse time, on the in-memory string, and the fixture
  * files themselves are never touched.
  *

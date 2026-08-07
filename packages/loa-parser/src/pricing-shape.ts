@@ -1,10 +1,10 @@
 /**
- * @auto-mb/loa-parser — pricing-shape classifier (DC-24; tickets/DC-24.md;
- * research/DC-32-loa-parser-contract.md §1, "the finding that governs
+ * @auto-mb/loa-parser — pricing-shape classifier (DC-24; legacy ticket DC-24;
+ * docs/reference/loa-parser-contract.md §1, "the finding that governs
  * correctness").
  *
  * `classifyPricingShape` is the single public entry point. It is the sole
- * authority for the five `works` columns tickets/DC-14.md adds
+ * authority for the five `works` columns legacy ticket DC-14 adds
  * (`advertised_value`, `contract_value`, `pricing_shape`, `letter_percentage`,
  * `letter_percentage_direction`) — DISTINCT from header.ts's
  * `ContractValueField` (`extractHeader().contractValue`), which extracts the
@@ -54,7 +54,7 @@
  * non-zero value raises `needsReview` as a data CONTRADICTION rather than
  * being applied either way ("never quietly prefers either number").
  *
- * TOTALS-ROUNDING TOLERANCE (tickets/DC-24.md, 2026-08-05 manager ruling,
+ * TOTALS-ROUNDING TOLERANCE (legacy ticket DC-24, 2026-08-05 manager ruling,
  * review R1 ride-along): the printed Net Bid Value ALWAYS wins as
  * `contract_value` once the shape reconciles at all — the letter is the
  * document the railway signed, the recomputation is only its checksum, never
@@ -181,8 +181,8 @@ export interface PricingShapeResult extends WorksPricingColumns {
 }
 
 /** The `needsReview` payload for a within-tolerance-but-nonzero
- * reconciliation gap (module doc "TOTALS-ROUNDING TOLERANCE"; tickets/
- * DC-24.md's 2026-08-05 manager ruling). `printed` is what `contract_value`
+ * reconciliation gap (module doc "TOTALS-ROUNDING TOLERANCE"; legacy ticket
+ * DC-24's 2026-08-05 manager ruling). `printed` is what `contract_value`
  * is actually set to; `computed` is what either arithmetic function
  * produced and survives ONLY here, never overwriting `contract_value`. */
 export interface TotalsRoundingDivergence {

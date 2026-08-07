@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadCorpus, loadLetter, type CorpusManifestEntry } from '../src/index.js';
 
-// research/DC-32-loa-parser-contract.md §0: "281 items total ... Treat any
+// docs/reference/loa-parser-contract.md §0: "281 items total ... Treat any
 // future extraction that does not total 281 on this corpus as a regression."
 const EXPECTED_ITEM_COUNTS: Record<string, number> = {
   'PL273-JHS': 4,
@@ -218,9 +218,9 @@ describe('loa corpus manifest (DC-22)', () => {
   });
 
   it('advertised_value, net_bid_value, schedule_count, zone, and division match research §0 exactly, per letter', () => {
-    // research/DC-32-loa-parser-contract.md §0's corpus table, in full — not
+    // docs/reference/loa-parser-contract.md §0's corpus table, in full — not
     // just the two value columns. schedule_count, zone, and division are
-    // ticket-named manifest fields (tickets/DC-22.md: "one entry per letter:
+    // ticket-named manifest fields (legacy ticket DC-22: "one entry per letter:
     // id, zone, division, schedule count, item count, advertised value, net
     // bid value...") with downstream teeth: schedule_count is Shape-B
     // correctness (research §1's Schedule Totals sum check) and DC-33's

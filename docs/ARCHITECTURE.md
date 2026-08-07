@@ -31,8 +31,8 @@ Deploy as a modular monolith: one web build, one API service, one worker service
 - `packages/db`: SQL migrations, DB connection, organisation-scoped transactions.
 - `packages/contracts`: TypeBox schemas shared by server and web.
 - `packages/loa-parser`: pure parser and real regression corpus.
-- `packages/documents`: deterministic issued-snapshot rendering contracts.
-- `packages/testkit`: reusable PostgreSQL and browser test support.
+
+Deterministic issued-snapshot rendering contracts and reusable test support live inside the modules that consume them; each becomes a package only when a real second consumer exists.
 
 Inside the API, modules initially remain folders rather than independent packages:
 

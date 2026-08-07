@@ -1,6 +1,6 @@
 /**
  * @auto-mb/loa-parser — exact-decimal (paisa-precise) arithmetic (DC-25;
- * tickets/DC-25.md criterion "qty × unit_rate ≈ bid_amount is validated per
+ * legacy ticket DC-25 criterion "qty × unit_rate ≈ bid_amount is validated per
  * item with an explicit tolerance ... Use exact-decimal string arithmetic
  * (DC-23's dates/words modules are the precedent — no float where paisa
  * matter)").

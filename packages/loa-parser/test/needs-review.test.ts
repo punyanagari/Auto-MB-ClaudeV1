@@ -32,10 +32,10 @@ const PACKAGE_DIR = path.resolve(TEST_DIR, '..');
 const SRC_DIR = path.join(PACKAGE_DIR, 'src');
 
 /**
- * tickets/DC-26.md — the `needsReview` trigger set: six proven traps, plus
+ * legacy ticket DC-26 — the `needsReview` trigger set: six proven traps, plus
  * the "Additional required behaviour" defensive branches (Item Breakup /
  * Rebate / Above Par / Banned-items). Input contract:
- * research/DC-32-loa-parser-contract.md §4 (traps) and §5 (unexercised
+ * docs/reference/loa-parser-contract.md §4 (traps) and §5 (unexercised
  * branches). verify: `pnpm --filter @auto-mb/loa-parser --fail-if-no-match test
  * needs-review` (a filename-substring filter on `vitest run`, matching only
  * this file — every DC-26 assertion lives here so that verify line
@@ -440,7 +440,7 @@ describe('criterion 5: item-code namespace mismatch', () => {
     expect(allFlags).toHaveLength(0);
   });
 
-  // Amendment (manager ratification, tickets/DC-26.md criterion 5,
+  // Amendment (manager ratification, legacy ticket DC-26 criterion 5,
   // 2026-08-05): "a corpus regression asserting zero criterion-5 flags
   // across all six letters -- the test that fails at 260 if the literal
   // reading is ever reintroduced." An EXPLICIT per-letter assertion, not
@@ -475,7 +475,7 @@ describe('criterion 5: item-code namespace mismatch', () => {
   });
 
   // This IS the amendment's required "synthetic fixture (8-digit code under
-  // a null directory -> flag)" case (tickets/DC-26.md criterion 5, manager
+  // a null directory -> flag)" case (legacy ticket DC-26 criterion 5, manager
   // ratification 2026-08-05): "synthetic" here means "constructed to
   // exercise a case the real corpus does not naturally contain," achieved
   // via a single targeted, in-memory token mutation of REAL fixture text --
@@ -935,7 +935,7 @@ describe('never auto-commit (PRODUCT-SPEC §5.1 step 2)', () => {
     // A "work-writing" name: mentions "work" (or "schedule"/"item" in the
     // persistence sense) alongside a write verb. None of this package's
     // exports may match -- it is a pure, read-only extraction library
-    // (module doc, packages/loa/src/index.ts).
+    // (module doc, src/index.ts).
     const writeVerbRe = /(write|create|persist|save|commit|insert|update|delete)/i;
     const workNounRe = /(work|challan)/i;
     const offenders = exportedNames.filter(

@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url';
 /**
  * @auto-mb/loa-parser — pure library holding the six-letter / 281-item IREPS
  * Letter-of-Acceptance regression corpus (DC-22; input contract:
- * research/DC-32-loa-parser-contract.md §0, §3).
+ * docs/reference/loa-parser-contract.md §0, §3).
  *
  * PURE LIBRARY CONTRACT: no database, no network, no filesystem access
  * outside this package's own fixtures/ directory, and no runtime dependency
- * on @auto-mb/db or @auto-mb/api (packages/config/test/workspace-layout.test.ts
- * (e) and packages/loa/test/corpus-manifest.test.ts both enforce this).
+ * on any @auto-mb/* package (test/corpus-manifest.test.ts and
+ * scripts/check-architecture.mjs both enforce this).
  * The fixtures directory is resolved relative to THIS file (import.meta.url),
  * never process.cwd() — root `pnpm test` collects this package's tests from
  * the repo root while `pnpm --filter @auto-mb/loa-parser test` runs them from the
@@ -53,7 +53,7 @@ export {
 } from './items.js';
 export { parseDecimalToMinorUnits, formatMinorUnits } from './decimal.js';
 // DC-24 — pricing-shape classifier (Shape A letter-level percentage vs
-// Shape B per-schedule totals; research/DC-32-loa-parser-contract.md §1).
+// Shape B per-schedule totals; docs/reference/loa-parser-contract.md §1).
 // Re-exported for the same "coherent public surface" reason as DC-23's and
 // DC-25's exports above.
 export {
@@ -111,7 +111,7 @@ const MANIFEST_PATH = path.join(FIXTURES_DIR, 'corpus.json');
  * (`Total Value <advertised> <pct> %Below|%Above|%At Par <net>`), every
  * `Schedule Totals` line reading `0.00`. Shape B: per-schedule totals with no
  * percentage token, where the populated `Schedule Totals` lines sum to the
- * Net Bid Value. See research/DC-32-loa-parser-contract.md §1. */
+ * Net Bid Value. See docs/reference/loa-parser-contract.md §1. */
 export type PricingShape = 'A' | 'B';
 
 /** The percentage is signed by its printed token — `%Below`/`%At Par` apply
@@ -143,7 +143,7 @@ export interface CorpusManifestEntry {
   readonly pricing_shape: PricingShape;
   readonly letter_percentage: LetterPercentage | null;
   /** Redaction mode applied to personal data (officer names, addresses) in
-   * the fixture text. Per the CEO decision (tickets/DC-22.md, "Decided —
+   * the fixture text. Per the CEO decision (legacy ticket DC-22, "Decided —
    * CEO, 2026-07-28"), officer names are retained verbatim rather than
    * redacted, so every entry currently declares the same mode:
    * "verbatim-names-retained". The field exists so a future redaction
@@ -208,7 +208,7 @@ function readFixtureText(entry: CorpusManifestEntry): string {
  * Loads the full six-letter corpus: manifest entry plus raw fixture text
  * for every letter, in `fixtures/corpus.json` order. This is the ONLY
  * sanctioned access path to the fixtures — later parser tickets must not
- * read `packages/loa/fixtures/**` directly.
+ * read `fixtures/**` directly.
  */
 export function loadCorpus(): CorpusLetter[] {
   return readManifest().map((manifest) => ({

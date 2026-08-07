@@ -21,9 +21,9 @@ const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(TEST_DIR, '..');
 
 /**
- * tickets/DC-24.md — pricing-shape classifier: Shape A (letter-level
+ * legacy ticket DC-24 — pricing-shape classifier: Shape A (letter-level
  * percentage) vs Shape B (per-schedule totals), totals reconciliation, the
- * rebate decoy. Input contract: research/DC-32-loa-parser-contract.md §1.
+ * rebate decoy. Input contract: docs/reference/loa-parser-contract.md §1.
  * verify: `pnpm --filter @auto-mb/loa-parser --fail-if-no-match test pricing-shape`
  * (a filename-substring filter on `vitest run`, matching only this file —
  * every DC-24 assertion lives here so that verify line exercises all of
@@ -418,7 +418,7 @@ describe('pricing-shape classifier (DC-24)', () => {
     });
   });
 
-  // ---- R1 ruling (tickets/DC-24.md, 2026-08-05 manager ruling): the
+  // ---- R1 ruling (legacy ticket DC-24, 2026-08-05 manager ruling): the
   // printed Net Bid Value wins the tolerance boundary -----------------------
 
   describe('totals-rounding tolerance: the printed Net Bid Value wins whenever the shape reconciles at all (diff <= 0.01), never the recomputed figure', () => {

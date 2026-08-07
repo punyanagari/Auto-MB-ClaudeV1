@@ -1,6 +1,6 @@
 /**
- * @auto-mb/loa-parser — LOA header/prose extraction (DC-23; tickets/DC-23.md;
- * research/DC-32-loa-parser-contract.md §3).
+ * @auto-mb/loa-parser — LOA header/prose extraction (DC-23; legacy ticket DC-23;
+ * docs/reference/loa-parser-contract.md §3).
  *
  * `extractHeader` is the single entry point: it strips print furniture
  * FIRST (furniture.ts, per the ticket's ordering requirement), then locates
@@ -9,7 +9,7 @@
  * needsReview: true }` — never a partial or guessed value (field.ts).
  *
  * Every regex here is anchored against phrasing verified byte-for-byte
- * across all six corpus fixtures (packages/loa/fixtures/*.txt via
+ * across all six corpus fixtures (fixtures/*.txt via
  * loadCorpus()) — this module never reads a fixture file directly.
  */
 import { parseDdMmYyyy } from './dates.js';
@@ -26,7 +26,7 @@ export interface ContractValueField {
   readonly words: string | null;
   readonly raw: string | null;
   /** true when either half is missing, OR both are present but disagree
-   * (research §1/§4; tickets/DC-23.md: "a mismatch raises needsReview
+   * (research §1/§4; legacy ticket DC-23: "a mismatch raises needsReview
    * rather than the parser picking one"). */
   readonly needsReview: boolean;
 }
