@@ -31,13 +31,27 @@ jobs:
       DATABASE_URL: postgres://auto_mb_app:local-app-change-me@127.0.0.1:5432/auto_mb
       AUTO_MB_APP_DB_PASSWORD: local-app-change-me
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22.16.0
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Proves shell scripts parse and follow shellcheck's static rules;
+      # does not prove runtime behaviour on a cloud VM.
+      - name: Shell lint
+        run: |
+          bash -n scripts/*.sh docker/postgres/init-app-role.sh
+          shellcheck scripts/*.sh docker/postgres/init-app-role.sh
+      # Proves the compose file is structurally valid with default
+      # interpolation; does not prove the services boot.
+      - name: Compose config validation
+        run: docker compose config --quiet
+      # `pnpm verify` includes formatting, lint (with security rules),
+      # typecheck, build, tests against the live PostgreSQL service,
+      # migration validation, architecture checks, config parse checks,
+      # and the secret scan.
       - name: Verify
         run: pnpm verify

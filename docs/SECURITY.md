@@ -67,24 +67,39 @@ Primary risks:
 
 ## 3. CI security baseline
 
-Enforced by CI today:
+Enforced by CI today, with what each control proves:
 
-- TypeScript type check;
-- lint and format check;
-- production build;
-- unit and PostgreSQL integration tests;
-- tenant-isolation tests against the real application role;
-- dependency audit (`pnpm audit --audit-level=high`);
-- migration validation;
-- architecture boundary checks.
+- TypeScript type check, lint, and format check — static correctness only;
+- static security analysis (`eslint-plugin-security` at zero warnings) —
+  catches known-dangerous JavaScript patterns; it is not a full SAST and
+  proves nothing about logic-level vulnerabilities;
+- secret scan (`secretlint` with the recommend preset over the whole tree)
+  — catches committed credentials matching known formats; it cannot detect
+  novel secret formats;
+- production build — the deployable artifacts compile;
+- unit and PostgreSQL integration tests, including tenant-isolation and
+  concurrent-migration proofs against the real application role on every
+  tenant-owned table;
+- dependency audit (`pnpm audit --audit-level=high`) on pull requests,
+  pushes to main, and a weekly schedule — known advisories only;
+- shell script validation (`bash -n` and shellcheck) — parse and static
+  correctness of operational scripts, not their runtime behaviour;
+- configuration parse checks (compose config, environment and package
+  JSON) — structural validity only;
+- migration validation and architecture boundary checks.
 
-Required before the first authenticated endpoint merges (not yet wired; treat as blocking debt for Milestone 1):
+Third-party CI actions are pinned to full commit SHAs.
 
-- secret scan;
-- SAST;
-- container scan;
-- browser security/accessibility smoke tests;
-- authorisation tests.
+Controls that activate with their product surface (adopting the surface
+without the control is a release blocker, not an option):
+
+- authorisation tests — with the first authenticated endpoint (Milestone 1);
+- deeper SAST (semgrep or equivalent) — with the first authenticated
+  endpoint;
+- container image scan — when an Auto-MB application image exists;
+- browser security/accessibility smoke tests — with the first accepted
+  browser workflow;
+- upload malware scanning (ClamAV) — before user uploads are accepted.
 
 Before paid production:
 
