@@ -50,6 +50,10 @@ Then open:
 - API health: `http://localhost:3000/api/health`
 - API docs: `http://localhost:3000/documentation/`
 
+## Cloud agents
+
+`.cursor/environment.json` provisions Cursor cloud agents: `scripts/cloud-install.sh` installs dependencies during environment builds, and `scripts/cloud-start.sh` brings up Docker, PostgreSQL, Gotenberg, and migrations on every agent boot, with `pnpm dev` running in a managed terminal. This repo-managed configuration takes precedence over dashboard-saved environments.
+
 ## Verification
 
 ```bash
