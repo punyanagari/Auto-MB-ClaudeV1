@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { HealthResponse } from '@auto-mb/contracts';
+import { isHealthResponse, type HealthResponse } from '@auto-mb/contracts';
 
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -10,11 +10,19 @@ export function App() {
     void fetch('/api/health', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
-        return (await response.json()) as HealthResponse;
+        const payload: unknown = await response.json();
+        if (!isHealthResponse(payload)) {
+          throw new Error('API returned an unexpected payload');
+        }
+        return payload;
       })
-      .then(setHealth)
+      .then((payload) => {
+        setHealth(payload);
+        setError(null);
+      })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === 'AbortError') return;
+        setHealth(null);
         setError(reason instanceof Error ? reason.message : 'Unknown API error');
       });
 

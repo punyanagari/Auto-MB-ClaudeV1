@@ -1,10 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
+
+const require = createRequire(import.meta.url);
 
 let app: FastifyInstance | undefined;
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await app?.close();
   app = undefined;
 });
@@ -33,18 +37,24 @@ describe('health API', () => {
     });
   });
 
-  it('reports 503, not 500, when the database is unreachable', async () => {
-    app = await buildApp({
-      databaseUrl: 'postgres://127.0.0.1:9/auto_mb',
-    });
-    const response = await app.inject({ method: 'GET', url: '/api/ready' });
+  // Bounded above the 2s readiness-probe timeout so a firewall-DROPped
+  // (rather than refused) port still fails with the real assertion message.
+  it(
+    'reports 503, not 500, when the database is unreachable',
+    { timeout: 15_000 },
+    async () => {
+      app = await buildApp({
+        databaseUrl: 'postgres://127.0.0.1:9/auto_mb',
+      });
+      const response = await app.inject({ method: 'GET', url: '/api/ready' });
 
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({
-      status: 'not-ready',
-      reason: 'database-unreachable',
-    });
-  });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        status: 'not-ready',
+        reason: 'database-unreachable',
+      });
+    },
+  );
 });
 
 describe('error handling', () => {
@@ -82,14 +92,32 @@ describe('error handling', () => {
 });
 
 describe('documentation UI', () => {
-  it('is served by default outside production', async () => {
+  it('is served when NODE_ENV is development', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
     app = await buildApp();
-    const response = await app.inject({ method: 'GET', url: '/documentation' });
+    const response = await app.inject({ method: 'GET', url: '/documentation/' });
 
-    expect([200, 302]).toContain(response.statusCode);
+    expect(response.statusCode).toBe(200);
   });
 
-  it('loads the Swagger UI through the pinned @fastify/static override', async () => {
+  it('fails closed when NODE_ENV is unset or production', async () => {
+    for (const value of ['', 'production']) {
+      vi.stubEnv('NODE_ENV', value);
+      const closedApp = await buildApp();
+      try {
+        const response = await closedApp.inject({
+          method: 'GET',
+          url: '/documentation',
+        });
+        expect(response.statusCode, `NODE_ENV=${value}`).toBe(404);
+      } finally {
+        await closedApp.close();
+      }
+    }
+  });
+
+  it('loads the Swagger UI end to end', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
     app = await buildApp();
     const response = await app.inject({
       method: 'GET',
@@ -99,6 +127,18 @@ describe('documentation UI', () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/html');
     expect(response.body).toContain('swagger');
+  });
+
+  it('resolves the exact @fastify/static version the security override pins', () => {
+    // GHSA-83w8-p2f5-377r: the override in pnpm-workspace.yaml cites this
+    // test, so it must assert the resolved version, not just that the UI
+    // renders (9.x renders the identical UI).
+    const swaggerUiPackagePath = require.resolve('@fastify/swagger-ui/package.json');
+    const swaggerUiRequire = createRequire(swaggerUiPackagePath);
+    const staticPackage = swaggerUiRequire('@fastify/static/package.json') as {
+      version: string;
+    };
+    expect(staticPackage.version).toBe('10.1.2');
   });
 
   it('is not registered when disabled', async () => {

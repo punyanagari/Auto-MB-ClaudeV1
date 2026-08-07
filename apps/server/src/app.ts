@@ -29,24 +29,36 @@ export async function buildApp(
       })
     : undefined;
 
-  if (database) {
-    app.addHook('onClose', async () => {
-      await database.end();
-    });
-  }
+  try {
+    if (database) {
+      app.addHook('onClose', async () => {
+        await database.end();
+      });
+    }
 
-  await app.register(swagger, {
-    openapi: {
-      info: {
-        title: 'Auto-MB API',
-        version: '0.1.0',
-        description: 'Post-award works-contract execution API.',
+    await app.register(swagger, {
+      openapi: {
+        info: {
+          title: 'Auto-MB API',
+          version: '0.1.0',
+          description: 'Post-award works-contract execution API.',
+        },
       },
-    },
-  });
-  const enableDocsUi = options.enableDocsUi ?? process.env.NODE_ENV !== 'production';
-  if (enableDocsUi) {
-    await app.register(swaggerUi, { routePrefix: '/documentation' });
+    });
+    // Fail closed: the docs UI is served only when the environment is
+    // explicitly non-production. An unset NODE_ENV (e.g. a bare
+    // `pnpm start`) must not publish it.
+    const enableDocsUi =
+      options.enableDocsUi ??
+      ['development', 'test'].includes(process.env.NODE_ENV ?? '');
+    if (enableDocsUi) {
+      await app.register(swaggerUi, { routePrefix: '/documentation' });
+    }
+  } catch (error) {
+    // The caller never receives the instance, so onClose will not run.
+    await database?.end();
+    await app.close();
+    throw error;
   }
 
   app.setErrorHandler((error, request, reply) => {
@@ -55,7 +67,8 @@ export async function buildApp(
       error instanceof Error &&
       'statusCode' in error &&
       typeof error.statusCode === 'number' &&
-      error.statusCode >= 400
+      error.statusCode >= 400 &&
+      error.statusCode <= 599
         ? error.statusCode
         : 500;
     void reply.status(statusCode).send(
