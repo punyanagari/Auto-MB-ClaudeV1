@@ -122,13 +122,11 @@ async function seedTenantGraph(
   shaFill: string,
 ): Promise<TenantGraph> {
   return withTenant(app, { organisationId, userId }, async (tx) => {
+    // The bootstrap function is the only path that can create an
+    // organisation under the membership floor: it atomically creates the
+    // organisation, the owner membership, and the audit event.
     await tx`
-      insert into organisations (id, name, slug)
-      values (${organisationId}, ${name}, ${slug})
-    `;
-    await tx`
-      insert into organisation_memberships (organisation_id, user_id, role)
-      values (${organisationId}, ${userId}, 'owner')
+      select app_private.create_organisation_with_owner(${name}, ${slug}, ${organisationId})
     `;
     const [work] = await tx<{ id: string }[]>`
       insert into works (
@@ -312,17 +310,21 @@ describe('application role security posture', () => {
     }
   });
 
-  it('has RLS enabled and forced on every tenant table, live in the catalog', async () => {
+  it('has RLS enabled and forced on every public table except the ledger, live in the catalog', async () => {
     const rows = await admin<
       { relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }[]
     >`
       select relname, relrowsecurity, relforcerowsecurity
       from pg_class
       where relnamespace = 'public'::regnamespace
-        and relname = any(${admin.array([...TENANT_TABLES])})
+        and relkind = 'r'
+        and relname <> 'schema_migrations'
       order by relname
     `;
-    expect(rows).toHaveLength(TENANT_TABLES.length);
+    expect(rows.length).toBeGreaterThanOrEqual(TENANT_TABLES.length);
+    for (const table of TENANT_TABLES) {
+      expect(rows.map((row) => row.relname)).toContain(table);
+    }
     for (const row of rows) {
       expect(row, row.relname).toMatchObject({
         relrowsecurity: true,
@@ -484,6 +486,85 @@ describe('cross-tenant isolation on every tenant table', () => {
         },
       ),
     ).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('membership floor', () => {
+  it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
+    // userB is not a member of organisation A: every read is empty and
+    // every write is denied, no matter what the handler stamped.
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userB },
+      async (tx) => {
+        const [bound] = await tx<{ organisation_id: string | null }[]>`
+          select app_private.current_organisation_id() as organisation_id
+        `;
+        expect(bound?.organisation_id).toBeNull();
+
+        for (const table of TENANT_TABLES) {
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationA.id),
+            table,
+          ).toBe(0);
+        }
+      },
+    );
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userB },
+        (tx) => tx`
+          insert into audit_events (organisation_id, action, entity_type)
+          values (${organisationA.id}, 'integration.floor-breach', 'works')
+        `,
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('does not bind tenant context for a disabled membership', async () => {
+    await admin`
+      update organisation_memberships set status = 'disabled'
+      where organisation_id = ${organisationB.id} and user_id = ${userB}
+    `;
+    try {
+      await withTenant(
+        app,
+        { organisationId: organisationB.id, userId: userB },
+        async (tx) => {
+          const works = await tx`select id from works`;
+          expect(works).toHaveLength(0);
+        },
+      );
+    } finally {
+      await admin`
+        update organisation_memberships set status = 'active'
+        where organisation_id = ${organisationB.id} and user_id = ${userB}
+      `;
+    }
+  });
+
+  it('refuses organisation bootstrap without a user context', async () => {
+    await expect(
+      app.begin(
+        (tx) => tx`
+        select app_private.create_organisation_with_owner('No User Org', 'no-user-org')
+      `,
+      ),
+    ).rejects.toMatchObject({ code: '28000' });
+  });
+
+  it('lets a member list their organisations before selecting one', async () => {
+    const organisations = await withUserContext(
+      app,
+      userA,
+      (tx) =>
+        tx<{ id: string; name: string }[]>`
+          select id, name from organisations order by id
+        `,
+    );
+    expect(organisations).toEqual([{ id: organisationA.id, name: organisationA.name }]);
   });
 });
 

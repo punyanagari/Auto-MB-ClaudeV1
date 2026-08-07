@@ -22,14 +22,14 @@ beforeAll(async () => {
     files.map((name) => readFile(path.join(migrationsDirectory, name), 'utf8')),
   );
   allSql = contents.join('\n');
-  createdTables = [...allSql.matchAll(/^CREATE TABLE (\w+)/gm)].map(
+  createdTables = [...allSql.matchAll(/^create table (\w+)/gim)].map(
     (match) => match[1] ?? '',
   );
 });
 
 describe('tenant migration contract', () => {
   it('enables and forces RLS on every table any migration creates', () => {
-    expect(createdTables.length).toBeGreaterThanOrEqual(10);
+    expect(createdTables.length).toBeGreaterThanOrEqual(15);
     for (const table of createdTables) {
       expect(allSql, table).toContain(
         `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`,
