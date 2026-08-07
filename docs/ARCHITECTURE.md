@@ -59,9 +59,12 @@ Tenant isolation is enforced by:
 3. `FORCE ROW LEVEL SECURITY`;
 4. a non-owner, non-superuser application role without `BYPASSRLS`;
 5. transaction-local `app.organisation_id` context;
-6. integration tests that attempt cross-tenant access through the real pool.
+6. the membership floor: `app_private.current_organisation_id()` returns the context organisation only when `app.user_id` holds an active membership in it, so every policy fails closed against a stamped-but-illegitimate organisation id;
+7. integration tests that attempt cross-tenant access through the real pool and the real HTTP endpoints.
 
-A user may belong to multiple organisations through memberships. The selected organisation is resolved server-side from the authenticated session and membership; a client-supplied organisation id is never trusted by itself.
+A user may belong to multiple organisations through memberships. The client names its selected organisation with the `x-organisation-id` header, but the database membership floor decides whether that selection binds; a client-supplied organisation id is never trusted by itself. Organisation creation goes through `app_private.create_organisation_with_owner`, the atomic SECURITY DEFINER bootstrap owned by the non-login `auto_mb_definer` role.
+
+Identity lives in Better Auth (email/password, server-side sessions, two-factor path) over its own `auth_*` tables; those tables are identity-level rather than tenant-owned and carry explicit service RLS policies.
 
 ## 5. Database and transactions
 

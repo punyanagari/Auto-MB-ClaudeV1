@@ -92,12 +92,20 @@ Enforced by CI today, with what each control proves:
 
 Third-party CI actions are pinned to full commit SHAs.
 
+Activated with Milestone 1 (authenticated endpoints exist):
+
+- authorisation tests — live HTTP proofs that non-members are denied with
+  a valid organisation id, member management is owner-only, and sign-out
+  revokes access;
+- deeper SAST — Semgrep (pinned version, curated `p/ci` ruleset,
+  `--metrics=off`) as a blocking CI job; it proves no match against those
+  rules, not the absence of logic-level vulnerabilities;
+- the database membership floor — `current_organisation_id()` binds only
+  for an active membership of the session user, proven by live tests.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 
-- authorisation tests — with the first authenticated endpoint (Milestone 1);
-- deeper SAST (semgrep or equivalent) — with the first authenticated
-  endpoint;
 - container image scan — when an Auto-MB application image exists;
 - browser security/accessibility smoke tests — with the first accepted
   browser workflow;

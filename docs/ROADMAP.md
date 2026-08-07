@@ -14,13 +14,20 @@ Exit criteria:
 
 ## Milestone 1 — organisation, identity, and isolation
 
-- Better Auth integration;
-- organisation creation and selection;
-- a database-enforced membership floor: tenant context binds only when the authenticated user holds an active membership in the selected organisation, so a compromised or buggy handler cannot stamp an arbitrary organisation id;
-- four roles, Work scope, issue/cancel authority;
-- session revocation and privileged-user MFA path;
-- RLS tests through the real application role and pool;
-- audit events for identity and membership changes.
+Delivered:
+
+- Better Auth integration (email/password, server-side sessions, sign-out revocation, two-factor path via the twoFactor plugin);
+- organisation creation (atomic SECURITY DEFINER bootstrap) and selection via the validated `x-organisation-id` header;
+- the database-enforced membership floor: tenant context binds only when the authenticated user holds an active membership in the selected organisation, so a compromised or buggy handler cannot stamp an arbitrary organisation id — proven live at both the SQL and HTTP layers;
+- four roles with Work scope and issue/cancel authority stored per membership; member management is owner-only;
+- RLS and authorisation tests through the real application role, pool, and HTTP endpoints;
+- audit events for organisation creation and membership changes.
+
+Remaining before Milestone 1 closes:
+
+- MFA enrolment/enforcement policy for privileged users (the twoFactor capability exists; the policy requiring it for owners does not yet);
+- identity-level audit events (sign-in/sign-out are not organisation-scoped; audit_events requires an organisation id — needs a schema decision);
+- role/authority enforcement on Work and Delivery Challan operations activates with the Milestone 2 endpoints that expose them.
 
 Exit: Organisation A cannot access Organisation B through any endpoint, identifier, job, or attachment path.
 

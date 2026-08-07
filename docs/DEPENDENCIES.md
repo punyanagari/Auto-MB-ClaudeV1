@@ -16,19 +16,18 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 
 ## Adopt with the relevant milestone
 
-| Dependency        | Trigger                                                                                         |
-| ----------------- | ----------------------------------------------------------------------------------------------- |
-| Better Auth       | Identity milestone                                                                              |
-| pg-boss           | First asynchronous extraction/PDF job                                                           |
-| Testcontainers    | Only if the compose/CI-service model for database tests becomes insufficient (it is in use now) |
-| Playwright + axe  | First user workflow UI                                                                          |
-| ClamAV            | Upload quarantine before design-partner pilot                                                   |
-| OpenTelemetry     | Staging deployment                                                                              |
-| k6                | Published capacity benchmark                                                                    |
-| OpenTofu          | AWS staging infrastructure                                                                      |
-| Semgrep/Trivy/ZAP | Deeper SAST at first authenticated endpoint; container scan at first image; DAST at staging     |
+| Dependency       | Trigger                                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| pg-boss          | First asynchronous extraction/PDF job                                                           |
+| Testcontainers   | Only if the compose/CI-service model for database tests becomes insufficient (it is in use now) |
+| Playwright + axe | First user workflow UI                                                                          |
+| ClamAV           | Upload quarantine before design-partner pilot                                                   |
+| OpenTelemetry    | Staging deployment                                                                              |
+| k6               | Published capacity benchmark                                                                    |
+| OpenTofu         | AWS staging infrastructure                                                                      |
+| Trivy/ZAP        | Container scan at first application image; DAST at staging                                      |
 
-Already adopted: Renovate (pin strategy with cooldown), secretlint (secret scan in `pnpm verify`), eslint-plugin-security (static security lint).
+Already adopted: Renovate (pin strategy with cooldown), secretlint (secret scan in `pnpm verify`), eslint-plugin-security (static security lint), Better Auth + node-postgres (identity; the `pg` pool serves Better Auth only, the application keeps postgres.js), Semgrep (pinned, CI SAST job).
 
 ## Explicit non-defaults
 
