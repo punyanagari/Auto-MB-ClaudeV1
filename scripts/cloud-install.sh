@@ -7,3 +7,22 @@ set -euo pipefail
 corepack enable
 corepack prepare pnpm@11.17.0 --activate
 pnpm install --frozen-lockfile
+
+# Not every base VM ships Docker (verified: just-in-time boots have no
+# docker binary), so bake it into the snapshot. cloud-start.sh repeats this
+# check as a fallback for boots that never went through a build.
+if ! command -v docker >/dev/null 2>&1; then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-v2
+fi
+
+# Cache warming only: pre-pull the compose images into the snapshot when the
+# build pod can run a daemon. A miss slows the first boot but breaks
+# nothing, so this step warns instead of failing the build.
+if sudo docker info >/dev/null 2>&1 ||
+  { sudo service docker start >/dev/null 2>&1 && sleep 3 && sudo docker info >/dev/null 2>&1; }; then
+  sudo docker compose pull -q postgres gotenberg ||
+    echo "warning: compose image pre-pull failed; images will pull at first boot" >&2
+else
+  echo "warning: Docker daemon unavailable in the build pod; images will pull at first boot" >&2
+fi

@@ -4,24 +4,34 @@
 # `pnpm verify` and the dev servers immediately. Must stay idempotent.
 set -euo pipefail
 
-if ! docker info >/dev/null 2>&1; then
+# Just-in-time boots (no build snapshot) land on base VMs without Docker;
+# snapshot-backed boots already carry it from cloud-install.sh.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker missing from this VM; installing"
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-v2
+fi
+
+# The agent user is not guaranteed docker-group membership, so every docker
+# invocation here goes through sudo.
+if ! sudo docker info >/dev/null 2>&1; then
   sudo service docker start >/dev/null 2>&1 || sudo systemctl start docker >/dev/null 2>&1 || true
   for _ in $(seq 1 30); do
-    docker info >/dev/null 2>&1 && break
+    sudo docker info >/dev/null 2>&1 && break
     sleep 1
   done
 fi
-docker info >/dev/null 2>&1 || {
+sudo docker info >/dev/null 2>&1 || {
   echo "Docker daemon did not start" >&2
   exit 1
 }
 
 [ -f .env ] || cp .env.example .env
 
-docker compose up -d postgres gotenberg
+sudo docker compose up -d postgres gotenberg
 
 pg_ready() {
-  docker compose exec -T postgres \
+  sudo docker compose exec -T postgres \
     pg_isready -U "${POSTGRES_ADMIN_USER:-auto_mb_owner}" -d "${POSTGRES_DB:-auto_mb}" >/dev/null 2>&1
 }
 
