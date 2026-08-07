@@ -35,7 +35,7 @@ describe('health API', () => {
 
   it('reports 503, not 500, when the database is unreachable', async () => {
     app = await buildApp({
-      databaseUrl: 'postgres://nobody:nope@127.0.0.1:9/auto_mb',
+      databaseUrl: 'postgres://127.0.0.1:9/auto_mb',
     });
     const response = await app.inject({ method: 'GET', url: '/api/ready' });
 
@@ -87,6 +87,18 @@ describe('documentation UI', () => {
     const response = await app.inject({ method: 'GET', url: '/documentation' });
 
     expect([200, 302]).toContain(response.statusCode);
+  });
+
+  it('loads the Swagger UI through the pinned @fastify/static override', async () => {
+    app = await buildApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/documentation/',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/html');
+    expect(response.body).toContain('swagger');
   });
 
   it('is not registered when disabled', async () => {

@@ -11,7 +11,9 @@ allowBuilds:
 
 # @fastify/swagger-ui 6.1.0 pins the vulnerable @fastify/static 9.x
 # (GHSA-83w8-p2f5-377r, route guard bypass via path traversal). 6.1.1 makes
-# the same jump but is younger than the minimum-release-age cooldown; drop
-# this override when @fastify/swagger-ui is bumped past 6.1.1.
+# the same jump but is younger than the minimum-release-age cooldown.
+# Pinned to the exact version the server tests exercise (the Swagger UI
+# load test proves the override keeps the docs working); drop this override
+# when @fastify/swagger-ui is bumped past 6.1.1.
 overrides:
-  '@fastify/static': '>=10.1.1'
+  '@fastify/static': '10.1.2'
