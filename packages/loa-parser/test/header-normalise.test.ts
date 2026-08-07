@@ -42,28 +42,18 @@ describe('print-furniture stripping', () => {
   it('recognises both observed furniture forms on all six fixtures', () => {
     for (const id of ALL_LETTER_IDS) {
       const { text } = loadLetter(id);
-      const furnitureLines = text
-        .split('\n')
-        .filter((l) => isPrintFurnitureLine(l));
-      expect(
-        furnitureLines.length,
-        `${id}: expected furniture lines`,
-      ).toBeGreaterThan(0);
+      const furnitureLines = text.split('\n').filter((l) => isPrintFurnitureLine(l));
+      expect(furnitureLines.length, `${id}: expected furniture lines`).toBeGreaterThan(
+        0,
+      );
       // Every fixture repeats the header/footer once per printed page — both
       // forms must be present given the corpus is a multi-page print.
       const headerForm = furnitureLines.some(
-        (l) =>
-          /ireps\.gov\.in\/epsn\/w\s?orks/.test(l) && !l.startsWith('https'),
+        (l) => /ireps\.gov\.in\/epsn\/w\s?orks/.test(l) && !l.startsWith('https'),
       );
-      const footerForm = furnitureLines.some((l) =>
-        l.trim().startsWith('https://'),
-      );
-      expect(headerForm, `${id}: page-header furniture form present`).toBe(
-        true,
-      );
-      expect(footerForm, `${id}: page-footer furniture form present`).toBe(
-        true,
-      );
+      const footerForm = furnitureLines.some((l) => l.trim().startsWith('https://'));
+      expect(headerForm, `${id}: page-header furniture form present`).toBe(true);
+      expect(footerForm, `${id}: page-footer furniture form present`).toBe(true);
     }
   });
 
@@ -87,9 +77,7 @@ describe('print-furniture stripping', () => {
     for (const id of ALL_LETTER_IDS) {
       const { text } = loadLetter(id);
       const stripped = stripPrintFurniture(text);
-      expect(stripped, `${id}: leaked "ireps.gov.in"`).not.toContain(
-        'ireps.gov.in',
-      );
+      expect(stripped, `${id}: leaked "ireps.gov.in"`).not.toContain('ireps.gov.in');
       expect(stripped, `${id}: leaked "https://"`).not.toContain('https://');
       expect(
         printHeaderDateTimeRe.test(stripped),
@@ -119,17 +107,12 @@ describe('print-furniture stripping', () => {
       const stripped = stripPrintFurniture(text);
       const strippedLines = stripped.split('\n');
 
-      const looseFurnitureLines = originalLines.filter((l) =>
-        looseFurnitureRe.test(l),
+      const looseFurnitureLines = originalLines.filter((l) => looseFurnitureRe.test(l));
+      expect(looseFurnitureLines.length, `${id}: known furniture-line count`).toBe(
+        expectedFurnitureLineCount[id],
       );
-      expect(
-        looseFurnitureLines.length,
-        `${id}: known furniture-line count`,
-      ).toBe(expectedFurnitureLineCount[id]);
 
-      const expectedRemaining = originalLines.filter(
-        (l) => !looseFurnitureRe.test(l),
-      );
+      const expectedRemaining = originalLines.filter((l) => !looseFurnitureRe.test(l));
       expect(
         strippedLines,
         `${id}: preserves every non-furniture line, in order`,
@@ -164,14 +147,12 @@ describe('print-furniture stripping', () => {
       const { text } = loadLetter(id);
       const stripped = stripPrintFurniture(text);
       const markerIdx = stripped.indexOf(ITEM_TABLE_MARKER);
-      const headerRegion =
-        markerIdx === -1 ? stripped : stripped.slice(0, markerIdx);
+      const headerRegion = markerIdx === -1 ? stripped : stripped.slice(0, markerIdx);
       const flattenedHeaderInput = flatten(headerRegion);
 
-      expect(
-        flattenedHeaderInput,
-        `${id}: flattened header input`,
-      ).not.toContain('ireps.gov.in');
+      expect(flattenedHeaderInput, `${id}: flattened header input`).not.toContain(
+        'ireps.gov.in',
+      );
       expect(
         printHeaderDateTimeRe.test(flattenedHeaderInput),
         `${id}: flattened header input carries a print-date pattern`,
@@ -238,12 +219,9 @@ describe('split letter-number rejoin', () => {
       'PL273-JHS': 'JHANSI DIVISION-S AND T / JHS-N-W-71-25 / 00341490150678',
       'PL280-ADI':
         'AHMEDABAD DIVISION-S AND T / DRM-SnT-ADI-Tele12of25-26 / 00341490157359',
-      'PL275-BKN':
-        'BIKANER DIVISION-S AND T / SnT-BKN-25-26-26 / 00341490151147',
-      'PL276-GTL':
-        'GUNTAKAL DIVISION-S AND T / 01-SNT-03-2026 / 00341490156039',
-      'PL270-CRB':
-        'MUMBAI-CST-DIVISION-S AND T / CR-BB-TELE-2025-46 / 00341490147964',
+      'PL275-BKN': 'BIKANER DIVISION-S AND T / SnT-BKN-25-26-26 / 00341490151147',
+      'PL276-GTL': 'GUNTAKAL DIVISION-S AND T / 01-SNT-03-2026 / 00341490156039',
+      'PL270-CRB': 'MUMBAI-CST-DIVISION-S AND T / CR-BB-TELE-2025-46 / 00341490147964',
       'PL281-BB':
         'MUMBAI CENTRAL DIVISION-S AND T / WR-MMCT-SnT-STTD-34-2025 / 00341490158364',
     };
@@ -285,9 +263,7 @@ describe('unlocatable field -> null + retained raw candidate + needsReview (neve
 
     // Never a partial value: the truncated naive-regex value must not leak
     // through either.
-    expect(header.letterNumber.value).not.toBe(
-      'JHANSI DIVISION-S AND T / JHS-N-',
-    );
+    expect(header.letterNumber.value).not.toBe('JHANSI DIVISION-S AND T / JHS-N-');
   });
 
   it('a field genuinely absent from the source (PL276-GTL has no "Consignee:" header paragraph) is null + needsReview, not guessed', () => {
@@ -314,9 +290,7 @@ describe('unlocatable field -> null + retained raw candidate + needsReview (neve
 
   it('File No is captured when present (PL280-ADI only)', () => {
     const header = extractHeader(loadLetter('PL280-ADI').text);
-    expect(header.fileNo.value).toBe(
-      'Computer file no.713979 WR-ADI0SnT(STMC)/3/2026',
-    );
+    expect(header.fileNo.value).toBe('Computer file no.713979 WR-ADI0SnT(STMC)/3/2026');
     expect(header.fileNo.needsReview).toBe(false);
   });
 });
@@ -333,26 +307,14 @@ describe('header/prose fields, all six letters', () => {
       expect(header.division.value, `${id}: division`).not.toBeNull();
       expect(header.officeAddress.value, `${id}: officeAddress`).not.toBeNull();
       expect(header.tenderNumber.value, `${id}: tenderNumber`).not.toBeNull();
-      expect(
-        header.tenderClosingDate.value,
-        `${id}: tenderClosingDate`,
-      ).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(
-        header.workDescription.value,
-        `${id}: workDescription`,
-      ).not.toBeNull();
-      expect(header.bidId.value, `${id}: bidId`).not.toBeNull();
-      expect(header.bidDate.value, `${id}: bidDate`).toMatch(
+      expect(header.tenderClosingDate.value, `${id}: tenderClosingDate`).toMatch(
         /^\d{4}-\d{2}-\d{2}$/,
       );
-      expect(
-        header.contractorName.value,
-        `${id}: contractorName`,
-      ).not.toBeNull();
-      expect(
-        header.contractorAddress.value,
-        `${id}: contractorAddress`,
-      ).not.toBeNull();
+      expect(header.workDescription.value, `${id}: workDescription`).not.toBeNull();
+      expect(header.bidId.value, `${id}: bidId`).not.toBeNull();
+      expect(header.bidDate.value, `${id}: bidDate`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(header.contractorName.value, `${id}: contractorName`).not.toBeNull();
+      expect(header.contractorAddress.value, `${id}: contractorAddress`).not.toBeNull();
       expect(header.signatoryName.value, `${id}: signatoryName`).not.toBeNull();
       expect(
         header.signatoryDesignation.value,
@@ -364,8 +326,7 @@ describe('header/prose fields, all six letters', () => {
   it('the letter-number-derived division agrees with the office-address-block division on all six letters', () => {
     for (const id of ALL_LETTER_IDS) {
       const header = extractHeader(loadLetter(id).text);
-      const divisionFromLetterNumber =
-        header.letterNumber.value?.split(' / ')[0];
+      const divisionFromLetterNumber = header.letterNumber.value?.split(' / ')[0];
       expect(header.division.value, id).toBe(divisionFromLetterNumber);
     }
   });
@@ -424,9 +385,7 @@ describe('header/prose fields, all six letters', () => {
 
     const header270 = extractHeader(loadLetter('PL270-CRB').text);
     expect(header270.emd.amount).toBe(1127900);
-    expect(header270.emd.irepsReferenceId).toBe(
-      'PE514428316551, PE793028316475',
-    );
+    expect(header270.emd.irepsReferenceId).toBe('PE514428316551, PE793028316475');
   });
 
   it('security-deposit percentages and clause reference, including a decimal clause number ("clause 16.1")', () => {
@@ -435,9 +394,7 @@ describe('header/prose fields, all six letters', () => {
     expect(header.securityDeposit.capPercent).toBe(5);
     // The clause-reference regex must not truncate at the decimal point
     // WITHIN the clause number itself.
-    expect(header.securityDeposit.clauseReference).toBe(
-      'clause 16.1 of GCC-2022',
-    );
+    expect(header.securityDeposit.clauseReference).toBe('clause 16.1 of GCC-2022');
     expect(header.securityDeposit.needsReview).toBe(false);
   });
 
@@ -540,9 +497,7 @@ describe('header/prose fields, all six letters', () => {
 
     // Nothing discarded: the whole prefix is retained verbatim...
     expect(header.officerInCharge.value).toContain('DSTE/JHS and ADSTE/GWL');
-    expect(header.officerInCharge.value).toContain(
-      'SSE/TELE/GWL will be consignee',
-    );
+    expect(header.officerInCharge.value).toContain('SSE/TELE/GWL will be consignee');
     // ...and flagged, since the split points could not be proven safe.
     expect(header.officerInCharge.needsReview).toBe(true);
   });
@@ -623,9 +578,7 @@ describe('contract value: figures + words, mismatch -> needsReview', () => {
       'works out to Rs. 9999999.99 (Rupees Thirty Lakh',
     );
     expect(corrupted).not.toBe(text); // the transform actually changed something
-    expect(loadLetter('PL273-JHS').text).toContain(
-      'works out to Rs. 3046426.56',
-    ); // fixture untouched
+    expect(loadLetter('PL273-JHS').text).toContain('works out to Rs. 3046426.56'); // fixture untouched
 
     const header = extractHeader(corrupted);
     expect(header.contractValue.figures).toBe(9999999.99);
@@ -665,9 +618,7 @@ describe('date normalisation: DD/MM/YYYY -> YYYY-MM-DD, no timezone-aware dateti
     const runUnder = (tz: string): string => {
       vi.stubEnv('TZ', tz);
       try {
-        const headers = loadCorpus().map((letter) =>
-          extractHeader(letter.text),
-        );
+        const headers = loadCorpus().map((letter) => extractHeader(letter.text));
         return JSON.stringify(headers);
       } finally {
         vi.unstubAllEnvs();
@@ -710,9 +661,7 @@ function deleteLetterNumberBlock(text: string): string {
   const lines = text.split('\n');
   const letterNoIdx = lines.findIndex((l) => /Letter No\s*:/.test(l));
   if (letterNoIdx === -1) {
-    throw new Error(
-      'test setup bug: fixture has no "Letter No:" line to delete',
-    );
+    throw new Error('test setup bug: fixture has no "Letter No:" line to delete');
   }
   // Locate the immediately-following "Dated:" line and the continuation line
   // after it (both non-blank, per the corpus's observed layout).
@@ -726,9 +675,7 @@ function deleteLetterNumberBlock(text: string): string {
     break;
   }
   if (datedIdx === -1 || !/Dated\s*:/.test(lines[datedIdx] ?? '')) {
-    throw new Error(
-      'test setup bug: no "Dated:" line found after "Letter No:"',
-    );
+    throw new Error('test setup bug: no "Dated:" line found after "Letter No:"');
   }
   let continuationIdx = -1;
   for (let i = datedIdx + 1; i < lines.length; i += 1) {
@@ -740,9 +687,7 @@ function deleteLetterNumberBlock(text: string): string {
     break;
   }
   if (continuationIdx === -1) {
-    throw new Error(
-      'test setup bug: no continuation line found after "Dated:"',
-    );
+    throw new Error('test setup bug: no continuation line found after "Dated:"');
   }
   const kept = lines.filter(
     (_, i) => i !== letterNoIdx && i !== datedIdx && i !== continuationIdx,
@@ -759,7 +704,5 @@ function collectStringValues(value: unknown): string[] {
   if (value === null || typeof value !== 'object') {
     return [];
   }
-  return Object.values(value as Record<string, unknown>).flatMap(
-    collectStringValues,
-  );
+  return Object.values(value as Record<string, unknown>).flatMap(collectStringValues);
 }

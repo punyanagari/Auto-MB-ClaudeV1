@@ -51,7 +51,10 @@ for (const file of await collectFiles(root)) {
   if (relative.startsWith('apps/web/') && /from ['"]@auto-mb\/db/.test(source)) {
     errors.push(`web must not import database package: ${relative}`);
   }
-  if (relative.startsWith('packages/loa-parser/') && /from ['"]@auto-mb\//.test(source)) {
+  if (
+    relative.startsWith('packages/loa-parser/') &&
+    /from ['"]@auto-mb\//.test(source)
+  ) {
     errors.push(`LOA parser must remain independent: ${relative}`);
   }
 }

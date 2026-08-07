@@ -13,10 +13,13 @@
     "migrate": "tsx src/migrate.ts",
     "check:migrations": "tsx src/check-migrations.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@auto-mb/testkit": "workspace:*"
   }
 }

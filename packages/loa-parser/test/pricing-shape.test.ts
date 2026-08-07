@@ -100,9 +100,7 @@ const SHAPE_B_CASES: {
     id: 'PL270-CRB',
     advertised: 195574112.38,
     contract: 169228497.35,
-    scheduleTotals: [
-      88677087.41, 16650896.17, 45956497.18, 8629251.2, 9314765.39,
-    ],
+    scheduleTotals: [88677087.41, 16650896.17, 45956497.18, 8629251.2, 9314765.39],
   },
 ];
 
@@ -235,9 +233,7 @@ describe('pricing-shape classifier (DC-24)', () => {
       const result = classifyPricingShape(text);
       expect(result.letter_percentage_direction).toBe('above');
       expect(result.contract_value).toBe(147535947.85);
-      expect(result.contract_value).toBeGreaterThan(
-        result.advertised_value ?? 0,
-      );
+      expect(result.contract_value).toBeGreaterThan(result.advertised_value ?? 0);
     });
   });
 
@@ -255,9 +251,9 @@ describe('pricing-shape classifier (DC-24)', () => {
         expect(result.letter_percentage).toBeNull();
         expect(result.letter_percentage_direction).toBeNull();
         expect(result.needsReview).toBe(false);
-        expect(
-          result.scheduleTotals.map((e: ScheduleTotalEntry) => e.total),
-        ).toEqual(scheduleTotals);
+        expect(result.scheduleTotals.map((e: ScheduleTotalEntry) => e.total)).toEqual(
+          scheduleTotals,
+        );
       },
     );
 
@@ -555,9 +551,7 @@ describe('pricing-shape classifier (DC-24)', () => {
       for (const { text } of loadCorpus()) {
         const result = classifyPricingShape(text);
         expect(result.pricing_shape).not.toBeNull();
-        expect(['letter_percentage', 'per_schedule']).toContain(
-          result.pricing_shape,
-        );
+        expect(['letter_percentage', 'per_schedule']).toContain(result.pricing_shape);
       }
     });
   });

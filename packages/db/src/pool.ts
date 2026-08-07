@@ -11,7 +11,9 @@ export function createDatabasePool(options: DatabasePoolOptions): Sql {
     max: options.max ?? 10,
     idle_timeout: 20,
     connect_timeout: 10,
-    application_name: options.applicationName ?? 'auto-mb',
+    connection: {
+      application_name: options.applicationName ?? 'auto-mb',
+    },
     transform: { undefined: null },
   });
 }

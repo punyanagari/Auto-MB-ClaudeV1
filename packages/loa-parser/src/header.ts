@@ -13,13 +13,7 @@
  * loadCorpus()) — this module never reads a fixture file directly.
  */
 import { parseDdMmYyyy } from './dates.js';
-import {
-  found,
-  notFound,
-  optionalAbsent,
-  preview,
-  type FieldResult,
-} from './field.js';
+import { found, notFound, optionalAbsent, preview, type FieldResult } from './field.js';
 import { stripPrintFurniture } from './furniture.js';
 import { extractLetterNumberAndDate } from './letter-number.js';
 import { flatten, hyphenJoin, paragraphs } from './text.js';
@@ -193,8 +187,7 @@ function extractContractorNameAddress(headerText: string): {
   const addressStartIdx = blockLines.findIndex((l) => /^S\.?\s*No\b/i.test(l));
   const nameLines =
     addressStartIdx === -1 ? blockLines : blockLines.slice(0, addressStartIdx);
-  const addressLines =
-    addressStartIdx === -1 ? [] : blockLines.slice(addressStartIdx);
+  const addressLines = addressStartIdx === -1 ? [] : blockLines.slice(addressStartIdx);
 
   const nameValue = hyphenJoin(nameLines);
   const addressValue = addressLines.join(' ').trim();
@@ -240,8 +233,7 @@ function extractTenderAndBid(flat: string): {
     const [full, number, day, month, year] = tenderMatch;
     tenderNumber = found((number ?? '').trim(), full ?? '');
     const iso = parseDdMmYyyy(`${day ?? ''}-${month ?? ''}-${year ?? ''}`);
-    tenderClosingDate =
-      iso === null ? notFound(full ?? null) : found(iso, full ?? '');
+    tenderClosingDate = iso === null ? notFound(full ?? null) : found(iso, full ?? '');
   }
 
   const workDescMatch = WORK_DESC_RE.exec(flat);
@@ -271,8 +263,7 @@ function extractTenderAndBid(flat: string): {
 // contract value (figures + words, mismatch -> needsReview)
 // ---------------------------------------------------------------------------
 
-const CONTRACT_VALUE_RE =
-  /works out to Rs\.\s*([\d,]+(?:\.\d+)?)\s*\(([^)]+?)\)/i;
+const CONTRACT_VALUE_RE = /works out to Rs\.\s*([\d,]+(?:\.\d+)?)\s*\(([^)]+?)\)/i;
 
 function parseFigures(raw: string): number | null {
   const n = Number.parseFloat(raw.replace(/,/g, ''));
@@ -298,9 +289,7 @@ function extractContractValue(flat: string): ContractValueField {
   const words = (wordsRaw ?? '').trim();
   const wordsValue = parseRupeesWords(words);
   const needsReview =
-    figures === null ||
-    wordsValue === null ||
-    !valuesMatch(figures, wordsValue);
+    figures === null || wordsValue === null || !valuesMatch(figures, wordsValue);
   return {
     figures,
     words: words.length > 0 ? words : null,
@@ -369,9 +358,7 @@ function extractSecurityDeposit(flat: string): SecurityDepositField {
     clauseReference: clauseReference.length > 0 ? clauseReference : null,
     raw: full ?? null,
     needsReview:
-      recoveryPercent === null ||
-      capPercent === null ||
-      clauseReference.length === 0,
+      recoveryPercent === null || capPercent === null || clauseReference.length === 0,
   };
 }
 
@@ -381,8 +368,7 @@ function extractSecurityDeposit(flat: string): SecurityDepositField {
 
 const PG_RE =
   /amounting to Rs\.\s*([\d,]+(?:\.\d+)?)\s*\(([^)]+?)\)\s*within\s+(\d+)\s+days\s+from the date of issue of Letter of Acceptance,\s*valid up to stipulated date of completion plus\s+(\d+)\s+days/i;
-const PENAL_INTEREST_RE =
-  /penal\s*interest of\s+(\d+(?:\.\d+)?)\s*%?\s*per annum/i;
+const PENAL_INTEREST_RE = /penal\s*interest of\s+(\d+(?:\.\d+)?)\s*%?\s*per annum/i;
 
 function extractPerformanceGuarantee(flat: string): PerformanceGuaranteeField {
   const m = PG_RE.exec(flat);
@@ -665,9 +651,7 @@ function extractSignatory(headerText: string): {
   }
   const [designationLine, nameLine] = preceding;
   if (designationLine === undefined || nameLine === undefined) {
-    const raw = preview(
-      lines.slice(Math.max(0, dsIdx - 6), dsIdx + 1).join('\n'),
-    );
+    const raw = preview(lines.slice(Math.max(0, dsIdx - 6), dsIdx + 1).join('\n'));
     return {
       signatoryName: notFound(raw),
       signatoryDesignation: notFound(raw),
@@ -747,8 +731,7 @@ export function extractHeader(rawText: string): LoaHeader {
   const flat = flatten(headerText);
   const paras = paragraphs(headerText);
 
-  const { zone, division, officeAddress } =
-    extractZoneDivisionAddress(headerText);
+  const { zone, division, officeAddress } = extractZoneDivisionAddress(headerText);
   const { letterNumber, letterDate } = extractLetterNumberAndDate(headerText);
   const { contractorName, contractorAddress } =
     extractContractorNameAddress(headerText);

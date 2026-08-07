@@ -11,6 +11,7 @@ export type DateOnly = Static<typeof DateOnlySchema>;
 
 export const DecimalStringSchema = Type.String({
   pattern: '^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,3})?$',
-  description: 'Decimal value transported as a string; authoritative arithmetic is not binary floating point.',
+  description:
+    'Decimal value transported as a string; authoritative arithmetic is not binary floating point.',
 });
 export type DecimalString = Static<typeof DecimalStringSchema>;

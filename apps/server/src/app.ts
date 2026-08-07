@@ -9,11 +9,14 @@ export interface BuildAppOptions {
   readonly databaseUrl?: string;
 }
 
-export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
+export async function buildApp(
+  options: BuildAppOptions = {},
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: options.logger ?? false,
     requestIdHeader: 'x-request-id',
-    genReqId: (request) => request.headers['x-request-id']?.toString() ?? crypto.randomUUID(),
+    genReqId: (request) =>
+      request.headers['x-request-id']?.toString() ?? crypto.randomUUID(),
     disableRequestLogging: false,
   });
 
@@ -51,6 +54,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
   });
 
-  await registerHealthRoutes(app, database);
+  registerHealthRoutes(app, database);
   return app;
 }

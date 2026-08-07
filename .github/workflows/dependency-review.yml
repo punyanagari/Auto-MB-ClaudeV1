@@ -1,4 +1,4 @@
-name: Dependency review
+name: Dependency audit
 
 on:
   pull_request:
@@ -7,10 +7,18 @@ permissions:
   contents: read
 
 jobs:
-  dependency-review:
+  # The dependency-review-action requires GitHub Advanced Security on
+  # private repositories, so it can never pass here. pnpm audit provides
+  # the SECURITY.md dependency-scan baseline instead.
+  audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/setup-node@v4
         with:
-          fail-on-severity: high
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high

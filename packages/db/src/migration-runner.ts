@@ -6,7 +6,6 @@ import type { Sql } from 'postgres';
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_]+\.sql$/;
 const FORBIDDEN_TRANSACTION_CONTROL = /^\s*(begin|commit|rollback)\b.*;?\s*$/im;
 
-
 function stripDollarQuotedBodies(input: string): string {
   let output = '';
   let index = 0;
@@ -27,7 +26,8 @@ function stripDollarQuotedBodies(input: string): string {
     }
 
     const end = input.indexOf(tag, index + tag.length);
-    if (end === -1) throw new Error(`unterminated dollar-quoted body beginning at byte ${index}`);
+    if (end === -1)
+      throw new Error(`unterminated dollar-quoted body beginning at byte ${index}`);
 
     output += ' '.repeat(end + tag.length - index);
     index = end + tag.length;
@@ -51,7 +51,9 @@ export interface MigrationFile {
 }
 
 export async function readMigrations(directory: string): Promise<MigrationFile[]> {
-  const names = (await readdir(directory)).filter((name) => MIGRATION_FILE.test(name)).sort();
+  const names = (await readdir(directory))
+    .filter((name) => MIGRATION_FILE.test(name))
+    .sort();
   const migrations: MigrationFile[] = [];
 
   for (const fileName of names) {
@@ -74,14 +76,22 @@ export async function readMigrations(directory: string): Promise<MigrationFile[]
 }
 
 export async function runMigrations(sql: Sql, directory: string): Promise<void> {
-  await sql`
-    create table if not exists schema_migrations (
-      id text primary key,
-      file_name text not null unique,
-      sha256 text not null,
-      applied_at timestamptz not null default now()
-    )
+  // Checked before creating so repeat runs stay silent; `if not exists`
+  // emits a NOTICE that postgres.js prints as an alarming object dump.
+  const [ledger] = await sql`
+    select 1 as present from pg_catalog.pg_tables
+    where schemaname = 'public' and tablename = 'schema_migrations'
   `;
+  if (!ledger) {
+    await sql`
+      create table schema_migrations (
+        id text primary key,
+        file_name text not null unique,
+        sha256 text not null,
+        applied_at timestamptz not null default now()
+      )
+    `;
+  }
 
   const applied = await sql<{ id: string; sha256: string }[]>`
     select id, sha256 from schema_migrations order by id

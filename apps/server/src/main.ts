@@ -9,7 +9,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
 
 const app = await buildApp({
   logger: true,
-  databaseUrl: process.env.DATABASE_URL,
+  ...(process.env.DATABASE_URL ? { databaseUrl: process.env.DATABASE_URL } : {}),
 });
 
 const stop = async (signal: string): Promise<void> => {
