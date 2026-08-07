@@ -35,4 +35,10 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Standalone config and script files sit outside every package tsconfig,
+    // so the type-aware project service cannot parse them.
+    files: ['**/*.config.{js,ts,mjs}', 'eslint.config.js', 'scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
 );

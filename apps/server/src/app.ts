@@ -54,6 +54,6 @@ export async function buildApp(
     });
   });
 
-  await registerHealthRoutes(app, database);
+  registerHealthRoutes(app, database);
   return app;
 }
