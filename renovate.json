@@ -3,13 +3,14 @@
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
   "rangeStrategy": "pin",
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
   "packageRules": [
     {
       "description": "Group development tooling",
       "matchDepTypes": ["devDependencies"],
-      "groupName": "development tooling"
+      "groupName": "development tooling",
+      "minimumReleaseAge": "7 days"
     }
   ]
 }

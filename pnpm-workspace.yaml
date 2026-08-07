@@ -2,6 +2,48 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+# Supply-chain posture (mirrored in .npmrc and renovate.json): newly
+# published versions wait seven days before they can resolve, transitive
+# dependencies cannot arrive from exotic (non-registry) sources, and
+# dependency updates cannot silently downgrade these protections. Already
+# locked versions are unaffected; a security upgrade younger than the
+# cooldown requires an explicit, reviewed exception.
+minimumReleaseAge: 10080
+# Entries locked and reviewed before the 2026-08-07 cooldown tightening
+# (the Better Auth 1.6.26 family and transitive updates, all published
+# 2026-08-01..06). Every listed version ages past seven days by
+# 2026-08-13 — delete this whole list then; do not add to it without the
+# same review a security-upgrade exception gets.
+minimumReleaseAgeExclude:
+  - '@better-auth/core'
+  - '@better-auth/drizzle-adapter'
+  - '@better-auth/kysely-adapter'
+  - '@better-auth/memory-adapter'
+  - '@better-auth/mongo-adapter'
+  - '@better-auth/prisma-adapter'
+  - '@better-auth/telemetry'
+  - '@noble/hashes'
+  - '@textlint/ast-node-types'
+  - '@textlint/linter-formatter'
+  - '@textlint/module-interop'
+  - '@textlint/resolver'
+  - '@textlint/types'
+  - better-auth
+  - ipaddr.js
+  - jose
+  - nanoid
+  - postcss
+  - tinyexec
+  - tsx
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# undici-types (transitive via @types/node) has a historic trust-level dip
+# in its publish metadata that predates this repository; the locked version
+# is long-established. Reviewed 2026-08-07 — remove the exclusion when
+# @types/node moves past it.
+trustPolicyExclude:
+  - undici-types
+
 # esbuild's platform binary arrives through its @esbuild/* optional
 # dependency, so its postinstall stays denied like every other dependency's
 # install scripts (pnpm 11 default-deny posture; verified by clean install
@@ -11,8 +53,7 @@ allowBuilds:
 
 # @fastify/swagger-ui 6.1.0 pins the vulnerable @fastify/static 9.x
 # (GHSA-83w8-p2f5-377r, route guard bypass via path traversal). 6.1.1 makes
-# the same jump but is younger than the .npmrc minimum-release-age cooldown
-# (1 day; Renovate applies its own stricter 3-day cooldown to update PRs).
+# the same jump but is younger than the seven-day release cooldown above.
 # Pinned to the exact version the server tests assert
 # (apps/server/test/health.test.ts resolves @fastify/static and expects
 # this version); drop this override when @fastify/swagger-ui is bumped past
