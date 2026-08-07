@@ -3,6 +3,7 @@ dist/
 coverage/
 .vite/
 *.tsbuildinfo
+.eslintcache
 .env
 .env.*
 !.env.example
@@ -11,3 +12,10 @@ coverage/
 .tmp/
 artifacts/
 local-data/
+
+# Real IREPS award letters and material derived from them must never enter
+# the tree; only the reviewed text fixtures under packages/loa-parser/fixtures
+# are committed. Carried over from the legacy repository's data-protection
+# posture.
+*.loa.pdf
+fixtures-raw/

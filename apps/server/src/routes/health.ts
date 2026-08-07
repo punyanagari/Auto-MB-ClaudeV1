@@ -2,10 +2,7 @@ import { HealthResponseSchema } from '@auto-mb/contracts';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 
-export function registerHealthRoutes(
-  app: FastifyInstance,
-  database?: Sql,
-): void {
+export function registerHealthRoutes(app: FastifyInstance, database?: Sql): void {
   app.get(
     '/api/health',
     {
