@@ -19,10 +19,15 @@ export default defineConfig({
         }
       : {}),
   },
+  // The bundle is built by a separate `pnpm build` step (CI does this
+  // explicitly) so the webServer only serves; its output is piped so a
+  // startup failure is visible instead of a silent timeout.
   webServer: {
-    command: 'pnpm build && pnpm exec vite preview --port 4173 --strictPort',
+    command: 'pnpm exec vite preview --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
-    timeout: 60_000,
+    timeout: 120_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 });

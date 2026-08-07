@@ -11,6 +11,8 @@ coverage/
 *.log
 .tmp/
 artifacts/
+test-results/
+playwright-report/
 local-data/
 
 # Real IREPS award letters and material derived from them must never enter

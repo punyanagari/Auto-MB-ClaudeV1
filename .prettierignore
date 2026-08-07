@@ -4,3 +4,5 @@ node_modules
 packages/loa-parser/fixtures
 pnpm-lock.yaml
 docs/reference
+test-results/
+playwright-report/
