@@ -1,43 +1,70 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
+// Static, database-free checks over the migration files. These are
+// supplementary to the live catalog assertions in
+// tenancy.integration.test.ts; the table list here is DERIVED from the SQL
+// so new migrations cannot silently escape the contract.
 const here = path.dirname(fileURLToPath(import.meta.url));
-const migrationPath = path.resolve(here, '..', 'migrations', '0001_core.sql');
-const tenantTables = [
-  'organisations',
-  'organisation_memberships',
-  'works',
-  'work_schedules',
-  'work_items',
-  'loa_documents',
-  'delivery_challans',
-  'delivery_challan_items',
-  'delivery_challan_counters',
-  'audit_events',
-];
+const migrationsDirectory = path.resolve(here, '..', 'migrations');
+
+let allSql = '';
+let createdTables: string[] = [];
+
+beforeAll(async () => {
+  const files = (await readdir(migrationsDirectory))
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
+  expect(files.length).toBeGreaterThanOrEqual(3);
+  const contents = await Promise.all(
+    files.map((name) => readFile(path.join(migrationsDirectory, name), 'utf8')),
+  );
+  allSql = contents.join('\n');
+  createdTables = [...allSql.matchAll(/^CREATE TABLE (\w+)/gm)].map(
+    (match) => match[1] ?? '',
+  );
+});
 
 describe('tenant migration contract', () => {
-  it('enables and forces RLS on every tenant table', async () => {
-    const sql = await readFile(migrationPath, 'utf8');
-    for (const table of tenantTables) {
-      expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
-      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+  it('enables and forces RLS on every table any migration creates', () => {
+    expect(createdTables.length).toBeGreaterThanOrEqual(10);
+    for (const table of createdTables) {
+      expect(allSql, table).toContain(
+        `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`,
+      );
+      expect(allSql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
     }
   });
 
-  it('keeps audit events append-only for the application role', async () => {
-    const guardrail = await readFile(
-      path.resolve(here, '..', 'migrations', '0002_rls_guardrails.sql'),
-      'utf8',
-    );
-    expect(guardrail).toContain('REVOKE UPDATE, DELETE, TRUNCATE ON audit_events');
+  it('asserts full RLS coverage at migration time as well', () => {
+    // 0003 refuses to complete when any public table other than
+    // schema_migrations lacks enabled+forced RLS.
+    expect(allSql).toContain('NOT (c.relrowsecurity AND c.relforcerowsecurity)');
   });
 
-  it('enforces one draft Delivery Challan per Work in the database', async () => {
-    const sql = await readFile(migrationPath, 'utf8');
-    expect(sql).toContain('CREATE UNIQUE INDEX delivery_challans_one_draft_per_work');
-    expect(sql).toContain("WHERE status = 'draft'");
+  it('keeps audit events append-only for the application role specifically', () => {
+    expect(allSql).toMatch(
+      /REVOKE UPDATE, DELETE, TRUNCATE ON audit_events FROM auto_mb_app;/,
+    );
+  });
+
+  it('revokes DELETE on reservation-anchor tables from the application role', () => {
+    expect(allSql).toMatch(
+      /REVOKE DELETE ON\s+organisations,\s+works,\s+work_items,\s+loa_documents,\s+delivery_challan_counters\s+FROM auto_mb_app;/,
+    );
+  });
+
+  it('enforces one draft Delivery Challan per Work with a partial unique index', () => {
+    expect(allSql).toMatch(
+      /CREATE UNIQUE INDEX delivery_challans_one_draft_per_work\s+ON delivery_challans \(organisation_id, work_id\)\s+WHERE status = 'draft';/,
+    );
+  });
+
+  it('serialises challan sequence numbers per Work with a partial unique index', () => {
+    expect(allSql).toMatch(
+      /CREATE UNIQUE INDEX delivery_challans_sequence_per_work\s+ON delivery_challans \(organisation_id, work_id, sequence_number\)\s+WHERE sequence_number IS NOT NULL;/,
+    );
   });
 });

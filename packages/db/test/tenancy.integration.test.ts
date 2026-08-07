@@ -42,9 +42,27 @@ type TenantTable = (typeof TENANT_TABLES)[number];
 /** audit_events has its own append-only proof: the application role has no
  * UPDATE/DELETE privilege at all, so generic zero-row mutation assertions
  * (which expect privilege to exist but RLS to hide rows) do not apply. */
-const GENERIC_MUTATION_TABLES = TENANT_TABLES.filter(
-  (table) => table !== 'audit_events',
-);
+const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter((table) => table !== 'audit_events');
+
+/** Tables where 0003 revoked DELETE outright (reservation anchors and
+ * numbering state): a delete attempt raises 42501 rather than matching
+ * zero rows. */
+const DELETE_REVOKED_TABLES = [
+  'organisations',
+  'works',
+  'work_items',
+  'loa_documents',
+  'delivery_challan_counters',
+] as const satisfies readonly TenantTable[];
+
+/** Tables the application role may still DELETE (drafts, lines,
+ * memberships, schedules): cross-tenant deletes match zero rows. */
+const DELETE_ALLOWED_TABLES = [
+  'organisation_memberships',
+  'work_schedules',
+  'delivery_challans',
+  'delivery_challan_items',
+] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
  * `organisation_id`. */
@@ -64,6 +82,17 @@ let admin: Sql;
 let app: Sql;
 let graphA: TenantGraph;
 let graphB: TenantGraph;
+
+/** Deletes both fixture organisations' rows, children first. */
+async function removeSeedResidue(): Promise<void> {
+  const organisationIds = [organisationA.id, organisationB.id];
+  for (const table of [...TENANT_TABLES].reverse()) {
+    await admin.unsafe(
+      `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
+      [organisationIds],
+    );
+  }
+}
 
 async function countAs(
   pool: Sql,
@@ -141,7 +170,7 @@ async function seedTenantGraph(
         media_type, size_bytes, uploaded_by_user_id
       )
       values (
-        ${organisationId}, ${`loa/${workCode}.pdf`}, ${`${workCode}.pdf`},
+        ${organisationId}, ${`${organisationId}/loa/${workCode}.pdf`}, ${`${workCode}.pdf`},
         ${shaFill.repeat(64)}, 'application/pdf', 1024, ${userId}
       )
     `;
@@ -230,13 +259,10 @@ beforeAll(async () => {
   });
 
   // Remove residue from earlier runs, children first (admin bypasses RLS).
-  const organisationIds = [organisationA.id, organisationB.id];
-  for (const table of [...TENANT_TABLES].reverse()) {
-    await admin.unsafe(
-      `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
-      [organisationIds],
-    );
-  }
+  // The fixed fixture UUIDs make the suite deterministic and self-cleaning,
+  // at the documented cost that two invocations must not run concurrently
+  // against the same database.
+  await removeSeedResidue();
 
   graphA = await seedTenantGraph(
     organisationA.id,
@@ -257,8 +283,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app?.end();
-  await admin?.end();
+  try {
+    // beforeAll may have failed before the admin pool existed.
+    if ((admin as Sql | undefined) !== undefined) await removeSeedResidue();
+  } finally {
+    await app?.end();
+    await admin?.end();
+  }
 });
 
 describe('application role security posture', () => {
@@ -360,14 +391,17 @@ describe('cross-tenant isolation on every tenant table', () => {
       app,
       { organisationId: organisationA.id, userId: userA },
       async (tx) => {
-        for (const table of GENERIC_MUTATION_TABLES) {
+        for (const table of GENERIC_UPDATE_TABLES) {
           const column = organisationColumn(table);
           const updated = await tx.unsafe(
             `update ${table} set ${column} = ${column} where ${column} = $1`,
             [organisationB.id],
           );
           expect(updated.count, `${table} update`).toBe(0);
+        }
 
+        for (const table of DELETE_ALLOWED_TABLES) {
+          const column = organisationColumn(table);
           const deleted = await tx.unsafe(`delete from ${table} where ${column} = $1`, [
             organisationB.id,
           ]);
@@ -381,6 +415,41 @@ describe('cross-tenant isolation on every tenant table', () => {
     >`select title from works where id = ${graphB.workId}`;
     expect(untouched?.title).toBe('Integration test work for tenant isolation');
     expect(await countAs(admin, 'delivery_challan_items', organisationB.id)).toBe(1);
+  });
+
+  it('refuses DELETE outright on reservation-anchor tables, even inside the own tenant', async () => {
+    for (const table of DELETE_REVOKED_TABLES) {
+      const column = organisationColumn(table);
+      await expect(
+        withTenant(app, { organisationId: organisationA.id, userId: userA }, (tx) =>
+          tx.unsafe(`delete from ${table} where ${column} = $1`, [organisationA.id]),
+        ),
+        `${table} delete`,
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+  });
+
+  it('maintains updated_at on modification through the touch trigger', async () => {
+    const before = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [row] = await tx<{ updated_at: string }[]>`
+          select updated_at from works where id = ${graphA.workId}
+        `;
+        await tx`
+          update works set title = 'Integration test work for tenant isolation'
+          where id = ${graphA.workId}
+        `;
+        return row?.updated_at;
+      },
+    );
+
+    const [after] = await admin<{ newer: boolean }[]>`
+      select updated_at > ${before ?? null}::timestamptz as newer
+      from works where id = ${graphA.workId}
+    `;
+    expect(after?.newer).toBe(true);
   });
 
   it('rejects writing rows stamped with another organisation id', async () => {
@@ -470,8 +539,14 @@ describe('audit trail append-only guarantee', () => {
       ),
     ).rejects.toMatchObject({ code: '42501' });
 
-    await expect(app.unsafe('truncate audit_events')).rejects.toMatchObject({
-      code: '42501',
-    });
+    // Wrapped in a transaction that always throws: if the TRUNCATE revoke
+    // ever regresses, the data is rolled back and the test fails on the
+    // wrong rejection instead of destroying the shared audit table.
+    await expect(
+      app.begin(async (tx) => {
+        await tx.unsafe('truncate audit_events');
+        throw new Error('truncate unexpectedly succeeded');
+      }),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 });

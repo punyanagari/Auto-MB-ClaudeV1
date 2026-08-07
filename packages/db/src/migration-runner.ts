@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Sql } from 'postgres';
+import { setTimeout as sleep } from 'node:timers/promises';
+import type { ReservedSql, Sql } from 'postgres';
 
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_]+\.sql$/;
 const FORBIDDEN_TRANSACTION_CONTROL = /^\s*(begin|commit|rollback)\b.*;?\s*$/im;
@@ -73,16 +74,58 @@ export async function readMigrations(directory: string): Promise<MigrationFile[]
   }
 
   if (migrations.length === 0) throw new Error(`No migrations found in ${directory}`);
+
+  const ids = new Set<string>();
+  for (const migration of migrations) {
+    if (ids.has(migration.id)) {
+      throw new Error(`duplicate migration id: ${migration.id}`);
+    }
+    ids.add(migration.id);
+  }
+
   return migrations;
 }
 
 // Advisory-lock key serialising competing migrators (two int32 halves for
-// pg_advisory_lock(int, int)). Owned by Auto-MB; documented here and used
-// nowhere else. 0x4155544f = "AUTO", 0x4d420001 = "MB" + slot 1 (migrations).
+// pg_try_advisory_lock(int, int)). Owned by Auto-MB; documented here and
+// used nowhere else. 0x4155544f = "AUTO", 0x4d420001 = "MB" + slot 1
+// (migrations).
 export const MIGRATION_LOCK_CLASS = 0x4155544f;
 export const MIGRATION_LOCK_ID = 0x4d420001;
 
-export async function runMigrations(sql: Sql, directory: string): Promise<void> {
+const LOCK_RETRY_INTERVAL_MS = 250;
+const DEFAULT_LOCK_TIMEOUT_MS = 60_000;
+
+export interface RunMigrationsOptions {
+  /** How long to wait for a competing migrator before failing with a clear
+   * error instead of blocking a deploy indefinitely. */
+  readonly lockTimeoutMs?: number;
+}
+
+async function acquireMigrationLock(
+  reserved: ReservedSql,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const [row] = await reserved<{ locked: boolean }[]>`
+      select pg_try_advisory_lock(${MIGRATION_LOCK_CLASS}, ${MIGRATION_LOCK_ID}) as locked
+    `;
+    if (row?.locked) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `another migration run holds the Auto-MB migration lock; gave up after ${String(timeoutMs)}ms`,
+      );
+    }
+    await sleep(LOCK_RETRY_INTERVAL_MS);
+  }
+}
+
+export async function runMigrations(
+  sql: Sql,
+  directory: string,
+  options: RunMigrationsOptions = {},
+): Promise<void> {
   const migrations = await readMigrations(directory);
 
   // One reserved physical connection carries the whole run: the advisory
@@ -93,7 +136,10 @@ export async function runMigrations(sql: Sql, directory: string): Promise<void> 
   // driven with explicit BEGIN/COMMIT on this dedicated connection.
   const reserved = await sql.reserve();
   try {
-    await reserved`select pg_advisory_lock(${MIGRATION_LOCK_CLASS}, ${MIGRATION_LOCK_ID})`;
+    await acquireMigrationLock(
+      reserved,
+      options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+    );
     try {
       // Checked before creating so repeat runs stay silent; `if not exists`
       // emits a NOTICE that postgres.js prints as an alarming object dump.

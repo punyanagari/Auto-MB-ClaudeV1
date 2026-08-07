@@ -31,7 +31,19 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await admin?.end();
+  try {
+    // Sweep temp databases leaked by crashed earlier runs (the per-test
+    // finally cannot help when the process itself was killed).
+    const stale = await admin<{ datname: string }[]>`
+      select datname from pg_database
+      where datname like 'auto_mb_migration_test_%'
+    `;
+    for (const database of stale) {
+      await admin.unsafe(`drop database if exists ${database.datname} with (force)`);
+    }
+  } finally {
+    await admin?.end();
+  }
 });
 
 /**
@@ -56,7 +68,12 @@ async function withTemporaryDatabase(
   try {
     await work(pool);
   } finally {
-    await pool.end();
+    try {
+      await pool.end({ timeout: 5 });
+    } catch {
+      // A wedged pool must not stop the drop below; `with (force)`
+      // terminates whatever the pool left behind.
+    }
     await admin.unsafe(`drop database if exists ${databaseName} with (force)`);
   }
 }
