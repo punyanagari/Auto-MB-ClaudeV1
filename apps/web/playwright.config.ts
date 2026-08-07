@@ -21,9 +21,11 @@ export default defineConfig({
   },
   // The bundle is built by a separate `pnpm build` step (CI does this
   // explicitly) so the webServer only serves; its output is piped so a
-  // startup failure is visible instead of a silent timeout.
+  // startup failure is visible instead of a silent timeout. The host is
+  // pinned to 127.0.0.1 because "localhost" can resolve to ::1 on CI
+  // runners, leaving the IPv4 readiness probe waiting forever.
   webServer: {
-    command: 'pnpm exec vite preview --port 4173 --strictPort',
+    command: 'pnpm exec vite preview --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 120_000,
