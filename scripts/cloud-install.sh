@@ -18,9 +18,19 @@ fi
 
 # Cache warming only: pre-pull the compose images into the snapshot when the
 # build pod can run a daemon. A miss slows the first boot but breaks
-# nothing, so this step warns instead of failing the build.
-if sudo docker info >/dev/null 2>&1 ||
-  { sudo service docker start >/dev/null 2>&1 && sleep 3 && sudo docker info >/dev/null 2>&1; }; then
+# nothing, so this step warns instead of failing the build. Same direct
+# dockerd launch and vfs storage driver as cloud-start.sh (no systemd on
+# these pods; nested overlayfs cannot extract every image).
+if ! sudo docker info >/dev/null 2>&1; then
+  sudo install -d -m 0755 /etc/docker
+  printf '{"storage-driver":"vfs"}\n' | sudo tee /etc/docker/daemon.json >/dev/null
+  sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'
+  for _ in $(seq 1 30); do
+    sudo docker info >/dev/null 2>&1 && break
+    sleep 1
+  done
+fi
+if sudo docker info >/dev/null 2>&1; then
   sudo docker compose pull -q postgres gotenberg ||
     echo "warning: compose image pre-pull failed; images will pull at first boot" >&2
 else
