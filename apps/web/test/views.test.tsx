@@ -8,6 +8,7 @@ import type {
   SaveChallanRequest,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
+import { Approvals } from '../src/views/Approvals.js';
 import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
 import { Members } from '../src/views/Members.js';
@@ -69,6 +70,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listBills: vi.fn().mockResolvedValue([]),
     prepareBill: vi.fn(),
     setBillStatus: vi.fn(),
+    listApprovals: vi.fn().mockResolvedValue([]),
+    listWorkAmendments: vi.fn().mockResolvedValue([]),
+    proposeAmendment: vi.fn(),
+    proposeAddItem: vi.fn(),
+    approveAmendment: vi.fn(),
+    rejectAmendment: vi.fn(),
+    withdrawAmendment: vi.fn(),
+    setWorkSettings: vi.fn(),
     ...overrides,
   };
 }
@@ -147,6 +156,7 @@ function membership(overrides: Partial<Membership>): Membership {
     workScope: 'all',
     canIssueDocuments: true,
     canCancelDocuments: true,
+    canApproveAmendments: false,
     status: 'active',
     ...overrides,
   };
@@ -956,6 +966,7 @@ describe('WorkDetail retention', () => {
       canModify: boolean;
       canRecordEvidence: boolean;
       canIssue: boolean;
+      isOwner: boolean;
     }> = {},
   ) {
     return render(
@@ -966,6 +977,7 @@ describe('WorkDetail retention', () => {
         canModify={flags.canModify ?? true}
         canRecordEvidence={flags.canRecordEvidence ?? true}
         canIssue={flags.canIssue ?? true}
+        isOwner={flags.isOwner ?? false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
         onBack={vi.fn()}
@@ -1223,5 +1235,322 @@ describe('Settings', () => {
     expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
+  });
+});
+
+describe('Approvals queue', () => {
+  const APPROVAL_ID = '99999999-9999-4999-8999-999999999999';
+  const APPROVAL = {
+    id: APPROVAL_ID,
+    entityType: 'work_item_amendment' as const,
+    entityId: ITEM_A,
+    workId: WORK_ID,
+    workCode: 'DCW-1',
+    itemNumber: 'A/1',
+    proposed: {
+      kind: 'change_item',
+      workItemId: ITEM_A,
+      itemNumber: 'A/1',
+      changes: { quantity: '8.000' },
+    },
+    diff: [{ field: 'quantity', before: '5.000', after: '8.000' }],
+    reason: 'Railway variation order 12.',
+    status: 'pending' as const,
+    requestedByUserId: 'user-b',
+    decidedByUserId: null,
+    decidedAt: null,
+    decisionNote: null,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  it('renders the diff and approves with a note', async () => {
+    const approveAmendment = vi
+      .fn()
+      .mockResolvedValue({ ...APPROVAL, status: 'approved' });
+    const listApprovals = vi
+      .fn()
+      .mockResolvedValueOnce([APPROVAL])
+      .mockResolvedValue([]);
+    const api = stubApi({ listApprovals, approveAmendment });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Railway variation order 12.')).toBeTruthy();
+    expect(screen.getByText('5.000')).toBeTruthy();
+    expect(screen.getByText('8.000')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Decision note (required to reject)'), {
+      target: { value: 'Sanctioned by letter.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and apply' }));
+    await waitFor(() => {
+      expect(approveAmendment).toHaveBeenCalledWith(
+        ORG_ID,
+        APPROVAL_ID,
+        'Sanctioned by letter.',
+      );
+    });
+  });
+
+  it('keeps Reject disabled until a note is supplied', async () => {
+    const rejectAmendment = vi
+      .fn()
+      .mockResolvedValue({ ...APPROVAL, status: 'rejected' });
+    const api = stubApi({
+      listApprovals: vi.fn().mockResolvedValue([APPROVAL]),
+      rejectAmendment,
+    });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    const reject = await screen.findByRole('button', { name: 'Reject' });
+    expect((reject as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Decision note (required to reject)'), {
+      target: { value: 'Duplicate of variation 9.' },
+    });
+    expect((reject as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(reject);
+    await waitFor(() => {
+      expect(rejectAmendment).toHaveBeenCalledWith(
+        ORG_ID,
+        APPROVAL_ID,
+        'Duplicate of variation 9.',
+      );
+    });
+  });
+
+  it('offers withdraw to the requester and hides decisions without authority', async () => {
+    const withdrawAmendment = vi
+      .fn()
+      .mockResolvedValue({ ...APPROVAL, status: 'withdrawn' });
+    const api = stubApi({
+      listApprovals: vi.fn().mockResolvedValue([APPROVAL]),
+      withdrawAmendment,
+    });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-b"
+        canApprove={false}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('Railway variation order 12.');
+    expect(screen.queryByRole('button', { name: 'Approve and apply' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    await waitFor(() => {
+      expect(withdrawAmendment).toHaveBeenCalledWith(ORG_ID, APPROVAL_ID);
+    });
+  });
+
+  it('shows a calm empty state', async () => {
+    render(
+      <Approvals
+        api={stubApi()}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('Nothing is waiting for a decision.')).toBeTruthy();
+  });
+});
+
+describe('WorkDetail amendments', () => {
+  const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
+  const ADDED_ITEM = '88888888-8888-4888-8888-888888888888';
+  const AMENDED_WORK_DETAIL = {
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+      allowExcessDelivery: false,
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            effectiveQuantity: '8.000',
+            effectiveUnitRate: '110.00',
+            effectiveDescription: null,
+            effectiveUnit: null,
+            amendmentAdded: false,
+          },
+          {
+            id: ADDED_ITEM,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/3',
+            description: 'Lightning arrester',
+            unitCode: 'Nos',
+            awardedQuantity: '4.000',
+            effectiveRate: '50.00',
+            effectiveQuantity: '0.000',
+            effectiveUnitRate: null,
+            effectiveDescription: null,
+            effectiveUnit: null,
+            amendmentAdded: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  function amendedApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      getWork: vi.fn().mockResolvedValue(AMENDED_WORK_DETAIL),
+      ...overrides,
+    });
+  }
+
+  function renderAmended(api: ApiClient, flags: { isOwner?: boolean } = {}) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={true}
+        canRecordEvidence={true}
+        canIssue={true}
+        isOwner={flags.isOwner ?? false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows original and effective values side by side when they differ', async () => {
+    renderAmended(amendedApi());
+
+    await screen.findByRole('heading', { name: 'Amendments' });
+    // Quantity 5.000 → 8.000: the original stays visible, struck through.
+    expect(screen.getByText('5.000').tagName).toBe('S');
+    expect(screen.getByText('8.000')).toBeTruthy();
+    // Rate 100.00 → 110.00.
+    expect(screen.getByText('100.00').tagName).toBe('S');
+    expect(screen.getByText('110.00')).toBeTruthy();
+    // Amendment-added and omitted items are flagged.
+    expect(screen.getByText('added')).toBeTruthy();
+    expect(screen.getByText('omitted')).toBeTruthy();
+  });
+
+  it('proposes a quantity change with a reason', async () => {
+    const proposeAmendment = vi.fn().mockResolvedValue({
+      id: '11111111-2222-4333-8444-555555555555',
+      status: 'pending',
+    });
+    renderAmended(amendedApi({ proposeAmendment }));
+
+    await screen.findByRole('heading', { name: 'Amendments' });
+    fireEvent.change(screen.getByLabelText('Item to amend'), {
+      target: { value: ITEM_A },
+    });
+    fireEvent.change(screen.getByLabelText('New quantity (optional)'), {
+      target: { value: '9' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Variation order 15.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+
+    await waitFor(() => {
+      expect(proposeAmendment).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        workItemId: ITEM_A,
+        reason: 'Variation order 15.',
+        changes: { quantity: '9' },
+      });
+    });
+  });
+
+  it('lets an owner flip the excess-delivery escape hatch, and hides it otherwise', async () => {
+    const setWorkSettings = vi
+      .fn()
+      .mockResolvedValue({ id: WORK_ID, allowExcessDelivery: true });
+    renderAmended(amendedApi({ setWorkSettings }), { isOwner: true });
+
+    const toggle = await screen.findByLabelText(
+      'Allow issuing beyond sanctioned quantities',
+    );
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(setWorkSettings).toHaveBeenCalledWith(ORG_ID, WORK_ID, true);
+    });
+
+    cleanup();
+    renderAmended(amendedApi());
+    await screen.findByRole('heading', { name: 'Amendments' });
+    expect(
+      screen.queryByLabelText('Allow issuing beyond sanctioned quantities'),
+    ).toBeNull();
+    expect(screen.getByText('Not allowed')).toBeTruthy();
+  });
+});
+
+describe('Members amendment authority', () => {
+  it('lets an owner grant the approval authority', async () => {
+    const updateMember = vi
+      .fn()
+      .mockResolvedValue([
+        membership({ userId: 'user-a' }),
+        membership({ userId: 'user-b', role: 'office', canApproveAmendments: true }),
+      ]);
+    const api = stubApi({
+      listMembers: vi
+        .fn()
+        .mockResolvedValue([
+          membership({ userId: 'user-a' }),
+          membership({ userId: 'user-b', role: 'office' }),
+        ]),
+      updateMember,
+    });
+    render(<Members api={api} organisationId={ORG_ID} currentUserId="user-a" />);
+
+    const toggle = await screen.findByLabelText(
+      'Amendment approval authority of user-b',
+    );
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(updateMember).toHaveBeenCalledWith(ORG_ID, 'user-b', {
+        canApproveAmendments: true,
+      });
+    });
   });
 });

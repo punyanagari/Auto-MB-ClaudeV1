@@ -239,7 +239,19 @@ export function ChallanEditor({
                 <th scope="row">{item.itemNumber}</th>
                 <td className="cell--wrap">{item.description}</td>
                 <td>{item.unitCode}</td>
-                <td className="cell--numeric">{item.awardedQuantity}</td>
+                <td className="cell--numeric">
+                  {item.effectiveQuantity !== null &&
+                  item.effectiveQuantity !== undefined &&
+                  item.effectiveQuantity !== item.awardedQuantity ? (
+                    // An approved amendment moved the ceiling: show both.
+                    <>
+                      <s className="muted">{item.awardedQuantity}</s> →{' '}
+                      {item.effectiveQuantity}
+                    </>
+                  ) : (
+                    item.awardedQuantity
+                  )}
+                </td>
                 <td className="cell--numeric">{item.deliveredQuantity}</td>
                 <td className="cell--numeric">{item.remainingQuantity}</td>
                 <td>

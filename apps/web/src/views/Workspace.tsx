@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
+import { Approvals } from './Approvals.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
@@ -28,6 +29,7 @@ type WorkspaceView =
   | { name: 'challan-new'; workId: string; workCode: string }
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
+  | { name: 'approvals' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -67,6 +69,23 @@ const MODULES = [
         <rect x="9" y="2" width="5" height="5" rx="1" />
         <rect x="2" y="9" width="5" height="5" rx="1" />
         <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'approvals' as const,
+    label: 'Approvals',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2.5 8.5 6 12l7.5-8" />
       </svg>
     ),
   },
@@ -118,6 +137,7 @@ export function Workspace({
   onSignOut,
 }: WorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const membership = me.memberships.find(
@@ -129,9 +149,30 @@ export function Workspace({
   // Site engineers record delivery evidence (receipts, serials,
   // installations, measurements) but cannot draft or issue.
   const canRecordEvidence = canModify || membership?.role === 'site';
-  // Issue and cancel are explicit per-member authorities, not roles.
+  // Issue, cancel, and amendment approval are explicit per-member
+  // authorities, not roles.
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
+  const canApprove = membership?.canApproveAmendments ?? false;
+  const isOwner = membership?.role === 'owner';
+
+  // The nav badge: how many amendment requests await a decision. Refreshed
+  // on navigation and whenever an approval decision lands.
+  const refreshPendingApprovals = useCallback(() => {
+    api
+      .listApprovals(organisation.id, 'pending')
+      .then((approvals) => {
+        setPendingApprovals(approvals.length);
+      })
+      .catch(() => {
+        // A failed count never blocks the workspace; the queue page
+        // reports its own errors.
+      });
+  }, [api, organisation.id]);
+
+  useEffect(() => {
+    refreshPendingApprovals();
+  }, [refreshPendingApprovals, view.name]);
 
   // Same convention as the app shell: view changes land keyboard and
   // screen-reader users on the new heading.
@@ -140,7 +181,10 @@ export function Workspace({
   }, [view]);
 
   const activeModule =
-    view.name === 'dashboard' || view.name === 'members' || view.name === 'settings'
+    view.name === 'dashboard' ||
+    view.name === 'approvals' ||
+    view.name === 'members' ||
+    view.name === 'settings'
       ? view.name
       : 'works';
 
@@ -167,14 +211,24 @@ export function Workspace({
                     ? { name: 'dashboard' }
                     : key === 'works'
                       ? { name: 'works' }
-                      : key === 'members'
-                        ? { name: 'members' }
-                        : { name: 'settings' },
+                      : key === 'approvals'
+                        ? { name: 'approvals' }
+                        : key === 'members'
+                          ? { name: 'members' }
+                          : { name: 'settings' },
                 );
               }}
             >
               {module.icon}
               {module.label}
+              {module.key === 'approvals' && pendingApprovals > 0 && (
+                <span
+                  className="chip chip--draft"
+                  aria-label={`${String(pendingApprovals)} pending approvals`}
+                >
+                  {pendingApprovals}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -264,6 +318,15 @@ export function Workspace({
               }}
             />
           )}
+          {view.name === 'approvals' && (
+            <Approvals
+              api={api}
+              organisationId={organisation.id}
+              currentUserId={me.user.id}
+              canApprove={canApprove}
+              onChanged={refreshPendingApprovals}
+            />
+          )}
           {view.name === 'work' && (
             <WorkDetail
               api={api}
@@ -272,6 +335,7 @@ export function Workspace({
               canModify={canModify}
               canRecordEvidence={canRecordEvidence}
               canIssue={canIssue}
+              isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });
               }}
