@@ -160,6 +160,94 @@ Remaining:
 
 - retention-money maths beyond the measured-quantity bill (security deposit deductions, price variation) wait for a design partner's real bill format.
 
+## Milestone 6 — contract administration and change control
+
+Scope (from the 2026-08-08 legacy UI audit, verified item by item — see
+adr/0005-legacy-ui-audit-disposition.md for what was re-scoped or
+rejected):
+
+- completion dates on the Work (original and current) and extension/DOC
+  tracking — the works table currently has no completion date, which
+  blocks every validity-versus-completion rule downstream;
+- an audited work-item amendment path (quantity, rate, omission) behind a
+  maker-checker approval gate: immutable proposed snapshot, mandatory
+  reason, approver distinct from requester as an optional policy,
+  revalidation against live state at approval time — and a real setter
+  for `allow_excess_delivery`, which has been dead code since migration
+  0001;
+- PBG compliance, first slice: carry the parser's already-extracted
+  performance-guarantee requirement onto the Work at confirmation
+  (amount, submission window, penal-interest terms), with
+  submission-deadline and required-versus-actual shortfall alerts joining
+  the existing expiry alerts;
+- add/remove-row editing on the LOA review screen, so a letter the parser
+  cannot fully serve still has a path to a confirmed Work;
+- the audit trail becomes inspectable: a filtered organisation-wide read
+  API (date, actor, entity, Work, action) and timeline UI, and audit
+  writers start capturing before/after values instead of changed-key
+  names only.
+
+Exit: a railway-sanctioned quantity or rate change can be recorded
+without abandoning the Work, every such change shows who proposed and who
+approved it, and the audit timeline is readable in the product rather
+than only in the export JSON.
+
+## Milestone 7 — site material movement and document control
+
+Scope:
+
+- Issue Challans as a first-class document (legacy lifecycle: draft →
+  issued → cancelled, plus loan/return type; independent per-Work
+  numbering; manual lines permitted by design) recording material moving
+  from store/consignee custody to site;
+- quantity-level installation records with location, alongside the
+  existing per-serial installation facts;
+- consignee, location, and unit masters — retire-not-delete, always
+  snapshot-on-use so issued documents stay frozen; units seeded from the
+  parser's canonical list; signatory names join the organisation profile;
+- warranty/guarantee certificate page on the Delivery Challan: org-level
+  template text, rendered from the issued snapshot, template version and
+  content hash recorded;
+- controlled correction flow for evidence-locked challans: the 2026-08-08
+  cancellation policy makes a wrong challan with downstream evidence
+  unfixable today; corrections become approval-gated cancel-and-replace
+  or adjustment documents (the policy migration 0008 already promises),
+  never edits of the issued snapshot;
+- tenant-wide serial lookup (work-scope filtered) with the full trace,
+  and enforcement of the `requires_serials` flag (stored since migration
+  0001, never enforced): serial count must equal shipped quantity at
+  issue.
+
+Exit: a supplied item can be traced from delivery through custody
+transfer, installation location, and serial identity to signed
+documentary evidence, and a wrong issued document has a lawful correction
+path that preserves the original.
+
+## Milestone 8 — stage-wise payment eligibility
+
+Scope:
+
+- item payment categories assigned at LOA review and a per-Work payment
+  matrix keyed by category (percentages sum to 100 — per the legacy
+  settled decision, there is no per-item percentage entry);
+- PAC certificates recording certified quantities per item, capped at
+  installed-minus-already-certified;
+- stage-wise bill preparation: eligible stage quantity × authoritative
+  rate × stage percentage − previously billed for that stage, in exact
+  decimal arithmetic, with per-stage billed memory so no stage can be
+  billed twice;
+- compensating entries for corrections — paid bills are never rewritten.
+
+The matrix schema lands before the first design partner prepares a bill:
+bills are immutable and undeletable, so a 100%-of-measured bill on a
+staged contract would be a permanently wrong financial record. The
+richer maths already deferred (security deposit deductions, price
+variation) still wait for a partner's real bill format.
+
+Exit: a partial bill on a staged contract is computed entirely from
+recorded contract terms and operational evidence, with no spreadsheet on
+the side.
+
 ## Deferred until usage proves demand
 
 - GST IRN/e-way-bill automation;
@@ -168,4 +256,19 @@ Remaining:
 - department expansion;
 - enterprise SSO/custom policy engine;
 - offline sync and native mobile;
-- embedded finance.
+- embedded finance;
+- standalone/non-Work challans (separate company-level numbering series;
+  conflicts with three per-Work invariants, so it forks the model —
+  legacy evidence exists, demand does not yet);
+- a unified cross-document search register (per-type surfaces suffice
+  until partners ask);
+- Contract Agreement and variation-order document registers (waiting for
+  a design partner's real agreement/variation paperwork; the operative
+  change-control mechanics ship in Milestone 6);
+- full BOQ/Excel import-export machinery (the review-screen row editing
+  in Milestone 6 covers the known failure mode);
+- numbering-series/financial-year profiles and per-document signatory
+  selection (single profile until a partner needs more; multiple legal
+  entities stay multiple organisations — ADR-0005);
+- an in-app backup evidence console (external monitoring owns this; a
+  last-backup-age gauge on `/metrics` is the accepted slice).
