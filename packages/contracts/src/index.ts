@@ -9,3 +9,4 @@ export * from './loa.js';
 export * from './challans.js';
 export * from './retention.js';
 export * from './dashboard.js';
+export * from './extensions.js';
