@@ -38,6 +38,9 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   bills: 'SELECT, INSERT, UPDATE',
   bill_counters: 'SELECT, INSERT, UPDATE',
   mb_entries: 'SELECT, INSERT, UPDATE',
+  // Extension requests (0011): drafts deletable, counters keep no DELETE.
+  extension_requests: 'SELECT, INSERT, UPDATE, DELETE',
+  extension_request_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

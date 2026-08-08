@@ -42,6 +42,8 @@ const TENANT_TABLES = [
   'bills',
   'mb_entries',
   'work_assignments',
+  'extension_requests',
+  'extension_request_counters',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -67,6 +69,7 @@ const DELETE_REVOKED_TABLES = [
   'bill_counters',
   'bills',
   'mb_entries',
+  'extension_request_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -78,6 +81,7 @@ const DELETE_ALLOWED_TABLES = [
   'delivery_challan_items',
   'challan_item_serials',
   'work_assignments',
+  'extension_requests',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -283,6 +287,27 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
               '2026-02-03', ${userId})
+    `;
+
+    // Milestone 6 completion/extension tables: the one-time completion
+    // date set (allowed by the works guard), then a draft extension.
+    await tx`
+      update works
+      set original_completion_date = '2026-12-31',
+          current_completion_date = '2026-12-31'
+      where id = ${work.id}
+    `;
+    await tx`
+      insert into extension_requests (
+        organisation_id, work_id, proposed_completion_date, reason,
+        addressee, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2027-03-31',
+              'Integration test extension reason', 'Sr. DEE (G)', ${userId})
+    `;
+    await tx`
+      insert into extension_request_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
     `;
 
     return {
