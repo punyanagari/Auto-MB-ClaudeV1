@@ -1,0 +1,81 @@
+name: Deploy
+
+# Deploys main to the production host after CI passes there. Does nothing
+# until two repository secrets exist (Settings → Secrets and variables →
+# Actions):
+#   DEPLOY_HOST     the server's public IP (the Elastic IP)
+#   DEPLOY_SSH_KEY  a dedicated OpenSSH private key whose public half is
+#                   appended to /home/ubuntu/.ssh/authorized_keys on the
+#                   host; rotate by replacing both halves
+# The key exists only inside GitHub's encrypted secrets and the server;
+# revoking it is one line out of authorized_keys.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+# Deploys must not interleave; a queued newer deploy still runs after the
+# current one so the host always converges on the latest main.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check secrets are configured
+        id: gate
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DEPLOY_HOST / DEPLOY_SSH_KEY not set; skipping deploy."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure SSH
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull, rebuild, migrate, verify
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "ubuntu@$DEPLOY_HOST" 'sudo bash -s' <<'DEPLOY'
+          set -euo pipefail
+          cd /opt/auto-mb
+          git pull --ff-only
+          docker compose -f deploy/docker-compose.prod.yml \
+            --env-file deploy/.env.production up -d --build
+          set -a; . deploy/.env.production; set +a
+          # Migrations are additive and advisory-lock-guarded; running on
+          # every deploy is safe and removes the manual step.
+          docker compose -f deploy/docker-compose.prod.yml \
+            --env-file deploy/.env.production exec -T \
+            -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
+            -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
+            server pnpm --filter @auto-mb/db migrate
+          # The deploy is not done until the site answers.
+          sleep 5
+          curl -fsSk --max-time 15 \
+            --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
+            "https://${SITE_ADDRESS}/api/ready"
+          DEPLOY
