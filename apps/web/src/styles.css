@@ -1,9 +1,10 @@
-/* Design tokens — ported from the auto-mb-vercel design study: a cool
- * neutral workspace, white cards, "signal blue" primary, deep ink-navy
- * sidebar, soft semantic badges, and mono/tabular numerals for anything
- * countable. Values are oklch (perceptually even); change them here,
- * not inline. Legacy token names are kept as aliases so every existing
- * rule and view keeps resolving. */
+/* Design tokens — an exact port of the auto-mb-vercel design study:
+ * Geist Sans/Geist Mono, the cool neutral workspace, "signal blue"
+ * primary, deep ink-navy sidebar, soft semantic badges, and mono/tabular
+ * numerals for anything countable. Sizes are the study's computed
+ * Tailwind values (16px rem base, 14px interface text). Values are
+ * oklch; change them here, not inline. Legacy token names are kept as
+ * aliases so every existing rule and view keeps resolving. */
 :root {
   --background: oklch(0.976 0.004 250);
   --foreground: oklch(0.21 0.03 262);
@@ -80,24 +81,22 @@
   --space-6: 1.5rem;
   --space-8: 2rem;
 
-  --shadow-card: 0 1px 2px oklch(0.21 0.03 262 / 5%);
+  /* Tailwind shadow-sm / raised dialog shadow */
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 5%);
   --shadow-raised: 0 8px 24px oklch(0.21 0.03 262 / 14%);
 
+  --font-sans:
+    'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono:
-    ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+    'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  font-size: 15px;
+  font-family: var(--font-sans);
+  /* 16px rem base — the study's Tailwind scale maps 1:1. */
+  font-size: 16px;
   color: var(--foreground);
   background: var(--background);
   font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
   color-scheme: light;
 }
 
@@ -109,6 +108,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  /* The interface reads at text-sm, exactly like the study. */
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 
 button,
@@ -124,10 +126,13 @@ textarea {
 }
 
 h1 {
-  font-size: 1.45rem;
+  /* text-2xl font-semibold tracking-tight */
+  font-size: 1.5rem;
+  line-height: 2rem;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.025em;
   margin: 0 0 var(--space-2);
+  text-wrap: balance;
 }
 
 h1:focus {
@@ -135,13 +140,14 @@ h1:focus {
 }
 
 h2 {
-  font-size: 0.95rem;
+  /* Section titles are text-sm font-semibold in the study. */
+  font-size: 0.875rem;
   font-weight: 600;
   margin: var(--space-6) 0 var(--space-2);
 }
 
 h3 {
-  font-size: 0.88rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   margin: var(--space-4) 0 var(--space-2);
 }
@@ -169,7 +175,7 @@ h3 {
 
 .hint {
   color: var(--muted-foreground);
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   margin: var(--space-1) 0 0;
 }
 
@@ -202,10 +208,11 @@ h3 {
 .sidebar__brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: var(--space-4);
+  gap: 0.625rem;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--sidebar-border);
-  min-height: 4rem;
+  height: 4rem;
+  flex-shrink: 0;
   color: inherit;
   font-size: 1rem;
 }
@@ -228,13 +235,13 @@ h3 {
 }
 
 .sidebar__brand-text {
-  line-height: 1.2;
+  line-height: 1.25;
   min-width: 0;
 }
 
 .sidebar__brand-name {
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
   color: var(--sidebar-strong);
 }
 
@@ -243,9 +250,9 @@ h3 {
 }
 
 .sidebar__brand-sub {
-  font-size: 0.64rem;
-  font-weight: 550;
-  letter-spacing: 0.14em;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sidebar-faint);
   overflow: hidden;
@@ -260,15 +267,16 @@ h3 {
   padding: var(--space-4) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.125rem;
   scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) transparent;
 }
 
 .sidebar__label {
   padding: 0 var(--space-2) var(--space-2);
-  font-size: 0.64rem;
+  font-size: 0.625rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sidebar-faint);
 }
@@ -276,15 +284,16 @@ h3 {
 .sidebar__item {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.625rem;
   width: 100%;
+  min-height: 0;
   border: 0;
   background: transparent;
   color: oklch(0.82 0.02 260 / 80%);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   text-align: left;
-  padding: 0.5rem 0.65rem;
+  padding: 0.5rem 0.625rem;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition:
@@ -311,19 +320,19 @@ h3 {
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.125rem;
 }
 
 .sidebar__user {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.35rem 0.5rem;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
   min-width: 0;
 }
 
 .sidebar__user-name {
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--sidebar-strong);
   overflow: hidden;
@@ -332,7 +341,7 @@ h3 {
 }
 
 .sidebar__user-role {
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   color: var(--sidebar-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -342,7 +351,7 @@ h3 {
 .sidebar__user-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .avatar {
@@ -355,7 +364,7 @@ h3 {
   border-radius: 999px;
   background: var(--primary);
   color: var(--primary-foreground);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
@@ -384,14 +393,14 @@ h3 {
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .page-header__eyebrow {
   margin: 0 0 var(--space-1);
-  font-size: 0.7rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--primary);
 }
@@ -402,8 +411,9 @@ h3 {
 
 .page-header__desc {
   margin: var(--space-1) 0 0;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   color: var(--muted-foreground);
+  text-wrap: pretty;
 }
 
 .page-header__actions {
@@ -425,8 +435,8 @@ h3 {
 }
 
 .topbar__brand {
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 
 .topbar__org {
@@ -448,7 +458,7 @@ h3 {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
-  padding: var(--space-6);
+  padding: 1.25rem;
 }
 
 .card--wide {
@@ -479,19 +489,18 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: var(--space-4);
-  margin: var(--space-4) 0;
 }
 
 .summary-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4) 1.25rem;
+  padding: 1.25rem;
 }
 
 .summary-card h2 {
-  margin: 0 0 var(--space-3);
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-4);
+  font-size: 0.875rem;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -506,8 +515,8 @@ h3 {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  font-size: 0.86rem;
-  padding: 0.22rem 0;
+  font-size: 0.875rem;
+  padding: 0.3125rem 0;
 }
 
 .summary-row dt {
@@ -526,7 +535,7 @@ h3 {
 
 .summary-row--mono dd {
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -544,18 +553,18 @@ h3 {
 }
 
 .fact-list dt {
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.025em;
   text-transform: uppercase;
   color: var(--muted-foreground);
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.125rem;
 }
 
 .fact-list dd {
   margin: 0;
-  font-weight: 550;
-  font-size: 0.92rem;
+  font-weight: 500;
+  font-size: 0.875rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -570,25 +579,25 @@ h3 {
   border-radius: var(--radius-xl);
   overflow: hidden;
   background: var(--card);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   margin: var(--space-3) 0;
 }
 
 .data-table thead th {
-  background: oklch(0.965 0.005 250 / 60%);
+  background: oklch(0.965 0.005 250 / 40%);
   text-align: left;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.025em;
   text-transform: uppercase;
   color: var(--muted-foreground);
-  padding: 0.7rem var(--space-4);
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
 }
 
 .data-table td,
 .data-table tbody th {
-  padding: 0.7rem var(--space-4);
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
@@ -596,7 +605,7 @@ h3 {
 }
 
 .data-table tbody th {
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .data-table tbody tr:last-child td,
@@ -609,24 +618,26 @@ h3 {
 }
 
 .data-table tbody tr:hover {
-  background: oklch(0.965 0.005 250 / 45%);
+  background: oklch(0.965 0.005 250 / 40%);
 }
 
 .cell--numeric {
   text-align: right !important;
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 thead .cell--numeric {
   font-family: inherit;
+  font-size: 0.6875rem;
 }
 
 .cell--wrap {
   max-width: 28rem;
   overflow-wrap: anywhere;
+  line-height: 1.375;
 }
 
 .data-table--editable input {
@@ -636,13 +647,13 @@ thead .cell--numeric {
 /* Compact mono identifier chip (work codes, challan numbers). */
 .id-chip {
   display: inline-block;
-  border-radius: var(--radius-sm);
+  border-radius: 0.25rem;
   background: var(--primary-soft);
   color: var(--primary);
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.1rem 0.4rem;
+  padding: 0.125rem 0.375rem;
   white-space: nowrap;
 }
 
@@ -653,10 +664,10 @@ thead .cell--numeric {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.1rem 0.5rem;
+  padding: 0.125rem 0.5rem;
   border-radius: var(--radius-md);
-  font-size: 0.76rem;
-  font-weight: 550;
+  font-size: 0.75rem;
+  font-weight: 500;
   white-space: nowrap;
   background: var(--muted);
   color: var(--muted-foreground);
@@ -698,22 +709,23 @@ thead .cell--numeric {
 }
 
 /* ------------------------------------------------------------------ */
-/* Buttons                                                              */
+/* Buttons — h-9, text-sm font-medium, rounded-md.                      */
 
 button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 0.375rem;
   min-height: 2.25rem;
-  padding: 0.35rem 0.9rem;
+  padding: 0.375rem 1rem;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--primary);
   color: var(--primary-foreground);
-  font-size: 0.88rem;
-  font-weight: 550;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
   transition:
     background-color 120ms ease,
     border-color 120ms ease;
@@ -747,9 +759,10 @@ button:disabled {
   border: 0;
   background: transparent;
   color: var(--primary);
-  font-weight: 550;
+  font-weight: 500;
   text-decoration: none;
   cursor: pointer;
+  white-space: normal;
 }
 
 .button--link:hover {
@@ -764,13 +777,13 @@ button:disabled {
   margin: var(--space-3) 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.375rem;
   max-width: 34rem;
 }
 
 .field label {
-  font-size: 0.82rem;
-  font-weight: 550;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .field-row {
@@ -788,11 +801,12 @@ input,
 select,
 textarea {
   min-height: 2.25rem;
-  padding: 0.35rem 0.65rem;
+  padding: 0.375rem 0.75rem;
   border: 1px solid var(--input);
   border-radius: var(--radius-md);
   background: var(--card);
   color: var(--foreground);
+  font-size: 0.875rem;
   box-shadow: var(--shadow-card);
   transition:
     border-color 120ms ease,
@@ -828,14 +842,14 @@ input[type='radio'] {
 
 .form-error {
   color: var(--destructive);
-  font-size: 0.86rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   margin: var(--space-2) 0;
 }
 
 .form-notice {
   color: var(--success);
-  font-size: 0.86rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   margin: var(--space-2) 0;
 }
@@ -851,8 +865,8 @@ input[type='radio'] {
 .action-bar {
   position: sticky;
   bottom: 0;
-  margin: var(--space-4) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
-  padding: var(--space-3) var(--space-6);
+  margin: var(--space-4) -1.25rem -1.25rem;
+  padding: var(--space-3) 1.25rem;
   background: var(--card);
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
@@ -885,16 +899,17 @@ input[type='radio'] {
 
 .filter-pill {
   min-height: 0;
-  padding: 0.3rem 0.75rem;
+  padding: 0.375rem 0.75rem;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted-foreground);
-  font-size: 0.85rem;
-  font-weight: 550;
+  font-size: 0.875rem;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.375rem;
+  box-shadow: none;
 }
 
 .filter-pill:hover {
@@ -908,9 +923,9 @@ input[type='radio'] {
 }
 
 .filter-pill__count {
-  border-radius: var(--radius-sm);
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  border-radius: 0.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   background: oklch(0.53 0.02 258 / 15%);
 }
@@ -920,12 +935,12 @@ input[type='radio'] {
 }
 
 .search-input {
-  width: 17rem;
+  width: 20rem;
   max-width: 100%;
-  padding-left: 2.1rem;
+  padding-left: 2.25rem;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23768198' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: 0.65rem center;
+  background-position: 0.75rem center;
 }
 
 /* ------------------------------------------------------------------ */
@@ -936,20 +951,21 @@ input[type='radio'] {
   flex-wrap: wrap;
   gap: var(--space-1);
   border-bottom: 1px solid var(--border);
-  margin: var(--space-4) 0 var(--space-4);
+  margin: 0 0 var(--space-4);
 }
 
 .tab {
   min-height: 0;
-  padding: 0.5rem 0.85rem;
+  padding: 0.5rem 0.875rem;
   margin-bottom: -1px;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: transparent;
   color: var(--muted-foreground);
-  font-size: 0.88rem;
-  font-weight: 550;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: none;
 }
 
 .tab:hover {
@@ -961,6 +977,7 @@ input[type='radio'] {
   color: var(--primary);
   border-bottom-color: var(--primary);
   background: transparent;
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ */
@@ -970,31 +987,31 @@ input[type='radio'] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: var(--space-4);
-  margin: var(--space-3) 0 var(--space-4);
 }
 
 .stat-tile {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4) 1.25rem;
+  padding: 1.25rem;
 }
 
 .stat-tile__label {
   display: block;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.025em;
   text-transform: uppercase;
   color: var(--muted-foreground);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.375rem;
 }
 
 .stat-tile__value {
   display: block;
-  font-size: 1.4rem;
+  font-size: 1.5rem;
+  line-height: 2rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1052,11 +1069,11 @@ input[type='radio'] {
 .alert__message {
   flex: 1;
   min-width: 12rem;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .alert__due {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
@@ -1077,8 +1094,8 @@ input[type='radio'] {
 
 .progress__text {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 550;
+  font-size: 0.75rem;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1125,7 +1142,7 @@ input[type='radio'] {
 
 .raw-block {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   background: var(--muted);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1145,7 +1162,7 @@ input[type='radio'] {
 
 .flag-list {
   margin: var(--space-2) 0 0;
-  padding-left: 1.1rem;
+  padding-left: 1.125rem;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -1191,13 +1208,7 @@ input[type='radio'] {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 0.88rem;
-}
-
-.assignment-list input[type='checkbox'] {
-  min-height: 0;
-  box-shadow: none;
-  accent-color: var(--primary);
+  font-size: 0.875rem;
 }
 
 @media print {
