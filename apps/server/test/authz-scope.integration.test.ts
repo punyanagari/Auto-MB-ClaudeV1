@@ -1,0 +1,531 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { FastifyInstance, InjectOptions } from 'fastify';
+import type { DashboardResponse, Work } from '@auto-mb/contracts';
+import type { Sql } from '@auto-mb/db';
+import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { buildApp } from '../src/app.js';
+
+/**
+ * Work-scope enforcement, site-role evidence permissions, and member
+ * lifecycle management — the authorization batch from the 2026-08-08
+ * external review.
+ */
+
+const adminUrl =
+  process.env.DATABASE_ADMIN_URL ??
+  'postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb';
+const appUrl =
+  process.env.DATABASE_URL ??
+  'postgres://auto_mb_app:local-app-change-me@127.0.0.1:5432/auto_mb';
+const appPassword = process.env.AUTO_MB_APP_DB_PASSWORD ?? 'local-app-change-me';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDirectory = path.resolve(
+  here,
+  '..',
+  '..',
+  '..',
+  'packages',
+  'db',
+  'migrations',
+);
+
+const runId = randomBytes(5).toString('hex');
+const ownerEmail = `scope-owner-${runId}@integration.test`;
+const siteEmail = `scope-site-${runId}@integration.test`;
+const viewerEmail = `scope-viewer-${runId}@integration.test`;
+const password = `integration-password-${runId}`;
+
+let admin: Sql;
+let app: FastifyInstance;
+let storageDir: string;
+let organisationId: string;
+let ownerUserId: string;
+let siteUserId: string;
+let viewerUserId: string;
+let workAId: string;
+let workBId: string;
+let itemAId: string;
+let challanAId: string;
+let challanBId: string;
+
+interface CookieJar {
+  cookie: string;
+}
+let owner: CookieJar;
+let site: CookieJar;
+let viewer: CookieJar;
+
+function extractCookies(setCookie: string | string[] | undefined): string {
+  const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
+  return raw.map((entry) => entry.split(';')[0] ?? '').join('; ');
+}
+
+async function signUp(email: string, name: string): Promise<CookieJar> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/sign-up/email',
+    payload: { email, password, name },
+  });
+  expect(response.statusCode, `sign-up ${email}: ${response.body}`).toBe(200);
+  return { cookie: extractCookies(response.headers['set-cookie']) };
+}
+
+async function authed(
+  jar: CookieJar,
+  options: InjectOptions & { organisationId?: string },
+) {
+  const { organisationId: org, ...rest } = options;
+  return app.inject({
+    ...rest,
+    headers: {
+      ...(rest.headers ?? {}),
+      cookie: jar.cookie,
+      ...(org !== undefined ? { 'x-organisation-id': org } : {}),
+    },
+  });
+}
+
+async function seedWork(code: string): Promise<{ workId: string; itemId: string }> {
+  const workId = randomUUID();
+  await admin`
+    insert into works (
+      id, organisation_id, work_code, letter_number, letter_date, title,
+      advertised_value, contract_value, pricing_shape, created_by_user_id
+    )
+    values (
+      ${workId}, ${organisationId}, ${code}, ${`L-${code}`}, '2026-01-10',
+      ${`Scope proof work ${code}`}, '100000.00', '90000.00', 'per_schedule',
+      ${ownerUserId}
+    )
+  `;
+  const scheduleId = randomUUID();
+  await admin`
+    insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+    values (${scheduleId}, ${organisationId}, ${workId}, 'A', 'Schedule A', 1)
+  `;
+  const itemId = randomUUID();
+  await admin`
+    insert into work_items (
+      id, organisation_id, work_id, schedule_id, item_number,
+      description, unit_code, awarded_quantity, effective_rate
+    )
+    values (
+      ${itemId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
+      'Scope test item', 'Nos', '1000.000', '10.00'
+    )
+  `;
+  return { workId, itemId };
+}
+
+async function issueChallanOn(
+  workId: string,
+  itemId: string,
+  prefix: string,
+): Promise<string> {
+  const created = await authed(owner, {
+    method: 'POST',
+    url: `/api/works/${workId}/challans`,
+    organisationId,
+    payload: {
+      challanDate: '2026-08-08',
+      prefix,
+      consignee: { name: 'Scope Store', address: 'Yard 2, Nashik' },
+      items: [{ workItemId: itemId, quantity: '5.000' }],
+    },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  const challanId = created.json<{ challan: { id: string } }>().challan.id;
+  const issued = await authed(owner, {
+    method: 'POST',
+    url: `/api/challans/${challanId}/issue`,
+    organisationId,
+  });
+  expect(issued.statusCode, issued.body).toBe(201);
+  return challanId;
+}
+
+beforeAll(async () => {
+  admin = createDatabasePool({
+    url: adminUrl,
+    max: 1,
+    applicationName: 'auto-mb-scope-admin',
+  });
+  await admin`select 1 as ready`;
+  const escapedPassword = appPassword.replaceAll("'", "''");
+  await admin.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
+        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+      END IF;
+    END
+    $$;
+  `);
+  await runMigrations(admin, migrationsDirectory);
+
+  storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-scope-'));
+  app = await buildApp({
+    databaseUrl: appUrl,
+    authSecret: `integration-secret-${'0'.repeat(32)}`,
+    baseUrl: 'http://127.0.0.1:3000',
+    objectStorageDir: storageDir,
+  });
+
+  owner = await signUp(ownerEmail, 'Scope Owner');
+  site = await signUp(siteEmail, 'Scope Site');
+  viewer = await signUp(viewerEmail, 'Scope Viewer');
+
+  const created = await authed(owner, {
+    method: 'POST',
+    url: '/api/organisations',
+    payload: { name: 'Scope Constructions', slug: `scope-${runId}` },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  organisationId = created.json<{ id: string }>().id;
+
+  const users = await admin<{ id: string; email: string }[]>`
+    select "id", "email" from auth_users
+    where "email" like ${`%-${runId}@integration.test`}
+  `;
+  const byEmail = new Map(users.map((row) => [row.email, row.id]));
+  ownerUserId = byEmail.get(ownerEmail) ?? '';
+  siteUserId = byEmail.get(siteEmail) ?? '';
+  viewerUserId = byEmail.get(viewerEmail) ?? '';
+  expect(ownerUserId && siteUserId && viewerUserId).toBeTruthy();
+
+  await admin`
+    update organisation_memberships
+    set can_issue_documents = true, can_cancel_documents = true
+    where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+  `;
+  for (const [email, role] of [
+    [siteEmail, 'site'],
+    [viewerEmail, 'viewer'],
+  ] as const) {
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email, role },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+  }
+  // The site member is scoped to assigned Works only.
+  await admin`
+    update organisation_memberships set work_scope = 'assigned'
+    where organisation_id = ${organisationId} and user_id = ${siteUserId}
+  `;
+
+  const workA = await seedWork(`SCPA${runId.slice(0, 4).toUpperCase()}`);
+  const workB = await seedWork(`SCPB${runId.slice(0, 4).toUpperCase()}`);
+  workAId = workA.workId;
+  itemAId = workA.itemId;
+  workBId = workB.workId;
+  challanAId = await issueChallanOn(workA.workId, workA.itemId, 'SCPA');
+  challanBId = await issueChallanOn(workB.workId, workB.itemId, 'SCPB');
+
+  // Assign the site member to Work A only, through the API.
+  const assigned = await authed(owner, {
+    method: 'PUT',
+    url: `/api/organisations/current/members/${siteUserId}/assignments`,
+    organisationId,
+    payload: { workIds: [workAId] },
+  });
+  expect(assigned.statusCode, assigned.body).toBe(200);
+}, 60_000);
+
+afterAll(async () => {
+  if (admin) {
+    if (organisationId) {
+      await admin.unsafe(`set session_replication_role = 'replica'`);
+      for (const table of [
+        'audit_events',
+        'work_assignments',
+        'mb_entries',
+        'bills',
+        'bill_counters',
+        'challan_item_serials',
+        'challan_receipts',
+        'work_instruments',
+        'delivery_challan_items',
+        'delivery_challan_counters',
+        'delivery_challans',
+        'work_items',
+        'work_schedules',
+        'works',
+        'organisation_memberships',
+        'organisations',
+      ]) {
+        await admin.unsafe(
+          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
+          [organisationId],
+        );
+      }
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
+    await admin`
+      delete from identity_audit_events
+      where user_id in (
+        select "id" from auth_users
+        where "email" like ${`%-${runId}@integration.test`}
+      )
+    `;
+    await admin`
+      delete from auth_users where "email" like ${`%-${runId}@integration.test`}
+    `;
+    await admin.end();
+  }
+  if (app) await app.close();
+  if (storageDir) await rm(storageDir, { recursive: true, force: true });
+});
+
+describe('work scope enforcement', () => {
+  it('filters the Works list and dashboard to assignments', async () => {
+    const list = await authed(site, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    const works = list.json<{ works: Work[] }>().works;
+    expect(works.map((work) => work.id)).toEqual([workAId]);
+
+    const dashboard = await authed(site, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const payload = dashboard.json<DashboardResponse>();
+    expect(payload.works.map((work) => work.workId)).toEqual([workAId]);
+    expect(payload.totals.works).toBe(1);
+
+    // The owner still sees both.
+    const ownerList = await authed(owner, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(ownerList.json<{ works: Work[] }>().works).toHaveLength(2);
+  });
+
+  it('answers 404 for guessed ids outside the assignment', async () => {
+    const detail = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workBId}`,
+      organisationId,
+    });
+    expect(detail.statusCode).toBe(404);
+
+    const balance = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workBId}/balance`,
+      organisationId,
+    });
+    expect(balance.statusCode).toBe(404);
+
+    const challan = await authed(site, {
+      method: 'GET',
+      url: `/api/challans/${challanBId}`,
+      organisationId,
+    });
+    expect(challan.statusCode).toBe(404);
+
+    const receipt = await authed(site, {
+      method: 'POST',
+      url: `/api/challans/${challanBId}/receipt`,
+      organisationId,
+      payload: { receivedOn: '2026-08-08', receivedBy: 'Site keeper' },
+    });
+    expect(receipt.statusCode).toBe(404);
+
+    // The assigned Work stays reachable.
+    const assignedDetail = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workAId}`,
+      organisationId,
+    });
+    expect(assignedDetail.statusCode, assignedDetail.body).toBe(200);
+  });
+});
+
+describe('site role evidence permissions', () => {
+  it('lets site staff record evidence but not draft documents', async () => {
+    const receipt = await authed(site, {
+      method: 'POST',
+      url: `/api/challans/${challanAId}/receipt`,
+      organisationId,
+      payload: { receivedOn: '2026-08-08', receivedBy: 'Site keeper' },
+    });
+    expect(receipt.statusCode, receipt.body).toBe(201);
+
+    const measurement = await authed(site, {
+      method: 'POST',
+      url: `/api/works/${workAId}/mb-entries`,
+      organisationId,
+      payload: {
+        workItemId: itemAId,
+        deliveryChallanId: challanAId,
+        measuredQuantity: '1.000',
+        measuredOn: '2026-08-08',
+      },
+    });
+    expect(measurement.statusCode, measurement.body).toBe(201);
+
+    const draft = await authed(site, {
+      method: 'POST',
+      url: `/api/works/${workAId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'SCP',
+        consignee: { name: 'Site Attempt Store', address: 'Yard 2, Nashik 422010' },
+        items: [{ workItemId: itemAId, quantity: '1.000' }],
+      },
+    });
+    expect(draft.statusCode).toBe(403);
+
+    const instrument = await authed(site, {
+      method: 'POST',
+      url: `/api/works/${workAId}/instruments`,
+      organisationId,
+      payload: {
+        kind: 'pbg',
+        reference: `BG-SCOPE-${runId}`,
+        issuedOn: '2026-01-15',
+      },
+    });
+    expect(instrument.statusCode).toBe(403);
+  });
+
+  it('refuses evidence from viewers', async () => {
+    const receipt = await authed(viewer, {
+      method: 'POST',
+      url: `/api/challans/${challanAId}/receipt`,
+      organisationId,
+      payload: { receivedOn: '2026-08-08', receivedBy: 'Viewer' },
+    });
+    expect(receipt.statusCode).toBe(403);
+    expect(receipt.json<{ code: string }>().code).toBe('ROLE_FORBIDDEN');
+  });
+});
+
+describe('member lifecycle', () => {
+  it('updates role, scope, and authorities, audited and owner-only', async () => {
+    const denied = await authed(viewer, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${siteUserId}`,
+      organisationId,
+      payload: { role: 'owner' },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const updated = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${viewerUserId}`,
+      organisationId,
+      payload: { role: 'office', canIssueDocuments: true },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    const member = updated
+      .json<{
+        members: { userId: string; role: string; canIssueDocuments: boolean }[];
+      }>()
+      .members.find((candidate) => candidate.userId === viewerUserId);
+    expect(member?.role).toBe('office');
+    expect(member?.canIssueDocuments).toBe(true);
+  });
+
+  it('protects the last active owner', async () => {
+    const demote = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${ownerUserId}`,
+      organisationId,
+      payload: { role: 'office' },
+    });
+    expect(demote.statusCode).toBe(409);
+    expect(demote.json<{ code: string }>().code).toBe('LAST_OWNER');
+
+    const disable = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${ownerUserId}`,
+      organisationId,
+      payload: { status: 'disabled' },
+    });
+    expect(disable.statusCode).toBe(409);
+  });
+
+  it('cuts off a disabled member immediately', async () => {
+    const disabled = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${viewerUserId}`,
+      organisationId,
+      payload: { status: 'disabled' },
+    });
+    expect(disabled.statusCode, disabled.body).toBe(200);
+
+    const attempt = await authed(viewer, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(attempt.statusCode).toBe(403);
+
+    // Re-enable for cleanliness; access returns.
+    const enabled = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${viewerUserId}`,
+      organisationId,
+      payload: { status: 'active' },
+    });
+    expect(enabled.statusCode).toBe(200);
+    const restored = await authed(viewer, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(restored.statusCode).toBe(200);
+  });
+
+  it('manages assignments as a replace-set with existence checks', async () => {
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: `/api/organisations/current/members/${siteUserId}/assignments`,
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(listed.json<{ workIds: string[] }>().workIds).toEqual([workAId]);
+
+    const bogus = await authed(owner, {
+      method: 'PUT',
+      url: `/api/organisations/current/members/${siteUserId}/assignments`,
+      organisationId,
+      payload: { workIds: [randomUUID()] },
+    });
+    expect(bogus.statusCode).toBe(404);
+
+    const both = await authed(owner, {
+      method: 'PUT',
+      url: `/api/organisations/current/members/${siteUserId}/assignments`,
+      organisationId,
+      payload: { workIds: [workAId, workBId] },
+    });
+    expect(both.statusCode, both.body).toBe(200);
+    expect(both.json<{ workIds: string[] }>().workIds).toHaveLength(2);
+
+    // Work B becomes visible to the site member at once.
+    const detail = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workBId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+  });
+});

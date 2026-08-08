@@ -8,6 +8,11 @@ import {
   type AddMemberRequest,
   type CreateOrganisationRequest,
   type Membership,
+  type SetAssignmentsRequest,
+  type UpdateMemberRequest,
+  MemberAssignmentsResponseSchema,
+  SetAssignmentsRequestSchema,
+  UpdateMemberRequestSchema,
 } from '@auto-mb/contracts';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
@@ -241,6 +246,220 @@ export function registerIdentityRoutes(
         },
       );
       return reply.status(201).send({ members: members.map(toMembership) });
+    },
+  );
+
+  app.patch<{ Body: UpdateMemberRequest }>(
+    '/api/organisations/current/members/:userId',
+    {
+      schema: {
+        body: UpdateMemberRequestSchema,
+        response: { 200: MemberListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { userId: memberUserId } = request.params as { userId: string };
+      const body = request.body;
+      const members = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [requester] = await tx<{ role: string }[]>`
+            select role from organisation_memberships where user_id = ${user.id}
+          `;
+          if (requester?.role !== 'owner') {
+            throw httpError(
+              403,
+              'OWNER_REQUIRED',
+              'Only an organisation owner may manage members.',
+            );
+          }
+          const [current] = await tx<{ role: string; status: string }[]>`
+            select role, status from organisation_memberships
+            where user_id = ${memberUserId}
+            for update
+          `;
+          if (!current) {
+            throw httpError(404, 'MEMBER_NOT_FOUND', 'No such member.');
+          }
+
+          // The organisation must always keep one active owner: the last
+          // one can be neither demoted nor disabled.
+          const demotesOwner =
+            current.role === 'owner' &&
+            ((body.role !== undefined && body.role !== 'owner') ||
+              body.status === 'disabled');
+          if (demotesOwner) {
+            const [owners] = await tx<{ count: string }[]>`
+              select count(*)::text as count from organisation_memberships
+              where role = 'owner' and status = 'active'
+            `;
+            if (Number(owners?.count ?? '0') <= 1) {
+              throw httpError(
+                409,
+                'LAST_OWNER',
+                'The organisation must keep at least one active owner.',
+              );
+            }
+          }
+
+          await tx`
+            update organisation_memberships set
+              role = coalesce(${body.role ?? null}, role),
+              work_scope = coalesce(${body.workScope ?? null}, work_scope),
+              can_issue_documents =
+                coalesce(${body.canIssueDocuments ?? null}, can_issue_documents),
+              can_cancel_documents =
+                coalesce(${body.canCancelDocuments ?? null}, can_cancel_documents),
+              status = coalesce(${body.status ?? null}, status),
+              updated_at = now()
+            where user_id = ${memberUserId}
+          `;
+          await tx`
+            insert into audit_events (
+              organisation_id, actor_user_id, action, entity_type, details
+            )
+            values (
+              ${organisationId}, ${user.id}, 'membership.updated',
+              'organisation_memberships',
+              ${jsonb(tx, { memberUserId, changed: Object.keys(body) })}
+            )
+          `;
+          return tx<MembershipRow[]>`
+            select organisation_id, user_id, role, work_scope,
+                   can_issue_documents, can_cancel_documents, status
+            from organisation_memberships
+            order by created_at, user_id
+          `;
+        },
+      );
+      return { members: members.map(toMembership) };
+    },
+  );
+
+  app.get(
+    '/api/organisations/current/members/:userId/assignments',
+    {
+      schema: {
+        response: { 200: MemberAssignmentsResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { userId: memberUserId } = request.params as { userId: string };
+      const workIds = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [requester] = await tx<{ role: string }[]>`
+            select role from organisation_memberships where user_id = ${user.id}
+          `;
+          if (requester?.role !== 'owner' && user.id !== memberUserId) {
+            throw httpError(
+              403,
+              'OWNER_REQUIRED',
+              "Only an organisation owner may view other members' assignments.",
+            );
+          }
+          const rows = await tx<{ work_id: string }[]>`
+            select work_id from work_assignments
+            where user_id = ${memberUserId}
+            order by created_at
+          `;
+          return rows.map((row) => row.work_id);
+        },
+      );
+      return { userId: memberUserId, workIds };
+    },
+  );
+
+  app.put<{ Body: SetAssignmentsRequest }>(
+    '/api/organisations/current/members/:userId/assignments',
+    {
+      schema: {
+        body: SetAssignmentsRequestSchema,
+        response: { 200: MemberAssignmentsResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { userId: memberUserId } = request.params as { userId: string };
+      const body = request.body;
+      const workIds = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [requester] = await tx<{ role: string }[]>`
+            select role from organisation_memberships where user_id = ${user.id}
+          `;
+          if (requester?.role !== 'owner') {
+            throw httpError(
+              403,
+              'OWNER_REQUIRED',
+              'Only an organisation owner may manage assignments.',
+            );
+          }
+          const [member] = await tx<{ user_id: string }[]>`
+            select user_id from organisation_memberships
+            where user_id = ${memberUserId}
+          `;
+          if (!member) {
+            throw httpError(404, 'MEMBER_NOT_FOUND', 'No such member.');
+          }
+          // Replace-set semantics: assignments are access control, not
+          // history — the new list is the whole truth.
+          await tx`
+            delete from work_assignments where user_id = ${memberUserId}
+          `;
+          for (const workId of body.workIds) {
+            await tx`
+              insert into work_assignments (
+                organisation_id, work_id, user_id, created_by_user_id
+              )
+              values (${organisationId}, ${workId}, ${memberUserId}, ${user.id})
+            `.catch((error: unknown) => {
+              if (error instanceof Error && 'code' in error && error.code === '23503') {
+                throw httpError(
+                  404,
+                  'WORK_NOT_FOUND',
+                  'An assigned Work does not exist in this organisation.',
+                );
+              }
+              throw error;
+            });
+          }
+          await tx`
+            insert into audit_events (
+              organisation_id, actor_user_id, action, entity_type, details
+            )
+            values (
+              ${organisationId}, ${user.id}, 'membership.assignments_set',
+              'work_assignments',
+              ${jsonb(tx, { memberUserId, workCount: body.workIds.length })}
+            )
+          `;
+          const rows = await tx<{ work_id: string }[]>`
+            select work_id from work_assignments
+            where user_id = ${memberUserId}
+            order by created_at
+          `;
+          return rows.map((row) => row.work_id);
+        },
+      );
+      return { userId: memberUserId, workIds };
     },
   );
 }

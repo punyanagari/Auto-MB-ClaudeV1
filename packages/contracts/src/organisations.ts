@@ -125,3 +125,37 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
 export type UpdateOrganisationProfileRequest = Static<
   typeof UpdateOrganisationProfileRequestSchema
 >;
+
+/** Owner-only membership update: any subset of role, scope, authorities,
+ * and status. The last active owner can be neither demoted nor disabled. */
+export const UpdateMemberRequestSchema = Type.Object(
+  {
+    role: Type.Optional(MembershipRoleSchema),
+    workScope: Type.Optional(WorkScopeSchema),
+    canIssueDocuments: Type.Optional(Type.Boolean()),
+    canCancelDocuments: Type.Optional(Type.Boolean()),
+    status: Type.Optional(
+      Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type UpdateMemberRequest = Static<typeof UpdateMemberRequestSchema>;
+
+/** Replaces the member's Work assignments with exactly this set. */
+export const SetAssignmentsRequestSchema = Type.Object(
+  {
+    workIds: Type.Array(UuidSchema, { maxItems: 500 }),
+  },
+  { additionalProperties: false },
+);
+export type SetAssignmentsRequest = Static<typeof SetAssignmentsRequestSchema>;
+
+export const MemberAssignmentsResponseSchema = Type.Object(
+  {
+    userId: Type.String({ minLength: 1 }),
+    workIds: Type.Array(UuidSchema),
+  },
+  { additionalProperties: false },
+);
+export type MemberAssignmentsResponse = Static<typeof MemberAssignmentsResponseSchema>;

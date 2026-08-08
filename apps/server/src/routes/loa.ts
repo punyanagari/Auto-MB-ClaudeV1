@@ -21,7 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { requireWriterRole } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
@@ -516,15 +516,23 @@ export function registerLoaRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<WorkRow[]>`
-          select id, work_code, letter_number, letter_date::text as letter_date,
-                 title, advertised_value, contract_value, pricing_shape,
-                 letter_percentage, letter_percentage_direction, status,
-                 created_at
-          from works
-          where deleted_at is null
-          order by created_at desc, id
-        `,
+        async (tx) => {
+          // 'assigned'-scoped memberships list only their Works.
+          const full = await hasFullWorkScope(tx, user.id);
+          return tx<WorkRow[]>`
+            select id, work_code, letter_number, letter_date::text as letter_date,
+                   title, advertised_value, contract_value, pricing_shape,
+                   letter_percentage, letter_percentage_direction, status,
+                   created_at
+            from works w
+            where deleted_at is null
+              and (${full} or exists (
+                select 1 from work_assignments wa
+                where wa.work_id = w.id and wa.user_id = ${user.id}
+              ))
+            order by created_at desc, id
+          `;
+        },
       );
       return { works: rows.map(toWork) };
     },
@@ -545,6 +553,7 @@ export function registerLoaRoutes(
       );
       const { id } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await assertWorkAccess(tx, user.id, id);
         const [work] = await tx<WorkRow[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,

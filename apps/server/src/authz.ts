@@ -1,18 +1,19 @@
 import type { TransactionSql } from '@auto-mb/db';
 import { httpError } from './http.js';
 
-interface AuthorityRow {
+export interface MembershipRow {
   role: string;
+  work_scope: string;
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
 }
 
-async function membershipOf(
+export async function membershipOf(
   tx: TransactionSql,
   userId: string,
-): Promise<AuthorityRow | undefined> {
-  const [membership] = await tx<AuthorityRow[]>`
-    select role, can_issue_documents, can_cancel_documents
+): Promise<MembershipRow | undefined> {
+  const [membership] = await tx<MembershipRow[]>`
+    select role, work_scope, can_issue_documents, can_cancel_documents
     from organisation_memberships where user_id = ${userId}
   `;
   return membership;
@@ -29,6 +30,27 @@ export async function requireWriterRole(
       403,
       'ROLE_FORBIDDEN',
       'Only owner or office members may modify Works.',
+    );
+  }
+}
+
+/** Delivery evidence — receipts, serials, installations, Measurement
+ * Book entries — is the site staff's job; owner and office may record it
+ * too. Viewers may not. */
+export async function requireEvidenceRole(
+  tx: TransactionSql,
+  userId: string,
+): Promise<void> {
+  const membership = await membershipOf(tx, userId);
+  if (
+    membership?.role !== 'owner' &&
+    membership?.role !== 'office' &&
+    membership?.role !== 'site'
+  ) {
+    throw httpError(
+      403,
+      'ROLE_FORBIDDEN',
+      'Only owner, office, or site members may record delivery evidence.',
     );
   }
 }
@@ -53,4 +75,37 @@ export async function requireAuthority(
       `Your membership does not carry the ${authority} authority for documents.`,
     );
   }
+}
+
+/** Enforces work_scope: an 'assigned'-scoped membership reaches only the
+ * Works it is assigned to. Denials are 404, not 403 — a guessed id must
+ * not confirm the Work exists. Every Work-addressed route passes through
+ * here after the tenant is bound. */
+export async function assertWorkAccess(
+  tx: TransactionSql,
+  userId: string,
+  workId: string,
+): Promise<void> {
+  const membership = await membershipOf(tx, userId);
+  if (membership === undefined) {
+    throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  }
+  if (membership.work_scope !== 'assigned') return;
+  const [assignment] = await tx<{ id: string }[]>`
+    select id from work_assignments
+    where work_id = ${workId} and user_id = ${userId}
+  `;
+  if (!assignment) {
+    throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  }
+}
+
+/** True when the membership sees every Work; false when list queries
+ * must filter to assignments. */
+export async function hasFullWorkScope(
+  tx: TransactionSql,
+  userId: string,
+): Promise<boolean> {
+  const membership = await membershipOf(tx, userId);
+  return membership?.work_scope !== 'assigned';
 }

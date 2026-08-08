@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { Membership, MembershipRole } from '@auto-mb/contracts';
+import type { Membership, MembershipRole, Work } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
 
 interface MembersProps {
@@ -15,8 +15,93 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
   viewer: 'Viewer',
 };
 
+/** Per-member Work assignment editor: loads the member's assignment set
+ * on expand and saves it as a replace-set on every toggle. */
+function AssignmentsEditor({
+  api,
+  organisationId,
+  userId,
+  works,
+  onError,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly userId: string;
+  readonly works: readonly Work[];
+  readonly onError: (message: string) => void;
+}) {
+  const [assigned, setAssigned] = useState<readonly string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .memberAssignments(organisationId, userId)
+      .then((payload) => {
+        if (!cancelled) setAssigned(payload.workIds);
+      })
+      .catch(() => {
+        if (!cancelled) onError('The assignments could not be loaded.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, userId, onError]);
+
+  async function toggle(workId: string, include: boolean) {
+    if (assigned === null) return;
+    const next = include
+      ? [...assigned, workId]
+      : assigned.filter((candidate) => candidate !== workId);
+    setBusy(true);
+    try {
+      const payload = await api.setMemberAssignments(organisationId, userId, next);
+      setAssigned(payload.workIds);
+    } catch (cause) {
+      onError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'Saving the assignments failed.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (assigned === null) {
+    return (
+      <p className="muted" role="status">
+        Loading assignments…
+      </p>
+    );
+  }
+  if (works.length === 0) {
+    return <p className="muted">No Works exist yet.</p>;
+  }
+  return (
+    <ul className="assignment-list">
+      {works.map((work) => (
+        <li key={work.id}>
+          <label>
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={assigned.includes(work.id)}
+              onChange={(event) => {
+                void toggle(work.id, event.currentTarget.checked);
+              }}
+            />{' '}
+            {work.workCode} <span className="muted">{work.title}</span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [members, setMembers] = useState<readonly Membership[] | null>(null);
+  const [works, setWorks] = useState<readonly Work[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -26,10 +111,11 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
     let cancelled = false;
     setMembers(null);
     setLoadError(null);
-    api
-      .listMembers(organisationId)
-      .then((loaded) => {
-        if (!cancelled) setMembers(loaded);
+    Promise.all([api.listMembers(organisationId), api.listWorks(organisationId)])
+      .then(([loadedMembers, loadedWorks]) => {
+        if (cancelled) return;
+        setMembers(loadedMembers);
+        setWorks(loadedWorks);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -48,6 +134,29 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
     members?.some(
       (member) => member.userId === currentUserId && member.role === 'owner',
     ) ?? false;
+
+  async function change(
+    userId: string,
+    body: Parameters<ApiClient['updateMember']>[2],
+    description: string,
+  ) {
+    setPending(true);
+    setFormError(null);
+    setNotice(null);
+    try {
+      const updated = await api.updateMember(organisationId, userId, body);
+      setMembers(updated);
+      setNotice(description);
+    } catch (cause) {
+      setFormError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The change could not be saved.',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function addMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -114,18 +223,131 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
             </tr>
           </thead>
           <tbody>
-            {members.map((member) => (
-              <tr key={member.userId}>
-                <th scope="row">
-                  {member.userId === currentUserId ? 'You' : member.userId}
-                </th>
-                <td>{ROLE_LABELS[member.role]}</td>
-                <td>{member.workScope === 'all' ? 'All Works' : 'Assigned'}</td>
-                <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
-                <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
-                <td>{member.status}</td>
-              </tr>
-            ))}
+            {members.map((member) => {
+              const label = member.userId === currentUserId ? 'You' : member.userId;
+              if (!isOwner) {
+                return (
+                  <tr key={member.userId}>
+                    <th scope="row">{label}</th>
+                    <td>{ROLE_LABELS[member.role]}</td>
+                    <td>{member.workScope === 'all' ? 'All Works' : 'Assigned'}</td>
+                    <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
+                    <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
+                    <td>{member.status}</td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={member.userId}>
+                  <th scope="row" className="cell--wrap">
+                    {label}
+                    <details className="member-manage">
+                      <summary>Assignments</summary>
+                      <AssignmentsEditor
+                        api={api}
+                        organisationId={organisationId}
+                        userId={member.userId}
+                        works={works}
+                        onError={setFormError}
+                      />
+                    </details>
+                  </th>
+                  <td>
+                    <select
+                      aria-label={`Role of ${label}`}
+                      value={member.role}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          { role: event.currentTarget.value as MembershipRole },
+                          `Role updated for ${label}.`,
+                        );
+                      }}
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="office">Office</option>
+                      <option value="site">Site</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      aria-label={`Work scope of ${label}`}
+                      value={member.workScope}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          {
+                            workScope: event.currentTarget.value as 'all' | 'assigned',
+                          },
+                          `Work scope updated for ${label}.`,
+                        );
+                      }}
+                    >
+                      <option value="all">All Works</option>
+                      <option value="assigned">Assigned</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Issue authority of ${label}`}
+                      checked={member.canIssueDocuments}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          { canIssueDocuments: event.currentTarget.checked },
+                          `Issue authority updated for ${label}.`,
+                        );
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Cancel authority of ${label}`}
+                      checked={member.canCancelDocuments}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          { canCancelDocuments: event.currentTarget.checked },
+                          `Cancel authority updated for ${label}.`,
+                        );
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <span
+                      className={`chip chip--${member.status === 'active' ? 'active' : 'failed'}`}
+                    >
+                      {member.status}
+                    </span>{' '}
+                    <button
+                      type="button"
+                      className="button--ghost"
+                      disabled={pending}
+                      onClick={() => {
+                        void change(
+                          member.userId,
+                          {
+                            status: member.status === 'active' ? 'disabled' : 'active',
+                          },
+                          member.status === 'active'
+                            ? `${label} disabled — access ends immediately.`
+                            : `${label} re-enabled.`,
+                        );
+                      }}
+                    >
+                      {member.status === 'active' ? 'Disable' : 'Enable'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -135,13 +357,19 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
           {notice}
         </p>
       )}
+      {formError !== null && (
+        <p className="form-error" role="alert">
+          {formError}
+        </p>
+      )}
 
       {isOwner && (
         <>
           <h2>Add a member</h2>
           <p className="muted">
             The person must already have an Auto-MB account; add them by their account
-            email.
+            email. Site members record delivery evidence; set their scope to Assigned
+            and pick their Works under Assignments.
           </p>
           <form onSubmit={(event) => void addMember(event)}>
             <div className="field-row">
@@ -165,12 +393,6 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                 </select>
               </div>
             </div>
-
-            {formError !== null && (
-              <p className="form-error" role="alert">
-                {formError}
-              </p>
-            )}
 
             <div className="actions">
               <button type="submit" disabled={pending}>

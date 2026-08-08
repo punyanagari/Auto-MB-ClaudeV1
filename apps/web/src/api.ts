@@ -9,10 +9,12 @@ import type {
   DashboardResponse,
   LoaDocument,
   LoaDocumentDetail,
+  MemberAssignmentsResponse,
   Membership,
   Organisation,
   OrganisationProfile,
   SaveChallanRequest,
+  UpdateMemberRequest,
   UpdateOrganisationProfileRequest,
   Work,
   WorkBalanceResponse,
@@ -50,6 +52,20 @@ export interface ApiClient {
     organisationId: string,
     body: AddMemberRequest,
   ) => Promise<readonly Membership[]>;
+  readonly updateMember: (
+    organisationId: string,
+    userId: string,
+    body: UpdateMemberRequest,
+  ) => Promise<readonly Membership[]>;
+  readonly memberAssignments: (
+    organisationId: string,
+    userId: string,
+  ) => Promise<MemberAssignmentsResponse>;
+  readonly setMemberAssignments: (
+    organisationId: string,
+    userId: string,
+    workIds: readonly string[],
+  ) => Promise<MemberAssignmentsResponse>;
   readonly listLoaDocuments: (
     organisationId: string,
   ) => Promise<readonly LoaDocument[]>;
@@ -239,6 +255,25 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'POST', body, organisationId },
       );
       return payload.members;
+    },
+    async updateMember(organisationId, userId, body) {
+      const payload = await request<{ members: Membership[] }>(
+        `/api/organisations/current/members/${userId}`,
+        { method: 'PATCH', body, organisationId },
+      );
+      return payload.members;
+    },
+    async memberAssignments(organisationId, userId) {
+      return request<MemberAssignmentsResponse>(
+        `/api/organisations/current/members/${userId}/assignments`,
+        { organisationId },
+      );
+    },
+    async setMemberAssignments(organisationId, userId, workIds) {
+      return request<MemberAssignmentsResponse>(
+        `/api/organisations/current/members/${userId}/assignments`,
+        { method: 'PUT', body: { workIds }, organisationId },
+      );
     },
     async listLoaDocuments(organisationId) {
       const payload = await request<{ documents: LoaDocument[] }>(

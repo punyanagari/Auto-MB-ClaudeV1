@@ -7,6 +7,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
+import { hasFullWorkScope } from '../authz.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
@@ -65,6 +66,8 @@ export function registerDashboardRoutes(
         request.headers['x-organisation-id'],
       );
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        // 'assigned'-scoped members see a dashboard of their Works only.
+        const full = await hasFullWorkScope(tx, user.id);
         const works = await tx<ProgressRow[]>`
           select
             w.id as work_id,
@@ -90,6 +93,10 @@ export function registerDashboardRoutes(
             where b.work_id = w.id
           ) billed on true
           where w.deleted_at is null
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
           order by w.created_at desc
         `;
 
@@ -112,6 +119,10 @@ export function registerDashboardRoutes(
           from work_instruments wi
           join works w on w.id = wi.work_id
           where wi.status = 'active'
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
             and wi.expires_on is not null
             and wi.expires_on <= current_date + ${EXPIRY_WARNING_DAYS}::int
           order by wi.expires_on asc
@@ -124,6 +135,10 @@ export function registerDashboardRoutes(
           from bills b
           join works w on w.id = b.work_id
           where b.status in ('prepared', 'submitted')
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
           order by b.created_at asc
         `;
 

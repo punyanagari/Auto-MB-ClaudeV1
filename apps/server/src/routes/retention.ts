@@ -32,7 +32,12 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { requireAuthority, requireWriterRole } from '../authz.js';
+import {
+  assertWorkAccess,
+  requireAuthority,
+  requireEvidenceRole,
+  requireWriterRole,
+} from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
@@ -184,7 +189,7 @@ export function registerRetentionRoutes(
         organisationId,
         user.id,
         async (tx) => {
-          await requireWriterRole(tx, user.id);
+          await requireEvidenceRole(tx, user.id);
           // The row lock serialises receipt recording against concurrent
           // cancellation: whichever transaction wins, the other sees the
           // final status.
@@ -196,6 +201,7 @@ export function registerRetentionRoutes(
           if (!challan) {
             throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
           }
+          await assertWorkAccess(tx, user.id, challan.work_id);
           if (challan.status !== 'issued') {
             throw httpError(
               409,
@@ -275,6 +281,13 @@ export function registerRetentionRoutes(
       );
       const { id: challanId } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [ref] = await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${challanId}
+        `;
+        if (!ref) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, ref.work_id);
         const [row] = await tx<
           {
             id: string;
@@ -325,7 +338,7 @@ export function registerRetentionRoutes(
         organisationId,
         user.id,
         async (tx) => {
-          await requireWriterRole(tx, user.id);
+          await requireEvidenceRole(tx, user.id);
           // Lock the line so the quantity cap cannot race.
           const [line] = await tx<
             { id: string; work_id: string; quantity: string; challan_status: string }[]
@@ -347,6 +360,7 @@ export function registerRetentionRoutes(
               'Serials are recorded against issued challans.',
             );
           }
+          await assertWorkAccess(tx, user.id, line.work_id);
           const [existing] = await tx<{ count: string }[]>`
             select count(*)::text as count from challan_item_serials
             where delivery_challan_item_id = ${body.challanItemId}
@@ -420,7 +434,14 @@ export function registerRetentionRoutes(
         organisationId,
         user.id,
         async (tx) => {
-          await requireWriterRole(tx, user.id);
+          await requireEvidenceRole(tx, user.id);
+          const [serial] = await tx<{ work_id: string }[]>`
+            select work_id from challan_item_serials where id = ${id}
+          `;
+          if (!serial) {
+            throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
+          }
+          await assertWorkAccess(tx, user.id, serial.work_id);
           const [updated] = await tx<{ work_id: string }[]>`
             update challan_item_serials
             set installed_on = ${body.installedOn},
@@ -463,8 +484,14 @@ export function registerRetentionRoutes(
         request.headers['x-organisation-id'],
       );
       const { id: workId } = request.params as { id: string };
-      const serials = await withBoundTenant(database, organisationId, user.id, (tx) =>
-        listSerials(tx, workId),
+      const serials = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return listSerials(tx, workId);
+        },
       );
       return { serials };
     },
@@ -489,14 +516,17 @@ export function registerRetentionRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<InstrumentRow[]>`
-          select id, work_id, kind, reference, amount::text as amount,
-                 issued_on::text as issued_on, expires_on::text as expires_on,
-                 status, notes, created_at
-          from work_instruments
-          where work_id = ${workId}
-          order by kind, issued_on, reference
-        `,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return tx<InstrumentRow[]>`
+            select id, work_id, kind, reference, amount::text as amount,
+                   issued_on::text as issued_on, expires_on::text as expires_on,
+                   status, notes, created_at
+            from work_instruments
+            where work_id = ${workId}
+            order by kind, issued_on, reference
+          `;
+        },
       );
       return { instruments: rows.map(toInstrument) };
     },
@@ -524,6 +554,7 @@ export function registerRetentionRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
           const [work] = await tx<{ id: string }[]>`
             select id from works where id = ${workId} and deleted_at is null
           `;
@@ -590,6 +621,13 @@ export function registerRetentionRoutes(
       const body = request.body as UpdateInstrumentRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
+        const [existing] = await tx<{ work_id: string }[]>`
+          select work_id from work_instruments where id = ${id}
+        `;
+        if (!existing) {
+          throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
+        }
+        await assertWorkAccess(tx, user.id, existing.work_id);
         if (body.status !== undefined) {
           const [current] = await tx<{ status: string }[]>`
             select status from work_instruments where id = ${id} for update
@@ -651,16 +689,19 @@ export function registerRetentionRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<MbEntryRow[]>`
-          select mb.id, mb.work_item_id, wi.item_number,
-                 mb.delivery_challan_id, mb.measured_quantity::text as measured_quantity,
-                 mb.measured_on::text as measured_on, mb.mb_book_ref, mb.remarks,
-                 mb.bill_id, mb.created_at
-          from mb_entries mb
-          join work_items wi on wi.id = mb.work_item_id
-          where mb.work_id = ${workId}
-          order by mb.measured_on, mb.created_at
-        `,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return tx<MbEntryRow[]>`
+            select mb.id, mb.work_item_id, wi.item_number,
+                   mb.delivery_challan_id, mb.measured_quantity::text as measured_quantity,
+                   mb.measured_on::text as measured_on, mb.mb_book_ref, mb.remarks,
+                   mb.bill_id, mb.created_at
+            from mb_entries mb
+            join work_items wi on wi.id = mb.work_item_id
+            where mb.work_id = ${workId}
+            order by mb.measured_on, mb.created_at
+          `;
+        },
       );
       return { entries: rows.map(toMbEntry) };
     },
@@ -687,7 +728,8 @@ export function registerRetentionRoutes(
         organisationId,
         user.id,
         async (tx) => {
-          await requireWriterRole(tx, user.id);
+          await requireEvidenceRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
           // Lock the item: cumulative measurement must not exceed delivered
           // (issued challans), and this check must not race.
           const [item] = await tx<{ id: string; item_number: string }[]>`
@@ -801,13 +843,16 @@ export function registerRetentionRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<BillRow[]>`
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
                  total_amount::text as total_amount, created_at, submitted_at,
                  paid_at
           from bills where work_id = ${workId}
           order by bill_number desc
-        `,
+        `;
+        },
       );
       return { bills: rows.map(toBill) };
     },
@@ -834,6 +879,7 @@ export function registerRetentionRoutes(
         async (tx) => {
           // Preparing a bill is a financial act: issue authority required.
           await requireAuthority(tx, user.id, 'issue');
+          await assertWorkAccess(tx, user.id, workId);
 
           // The counter row lock serialises concurrent bill preparation for
           // the Work (numbering AND the unbilled-set selection).
@@ -950,10 +996,11 @@ export function registerRetentionRoutes(
       const body = request.body as UpdateBillStatusRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'issue');
-        const [current] = await tx<{ status: Bill['status'] }[]>`
-          select status from bills where id = ${id} for update
+        const [current] = await tx<{ status: Bill['status']; work_id: string }[]>`
+          select status, work_id from bills where id = ${id} for update
         `;
         if (!current) throw httpError(404, 'BILL_NOT_FOUND', 'No such bill.');
+        await assertWorkAccess(tx, user.id, current.work_id);
         const allowed =
           (current.status === 'prepared' && body.status === 'submitted') ||
           (current.status === 'submitted' && body.status === 'paid');

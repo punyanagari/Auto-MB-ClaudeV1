@@ -24,6 +24,23 @@ Delivered:
 - audit events for organisation creation and membership changes;
 - web screens for sign-in/sign-up, organisation selection and creation, and member management — token-based design system, print-aware styles, component tests, and a blocking Playwright + axe accessibility smoke against the production bundle.
 
+Authorization completion (2026-08-08, following the external code review):
+
+- `work_scope = 'assigned'` is now enforced, not merely stored: a
+  membership-to-Work assignment model (migration 0009, seventeenth
+  tenant table) filters the Works list and dashboard and answers 404 for
+  any guessed identifier outside the assignment, on every Work, challan,
+  PDF, receipt, serial, instrument, MB, and bill path;
+- the site role can now do the site job: receipts, serials,
+  installations, and Measurement Book entries accept owner, office, and
+  site members (viewers are refused); drafting, instruments, and billing
+  remain office/owner and authority-gated;
+- member lifecycle management exists end to end: owners edit role,
+  scope, and issue/cancel authorities, disable and re-enable members
+  (denial is immediate through the membership floor), and manage Work
+  assignments — all audited, with the last active owner protected from
+  demotion or disablement.
+
 Closing decisions (2026-08-08):
 
 - MFA enrolment/enforcement for owners is deferred to Milestone 4: the twoFactor capability is live, and the enforcement policy lands with design-partner onboarding, where real contractor data first appears;

@@ -18,7 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { requireAuthority, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import {
   CHALLAN_TEMPLATE_VERSION,
   renderChallanHtml,
@@ -273,6 +273,7 @@ export function registerChallanRoutes(
       );
       const { id: workId } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ allow_excess_delivery: boolean }[]>`
           select allow_excess_delivery from works
           where id = ${workId} and deleted_at is null
@@ -339,12 +340,15 @@ export function registerChallanRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<ChallanRow[]>`
-          select ${tx.unsafe(CHALLAN_COLUMNS)}
-          from delivery_challans
-          where work_id = ${workId}
-          order by created_at desc, id
-        `,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return tx<ChallanRow[]>`
+            select ${tx.unsafe(CHALLAN_COLUMNS)}
+            from delivery_challans
+            where work_id = ${workId}
+            order by created_at desc, id
+          `;
+        },
       );
       return { challans: rows.map(toChallan) };
     },
@@ -373,6 +377,7 @@ export function registerChallanRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
           const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
           `;
@@ -440,9 +445,16 @@ export function registerChallanRoutes(
         request.headers['x-organisation-id'],
       );
       const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, (tx) =>
-        readDetail(tx, id),
-      );
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [ref] = await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${id}
+        `;
+        if (!ref) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, ref.work_id);
+        return readDetail(tx, id);
+      });
     },
   );
 
@@ -465,6 +477,7 @@ export function registerChallanRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
         await tx`
           update delivery_challans
@@ -498,6 +511,7 @@ export function registerChallanRoutes(
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
         await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challans where id = ${id}`;
@@ -530,6 +544,7 @@ export function registerChallanRoutes(
         async (tx) => {
           await requireAuthority(tx, user.id, 'issue');
           const challan = await lockChallan(tx, id);
+          await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'draft');
 
           const [work] = await tx<
@@ -687,6 +702,7 @@ export function registerChallanRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
         // Received goods cannot be un-delivered: once a receipt, serial,
         // or Measurement Book entry references this challan, cancellation
@@ -756,6 +772,7 @@ export function registerChallanRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           const challan = await lockChallan(tx, id);
+          await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'issued');
           const [row] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from delivery_challans where id = ${id}
@@ -880,6 +897,7 @@ export function registerChallanRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
         await storage.put(objectKey, body);
         await tx`
@@ -920,16 +938,18 @@ export function registerChallanRoutes(
         async (tx) => {
           const [row] = await tx<
             {
+              work_id: string;
               rendered_object_key: string | null;
               signed_copy_object_key: string | null;
             }[]
           >`
-            select rendered_object_key, signed_copy_object_key
+            select work_id, rendered_object_key, signed_copy_object_key
             from delivery_challans where id = ${id}
           `;
           if (!row) {
             throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
           }
+          await assertWorkAccess(tx, user.id, row.work_id);
           const found =
             kind === 'rendered' ? row.rendered_object_key : row.signed_copy_object_key;
           if (found === null) {

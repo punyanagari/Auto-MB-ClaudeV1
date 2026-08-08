@@ -41,6 +41,7 @@ const TENANT_TABLES = [
   'bill_counters',
   'bills',
   'mb_entries',
+  'work_assignments',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -48,7 +49,9 @@ type TenantTable = (typeof TENANT_TABLES)[number];
 /** audit_events has its own append-only proof: the application role has no
  * UPDATE/DELETE privilege at all, so generic zero-row mutation assertions
  * (which expect privilege to exist but RLS to hide rows) do not apply. */
-const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter((table) => table !== 'audit_events');
+const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
+  (table) => table !== 'audit_events' && table !== 'work_assignments',
+);
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
  * numbering state): a delete attempt raises 42501 rather than matching
@@ -74,6 +77,7 @@ const DELETE_ALLOWED_TABLES = [
   'delivery_challans',
   'delivery_challan_items',
   'challan_item_serials',
+  'work_assignments',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -246,6 +250,12 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${work.id}, ${challan.id}, ${challanItem.id},
               ${`SN-${workCode}`})
+    `;
+    await tx`
+      insert into work_assignments (
+        organisation_id, work_id, user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${userId}, ${userId})
     `;
     await tx`
       insert into work_instruments (
