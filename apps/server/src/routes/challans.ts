@@ -17,6 +17,7 @@ import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import {
@@ -263,6 +264,22 @@ async function writeLines(
       );
     }
   }
+}
+
+/** The challan's lines in request-input shape ({workItemId, quantity})
+ * for audit diffing; quantity text comes normalised from the numeric
+ * column so before/after compare like for like. */
+async function readLineInputs(
+  tx: TransactionSql,
+  challanId: string,
+): Promise<{ workItemId: string; quantity: string }[]> {
+  const rows = await tx<{ work_item_id: string; quantity: string }[]>`
+    select work_item_id, quantity::text as quantity
+    from delivery_challan_items
+    where delivery_challan_id = ${challanId}
+    order by position
+  `;
+  return rows.map((row) => ({ workItemId: row.work_item_id, quantity: row.quantity }));
 }
 
 async function auditChallan(
@@ -515,6 +532,7 @@ export function registerChallanRoutes(
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
         await assertChallanDate(tx, challan.work_id, body.challanDate);
+        const linesBefore = await readLineInputs(tx, id);
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
@@ -522,8 +540,26 @@ export function registerChallanRoutes(
           where id = ${id}
         `;
         await writeLines(tx, organisationId, id, challan.work_id, body);
+        // Milestone 6: the trail records what each changed field was and
+        // became. Lines round-trip through the database on both sides so
+        // quantities compare in the same normalised numeric text.
+        const changes = auditDiff(
+          {
+            challanDate: challan.challan_date,
+            prefix: challan.prefix,
+            consignee: parseJsonbColumn(challan.consignee_snapshot),
+            items: linesBefore,
+          },
+          {
+            challanDate: body.challanDate,
+            prefix: body.prefix,
+            consignee: body.consignee,
+            items: await readLineInputs(tx, id),
+          },
+        );
         await auditChallan(tx, organisationId, user.id, 'challan.updated', id, {
-          itemCount: body.items.length,
+          before: changes.before,
+          after: changes.after,
         });
         return readDetail(tx, id);
       });
