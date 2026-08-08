@@ -237,9 +237,11 @@ async function writeLines(
         line_amount, position
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
-             wi.description, wi.unit_code, ${item.quantity},
-             wi.effective_rate,
-             (${item.quantity}::numeric(18,3) * wi.effective_rate)::numeric(18,2),
+             coalesce(wi.effective_description, wi.description),
+             coalesce(wi.effective_unit, wi.unit_code), ${item.quantity},
+             coalesce(wi.effective_unit_rate, wi.effective_rate),
+             (${item.quantity}::numeric(18,3)
+               * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
              ${index + 1}
       from work_items wi
       where wi.id = ${item.workItemId} and wi.work_id = ${workId}
@@ -313,6 +315,10 @@ export function registerChallanRoutes(
           where id = ${workId} and deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // The delivery ceiling is COALESCE(effective_quantity,
+        // awarded_quantity): approved amendments (Milestone 6) raise or
+        // lower it, and the rate/description an amendment changed is what
+        // new challan lines will snapshot.
         const rows = await tx<
           {
             work_item_id: string;
@@ -320,18 +326,21 @@ export function registerChallanRoutes(
             description: string;
             unit_code: string;
             awarded: string;
+            effective: string | null;
             delivered: string;
             remaining: string;
             rate: string;
           }[]
         >`
-          select wi.id as work_item_id, wi.item_number, wi.description,
-                 wi.unit_code,
+          select wi.id as work_item_id, wi.item_number,
+                 coalesce(wi.effective_description, wi.description) as description,
+                 coalesce(wi.effective_unit, wi.unit_code) as unit_code,
                  wi.awarded_quantity::text as awarded,
+                 wi.effective_quantity::text as effective,
                  coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)::text as delivered,
-                 (wi.awarded_quantity
+                 (coalesce(wi.effective_quantity, wi.awarded_quantity)
                    - coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0))::text as remaining,
-                 wi.effective_rate::text as rate
+                 coalesce(wi.effective_unit_rate, wi.effective_rate)::text as rate
           from work_items wi
           left join delivery_challan_items dci on dci.work_item_id = wi.id
           left join delivery_challans dc on dc.id = dci.delivery_challan_id
@@ -347,6 +356,7 @@ export function registerChallanRoutes(
             description: row.description,
             unitCode: row.unit_code,
             awardedQuantity: row.awarded,
+            effectiveQuantity: row.effective,
             deliveredQuantity: row.delivered,
             remainingQuantity: row.remaining,
             effectiveRate: row.rate,
@@ -599,9 +609,20 @@ export function registerChallanRoutes(
           if (!work) throw new Error('challan without a Work');
 
           // Concurrency-safe quantity validation: this challan's lines plus
-          // everything already ISSUED must stay within the awarded quantity
-          // (exact numeric arithmetic in SQL). The row lock above serialises
-          // competing issues of this work's single draft.
+          // everything already ISSUED must stay within the delivery ceiling
+          // COALESCE(effective_quantity, awarded_quantity) — exact numeric
+          // arithmetic in SQL. The challan row lock above serialises
+          // competing issues of this work's single draft, and the item row
+          // locks below serialise against amendment apply (Milestone 6),
+          // which takes the same locks before lowering a ceiling.
+          await tx`
+            select wi.id from work_items wi
+            where wi.id in (
+              select dci.work_item_id from delivery_challan_items dci
+              where dci.delivery_challan_id = ${id}
+            )
+            for update
+          `;
           if (!work.allow_excess_delivery) {
             const exceeded = await tx<{ item_number: string }[]>`
               select wi.item_number
@@ -614,14 +635,14 @@ export function registerChallanRoutes(
                   join delivery_challans dc on dc.id = q.delivery_challan_id
                   where q.work_item_id = dci.work_item_id
                     and dc.status = 'issued'
-                ), 0) > wi.awarded_quantity
+                ), 0) > coalesce(wi.effective_quantity, wi.awarded_quantity)
               order by wi.item_number
             `;
             if (exceeded.length > 0) {
               throw httpError(
                 409,
                 'QUANTITY_EXCEEDED',
-                `Issuing would exceed the awarded quantity for: ${exceeded
+                `Issuing would exceed the permitted quantity for: ${exceeded
                   .map((row) => row.item_number)
                   .join(', ')}.`,
               );

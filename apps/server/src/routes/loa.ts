@@ -612,11 +612,11 @@ export function registerLoaRoutes(
       const { id } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, id);
-        const [work] = await tx<WorkRow[]>`
+        const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,
                  letter_percentage, letter_percentage_direction, status,
-                 created_at
+                 created_at, allow_excess_delivery
           from works
           where id = ${id} and deleted_at is null
         `;
@@ -639,10 +639,18 @@ export function registerLoaRoutes(
             unit_code: string;
             awarded_quantity: string;
             effective_rate: string;
+            effective_quantity: string | null;
+            effective_unit_rate: string | null;
+            effective_description: string | null;
+            effective_unit: string | null;
+            amendment_added: boolean;
           }[]
         >`
           select id, schedule_id, item_number, description, unit_code,
-                 awarded_quantity, effective_rate
+                 awarded_quantity, effective_rate,
+                 effective_quantity::text as effective_quantity,
+                 effective_unit_rate::text as effective_unit_rate,
+                 effective_description, effective_unit, amendment_added
           from work_items
           where work_id = ${id} and deleted_at is null
           order by item_number
@@ -663,9 +671,18 @@ export function registerLoaRoutes(
               unitCode: item.unit_code,
               awardedQuantity: item.awarded_quantity,
               effectiveRate: item.effective_rate,
+              // Amendment overlays (Milestone 6): null = original applies.
+              effectiveQuantity: item.effective_quantity,
+              effectiveUnitRate: item.effective_unit_rate,
+              effectiveDescription: item.effective_description,
+              effectiveUnit: item.effective_unit,
+              amendmentAdded: item.amendment_added,
             })),
         }));
-        return { work: toWork(work), schedules };
+        return {
+          work: { ...toWork(work), allowExcessDelivery: work.allow_excess_delivery },
+          schedules,
+        };
       });
     },
   );

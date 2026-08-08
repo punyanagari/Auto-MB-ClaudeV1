@@ -9,6 +9,7 @@ import { identityActionForPath, recordIdentityEvent } from './identity-audit.js'
 import { createClamdScanner, noScanner } from './malware-scan.js';
 import { createMetricsRegistry } from './metrics.js';
 import { createRateLimiter, type RateLimitRule } from './rate-limit.js';
+import { registerAmendmentRoutes } from './routes/amendments.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
 import { registerOrganisationRoutes } from './routes/organisation.js';
@@ -306,6 +307,7 @@ export async function buildApp(
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerAmendmentRoutes(app, authInstance, database);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
     registerRetentionRoutes(app, authInstance, database);
