@@ -4,6 +4,7 @@ import type {
   Challan,
   Instrument,
   InstrumentStatus,
+  IssueChallan,
   MbEntry,
   Serial,
   WorkDetailResponse,
@@ -22,8 +23,16 @@ interface WorkDetailProps {
   readonly canIssue: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
+  readonly onNewIssueChallan: (workId: string) => void;
+  readonly onOpenIssueChallan: (challanId: string) => void;
   readonly onBack: () => void;
 }
+
+const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
+  issue: 'Issue',
+  loan: 'Loan',
+  return: 'Return',
+};
 
 const DIRECTION_LABELS = {
   below: 'below advertised',
@@ -69,10 +78,15 @@ export function WorkDetail({
   canIssue,
   onNewChallan,
   onOpenChallan,
+  onNewIssueChallan,
+  onOpenIssueChallan,
   onBack,
 }: WorkDetailProps) {
   const [detail, setDetail] = useState<WorkDetailResponse | null>(null);
   const [challans, setChallans] = useState<readonly Challan[] | null>(null);
+  const [issueChallans, setIssueChallans] = useState<readonly IssueChallan[] | null>(
+    null,
+  );
   const [instruments, setInstruments] = useState<readonly Instrument[]>([]);
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
@@ -86,6 +100,7 @@ export function WorkDetail({
     let cancelled = false;
     setDetail(null);
     setChallans(null);
+    setIssueChallans(null);
     setLoadError(null);
     Promise.all([
       api.getWork(organisationId, workId),
@@ -94,6 +109,7 @@ export function WorkDetail({
       api.listMbEntries(organisationId, workId),
       api.listBills(organisationId, workId),
       api.listWorkSerials(organisationId, workId),
+      api.listIssueChallans(organisationId, workId),
     ])
       .then(
         ([
@@ -103,6 +119,7 @@ export function WorkDetail({
           loadedEntries,
           loadedBills,
           loadedSerials,
+          loadedIssueChallans,
         ]) => {
           if (cancelled) return;
           setDetail(loaded);
@@ -111,6 +128,7 @@ export function WorkDetail({
           setMbEntries(loadedEntries);
           setBills(loadedBills);
           setSerials(loadedSerials);
+          setIssueChallans(loadedIssueChallans);
         },
       )
       .catch((cause: unknown) => {
@@ -310,6 +328,77 @@ export function WorkDetail({
         </table>
       ) : (
         <p className="muted">No Delivery Challans yet.</p>
+      )}
+
+      <div className="card__header">
+        <h2>Issue Challans</h2>
+        {canModify &&
+          (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
+            <button
+              type="button"
+              onClick={() => {
+                const draft = issueChallans.find(
+                  (challan) => challan.status === 'draft',
+                );
+                if (draft) onOpenIssueChallan(draft.id);
+              }}
+            >
+              Open draft Issue Challan
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onNewIssueChallan(workId);
+              }}
+            >
+              New Issue Challan
+            </button>
+          ))}
+      </div>
+      {issueChallans !== null && issueChallans.length > 0 ? (
+        <table className="data-table">
+          <caption className="visually-hidden">Issue Challans for this Work</caption>
+          <thead>
+            <tr>
+              <th scope="col">Number</th>
+              <th scope="col">Movement</th>
+              <th scope="col">Date</th>
+              <th scope="col">Issued to</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {issueChallans.map((challan) => (
+              <tr key={challan.id}>
+                <th scope="row">
+                  <button
+                    type="button"
+                    className="button--link"
+                    onClick={() => {
+                      onOpenIssueChallan(challan.id);
+                    }}
+                  >
+                    {challan.challanNumber ?? 'Draft'}
+                  </button>
+                </th>
+                <td>{MOVEMENT_LABELS[challan.movementType]}</td>
+                <td>{challan.challanDate}</td>
+                <td className="cell--wrap">{challan.issuedToName}</td>
+                <td>
+                  <span className={`chip chip--${challan.status}`}>
+                    {challan.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="muted">
+          No Issue Challans yet. Issue Challans record material sent out to site, job
+          work, loans, and returns.
+        </p>
       )}
 
       {notice !== null && (

@@ -34,6 +34,9 @@ const TENANT_TABLES = [
   'delivery_challans',
   'delivery_challan_items',
   'delivery_challan_counters',
+  'issue_challans',
+  'issue_challan_lines',
+  'issue_challan_counters',
   'audit_events',
   'challan_receipts',
   'challan_item_serials',
@@ -68,6 +71,7 @@ const DELETE_REVOKED_TABLES = [
   'work_items',
   'loa_documents',
   'delivery_challan_counters',
+  'issue_challan_counters',
   'challan_receipts',
   'work_instruments',
   'bill_counters',
@@ -88,6 +92,8 @@ const DELETE_ALLOWED_TABLES = [
   'work_schedules',
   'delivery_challans',
   'delivery_challan_items',
+  'issue_challans',
+  'issue_challan_lines',
   'challan_item_serials',
   'work_assignments',
   'extension_requests',
@@ -232,6 +238,32 @@ async function seedTenantGraph(
 
     await tx`
       insert into delivery_challan_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 Issue Challan tables: one row each.
+    const [issueChallan] = await tx<{ id: string }[]>`
+      insert into issue_challans (
+        organisation_id, work_id, movement_type, challan_date, prefix,
+        issued_to_name, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'issue', '2026-02-01',
+              ${`${workCode}-IC`}, 'Integration site engineer', ${userId})
+      returning id
+    `;
+    if (!issueChallan) throw new Error('seed issue challan insert returned no row');
+    await tx`
+      insert into issue_challan_lines (
+        organisation_id, issue_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, position
+      )
+      values (
+        ${organisationId}, ${issueChallan.id}, ${work.id}, ${workItem.id},
+        'Integration test item', 'Nos', '1.000', 1
+      )
+    `;
+    await tx`
+      insert into issue_challan_counters (organisation_id, work_id)
       values (${organisationId}, ${work.id})
     `;
 

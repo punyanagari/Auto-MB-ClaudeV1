@@ -3,6 +3,8 @@ import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
+import { IssueChallanDetail } from './IssueChallanDetail.js';
+import { IssueChallanEditor } from './IssueChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
 import { Masters } from './Masters.js';
 import { Members } from './Members.js';
@@ -30,6 +32,9 @@ type WorkspaceView =
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
   | { name: 'masters' }
+  | { name: 'issue-challan-new'; workId: string }
+  | { name: 'issue-challan-edit'; workId: string; challanId: string }
+  | { name: 'issue-challan'; workId: string; challanId: string }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -309,6 +314,12 @@ export function Workspace({
                   challanId,
                 });
               }}
+              onNewIssueChallan={(workId) => {
+                setView({ name: 'issue-challan-new', workId });
+              }}
+              onOpenIssueChallan={(challanId) => {
+                setView({ name: 'issue-challan', workId: view.workId, challanId });
+              }}
               onBack={() => {
                 setView({ name: 'works' });
               }}
@@ -361,6 +372,44 @@ export function Workspace({
           )}
           {view.name === 'masters' && (
             <Masters api={api} organisationId={organisation.id} canModify={canModify} />
+          )}
+          {(view.name === 'issue-challan-new' ||
+            view.name === 'issue-challan-edit') && (
+            <IssueChallanEditor
+              api={api}
+              organisationId={organisation.id}
+              workId={view.workId}
+              challanId={view.name === 'issue-challan-edit' ? view.challanId : null}
+              onSaved={(challanId) => {
+                setView({ name: 'issue-challan', workId: view.workId, challanId });
+              }}
+              onCancel={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'issue-challan' && (
+            <IssueChallanDetail
+              api={api}
+              organisationId={organisation.id}
+              challanId={view.challanId}
+              canModify={canModify}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              onEdit={(challanId) => {
+                setView({
+                  name: 'issue-challan-edit',
+                  workId: view.workId,
+                  challanId,
+                });
+              }}
+              onDeleted={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+              onBack={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
           )}
           {view.name === 'members' && (
             <Members

@@ -31,6 +31,8 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   delivery_challans: 'SELECT, INSERT, UPDATE, DELETE',
   delivery_challan_items: 'SELECT, INSERT, UPDATE, DELETE',
   challan_item_serials: 'SELECT, INSERT, UPDATE, DELETE',
+  issue_challans: 'SELECT, INSERT, UPDATE, DELETE',
+  issue_challan_lines: 'SELECT, INSERT, UPDATE, DELETE',
   work_assignments: 'SELECT, INSERT, DELETE',
   // Retention financial records: no DELETE (0006).
   challan_receipts: 'SELECT, INSERT, UPDATE',
@@ -46,6 +48,8 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // Extension requests (0011): drafts deletable, counters keep no DELETE.
   extension_requests: 'SELECT, INSERT, UPDATE, DELETE',
   extension_request_counters: 'SELECT, INSERT, UPDATE',
+  // Issue Challan numbering state: no DELETE, like the DC counter (0014).
+  issue_challan_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

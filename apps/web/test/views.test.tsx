@@ -52,6 +52,16 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderChallan: vi.fn(),
     uploadSignedCopy: vi.fn(),
     downloadChallanPdf: vi.fn(),
+    listIssueChallans: vi.fn().mockResolvedValue([]),
+    getIssueChallan: vi.fn(),
+    createIssueChallan: vi.fn(),
+    updateIssueChallan: vi.fn(),
+    deleteIssueChallan: vi.fn(),
+    issueIssueChallan: vi.fn(),
+    cancelIssueChallan: vi.fn(),
+    renderIssueChallan: vi.fn(),
+    uploadIssueChallanSignedCopy: vi.fn(),
+    downloadIssueChallanPdf: vi.fn(),
     dashboard: vi.fn(),
     organisationProfile: vi.fn(),
     updateOrganisationProfile: vi.fn(),
@@ -997,6 +1007,8 @@ describe('WorkDetail retention', () => {
         canIssue={flags.canIssue ?? true}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
         onBack={vi.fn()}
       />,
     );
