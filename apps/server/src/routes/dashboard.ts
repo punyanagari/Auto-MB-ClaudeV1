@@ -93,9 +93,7 @@ export function registerDashboardRoutes(
           order by w.created_at desc
         `;
 
-        const [counts] = await tx<
-          { open_drafts: string; loa_review: string }[]
-        >`
+        const [counts] = await tx<{ open_drafts: string; loa_review: string }[]>`
           select
             (select count(*) from delivery_challans where status = 'draft')::text
               as open_drafts,

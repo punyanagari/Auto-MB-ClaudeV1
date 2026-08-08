@@ -33,9 +33,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setError(
-            cause instanceof Error ? cause.message : 'Settings failed to load.',
-          );
+          setError(cause instanceof Error ? cause.message : 'Settings failed to load.');
         }
       });
     return () => {
@@ -108,7 +106,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
     setNotice(null);
     try {
       await api.removeLogo(organisationId);
-      setProfile((current) => (current === null ? null : { ...current, hasLogo: false }));
+      setProfile((current) =>
+        current === null ? null : { ...current, hasLogo: false },
+      );
       setLogoUrl((current) => {
         if (current !== null) URL.revokeObjectURL(current);
         return null;
@@ -116,7 +116,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       setNotice('Logo removed.');
     } catch (cause) {
       setError(
-        cause instanceof RequestFailedError ? cause.message : 'Removing the logo failed.',
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'Removing the logo failed.',
       );
     } finally {
       setBusy(false);

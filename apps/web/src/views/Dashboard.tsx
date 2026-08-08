@@ -158,7 +158,10 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
             </thead>
             <tbody>
               {data.works.map((work) => {
-                const percent = progressPercent(work.deliveredValue, work.contractValue);
+                const percent = progressPercent(
+                  work.deliveredValue,
+                  work.contractValue,
+                );
                 return (
                   <tr key={work.workId}>
                     <th scope="row">

@@ -187,11 +187,7 @@ export function registerOrganisationRoutes(
       }
       const mediaType = detectImageType(body);
       if (mediaType === null) {
-        throw httpError(
-          400,
-          'INVALID_IMAGE',
-          'The logo must be a PNG or JPEG image.',
-        );
+        throw httpError(400, 'INVALID_IMAGE', 'The logo must be a PNG or JPEG image.');
       }
       await assertNotMalware(scanner, body);
 

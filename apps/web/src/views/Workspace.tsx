@@ -137,9 +137,7 @@ export function Workspace({
   }, [view]);
 
   const activeModule =
-    view.name === 'dashboard' ||
-    view.name === 'members' ||
-    view.name === 'settings'
+    view.name === 'dashboard' || view.name === 'members' || view.name === 'settings'
       ? view.name
       : 'works';
 
