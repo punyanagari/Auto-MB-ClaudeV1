@@ -62,6 +62,18 @@ jobs:
             rm ~/.ssh/deploy_key.in
           fi
           chmod 600 ~/.ssh/deploy_key
+          # Validate without leaking: shape stats plus the derived PUBLIC
+          # key (safe to print; must match authorized_keys on the host).
+          echo "key file: $(wc -c < ~/.ssh/deploy_key) bytes, $(wc -l < ~/.ssh/deploy_key) lines"
+          if grep -q "BEGIN .*PRIVATE KEY" ~/.ssh/deploy_key; then
+            echo "shape: PEM/OpenSSH text"
+          else
+            echo "shape: no PEM header found"
+          fi
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key; then
+            echo "DEPLOY_SSH_KEY does not parse as a private key" >&2
+            exit 1
+          fi
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Pull, rebuild, migrate, verify
