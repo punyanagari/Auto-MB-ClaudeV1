@@ -1225,3 +1225,315 @@ describe('Settings', () => {
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
   });
 });
+
+describe('ReviewLoa PBG requirement and row editing', () => {
+  // The base REVIEW_PAYLOAD (untouched above) has no performance-guarantee
+  // field; this variant carries the parsed clause plus a second item row
+  // so removal leaves a confirmable Work.
+  const PBG_PAYLOAD = {
+    ...REVIEW_PAYLOAD,
+    review: {
+      ...REVIEW_PAYLOAD.review,
+      header: {
+        ...REVIEW_PAYLOAD.review.header,
+        performanceGuarantee: {
+          amountFigures: 152321.33,
+          amountWords:
+            'Rupees One Lakh Fifty-Two Thousand Three Hundred And Twenty-One Rupees And Thirty-Three Paise Only',
+          submissionDays: 21,
+          extensionDays: 60,
+          penalInterestPercent: 12,
+          raw: 'amounting to Rs. 152321.33 (…) within 21 days from the date of issue of Letter of Acceptance',
+          needsReview: false,
+        },
+      },
+      items: [
+        ...REVIEW_PAYLOAD.review.items,
+        {
+          schedule: { id: 'A' },
+          itemSno: '2',
+          itemCode: 'S02',
+          description: 'Distribution board, wall mounted',
+          qty: '1.000',
+          qtyUnit: 'Numbers',
+          unitRate: '100.00',
+          bidAmount: '100.00',
+          needsReview: false,
+          raw: { anchorLine: '2  S02  Distribution board ...' },
+        },
+      ],
+    },
+  };
+  const PBG_DOCUMENT = { ...REVIEW_DOCUMENT, extractionPayload: PBG_PAYLOAD };
+
+  function renderReview(confirmLoa = vi.fn()) {
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(PBG_DOCUMENT),
+      confirmLoa: confirmLoa.mockResolvedValue({
+        work: { id: WORK_ID },
+        schedules: [],
+      }),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    return confirmLoa;
+  }
+
+  it('prefills the parsed PBG requirement and submits it with the confirmation', async () => {
+    const confirmLoa = renderReview();
+
+    const amount = await screen.findByLabelText('Required amount (₹)');
+    expect((amount as HTMLInputElement).value).toBe('152321.33');
+    expect(screen.getByLabelText<HTMLInputElement>('Submit within (days)').value).toBe(
+      '21',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Extension window (days)').value,
+    ).toBe('60');
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Penal interest (% p.a.)').value,
+    ).toBe('12');
+    expect(screen.getByText(/amounting to Rs\. 152321\.33/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect(requestArg.pbgRequirement).toEqual({
+      requiredAmount: '152321.33',
+      submissionDays: 21,
+      extensionDays: 60,
+      penalInterestPercent: '12',
+    });
+  });
+
+  it('confirms without a PBG requirement when the reviewer unchecks it', async () => {
+    const confirmLoa = renderReview();
+
+    fireEvent.click(
+      await screen.findByLabelText('The letter demands a Performance Bank Guarantee'),
+    );
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect(requestArg.pbgRequirement).toBeUndefined();
+  });
+
+  it('adds a manual row flagged for review and confirms it with the manual marker', async () => {
+    const confirmLoa = renderReview();
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
+      'Entered rows total ₹1000.00 across 2 rows',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add row' }));
+    const description = screen.getByLabelText('Description for row M1 in schedule A');
+    fireEvent.change(description, {
+      target: { value: 'Extra switch panels supplied loose' },
+    });
+    fireEvent.change(screen.getByLabelText('Unit for row M1 in schedule A'), {
+      target: { value: 'Nos' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity for row M1 in schedule A'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Rate for row M1 in schedule A'), {
+      target: { value: '50.00' },
+    });
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Item number for row M1 in schedule A')
+        .value,
+    ).toBe('A/M1');
+    expect(screen.getByText('manual row')).toBeTruthy();
+    // 900 + 100 + 2×50 against a contract value of 900.00.
+    expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
+      'Entered rows total ₹1100.00 across 3 rows — contract value ₹900.00 (difference ₹200.00)',
+    );
+
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    const manualItem = requestArg.schedules[0]?.items.find(
+      (item) => item.itemNumber === 'A/M1',
+    );
+    expect(manualItem).toMatchObject({
+      manualEntry: true,
+      description: 'Extra switch panels supplied loose',
+      awardedQuantity: '2',
+      effectiveRate: '50.00',
+    });
+    expect(manualItem?.sourceRef).toBeUndefined();
+    // Parsed rows keep their sourceRef untouched.
+    expect(requestArg.schedules[0]?.items[0]?.sourceRef).toEqual({
+      scheduleId: 'A',
+      itemSno: '1',
+    });
+  });
+
+  it('removes a parsed row behind an inline confirmation and recomputes the totals', async () => {
+    const confirmLoa = renderReview();
+
+    await screen.findByLabelText('Rate for row 2 in schedule A');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove row 2 in schedule A' }));
+    // Nothing is removed until the inline prompt is confirmed.
+    expect(screen.getByLabelText('Rate for row 2 in schedule A')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
+
+    expect(screen.queryByLabelText('Rate for row 2 in schedule A')).toBeNull();
+    expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
+      'Entered rows total ₹900.00 across 1 row — contract value ₹900.00 (difference ₹0.00)',
+    );
+
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect(requestArg.schedules).toHaveLength(1);
+    expect(requestArg.schedules[0]?.items).toHaveLength(1);
+    expect(requestArg.schedules[0]?.items[0]?.itemNumber).toBe('A/1');
+  });
+
+  it('keeps a removal candidate when the reviewer chooses Keep', async () => {
+    renderReview();
+    await screen.findByLabelText('Rate for row 2 in schedule A');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove row 2 in schedule A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(screen.getByLabelText('Rate for row 2 in schedule A')).toBeTruthy();
+  });
+});
+
+describe('WorkDetail PBG requirement', () => {
+  const PBG_SCHEDULE_ID = '88888888-8888-4888-8888-888888888888';
+  const workDetailWith = (pbg: {
+    pbgRequiredAmount: string | null;
+    pbgSubmissionDays: number | null;
+    pbgExtensionDays: number | null;
+    pbgPenalInterestPercent: string | null;
+  }) => ({
+    work: {
+      id: WORK_ID,
+      workCode: 'PBG-W-1',
+      letterNumber: 'L-99/2026',
+      letterDate: '2026-02-09',
+      title: 'Supply of signalling gear',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+      ...pbg,
+    },
+    schedules: [
+      {
+        id: PBG_SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [],
+      },
+    ],
+  });
+
+  function renderDetail(detail: unknown) {
+    render(
+      <WorkDetail
+        api={stubApi({ getWork: vi.fn().mockResolvedValue(detail) })}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={false}
+        canRecordEvidence={false}
+        canIssue={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows the letter’s PBG requirement beside the instruments', async () => {
+    renderDetail(
+      workDetailWith({
+        pbgRequiredAmount: '45000.00',
+        pbgSubmissionDays: 21,
+        pbgExtensionDays: 60,
+        pbgPenalInterestPercent: '12.000',
+      }),
+    );
+
+    await screen.findByText('PBG required by the letter');
+    expect(screen.getByText(/45,000/)).toBeTruthy();
+    expect(
+      screen.getByText(/21 days from the letter date \(\+60 days extension\)/),
+    ).toBeTruthy();
+    expect(screen.getByText('12.000% p.a.')).toBeTruthy();
+    expect(
+      screen.queryByText(
+        'The letter records no Performance Bank Guarantee requirement.',
+      ),
+    ).toBeNull();
+  });
+
+  it('says so when the letter records no PBG requirement', async () => {
+    renderDetail(
+      workDetailWith({
+        pbgRequiredAmount: null,
+        pbgSubmissionDays: null,
+        pbgExtensionDays: null,
+        pbgPenalInterestPercent: null,
+      }),
+    );
+
+    await screen.findByText(
+      'The letter records no Performance Bank Guarantee requirement.',
+    );
+    expect(screen.queryByText('PBG required by the letter')).toBeNull();
+  });
+});
