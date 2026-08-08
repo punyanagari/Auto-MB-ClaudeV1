@@ -38,6 +38,11 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   bills: 'SELECT, INSERT, UPDATE',
   bill_counters: 'SELECT, INSERT, UPDATE',
   mb_entries: 'SELECT, INSERT, UPDATE',
+  // Master data retires via the active flag; no DELETE exists (0013).
+  consignee_masters: 'SELECT, INSERT, UPDATE',
+  location_masters: 'SELECT, INSERT, UPDATE',
+  unit_masters: 'SELECT, INSERT, UPDATE',
+  organisation_signatories: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
