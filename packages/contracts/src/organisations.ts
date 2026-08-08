@@ -99,6 +99,12 @@ export const OrganisationProfileSchema = Type.Object(
       Type.Null(),
     ]),
     hasLogo: Type.Boolean(),
+    /** Warranty agreement template for a later document generator;
+     * stored verbatim, never rendered here (Milestone 7: CRUD only). */
+    warrantyTemplateText: Type.Union([
+      Type.String({ minLength: 1, maxLength: 20000 }),
+      Type.Null(),
+    ]),
   },
   { additionalProperties: false },
 );
@@ -118,6 +124,9 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     ),
     contactEmail: Type.Optional(
       Type.Union([Type.String({ minLength: 3, maxLength: 200 }), Type.Null()]),
+    ),
+    warrantyTemplateText: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),
     ),
   },
   { additionalProperties: false },

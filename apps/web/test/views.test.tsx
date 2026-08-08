@@ -72,6 +72,18 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
+    listConsigneeMasters: vi.fn().mockResolvedValue([]),
+    saveConsigneeMaster: vi.fn(),
+    setConsigneeMasterActive: vi.fn(),
+    listLocationMasters: vi.fn().mockResolvedValue([]),
+    saveLocationMaster: vi.fn(),
+    setLocationMasterActive: vi.fn(),
+    listUnitMasters: vi.fn().mockResolvedValue([]),
+    saveUnitMaster: vi.fn(),
+    setUnitMasterActive: vi.fn(),
+    listSignatories: vi.fn().mockResolvedValue([]),
+    saveSignatory: vi.fn(),
+    setSignatoryActive: vi.fn(),
     ...overrides,
   };
 }
@@ -1202,6 +1214,7 @@ describe('Settings', () => {
         gstin: '27ABCDE1234F1Z5',
         contactPhone: null,
         contactEmail: null,
+        warrantyTemplateText: null,
       });
     });
     expect(await screen.findByRole('status')).toBeTruthy();
@@ -1226,6 +1239,202 @@ describe('Settings', () => {
     expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
+  });
+
+  it('saves the warranty template through the profile update', async () => {
+    const updateOrganisationProfile = vi.fn().mockResolvedValue({
+      ...PROFILE,
+      warrantyTemplateText: 'Goods carry a 24-month warranty.',
+    });
+    const { Settings } = await import('../src/views/Settings.js');
+    render(
+      <Settings
+        api={stubApi({
+          organisationProfile: vi.fn().mockResolvedValue(PROFILE),
+          updateOrganisationProfile,
+        })}
+        organisationId={ORG_ID}
+        isOwner
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    fireEvent.change(screen.getByLabelText('Warranty agreement template'), {
+      target: { value: 'Goods carry a 24-month warranty.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));
+
+    await waitFor(() => {
+      expect(updateOrganisationProfile).toHaveBeenCalledWith(
+        ORG_ID,
+        expect.objectContaining({
+          warrantyTemplateText: 'Goods carry a 24-month warranty.',
+        }),
+      );
+    });
+  });
+});
+
+describe('Masters', () => {
+  const CONSIGNEE = {
+    id: '44444444-4444-4444-8444-444444444444',
+    designation: 'Sr. DEE (G) NR',
+    address: 'Delhi Division, New Delhi',
+    contactPerson: null,
+    phone: '011-23385678',
+    email: null,
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  it('lists consignees and adds one through the form', async () => {
+    const saveConsigneeMaster = vi.fn().mockResolvedValue(CONSIGNEE);
+    const api = stubApi({
+      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+      saveConsigneeMaster,
+    });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Designation / name'), {
+      target: { value: 'SSE (Signal) GZB' },
+    });
+    fireEvent.change(screen.getByLabelText('Address (optional)'), {
+      target: { value: 'Signal Workshop, Ghaziabad' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add consignee' }));
+
+    await waitFor(() => {
+      expect(saveConsigneeMaster).toHaveBeenCalledWith(ORG_ID, null, {
+        designation: 'SSE (Signal) GZB',
+        address: 'Signal Workshop, Ghaziabad',
+      });
+    });
+    expect(await screen.findByRole('status')).toBeTruthy();
+  });
+
+  it('retires a consignee and surfaces duplicate conflicts as alerts', async () => {
+    const setConsigneeMasterActive = vi
+      .fn()
+      .mockResolvedValue({ ...CONSIGNEE, active: false });
+    const saveConsigneeMaster = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'CONSIGNEE_MASTER_EXISTS',
+          'A consignee with this designation and address already exists.',
+        ),
+      );
+    const api = stubApi({
+      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+      setConsigneeMasterActive,
+      saveConsigneeMaster,
+    });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retire' }));
+    await waitFor(() => {
+      expect(setConsigneeMasterActive).toHaveBeenCalledWith(
+        ORG_ID,
+        CONSIGNEE.id,
+        false,
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText('Designation / name'), {
+      target: { value: 'Sr. DEE (G) NR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add consignee' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('already exists');
+  });
+
+  it('hides mutations from read-only members', async () => {
+    const api = stubApi({
+      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+    });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify={false} />);
+
+    expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retire' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add consignee' })).toBeNull();
+  });
+
+  it('switches to the units tab and shows the seeded canon', async () => {
+    const listUnitMasters = vi.fn().mockResolvedValue([
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        name: 'Numbers',
+        active: true,
+        createdAt: '2026-08-08T00:00:00.000Z',
+      },
+    ]);
+    const api = stubApi({ listUnitMasters });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Units' }));
+    expect(await screen.findByText('Numbers')).toBeTruthy();
+    expect(listUnitMasters).toHaveBeenCalledWith(ORG_ID, false);
+  });
+});
+
+describe('ChallanEditor consignee picker', () => {
+  it('prefills the snapshot fields from a chosen master and keeps them editable', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listConsigneeMasters: vi.fn().mockResolvedValue([
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          designation: 'Sr. DEE (G) NR',
+          address: 'Delhi Division, New Delhi',
+          contactPerson: null,
+          phone: '011-23385678',
+          email: null,
+          active: true,
+          createdAt: '2026-08-08T00:00:00.000Z',
+        },
+      ]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    fireEvent.change(screen.getByLabelText('Prefill consignee from masters'), {
+      target: { value: '44444444-4444-4444-8444-444444444444' },
+    });
+
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G) NR',
+    );
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
+      'Delhi Division, New Delhi',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('011-23385678');
+
+    // Manual entry stays possible after picking — the fields are the
+    // challan's own snapshot, not a bound reference.
+    fireEvent.change(screen.getByLabelText('Consignee name'), {
+      target: { value: 'Sr. DEE (G) NR, Attn: TI' },
+    });
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G) NR, Attn: TI',
+    );
   });
 });
 

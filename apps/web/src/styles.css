@@ -979,6 +979,34 @@ button:disabled {
 
 .timeline__arrow {
   color: var(--color-ink-muted);
+/* Tab strip: flat category switcher used by the Masters screen. The
+ * selected tab carries the accent underline, mirroring the sidebar's
+ * active treatment. */
+.tab-strip {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-line);
+  margin-bottom: var(--space-4);
+}
+
+.tab-strip__tab {
+  border: none;
+  background: none;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-ink-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-weight: 550;
+}
+
+.tab-strip__tab:hover {
+  color: var(--color-ink);
+}
+
+.tab-strip__tab[aria-selected='true'] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 
 /* Documents are legal artifacts: anything that reaches paper drops chrome. */

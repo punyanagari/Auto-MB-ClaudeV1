@@ -1,5 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { SaveChallanRequest, WorkBalanceResponse } from '@auto-mb/contracts';
+import type {
+  ConsigneeMaster,
+  SaveChallanRequest,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 
 interface ChallanEditorProps {
@@ -33,6 +37,7 @@ export function ChallanEditor({
 }: ChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
+  const [consignees, setConsignees] = useState<readonly ConsigneeMaster[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -47,10 +52,14 @@ export function ChallanEditor({
       challanId === null
         ? Promise.resolve(null)
         : api.getChallan(organisationId, challanId),
+      // The picker is a convenience: an unavailable master list must not
+      // block manual consignee entry.
+      api.listConsigneeMasters(organisationId).catch(() => []),
     ])
-      .then(([loadedBalance, existing]) => {
+      .then(([loadedBalance, existing, loadedConsignees]) => {
         if (cancelled) return;
         setBalance(loadedBalance);
+        setConsignees(loadedConsignees);
         const quantities: Record<string, string> = {};
         for (const item of existing?.items ?? []) {
           quantities[item.workItemId] = item.quantity;
@@ -178,6 +187,42 @@ export function ChallanEditor({
             />
           </div>
         </div>
+        {consignees.length > 0 && (
+          <div className="field">
+            <label htmlFor="consignee-picker">Prefill consignee from masters</label>
+            <select
+              id="consignee-picker"
+              defaultValue=""
+              onChange={(event) => {
+                // The picker only PREFILLS the snapshot fields below —
+                // the challan keeps its own free-text copy, and every
+                // field stays editable after picking.
+                const chosen = consignees.find(
+                  (candidate) => candidate.id === event.target.value,
+                );
+                if (chosen === undefined) return;
+                setState({
+                  ...state,
+                  name: chosen.designation,
+                  address: chosen.address ?? '',
+                  phone: chosen.phone ?? '',
+                });
+              }}
+            >
+              <option value="">Manual entry</option>
+              {consignees.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.designation}
+                  {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="hint">
+              Picking copies the details into this challan; edits here never change the
+              master.
+            </p>
+          </div>
+        )}
         <div className="field-row">
           <div className="field">
             <label htmlFor="consignee-name">Consignee name</label>

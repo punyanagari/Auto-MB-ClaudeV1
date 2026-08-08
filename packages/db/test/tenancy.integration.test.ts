@@ -42,6 +42,10 @@ const TENANT_TABLES = [
   'bills',
   'mb_entries',
   'work_assignments',
+  'consignee_masters',
+  'location_masters',
+  'unit_masters',
+  'organisation_signatories',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -67,6 +71,11 @@ const DELETE_REVOKED_TABLES = [
   'bill_counters',
   'bills',
   'mb_entries',
+  // Masters retire via the active flag; the app role holds no DELETE (0013).
+  'consignee_masters',
+  'location_masters',
+  'unit_masters',
+  'organisation_signatories',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -283,6 +292,29 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
               '2026-02-03', ${userId})
+    `;
+
+    // Milestone 7 masters tables: one row each.
+    await tx`
+      insert into consignee_masters (
+        organisation_id, designation, address, created_by_user_id
+      )
+      values (${organisationId}, ${`Sr. DEE ${workCode}`},
+              'Integration division office', ${userId})
+    `;
+    await tx`
+      insert into location_masters (organisation_id, name, kind, created_by_user_id)
+      values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
+    `;
+    await tx`
+      insert into unit_masters (organisation_id, name, created_by_user_id)
+      values (${organisationId}, ${`Unit-${workCode}`}, ${userId})
+    `;
+    await tx`
+      insert into organisation_signatories (
+        organisation_id, name, designation, created_by_user_id
+      )
+      values (${organisationId}, ${`Signatory ${workCode}`}, 'Director', ${userId})
     `;
 
     return {

@@ -4,6 +4,7 @@ import type { ApiClient, MeResponse } from '../api.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
+import { Masters } from './Masters.js';
 import { Members } from './Members.js';
 import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
@@ -28,6 +29,7 @@ type WorkspaceView =
   | { name: 'challan-new'; workId: string; workCode: string }
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
+  | { name: 'masters' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -67,6 +69,25 @@ const MODULES = [
         <rect x="9" y="2" width="5" height="5" rx="1" />
         <rect x="2" y="9" width="5" height="5" rx="1" />
         <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'masters' as const,
+    label: 'Masters',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2.5 4.5 8 2l5.5 2.5L8 7 2.5 4.5Z" />
+        <path d="M2.5 8 8 10.5 13.5 8" />
+        <path d="M2.5 11.5 8 14l5.5-2.5" />
       </svg>
     ),
   },
@@ -140,7 +161,10 @@ export function Workspace({
   }, [view]);
 
   const activeModule =
-    view.name === 'dashboard' || view.name === 'members' || view.name === 'settings'
+    view.name === 'dashboard' ||
+    view.name === 'masters' ||
+    view.name === 'members' ||
+    view.name === 'settings'
       ? view.name
       : 'works';
 
@@ -167,9 +191,11 @@ export function Workspace({
                     ? { name: 'dashboard' }
                     : key === 'works'
                       ? { name: 'works' }
-                      : key === 'members'
-                        ? { name: 'members' }
-                        : { name: 'settings' },
+                      : key === 'masters'
+                        ? { name: 'masters' }
+                        : key === 'members'
+                          ? { name: 'members' }
+                          : { name: 'settings' },
                 );
               }}
             >
@@ -332,6 +358,9 @@ export function Workspace({
                 setView({ name: 'work', workId: view.workId });
               }}
             />
+          )}
+          {view.name === 'masters' && (
+            <Masters api={api} organisationId={organisation.id} canModify={canModify} />
           )}
           {view.name === 'members' && (
             <Members

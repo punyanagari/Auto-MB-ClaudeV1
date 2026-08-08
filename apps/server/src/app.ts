@@ -16,6 +16,7 @@ import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
+import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
 import { createFileSystemStorage } from './storage.js';
@@ -318,6 +319,7 @@ export async function buildApp(
     registerExportRoutes(app, authInstance, database);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
+    registerMasterRoutes(app, authInstance, database);
     registerRetentionRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);

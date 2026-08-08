@@ -6,12 +6,14 @@ import type {
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
+  ConsigneeMaster,
   CreateOrganisationRequest,
   DashboardResponse,
   InstallSerialRequest,
   Instrument,
   LoaDocument,
   LoaDocumentDetail,
+  LocationMaster,
   MbEntry,
   MemberAssignmentsResponse,
   Membership,
@@ -22,9 +24,15 @@ import type {
   RecordReceiptRequest,
   RecordSerialsRequest,
   SaveChallanRequest,
+  SaveConsigneeMasterRequest,
   SaveInstrumentRequest,
+  SaveLocationMasterRequest,
+  SaveSignatoryRequest,
+  SaveUnitMasterRequest,
   Serial,
   TimelineResponse,
+  Signatory,
+  UnitMaster,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
   UpdateMemberRequest,
@@ -233,6 +241,64 @@ export interface ApiClient {
     entityId: string,
     options?: { readonly cursor?: string; readonly limit?: number },
   ) => Promise<TimelineResponse>;
+  /** Master data (pickers only): `save` with a null id creates, with an id
+   * updates; `setActive` retires (false) or reactivates (true). */
+  readonly listConsigneeMasters: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly ConsigneeMaster[]>;
+  readonly saveConsigneeMaster: (
+    organisationId: string,
+    id: string | null,
+    body: SaveConsigneeMasterRequest,
+  ) => Promise<ConsigneeMaster>;
+  readonly setConsigneeMasterActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<ConsigneeMaster>;
+  readonly listLocationMasters: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly LocationMaster[]>;
+  readonly saveLocationMaster: (
+    organisationId: string,
+    id: string | null,
+    body: SaveLocationMasterRequest,
+  ) => Promise<LocationMaster>;
+  readonly setLocationMasterActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<LocationMaster>;
+  readonly listUnitMasters: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly UnitMaster[]>;
+  readonly saveUnitMaster: (
+    organisationId: string,
+    id: string | null,
+    body: SaveUnitMasterRequest,
+  ) => Promise<UnitMaster>;
+  readonly setUnitMasterActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<UnitMaster>;
+  readonly listSignatories: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly Signatory[]>;
+  readonly saveSignatory: (
+    organisationId: string,
+    id: string | null,
+    body: SaveSignatoryRequest,
+  ) => Promise<Signatory>;
+  readonly setSignatoryActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<Signatory>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -651,6 +717,82 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<TimelineResponse>(
         `/api/audit/entity/${entityType}/${entityId}${suffix}`,
         { organisationId },
+      );
+    },
+    async listConsigneeMasters(organisationId, includeRetired = false) {
+      const payload = await request<{ consignees: ConsigneeMaster[] }>(
+        `/api/masters/consignees${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.consignees;
+    },
+    async saveConsigneeMaster(organisationId, id, body) {
+      return request<ConsigneeMaster>(
+        id === null ? '/api/masters/consignees' : `/api/masters/consignees/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setConsigneeMasterActive(organisationId, id, active) {
+      return request<ConsigneeMaster>(
+        `/api/masters/consignees/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listLocationMasters(organisationId, includeRetired = false) {
+      const payload = await request<{ locations: LocationMaster[] }>(
+        `/api/masters/locations${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.locations;
+    },
+    async saveLocationMaster(organisationId, id, body) {
+      return request<LocationMaster>(
+        id === null ? '/api/masters/locations' : `/api/masters/locations/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setLocationMasterActive(organisationId, id, active) {
+      return request<LocationMaster>(
+        `/api/masters/locations/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listUnitMasters(organisationId, includeRetired = false) {
+      const payload = await request<{ units: UnitMaster[] }>(
+        `/api/masters/units${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.units;
+    },
+    async saveUnitMaster(organisationId, id, body) {
+      return request<UnitMaster>(
+        id === null ? '/api/masters/units' : `/api/masters/units/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setUnitMasterActive(organisationId, id, active) {
+      return request<UnitMaster>(
+        `/api/masters/units/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listSignatories(organisationId, includeRetired = false) {
+      const payload = await request<{ signatories: Signatory[] }>(
+        `/api/masters/signatories${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.signatories;
+    },
+    async saveSignatory(organisationId, id, body) {
+      return request<Signatory>(
+        id === null ? '/api/masters/signatories' : `/api/masters/signatories/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setSignatoryActive(organisationId, id, active) {
+      return request<Signatory>(
+        `/api/masters/signatories/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
       );
     },
   };
