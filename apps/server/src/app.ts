@@ -46,6 +46,13 @@ export interface BuildAppOptions {
     readonly auth?: RateLimitRule;
     readonly upload?: RateLimitRule;
   };
+  /** Number of reverse-proxy hops to trust for client addressing. In the
+   * production topology the server sits exactly one hop behind Caddy,
+   * which replaces any client-supplied X-Forwarded-For with the real
+   * peer address, so 1 is the correct (and narrow) setting there. Unset
+   * trusts no proxy: request.ip is the socket peer, and forwarded
+   * headers are ignored — the safe default when exposed directly. */
+  readonly trustProxyHops?: number;
 }
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
@@ -68,6 +75,12 @@ export async function buildApp(
     genReqId: (request) =>
       request.headers['x-request-id']?.toString() ?? crypto.randomUUID(),
     disableRequestLogging: false,
+    // Without this, every request behind Caddy shares the proxy's own
+    // address and the per-client rate limits collapse into one global
+    // bucket (external re-audit).
+    ...(options.trustProxyHops !== undefined
+      ? { trustProxy: options.trustProxyHops }
+      : {}),
   });
 
   const database = options.databaseUrl

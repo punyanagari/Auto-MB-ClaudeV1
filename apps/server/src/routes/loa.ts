@@ -21,7 +21,12 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import {
+  assertWorkAccess,
+  hasFullWorkScope,
+  membershipOf,
+  requireWriterRole,
+} from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
@@ -290,12 +295,36 @@ export function registerLoaRoutes(
         database,
         organisationId,
         user.id,
-        (tx) => tx<LoaDocumentRow[]>`
-          select id, original_filename, sha256, size_bytes,
-                 extraction_status, confirmed_work_id, created_at
-          from loa_documents
-          order by created_at desc, id
-        `,
+        async (tx) => {
+          // Owner/office run the upload/review workflow and see every
+          // document. Site/viewer members see only documents already
+          // confirmed into Works within their scope — unconfirmed uploads
+          // (and their extraction payloads) are the writers' workspace
+          // (external re-audit).
+          const membership = await membershipOf(tx, user.id);
+          const writer = membership?.role === 'owner' || membership?.role === 'office';
+          if (writer) {
+            return tx<LoaDocumentRow[]>`
+              select id, original_filename, sha256, size_bytes,
+                     extraction_status, confirmed_work_id, created_at
+              from loa_documents
+              order by created_at desc, id
+            `;
+          }
+          const full = membership !== undefined && membership.work_scope !== 'assigned';
+          return tx<LoaDocumentRow[]>`
+            select id, original_filename, sha256, size_bytes,
+                   extraction_status, confirmed_work_id, created_at
+            from loa_documents
+            where confirmed_work_id is not null
+              and (${full} or exists (
+                select 1 from work_assignments wa
+                where wa.work_id = loa_documents.confirmed_work_id
+                  and wa.user_id = ${user.id}
+              ))
+            order by created_at desc, id
+          `;
+        },
       );
       return { documents: rows.map(toDocument) };
     },
@@ -329,6 +358,28 @@ export function registerLoaRoutes(
           `;
           if (!found) {
             throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+          }
+          // Same visibility rule as the list; the denial is 404 so a
+          // guessed identifier does not confirm the document exists.
+          const membership = await membershipOf(tx, user.id);
+          const writer = membership?.role === 'owner' || membership?.role === 'office';
+          if (!writer) {
+            let visible = false;
+            if (membership !== undefined && found.confirmed_work_id !== null) {
+              if (membership.work_scope !== 'assigned') {
+                visible = true;
+              } else {
+                const [assignment] = await tx<{ id: string }[]>`
+                  select id from work_assignments
+                  where work_id = ${found.confirmed_work_id}
+                    and user_id = ${user.id}
+                `;
+                visible = assignment !== undefined;
+              }
+            }
+            if (!visible) {
+              throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+            }
           }
           return found;
         },

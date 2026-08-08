@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { DashboardResponse, Work } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -257,6 +257,7 @@ afterAll(async () => {
         'delivery_challan_items',
         'delivery_challan_counters',
         'delivery_challans',
+        'loa_documents',
         'work_items',
         'work_schedules',
         'works',
@@ -417,6 +418,109 @@ describe('site role evidence permissions', () => {
   });
 });
 
+describe('LOA document scope', () => {
+  let confirmedAId: string;
+  let confirmedBId: string;
+  let unconfirmedId: string;
+
+  beforeAll(async () => {
+    confirmedAId = randomUUID();
+    confirmedBId = randomUUID();
+    unconfirmedId = randomUUID();
+    const seed = [
+      [confirmedAId, workAId, 'confirmed', 'loa-work-a.pdf'],
+      [confirmedBId, workBId, 'confirmed', 'loa-work-b.pdf'],
+      [unconfirmedId, null, 'review', 'loa-unconfirmed.pdf'],
+    ] as const;
+    for (const [id, workId, status, filename] of seed) {
+      await admin`
+        insert into loa_documents (
+          id, organisation_id, object_key, original_filename, sha256,
+          media_type, size_bytes, extraction_status, extraction_payload,
+          confirmed_work_id, uploaded_by_user_id
+        )
+        values (
+          ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
+          ${filename}, ${'c'.repeat(32) + id.replaceAll('-', '')},
+          'application/pdf', 1000, ${status},
+          ${jsonb(admin, { sourceText: 'SECRET LETTER TEXT' })},
+          ${workId}, ${ownerUserId}
+        )
+      `;
+    }
+  });
+
+  it('shows writers every document, unconfirmed included', async () => {
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/loa-documents',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const ids = listed
+      .json<{ documents: { id: string }[] }>()
+      .documents.map((document) => document.id);
+    expect(ids).toContain(confirmedAId);
+    expect(ids).toContain(confirmedBId);
+    expect(ids).toContain(unconfirmedId);
+  });
+
+  it('limits assigned-scope members to their Works, confirmed only', async () => {
+    const listed = await authed(site, {
+      method: 'GET',
+      url: '/api/loa-documents',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const ids = listed
+      .json<{ documents: { id: string }[] }>()
+      .documents.map((document) => document.id);
+    expect(ids).toContain(confirmedAId);
+    expect(ids).not.toContain(confirmedBId);
+    expect(ids).not.toContain(unconfirmedId);
+
+    // Detail follows the same rule; denials are indistinguishable from
+    // absence.
+    const allowed = await authed(site, {
+      method: 'GET',
+      url: `/api/loa-documents/${confirmedAId}`,
+      organisationId,
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    for (const blockedId of [confirmedBId, unconfirmedId]) {
+      const blocked = await authed(site, {
+        method: 'GET',
+        url: `/api/loa-documents/${blockedId}`,
+        organisationId,
+      });
+      expect(blocked.statusCode).toBe(404);
+      expect(blocked.json<{ code: string }>().code).toBe('DOCUMENT_NOT_FOUND');
+    }
+  });
+
+  it('hides unconfirmed uploads from full-scope readers too', async () => {
+    const listed = await authed(viewer, {
+      method: 'GET',
+      url: '/api/loa-documents',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const ids = listed
+      .json<{ documents: { id: string }[] }>()
+      .documents.map((document) => document.id);
+    expect(ids).toContain(confirmedAId);
+    expect(ids).toContain(confirmedBId);
+    expect(ids).not.toContain(unconfirmedId);
+
+    const blocked = await authed(viewer, {
+      method: 'GET',
+      url: `/api/loa-documents/${unconfirmedId}`,
+      organisationId,
+    });
+    expect(blocked.statusCode).toBe(404);
+  });
+});
+
 describe('member lifecycle', () => {
   it('updates role, scope, and authorities, audited and owner-only', async () => {
     const denied = await authed(viewer, {
@@ -527,5 +631,51 @@ describe('member lifecycle', () => {
       organisationId,
     });
     expect(detail.statusCode, detail.body).toBe(200);
+  });
+});
+
+describe('last-owner concurrency', () => {
+  it('never lets simultaneous demotions strip the final active owner', async () => {
+    // Promote the (by now office-role) viewer to a second owner so the
+    // organisation has exactly two, then have each owner demote the
+    // other at the same time. Without the organisation row lock both
+    // requests observed two owners and both proceeded — zero owners
+    // (external re-audit). With it, exactly one demotion wins.
+    const promoted = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${viewerUserId}`,
+      organisationId,
+      payload: { role: 'owner' },
+    });
+    expect(promoted.statusCode, promoted.body).toBe(200);
+
+    const [first, second] = await Promise.all([
+      authed(owner, {
+        method: 'PATCH',
+        url: `/api/organisations/current/members/${viewerUserId}`,
+        organisationId,
+        payload: { role: 'office' },
+      }),
+      authed(viewer, {
+        method: 'PATCH',
+        url: `/api/organisations/current/members/${ownerUserId}`,
+        organisationId,
+        payload: { role: 'office' },
+      }),
+    ]);
+
+    const statuses = [first.statusCode, second.statusCode].sort();
+    expect(statuses[0], `${first.body} | ${second.body}`).toBe(200);
+    // The loser is refused: LAST_OWNER if it re-checked the count, or
+    // OWNER_REQUIRED if it was itself the demoted owner; never a second
+    // success.
+    expect(statuses[1]).toBeGreaterThanOrEqual(400);
+
+    const [owners] = await admin<{ count: string }[]>`
+      select count(*)::text as count from organisation_memberships
+      where organisation_id = ${organisationId}
+        and role = 'owner' and status = 'active'
+    `;
+    expect(Number(owners?.count ?? '0')).toBe(1);
   });
 });

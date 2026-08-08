@@ -14,8 +14,14 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
 
 const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
 
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '0');
+if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
+  throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
+}
+
 const app = await buildApp({
   logger: true,
+  ...(trustProxyHops > 0 ? { trustProxyHops } : {}),
   ...(process.env.METRICS_TOKEN ? { metricsToken: process.env.METRICS_TOKEN } : {}),
   ...(process.env.DATABASE_URL
     ? {

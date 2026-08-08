@@ -50,6 +50,10 @@ services:
       DATABASE_URL: postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD:?set in .env.production}@postgres:5432/auto_mb
       AUTH_SECRET: ${AUTH_SECRET:?set in .env.production}
       WEB_ORIGIN: https://${SITE_ADDRESS:?set in .env.production}
+      # The server sits exactly one hop behind Caddy, which replaces any
+      # client-supplied X-Forwarded-For with the real peer address; one
+      # trusted hop gives the rate limiter true per-client addressing.
+      TRUST_PROXY_HOPS: '1'
       OBJECT_STORAGE_DIR: /data/objects
       GOTENBERG_URL: http://gotenberg:3000
       CLAMAV_HOST: clamav

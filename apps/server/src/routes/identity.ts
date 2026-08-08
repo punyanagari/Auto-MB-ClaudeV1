@@ -269,6 +269,16 @@ export function registerIdentityRoutes(
         organisationId,
         user.id,
         async (tx) => {
+          // Serialise membership edits per organisation: the last-owner
+          // check below counts rows it has NOT locked, so two concurrent
+          // demotions of two different owners could each observe the other
+          // and both proceed, leaving no active owner (external re-audit).
+          // The organisation row lock makes the count race-free, and taking
+          // it before the requester check means a concurrently-demoted
+          // owner cannot act on a stale reading of their own role.
+          await tx`
+            select id from organisations where id = ${organisationId} for update
+          `;
           const [requester] = await tx<{ role: string }[]>`
             select role from organisation_memberships where user_id = ${user.id}
           `;

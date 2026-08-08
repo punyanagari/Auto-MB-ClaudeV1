@@ -54,6 +54,61 @@ describe('rate limiting', () => {
     const health = await app.inject({ method: 'GET', url: '/api/health' });
     expect(health.statusCode).toBe(200);
   });
+
+  it('keys per forwarded client behind a trusted proxy hop', async () => {
+    // Production topology: every connection reaches Fastify from the
+    // Caddy container, which stamps the real client into
+    // X-Forwarded-For. Without trustProxy the limiter saw one shared
+    // address for the whole site (external re-audit).
+    const proxied = await buildApp({
+      objectStorageDir: storageDir,
+      trustProxyHops: 1,
+      rateLimits: { auth: { windowMs: 60_000, max: 2 } },
+    });
+    try {
+      const attempt = (client: string) =>
+        proxied.inject({
+          method: 'POST',
+          url: '/api/auth/sign-in/email',
+          headers: { 'x-forwarded-for': client },
+          payload: { email: 'x@example.test', password: 'irrelevant' },
+        });
+      for (let index = 0; index < 2; index += 1) {
+        expect((await attempt('203.0.113.7')).statusCode).not.toBe(429);
+      }
+      // The first client's window is exhausted…
+      expect((await attempt('203.0.113.7')).statusCode).toBe(429);
+      // …while a different forwarded client is unaffected.
+      expect((await attempt('203.0.113.8')).statusCode).not.toBe(429);
+    } finally {
+      await proxied.close();
+    }
+  });
+
+  it('ignores forwarded headers when no proxy hop is trusted', async () => {
+    // Exposed directly, X-Forwarded-For is client-controlled: it must
+    // not let an attacker mint fresh rate-limit identities.
+    const direct = await buildApp({
+      objectStorageDir: storageDir,
+      rateLimits: { auth: { windowMs: 60_000, max: 2 } },
+    });
+    try {
+      const attempt = (client: string) =>
+        direct.inject({
+          method: 'POST',
+          url: '/api/auth/sign-in/email',
+          headers: { 'x-forwarded-for': client },
+          payload: { email: 'x@example.test', password: 'irrelevant' },
+        });
+      expect((await attempt('203.0.113.1')).statusCode).not.toBe(429);
+      expect((await attempt('203.0.113.2')).statusCode).not.toBe(429);
+      // Third request claims yet another client, but the socket peer is
+      // the same — the shared window is exhausted.
+      expect((await attempt('203.0.113.3')).statusCode).toBe(429);
+    } finally {
+      await direct.close();
+    }
+  });
 });
 
 describe('readiness components', () => {
