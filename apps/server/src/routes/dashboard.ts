@@ -22,6 +22,11 @@ const errorResponses = {
  * extend, so the window is generous. */
 const EXPIRY_WARNING_DAYS = 60;
 
+/** Works whose current completion date is this close (or past) surface on
+ * the dashboard: a DOC extension request takes time to draft, finalise,
+ * and post before the date lapses. */
+const COMPLETION_WARNING_DAYS = 30;
+
 interface ProgressRow extends Record<string, unknown> {
   work_id: string;
   work_code: string;
@@ -39,6 +44,13 @@ interface InstrumentRow extends Record<string, unknown> {
   kind: string;
   reference: string;
   expires_on: string;
+  due_in_days: string;
+}
+
+interface CompletionRow extends Record<string, unknown> {
+  work_id: string;
+  work_code: string;
+  due_on: string;
   due_in_days: string;
 }
 
@@ -128,6 +140,24 @@ export function registerDashboardRoutes(
           order by wi.expires_on asc
         `;
 
+        const completions = await tx<CompletionRow[]>`
+          select
+            w.id as work_id,
+            w.work_code,
+            w.current_completion_date::text as due_on,
+            (w.current_completion_date - current_date)::text as due_in_days
+          from works w
+          where w.deleted_at is null
+            and w.status = 'active'
+            and w.current_completion_date is not null
+            and w.current_completion_date <= current_date + ${COMPLETION_WARNING_DAYS}::int
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
+          order by w.current_completion_date asc
+        `;
+
         const unpaidBills = await tx<
           { work_id: string; work_code: string; bill_number: number; status: string }[]
         >`
@@ -155,6 +185,20 @@ export function registerDashboardRoutes(
               : `${label} ${instrument.reference} for ${instrument.work_code} expires on ${instrument.expires_on}.`,
             workId: instrument.work_id,
             workCode: instrument.work_code,
+            dueInDays,
+          });
+        }
+        for (const completion of completions) {
+          const dueInDays = Number(completion.due_in_days);
+          const overdue = dueInDays < 0;
+          alerts.push({
+            kind: overdue ? 'completion_overdue' : 'completion_due',
+            severity: overdue || dueInDays <= 7 ? 'danger' : 'warning',
+            message: overdue
+              ? `${completion.work_code} passed its completion date on ${completion.due_on}; request a DOC extension.`
+              : `${completion.work_code} reaches its completion date on ${completion.due_on} (${String(dueInDays)} days left).`,
+            workId: completion.work_id,
+            workCode: completion.work_code,
             dueInDays,
           });
         }

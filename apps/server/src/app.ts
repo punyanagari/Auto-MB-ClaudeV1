@@ -11,6 +11,7 @@ import { createMetricsRegistry } from './metrics.js';
 import { createRateLimiter, type RateLimitRule } from './rate-limit.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
+import { registerExtensionRoutes } from './routes/extensions.js';
 import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -311,6 +312,14 @@ export async function buildApp(
     registerRetentionRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
+    );
+    registerExtensionRoutes(
       app,
       authInstance,
       database,
