@@ -66,6 +66,8 @@ Minimum signals:
 - authentication failures and suspicious access;
 - object-storage errors;
 - tenant-boundary denial events;
+- backup recency: age of the last fully verified backup, exposed as a
+  metric and alerted on before it exceeds one missed backup cycle;
 - deployment and migration status.
 
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.

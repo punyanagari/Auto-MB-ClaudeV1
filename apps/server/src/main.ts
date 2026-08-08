@@ -23,6 +23,9 @@ const app = await buildApp({
   logger: true,
   ...(trustProxyHops > 0 ? { trustProxyHops } : {}),
   ...(process.env.METRICS_TOKEN ? { metricsToken: process.env.METRICS_TOKEN } : {}),
+  ...(process.env.BACKUP_MARKER_PATH
+    ? { backupMarkerPath: process.env.BACKUP_MARKER_PATH }
+    : {}),
   ...(process.env.DATABASE_URL
     ? {
         databaseUrl: process.env.DATABASE_URL,

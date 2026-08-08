@@ -59,8 +59,18 @@ services:
       CLAMAV_HOST: clamav
       CLAMAV_PORT: '3310'
       METRICS_TOKEN: ${METRICS_TOKEN:?set in .env.production}
+      # Backup freshness (docs/RUNBOOK.md §4/§6): the nightly host cron
+      # writes /var/lib/auto-mb/backup-status/last-success only after a
+      # fully verified backup; /metrics surfaces it as the
+      # backup_last_success_timestamp_seconds gauge. Absent file simply
+      # omits the series.
+      BACKUP_MARKER_PATH: /backup-status/last-success
     volumes:
       - objects:/data/objects
+      # Marker directory only, read-only — the dumps themselves must never
+      # be reachable from the internet-facing app container. A directory
+      # (not file) mount so the cron's atomic rename stays visible inside.
+      - /var/lib/auto-mb/backup-status:/backup-status:ro
 
   caddy:
     build:
