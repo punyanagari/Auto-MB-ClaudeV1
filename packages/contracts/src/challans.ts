@@ -109,11 +109,14 @@ export const WorkBalanceItemSchema = Type.Object(
     description: Type.String(),
     unitCode: Type.String(),
     awardedQuantity: DecimalStringSchema,
+    /** Amended ceiling when an approved amendment changed the quantity;
+     * null means the awarded quantity applies. */
+    effectiveQuantity: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
     /** Sum of quantities on ISSUED challans; cancelled ones release theirs. */
     deliveredQuantity: DecimalStringSchema,
     remainingQuantity: Type.String({
       description:
-        'awarded − delivered as exact decimal text; negative only when excess delivery was allowed.',
+        'COALESCE(effective, awarded) − delivered as exact decimal text; negative only when excess delivery was allowed.',
     }),
     effectiveRate: DecimalStringSchema,
   },

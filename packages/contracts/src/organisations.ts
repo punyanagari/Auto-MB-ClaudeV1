@@ -33,6 +33,7 @@ export const MembershipSchema = Type.Object(
     workScope: WorkScopeSchema,
     canIssueDocuments: Type.Boolean(),
     canCancelDocuments: Type.Boolean(),
+    canApproveAmendments: Type.Boolean(),
     status: Type.Union([
       Type.Literal('invited'),
       Type.Literal('active'),
@@ -59,6 +60,7 @@ export const AddMemberRequestSchema = Type.Object(
     workScope: Type.Optional(WorkScopeSchema),
     canIssueDocuments: Type.Optional(Type.Boolean()),
     canCancelDocuments: Type.Optional(Type.Boolean()),
+    canApproveAmendments: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -134,6 +136,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     workScope: Type.Optional(WorkScopeSchema),
     canIssueDocuments: Type.Optional(Type.Boolean()),
     canCancelDocuments: Type.Optional(Type.Boolean()),
+    canApproveAmendments: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),
