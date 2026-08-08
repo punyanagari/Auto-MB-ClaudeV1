@@ -770,13 +770,11 @@ export function registerLoaRoutes(
         const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,
-                 letter_percentage, letter_percentage_direction, status,
-                 created_at, allow_excess_delivery
                  letter_percentage, letter_percentage_direction,
                  pbg_required_amount::text as pbg_required_amount,
                  pbg_submission_days, pbg_extension_days,
                  pbg_penal_interest_percent::text as pbg_penal_interest_percent,
-                 status, created_at
+                 status, created_at, allow_excess_delivery
           from works
           where id = ${id} and deleted_at is null
         `;

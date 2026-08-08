@@ -206,7 +206,6 @@ export function registerDashboardRoutes(
               select 1 from work_assignments wa
               where wa.work_id = w.id and wa.user_id = ${user.id}
             ))
-          order by w.current_completion_date asc
           order by w.created_at desc
         `;
 

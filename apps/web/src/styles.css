@@ -999,6 +999,8 @@ button:disabled {
 
 .timeline__arrow {
   color: var(--color-ink-muted);
+}
+
 /* Tab strip: flat category switcher used by the Masters screen. The
  * selected tab carries the accent underline, mirroring the sidebar's
  * active treatment. */

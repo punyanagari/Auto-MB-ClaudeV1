@@ -132,8 +132,6 @@ const MODULES = [
         <path d="M2.5 4.5 8 2l5.5 2.5L8 7 2.5 4.5Z" />
         <path d="M2.5 8 8 10.5 13.5 8" />
         <path d="M2.5 11.5 8 14l5.5-2.5" />
-        <circle cx="7" cy="7" r="4.2" />
-        <path d="m10.2 10.2 3.6 3.6" />
       </svg>
     ),
   },
@@ -263,13 +261,13 @@ export function Workspace({
                       ? { name: 'works' }
                       : key === 'masters'
                         ? { name: 'masters' }
-                      : key === 'approvals'
-                        ? { name: 'approvals' }
-                      : key === 'serials'
-                        ? { name: 'serials' }
-                        : key === 'members'
-                          ? { name: 'members' }
-                          : { name: 'settings' },
+                        : key === 'approvals'
+                          ? { name: 'approvals' }
+                          : key === 'serials'
+                            ? { name: 'serials' }
+                            : key === 'members'
+                              ? { name: 'members' }
+                              : { name: 'settings' },
                 );
               }}
             >

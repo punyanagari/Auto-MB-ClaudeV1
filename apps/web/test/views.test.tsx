@@ -2042,11 +2042,17 @@ describe('WorkDetail amendments', () => {
 
     await screen.findByRole('heading', { name: 'Amendments' });
     // Quantity 5.000 → 8.000: the original stays visible, struck through.
-    expect(screen.getByText('5.000').tagName).toBe('S');
-    expect(screen.getByText('8.000')).toBeTruthy();
+    // Other sections (serials, balances) may repeat the bare numbers, so
+    // assert the struck-through original exists among the matches.
+    expect(screen.getAllByText('5.000').some((node) => node.tagName === 'S')).toBe(
+      true,
+    );
+    expect(screen.getAllByText('8.000').length).toBeGreaterThan(0);
     // Rate 100.00 → 110.00.
-    expect(screen.getByText('100.00').tagName).toBe('S');
-    expect(screen.getByText('110.00')).toBeTruthy();
+    expect(screen.getAllByText('100.00').some((node) => node.tagName === 'S')).toBe(
+      true,
+    );
+    expect(screen.getAllByText('110.00').length).toBeGreaterThan(0);
     // Amendment-added and omitted items are flagged.
     expect(screen.getByText('added')).toBeTruthy();
     expect(screen.getByText('omitted')).toBeTruthy();
