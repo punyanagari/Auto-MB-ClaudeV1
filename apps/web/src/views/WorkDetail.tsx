@@ -10,6 +10,7 @@ import type {
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
+import { Timeline } from './Timeline.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -722,6 +723,12 @@ export function WorkDetail({
           No serial numbers recorded yet. Serials are recorded on each issued challan.
         </p>
       )}
+
+      <Timeline
+        api={api}
+        organisationId={organisationId}
+        scope={{ kind: 'work', workId }}
+      />
 
       <div className="actions">
         <button type="button" className="button--ghost" onClick={onBack}>

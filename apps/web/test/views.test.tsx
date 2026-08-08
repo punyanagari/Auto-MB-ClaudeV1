@@ -14,6 +14,7 @@ import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SignIn } from '../src/views/SignIn.js';
+import { Timeline } from '../src/views/Timeline.js';
 import { UploadLoa } from '../src/views/UploadLoa.js';
 import { WorkDetail } from '../src/views/WorkDetail.js';
 import { Works } from '../src/views/Works.js';
@@ -69,6 +70,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listBills: vi.fn().mockResolvedValue([]),
     prepareBill: vi.fn(),
     setBillStatus: vi.fn(),
+    workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
+    entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     ...overrides,
   };
 }
@@ -1223,5 +1226,141 @@ describe('Settings', () => {
     expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
+  });
+});
+
+describe('Timeline', () => {
+  const EVENT_ISSUED = {
+    id: 'e1111111-1111-4111-8111-111111111111',
+    occurredAt: '2026-08-08T10:00:00.000Z',
+    actorUserId: 'user-a',
+    actorName: 'Owner Person',
+    action: 'challan.issued',
+    entityType: 'delivery_challans',
+    entityId: CHALLAN_ID,
+    details: { challanNumber: 'DC/1', sequence: 1, totalAmount: '675.75' },
+  };
+  const EVENT_UPDATED = {
+    id: 'e2222222-2222-4222-8222-222222222222',
+    occurredAt: '2026-08-08T09:00:00.000Z',
+    actorUserId: 'user-a',
+    actorName: 'Owner Person',
+    action: 'instrument.updated',
+    entityType: 'work_instruments',
+    entityId: '77777777-7777-4777-8777-777777777777',
+    details: { before: { status: 'active' }, after: { status: 'released' } },
+  };
+
+  it('renders humanised actions with a structured before → after diff', async () => {
+    const workTimeline = vi
+      .fn()
+      .mockResolvedValue({ events: [EVENT_ISSUED, EVENT_UPDATED], nextCursor: null });
+    render(
+      <Timeline
+        api={stubApi({ workTimeline })}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />,
+    );
+
+    // Humanised action labels, never raw action codes.
+    expect(await screen.findByText('Challan issued')).toBeTruthy();
+    expect(screen.getByText('Instrument updated')).toBeTruthy();
+    expect(screen.queryByText('challan.issued')).toBeNull();
+    // Context facts for plain events…
+    expect(screen.getByText(/Challan number: DC\/1/)).toBeTruthy();
+    // …and a field-by-field old → new diff for update events, not JSON.
+    expect(screen.getByText('Status')).toBeTruthy();
+    expect(screen.getByText('active')).toBeTruthy();
+    expect(screen.getByText('released')).toBeTruthy();
+    expect(screen.queryByText(/[{}"]/)).toBeNull();
+    expect(screen.getAllByText(/Owner Person/).length).toBeGreaterThan(0);
+  });
+
+  it('pages older events through the keyset cursor', async () => {
+    const workTimeline = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [EVENT_ISSUED], nextCursor: EVENT_ISSUED.id })
+      .mockResolvedValueOnce({ events: [EVENT_UPDATED], nextCursor: null });
+    render(
+      <Timeline
+        api={stubApi({ workTimeline })}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show earlier events' }));
+    await waitFor(() => {
+      expect(workTimeline).toHaveBeenLastCalledWith(ORG_ID, WORK_ID, {
+        cursor: EVENT_ISSUED.id,
+      });
+    });
+    expect(await screen.findByText('Instrument updated')).toBeTruthy();
+    // Both pages stay on screen; the cursor is exhausted.
+    expect(screen.getByText('Challan issued')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show earlier events' })).toBeNull();
+  });
+
+  it('filters the Work stream by record type via the query parameter', async () => {
+    const workTimeline = vi
+      .fn()
+      .mockResolvedValue({ events: [EVENT_ISSUED], nextCursor: null });
+    render(
+      <Timeline
+        api={stubApi({ workTimeline })}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />,
+    );
+
+    await screen.findByText('Challan issued');
+    fireEvent.change(screen.getByLabelText('Filter timeline by record type'), {
+      target: { value: 'delivery_challans' },
+    });
+    await waitFor(() => {
+      expect(workTimeline).toHaveBeenLastCalledWith(ORG_ID, WORK_ID, {
+        entityTypes: ['delivery_challans'],
+      });
+    });
+  });
+
+  it('shows the same component on the challan detail via the entity history', async () => {
+    const entityTimeline = vi
+      .fn()
+      .mockResolvedValue({ events: [EVENT_ISSUED], nextCursor: null });
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(
+        challanDetail({
+          status: 'issued',
+          challanNumber: 'DC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-08-08T10:00:00.000Z',
+        }),
+      ),
+      entityTimeline,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Challan issued')).toBeTruthy();
+    expect(entityTimeline).toHaveBeenCalledWith(
+      ORG_ID,
+      'delivery_challans',
+      CHALLAN_ID,
+      {},
+    );
   });
 });

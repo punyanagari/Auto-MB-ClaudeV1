@@ -7,6 +7,7 @@ import {
 } from '@auto-mb/contracts';
 import type { FastifyInstance } from 'fastify';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
@@ -151,6 +152,24 @@ export function registerOrganisationRoutes(
                     contact_email, logo_object_key
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
+        // Milestone 6: record each changed field's old and new value —
+        // company details only, never credentials or upload bytes.
+        const changes = auditDiff(
+          {
+            name: current.name,
+            address: current.address,
+            gstin: current.gstin,
+            contactPhone: current.contact_phone,
+            contactEmail: current.contact_email,
+          },
+          {
+            name: next.name,
+            address: next.address,
+            gstin: next.gstin,
+            contactPhone: next.contact_phone,
+            contactEmail: next.contact_email,
+          },
+        );
         await tx`
           insert into audit_events (
             organisation_id, actor_user_id, action, entity_type, entity_id, details
@@ -158,7 +177,7 @@ export function registerOrganisationRoutes(
           values (
             ${organisationId}, ${user.id}, 'organisation.profile_updated',
             'organisations', ${organisationId},
-            ${jsonb(tx, { changed: Object.keys(body) })}
+            ${jsonb(tx, { before: changes.before, after: changes.after })}
           )
         `;
         return toProfile(updated);

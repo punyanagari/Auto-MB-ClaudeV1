@@ -17,6 +17,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb, withUserContext } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { httpError } from './../http.js';
 import { requireUser } from '../session.js';
@@ -289,8 +290,18 @@ export function registerIdentityRoutes(
               'Only an organisation owner may manage members.',
             );
           }
-          const [current] = await tx<{ role: string; status: string }[]>`
-            select role, status from organisation_memberships
+          const [current] = await tx<
+            {
+              role: string;
+              status: string;
+              work_scope: string;
+              can_issue_documents: boolean;
+              can_cancel_documents: boolean;
+            }[]
+          >`
+            select role, status, work_scope, can_issue_documents,
+                   can_cancel_documents
+            from organisation_memberships
             where user_id = ${memberUserId}
             for update
           `;
@@ -330,6 +341,25 @@ export function registerIdentityRoutes(
               updated_at = now()
             where user_id = ${memberUserId}
           `;
+          // Milestone 6: the trail records what each changed field was
+          // and became, not just which keys were touched.
+          const changes = auditDiff(
+            {
+              role: current.role,
+              workScope: current.work_scope,
+              canIssueDocuments: current.can_issue_documents,
+              canCancelDocuments: current.can_cancel_documents,
+              status: current.status,
+            },
+            {
+              role: body.role ?? current.role,
+              workScope: body.workScope ?? current.work_scope,
+              canIssueDocuments: body.canIssueDocuments ?? current.can_issue_documents,
+              canCancelDocuments:
+                body.canCancelDocuments ?? current.can_cancel_documents,
+              status: body.status ?? current.status,
+            },
+          );
           await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, details
@@ -337,7 +367,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.updated',
               'organisation_memberships',
-              ${jsonb(tx, { memberUserId, changed: Object.keys(body) })}
+              ${jsonb(tx, { memberUserId, before: changes.before, after: changes.after })}
             )
           `;
           return tx<MembershipRow[]>`
@@ -429,6 +459,13 @@ export function registerIdentityRoutes(
           if (!member) {
             throw httpError(404, 'MEMBER_NOT_FOUND', 'No such member.');
           }
+          // The audit event carries the assignment set as it was and as
+          // it becomes; read the old set before the replace wipes it.
+          const previous = await tx<{ work_id: string }[]>`
+            select work_id from work_assignments
+            where user_id = ${memberUserId}
+            order by created_at
+          `;
           // Replace-set semantics: assignments are access control, not
           // history — the new list is the whole truth.
           await tx`
@@ -451,6 +488,12 @@ export function registerIdentityRoutes(
               throw error;
             });
           }
+          // Assignments are a set; both sides sort so a reordered PUT of
+          // the same Works records no spurious change.
+          const changes = auditDiff(
+            { workIds: previous.map((row) => row.work_id).sort() },
+            { workIds: [...body.workIds].sort() },
+          );
           await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, details
@@ -458,7 +501,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.assignments_set',
               'work_assignments',
-              ${jsonb(tx, { memberUserId, workCount: body.workIds.length })}
+              ${jsonb(tx, { memberUserId, before: changes.before, after: changes.after })}
             )
           `;
           const rows = await tx<{ work_id: string }[]>`

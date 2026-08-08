@@ -31,6 +31,7 @@ import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
   assertWorkAccess,
@@ -435,8 +436,17 @@ export function registerRetentionRoutes(
         user.id,
         async (tx) => {
           await requireEvidenceRole(tx, user.id);
-          const [serial] = await tx<{ work_id: string }[]>`
-            select work_id from challan_item_serials where id = ${id}
+          const [serial] = await tx<
+            {
+              work_id: string;
+              installed_on: string | null;
+              installation_remarks: string | null;
+            }[]
+          >`
+            select work_id, installed_on::text as installed_on,
+                   installation_remarks
+            from challan_item_serials where id = ${id}
+            for update
           `;
           if (!serial) {
             throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
@@ -452,6 +462,18 @@ export function registerRetentionRoutes(
           if (!updated) {
             throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
           }
+          // Re-recording an installation overwrites the previous date, so
+          // the trail keeps the old value alongside the new one.
+          const changes = auditDiff(
+            {
+              installedOn: serial.installed_on,
+              installationRemarks: serial.installation_remarks,
+            },
+            {
+              installedOn: body.installedOn,
+              installationRemarks: body.remarks ?? null,
+            },
+          );
           await audit(
             tx,
             organisationId,
@@ -459,9 +481,7 @@ export function registerRetentionRoutes(
             'serial.installed',
             'challan_item_serials',
             id,
-            {
-              installedOn: body.installedOn,
-            },
+            { before: changes.before, after: changes.after },
           );
           return listSerials(tx, updated.work_id);
         },
@@ -621,27 +641,34 @@ export function registerRetentionRoutes(
       const body = request.body as UpdateInstrumentRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
-        const [existing] = await tx<{ work_id: string }[]>`
-          select work_id from work_instruments where id = ${id}
+        // The row lock serialises concurrent status edits, and the locked
+        // values are the audit trail's before-image.
+        const [existing] = await tx<
+          {
+            work_id: string;
+            status: string;
+            expires_on: string | null;
+            notes: string | null;
+          }[]
+        >`
+          select work_id, status, expires_on::text as expires_on, notes
+          from work_instruments where id = ${id}
+          for update
         `;
         if (!existing) {
           throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
         }
         await assertWorkAccess(tx, user.id, existing.work_id);
-        if (body.status !== undefined) {
-          const [current] = await tx<{ status: string }[]>`
-            select status from work_instruments where id = ${id} for update
-          `;
-          if (!current) {
-            throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
-          }
-          if (current.status !== body.status && current.status !== 'active') {
-            throw httpError(
-              409,
-              'INSTRUMENT_STATUS_TERMINAL',
-              `A ${current.status} instrument cannot change status.`,
-            );
-          }
+        if (
+          body.status !== undefined &&
+          existing.status !== body.status &&
+          existing.status !== 'active'
+        ) {
+          throw httpError(
+            409,
+            'INSTRUMENT_STATUS_TERMINAL',
+            `A ${existing.status} instrument cannot change status.`,
+          );
         }
         const [row] = await tx<InstrumentRow[]>`
           update work_instruments
@@ -654,6 +681,18 @@ export function registerRetentionRoutes(
                     status, notes, created_at
         `;
         if (!row) throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
+        const changes = auditDiff(
+          {
+            status: existing.status,
+            expiresOn: existing.expires_on,
+            notes: existing.notes,
+          },
+          {
+            status: body.status ?? existing.status,
+            expiresOn: body.expiresOn ?? existing.expires_on,
+            notes: body.notes ?? existing.notes,
+          },
+        );
         await audit(
           tx,
           organisationId,
@@ -661,9 +700,7 @@ export function registerRetentionRoutes(
           'instrument.updated',
           'work_instruments',
           id,
-          {
-            status: body.status ?? null,
-          },
+          { before: changes.before, after: changes.after },
         );
         return toInstrument(row);
       });
@@ -1022,15 +1059,10 @@ export function registerRetentionRoutes(
                     submitted_at, paid_at
         `;
         if (!row) throw new Error('bill status update returned no row');
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          `bill.${body.status}`,
-          'bills',
-          id,
-          {},
-        );
+        await audit(tx, organisationId, user.id, `bill.${body.status}`, 'bills', id, {
+          before: { status: current.status },
+          after: { status: body.status },
+        });
         return toBill(row);
       });
     },
