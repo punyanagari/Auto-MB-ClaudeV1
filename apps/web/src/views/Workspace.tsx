@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
+import { initials } from '../format.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
@@ -144,16 +145,49 @@ export function Workspace({
       ? view.name
       : 'works';
 
+  const membershipRole = membership?.role ?? 'member';
+
   return (
     <div className="app-frame">
       <nav className="sidebar" aria-label="Modules">
         <span className="sidebar__brand">
           <span className="sidebar__brand-mark" aria-hidden="true">
-            MB
+            {/* Rail-inspired monogram: two rails, sleepers, a signal dot. */}
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M7 21 10 5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M17 21 14 5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M6.4 17.5H17.6M7 13H17M7.6 8.5H16.4"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                opacity="0.85"
+              />
+              <circle cx="12" cy="4" r="1.9" fill="currentColor" />
+            </svg>
           </span>
-          Auto-MB
+          <span className="sidebar__brand-text">
+            <span className="sidebar__brand-name">
+              Auto<span>-MB</span>
+            </span>
+            <br />
+            <span className="sidebar__brand-sub">{organisation.name}</span>
+          </span>
         </span>
         <div className="sidebar__nav">
+          <span className="sidebar__label" aria-hidden="true">
+            Navigation
+          </span>
           {MODULES.map((module) => (
             <button
               key={module.key}
@@ -178,29 +212,53 @@ export function Workspace({
             </button>
           ))}
         </div>
-        <span className="sidebar__foot">{organisation.name}</span>
+        <div className="sidebar__foot">
+          <div className="sidebar__user">
+            <span className="avatar" aria-hidden="true">
+              {initials(me.user.email)}
+            </span>
+            <span className="sidebar__user-text">
+              <span className="sidebar__user-name">{me.user.email}</span>
+              <br />
+              <span className="sidebar__user-role">{membershipRole}</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            className="sidebar__item"
+            onClick={onSwitchOrganisation}
+          >
+            <svg
+              aria-hidden="true"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" />
+            </svg>
+            Switch organisation
+          </button>
+          <button type="button" className="sidebar__item" onClick={onSignOut}>
+            <svg
+              aria-hidden="true"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M6 2H3v12h3M11 5l3 3-3 3M14 8H6" />
+            </svg>
+            Sign out
+          </button>
+        </div>
       </nav>
 
       <div className="app-main">
-        <header className="topbar">
-          <div className="topbar__session">
-            <span className="topbar__org">{organisation.name}</span>
-            <button
-              type="button"
-              className="button--ghost"
-              onClick={onSwitchOrganisation}
-            >
-              Switch organisation
-            </button>
-          </div>
-          <div className="topbar__session">
-            <span className="muted">{me.user.email}</span>
-            <button type="button" className="button--ghost" onClick={onSignOut}>
-              Sign out
-            </button>
-          </div>
-        </header>
-
         <main className="content" ref={containerRef}>
           {view.name === 'dashboard' && (
             <Dashboard

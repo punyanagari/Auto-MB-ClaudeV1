@@ -468,15 +468,27 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
   ).toBeVisible();
-  // The retention sections load with the Work.
+  // The file opens on LOA Items; each retention tab carries its section.
+  await expect(page.getByRole('heading', { name: /Schedule A/ })).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — LOA items');
+
+  await page.getByRole('button', { name: 'Instruments', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Contract instruments' }),
   ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Measurement Book' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail');
+  await expectNoSeriousViolations(page, 'work detail — instruments');
 
+  await page.getByRole('button', { name: 'Measurement Book' }).click();
+  await expect(page.getByRole('heading', { name: 'Measurement Book' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Bills' }).click();
+  await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Serial Trace' }).click();
+  await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — serial trace');
+
+  await page.getByRole('button', { name: 'Delivery Challans' }).click();
   await page.getByRole('button', { name: 'DC/1' }).click();
   await expect(
     page.getByRole('heading', { name: 'Delivery Challan DC/1' }),

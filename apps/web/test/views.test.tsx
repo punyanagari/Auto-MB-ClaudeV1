@@ -996,6 +996,7 @@ describe('WorkDetail retention', () => {
     const api = retentionApi({ recordMbEntry });
     renderWorkDetail(api);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Measurement Book' }));
     fireEvent.change(await screen.findByLabelText('Measured quantity'), {
       target: { value: '1.000' },
     });
@@ -1034,6 +1035,7 @@ describe('WorkDetail retention', () => {
     const api = retentionApi({ prepareBill, setBillStatus, listBills, listMbEntries });
     renderWorkDetail(api);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Bills' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Prepare bill' }));
     await waitFor(() => {
       expect(prepareBill).toHaveBeenCalledWith(ORG_ID, WORK_ID);
@@ -1056,6 +1058,7 @@ describe('WorkDetail retention', () => {
     const api = retentionApi({ updateInstrument });
     renderWorkDetail(api);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Instruments' }));
     fireEvent.change(await screen.findByLabelText('New status for BG/22'), {
       target: { value: 'released' },
     });
@@ -1077,11 +1080,17 @@ describe('WorkDetail retention', () => {
       canIssue: false,
     });
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Instruments' }));
     await screen.findByRole('heading', { name: 'Contract instruments' });
     expect(screen.getByText('BG/22')).toBeTruthy();
-    expect(screen.getByText('MB-12/34')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add instrument' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Measurement Book' }));
+    expect(await screen.findByText('MB-12/34')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bills' }));
+    await screen.findByRole('heading', { name: /Bill #1/ });
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Mark submitted' })).toBeNull();
   });

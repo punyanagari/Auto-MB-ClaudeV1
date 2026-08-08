@@ -14,6 +14,44 @@ export function formatInr(decimal: string): string {
   return rupees.format(value);
 }
 
+const compact = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
+
+/** Compact crore/lakh label for dense tables, e.g. "84610891.00" →
+ * "₹8.46 Cr". Small amounts fall back to the exact rupee format. */
+export function formatCompactInr(decimal: string): string {
+  const value = Number(decimal);
+  if (!Number.isFinite(value)) return decimal;
+  if (Math.abs(value) >= 1_00_00_000) {
+    return `₹${compact.format(value / 1_00_00_000)} Cr`;
+  }
+  if (Math.abs(value) >= 1_00_000) {
+    return `₹${compact.format(value / 1_00_000)} L`;
+  }
+  return rupees.format(value);
+}
+
+/** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
+export function formatDate(isoDate: string): string {
+  const parsed = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** First letters of the first two words — the avatar monogram. */
+export function initials(nameOrEmail: string): string {
+  return nameOrEmail
+    .split(/[\s@._-]+/)
+    .filter((part) => part.length > 0)
+    .slice(0, 2)
+    .map((part) => (part[0] ?? '').toUpperCase())
+    .join('');
+}
+
 /** Whole-percent progress, clamped to 0–100 for display. */
 export function progressPercent(part: string, whole: string): number {
   const partValue = Number(part);
