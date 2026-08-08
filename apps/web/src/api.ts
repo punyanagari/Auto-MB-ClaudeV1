@@ -8,6 +8,7 @@ import type {
   ConfirmWorkRequest,
   CreateOrganisationRequest,
   DashboardResponse,
+  ExtensionRequestDetailResponse,
   InstallSerialRequest,
   Instrument,
   LoaDocument,
@@ -21,15 +22,19 @@ import type {
   RecordMbEntryRequest,
   RecordReceiptRequest,
   RecordSerialsRequest,
+  RespondExtensionRequest,
   SaveChallanRequest,
+  SaveExtensionRequest,
   SaveInstrumentRequest,
   Serial,
+  SetCompletionDateRequest,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
   UpdateMemberRequest,
   UpdateOrganisationProfileRequest,
   Work,
   WorkBalanceResponse,
+  WorkCompletionResponse,
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 
@@ -217,6 +222,52 @@ export interface ApiClient {
     billId: string,
     body: UpdateBillStatusRequest,
   ) => Promise<Bill>;
+  readonly getWorkCompletion: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkCompletionResponse>;
+  readonly setCompletionDate: (
+    organisationId: string,
+    workId: string,
+    body: SetCompletionDateRequest,
+  ) => Promise<WorkCompletionResponse>;
+  readonly createExtensionRequest: (
+    organisationId: string,
+    workId: string,
+    body: SaveExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly updateExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+    body: SaveExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly deleteExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<void>;
+  readonly finaliseExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly renderExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly uploadExtensionResponse: (
+    organisationId: string,
+    extensionId: string,
+    file: Blob,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly respondExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+    body: RespondExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly downloadExtensionPdf: (
+    organisationId: string,
+    extensionId: string,
+    kind: 'rendered' | 'response',
+  ) => Promise<Blob>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -610,6 +661,81 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async getWorkCompletion(organisationId, workId) {
+      return request<WorkCompletionResponse>(`/api/works/${workId}/completion`, {
+        organisationId,
+      });
+    },
+    async setCompletionDate(organisationId, workId, body) {
+      return request<WorkCompletionResponse>(`/api/works/${workId}/completion-dates`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async createExtensionRequest(organisationId, workId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/works/${workId}/extension-requests`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async updateExtensionRequest(organisationId, extensionId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async deleteExtensionRequest(organisationId, extensionId) {
+      await request(`/api/extension-requests/${extensionId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async finaliseExtensionRequest(organisationId, extensionId) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/finalise`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async renderExtensionRequest(organisationId, extensionId) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async uploadExtensionResponse(organisationId, extensionId, file) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/response-document`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ExtensionRequestDetailResponse;
+    },
+    async respondExtensionRequest(organisationId, extensionId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/respond`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async downloadExtensionPdf(organisationId, extensionId, kind) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/pdf?kind=${kind}`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
   };
 }
