@@ -107,6 +107,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     rejectAmendment: vi.fn(),
     withdrawAmendment: vi.fn(),
     setWorkSettings: vi.fn(),
+    deleteSerial: vi.fn(),
+    searchSerials: vi.fn().mockResolvedValue({ results: [], truncated: false }),
+    updateWorkItemSerials: vi.fn(),
     ...overrides,
   };
 }

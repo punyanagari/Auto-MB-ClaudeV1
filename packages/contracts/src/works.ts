@@ -112,6 +112,7 @@ export const WorkItemSchema = Type.Object(
     effectiveDescription: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     effectiveUnit: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     amendmentAdded: Type.Optional(Type.Boolean()),
+    requiresSerials: Type.Boolean(),
   },
   { additionalProperties: false },
 );

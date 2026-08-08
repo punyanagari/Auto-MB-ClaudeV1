@@ -11,6 +11,7 @@ export * from './masters.js';
 export * from './issue-challans.js';
 export * from './retention.js';
 export * from './amendments.js';
+export * from './serials.js';
 export * from './dashboard.js';
 export * from './timeline.js';
 export * from './extensions.js';
