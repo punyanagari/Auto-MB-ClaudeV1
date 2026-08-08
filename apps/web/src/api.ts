@@ -10,6 +10,10 @@ import type {
   DashboardResponse,
   InstallSerialRequest,
   Instrument,
+  IssueChallan,
+  IssueChallanDetailResponse,
+  CancelIssueChallanRequest,
+  SaveIssueChallanRequest,
   LoaDocument,
   LoaDocumentDetail,
   MbEntry,
@@ -38,15 +42,19 @@ export interface MeResponse {
   readonly memberships: readonly Membership[];
 }
 
-/** Error carrying the server's ApiError envelope for user-facing display. */
+/** Error carrying the server's ApiError envelope for user-facing display.
+ * `details` carries structured conflict payloads (e.g. DRAFT_EXISTS
+ * answers with the existing draft's id). */
 export class RequestFailedError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: unknown;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details ?? null;
   }
 }
 
@@ -146,6 +154,51 @@ export interface ApiClient {
     challanId: string,
     kind: 'rendered' | 'signed',
   ) => Promise<Blob>;
+  readonly listIssueChallans: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly IssueChallan[]>;
+  readonly getIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly createIssueChallan: (
+    organisationId: string,
+    workId: string,
+    body: SaveIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly updateIssueChallan: (
+    organisationId: string,
+    challanId: string,
+    body: SaveIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly deleteIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<void>;
+  readonly issueIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly cancelIssueChallan: (
+    organisationId: string,
+    challanId: string,
+    body: CancelIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly renderIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly uploadIssueChallanSignedCopy: (
+    organisationId: string,
+    challanId: string,
+    file: Blob,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly downloadIssueChallanPdf: (
+    organisationId: string,
+    challanId: string,
+    kind: 'rendered' | 'signed',
+  ) => Promise<Blob>;
   readonly dashboard: (organisationId: string) => Promise<DashboardResponse>;
   readonly organisationProfile: (
     organisationId: string,
@@ -232,14 +285,16 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 async function parseError(response: Response): Promise<RequestFailedError> {
   let code = 'REQUEST_ERROR';
   let message = `The server answered ${String(response.status)}.`;
+  let details: unknown;
   try {
     const body = (await response.json()) as Partial<ApiError>;
     if (typeof body.code === 'string') code = body.code;
     if (typeof body.message === 'string') message = body.message;
+    details = body.details;
   } catch {
     // Non-JSON error body: keep the status-based message.
   }
-  return new RequestFailedError(response.status, code, message);
+  return new RequestFailedError(response.status, code, message, details);
 }
 
 /**
@@ -466,6 +521,81 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         credentials: 'same-origin',
         headers: { 'x-organisation-id': organisationId },
       });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async listIssueChallans(organisationId, workId) {
+      const payload = await request<{ issueChallans: IssueChallan[] }>(
+        `/api/works/${workId}/issue-challans`,
+        { organisationId },
+      );
+      return payload.issueChallans;
+    },
+    async getIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(`/api/issue-challans/${challanId}`, {
+        organisationId,
+      });
+    },
+    async createIssueChallan(organisationId, workId, body) {
+      return request<IssueChallanDetailResponse>(
+        `/api/works/${workId}/issue-challans`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async updateIssueChallan(organisationId, challanId, body) {
+      return request<IssueChallanDetailResponse>(`/api/issue-challans/${challanId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async deleteIssueChallan(organisationId, challanId) {
+      await request(`/api/issue-challans/${challanId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async issueIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/issue`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelIssueChallan(organisationId, challanId, body) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async renderIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async uploadIssueChallanSignedCopy(organisationId, challanId, file) {
+      const response = await fetchImpl(`/api/issue-challans/${challanId}/signed-copy`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/pdf',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as IssueChallanDetailResponse;
+    },
+    async downloadIssueChallanPdf(organisationId, challanId, kind) {
+      // The tenant header travels on every scoped request, so PDFs are
+      // fetched (not linked) and handed to the browser as object URLs.
+      const response = await fetchImpl(
+        `/api/issue-challans/${challanId}/pdf?kind=${kind}`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
       if (!response.ok) throw await parseError(response);
       return response.blob();
     },
