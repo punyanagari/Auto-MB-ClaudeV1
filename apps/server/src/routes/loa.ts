@@ -202,36 +202,43 @@ export function registerLoaRoutes(
       if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
+      // Authorisation BEFORE any expensive work: an unauthorised caller
+      // must not be able to spend a malware scan or a pdftotext run.
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+      });
       await assertNotMalware(scanner, body);
 
       const sha256 = createHash('sha256').update(body).digest('hex');
       const documentId = crypto.randomUUID();
       const objectKey = `${organisationId}/loa/${documentId}.pdf`;
 
+      // Storage write and extraction run OUTSIDE the tenant transaction:
+      // pdftotext may take tens of seconds and must not hold a pooled
+      // connection. A failure here leaves at worst an orphan object under
+      // a UUID key, never a database row without its document.
+      await storage.put(objectKey, body);
+      let status: LoaDocument['extractionStatus'];
+      let payload: ExtractionPayload | { error: string };
+      try {
+        const sourceText = await extractPdfText(body);
+        payload = { sourceText, review: reviewLoaLetter(sourceText) };
+        status = 'review';
+      } catch (error) {
+        payload = {
+          error: error instanceof Error ? error.message : 'extraction failed',
+        };
+        status = 'failed';
+      }
+
       const row = await withBoundTenant(
         database,
         organisationId,
         user.id,
         async (tx) => {
+          // Re-checked inside the writing transaction: the role could
+          // have been revoked while the scan and extraction ran.
           await requireWriterRole(tx, user.id);
-
-          // Store before the row exists: a failure here leaves at worst an
-          // orphan object under a UUID key, never a database row without
-          // its document.
-          await storage.put(objectKey, body);
-
-          let status: LoaDocument['extractionStatus'];
-          let payload: ExtractionPayload | { error: string };
-          try {
-            const sourceText = await extractPdfText(body);
-            payload = { sourceText, review: reviewLoaLetter(sourceText) };
-            status = 'review';
-          } catch (error) {
-            payload = {
-              error: error instanceof Error ? error.message : 'extraction failed',
-            };
-            status = 'failed';
-          }
 
           const [inserted] = await tx<LoaDocumentRow[]>`
             insert into loa_documents (

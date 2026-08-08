@@ -189,6 +189,10 @@ export function registerOrganisationRoutes(
       if (mediaType === null) {
         throw httpError(400, 'INVALID_IMAGE', 'The logo must be a PNG or JPEG image.');
       }
+      // Authorisation before the expensive scan (ops batch).
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+      });
       await assertNotMalware(scanner, body);
 
       const extension = mediaType === 'image/png' ? 'png' : 'jpg';

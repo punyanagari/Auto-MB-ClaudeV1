@@ -62,7 +62,7 @@ Delivered:
 
 Remaining (tracked for the pre-pilot hardening pass):
 
-- rate limiting on upload/extraction (docs/SECURITY.md lists it with login rate limiting);
+- ~~rate limiting on upload/extraction~~ — shipped 2026-08-08 (ops batch): sliding-window limits on login and every upload endpoint;
 - ClamAV upload quarantine before design-partner uploads (Milestone 4 trigger);
 - the model/OCR fallback for unresolved fields waits for the first real letter the deterministic parser cannot serve.
 
@@ -101,7 +101,7 @@ Delivered (the engineering half):
 Remaining (needs the operator, real infrastructure, or third parties):
 
 - MFA enrolment/enforcement for owners — the Milestone 1 deferred decision comes due before the first partner account exists (docs/RUNBOOK.md §8);
-- rate limiting on login and upload/extraction — with the hardening pass at deployment;
+- ~~rate limiting on login and upload/extraction~~ — shipped 2026-08-08 (ops batch), alongside authorize-before-scan ordering, extraction outside the tenant transaction, the idempotent role/grant bootstrap (deployed on every release), the public auth base URL, edge security headers with CSP, the component-aware readiness probe, a production-compose smoke test in CI, and a restore proof that fails CI instead of skipping;
 - the India-region VM, DNS, and TLS hostname (operator accounts and decisions);
 - external uptime monitor and metrics scraper pointed at the deployment;
 - DAST against staging and the external application-security review;

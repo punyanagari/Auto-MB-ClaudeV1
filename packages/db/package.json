@@ -13,7 +13,8 @@
     "migrate": "tsx src/migrate.ts",
     "check:migrations": "tsx src/check-migrations.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bootstrap": "tsx src/bootstrap.ts"
   },
   "dependencies": {
     "postgres": "3.4.9"

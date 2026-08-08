@@ -72,6 +72,12 @@ beforeAll(async () => {
   compatible = check.ok;
   skipReason = check.reason;
   if (!compatible) {
+    // CI sets RESTORE_PROOF=required: a green run must MEAN the restore
+    // executed — incompatible tooling fails the gate instead of silently
+    // skipping the proof (external review, ops batch).
+    if (process.env.RESTORE_PROOF === 'required') {
+      throw new Error(`restore proof is required but cannot run: ${skipReason}`);
+    }
     console.warn(`backup/restore proof skipped: ${skipReason}`);
     return;
   }

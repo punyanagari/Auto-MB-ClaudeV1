@@ -8,6 +8,7 @@ import { toWebHeaders, toWebRequest } from './http.js';
 import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
 import { createClamdScanner, noScanner } from './malware-scan.js';
 import { createMetricsRegistry } from './metrics.js';
+import { createRateLimiter, type RateLimitRule } from './rate-limit.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
 import { registerOrganisationRoutes } from './routes/organisation.js';
@@ -39,6 +40,12 @@ export interface BuildAppOptions {
   /** Enables GET /metrics (Prometheus text format) behind this bearer
    * token. Unset disables the endpoint entirely. */
   readonly metricsToken?: string;
+  /** Overrides for the built-in login/upload rate limits (tests use
+   * tight windows; production keeps the defaults). */
+  readonly rateLimits?: {
+    readonly auth?: RateLimitRule;
+    readonly upload?: RateLimitRule;
+  };
 }
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
@@ -175,7 +182,49 @@ export async function buildApp(
     });
   }
 
-  registerHealthRoutes(app, database);
+  // Login and upload throttling (docs/SECURITY.md): both endpoints do
+  // expensive work (password hashing; malware scans and extraction), so
+  // they carry per-address sliding-window limits.
+  const authLimiter = createRateLimiter(
+    options.rateLimits?.auth ?? { windowMs: 5 * 60_000, max: 20 },
+  );
+  const uploadLimiter = createRateLimiter(
+    options.rateLimits?.upload ?? { windowMs: 10 * 60_000, max: 30 },
+  );
+  app.addHook('onRequest', async (request, reply) => {
+    const path = request.url.split('?')[0] ?? '';
+    const isAuthAttempt =
+      request.method === 'POST' &&
+      (path === '/api/auth/sign-in/email' || path === '/api/auth/sign-up/email');
+    const isUpload =
+      (request.method === 'POST' || request.method === 'PUT') &&
+      (path === '/api/loa-documents' ||
+        path === '/api/organisation/logo' ||
+        path.endsWith('/signed-copy'));
+    const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
+    if (limiter !== null && !limiter.allow(request.ip)) {
+      return reply.status(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many attempts; wait a few minutes and try again.',
+        requestId: request.id,
+      });
+    }
+    return undefined;
+  });
+
+  const storage = createFileSystemStorage(
+    options.objectStorageDir ?? './local-data/objects',
+  );
+  registerHealthRoutes(app, {
+    ...(database ? { database } : {}),
+    storage,
+    // Only explicitly configured externals are probed: a defaulted URL
+    // in a test environment must not fail readiness.
+    ...(options.gotenbergUrl !== undefined
+      ? { gotenbergUrl: options.gotenbergUrl }
+      : {}),
+    ...(options.clamav ? { clamav: options.clamav } : {}),
+  });
 
   if (auth && database) {
     const authInstance = auth;
@@ -240,9 +289,6 @@ export async function buildApp(
         },
       );
     }
-    const storage = createFileSystemStorage(
-      options.objectStorageDir ?? './local-data/objects',
-    );
     const scanner = options.clamav
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;

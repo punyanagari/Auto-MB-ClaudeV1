@@ -32,7 +32,8 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.producti
 docker compose -f deploy/docker-compose.prod.yml exec \
   -e DATABASE_ADMIN_URL="<owner connection string>" \
   -e AUTO_MB_APP_DB_PASSWORD="<AUTO_MB_APP_DB_PASSWORD>" \
-  server pnpm --filter @auto-mb/db migrate
+  -e DATABASE_URL="<application connection string>" \
+  server pnpm --filter @auto-mb/db bootstrap
 ```
 
 Verify: `https://<SITE_ADDRESS>/api/ready` answers `200`, sign-up works,
@@ -45,7 +46,7 @@ boot to download signatures).
 ```bash
 git pull
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
-# then re-run the migrate command from §2 if the release added migrations
+# then re-run the bootstrap command from §2 if the release added migrations
 ```
 
 Migrations are additive and advisory-lock-guarded (packages/db); a

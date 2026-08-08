@@ -888,6 +888,11 @@ export function registerChallanRoutes(
       if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
+      // Authorisation before the expensive scan (ops batch): an
+      // unauthorised caller must not spend scanner capacity.
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+      });
       await assertNotMalware(scanner, body);
       // Content-addressed key: a replacement upload gets a new object and
       // never overwrites earlier evidence; the hash is recorded like the

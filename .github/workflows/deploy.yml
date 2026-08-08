@@ -98,19 +98,33 @@ jobs:
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production up -d --build
           set -a; . deploy/.env.production; set +a
-          # Migrations are additive and advisory-lock-guarded; running on
-          # every deploy is safe and removes the manual step.
+          # Bootstrap = ensure application role + migrations + reapply the
+          # canonical privilege matrix + prove an application-role query.
+          # Idempotent and advisory-lock-guarded; safe on every deploy.
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production exec -T \
             -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
             -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
-            server pnpm --filter @auto-mb/db migrate < /dev/null
+            -e DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@postgres:5432/auto_mb" \
+            server pnpm --filter @auto-mb/db bootstrap < /dev/null
           # (the </dev/null matters: without it, docker exec attaches to
           # this script's stdin and swallows the lines below)
-          # The deploy is not done until the site answers.
-          sleep 5
-          curl -fsSk --max-time 15 \
-            --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
-            "https://${SITE_ADDRESS}/api/ready"
-          echo "deploy verified: site is ready"
+          # The deploy is not done until the site answers READY — every
+          # configured component, scanner included. Retries cover the
+          # scanner's warm-up window after a container recreation.
+          for attempt in $(seq 1 24); do
+            if body=$(curl -fsSk --max-time 15 \
+                --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
+                "https://${SITE_ADDRESS}/api/ready"); then
+              echo "$body"
+              echo "deploy verified: site is ready"
+              exit 0
+            fi
+            echo "not ready yet (attempt $attempt)"
+            sleep 10
+          done
+          echo "site did not become ready" >&2
+          curl -sk --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
+            "https://${SITE_ADDRESS}/api/ready" || true
+          exit 1
           DEPLOY

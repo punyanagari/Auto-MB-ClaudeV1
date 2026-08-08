@@ -4,6 +4,19 @@
 
 encode zstd gzip
 
+# Security headers (docs/SECURITY.md). The CSP matches the SPA's real
+# needs: same-origin everything, data:/blob: images (logo previews and
+# generated PDFs travel as object URLs), inline style attributes only.
+header {
+	Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	X-Content-Type-Options "nosniff"
+	X-Frame-Options "DENY"
+	Referrer-Policy "strict-origin-when-cross-origin"
+	Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	-Server
+}
+
 # The API, including auth and document streaming.
 handle /api/* {
 	reverse_proxy server:3000

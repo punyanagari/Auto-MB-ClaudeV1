@@ -21,7 +21,11 @@ const app = await buildApp({
     ? {
         databaseUrl: process.env.DATABASE_URL,
         authSecret: assertProductionSecret(process.env.AUTH_SECRET),
-        baseUrl: `http://${host}:${String(port)}`,
+        // Better Auth's static base URL takes priority over forwarded
+        // headers when constructing callback/verification URLs, so it
+        // must be the PUBLIC origin (the web origin fronting /api), never
+        // the container bind address.
+        baseUrl: process.env.WEB_ORIGIN ?? `http://${host}:${String(port)}`,
         trustedOrigins: [webOrigin],
         ...(process.env.OBJECT_STORAGE_DIR
           ? { objectStorageDir: process.env.OBJECT_STORAGE_DIR }

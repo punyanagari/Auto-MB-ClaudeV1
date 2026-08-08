@@ -20,10 +20,27 @@ export function isHealthResponse(value: unknown): value is HealthResponse {
   return Value.Check(HealthResponseSchema, value);
 }
 
+export const ReadinessComponentSchema = Type.Union([
+  Type.Literal('ok'),
+  Type.Literal('failed'),
+  Type.Literal('unconfigured'),
+]);
+
 export const ReadinessResponseSchema = Type.Object(
   {
     status: Type.Union([Type.Literal('ready'), Type.Literal('not-ready')]),
     reason: Type.Optional(Type.String()),
+    components: Type.Optional(
+      Type.Object(
+        {
+          database: ReadinessComponentSchema,
+          objectStorage: ReadinessComponentSchema,
+          pdfRenderer: ReadinessComponentSchema,
+          malwareScanner: ReadinessComponentSchema,
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
