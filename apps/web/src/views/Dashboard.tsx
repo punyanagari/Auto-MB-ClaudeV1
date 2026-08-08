@@ -67,26 +67,41 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
 
   return (
     <>
-      <section aria-label="Overview" className="stat-row">
-        <div className="stat-tile">
-          <span className="stat-tile__label">Works</span>
-          <span className="stat-tile__value">{data.totals.works}</span>
+      <section
+        aria-label="Overview"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <div className="rounded-lg border border-border bg-card p-5">
+          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Works
+          </span>
+          <span className="block text-2xl font-semibold tracking-tight tnum">
+            {data.totals.works}
+          </span>
         </div>
-        <div className="stat-tile">
-          <span className="stat-tile__label">Contract value</span>
-          <span className="stat-tile__value">
+        <div className="rounded-lg border border-border bg-card p-5">
+          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Contract value
+          </span>
+          <span className="block text-2xl font-semibold tracking-tight tnum">
             {formatInr(data.totals.contractValue)}
           </span>
         </div>
-        <div className="stat-tile">
-          <span className="stat-tile__label">Delivered value</span>
-          <span className="stat-tile__value">
+        <div className="rounded-lg border border-border bg-card p-5">
+          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Delivered value
+          </span>
+          <span className="block text-2xl font-semibold tracking-tight tnum">
             {formatInr(data.totals.deliveredValue)}
           </span>
         </div>
-        <div className="stat-tile">
-          <span className="stat-tile__label">Billed value</span>
-          <span className="stat-tile__value">{formatInr(data.totals.billedValue)}</span>
+        <div className="rounded-lg border border-border bg-card p-5">
+          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Billed value
+          </span>
+          <span className="block text-2xl font-semibold tracking-tight tnum">
+            {formatInr(data.totals.billedValue)}
+          </span>
         </div>
       </section>
 

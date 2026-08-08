@@ -1,0 +1,136 @@
+/* Tailwind entrypoint — the design system is the auto-mb-vercel study's
+ * own globals, adapted for Vite: same tokens, same @theme mapping, Geist
+ * self-hosted via Fontsource. The pre-Tailwind stylesheet is imported
+ * into a `legacy` layer BELOW components/utilities, so unmigrated
+ * screens keep their exact rendering while migrated markup written in
+ * Tailwind utilities always wins. */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss';
+@import './styles.css' layer(legacy);
+
+@theme inline {
+  --font-sans:
+    'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:
+    'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-faint: var(--sidebar-faint);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  color-scheme: light;
+
+  /* Cool neutral workspace (the study's light palette, verbatim). */
+  --background: oklch(0.976 0.004 250);
+  --foreground: oklch(0.21 0.03 262);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.03 262);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.03 262);
+
+  /* Signal blue primary */
+  --primary: oklch(0.52 0.16 258);
+  --primary-foreground: oklch(0.99 0.005 250);
+
+  --secondary: oklch(0.955 0.007 250);
+  --secondary-foreground: oklch(0.31 0.03 262);
+  --muted: oklch(0.965 0.005 250);
+  --muted-foreground: oklch(0.53 0.02 258);
+  --accent: oklch(0.945 0.02 258);
+  --accent-foreground: oklch(0.4 0.1 258);
+
+  --destructive: oklch(0.51 0.19 25);
+  --destructive-foreground: oklch(0.99 0.005 250);
+  --success: oklch(0.47 0.13 155);
+  --success-foreground: oklch(0.99 0.005 250);
+  --warning: oklch(0.75 0.15 70);
+  --warning-foreground: oklch(0.4 0.09 70);
+  --info: oklch(0.49 0.12 240);
+  --info-foreground: oklch(0.99 0.005 250);
+
+  --border: oklch(0.915 0.008 255);
+  --input: oklch(0.915 0.008 255);
+  --ring: oklch(0.52 0.16 258);
+
+  --radius: 0.55rem;
+
+  /* Deep ink navy sidebar */
+  --sidebar: oklch(0.24 0.035 265);
+  --sidebar-foreground: oklch(0.82 0.02 260);
+  /* Solid, AA-safe faint tone for small uppercase labels (the study's
+   * 45% alpha fails the axe contrast gate on the navy). */
+  --sidebar-faint: oklch(0.75 0.02 260);
+  --sidebar-primary: oklch(0.6 0.16 258);
+  --sidebar-primary-foreground: oklch(0.99 0.005 250);
+  --sidebar-accent: oklch(0.31 0.04 265);
+  --sidebar-accent-foreground: oklch(0.98 0.005 250);
+  --sidebar-border: oklch(0.34 0.03 265);
+  --sidebar-ring: oklch(0.6 0.16 258);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Thin, technical scrollbars + tabular numerals, as in the study. */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

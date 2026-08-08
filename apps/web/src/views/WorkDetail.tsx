@@ -9,6 +9,7 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { cn } from '../lib/cn.js';
 import { formatCompactInr, formatDate, formatInr } from '../format.js';
 
 interface WorkDetailProps {
@@ -208,17 +209,23 @@ export function WorkDetail({
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <p className="page-header__eyebrow">File {work.workCode}</p>
-          <h1 id="work-title" tabIndex={-1}>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="mb-1 text-[11px] font-semibold tracking-widest text-primary uppercase">
+            File {work.workCode}
+          </p>
+          <h1
+            id="work-title"
+            tabIndex={-1}
+            className="text-2xl font-semibold tracking-tight text-balance"
+          >
             {work.workCode} — {work.title}
           </h1>
-          <p className="page-header__desc">
+          <p className="mt-1 text-sm text-muted-foreground text-pretty">
             {work.letterNumber} · LOA {formatDate(work.letterDate)}
           </p>
         </div>
-        <div className="page-header__actions">
+        <div className="flex shrink-0 items-center gap-2">
           <span className={`chip ${WORK_STATUS_CHIP[work.status] ?? ''}`}>
             {work.status}
           </span>
@@ -245,9 +252,12 @@ export function WorkDetail({
         </div>
       </header>
 
-      <div className="summary-grid">
-        <section className="summary-card" aria-label="Contract details">
-          <h2>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <section
+          className="rounded-lg border border-border bg-card p-5"
+          aria-label="Contract details"
+        >
+          <h2 className="mb-4 mt-0 flex items-center gap-2 text-sm font-semibold [&_svg]:text-primary">
             <svg
               aria-hidden="true"
               width="15"
@@ -263,15 +273,15 @@ export function WorkDetail({
             Contract details
           </h2>
           <dl>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Letter No.</dt>
               <dd>{work.letterNumber}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>LOA date</dt>
               <dd>{formatDate(work.letterDate)}</dd>
             </div>
-            <div className="summary-row">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-medium">
               <dt>Pricing</dt>
               <dd>
                 {work.pricingShape === 'letter_percentage' &&
@@ -281,7 +291,7 @@ export function WorkDetail({
                   : 'Per-schedule totals'}
               </dd>
             </div>
-            <div className="summary-row">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-medium">
               <dt>Schedules</dt>
               <dd>
                 {schedules.length} · {workItems.length} items
@@ -290,8 +300,11 @@ export function WorkDetail({
           </dl>
         </section>
 
-        <section className="summary-card" aria-label="Value">
-          <h2>
+        <section
+          className="rounded-lg border border-border bg-card p-5"
+          aria-label="Value"
+        >
+          <h2 className="mb-4 mt-0 flex items-center gap-2 text-sm font-semibold [&_svg]:text-primary">
             <svg
               aria-hidden="true"
               width="15"
@@ -308,27 +321,30 @@ export function WorkDetail({
             Value &amp; delivery
           </h2>
           <dl>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Advertised</dt>
               <dd>{formatCompactInr(work.advertisedValue)}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Contract</dt>
               <dd>{formatCompactInr(work.contractValue)}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Issued challans</dt>
               <dd>{issuedChallans.length}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Unbilled measurements</dt>
               <dd>{unbilledCount}</dd>
             </div>
           </dl>
         </section>
 
-        <section className="summary-card" aria-label="Instruments and evidence">
-          <h2>
+        <section
+          className="rounded-lg border border-border bg-card p-5"
+          aria-label="Instruments and evidence"
+        >
+          <h2 className="mb-4 mt-0 flex items-center gap-2 text-sm font-semibold [&_svg]:text-primary">
             <svg
               aria-hidden="true"
               width="15"
@@ -344,19 +360,19 @@ export function WorkDetail({
             Instruments &amp; evidence
           </h2>
           <dl>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Active instruments</dt>
               <dd>{activeInstruments.length}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Next expiry</dt>
               <dd>{nextExpiry !== undefined ? formatDate(nextExpiry) : '—'}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Serials recorded</dt>
               <dd>{serials.length}</dd>
             </div>
-            <div className="summary-row summary-row--mono">
+            <div className="flex items-baseline justify-between gap-3 py-1 text-sm [&_dt]:shrink-0 [&_dt]:text-muted-foreground [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:text-right [&_dd]:font-mono [&_dd]:text-[13px] [&_dd]:font-medium [&_dd]:tnum">
               <dt>Installed</dt>
               <dd>{installedCount}</dd>
             </div>
@@ -364,13 +380,24 @@ export function WorkDetail({
         </section>
       </div>
 
-      <section className="card card--wide" aria-label="Work file">
-        <nav className="tab-bar" aria-label="Work file sections">
+      <section
+        className="rounded-xl border border-border bg-card p-5 shadow-sm"
+        aria-label="Work file"
+      >
+        <nav
+          className="mb-4 flex flex-wrap gap-1 border-b border-border"
+          aria-label="Work file sections"
+        >
           {TABS.map((candidate) => (
             <button
               key={candidate.key}
               type="button"
-              className="tab"
+              className={cn(
+                '-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors',
+                tab === candidate.key
+                  ? 'border-primary font-semibold text-primary'
+                  : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
               aria-current={tab === candidate.key ? 'true' : undefined}
               onClick={() => {
                 setTab(candidate.key);

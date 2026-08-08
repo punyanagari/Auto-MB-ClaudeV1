@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  LayoutDashboard,
+  LayoutList,
+  Users,
+  Settings as SettingsIcon,
+  LogOut,
+  ArrowLeftRight,
+} from 'lucide-react';
 import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
 import { initials } from '../format.js';
+import { cn } from '../lib/cn.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
@@ -33,83 +42,44 @@ type WorkspaceView =
   | { name: 'settings' };
 
 const MODULES = [
-  {
-    key: 'dashboard' as const,
-    label: 'Dashboard',
-    icon: (
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      >
-        <path d="M2 9.5 8 3l6 6.5" />
-        <path d="M4 8v6h8V8" />
-      </svg>
-    ),
-  },
-  {
-    key: 'works' as const,
-    label: 'Works',
-    icon: (
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      >
-        <rect x="2" y="2" width="5" height="5" rx="1" />
-        <rect x="9" y="2" width="5" height="5" rx="1" />
-        <rect x="2" y="9" width="5" height="5" rx="1" />
-        <rect x="9" y="9" width="5" height="5" rx="1" />
-      </svg>
-    ),
-  },
-  {
-    key: 'members' as const,
-    label: 'Members',
-    icon: (
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      >
-        <circle cx="5.5" cy="5" r="2.5" />
-        <path d="M1.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4" />
-        <circle cx="11.5" cy="5.5" r="2" />
-        <path d="M11 10.2c2 .2 3.5 1.8 3.5 3.8" />
-      </svg>
-    ),
-  },
-  {
-    key: 'settings' as const,
-    label: 'Settings',
-    icon: (
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      >
-        <circle cx="8" cy="8" r="2.4" />
-        <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6 11 5M5 11l-1.4 1.4" />
-      </svg>
-    ),
-  },
+  { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'works' as const, label: 'Works', icon: LayoutList },
+  { key: 'members' as const, label: 'Members', icon: Users },
+  { key: 'settings' as const, label: 'Settings', icon: SettingsIcon },
 ];
+
+/** The study's rail monogram: two rails, sleepers, a signal dot. */
+function BrandMark() {
+  return (
+    <span
+      className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 24 24" fill="none" className="size-5">
+        <path
+          d="M7 21 10 5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M17 21 14 5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M6.4 17.5H17.6M7 13H17M7.6 8.5H16.4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          opacity="0.85"
+        />
+        <circle cx="12" cy="4" r="1.9" fill="currentColor" />
+      </svg>
+    </span>
+  );
+}
 
 export function Workspace({
   api,
@@ -148,118 +118,110 @@ export function Workspace({
   const membershipRole = membership?.role ?? 'member';
 
   return (
-    <div className="app-frame">
-      <nav className="sidebar" aria-label="Modules">
-        <span className="sidebar__brand">
-          <span className="sidebar__brand-mark" aria-hidden="true">
-            {/* Rail-inspired monogram: two rails, sleepers, a signal dot. */}
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M7 21 10 5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-              <path
-                d="M17 21 14 5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-              <path
-                d="M6.4 17.5H17.6M7 13H17M7.6 8.5H16.4"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                opacity="0.85"
-              />
-              <circle cx="12" cy="4" r="1.9" fill="currentColor" />
-            </svg>
-          </span>
-          <span className="sidebar__brand-text">
-            <span className="sidebar__brand-name">
-              Auto<span>-MB</span>
-            </span>
-            <br />
-            <span className="sidebar__brand-sub">{organisation.name}</span>
-          </span>
-        </span>
-        <div className="sidebar__nav">
-          <span className="sidebar__label" aria-hidden="true">
-            Navigation
-          </span>
-          {MODULES.map((module) => (
-            <button
-              key={module.key}
-              type="button"
-              className="sidebar__item"
-              aria-current={activeModule === module.key ? 'page' : undefined}
-              onClick={() => {
-                const key = module.key;
-                setView(
-                  key === 'dashboard'
-                    ? { name: 'dashboard' }
-                    : key === 'works'
-                      ? { name: 'works' }
-                      : key === 'members'
-                        ? { name: 'members' }
-                        : { name: 'settings' },
-                );
-              }}
-            >
-              {module.icon}
-              {module.label}
-            </button>
-          ))}
+    <div className="flex min-h-dvh">
+      <nav
+        className="sticky top-0 flex h-dvh w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground"
+        aria-label="Modules"
+      >
+        <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-4">
+          <div className="flex items-center gap-2.5">
+            <BrandMark />
+            <div className="leading-tight">
+              <div className="font-semibold tracking-tight text-sidebar-accent-foreground">
+                Auto<span className="text-[oklch(0.72_0.13_258)]">-MB</span>
+              </div>
+              <div className="max-w-40 truncate text-[10px] font-medium tracking-widest text-sidebar-faint uppercase">
+                {organisation.name}
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="sidebar__foot">
-          <div className="sidebar__user">
-            <span className="avatar" aria-hidden="true">
+
+        <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4">
+          <p
+            className="px-2 pb-2 text-[10px] font-semibold tracking-widest text-sidebar-faint uppercase"
+            aria-hidden="true"
+          >
+            Navigation
+          </p>
+          <ul className="flex flex-col gap-0.5">
+            {MODULES.map((module) => {
+              const active = activeModule === module.key;
+              const Icon = module.icon;
+              return (
+                <li key={module.key}>
+                  <button
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => {
+                      const key = module.key;
+                      setView(
+                        key === 'dashboard'
+                          ? { name: 'dashboard' }
+                          : key === 'works'
+                            ? { name: 'works' }
+                            : key === 'members'
+                              ? { name: 'members' }
+                              : { name: 'settings' },
+                      );
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium transition-colors',
+                      active
+                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1">{module.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="border-t border-sidebar-border p-3">
+          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+              aria-hidden="true"
+            >
               {initials(me.user.email)}
             </span>
-            <span className="sidebar__user-text">
-              <span className="sidebar__user-name">{me.user.email}</span>
-              <br />
-              <span className="sidebar__user-role">{membershipRole}</span>
-            </span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-sm font-medium text-sidebar-accent-foreground">
+                {me.user.email}
+              </div>
+              <div className="truncate text-xs text-sidebar-faint">
+                {membershipRole}
+              </div>
+            </div>
           </div>
           <button
             type="button"
-            className="sidebar__item"
             onClick={onSwitchOrganisation}
+            className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
           >
-            <svg
-              aria-hidden="true"
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" />
-            </svg>
+            <ArrowLeftRight className="size-4" aria-hidden="true" />
             Switch organisation
           </button>
-          <button type="button" className="sidebar__item" onClick={onSignOut}>
-            <svg
-              aria-hidden="true"
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <path d="M6 2H3v12h3M11 5l3 3-3 3M14 8H6" />
-            </svg>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+          >
+            <LogOut className="size-4" aria-hidden="true" />
             Sign out
           </button>
         </div>
       </nav>
 
-      <div className="app-main">
-        <main className="content" ref={containerRef}>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main
+          className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-6 py-6 lg:px-8"
+          ref={containerRef}
+        >
           {view.name === 'dashboard' && (
             <Dashboard
               api={api}
