@@ -7,6 +7,7 @@ import {
   UploadLoaQuerySchema,
   WorkDetailResponseSchema,
   WorkListResponseSchema,
+  type ConfirmPbgRequirement,
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
   type LoaDocument,
@@ -15,7 +16,12 @@ import {
   type Work,
   type WorkSchedule,
 } from '@auto-mb/contracts';
-import { reviewLoaLetter, type LoaReviewPayload } from '@auto-mb/loa-parser';
+import {
+  parseDecimalToMinorUnits,
+  reviewLoaLetter,
+  type LoaReviewPayload,
+  type PerformanceGuaranteeField,
+} from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
@@ -108,6 +114,10 @@ interface WorkRow {
   pricing_shape: Work['pricingShape'];
   letter_percentage: string | null;
   letter_percentage_direction: Work['letterPercentageDirection'];
+  pbg_required_amount: string | null;
+  pbg_submission_days: number | null;
+  pbg_extension_days: number | null;
+  pbg_penal_interest_percent: string | null;
   status: Work['status'];
   created_at: Date;
 }
@@ -124,6 +134,10 @@ function toWork(row: WorkRow): Work {
     pricingShape: row.pricing_shape,
     letterPercentage: row.letter_percentage,
     letterPercentageDirection: row.letter_percentage_direction,
+    pbgRequiredAmount: row.pbg_required_amount,
+    pbgSubmissionDays: row.pbg_submission_days,
+    pbgExtensionDays: row.pbg_extension_days,
+    pbgPenalInterestPercent: row.pbg_penal_interest_percent,
     status: row.status,
     createdAt: row.created_at.toISOString(),
   };
@@ -131,19 +145,51 @@ function toWork(row: WorkRow): Work {
 
 /** Links a confirmed item back to the parsed row it came from, so the
  * work_items.source_evidence column carries the parser's verbatim source
- * block for that item — corrections never overwrite evidence. */
+ * block for that item — corrections never overwrite evidence.
+ *
+ * Every item must resolve: a parsed row's sourceRef must point at a real
+ * row of the stored extraction payload, and a reviewer-added row must
+ * declare itself with `manualEntry: true` (recorded as an explicit
+ * manual-entry marker). A confirmed Work therefore never carries an
+ * unresolved evidence link. */
 function sourceEvidenceFor(
   payload: ExtractionPayload | null,
   item: ConfirmWorkItem,
 ): Record<string, unknown> {
-  if (!payload || !item.sourceRef) return {};
+  if (item.manualEntry === true) {
+    if (item.sourceRef) {
+      throw httpError(
+        400,
+        'ITEM_EVIDENCE_CONFLICT',
+        `Item ${item.itemNumber} claims both a parsed source row and manual entry; it must carry exactly one.`,
+      );
+    }
+    return {
+      resolved: true,
+      manualEntry: true,
+      note: 'Row added by the reviewer at confirmation; the parsed letter has no corresponding item row.',
+    };
+  }
+  if (!item.sourceRef) {
+    throw httpError(
+      400,
+      'ITEM_EVIDENCE_REQUIRED',
+      `Item ${item.itemNumber} carries neither a sourceRef into the parsed letter nor a manualEntry marker.`,
+    );
+  }
   const ref = item.sourceRef;
-  const parsed = payload.review.items.find(
+  const parsed = payload?.review.items.find(
     (candidate) =>
       (candidate.schedule?.id ?? 'UNBOUND') === ref.scheduleId &&
       candidate.itemSno === ref.itemSno,
   );
-  if (!parsed) return { sourceRef: ref, resolved: false };
+  if (!parsed) {
+    throw httpError(
+      400,
+      'SOURCE_REF_UNRESOLVED',
+      `Item ${item.itemNumber} references parsed row ${ref.scheduleId}#${ref.itemSno}, which the stored extraction payload does not contain.`,
+    );
+  }
   return {
     sourceRef: ref,
     resolved: true,
@@ -155,6 +201,75 @@ function sourceEvidenceFor(
     needsReview: parsed.needsReview,
     raw: parsed.raw,
   };
+}
+
+/** True when the submitted decimal string and the parser's float denote
+ * the same value, compared in exact integer minor units — never float
+ * arithmetic. A parser value that does not round-trip through
+ * `String()` into a plain decimal (never observed on the corpus) simply
+ * compares unequal. */
+function decimalMatchesParserValue(
+  submitted: string | undefined,
+  parserValue: number | null,
+  scale: number,
+): boolean {
+  if (submitted === undefined || parserValue === null) {
+    return submitted === undefined && parserValue === null;
+  }
+  const submittedMinor = parseDecimalToMinorUnits(submitted, scale);
+  const parserMinor = parseDecimalToMinorUnits(String(parserValue), scale);
+  return submittedMinor !== null && submittedMinor === parserMinor;
+}
+
+/** Builds works.pbg_requirement_source: the parser's printed raw block and
+ * proposal (verbatim, from the STORED extraction payload — never from the
+ * client) plus the provenance verdict. Values that match the parser's
+ * complete proposal are 'parser'; anything else — including a requirement
+ * entered for a letter whose clause the parser could not read — is
+ * 'corrected'. */
+function pbgRequirementSourceFor(
+  payload: ExtractionPayload | null,
+  requirement: ConfirmPbgRequirement,
+): Record<string, unknown> {
+  const parser: PerformanceGuaranteeField | null =
+    payload?.review.header.performanceGuarantee ?? null;
+  const matchesParser =
+    parser !== null &&
+    decimalMatchesParserValue(requirement.requiredAmount, parser.amountFigures, 2) &&
+    requirement.submissionDays === parser.submissionDays &&
+    (requirement.extensionDays ?? null) === parser.extensionDays &&
+    decimalMatchesParserValue(
+      requirement.penalInterestPercent,
+      parser.penalInterestPercent,
+      3,
+    );
+  return {
+    provenance: matchesParser ? 'parser' : 'corrected',
+    raw: parser?.raw ?? null,
+    parser:
+      parser === null
+        ? null
+        : {
+            amountFigures: parser.amountFigures,
+            amountWords: parser.amountWords,
+            submissionDays: parser.submissionDays,
+            extensionDays: parser.extensionDays,
+            penalInterestPercent: parser.penalInterestPercent,
+            needsReview: parser.needsReview,
+          },
+  };
+}
+
+function assertPbgRequirementCoherent(body: ConfirmWorkRequest): void {
+  if (body.pbgRequirement === undefined) return;
+  const amountMinor = parseDecimalToMinorUnits(body.pbgRequirement.requiredAmount, 2);
+  if (amountMinor === null || amountMinor <= 0n) {
+    throw httpError(
+      400,
+      'PBG_AMOUNT_INVALID',
+      'The PBG required amount must be a positive rupee amount with at most two decimal places.',
+    );
+  }
 }
 
 function assertPricingShapeCoherent(body: ConfirmWorkRequest): void {
@@ -405,6 +520,7 @@ export function registerLoaRoutes(
       const { id: documentId } = request.params as { id: string };
       const body = request.body as ConfirmWorkRequest;
       assertPricingShapeCoherent(body);
+      assertPbgRequirementCoherent(body);
 
       const result = await withBoundTenant(
         database,
@@ -439,11 +555,20 @@ export function registerLoaRoutes(
               ? (parsedPayload as unknown as ExtractionPayload)
               : null;
 
+          // The reviewer-confirmed PBG requirement lands on the Work in
+          // this same atomic transaction; its provenance payload is built
+          // from the STORED extraction payload, never from the client.
+          const pbg = body.pbgRequirement;
+          const pbgSource =
+            pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
+
           const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
               letter_percentage, letter_percentage_direction,
+              pbg_required_amount, pbg_submission_days, pbg_extension_days,
+              pbg_penal_interest_percent, pbg_requirement_source,
               created_by_user_id
             )
             values (
@@ -451,12 +576,19 @@ export function registerLoaRoutes(
               ${body.letterDate}, ${body.title}, ${body.advertisedValue},
               ${body.contractValue}, ${body.pricingShape},
               ${body.letterPercentage ?? null},
-              ${body.letterPercentageDirection ?? null}, ${user.id}
+              ${body.letterPercentageDirection ?? null},
+              ${pbg?.requiredAmount ?? null}, ${pbg?.submissionDays ?? null},
+              ${pbg?.extensionDays ?? null}, ${pbg?.penalInterestPercent ?? null},
+              ${pbgSource === null ? null : jsonb(tx, pbgSource)},
+              ${user.id}
             )
             returning id, work_code, letter_number, letter_date::text as letter_date,
                       title, advertised_value, contract_value, pricing_shape,
-                      letter_percentage, letter_percentage_direction, status,
-                      created_at
+                      letter_percentage, letter_percentage_direction,
+                      pbg_required_amount::text as pbg_required_amount,
+                      pbg_submission_days, pbg_extension_days,
+                      pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                      status, created_at
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               throw httpError(
@@ -540,6 +672,22 @@ export function registerLoaRoutes(
                   (total, schedule) => total + schedule.items.length,
                   0,
                 ),
+                manualItemCount: body.schedules.reduce(
+                  (total, schedule) =>
+                    total +
+                    schedule.items.filter((item) => item.manualEntry === true).length,
+                  0,
+                ),
+                pbgRequirement:
+                  pbg === undefined
+                    ? null
+                    : {
+                        requiredAmount: pbg.requiredAmount,
+                        submissionDays: pbg.submissionDays,
+                        extensionDays: pbg.extensionDays ?? null,
+                        penalInterestPercent: pbg.penalInterestPercent ?? null,
+                        provenance: pbgSource?.provenance ?? null,
+                      },
               })}
             )
           `;
@@ -580,8 +728,11 @@ export function registerLoaRoutes(
           return tx<WorkRow[]>`
             select id, work_code, letter_number, letter_date::text as letter_date,
                    title, advertised_value, contract_value, pricing_shape,
-                   letter_percentage, letter_percentage_direction, status,
-                   created_at
+                   letter_percentage, letter_percentage_direction,
+                   pbg_required_amount::text as pbg_required_amount,
+                   pbg_submission_days, pbg_extension_days,
+                   pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                   status, created_at
             from works w
             where deleted_at is null
               and (${full} or exists (
@@ -615,8 +766,11 @@ export function registerLoaRoutes(
         const [work] = await tx<WorkRow[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,
-                 letter_percentage, letter_percentage_direction, status,
-                 created_at
+                 letter_percentage, letter_percentage_direction,
+                 pbg_required_amount::text as pbg_required_amount,
+                 pbg_submission_days, pbg_extension_days,
+                 pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                 status, created_at
           from works
           where id = ${id} and deleted_at is null
         `;

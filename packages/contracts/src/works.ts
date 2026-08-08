@@ -18,7 +18,12 @@ const WorkCodeSchema = Type.String({ pattern: '^[A-Z0-9][A-Z0-9_/-]{0,19}$' });
 
 /** One corrected item as the reviewer confirms it. `sourceRef` points back
  * into the stored extraction payload (schedule id + printed serial) so the
- * server can attach the parser's verbatim source block as evidence. */
+ * server can attach the parser's verbatim source block as evidence.
+ * A row the reviewer ADDED at review time (a letter the parser could not
+ * fully serve) carries `manualEntry: true` INSTEAD of a sourceRef; the
+ * server records an explicit manual-entry marker as its source evidence.
+ * Every item must carry exactly one of the two — the confirm endpoint
+ * refuses items with neither (or both). */
 export const ConfirmWorkItemSchema = Type.Object(
   {
     itemNumber: Type.String({ minLength: 1, maxLength: 100 }),
@@ -35,6 +40,7 @@ export const ConfirmWorkItemSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    manualEntry: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );
@@ -50,6 +56,24 @@ export const ConfirmWorkScheduleSchema = Type.Object(
 );
 export type ConfirmWorkSchedule = Static<typeof ConfirmWorkScheduleSchema>;
 
+/** The Performance Bank Guarantee REQUIREMENT the letter demands, as the
+ * reviewer confirms it. Distinct from work_instruments kind='pbg' rows
+ * (what the contractor actually submitted). The server derives provenance
+ * (parser-proposed vs reviewer-corrected) by comparing these values with
+ * the stored extraction payload, and retains the printed raw source —
+ * clients only ever submit the values themselves. Letters without a
+ * performance-guarantee clause simply omit the whole object. */
+export const ConfirmPbgRequirementSchema = Type.Object(
+  {
+    requiredAmount: DecimalStringSchema,
+    submissionDays: Type.Integer({ minimum: 1, maximum: 180 }),
+    extensionDays: Type.Optional(Type.Integer({ minimum: 0, maximum: 3650 })),
+    penalInterestPercent: Type.Optional(DecimalStringSchema),
+  },
+  { additionalProperties: false },
+);
+export type ConfirmPbgRequirement = Static<typeof ConfirmPbgRequirementSchema>;
+
 export const ConfirmWorkRequestSchema = Type.Object(
   {
     workCode: WorkCodeSchema,
@@ -61,6 +85,7 @@ export const ConfirmWorkRequestSchema = Type.Object(
     pricingShape: PricingShapeSchema,
     letterPercentage: Type.Optional(DecimalStringSchema),
     letterPercentageDirection: Type.Optional(LetterPercentageDirectionSchema),
+    pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
     schedules: Type.Array(ConfirmWorkScheduleSchema, { minItems: 1 }),
   },
   { additionalProperties: false },
@@ -82,6 +107,16 @@ export const WorkSchema = Type.Object(
       LetterPercentageDirectionSchema,
       Type.Null(),
     ]),
+    /** The letter's PBG requirement (all null when the letter demands
+     * none). What the contractor actually submitted lives on the Work's
+     * instruments, not here. */
+    pbgRequiredAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    pbgSubmissionDays: Type.Union([
+      Type.Integer({ minimum: 1, maximum: 180 }),
+      Type.Null(),
+    ]),
+    pbgExtensionDays: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    pbgPenalInterestPercent: Type.Union([DecimalStringSchema, Type.Null()]),
     status: Type.Union([
       Type.Literal('active'),
       Type.Literal('completed'),
