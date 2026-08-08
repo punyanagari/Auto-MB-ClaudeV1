@@ -40,8 +40,17 @@ async function toolingCompatible(sql: Sql): Promise<{ ok: boolean; reason: strin
     return { ok: false, reason: 'pg_dump is not installed' };
   }
   const clientMajor = Number(/(\d+)/.exec(clientVersion)?.[1] ?? '0');
-  const [row] = await sql<{ v: string }[]>`show server_version`;
-  const serverMajor = Number(/(\d+)/.exec(row?.v ?? '0')?.[1] ?? '0');
+  const [row] = await sql<{ v: string }[]>`
+    select current_setting('server_version') as v
+  `;
+  const serverMajor = Number(/(\d+)/.exec(row?.v ?? '')?.[1] ?? 'NaN');
+  if (
+    !Number.isFinite(clientMajor) ||
+    !Number.isFinite(serverMajor) ||
+    serverMajor === 0
+  ) {
+    return { ok: false, reason: 'could not determine pg_dump/server versions' };
+  }
   if (clientMajor < serverMajor) {
     return {
       ok: false,
