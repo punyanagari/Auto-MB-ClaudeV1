@@ -13,6 +13,7 @@ import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
 import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
+import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -311,6 +312,14 @@ export async function buildApp(
     registerRetentionRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
+    );
+    registerIssueChallanRoutes(
       app,
       authInstance,
       database,
