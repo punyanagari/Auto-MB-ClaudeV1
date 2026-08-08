@@ -124,6 +124,13 @@ afterAll(async () => {
         );
       }
     }
+    await admin`
+      delete from identity_audit_events
+      where user_id in (
+        select "id" from auth_users
+        where "email" like ${`%-${runId}@integration.test`}
+      )
+    `;
     // Cascades sessions, accounts, and two-factor rows.
     await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
   }
@@ -275,5 +282,34 @@ describe('identity and organisation flow', () => {
 
     const afterSignOut = await authed(stranger, { method: 'GET', url: '/api/me' });
     expect(afterSignOut.statusCode).toBe(401);
+  });
+
+  it('records user-scoped identity audit events for sign-up, sign-out and sign-in', async () => {
+    // The stranger signed up earlier and signed out above; sign back in so
+    // all three auditable actions exist for one user.
+    const signIn = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: { email: strangerEmail, password },
+    });
+    expect(signIn.statusCode, signIn.body).toBe(200);
+
+    const [strangerUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${strangerEmail}
+    `;
+    expect(strangerUser).toBeDefined();
+    const events = await admin<{ action: string; request_id: string | null }[]>`
+      select action, request_id from identity_audit_events
+      where user_id = ${strangerUser?.id ?? ''}
+      order by occurred_at, action
+    `;
+    expect(events.map((event) => event.action)).toEqual([
+      'sign_up',
+      'sign_out',
+      'sign_in',
+    ]);
+    for (const event of events) {
+      expect(event.request_id).toBeTruthy();
+    }
   });
 });

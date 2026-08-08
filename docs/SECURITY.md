@@ -101,7 +101,11 @@ Activated with Milestone 1 (authenticated endpoints exist):
   `--metrics=off`) as a blocking CI job; it proves no match against those
   rules, not the absence of logic-level vulnerabilities;
 - the database membership floor — `current_organisation_id()` binds only
-  for an active membership of the session user, proven by live tests.
+  for an active membership of the session user, proven by live tests;
+- identity audit trail — sign-up/sign-in/sign-out are appended to the
+  user-scoped `identity_audit_events` table (INSERT/SELECT grants only, so
+  the trail is append-only even for the service role), proven by live
+  tests.
 
 Activated with the first browser workflow (the Milestone 1 screens):
 
@@ -115,7 +119,10 @@ Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 
 - container image scan — when an Auto-MB application image exists;
-- upload malware scanning (ClamAV) — before user uploads are accepted.
+- upload malware scanning (ClamAV) — before uploads are accepted from
+  design partners (Milestone 4), matching docs/DEPENDENCIES.md; until
+  then uploads are development-only and covered by the magic-byte, size,
+  and media-type validation plus the never-execute rule above.
 
 Before paid production:
 

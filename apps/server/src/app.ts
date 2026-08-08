@@ -4,7 +4,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { createDatabasePool } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
-import { toWebRequest } from './http.js';
+import { toWebHeaders, toWebRequest } from './http.js';
+import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 
@@ -16,6 +17,17 @@ export interface BuildAppOptions {
   readonly authSecret?: string;
   readonly baseUrl?: string;
   readonly trustedOrigins?: readonly string[];
+}
+
+/** Better Auth's sign-up/sign-in responses carry the user object; the
+ * audit trail needs only its id. Anything unparseable yields null. */
+function userIdFromAuthBody(text: string): string | null {
+  try {
+    const body = JSON.parse(text) as { user?: { id?: unknown } };
+    return typeof body.user?.id === 'string' ? body.user.id : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function buildApp(
@@ -127,6 +139,17 @@ export async function buildApp(
       method: ['GET', 'POST'],
       url: '/api/auth/*',
       handler: async (request, reply) => {
+        const action = identityActionForPath(request.url.split('?')[0] ?? '');
+        // Sign-out revokes the session, so the acting user must be read
+        // BEFORE the request is forwarded — afterwards the cookie is dead.
+        let signOutUserId: string | null = null;
+        if (action === 'sign_out') {
+          const session = await authInstance.api.getSession({
+            headers: toWebHeaders(request),
+          });
+          signOutUserId = session?.user.id ?? null;
+        }
+
         const response = await authInstance.handler(toWebRequest(request));
         reply.status(response.status);
         response.headers.forEach((value, key) => {
@@ -135,6 +158,28 @@ export async function buildApp(
         const cookies = response.headers.getSetCookie();
         if (cookies.length > 0) void reply.header('set-cookie', cookies);
         const text = await response.text();
+
+        if (action !== null && response.status < 400) {
+          const userId =
+            action === 'sign_out' ? signOutUserId : userIdFromAuthBody(text);
+          if (userId !== null) {
+            // The auth response above already succeeded; failing the
+            // request over a lost audit row would desync the client from
+            // the session that now exists, so log loudly and continue.
+            try {
+              await recordIdentityEvent(database, {
+                userId,
+                action,
+                requestId: request.id,
+              });
+            } catch (error) {
+              request.log.error(
+                { err: error, action, userId },
+                'identity audit write failed',
+              );
+            }
+          }
+        }
         return reply.send(text.length > 0 ? text : null);
       },
     });

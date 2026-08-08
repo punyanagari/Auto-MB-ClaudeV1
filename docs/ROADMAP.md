@@ -24,11 +24,11 @@ Delivered:
 - audit events for organisation creation and membership changes;
 - web screens for sign-in/sign-up, organisation selection and creation, and member management — token-based design system, print-aware styles, component tests, and a blocking Playwright + axe accessibility smoke against the production bundle.
 
-Remaining before Milestone 1 closes:
+Closing decisions (2026-08-08):
 
-- MFA enrolment/enforcement policy for privileged users (the twoFactor capability exists; the policy requiring it for owners does not yet);
-- identity-level audit events (sign-in/sign-out are not organisation-scoped; audit_events requires an organisation id — needs a schema decision);
-- role/authority enforcement on Work and Delivery Challan operations activates with the Milestone 2 endpoints that expose them.
+- MFA enrolment/enforcement for owners is deferred to Milestone 4: the twoFactor capability is live, and the enforcement policy lands with design-partner onboarding, where real contractor data first appears;
+- identity-level audit events (sign-up/sign-in/sign-out) are recorded in the user-scoped, append-only `identity_audit_events` table (migration 0005) — `audit_events` keeps its NOT NULL organisation invariant;
+- role/authority enforcement on Work operations activates with the Milestone 2 endpoints (upload and confirm are owner/office-only).
 
 Exit: Organisation A cannot access Organisation B through any endpoint, identifier, job, or attachment path.
 
