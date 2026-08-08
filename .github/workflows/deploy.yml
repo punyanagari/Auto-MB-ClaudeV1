@@ -18,7 +18,10 @@ on:
   # Manual redeploys of current main, without a code push.
   workflow_dispatch:
 
-permissions: {}
+# contents:read lets the job mint the ephemeral token the host uses to
+# pull this private repository.
+permissions:
+  contents: read
 
 # Deploys must not interleave; a queued newer deploy still runs after the
 # current one so the host always converges on the latest main.
@@ -80,11 +83,18 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          ssh -i ~/.ssh/deploy_key "ubuntu@$DEPLOY_HOST" 'sudo bash -s' <<'DEPLOY'
+          ssh -i ~/.ssh/deploy_key "ubuntu@$DEPLOY_HOST" \
+            "sudo GITHUB_TOKEN='$GH_TOKEN' GITHUB_REPOSITORY='$GH_REPO' bash -s" <<'DEPLOY'
           set -euo pipefail
           cd /opt/auto-mb
-          git pull --ff-only
+          # The repository is private and this shell has no TTY to prompt
+          # for credentials; fetch with the job's ephemeral read token,
+          # which never touches the host's disk.
+          git fetch "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
+          git merge --ff-only FETCH_HEAD
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production up -d --build
           set -a; . deploy/.env.production; set +a
