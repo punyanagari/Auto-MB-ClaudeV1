@@ -259,6 +259,25 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
 test('work detail and challan editor pass the axe scan', async ({ page }) => {
   const WORK_ID = '33333333-3333-4333-8333-333333333333';
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
+  const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
+  const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
+  const CHALLAN = {
+    id: CHALLAN_ID,
+    workId: WORK_ID,
+    status: 'issued',
+    challanDate: '2026-08-01',
+    challanNumber: 'DC/1',
+    sequenceNumber: 1,
+    prefix: 'DC',
+    consignee: { name: 'Sr. DEE (G)', address: 'Delhi Division' },
+    templateVersion: 'dc-v2',
+    renderedAvailable: false,
+    signedCopyAvailable: false,
+    cancellationNote: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    issuedAt: '2026-08-01T10:00:00.000Z',
+    cancelledAt: null,
+  };
   const WORK = {
     id: WORK_ID,
     workCode: 'DCW-1',
@@ -309,7 +328,118 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     ),
   );
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
-    route.fulfill(json({ challans: [] })),
+    route.fulfill(json({ challans: [CHALLAN] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/instruments`, (route) =>
+    route.fulfill(
+      json({
+        instruments: [
+          {
+            id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            workId: WORK_ID,
+            kind: 'pbg',
+            reference: 'BG/22',
+            amount: '45000.00',
+            issuedOn: '2026-01-10',
+            expiresOn: '2026-09-15',
+            status: 'active',
+            notes: null,
+            createdAt: '2026-01-10T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/mb-entries`, (route) =>
+    route.fulfill(
+      json({
+        entries: [
+          {
+            id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            deliveryChallanId: CHALLAN_ID,
+            measuredQuantity: '2.000',
+            measuredOn: '2026-08-01',
+            mbBookRef: 'MB-12/34',
+            remarks: null,
+            billId: null,
+            createdAt: '2026-08-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/bills`, (route) =>
+    route.fulfill(
+      json({
+        bills: [
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            workId: WORK_ID,
+            billNumber: 1,
+            status: 'prepared',
+            totalAmount: '200.00',
+            linesSnapshot: [
+              {
+                workItemId: ITEM_ID,
+                itemNumber: 'A/1',
+                unitCode: 'Nos',
+                quantity: '2.000',
+                rate: '100.00',
+                amount: '200.00',
+              },
+            ],
+            createdAt: '2026-08-02T00:00:00.000Z',
+            submittedAt: null,
+            paidAt: null,
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/serials`, (route) =>
+    route.fulfill(
+      json({
+        serials: [
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            deliveryChallanId: CHALLAN_ID,
+            challanItemId: CHALLAN_ITEM_ID,
+            challanNumber: 'DC/1',
+            itemDescription: 'Main switchboard',
+            serialNumber: 'SN-001',
+            installedOn: null,
+            installationRemarks: null,
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route(`**/api/challans/${CHALLAN_ID}`, (route) =>
+    route.fulfill(
+      json({
+        challan: CHALLAN,
+        items: [
+          {
+            id: CHALLAN_ITEM_ID,
+            workItemId: ITEM_ID,
+            description: 'Main switchboard',
+            unit: 'Nos',
+            quantity: '2.000',
+            rate: '100.00',
+            lineAmount: '200.00',
+            position: 1,
+          },
+        ],
+        issuedSnapshot: null,
+      }),
+    ),
+  );
+  await page.route(`**/api/challans/${CHALLAN_ID}/receipt`, (route) =>
+    route.fulfill(
+      json({ code: 'RECEIPT_NOT_FOUND', message: 'No receipt.', requestId: 'r' }, 404),
+    ),
   );
   await page.route(`**/api/works/${WORK_ID}/balance`, (route) =>
     route.fulfill(
@@ -338,8 +468,25 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
   ).toBeVisible();
+  // The retention sections load with the Work.
+  await expect(
+    page.getByRole('heading', { name: 'Contract instruments' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Measurement Book' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 
+  await page.getByRole('button', { name: 'DC/1' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Delivery Challan DC/1' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delivery receipt' })).toBeVisible();
+  await expect(page.getByLabel('Serial numbers (one per line)')).toBeVisible();
+  await expect(page.getByLabel('Installed on')).toBeVisible();
+  await expectNoSeriousViolations(page, 'challan detail with evidence');
+
+  await page.getByRole('button', { name: 'Back to Work' }).click();
   await page.getByRole('button', { name: 'New Delivery Challan' }).click();
   await expect(
     page.getByRole('heading', { name: 'New Delivery Challan' }),

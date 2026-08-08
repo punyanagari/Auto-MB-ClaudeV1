@@ -1,19 +1,31 @@
 import type {
   AddMemberRequest,
   ApiError,
+  Bill,
   CancelChallanRequest,
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
   CreateOrganisationRequest,
   DashboardResponse,
+  InstallSerialRequest,
+  Instrument,
   LoaDocument,
   LoaDocumentDetail,
+  MbEntry,
   MemberAssignmentsResponse,
   Membership,
   Organisation,
   OrganisationProfile,
+  Receipt,
+  RecordMbEntryRequest,
+  RecordReceiptRequest,
+  RecordSerialsRequest,
   SaveChallanRequest,
+  SaveInstrumentRequest,
+  Serial,
+  UpdateBillStatusRequest,
+  UpdateInstrumentRequest,
   UpdateMemberRequest,
   UpdateOrganisationProfileRequest,
   Work,
@@ -149,6 +161,62 @@ export interface ApiClient {
   ) => Promise<OrganisationProfile>;
   readonly removeLogo: (organisationId: string) => Promise<void>;
   readonly logoBlob: (organisationId: string) => Promise<Blob | null>;
+  readonly getReceipt: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<Receipt | null>;
+  readonly recordReceipt: (
+    organisationId: string,
+    challanId: string,
+    body: RecordReceiptRequest,
+  ) => Promise<Receipt>;
+  readonly recordSerials: (
+    organisationId: string,
+    challanId: string,
+    body: RecordSerialsRequest,
+  ) => Promise<readonly Serial[]>;
+  readonly recordInstallation: (
+    organisationId: string,
+    serialId: string,
+    body: InstallSerialRequest,
+  ) => Promise<readonly Serial[]>;
+  readonly listWorkSerials: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Serial[]>;
+  readonly listInstruments: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Instrument[]>;
+  readonly createInstrument: (
+    organisationId: string,
+    workId: string,
+    body: SaveInstrumentRequest,
+  ) => Promise<Instrument>;
+  readonly updateInstrument: (
+    organisationId: string,
+    instrumentId: string,
+    body: UpdateInstrumentRequest,
+  ) => Promise<Instrument>;
+  readonly listMbEntries: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly MbEntry[]>;
+  readonly recordMbEntry: (
+    organisationId: string,
+    workId: string,
+    body: RecordMbEntryRequest,
+  ) => Promise<MbEntry>;
+  readonly listBills: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Bill[]>;
+  readonly prepareBill: (organisationId: string, workId: string) => Promise<Bill>;
+  readonly setBillStatus: (
+    organisationId: string,
+    billId: string,
+    body: UpdateBillStatusRequest,
+  ) => Promise<Bill>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -443,6 +511,105 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       if (response.status === 404) return null;
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async getReceipt(organisationId, challanId) {
+      try {
+        return await request<Receipt>(`/api/challans/${challanId}/receipt`, {
+          organisationId,
+        });
+      } catch (error) {
+        // "No receipt yet" is an ordinary state, not a failure.
+        if (
+          error instanceof RequestFailedError &&
+          error.status === 404 &&
+          error.code === 'RECEIPT_NOT_FOUND'
+        ) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    async recordReceipt(organisationId, challanId, body) {
+      return request<Receipt>(`/api/challans/${challanId}/receipt`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async recordSerials(organisationId, challanId, body) {
+      const payload = await request<{ serials: Serial[] }>(
+        `/api/challans/${challanId}/serials`,
+        { method: 'POST', body, organisationId },
+      );
+      return payload.serials;
+    },
+    async recordInstallation(organisationId, serialId, body) {
+      const payload = await request<{ serials: Serial[] }>(
+        `/api/serials/${serialId}/installation`,
+        { method: 'PUT', body, organisationId },
+      );
+      return payload.serials;
+    },
+    async listWorkSerials(organisationId, workId) {
+      const payload = await request<{ serials: Serial[] }>(
+        `/api/works/${workId}/serials`,
+        { organisationId },
+      );
+      return payload.serials;
+    },
+    async listInstruments(organisationId, workId) {
+      const payload = await request<{ instruments: Instrument[] }>(
+        `/api/works/${workId}/instruments`,
+        { organisationId },
+      );
+      return payload.instruments;
+    },
+    async createInstrument(organisationId, workId, body) {
+      return request<Instrument>(`/api/works/${workId}/instruments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async updateInstrument(organisationId, instrumentId, body) {
+      return request<Instrument>(`/api/instruments/${instrumentId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listMbEntries(organisationId, workId) {
+      const payload = await request<{ entries: MbEntry[] }>(
+        `/api/works/${workId}/mb-entries`,
+        { organisationId },
+      );
+      return payload.entries;
+    },
+    async recordMbEntry(organisationId, workId, body) {
+      return request<MbEntry>(`/api/works/${workId}/mb-entries`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listBills(organisationId, workId) {
+      const payload = await request<{ bills: Bill[] }>(`/api/works/${workId}/bills`, {
+        organisationId,
+      });
+      return payload.bills;
+    },
+    async prepareBill(organisationId, workId) {
+      return request<Bill>(`/api/works/${workId}/bills`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async setBillStatus(organisationId, billId, body) {
+      return request<Bill>(`/api/bills/${billId}/status`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
   };
 }

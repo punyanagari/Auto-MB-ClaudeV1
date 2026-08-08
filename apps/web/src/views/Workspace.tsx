@@ -126,6 +126,9 @@ export function Workspace({
   );
   // Owner/office members may upload, confirm, and draft; site/viewer read.
   const canModify = membership?.role === 'owner' || membership?.role === 'office';
+  // Site engineers record delivery evidence (receipts, serials,
+  // installations, measurements) but cannot draft or issue.
+  const canRecordEvidence = canModify || membership?.role === 'site';
   // Issue and cancel are explicit per-member authorities, not roles.
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
@@ -267,6 +270,8 @@ export function Workspace({
               organisationId={organisation.id}
               workId={view.workId}
               canModify={canModify}
+              canRecordEvidence={canRecordEvidence}
+              canIssue={canIssue}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });
               }}
@@ -311,6 +316,7 @@ export function Workspace({
               canModify={canModify}
               canIssue={canIssue}
               canCancel={canCancel}
+              canRecordEvidence={canRecordEvidence}
               onEdit={(challanId) => {
                 setView({
                   name: 'challan-edit',

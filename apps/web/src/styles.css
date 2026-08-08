@@ -570,6 +570,31 @@ button:disabled {
   border-color: transparent;
 }
 
+.chip--prepared {
+  background: var(--color-notice-surface);
+  color: var(--color-notice);
+  border-color: transparent;
+}
+
+.chip--submitted {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: transparent;
+}
+
+.chip--paid,
+.chip--installed {
+  background: var(--color-success-surface);
+  color: var(--color-success-ink);
+  border-color: transparent;
+}
+
+.chip--expired {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  border-color: transparent;
+}
+
 /* Editors keep their primary actions visible while the form scrolls —
  * the Zoho bottom action bar. */
 .action-bar {

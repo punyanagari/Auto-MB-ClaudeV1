@@ -15,6 +15,7 @@ import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SignIn } from '../src/views/SignIn.js';
 import { UploadLoa } from '../src/views/UploadLoa.js';
+import { WorkDetail } from '../src/views/WorkDetail.js';
 import { Works } from '../src/views/Works.js';
 
 afterEach(cleanup);
@@ -55,6 +56,19 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadLogo: vi.fn(),
     removeLogo: vi.fn().mockResolvedValue(undefined),
     logoBlob: vi.fn().mockResolvedValue(null),
+    getReceipt: vi.fn().mockResolvedValue(null),
+    recordReceipt: vi.fn(),
+    recordSerials: vi.fn(),
+    recordInstallation: vi.fn(),
+    listWorkSerials: vi.fn().mockResolvedValue([]),
+    listInstruments: vi.fn().mockResolvedValue([]),
+    createInstrument: vi.fn(),
+    updateInstrument: vi.fn(),
+    listMbEntries: vi.fn().mockResolvedValue([]),
+    recordMbEntry: vi.fn(),
+    listBills: vi.fn().mockResolvedValue([]),
+    prepareBill: vi.fn(),
+    setBillStatus: vi.fn(),
     ...overrides,
   };
 }
@@ -628,6 +642,7 @@ describe('ChallanDetail', () => {
         canModify
         canIssue
         canCancel={false}
+        canRecordEvidence
         onEdit={vi.fn()}
         onDeleted={vi.fn()}
         onBack={vi.fn()}
@@ -673,6 +688,7 @@ describe('ChallanDetail', () => {
         canModify={false}
         canIssue={false}
         canCancel
+        canRecordEvidence={false}
         onEdit={vi.fn()}
         onDeleted={vi.fn()}
         onBack={vi.fn()}
@@ -692,6 +708,382 @@ describe('ChallanDetail', () => {
       });
     });
     expect(await screen.findByText(/Cancelled: Wrong consignee\./)).toBeTruthy();
+  });
+
+  const ISSUED = () =>
+    challanDetail({
+      status: 'issued',
+      challanNumber: 'DC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-08-08T10:00:00.000Z',
+    });
+
+  const SERIAL = {
+    id: '88888888-8888-4888-8888-888888888888',
+    deliveryChallanId: CHALLAN_ID,
+    challanItemId: '66666666-6666-4666-8666-666666666666',
+    challanNumber: 'DC/1',
+    itemDescription: 'Main switchboard',
+    serialNumber: 'SN-001',
+    installedOn: null,
+    installationRemarks: null,
+  };
+
+  it('records a delivery receipt on an issued challan', async () => {
+    const recordReceipt = vi.fn().mockResolvedValue({
+      id: '99999999-9999-4999-8999-999999999999',
+      deliveryChallanId: CHALLAN_ID,
+      receivedOn: '2026-08-05',
+      receivedBy: 'SSE/Signal/Delhi',
+      remarks: null,
+      createdAt: '2026-08-05T00:00:00.000Z',
+    });
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(ISSUED()),
+      recordReceipt,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(await screen.findByLabelText('Received on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Received by'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record receipt' }));
+
+    await waitFor(() => {
+      expect(recordReceipt).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        receivedOn: '2026-08-05',
+        receivedBy: 'SSE/Signal/Delhi',
+      });
+    });
+    // The recorded receipt replaces the form with the acknowledgement facts.
+    expect(await screen.findByText('SSE/Signal/Delhi')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record receipt' })).toBeNull();
+  });
+
+  it('records serials for a line and then an installation', async () => {
+    const recordSerials = vi.fn().mockResolvedValue([SERIAL]);
+    const recordInstallation = vi
+      .fn()
+      .mockResolvedValue([{ ...SERIAL, installedOn: '2026-08-06' }]);
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(ISSUED()),
+      recordSerials,
+      recordInstallation,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(await screen.findByLabelText('Serial numbers (one per line)'), {
+      target: { value: 'SN-001\n\n' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record serials' }));
+
+    await waitFor(() => {
+      expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        challanItemId: '66666666-6666-4666-8666-666666666666',
+        serialNumbers: ['SN-001'],
+      });
+    });
+    // The serial shows in the table and in the installation picker.
+    expect((await screen.findAllByText('SN-001')).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-06' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    await waitFor(() => {
+      expect(recordInstallation).toHaveBeenCalledWith(ORG_ID, SERIAL.id, {
+        installedOn: '2026-08-06',
+      });
+    });
+    expect(await screen.findByText('installed 2026-08-06')).toBeTruthy();
+  });
+
+  it('shows evidence read-only to members without the evidence roles', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(ISSUED()),
+      getReceipt: vi.fn().mockResolvedValue(null),
+      listWorkSerials: vi.fn().mockResolvedValue([SERIAL]),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('No receipt recorded yet.')).toBeTruthy();
+    expect(screen.getByText('SN-001')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record receipt' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record serials' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+  });
+});
+
+describe('WorkDetail retention', () => {
+  const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
+  const WORK_DETAIL = {
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+          },
+        ],
+      },
+    ],
+  };
+
+  const ISSUED_CHALLAN = {
+    ...challanDetail({
+      status: 'issued',
+      challanNumber: 'DC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-08-08T10:00:00.000Z',
+    }).challan,
+  };
+
+  const INSTRUMENT = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    workId: WORK_ID,
+    kind: 'pbg' as const,
+    reference: 'BG/22',
+    amount: '45000.00',
+    issuedOn: '2026-01-10',
+    expiresOn: '2026-09-15',
+    status: 'active' as const,
+    notes: null,
+    createdAt: '2026-01-10T00:00:00.000Z',
+  };
+
+  const MB_ENTRY = {
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    workItemId: ITEM_A,
+    itemNumber: 'A/1',
+    deliveryChallanId: CHALLAN_ID,
+    measuredQuantity: '2.000',
+    measuredOn: '2026-08-01',
+    mbBookRef: 'MB-12/34',
+    remarks: null,
+    billId: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+  };
+
+  const BILL = {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    workId: WORK_ID,
+    billNumber: 1,
+    status: 'prepared' as const,
+    totalAmount: '200.00',
+    linesSnapshot: [
+      {
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        unitCode: 'Nos',
+        quantity: '2.000',
+        rate: '100.00',
+        amount: '200.00',
+      },
+    ],
+    createdAt: '2026-08-02T00:00:00.000Z',
+    submittedAt: null,
+    paidAt: null,
+  };
+
+  function renderWorkDetail(
+    api: ApiClient,
+    flags: Partial<{
+      canModify: boolean;
+      canRecordEvidence: boolean;
+      canIssue: boolean;
+    }> = {},
+  ) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={flags.canModify ?? true}
+        canRecordEvidence={flags.canRecordEvidence ?? true}
+        canIssue={flags.canIssue ?? true}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  function retentionApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      getWork: vi.fn().mockResolvedValue(WORK_DETAIL),
+      listChallans: vi.fn().mockResolvedValue([ISSUED_CHALLAN]),
+      listInstruments: vi.fn().mockResolvedValue([INSTRUMENT]),
+      listMbEntries: vi.fn().mockResolvedValue([MB_ENTRY]),
+      listBills: vi.fn().mockResolvedValue([BILL]),
+      listWorkSerials: vi.fn().mockResolvedValue([]),
+      ...overrides,
+    });
+  }
+
+  it('records a measurement with challan provenance', async () => {
+    const recordMbEntry = vi.fn().mockResolvedValue({
+      ...MB_ENTRY,
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      measuredQuantity: '1.000',
+      measuredOn: '2026-08-07',
+      mbBookRef: null,
+    });
+    const api = retentionApi({ recordMbEntry });
+    renderWorkDetail(api);
+
+    fireEvent.change(await screen.findByLabelText('Measured quantity'), {
+      target: { value: '1.000' },
+    });
+    fireEvent.change(screen.getByLabelText('Measured on'), {
+      target: { value: '2026-08-07' },
+    });
+    fireEvent.change(screen.getByLabelText('Source challan (optional)'), {
+      target: { value: CHALLAN_ID },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record measurement' }));
+
+    await waitFor(() => {
+      expect(recordMbEntry).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        workItemId: ITEM_A,
+        measuredQuantity: '1.000',
+        measuredOn: '2026-08-07',
+        deliveryChallanId: CHALLAN_ID,
+      });
+    });
+    // Both the pre-existing and the new entry are listed.
+    expect(screen.getAllByText('A/1').length).toBeGreaterThan(1);
+  });
+
+  it('prepares a bill from unbilled measurements and moves it forward', async () => {
+    const prepareBill = vi.fn().mockResolvedValue(BILL);
+    const setBillStatus = vi.fn().mockResolvedValue({
+      ...BILL,
+      status: 'submitted',
+      submittedAt: '2026-08-08T11:00:00.000Z',
+    });
+    const listBills = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([BILL]);
+    const listMbEntries = vi
+      .fn()
+      .mockResolvedValueOnce([MB_ENTRY])
+      .mockResolvedValue([{ ...MB_ENTRY, billId: BILL.id }]);
+    const api = retentionApi({ prepareBill, setBillStatus, listBills, listMbEntries });
+    renderWorkDetail(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare bill' }));
+    await waitFor(() => {
+      expect(prepareBill).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    });
+    expect(await screen.findByRole('heading', { name: /Bill #1/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark submitted' }));
+    await waitFor(() => {
+      expect(setBillStatus).toHaveBeenCalledWith(ORG_ID, BILL.id, {
+        status: 'submitted',
+      });
+    });
+    expect(await screen.findByText('submitted')).toBeTruthy();
+  });
+
+  it('updates an instrument status through the forward-only transition', async () => {
+    const updateInstrument = vi
+      .fn()
+      .mockResolvedValue({ ...INSTRUMENT, status: 'released' });
+    const api = retentionApi({ updateInstrument });
+    renderWorkDetail(api);
+
+    fireEvent.change(await screen.findByLabelText('New status for BG/22'), {
+      target: { value: 'released' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(updateInstrument).toHaveBeenCalledWith(ORG_ID, INSTRUMENT.id, {
+        status: 'released',
+      });
+    });
+    expect(await screen.findByText('released')).toBeTruthy();
+  });
+
+  it('hides retention forms and billing actions from read-only members', async () => {
+    const api = retentionApi();
+    renderWorkDetail(api, {
+      canModify: false,
+      canRecordEvidence: false,
+      canIssue: false,
+    });
+
+    await screen.findByRole('heading', { name: 'Contract instruments' });
+    expect(screen.getByText('BG/22')).toBeTruthy();
+    expect(screen.getByText('MB-12/34')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add instrument' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark submitted' })).toBeNull();
   });
 });
 

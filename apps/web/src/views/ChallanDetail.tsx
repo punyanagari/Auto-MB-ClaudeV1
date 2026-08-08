@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChallanDetailResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import type { ChallanDetailResponse, Receipt, Serial } from '@auto-mb/contracts';
+import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 
 interface ChallanDetailProps {
@@ -10,6 +10,7 @@ interface ChallanDetailProps {
   readonly canModify: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  readonly canRecordEvidence: boolean;
   readonly onEdit: (challanId: string) => void;
   readonly onDeleted: () => void;
   readonly onBack: () => void;
@@ -31,11 +32,14 @@ export function ChallanDetail({
   canModify,
   canIssue,
   canCancel,
+  canRecordEvidence,
   onEdit,
   onDeleted,
   onBack,
 }: ChallanDetailProps) {
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [serials, setSerials] = useState<readonly Serial[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -46,7 +50,21 @@ export function ChallanDetail({
     setLoadError(null);
     api
       .getChallan(organisationId, challanId)
-      .then(setDetail)
+      .then(async (loaded) => {
+        // Delivery evidence only exists once the challan is issued.
+        if (loaded.challan.status === 'issued') {
+          const [loadedReceipt, workSerials] = await Promise.all([
+            api.getReceipt(organisationId, challanId),
+            api.listWorkSerials(organisationId, loaded.challan.workId),
+          ]);
+          setReceipt(loadedReceipt);
+          setSerials(workSerials.filter((s) => s.deliveryChallanId === challanId));
+        } else {
+          setReceipt(null);
+          setSerials(null);
+        }
+        setDetail(loaded);
+      })
       .catch((cause: unknown) => {
         setLoadError(
           cause instanceof RequestFailedError
@@ -110,6 +128,7 @@ export function ChallanDetail({
   const total = items
     .reduce((sum, item) => sum + Number(item.lineAmount), 0)
     .toFixed(2);
+  const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
 
   return (
     <section className="card card--wide" aria-labelledby="challan-title">
@@ -294,6 +313,213 @@ export function ChallanDetail({
           Back to Work
         </button>
       </div>
+
+      {challan.status === 'issued' && (
+        <>
+          <h2>Delivery receipt</h2>
+          {receipt !== null ? (
+            <dl className="fact-list">
+              <div>
+                <dt>Received on</dt>
+                <dd>{receipt.receivedOn}</dd>
+              </div>
+              <div>
+                <dt>Received by</dt>
+                <dd>{receipt.receivedBy}</dd>
+              </div>
+              {receipt.remarks !== null && (
+                <div>
+                  <dt>Remarks</dt>
+                  <dd>{receipt.remarks}</dd>
+                </div>
+              )}
+            </dl>
+          ) : canRecordEvidence ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const receivedOn = formValue(data, 'receipt-date');
+                const receivedBy = formValue(data, 'receipt-by');
+                const remarks = formValue(data, 'receipt-remarks').trim();
+                void act(async () => {
+                  const recorded = await api.recordReceipt(organisationId, challan.id, {
+                    receivedOn,
+                    receivedBy,
+                    ...(remarks.length > 0 ? { remarks } : {}),
+                  });
+                  setReceipt(recorded);
+                  return null;
+                }, 'Receipt recorded.');
+              }}
+            >
+              <p className="muted">
+                Record the consignee&apos;s acknowledgement of this delivery.
+              </p>
+              <div className="field">
+                <label htmlFor="receipt-date">Received on</label>
+                <input id="receipt-date" name="receipt-date" type="date" required />
+              </div>
+              <div className="field">
+                <label htmlFor="receipt-by">Received by</label>
+                <input
+                  id="receipt-by"
+                  name="receipt-by"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="receipt-remarks">Remarks (optional)</label>
+                <input id="receipt-remarks" name="receipt-remarks" maxLength={1000} />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Record receipt
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="muted">No receipt recorded yet.</p>
+          )}
+
+          <h2>Serial numbers</h2>
+          {serials !== null && serials.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Serial numbers recorded against this challan
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Serial</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Installation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serials.map((serial) => (
+                  <tr key={serial.id}>
+                    <th scope="row">{serial.serialNumber}</th>
+                    <td className="cell--wrap">{serial.itemDescription}</td>
+                    <td>
+                      {serial.installedOn !== null ? (
+                        <span className="chip chip--installed">
+                          installed {serial.installedOn}
+                        </span>
+                      ) : (
+                        <span className="muted">not installed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">No serial numbers recorded yet.</p>
+          )}
+
+          {canRecordEvidence && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = new FormData(form);
+                const challanItemId = formValue(data, 'serial-line');
+                const serialNumbers = formValue(data, 'serial-numbers')
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter((line) => line.length > 0);
+                if (challanItemId === '' || serialNumbers.length === 0) {
+                  setActionError('Choose a line and enter at least one serial number.');
+                  return;
+                }
+                void act(async () => {
+                  const updated = await api.recordSerials(organisationId, challan.id, {
+                    challanItemId,
+                    serialNumbers,
+                  });
+                  setSerials(updated.filter((s) => s.deliveryChallanId === challan.id));
+                  form.reset();
+                  return null;
+                }, 'Serial numbers recorded.');
+              }}
+            >
+              <h3>Record serial numbers</h3>
+              <div className="field">
+                <label htmlFor="serial-line">Challan line</label>
+                <select id="serial-line" name="serial-line" required>
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.position}. {item.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="serial-numbers">Serial numbers (one per line)</label>
+                <textarea id="serial-numbers" name="serial-numbers" rows={4} required />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Record serials
+                </button>
+              </div>
+            </form>
+          )}
+
+          {canRecordEvidence && uninstalled.length > 0 && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = new FormData(form);
+                const serialId = formValue(data, 'install-serial');
+                const installedOn = formValue(data, 'install-date');
+                const remarks = formValue(data, 'install-remarks').trim();
+                void act(async () => {
+                  const updated = await api.recordInstallation(
+                    organisationId,
+                    serialId,
+                    {
+                      installedOn,
+                      ...(remarks.length > 0 ? { remarks } : {}),
+                    },
+                  );
+                  setSerials(updated.filter((s) => s.deliveryChallanId === challan.id));
+                  form.reset();
+                  return null;
+                }, 'Installation recorded.');
+              }}
+            >
+              <h3>Record installation</h3>
+              <div className="field">
+                <label htmlFor="install-serial">Serial</label>
+                <select id="install-serial" name="install-serial" required>
+                  {uninstalled.map((serial) => (
+                    <option key={serial.id} value={serial.id}>
+                      {serial.serialNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="install-date">Installed on</label>
+                <input id="install-date" name="install-date" type="date" required />
+              </div>
+              <div className="field">
+                <label htmlFor="install-remarks">Remarks (optional)</label>
+                <input id="install-remarks" name="install-remarks" maxLength={1000} />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Record installation
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
 
       {challan.status === 'issued' && canModify && (
         <form

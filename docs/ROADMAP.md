@@ -127,9 +127,14 @@ Integrity hardening (2026-08-08, following the external code review):
 - signed copies are stored content-addressed with their SHA-256 (replacements never overwrite earlier evidence), and a render that loses a race with a status change is discarded instead of leaving a false audit entry;
 - the organisation export (`export-v2`) now includes receipts, serials, instruments, MB entries, and bills — the complete business record again.
 
+Retention UI (2026-08-08):
+
+- challan screen: delivery receipt (record + facts), per-line serial recording, installation recording, all gated on the evidence roles (owner/office/site);
+- Work screen: PBG/PAC/DOC instruments with forward-only status transitions, Measurement Book with challan provenance, bill preparation and status progression under the issue authority, and the per-Work serial trace;
+- covered by view tests and the axe accessibility scans (work detail with retention sections, challan detail with evidence forms).
+
 Remaining:
 
-- the retention UI (receipt/serials on the challan screen, instruments and MB/billing on the Work screen) — the endpoints are contract-typed and ready for it;
 - retention-money maths beyond the measured-quantity bill (security deposit deductions, price variation) wait for a design partner's real bill format.
 
 ## Deferred until usage proves demand
