@@ -24,6 +24,7 @@ import type {
   SaveChallanRequest,
   SaveInstrumentRequest,
   Serial,
+  TimelineResponse,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
   UpdateMemberRequest,
@@ -217,6 +218,21 @@ export interface ApiClient {
     billId: string,
     body: UpdateBillStatusRequest,
   ) => Promise<Bill>;
+  readonly workTimeline: (
+    organisationId: string,
+    workId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly entityTypes?: readonly string[];
+      readonly limit?: number;
+    },
+  ) => Promise<TimelineResponse>;
+  readonly entityTimeline: (
+    organisationId: string,
+    entityType: string,
+    entityId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ) => Promise<TimelineResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -610,6 +626,32 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async workTimeline(organisationId, workId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) {
+        parameters.set('limit', String(options.limit));
+      }
+      if (options.entityTypes !== undefined && options.entityTypes.length > 0) {
+        parameters.set('entityTypes', options.entityTypes.join(','));
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<TimelineResponse>(`/api/works/${workId}/timeline${suffix}`, {
+        organisationId,
+      });
+    },
+    async entityTimeline(organisationId, entityType, entityId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) {
+        parameters.set('limit', String(options.limit));
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<TimelineResponse>(
+        `/api/audit/entity/${entityType}/${entityId}${suffix}`,
+        { organisationId },
+      );
     },
   };
 }

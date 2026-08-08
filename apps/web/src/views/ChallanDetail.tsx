@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ChallanDetailResponse, Receipt, Serial } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
+import { Timeline } from './Timeline.js';
 
 interface ChallanDetailProps {
   readonly api: ApiClient;
@@ -555,6 +556,16 @@ export function ChallanDetail({
           </div>
         </form>
       )}
+
+      <Timeline
+        api={api}
+        organisationId={organisationId}
+        scope={{
+          kind: 'entity',
+          entityType: 'delivery_challans',
+          entityId: challanId,
+        }}
+      />
 
       {challan.status === 'issued' && canCancel && (
         <form

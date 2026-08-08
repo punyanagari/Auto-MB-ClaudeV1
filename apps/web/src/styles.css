@@ -901,6 +901,86 @@ button:disabled {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Timeline (audit trail)                                              */
+
+.timeline-section {
+  margin-top: var(--space-6);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 2px solid var(--color-line-strong);
+}
+
+.timeline__event {
+  position: relative;
+  padding: 0 0 var(--space-4) var(--space-4);
+}
+
+.timeline__event::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-1) - 3px);
+  top: 0.4rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.timeline__headline {
+  margin: 0;
+}
+
+.timeline__action {
+  font-weight: 600;
+}
+
+.timeline__facts {
+  margin: var(--space-1) 0 0;
+  font-size: 0.875rem;
+}
+
+.timeline__diff {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.timeline__diff-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.timeline__diff-row dt {
+  min-width: 8rem;
+  font-weight: 600;
+}
+
+.timeline__diff-row dd {
+  margin: 0;
+}
+
+.timeline__before {
+  color: var(--color-ink-muted);
+  text-decoration: line-through;
+}
+
+.timeline__after {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.timeline__arrow {
+  color: var(--color-ink-muted);
+}
+
 /* Documents are legal artifacts: anything that reaches paper drops chrome. */
 @media print {
   .sidebar,
