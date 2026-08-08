@@ -138,12 +138,13 @@ jobs:
   # Boots the PRODUCTION topology from scratch on every change: real
   # image builds, fresh volumes, the role/grant bootstrap, and the
   # readiness gate through Caddy — the deployment path itself is under
-  # test, not just the application (external review, ops batch). ClamAV
-  # is left warming (its virus database download is minutes long); the
-  # readiness probe covers reachability of everything else.
+  # test, not just the application (external review, ops batch). The
+  # gate waits out ClamAV's virus-database download and requires the
+  # COMPLETE topology, scanner included (external re-audit) — green must
+  # mean uploads scan.
   production-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -168,23 +169,26 @@ jobs:
             -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
             -e DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@postgres:5432/auto_mb" \
             server pnpm --filter @auto-mb/db bootstrap < /dev/null
-      - name: Readiness through Caddy
+      - name: Readiness through Caddy (complete, scanner included)
         run: |
-          for attempt in $(seq 1 30); do
+          # ClamAV downloads its virus database on first boot — minutes,
+          # not seconds. The gate is full readiness: HTTP 200 with every
+          # configured component ok.
+          for attempt in $(seq 1 90); do
             body=$(curl -sk https://localhost/api/ready || true)
             echo "attempt $attempt: $body"
             case "$body" in
-              *'"database":"ok"'*) break ;;
+              *'"status":"ready"'*) break ;;
             esac
-            sleep 2
+            sleep 10
           done
-          # The scanner may still be warming; every other component must
-          # answer ok.
-          body=$(curl -sk https://localhost/api/ready)
+          body=$(curl -fsk https://localhost/api/ready)
           echo "$body"
+          echo "$body" | grep -q '"status":"ready"'
           echo "$body" | grep -q '"database":"ok"'
           echo "$body" | grep -q '"objectStorage":"ok"'
           echo "$body" | grep -q '"pdfRenderer":"ok"'
+          echo "$body" | grep -q '"malwareScanner":"ok"'
       - name: Web bundle served
         run: curl -fsk https://localhost/ | grep -qi '<!doctype html>'
       - name: Sign-up works end to end
@@ -202,3 +206,105 @@ jobs:
             --env-file deploy/.env.production ps
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production logs --tail 80
+
+  # Disaster-recovery proof on a TRULY fresh cluster (external re-audit):
+  # the in-cluster restore test cannot see missing roles, lost SECURITY
+  # DEFINER ownership, or ACLs referencing absent roles. Here the source
+  # database is bootstrapped and backed up with the real scripts, then
+  # restored onto a brand-new PostgreSQL 17 container that has none of
+  # the application roles — following the documented sequence: roles
+  # first, then restore, then the full bootstrap. Green means the
+  # application role connects and the definer functions are owned
+  # correctly on the rebuilt cluster.
+  restore-fresh-cluster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: auto_mb
+          POSTGRES_USER: auto_mb_owner
+          POSTGRES_PASSWORD: local-owner-change-me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auto_mb_owner -d auto_mb"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_ADMIN_URL: postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb
+      AUTO_MB_APP_DB_PASSWORD: local-app-change-me
+      FRESH_ADMIN_URL: postgres://auto_mb_owner:fresh-owner-change-me@127.0.0.1:55432/auto_mb
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+      - name: Bootstrap and back up the source database
+        run: |
+          pnpm --filter @auto-mb/db bootstrap
+          mkdir -p /tmp/source-objects
+          echo restore-me > /tmp/source-objects/marker.txt
+          BACKUP_ROOT=/tmp/backups OBJECT_STORAGE_DIR=/tmp/source-objects \
+            bash scripts/backup.sh
+      - name: Restore onto a brand-new cluster
+        run: |
+          docker run -d --name fresh-pg -p 55432:5432 \
+            -e POSTGRES_USER=auto_mb_owner \
+            -e POSTGRES_PASSWORD=fresh-owner-change-me \
+            -e POSTGRES_DB=auto_mb \
+            postgres:17-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec fresh-pg pg_isready -U auto_mb_owner -d auto_mb; then
+              break
+            fi
+            sleep 2
+          done
+          # 1. Roles first: they are cluster-level and never travel in a
+          #    database dump, but the dump's ACLs reference them.
+          DATABASE_ADMIN_URL="$FRESH_ADMIN_URL" \
+            pnpm --filter @auto-mb/db exec tsx src/bootstrap.ts --roles-only
+          # 2. The restore itself, with the real script.
+          backup_dir=$(ls -d /tmp/backups/*)
+          RESTORE_DATABASE_URL="$FRESH_ADMIN_URL" \
+            RESTORE_OBJECT_STORAGE_DIR=/tmp/restored-objects \
+            bash scripts/restore.sh "$backup_dir"
+          # 3. Full bootstrap: repairs grants and SECURITY DEFINER
+          #    ownership, then proves an application-role connection.
+          DATABASE_ADMIN_URL="$FRESH_ADMIN_URL" \
+            DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@127.0.0.1:55432/auto_mb" \
+            pnpm --filter @auto-mb/db bootstrap
+      - name: Prove the restored system
+        run: |
+          psql "postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@127.0.0.1:55432/auto_mb" \
+            -v ON_ERROR_STOP=1 \
+            -c "select count(*) as organisations from organisations" \
+            -c "select p.proowner::regrole::text as owner from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'app_private'
+                  and p.proname = 'create_organisation_with_owner'" \
+            | tee /tmp/restore-proof.txt
+          grep -q auto_mb_definer /tmp/restore-proof.txt
+          test -f /tmp/restored-objects/marker.txt
+      - name: Fresh-cluster logs on failure
+        if: failure()
+        run: docker logs fresh-pg --tail 60 || true

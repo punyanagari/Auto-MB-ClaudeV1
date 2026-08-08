@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import net from 'node:net';
 import { HealthResponseSchema, ReadinessResponseSchema } from '@auto-mb/contracts';
 import type { FastifyInstance } from 'fastify';
@@ -42,8 +41,11 @@ async function probeDatabase(database: Sql): Promise<void> {
  * volume, the failure mode a plain SELECT can never see. */
 async function probeStorage(storage: ObjectStorage): Promise<void> {
   // Object keys are <uuid>/<area>/<name>; the nil UUID is the probe's
-  // reserved tenant, never a real organisation.
-  const key = `00000000-0000-4000-8000-000000000000/readiness/probe-${randomBytes(6).toString('hex')}`;
+  // reserved tenant, never a real organisation. One FIXED key that every
+  // probe overwrites — a per-probe random key would leave a new file
+  // behind on every poll, forever (external re-audit: a one-minute
+  // uptime monitor is half a million files a year).
+  const key = '00000000-0000-4000-8000-000000000000/readiness/probe';
   await withTimeout(
     (async () => {
       await storage.put(key, Buffer.from('ready'));

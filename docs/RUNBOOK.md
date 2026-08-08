@@ -81,6 +81,32 @@ RESTORE_OBJECT_STORAGE_DIR=/tmp/drill-objects \
 Record date, backup used, and outcome in the ops log. The same flow is
 proven automatically by `packages/db/test/backup-restore.integration.test.ts`.
 
+**Disaster recovery onto a FRESH cluster** (the real disaster shape: the
+whole PostgreSQL instance is gone, so `auto_mb_app` and `auto_mb_definer`
+do not exist and the dump's ACLs reference absent roles). The order
+matters:
+
+```bash
+# 1. Roles first — they are cluster-level and never travel in the dump.
+DATABASE_ADMIN_URL="<owner connection string on the new cluster>" \
+AUTO_MB_APP_DB_PASSWORD="<application password>" \
+  pnpm --filter @auto-mb/db exec tsx src/bootstrap.ts --roles-only
+
+# 2. The restore itself (empty auto_mb database on the new cluster).
+RESTORE_DATABASE_URL=... RESTORE_OBJECT_STORAGE_DIR=... \
+  ./scripts/restore.sh /backup/<latest>
+
+# 3. Full bootstrap: reapplies the grant matrix and repairs the
+#    SECURITY DEFINER function ownership that pg_restore --no-owner
+#    cannot carry over, then proves an application-role query.
+DATABASE_ADMIN_URL=... AUTO_MB_APP_DB_PASSWORD=... DATABASE_URL=... \
+  pnpm --filter @auto-mb/db bootstrap
+```
+
+CI proves this whole sequence on every change: the `restore-fresh-cluster`
+job restores a scripted backup onto a brand-new PostgreSQL 17 container
+and requires the application role to connect afterwards.
+
 ## 6. Monitoring and alerts
 
 - **uptime**: an external monitor probing `https://<SITE_ADDRESS>/api/ready`

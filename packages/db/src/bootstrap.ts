@@ -55,6 +55,13 @@ const FUNCTION_GRANTS = [
   'app_private.create_organisation_with_owner(text, text, uuid)',
 ];
 
+/** Functions that MUST be owned by the BYPASSRLS definer role: they are
+ * SECURITY DEFINER and read organisation_memberships from inside the RLS
+ * policies themselves. After a restore onto a fresh cluster
+ * (pg_restore --no-owner) they come back owned by the restoring role and
+ * organisation creation breaks; the bootstrap repairs ownership. */
+const DEFINER_FUNCTIONS = FUNCTION_GRANTS;
+
 export async function ensureApplicationRole(
   admin: Sql,
   password: string,
@@ -75,6 +82,22 @@ export async function ensureApplicationRole(
   `);
 }
 
+/** The NOLOGIN BYPASSRLS function-owner role (migration 0004). Created
+ * here as well so a fresh cluster can receive a restore whose dump
+ * references it — roles are cluster-level and never travel in a
+ * database dump. */
+export async function ensureDefinerRole(admin: Sql): Promise<void> {
+  await admin.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_definer') THEN
+        CREATE ROLE auto_mb_definer NOLOGIN BYPASSRLS;
+      END IF;
+    END
+    $$;
+  `);
+}
+
 export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(`GRANT USAGE ON SCHEMA public, app_private TO auto_mb_app`);
   for (const fn of FUNCTION_GRANTS) {
@@ -85,6 +108,19 @@ export async function applyGrants(admin: Sql): Promise<void> {
     // database that once carried wider privileges.
     await admin.unsafe(`REVOKE ALL ON ${table} FROM auto_mb_app`);
     await admin.unsafe(`GRANT ${privileges} ON ${table} TO auto_mb_app`);
+  }
+  // Definer posture (mirrors migration 0004): schema usage, the tables
+  // the definer functions touch, and — critically after a fresh-cluster
+  // restore — ownership of the SECURITY DEFINER functions themselves.
+  await admin.unsafe(`GRANT USAGE ON SCHEMA public, app_private TO auto_mb_definer`);
+  await admin.unsafe(
+    `GRANT SELECT, INSERT ON organisations, organisation_memberships, audit_events
+     TO auto_mb_definer`,
+  );
+  for (const fn of DEFINER_FUNCTIONS) {
+    await admin.unsafe(`ALTER FUNCTION ${fn} OWNER TO auto_mb_definer`);
+    await admin.unsafe(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC`);
+    await admin.unsafe(`GRANT EXECUTE ON FUNCTION ${fn} TO auto_mb_app`);
   }
 }
 
@@ -112,6 +148,12 @@ if (invokedDirectly) {
   const appPassword = process.env.AUTO_MB_APP_DB_PASSWORD;
   if (!adminUrl) throw new Error('DATABASE_ADMIN_URL is required');
   if (!appPassword) throw new Error('AUTO_MB_APP_DB_PASSWORD is required');
+  // Restore sequencing (docs/RUNBOOK.md): a dump's ACLs reference the
+  // cluster-level roles, which never travel with it, so on a FRESH
+  // cluster the roles must exist BEFORE pg_restore runs. --roles-only
+  // creates them and stops — migrations would otherwise create a schema
+  // the restore is about to bring back.
+  const rolesOnly = process.argv.includes('--roles-only');
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const migrationsDirectory = path.resolve(here, '..', 'migrations');
@@ -122,17 +164,20 @@ if (invokedDirectly) {
   });
   try {
     await ensureApplicationRole(admin, appPassword);
-    console.log('application role ensured');
-    await runMigrations(admin, migrationsDirectory);
-    await applyGrants(admin);
-    console.log('privilege matrix applied');
-    const appUrl = process.env.DATABASE_URL;
-    if (appUrl) {
-      await verifyApplicationConnection(appUrl);
-      console.log('application connection verified');
+    await ensureDefinerRole(admin);
+    console.log('application and definer roles ensured');
+    if (!rolesOnly) {
+      await runMigrations(admin, migrationsDirectory);
+      await applyGrants(admin);
+      console.log('privilege matrix applied');
+      const appUrl = process.env.DATABASE_URL;
+      if (appUrl) {
+        await verifyApplicationConnection(appUrl);
+        console.log('application connection verified');
+      }
     }
   } finally {
     await admin.end();
   }
-  console.log('bootstrap complete');
+  console.log(rolesOnly ? 'roles bootstrap complete' : 'bootstrap complete');
 }

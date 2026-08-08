@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -129,6 +129,18 @@ describe('readiness components', () => {
       expect(body.components.objectStorage).toBe('ok');
       expect(body.components.pdfRenderer).toBe('unconfigured');
       expect(body.components.malwareScanner).toBe('unconfigured');
+
+      // The storage probe overwrites ONE reserved key: repeated polls
+      // must not leave a growing trail of files (external re-audit — a
+      // one-minute monitor probing for a year is half a million files).
+      await app.inject({ method: 'GET', url: '/api/ready' });
+      await app.inject({ method: 'GET', url: '/api/ready' });
+      const probeDir = path.join(
+        storageDir,
+        '00000000-0000-4000-8000-000000000000',
+        'readiness',
+      );
+      expect(await readdir(probeDir)).toHaveLength(1);
     } finally {
       await app.close();
     }

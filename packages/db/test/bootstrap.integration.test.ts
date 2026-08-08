@@ -57,6 +57,16 @@ beforeAll(async () => {
     await bootAdmin.unsafe(`revoke all on ${tablename} from auto_mb_app`);
   }
   await bootAdmin.unsafe(`revoke all on schema public, app_private from auto_mb_app`);
+  // And the post-restore state on a fresh cluster: pg_restore --no-owner
+  // leaves the SECURITY DEFINER functions owned by the restoring role,
+  // which breaks organisation creation until ownership is repaired.
+  for (const fn of [
+    'app_private.current_organisation_id()',
+    'app_private.current_user_id()',
+    'app_private.create_organisation_with_owner(text, text, uuid)',
+  ]) {
+    await bootAdmin.unsafe(`alter function ${fn} owner to auto_mb_owner`);
+  }
 }, 60_000);
 
 afterAll(async () => {
@@ -96,6 +106,23 @@ describe('production bootstrap', () => {
         ) as ok
       `;
       expect(row?.ok, `${table} ${privilege}`).toBe(expected);
+    }
+
+    // The SECURITY DEFINER functions are owned by the BYPASSRLS definer
+    // role again — the fresh-cluster restore repair (external re-audit).
+    const owners = await bootAdmin<{ proname: string; owner: string }[]>`
+      select p.proname, p.proowner::regrole::text as owner
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'app_private'
+        and p.proname in (
+          'current_organisation_id', 'current_user_id',
+          'create_organisation_with_owner'
+        )
+    `;
+    expect(owners).toHaveLength(3);
+    for (const row of owners) {
+      expect(row.owner, row.proname).toBe('auto_mb_definer');
     }
 
     // And the application role can actually connect and query.
