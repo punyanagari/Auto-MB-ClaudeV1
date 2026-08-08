@@ -105,7 +105,12 @@ Remaining (needs the operator, real infrastructure, or third parties):
 - the India-region VM, DNS, and TLS hostname (operator accounts and decisions);
 - external uptime monitor and metrics scraper pointed at the deployment;
 - DAST against staging and the external application-security review;
-- three to five design partners recruited and onboarded per the checklist.
+- three to five design partners recruited and onboarded per the checklist;
+- backup-age visibility (thin pre-pilot slice, ADR-0005): the backup
+  script updates a last-success marker only after the dump, the object
+  archive, and manifest verification all complete; `/metrics` exposes the
+  marker as a `backup_last_success_timestamp_seconds` gauge so the
+  external monitor alerts on staleness — no in-app backup controls.
 
 ## Milestone 5 — retention workflow
 
@@ -158,7 +163,151 @@ Retention UI (2026-08-08):
 
 Remaining:
 
-- retention-money maths beyond the measured-quantity bill (security deposit deductions, price variation) wait for a design partner's real bill format.
+- retention-money maths beyond the measured-quantity bill (security deposit deductions, price variation) wait for a design partner's real bill format;
+- PBG requirement wiring (thin pre-pilot slice, ADR-0005): surface the
+  parser's already-extracted performance-guarantee field on the LOA
+  review screen, persist the reviewer-confirmed requirement (required
+  amount, submission and extension windows, penal-interest terms, source
+  evidence, parser-proposed versus reviewer-corrected) onto the Work at
+  confirmation, and derive submission-due dates from the LOA date. The
+  requirement (what the LOA demands) stays distinct from the instrument
+  (what the contractor submitted), enabling required-but-missing,
+  under-value, window-missed, and expiring alerts beside the existing
+  instrument expiry alerts.
+
+## Milestone 6 — contract administration and change control
+
+Scope (from the 2026-08-08 legacy UI audit as corrected by its author —
+adr/0005-legacy-ui-audit-disposition.md records the dispositions):
+
+- original and current completion dates on the Work, with approaching and
+  overdue alerts — the works table currently has no completion date,
+  which blocks every validity-versus-completion rule downstream; the
+  current date changes only through a recorded extension or amendment
+  event, never a free-form Work edit;
+- DOC extension requests as first-class records: draft → finalised →
+  responded, sequential `<work_code>-Extension-NN` numbering, generated
+  request PDF, railway response attachment, full history retained;
+- controlled baseline amendments — add or omit an item, change quantity,
+  description, unit, or a legally authorised rate — with reason and
+  evidence, preserving original LOA values so the original, amended, and
+  effective baselines each stay visible; plus a real setter for
+  `allow_excess_delivery`, dead code since migration 0001;
+- the issued-record amendment and edit-approval workflow guarding those
+  amendments: immutable proposed snapshot with a structured before/after
+  diff, one pending request per record, mandatory reason, revalidation of
+  authority and business invariants at apply time, an approvals holder
+  may apply directly with the self-approval automatically recorded,
+  rejection takes a note, and the new revision links back to the
+  untouched original;
+- add/remove-row editing on the LOA review screen, so a letter the parser
+  cannot fully serve still has a path to a confirmed Work;
+- audit writers start capturing before/after values (today only
+  changed-key names are recorded, so diff evidence is being lost daily),
+  and a per-Work/entity timeline read API and view make the trail
+  inspectable in the product — organisation-wide search waits for
+  Milestone 9.
+
+Discovery gates (partner paperwork required before these enter committed
+scope): the Contract Agreement register and a formal Variation Order
+register — the operative change-control mechanics above ship without
+them, and real agreements and variation orders from a design partner
+settle their reference fields, legal precedence, and lifecycle.
+
+Exit: a reviewer can reconstruct original LOA baseline → every approved
+amendment → every completion extension → current effective baseline with
+no historical record overwritten, and every change shows who proposed it
+and who applied it.
+
+## Milestone 7 — site material movement and document control
+
+Scope:
+
+- Issue Challans as a first-class document (legacy lifecycle: draft →
+  issued → cancelled, plus loan/return type; independent per-Work
+  numbering; manual lines permitted by design) recording material moving
+  from store/consignee custody to site, distinguishing railway-issued
+  from contractor-provided material;
+- quantity-level installation records with location, alongside the
+  existing per-serial installation facts;
+- consignee, location, and unit masters — kept in this milestone because
+  installation and Issue Challans consume them (legacy installation picks
+  its location from the master, inline-creatable): retire-not-delete,
+  always snapshot-on-use so issued documents stay frozen; units seeded
+  from the parser's canonical list; signatory names join the organisation
+  profile;
+- warranty/guarantee certificate page on the Delivery Challan: org-level
+  template text, rendered from the issued snapshot, template version and
+  content hash recorded;
+- the Milestone 6 amendment/approval mechanism extends to issued
+  documents: a wrong challan with downstream evidence (unfixable since
+  the 2026-08-08 cancellation policy) gets an approval-gated
+  cancel-and-replace or adjustment document — the promise migration 0008
+  already makes — never an edit of the issued snapshot;
+- tenant-wide serial lookup (work-scope filtered) with the full trace,
+  and enforcement of the `requires_serials` flag (stored since migration
+  0001, never enforced): serial count must equal shipped quantity at
+  issue. Multiline batch capture already shipped in Milestone 5; range
+  expansion and spreadsheet import stay evidence-gated in Milestone 9.
+
+Exit: a material unit can be traced awarded → delivered → received →
+issued to site → installed, including its documents, custody, serial
+identity, and location, and a wrong issued document has a lawful
+correction path that preserves the original.
+
+## Milestone 8 — stage-wise payment eligibility
+
+Scope:
+
+- item payment categories assigned at LOA review, and a per-Work payment
+  matrix keyed by category — each category defines supply, installation,
+  PAC, and final-bill percentages summing exactly to 100; per the legacy
+  settled decision there is deliberately no per-item percentage-entry
+  interface;
+- PAC certificates recording certified quantities per item, capped at
+  installed-minus-already-certified;
+- stage-wise bill preparation: eligible stage quantity × authoritative
+  rate × stage percentage − previously billed for that stage, in exact
+  decimal arithmetic, with per-stage billed memory so no stage can be
+  billed twice;
+- every finalised MB and bill snapshots the item's category assignment,
+  the resolved percentages, eligible stage quantities, rates, and prior
+  billed amounts — changing the Work matrix later never alters a
+  finalised record;
+- compensating entries for corrections — paid bills are never rewritten.
+
+The matrix schema lands before the first design partner prepares a bill:
+bills are immutable and undeletable, so a 100%-of-measured bill on a
+staged contract would be a permanently wrong financial record. The
+richer maths already deferred (security deposit deductions, price
+variation) still wait for a partner's real bill format.
+
+Exit: the first stage-based bill is computed entirely from recorded
+contract terms and operational evidence, with no payment percentages
+calculated in an external spreadsheet.
+
+## Milestone 9 — operational depth, evidence-gated
+
+Each item enters build only when a design partner supplies the evidence
+named with it:
+
+- Excel Work-item import with validation, mapping preview, and
+  review-before-accept — first real letter or BOQ the PDF path cannot
+  serve (Milestone 6's row editing covers the known failure mode until
+  then);
+- organisation-wide audit search with structured diffs — first
+  investigation need the per-Work timeline cannot answer (capture starts
+  in Milestone 6, so the evidence exists by then);
+- multiple numbering series and per-document signatory selection within
+  one organisation — first partner needing more than the single profile;
+  a series or signatory never changes the legal entity that owns the
+  record (multiple legal entities remain multiple organisations,
+  ADR-0005);
+- a unified cross-document register — first partner request the per-type
+  surfaces cannot satisfy (the concept has no legacy-spec antecedent);
+- standalone/non-Work material movements with a separate company-level
+  numbering series — real demand only; it forks the one-draft-per-Work,
+  per-Work-numbering, and LOA-date invariants.
 
 ## Deferred until usage proves demand
 
@@ -168,4 +317,6 @@ Remaining:
 - department expansion;
 - enterprise SSO/custom policy engine;
 - offline sync and native mobile;
-- embedded finance.
+- embedded finance;
+- an in-app backup console — rejected in ADR-0005; the backup-age gauge
+  in Milestone 4's remaining list is the accepted slice.
