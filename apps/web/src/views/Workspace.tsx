@@ -13,6 +13,8 @@ interface WorkspaceProps {
   readonly api: ApiClient;
   readonly me: MeResponse;
   readonly organisation: Organisation;
+  readonly onSwitchOrganisation: () => void;
+  readonly onSignOut: () => void;
 }
 
 type WorkspaceView =
@@ -25,7 +27,56 @@ type WorkspaceView =
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
   | { name: 'members' };
 
-export function Workspace({ api, me, organisation }: WorkspaceProps) {
+const MODULES = [
+  {
+    key: 'works' as const,
+    label: 'Works',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <rect x="2" y="2" width="5" height="5" rx="1" />
+        <rect x="9" y="2" width="5" height="5" rx="1" />
+        <rect x="2" y="9" width="5" height="5" rx="1" />
+        <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'members' as const,
+    label: 'Members',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="5.5" cy="5" r="2.5" />
+        <path d="M1.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4" />
+        <circle cx="11.5" cy="5.5" r="2" />
+        <path d="M11 10.2c2 .2 3.5 1.8 3.5 3.8" />
+      </svg>
+    ),
+  },
+];
+
+export function Workspace({
+  api,
+  me,
+  organisation,
+  onSwitchOrganisation,
+  onSignOut,
+}: WorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'works' });
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -45,152 +96,178 @@ export function Workspace({ api, me, organisation }: WorkspaceProps) {
     containerRef.current?.querySelector('h1')?.focus();
   }, [view]);
 
-  const tab = view.name === 'members' ? 'members' : 'works';
+  const activeModule = view.name === 'members' ? 'members' : 'works';
 
   return (
-    <div ref={containerRef}>
-      <nav className="tabs" aria-label="Workspace sections">
-        <button
-          type="button"
-          className="tab"
-          aria-current={tab === 'works' ? 'page' : undefined}
-          onClick={() => {
-            setView({ name: 'works' });
-          }}
-        >
-          Works
-        </button>
-        <button
-          type="button"
-          className="tab"
-          aria-current={tab === 'members' ? 'page' : undefined}
-          onClick={() => {
-            setView({ name: 'members' });
-          }}
-        >
-          Members
-        </button>
+    <div className="app-frame">
+      <nav className="sidebar" aria-label="Modules">
+        <span className="sidebar__brand">
+          <span className="sidebar__brand-mark" aria-hidden="true">
+            MB
+          </span>
+          Auto-MB
+        </span>
+        <div className="sidebar__nav">
+          {MODULES.map((module) => (
+            <button
+              key={module.key}
+              type="button"
+              className="sidebar__item"
+              aria-current={activeModule === module.key ? 'page' : undefined}
+              onClick={() => {
+                setView(module.key === 'works' ? { name: 'works' } : { name: 'members' });
+              }}
+            >
+              {module.icon}
+              {module.label}
+            </button>
+          ))}
+        </div>
+        <span className="sidebar__foot">{organisation.name}</span>
       </nav>
 
-      {view.name === 'works' && (
-        <Works
-          api={api}
-          organisationId={organisation.id}
-          canModify={canModify}
-          onUpload={() => {
-            setView({ name: 'upload' });
-          }}
-          onReview={(documentId) => {
-            setView({ name: 'review', documentId });
-          }}
-          onOpenWork={(workId) => {
-            setView({ name: 'work', workId });
-          }}
-        />
-      )}
-      {view.name === 'upload' && (
-        <UploadLoa
-          api={api}
-          organisationId={organisation.id}
-          onUploaded={(document) => {
-            setView(
-              document.extractionStatus === 'review'
-                ? { name: 'review', documentId: document.id }
-                : { name: 'works' },
-            );
-          }}
-          onCancel={() => {
-            setView({ name: 'works' });
-          }}
-        />
-      )}
-      {view.name === 'review' && (
-        <ReviewLoa
-          api={api}
-          organisationId={organisation.id}
-          documentId={view.documentId}
-          canModify={canModify}
-          onConfirmed={(created) => {
-            setView({ name: 'work', workId: created.work.id });
-          }}
-          onBack={() => {
-            setView({ name: 'works' });
-          }}
-        />
-      )}
-      {view.name === 'work' && (
-        <WorkDetail
-          api={api}
-          organisationId={organisation.id}
-          workId={view.workId}
-          canModify={canModify}
-          onNewChallan={(workId, workCode) => {
-            setView({ name: 'challan-new', workId, workCode });
-          }}
-          onOpenChallan={(challanId) => {
-            setView({
-              name: 'challan',
-              workId: view.workId,
-              workCode: '',
-              challanId,
-            });
-          }}
-          onBack={() => {
-            setView({ name: 'works' });
-          }}
-        />
-      )}
-      {(view.name === 'challan-new' || view.name === 'challan-edit') && (
-        <ChallanEditor
-          api={api}
-          organisationId={organisation.id}
-          workId={view.workId}
-          workCode={view.workCode}
-          challanId={view.name === 'challan-edit' ? view.challanId : null}
-          onSaved={(challanId) => {
-            setView({
-              name: 'challan',
-              workId: view.workId,
-              workCode: view.workCode,
-              challanId,
-            });
-          }}
-          onCancel={() => {
-            setView({ name: 'work', workId: view.workId });
-          }}
-        />
-      )}
-      {view.name === 'challan' && (
-        <ChallanDetail
-          api={api}
-          organisationId={organisation.id}
-          challanId={view.challanId}
-          canModify={canModify}
-          canIssue={canIssue}
-          canCancel={canCancel}
-          onEdit={(challanId) => {
-            setView({
-              name: 'challan-edit',
-              workId: view.workId,
-              workCode: view.workCode,
-              challanId,
-            });
-          }}
-          onDeleted={() => {
-            setView({ name: 'work', workId: view.workId });
-          }}
-          onBack={() => {
-            setView({ name: 'work', workId: view.workId });
-          }}
-        />
-      )}
-      {view.name === 'members' && (
-        <Members
-          api={api}
-          organisationId={organisation.id}
-          currentUserId={me.user.id}
-        />
-      )}
+      <div className="app-main">
+        <header className="topbar">
+          <div className="topbar__session">
+            <span className="topbar__org">{organisation.name}</span>
+            <button
+              type="button"
+              className="button--ghost"
+              onClick={onSwitchOrganisation}
+            >
+              Switch organisation
+            </button>
+          </div>
+          <div className="topbar__session">
+            <span className="muted">{me.user.email}</span>
+            <button type="button" className="button--ghost" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <main className="content" ref={containerRef}>
+          {view.name === 'works' && (
+            <Works
+              api={api}
+              organisationId={organisation.id}
+              canModify={canModify}
+              onUpload={() => {
+                setView({ name: 'upload' });
+              }}
+              onReview={(documentId) => {
+                setView({ name: 'review', documentId });
+              }}
+              onOpenWork={(workId) => {
+                setView({ name: 'work', workId });
+              }}
+            />
+          )}
+          {view.name === 'upload' && (
+            <UploadLoa
+              api={api}
+              organisationId={organisation.id}
+              onUploaded={(document) => {
+                setView(
+                  document.extractionStatus === 'review'
+                    ? { name: 'review', documentId: document.id }
+                    : { name: 'works' },
+                );
+              }}
+              onCancel={() => {
+                setView({ name: 'works' });
+              }}
+            />
+          )}
+          {view.name === 'review' && (
+            <ReviewLoa
+              api={api}
+              organisationId={organisation.id}
+              documentId={view.documentId}
+              canModify={canModify}
+              onConfirmed={(created) => {
+                setView({ name: 'work', workId: created.work.id });
+              }}
+              onBack={() => {
+                setView({ name: 'works' });
+              }}
+            />
+          )}
+          {view.name === 'work' && (
+            <WorkDetail
+              api={api}
+              organisationId={organisation.id}
+              workId={view.workId}
+              canModify={canModify}
+              onNewChallan={(workId, workCode) => {
+                setView({ name: 'challan-new', workId, workCode });
+              }}
+              onOpenChallan={(challanId) => {
+                setView({
+                  name: 'challan',
+                  workId: view.workId,
+                  workCode: '',
+                  challanId,
+                });
+              }}
+              onBack={() => {
+                setView({ name: 'works' });
+              }}
+            />
+          )}
+          {(view.name === 'challan-new' || view.name === 'challan-edit') && (
+            <ChallanEditor
+              api={api}
+              organisationId={organisation.id}
+              workId={view.workId}
+              workCode={view.workCode}
+              challanId={view.name === 'challan-edit' ? view.challanId : null}
+              onSaved={(challanId) => {
+                setView({
+                  name: 'challan',
+                  workId: view.workId,
+                  workCode: view.workCode,
+                  challanId,
+                });
+              }}
+              onCancel={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'challan' && (
+            <ChallanDetail
+              api={api}
+              organisationId={organisation.id}
+              challanId={view.challanId}
+              canModify={canModify}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              onEdit={(challanId) => {
+                setView({
+                  name: 'challan-edit',
+                  workId: view.workId,
+                  workCode: view.workCode,
+                  challanId,
+                });
+              }}
+              onDeleted={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+              onBack={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'members' && (
+            <Members
+              api={api}
+              organisationId={organisation.id}
+              currentUserId={me.user.id}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 }

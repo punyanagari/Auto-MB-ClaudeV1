@@ -1,20 +1,35 @@
-/* Design tokens: the single source for colour, spacing, and type. Values
- * are chosen for WCAG AA contrast on the given surfaces; change them here,
- * not inline. */
+/* Design tokens: the single source for colour, spacing, and type. The
+ * palette follows the Zoho Books idiom — dark navy module sidebar, white
+ * chrome, blue primary actions on a cool gray canvas. Values are chosen
+ * for WCAG AA contrast on the given surfaces; change them here, not
+ * inline. */
 :root {
-  --color-ink: #17221d;
-  --color-ink-muted: #55635c;
-  --color-surface: #f2f4ef;
+  --color-ink: #1f2430;
+  --color-ink-muted: #5f6b7c;
+  --color-surface: #f2f4f7;
   --color-card: #ffffff;
-  --color-line: #d7ddd3;
-  --color-accent: #1f6f43;
+  --color-line: #e1e5eb;
+  --color-line-strong: #c9cfd8;
+
+  --color-accent: #2368c4;
   --color-accent-ink: #ffffff;
-  --color-accent-hover: #185936;
-  --color-danger: #a4262c;
-  --color-danger-surface: #fbeaea;
+  --color-accent-hover: #1b57a6;
+  --color-accent-soft: #e9f1fb;
+
+  --color-danger: #b3272d;
+  --color-danger-surface: #fceaea;
   --color-notice: #1f4e6f;
   --color-notice-surface: #e8f1f8;
-  --color-focus: #14512f;
+  --color-success-ink: #1e6a41;
+  --color-success-surface: #e4f3ea;
+  --color-focus: #1b57a6;
+
+  --sidebar-bg: #21263c;
+  --sidebar-bg-active: #2f3654;
+  --sidebar-ink: #f4f6fb;
+  --sidebar-ink-muted: #aab3cc;
+  --sidebar-accent: #5ea1f7;
+  --sidebar-width: 15rem;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -23,7 +38,10 @@
   --space-6: 1.5rem;
   --space-8: 2rem;
 
-  --radius: 8px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --shadow-card: 0 1px 2px rgba(31, 36, 48, 0.06);
+  --shadow-raised: 0 8px 24px rgba(31, 36, 48, 0.14);
 
   font-family:
     Inter,
@@ -33,6 +51,7 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
+  font-size: 15px;
   color: var(--color-ink);
   background: var(--color-surface);
   font-synthesis: none;
@@ -61,7 +80,8 @@ textarea {
 }
 
 h1 {
-  font-size: 1.4rem;
+  font-size: 1.3rem;
+  font-weight: 650;
   margin: 0 0 var(--space-2);
 }
 
@@ -70,7 +90,8 @@ h1:focus {
 }
 
 h2 {
-  font-size: 1.05rem;
+  font-size: 1rem;
+  font-weight: 650;
   margin: var(--space-6) 0 var(--space-2);
 }
 
@@ -95,10 +116,97 @@ h2 {
   padding: var(--space-8);
 }
 
-/* Layout */
+/* ------------------------------------------------------------------ */
+/* Application frame: full-height module sidebar on the left, then a   */
+/* column of topbar + scrollable content — the Zoho Books skeleton.    */
 
-.shell {
+.app-frame {
+  display: flex;
   min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-ink);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.sidebar__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: var(--radius);
+  background: var(--sidebar-accent);
+  color: #10131f;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  overflow-y: auto;
+}
+
+.sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--sidebar-ink-muted);
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__item:hover:not(:disabled) {
+  background: var(--sidebar-bg-active);
+  color: var(--sidebar-ink);
+}
+
+.sidebar__item[aria-current='page'] {
+  background: var(--sidebar-bg-active);
+  border-left-color: var(--sidebar-accent);
+  color: var(--sidebar-ink);
+}
+
+.sidebar__item svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.sidebar__foot {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.75rem;
+  color: var(--sidebar-ink-muted);
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -109,7 +217,8 @@ h2 {
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-2) var(--space-6);
+  min-height: 3.4rem;
   background: var(--color-card);
   border-bottom: 1px solid var(--color-line);
 }
@@ -119,6 +228,10 @@ h2 {
   letter-spacing: 0.02em;
 }
 
+.topbar__org {
+  font-weight: 650;
+}
+
 .topbar__session {
   display: flex;
   align-items: center;
@@ -126,22 +239,39 @@ h2 {
   flex-wrap: wrap;
 }
 
-.topbar__org {
-  font-weight: 600;
+.content {
+  flex: 1;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  align-items: stretch;
 }
 
-main {
+/* Screens that exist outside the signed-in frame (sign-in, organisation
+ * choice) keep a calm, centered composition. */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-shell main {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   padding: var(--space-8) var(--space-4);
 }
+
+/* Cards */
 
 .card {
   background: var(--color-card);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: var(--space-6);
   width: 100%;
   max-width: 56rem;
@@ -149,6 +279,27 @@ main {
 
 .card--narrow {
   max-width: 26rem;
+}
+
+.card--wide {
+  max-width: none;
+}
+
+.content .card {
+  max-width: none;
+}
+
+.content .card--narrow {
+  max-width: 30rem;
+}
+
+.card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
 }
 
 /* Forms */
@@ -173,16 +324,27 @@ main {
 
 label {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 input,
-select {
+select,
+textarea {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-line-strong);
   border-radius: var(--radius);
   background: var(--color-card);
   color: var(--color-ink);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--color-ink-muted);
+}
+
+textarea {
+  resize: vertical;
 }
 
 .hint {
@@ -227,9 +389,24 @@ button:disabled {
 }
 
 .button--ghost:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  text-decoration: none;
+}
+
+.button--link {
+  background: transparent;
+  color: var(--color-accent);
+  border: none;
+  padding: 0;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.button--link:hover:not(:disabled) {
   background: transparent;
   color: var(--color-accent-hover);
-  text-decoration: underline;
 }
 
 .form-error {
@@ -271,7 +448,7 @@ button:disabled {
 }
 
 .org-list__item:hover:not(:disabled) {
-  background: var(--color-surface);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
 }
 
@@ -279,7 +456,8 @@ button:disabled {
   font-weight: 600;
 }
 
-/* Data tables */
+/* Data tables: the working surface of the product — dense, ruled rows,
+ * quiet uppercase headers, tabular numerals on quantity columns. */
 
 .data-table {
   width: 100%;
@@ -292,74 +470,24 @@ button:disabled {
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-line);
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
 .data-table thead th {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--color-ink-muted);
+  border-bottom: 1px solid var(--color-line-strong);
+  background: var(--color-card);
 }
 
 .data-table tbody th {
   font-weight: 600;
 }
 
-/* Workspace navigation */
-
-.tabs {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-}
-
-.tab {
-  background: transparent;
-  color: var(--color-ink-muted);
-  border: 1px solid transparent;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  font-weight: 600;
-}
-
-.tab:hover:not(:disabled) {
-  background: transparent;
-  color: var(--color-accent-hover);
-}
-
-.tab[aria-current='page'] {
-  color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
-}
-
-/* Works, documents, and review */
-
-.card--wide {
-  max-width: 72rem;
-}
-
-.card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.button--link {
-  background: transparent;
-  color: var(--color-accent);
-  border: none;
-  padding: 0;
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.button--link:hover:not(:disabled) {
-  background: transparent;
-  color: var(--color-accent-hover);
+.data-table tbody tr:hover {
+  background: #f7f9fc;
 }
 
 .cell--wrap {
@@ -372,15 +500,37 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.data-table--editable input,
+.data-table--editable textarea {
+  width: 100%;
+  min-width: 5rem;
+}
+
+.data-table--editable .cell--wrap textarea {
+  min-width: 16rem;
+}
+
+.data-table--editable details summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--color-ink-muted);
+}
+
+.data-table--editable tbody tr:hover {
+  background: transparent;
+}
+
+/* Status chips */
+
 .chip {
   display: inline-block;
-  padding: 0.1rem var(--space-2);
+  padding: 0.12rem var(--space-2);
   border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.76rem;
+  font-weight: 650;
   background: var(--color-surface);
   color: var(--color-ink-muted);
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-line-strong);
 }
 
 .chip--review {
@@ -390,8 +540,8 @@ button:disabled {
 }
 
 .chip--confirmed {
-  background: #e6f2ea;
-  color: var(--color-accent-hover);
+  background: var(--color-success-surface);
+  color: var(--color-success-ink);
   border-color: transparent;
 }
 
@@ -400,6 +550,8 @@ button:disabled {
   color: var(--color-danger);
   border-color: transparent;
 }
+
+/* Review flags */
 
 .flag-panel {
   margin-top: var(--space-4);
@@ -436,30 +588,7 @@ button:disabled {
   background: var(--color-notice-surface);
 }
 
-textarea {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius);
-  background: var(--color-card);
-  color: var(--color-ink);
-  resize: vertical;
-}
-
-.data-table--editable input,
-.data-table--editable textarea {
-  width: 100%;
-  min-width: 5rem;
-}
-
-.data-table--editable .cell--wrap textarea {
-  min-width: 16rem;
-}
-
-.data-table--editable details summary {
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--color-ink-muted);
-}
+/* Fact strips on detail pages */
 
 .fact-list {
   display: flex;
@@ -469,9 +598,9 @@ textarea {
 }
 
 .fact-list dt {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--color-ink-muted);
 }
 
@@ -480,8 +609,79 @@ textarea {
   font-weight: 600;
 }
 
+/* Legacy horizontal tabs (retained for secondary navigation inside a
+ * page; primary modules live in the sidebar). */
+
+.tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.tab {
+  background: transparent;
+  color: var(--color-ink-muted);
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.tab:hover:not(:disabled) {
+  background: transparent;
+  color: var(--color-accent-hover);
+}
+
+.tab[aria-current='page'] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Narrow screens: the sidebar folds into a horizontal module bar so the
+ * content keeps the full width. No behaviour changes, CSS only. */
+@media (max-width: 56rem) {
+  .app-frame {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .sidebar__brand {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .sidebar__nav {
+    flex-direction: row;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .sidebar__item {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+  }
+
+  .sidebar__item[aria-current='page'] {
+    border-bottom-color: var(--sidebar-accent);
+  }
+
+  .sidebar__foot {
+    display: none;
+  }
+
+  .content {
+    padding: var(--space-4);
+  }
+}
+
 /* Documents are legal artifacts: anything that reaches paper drops chrome. */
 @media print {
+  .sidebar,
   .topbar,
   .actions,
   form {
@@ -490,6 +690,7 @@ textarea {
 
   .card {
     border: none;
+    box-shadow: none;
     padding: 0;
   }
 }

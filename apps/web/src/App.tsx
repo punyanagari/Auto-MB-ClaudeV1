@@ -80,26 +80,29 @@ export function App({ api: providedApi }: AppProps) {
     }
   }
 
+  // Signed in with an organisation bound: the Workspace owns the whole
+  // frame (module sidebar plus topbar). Every other phase renders as a
+  // calm centered page under a minimal brand bar.
+  if (phase.name === 'workspace') {
+    return (
+      <Workspace
+        api={api}
+        me={phase.me}
+        organisation={phase.organisation}
+        onSwitchOrganisation={() => {
+          setPhase({ name: 'pick-organisation', me: phase.me });
+        }}
+        onSignOut={() => void signOut()}
+      />
+    );
+  }
+
   return (
-    <div className="shell">
+    <div className="auth-shell">
       <header className="topbar">
         <span className="topbar__brand">Auto-MB</span>
-        {(phase.name === 'workspace' || phase.name === 'pick-organisation') && (
+        {phase.name === 'pick-organisation' && (
           <div className="topbar__session">
-            {phase.name === 'workspace' && (
-              <>
-                <span className="topbar__org">{phase.organisation.name}</span>
-                <button
-                  type="button"
-                  className="button--ghost"
-                  onClick={() => {
-                    setPhase({ name: 'pick-organisation', me: phase.me });
-                  }}
-                >
-                  Switch organisation
-                </button>
-              </>
-            )}
             <span className="muted">{phase.me.user.email}</span>
             <button
               type="button"
@@ -133,9 +136,6 @@ export function App({ api: providedApi }: AppProps) {
               });
             }}
           />
-        )}
-        {phase.name === 'workspace' && (
-          <Workspace api={api} me={phase.me} organisation={phase.organisation} />
         )}
       </main>
     </div>
