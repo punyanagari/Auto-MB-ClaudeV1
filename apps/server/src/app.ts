@@ -13,6 +13,7 @@ import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
+import { registerRetentionRoutes } from './routes/retention.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -242,6 +243,7 @@ export async function buildApp(
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerRetentionRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,

@@ -92,10 +92,19 @@ Remaining (needs the operator, real infrastructure, or third parties):
 
 ## Milestone 5 — retention workflow
 
-- delivery receipt/installation records;
-- serial traceability;
-- PBG/PAC/DOC tracking;
-- Measurement Book and first partial-billing cycle.
+Delivered (backend, migration 0006 + live HTTP proofs):
+
+- delivery receipts: one per issued challan, writer-recorded, duplicate-proof;
+- serial traceability: serials unique per Work, capped at the shipped line quantity under a row lock, installation recorded in place, and a per-Work trace listing serial → challan number → item → installation;
+- PBG/PAC/DOC instruments per Work: unique references, amounts, issue/expiry dates, forward status management, an expiry index for alerting;
+- Measurement Book: entries capped so cumulative measurement never exceeds delivered (issued) quantity — checked in exact SQL arithmetic under a row lock; billed entries freeze via a DB trigger;
+- first partial-billing cycle: bill preparation under issue authority sweeps all unbilled MB entries into an immutable per-item snapshot (quantity × rate in exact numeric), numbered gaplessly per Work through a counter row lock; status moves forward only (prepared → submitted → paid, DB-enforced); bills cannot be deleted;
+- the sixteen-table tenant-isolation matrix now covers every retention table, and the audit trail spans the whole flow (received → serials → installed → measured → billed → paid).
+
+Remaining:
+
+- the retention UI (receipt/serials on the challan screen, instruments and MB/billing on the Work screen) — the endpoints are contract-typed and ready for it;
+- retention-money maths beyond the measured-quantity bill (security deposit deductions, price variation) wait for a design partner's real bill format.
 
 ## Deferred until usage proves demand
 

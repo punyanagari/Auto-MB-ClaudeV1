@@ -35,6 +35,12 @@ const TENANT_TABLES = [
   'delivery_challan_items',
   'delivery_challan_counters',
   'audit_events',
+  'challan_receipts',
+  'challan_item_serials',
+  'work_instruments',
+  'bill_counters',
+  'bills',
+  'mb_entries',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -53,6 +59,11 @@ const DELETE_REVOKED_TABLES = [
   'work_items',
   'loa_documents',
   'delivery_challan_counters',
+  'challan_receipts',
+  'work_instruments',
+  'bill_counters',
+  'bills',
+  'mb_entries',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -62,6 +73,7 @@ const DELETE_ALLOWED_TABLES = [
   'work_schedules',
   'delivery_challans',
   'delivery_challan_items',
+  'challan_item_serials',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -86,11 +98,18 @@ let graphB: TenantGraph;
 /** Deletes both fixture organisations' rows, children first. */
 async function removeSeedResidue(): Promise<void> {
   const organisationIds = [organisationA.id, organisationB.id];
-  for (const table of [...TENANT_TABLES].reverse()) {
-    await admin.unsafe(
-      `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
-      [organisationIds],
-    );
+  // Fixture cleanup as superuser: the bill/MB immutability triggers
+  // (rightly) block ordinary deletes.
+  await admin.unsafe(`set session_replication_role = 'replica'`);
+  try {
+    for (const table of [...TENANT_TABLES].reverse()) {
+      await admin.unsafe(
+        `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
+        [organisationIds],
+      );
+    }
+  } finally {
+    await admin.unsafe(`set session_replication_role = 'origin'`);
   }
 }
 
@@ -205,6 +224,56 @@ async function seedTenantGraph(
       returning id
     `;
     if (!auditEvent) throw new Error('seed audit insert returned no row');
+
+    // Milestone 5 retention tables: one row each.
+    const [challanItem] = await tx<{ id: string }[]>`
+      select id from delivery_challan_items
+      where delivery_challan_id = ${challan.id}
+    `;
+    if (!challanItem) throw new Error('seed challan item lookup returned no row');
+    await tx`
+      insert into challan_receipts (
+        organisation_id, delivery_challan_id, work_id, received_on,
+        received_by, recorded_by_user_id
+      )
+      values (${organisationId}, ${challan.id}, ${work.id}, '2026-02-02',
+              'Integration consignee', ${userId})
+    `;
+    await tx`
+      insert into challan_item_serials (
+        organisation_id, work_id, delivery_challan_id,
+        delivery_challan_item_id, serial_number
+      )
+      values (${organisationId}, ${work.id}, ${challan.id}, ${challanItem.id},
+              ${`SN-${workCode}`})
+    `;
+    await tx`
+      insert into work_instruments (
+        organisation_id, work_id, kind, reference, issued_on,
+        created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'pbg', ${`PBG-${workCode}`},
+              '2026-01-20', ${userId})
+    `;
+    await tx`
+      insert into bill_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+    await tx`
+      insert into bills (
+        organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+        prepared_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 1, '[]'::jsonb, 0, ${userId})
+    `;
+    await tx`
+      insert into mb_entries (
+        organisation_id, work_id, work_item_id, measured_quantity,
+        measured_on, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
+              '2026-02-03', ${userId})
+    `;
 
     return {
       workId: work.id,

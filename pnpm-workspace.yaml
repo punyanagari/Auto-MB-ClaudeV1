@@ -13,7 +13,9 @@ minimumReleaseAge: 10080
 # (the Better Auth 1.6.26 family and transitive updates, all published
 # 2026-08-01..06). Every listed version ages past seven days by
 # 2026-08-13 — delete this whole list then; do not add to it without the
-# same review a security-upgrade exception gets.
+# same review a security-upgrade exception gets. (Deletion attempted
+# 2026-08-08: all twenty entries still violated the cooldown, verified by
+# a frozen install — the date stands.)
 minimumReleaseAgeExclude:
   - '@better-auth/core'
   - '@better-auth/drizzle-adapter'
