@@ -353,11 +353,14 @@ export function registerRetentionRoutes(
           if (!line) {
             throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
           }
-          if (line.challan_status !== 'issued') {
+          // Serials are recorded post-issue (the historical evidence
+          // flow) or on the draft (required before issue for items with
+          // requires_serials). Cancelled challans take no new evidence.
+          if (line.challan_status !== 'issued' && line.challan_status !== 'draft') {
             throw httpError(
               409,
               'CHALLAN_STATUS_CONFLICT',
-              'Serials are recorded against issued challans.',
+              'Serials are recorded against draft or issued challans.',
             );
           }
           await assertWorkAccess(tx, user.id, line.work_id);

@@ -102,6 +102,7 @@ export const WorkItemSchema = Type.Object(
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     awardedQuantity: DecimalStringSchema,
     effectiveRate: DecimalStringSchema,
+    requiresSerials: Type.Boolean(),
   },
   { additionalProperties: false },
 );

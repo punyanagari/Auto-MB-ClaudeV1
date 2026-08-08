@@ -8,4 +8,5 @@ export * from './works.js';
 export * from './loa.js';
 export * from './challans.js';
 export * from './retention.js';
+export * from './serials.js';
 export * from './dashboard.js';

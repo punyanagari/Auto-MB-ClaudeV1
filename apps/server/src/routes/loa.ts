@@ -509,6 +509,10 @@ export function registerLoaRoutes(
                 unitCode: item.unitCode,
                 awardedQuantity: item.awardedQuantity,
                 effectiveRate: item.effectiveRate,
+                // Serial traceability is switched on per item after
+                // confirmation, once the contractor knows which items
+                // ship serialised equipment.
+                requiresSerials: false,
               });
             }
             schedules.push({
@@ -639,10 +643,11 @@ export function registerLoaRoutes(
             unit_code: string;
             awarded_quantity: string;
             effective_rate: string;
+            requires_serials: boolean;
           }[]
         >`
           select id, schedule_id, item_number, description, unit_code,
-                 awarded_quantity, effective_rate
+                 awarded_quantity, effective_rate, requires_serials
           from work_items
           where work_id = ${id} and deleted_at is null
           order by item_number
@@ -663,6 +668,7 @@ export function registerLoaRoutes(
               unitCode: item.unit_code,
               awardedQuantity: item.awarded_quantity,
               effectiveRate: item.effective_rate,
+              requiresSerials: item.requires_serials,
             })),
         }));
         return { work: toWork(work), schedules };

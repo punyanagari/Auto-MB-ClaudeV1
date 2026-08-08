@@ -226,6 +226,13 @@ async function writeLines(
   workId: string,
   body: SaveChallanRequest,
 ): Promise<void> {
+  // Draft-time serials hang off the line rows being replaced (serial
+  // lineage FK); they are draft-stage records — deletable by rule — and
+  // cannot outlive their lines, so a line rewrite clears them and they
+  // are re-recorded against the new lines before issue.
+  await tx`
+    delete from challan_item_serials where delivery_challan_id = ${challanId}
+  `;
   await tx`
     delete from delivery_challan_items where delivery_challan_id = ${challanId}
   `;
@@ -549,6 +556,9 @@ export function registerChallanRoutes(
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
+        // A deleted draft takes its draft-stage serials with it (they
+        // reference the lines and would otherwise orphan the delete).
+        await tx`delete from challan_item_serials where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challans where id = ${id}`;
         await auditChallan(tx, organisationId, user.id, 'challan.deleted', id, {
@@ -624,6 +634,65 @@ export function registerChallanRoutes(
                 `Issuing would exceed the awarded quantity for: ${exceeded
                   .map((row) => row.item_number)
                   .join(', ')}.`,
+              );
+            }
+          }
+
+          // requires_serials enforcement. The challan's work_items rows
+          // are locked FOR UPDATE (no flag predicate) so a concurrent
+          // flag toggle serialises with this check in both orders: a
+          // toggle that committed first is visible in the locked read;
+          // a toggle waiting on these locks re-validates against the
+          // now-issued lines after we commit. Serial recording/deletion
+          // already serialises against issue through the challan row
+          // lock taken above.
+          const challanWorkItems = await tx<
+            { id: string; item_number: string; requires_serials: boolean }[]
+          >`
+            select wi.id, wi.item_number, wi.requires_serials
+            from work_items wi
+            where wi.id in (
+              select work_item_id from delivery_challan_items
+              where delivery_challan_id = ${id}
+            )
+            order by wi.id
+            for update of wi
+          `;
+          const flaggedItemIds = challanWorkItems
+            .filter((item) => item.requires_serials)
+            .map((item) => item.id);
+          if (flaggedItemIds.length > 0) {
+            // Exact count check in SQL: recorded serials must equal the
+            // line quantity (numeric comparison, no floats).
+            const incomplete = await tx<
+              { item_number: string; quantity: string; recorded: string }[]
+            >`
+              select wi.item_number, dci.quantity::text as quantity,
+                     (
+                       select count(*) from challan_item_serials s
+                       where s.delivery_challan_item_id = dci.id
+                     )::text as recorded
+              from delivery_challan_items dci
+              join work_items wi on wi.id = dci.work_item_id
+              where dci.delivery_challan_id = ${id}
+                and dci.work_item_id = any(${flaggedItemIds}::uuid[])
+                and (
+                  select count(*) from challan_item_serials s
+                  where s.delivery_challan_item_id = dci.id
+                ) <> dci.quantity
+              order by wi.item_number
+            `;
+            if (incomplete.length > 0) {
+              const detail = incomplete
+                .map(
+                  (line) =>
+                    `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,
+                )
+                .join('; ');
+              throw httpError(
+                409,
+                'SERIALS_INCOMPLETE',
+                `These items require one serial per unit before issue: ${detail}.`,
               );
             }
           }

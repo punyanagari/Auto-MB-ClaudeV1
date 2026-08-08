@@ -186,8 +186,12 @@ beforeAll(async () => {
       unit_code, awarded_quantity, effective_rate, requires_serials
     )
     values
+      -- Item A stays unflagged: these tests exercise the voluntary
+      -- post-issue serial flow. Mandatory (requires_serials) coverage
+      -- lives in serials.integration.test.ts, where issue is blocked
+      -- until the draft lines are serial-complete.
       (${itemAId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Main switchboard', 'Nos', 5.000, 100.00, true),
+       'Main switchboard', 'Nos', 5.000, 100.00, false),
       (${itemBId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
        'Cable set', 'Set', 2.000, 250.50, false)
   `;
