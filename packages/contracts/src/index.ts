@@ -11,3 +11,4 @@ export * from './masters.js';
 export * from './retention.js';
 export * from './dashboard.js';
 export * from './timeline.js';
+export * from './extensions.js';

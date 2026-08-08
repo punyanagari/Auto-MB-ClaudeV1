@@ -10,6 +10,7 @@ import type {
 import { RequestFailedError, type ApiClient } from '../src/api.js';
 import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
+import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
@@ -84,6 +85,19 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listSignatories: vi.fn().mockResolvedValue([]),
     saveSignatory: vi.fn(),
     setSignatoryActive: vi.fn(),
+    getWorkCompletion: vi.fn().mockResolvedValue({
+      completion: { originalCompletionDate: null, currentCompletionDate: null },
+      extensionRequests: [],
+    }),
+    setCompletionDate: vi.fn(),
+    createExtensionRequest: vi.fn(),
+    updateExtensionRequest: vi.fn(),
+    deleteExtensionRequest: vi.fn().mockResolvedValue(undefined),
+    finaliseExtensionRequest: vi.fn(),
+    renderExtensionRequest: vi.fn(),
+    uploadExtensionResponse: vi.fn(),
+    respondExtensionRequest: vi.fn(),
+    downloadExtensionPdf: vi.fn(),
     ...overrides,
   };
 }
@@ -1099,6 +1113,205 @@ describe('WorkDetail retention', () => {
     expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Mark submitted' })).toBeNull();
+  });
+});
+
+describe('CompletionExtensions', () => {
+  const EXTENSION_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const COMPLETION_SET = {
+    completion: {
+      originalCompletionDate: '2026-12-31',
+      currentCompletionDate: '2026-12-31',
+    },
+    extensionRequests: [],
+  };
+  const DRAFT_EXTENSION = {
+    id: EXTENSION_ID,
+    workId: WORK_ID,
+    status: 'draft' as const,
+    proposedCompletionDate: '2027-03-31',
+    reason: 'Site not handed over in time.',
+    addressee: 'Sr. DEE (G) NR',
+    letterDate: '2026-08-01',
+    sequenceNumber: null,
+    requestNumber: null,
+    templateVersion: null,
+    renderedAvailable: false,
+    responseDocumentAvailable: false,
+    responseOutcome: null,
+    grantedCompletionDate: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    finalisedAt: null,
+    respondedAt: null,
+  };
+  const FINALISED_EXTENSION = {
+    ...DRAFT_EXTENSION,
+    status: 'finalised' as const,
+    sequenceNumber: 1,
+    requestNumber: 'DCW-1-Extension-01',
+    templateVersion: 'extension-v1',
+    responseDocumentAvailable: true,
+    finalisedAt: '2026-08-02T00:00:00.000Z',
+  };
+
+  function renderCompletion(
+    api: ApiClient,
+    flags: Partial<{ canModify: boolean; canIssue: boolean }> = {},
+  ) {
+    return render(
+      <CompletionExtensions
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={flags.canModify ?? true}
+        canIssue={flags.canIssue ?? true}
+      />,
+    );
+  }
+
+  it('sets the completion date once through the one-time form', async () => {
+    const setCompletionDate = vi.fn().mockResolvedValue(COMPLETION_SET);
+    const api = stubApi({ setCompletionDate });
+    renderCompletion(api);
+
+    fireEvent.change(
+      await screen.findByLabelText('Completion date (per the contract)'),
+      { target: { value: '2026-12-31' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Set completion date' }));
+
+    await waitFor(() => {
+      expect(setCompletionDate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        completionDate: '2026-12-31',
+      });
+    });
+    // Once set, the form disappears and the dates show as facts.
+    expect(await screen.findByText('Original completion date')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Set completion date' })).toBeNull();
+  });
+
+  it('drafts an extension request against the current completion date', async () => {
+    const createExtensionRequest = vi.fn().mockResolvedValue({
+      extensionRequest: DRAFT_EXTENSION,
+      finalisedSnapshot: null,
+    });
+    const getWorkCompletion = vi
+      .fn()
+      .mockResolvedValueOnce(COMPLETION_SET)
+      .mockResolvedValue({
+        ...COMPLETION_SET,
+        extensionRequests: [DRAFT_EXTENSION],
+      });
+    const api = stubApi({ createExtensionRequest, getWorkCompletion });
+    renderCompletion(api);
+
+    fireEvent.change(await screen.findByLabelText('Proposed completion date'), {
+      target: { value: '2027-03-31' },
+    });
+    fireEvent.change(screen.getByLabelText('Addressee'), {
+      target: { value: 'Sr. DEE (G) NR' },
+    });
+    fireEvent.change(screen.getByLabelText('Letter date'), {
+      target: { value: '2026-08-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
+      target: { value: 'Site not handed over in time.' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save draft extension request' }),
+    );
+
+    await waitFor(() => {
+      expect(createExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        proposedCompletionDate: '2027-03-31',
+        reason: 'Site not handed over in time.',
+        addressee: 'Sr. DEE (G) NR',
+        letterDate: '2026-08-01',
+      });
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Finalise extension request' }),
+    ).toBeTruthy();
+  });
+
+  it('finalises the draft under the issue authority', async () => {
+    const finaliseExtensionRequest = vi.fn().mockResolvedValue({
+      extensionRequest: FINALISED_EXTENSION,
+      finalisedSnapshot: {},
+    });
+    const getWorkCompletion = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...COMPLETION_SET,
+        extensionRequests: [DRAFT_EXTENSION],
+      })
+      .mockResolvedValue({
+        ...COMPLETION_SET,
+        extensionRequests: [FINALISED_EXTENSION],
+      });
+    const api = stubApi({ finaliseExtensionRequest, getWorkCompletion });
+    renderCompletion(api);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Finalise extension request' }),
+    );
+    await waitFor(() => {
+      expect(finaliseExtensionRequest).toHaveBeenCalledWith(ORG_ID, EXTENSION_ID);
+    });
+    expect(await screen.findByText('DCW-1-Extension-01')).toBeTruthy();
+  });
+
+  it('records a modified response with the granted date', async () => {
+    const respondExtensionRequest = vi.fn().mockResolvedValue({
+      extensionRequest: {
+        ...FINALISED_EXTENSION,
+        status: 'responded',
+        responseOutcome: 'modified',
+        grantedCompletionDate: '2027-02-28',
+        respondedAt: '2026-08-08T00:00:00.000Z',
+      },
+      finalisedSnapshot: {},
+    });
+    const getWorkCompletion = vi.fn().mockResolvedValue({
+      ...COMPLETION_SET,
+      extensionRequests: [FINALISED_EXTENSION],
+    });
+    const api = stubApi({ respondExtensionRequest, getWorkCompletion });
+    renderCompletion(api);
+
+    fireEvent.change(await screen.findByLabelText('Outcome'), {
+      target: { value: 'modified' },
+    });
+    fireEvent.change(screen.getByLabelText('Granted completion date'), {
+      target: { value: '2027-02-28' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record response' }));
+
+    await waitFor(() => {
+      expect(respondExtensionRequest).toHaveBeenCalledWith(ORG_ID, EXTENSION_ID, {
+        outcome: 'modified',
+        grantedCompletionDate: '2027-02-28',
+      });
+    });
+  });
+
+  it('hides every completion and extension form from read-only members', async () => {
+    const getWorkCompletion = vi.fn().mockResolvedValue({
+      ...COMPLETION_SET,
+      extensionRequests: [FINALISED_EXTENSION],
+    });
+    const api = stubApi({ getWorkCompletion });
+    renderCompletion(api, { canModify: false, canIssue: false });
+
+    expect(await screen.findByText('DCW-1-Extension-01')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Set completion date' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Save draft extension request' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Finalise extension request' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record response' })).toBeNull();
   });
 });
 

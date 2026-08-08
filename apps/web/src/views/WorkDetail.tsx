@@ -11,6 +11,7 @@ import type {
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
+import { CompletionExtensions } from './CompletionExtensions.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -321,6 +322,14 @@ export function WorkDetail({
           {actionError}
         </p>
       )}
+
+      <CompletionExtensions
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
+        canIssue={canIssue}
+      />
 
       <h2>Contract instruments</h2>
       {instruments.length > 0 ? (
