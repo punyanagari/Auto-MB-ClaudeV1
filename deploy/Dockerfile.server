@@ -1,15 +1,16 @@
 # Auto-MB API server image. Build from the repository root:
 #   docker compose -f deploy/docker-compose.prod.yml build
-FROM node:22.13.0-alpine
+FROM node:22.16.0-alpine
 
 # pdftotext (poppler-utils) is the LOA text-extraction system dependency
 # (docs/DEPENDENCIES.md).
 RUN apk add --no-cache poppler-utils
 
-RUN corepack enable
+# Pinned directly rather than through corepack (see Dockerfile.web).
+RUN npm install -g pnpm@11.17.0
 WORKDIR /app
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/server ./apps/server
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/server..." --filter "@auto-mb/db..."

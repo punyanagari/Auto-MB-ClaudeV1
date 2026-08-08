@@ -1,9 +1,14 @@
 # Auto-MB web front end: production bundle served by Caddy, which also
 # terminates TLS and proxies /api to the server container.
-FROM node:22.13.0-alpine AS build
-RUN corepack enable
+FROM node:22.16.0-alpine AS build
+# Pinned directly rather than through corepack: corepack resolves the
+# packageManager field by downloading pnpm and verifying npm's registry
+# signature against keys baked into the corepack release, so an image
+# whose bundled corepack predates a registry key rotation fails the
+# build with an unrelated-looking signature error.
+RUN npm install -g pnpm@11.17.0
 WORKDIR /app
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/web..." \
