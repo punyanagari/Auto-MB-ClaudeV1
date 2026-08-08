@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ChallanDetailResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatInr } from '../format.js';
 
 interface ChallanDetailProps {
   readonly api: ApiClient;
@@ -158,8 +159,12 @@ export function ChallanDetail({
             <th scope="col">Description</th>
             <th scope="col">Unit</th>
             <th scope="col">Quantity</th>
-            <th scope="col">Rate (₹)</th>
-            <th scope="col">Amount (₹)</th>
+            <th scope="col" className="cell--numeric">
+              Rate
+            </th>
+            <th scope="col" className="cell--numeric">
+              Amount
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -169,8 +174,8 @@ export function ChallanDetail({
               <td className="cell--wrap">{item.description}</td>
               <td>{item.unit}</td>
               <td className="cell--numeric">{item.quantity}</td>
-              <td className="cell--numeric">{item.rate}</td>
-              <td className="cell--numeric">{item.lineAmount}</td>
+              <td className="cell--numeric">{formatInr(item.rate)}</td>
+              <td className="cell--numeric">{formatInr(item.lineAmount)}</td>
             </tr>
           ))}
           <tr>
@@ -178,7 +183,7 @@ export function ChallanDetail({
               Total
             </th>
             <td className="cell--numeric">
-              <strong>{total}</strong>
+              <strong>{formatInr(total)}</strong>
             </td>
           </tr>
         </tbody>

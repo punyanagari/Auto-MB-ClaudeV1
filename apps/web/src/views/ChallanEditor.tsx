@@ -269,7 +269,7 @@ export function ChallanEditor({
           </p>
         )}
 
-        <div className="actions">
+        <div className="actions action-bar">
           <button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Save draft'}
           </button>

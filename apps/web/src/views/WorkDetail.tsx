@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Challan, WorkDetailResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatInr } from '../format.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -99,11 +100,11 @@ export function WorkDetail({
         </div>
         <div>
           <dt>Advertised value</dt>
-          <dd>₹{work.advertisedValue}</dd>
+          <dd>{formatInr(work.advertisedValue)}</dd>
         </div>
         <div>
           <dt>Contract value</dt>
-          <dd>₹{work.contractValue}</dd>
+          <dd>{formatInr(work.contractValue)}</dd>
         </div>
         <div>
           <dt>Pricing</dt>

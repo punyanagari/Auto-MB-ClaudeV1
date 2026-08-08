@@ -510,7 +510,7 @@ export function ReviewLoa({
           </p>
         )}
 
-        <div className="actions">
+        <div className="actions action-bar">
           {canModify && (
             <button type="submit" disabled={pending}>
               {pending ? 'Creating Work…' : 'Confirm and create Work'}
