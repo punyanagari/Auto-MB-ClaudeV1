@@ -486,12 +486,21 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v2');
+    expect(exported.formatVersion).toBe('export-v3');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
     expect(exported.bills?.length).toBeGreaterThan(0);
     expect(Array.isArray(exported.challanItemSerials)).toBe(true);
+    // export-v3: assignments, the full organisation profile, and a
+    // portable manifest of every referenced stored object.
+    expect(Array.isArray(exported.workAssignments)).toBe(true);
+    expect(
+      Object.keys(exported.organisation as unknown as Record<string, unknown>),
+    ).toEqual(expect.arrayContaining(['address', 'gstin', 'logo_object_key']));
+    // This fixture seeds Works directly, so the manifest may hold no
+    // uploads — its presence and shape are the contract here.
+    expect(Array.isArray(exported.objectManifest)).toBe(true);
   });
 });
 

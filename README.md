@@ -14,17 +14,29 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
 
 ## Status
 
-**Foundation commit.** This repository contains:
+**In production with the pilot workflow complete** (docs/ROADMAP.md is the
+authoritative ledger). The repository contains:
 
-- a React web shell;
-- a Fastify API with OpenAPI and health endpoints;
-- a worker process boundary;
-- PostgreSQL migrations for organisations, memberships, works, LOA intake, Delivery Challans, RLS, and audit events;
-- the six-letter / 281-item LOA parser corpus adopted from the original project;
-- concise product, architecture, security, operations, and roadmap contracts;
-- agent instructions and CI.
+- the full LOA-to-DC workflow: LOA PDF upload → parser-assisted review →
+  confirmed Work → Delivery Challan drafting → issue with gapless
+  numbering → branded PDF → signed-copy evidence;
+- the retention workflow, backend and UI: delivery receipts, serial
+  traceability with installation, PBG/PAC/DOC instruments, Measurement
+  Book entries, and measured-quantity bills (prepared → submitted → paid);
+- a dashboard, organisation settings/branding, member roles, per-member
+  work assignments, and issue/cancel authorities;
+- multi-tenant PostgreSQL with forced RLS, an idempotent production
+  bootstrap, malware-scanned uploads, rate limiting, component-aware
+  readiness, backups with a CI-proven fresh-cluster restore, and a
+  Caddy-fronted production compose deployment with CD;
+- the six-letter / 281-item LOA parser corpus adopted from the original
+  project;
+- concise product, architecture, security, operations, and roadmap
+  contracts; agent instructions and CI.
 
-It does **not** yet claim a complete LOA-to-DC workflow or STQC certification.
+Owner MFA enforcement, external monitoring, DAST, and a follow-up
+security review remain before paid production (docs/ROADMAP.md). No STQC
+certification is claimed.
 
 ## Local start
 

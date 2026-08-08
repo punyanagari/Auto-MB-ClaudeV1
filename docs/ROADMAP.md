@@ -127,6 +127,29 @@ Integrity hardening (2026-08-08, following the external code review):
 - signed copies are stored content-addressed with their SHA-256 (replacements never overwrite earlier evidence), and a render that loses a race with a status change is discarded instead of leaving a false audit entry;
 - the organisation export (`export-v2`) now includes receipts, serials, instruments, MB entries, and bills — the complete business record again.
 
+Re-audit remediation (2026-08-08, second external review):
+
+- concurrency-safe last-owner protection: membership edits serialise on
+  the organisation row, proved with a simultaneous mutual-demotion test;
+- per-client rate limiting behind Caddy via a narrowly trusted proxy hop
+  (`TRUST_PROXY_HOPS=1` in production; forwarded headers ignored
+  otherwise);
+- LOA documents follow work scope: owner/office keep the review
+  workspace, other roles see only documents confirmed into Works within
+  their scope;
+- the readiness storage probe overwrites one fixed key instead of
+  leaving a file per poll;
+- the CI production smoke gates on complete readiness including the
+  malware scanner, and a new `restore-fresh-cluster` CI job proves
+  disaster recovery onto a roleless cluster (bootstrap now ensures the
+  definer role and repairs SECURITY DEFINER function ownership);
+- the product date invariant holds: challan dates can be neither in the
+  future (organisation-timezone today) nor before the LOA letter date —
+  API validation plus a database trigger (migration 0010);
+- export-v3 adds the organisation profile, work assignments, and a
+  portable object manifest (keys + hashes) for offboarding/incident
+  packages.
+
 Retention UI (2026-08-08):
 
 - challan screen: delivery receipt (record + facts), per-line serial recording, installation recording, all gated on the evidence roles (owner/office/site);

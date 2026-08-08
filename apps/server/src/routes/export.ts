@@ -50,12 +50,19 @@ export function registerExportRoutes(
         await requireOwner(tx, user.id);
 
         const [organisation] = await tx<Record<string, unknown>[]>`
-          select id, name, slug, timezone, status, created_at from organisations
+          select id, name, slug, timezone, status, created_at,
+                 address, gstin, contact_phone, contact_email,
+                 logo_object_key, logo_media_type
+          from organisations
         `;
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, status, created_at
           from organisation_memberships order by created_at
+        `;
+        const assignments = await tx<Record<string, unknown>[]>`
+          select user_id, work_id, created_at
+          from work_assignments order by created_at
         `;
         const works = await tx<Record<string, unknown>[]>`
           select * from works where deleted_at is null order by created_at
@@ -127,11 +134,53 @@ export function registerExportRoutes(
           ['details'],
         );
 
+        // A portable manifest of every stored object the record refers
+        // to — logo, uploaded LOAs, rendered and signed challan PDFs —
+        // with the recorded hashes, so an offboarding or incident package
+        // can fetch and verify the bytes (external re-audit).
+        const objectManifest = [
+          ...(organisation && organisation.logo_object_key !== null
+            ? [
+                {
+                  kind: 'organisation-logo',
+                  objectKey: organisation.logo_object_key,
+                  sha256: null,
+                },
+              ]
+            : []),
+          ...documents.map((document) => ({
+            kind: 'loa-document',
+            objectKey: document.object_key,
+            sha256: document.sha256,
+          })),
+          ...challans.flatMap((challan) => [
+            ...(challan.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'challan-rendered-pdf',
+                    objectKey: challan.rendered_object_key,
+                    sha256: challan.rendered_sha256 ?? null,
+                  },
+                ]
+              : []),
+            ...(challan.signed_copy_object_key !== null
+              ? [
+                  {
+                    kind: 'challan-signed-copy',
+                    objectKey: challan.signed_copy_object_key,
+                    sha256: challan.signed_copy_sha256 ?? null,
+                  },
+                ]
+              : []),
+          ]),
+        ];
+
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v2',
+          formatVersion: 'export-v3',
           organisation,
           members,
+          workAssignments: assignments,
           works,
           workSchedules: schedules,
           workItems: items,
@@ -143,6 +192,7 @@ export function registerExportRoutes(
           workInstruments: instruments,
           mbEntries,
           bills,
+          objectManifest,
           auditEvents,
         };
       });

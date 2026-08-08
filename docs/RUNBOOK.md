@@ -151,8 +151,11 @@ Per partner (3–5 for the pilot):
 - [ ] their first real LOA processed together, extraction quality noted;
 - [ ] support channel agreed (shared chat/phone), response expectations
       set (pilot: business hours, same-day);
+- [ ] retention walkthrough completed: receipt → serials/installation →
+      Measurement Book → bill preparation and status progression;
 - [ ] partner told, in writing, what the pilot does NOT yet include
-      (billing/Measurement Book, GST documents — docs/ROADMAP.md).
+      (GST documents, security-deposit/price-variation bill maths —
+      docs/ROADMAP.md).
 
 ## 9. External items before paid production
 

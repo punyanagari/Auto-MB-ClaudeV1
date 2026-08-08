@@ -308,6 +308,34 @@ describe('Delivery Challan lifecycle', () => {
     expect(response.json()).toMatchObject({ code: 'DRAFT_EXISTS' });
   });
 
+  it('rejects challan dates outside the product-contract window', async () => {
+    // Not in the future…
+    const future = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: itemAId, quantity: '1' }]),
+        challanDate: '2031-01-01',
+      },
+    });
+    expect(future.statusCode, future.body).toBe(400);
+    expect(future.json()).toMatchObject({ code: 'CHALLAN_DATE_INVALID' });
+
+    // …and never before the Work's LOA letter date (2025-06-01 here).
+    const beforeLetter = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: itemAId, quantity: '1' }]),
+        challanDate: '2025-05-31',
+      },
+    });
+    expect(beforeLetter.statusCode, beforeLetter.body).toBe(400);
+    expect(beforeLetter.json()).toMatchObject({ code: 'CHALLAN_DATE_INVALID' });
+  });
+
   it('refuses draft edits to read-only roles and accepts them from office', async () => {
     const denied = await authed(viewer, {
       method: 'PUT',
@@ -614,7 +642,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe('export-v2');
+    expect(exported.formatVersion).toBe('export-v3');
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(

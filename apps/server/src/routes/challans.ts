@@ -160,6 +160,40 @@ async function readDetail(
   };
 }
 
+/** Product contract: a document date is never in the future and never
+ * before the Work's LOA letter date. "Today" is the organisation's own
+ * timezone (default Asia/Kolkata), not the server clock — an evening
+ * entry in India must not be rejected as tomorrow's date. */
+async function assertChallanDate(
+  tx: TransactionSql,
+  workId: string,
+  challanDate: string,
+): Promise<void> {
+  const [bounds] = await tx<{ letter_date: string; today: string }[]>`
+    select w.letter_date::text as letter_date,
+           (now() at time zone o.timezone)::date::text as today
+    from works w
+    join organisations o on o.id = w.organisation_id
+    where w.id = ${workId}
+  `;
+  if (!bounds) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  // ISO dates compare correctly as strings.
+  if (challanDate > bounds.today) {
+    throw httpError(
+      400,
+      'CHALLAN_DATE_INVALID',
+      `The challan date cannot be in the future (today is ${bounds.today}).`,
+    );
+  }
+  if (challanDate < bounds.letter_date) {
+    throw httpError(
+      400,
+      'CHALLAN_DATE_INVALID',
+      `The challan date cannot precede the LOA letter date (${bounds.letter_date}).`,
+    );
+  }
+}
+
 /** Locks the challan row for the rest of the transaction and returns it.
  * Every state transition starts here so concurrent requests serialise. */
 async function lockChallan(tx: TransactionSql, challanId: string): Promise<ChallanRow> {
@@ -389,6 +423,7 @@ export function registerChallanRoutes(
               'Delivery Challans can only be drafted for active Works.',
             );
           }
+          await assertChallanDate(tx, workId, body.challanDate);
 
           const [created] = await tx<{ id: string }[]>`
             insert into delivery_challans (
@@ -479,6 +514,7 @@ export function registerChallanRoutes(
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
+        await assertChallanDate(tx, challan.work_id, body.challanDate);
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},

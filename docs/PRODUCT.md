@@ -127,7 +127,11 @@ A design partner can:
 
 ## 8. Explicit non-goals for the first release
 
-- Measurement Books and RA bills;
+- ~~Measurement Books and RA bills~~ — delivered ahead of plan in
+  Milestone 5: MB entries capped to delivered quantities and
+  measured-quantity bills (prepared → submitted → paid) are live, backend
+  and UI. Richer bill maths (security deposit deductions, price
+  variation) still wait for a design partner's real bill format;
 - GST IRN or e-way-bill integration;
 - procurement, POs, and quotations;
 - broad reporting;
