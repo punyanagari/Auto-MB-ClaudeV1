@@ -7,5 +7,6 @@ export * from './organisations.js';
 export * from './works.js';
 export * from './loa.js';
 export * from './challans.js';
+export * from './masters.js';
 export * from './retention.js';
 export * from './dashboard.js';
