@@ -52,7 +52,15 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          # The secret may hold the key either verbatim or base64-encoded
+          # (one line, survives any clipboard); detect and normalise.
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key.in
+          if grep -q "BEGIN .*PRIVATE KEY" ~/.ssh/deploy_key.in; then
+            mv ~/.ssh/deploy_key.in ~/.ssh/deploy_key
+          else
+            tr -d ' \t\r\n' < ~/.ssh/deploy_key.in | base64 -d > ~/.ssh/deploy_key
+            rm ~/.ssh/deploy_key.in
+          fi
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
