@@ -99,6 +99,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadExtensionResponse: vi.fn(),
     respondExtensionRequest: vi.fn(),
     downloadExtensionPdf: vi.fn(),
+    listApprovals: vi.fn().mockResolvedValue([]),
+    listWorkAmendments: vi.fn().mockResolvedValue([]),
+    proposeAmendment: vi.fn(),
+    proposeAddItem: vi.fn(),
+    approveAmendment: vi.fn(),
+    rejectAmendment: vi.fn(),
+    withdrawAmendment: vi.fn(),
+    setWorkSettings: vi.fn(),
     ...overrides,
   };
 }
@@ -441,6 +449,7 @@ describe('WorkDetail Issue Challans section', () => {
         canModify
         canRecordEvidence
         canIssue
+        isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
         onNewIssueChallan={handlers.onNewIssueChallan ?? vi.fn()}

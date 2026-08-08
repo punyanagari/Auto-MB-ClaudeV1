@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  ApprovalRequest,
   Bill,
   Challan,
   Instrument,
@@ -8,6 +9,7 @@ import type {
   MbEntry,
   Serial,
   WorkDetailResponse,
+  WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
@@ -21,6 +23,7 @@ interface WorkDetailProps {
   readonly canModify: boolean;
   readonly canRecordEvidence: boolean;
   readonly canIssue: boolean;
+  readonly isOwner: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
   readonly onNewIssueChallan: (workId: string) => void;
@@ -33,6 +36,30 @@ const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
   loan: 'Loan',
   return: 'Return',
 };
+/** Renders "original → effective" when an approved amendment changed the
+ * value, and the original alone otherwise. */
+function Amended({
+  original,
+  effective,
+}: {
+  readonly original: string;
+  readonly effective: string | null | undefined;
+}) {
+  if (effective === null || effective === undefined || effective === original) {
+    return <>{original}</>;
+  }
+  return (
+    <>
+      <s className="muted">{original}</s> → <strong>{effective}</strong>
+    </>
+  );
+}
+
+function itemFlags(item: WorkItem) {
+  const omitted =
+    item.effectiveQuantity !== null && Number(item.effectiveQuantity) === 0;
+  return { omitted, added: item.amendmentAdded === true };
+}
 
 const DIRECTION_LABELS = {
   below: 'below advertised',
@@ -76,6 +103,7 @@ export function WorkDetail({
   canModify,
   canRecordEvidence,
   canIssue,
+  isOwner,
   onNewChallan,
   onOpenChallan,
   onNewIssueChallan,
@@ -91,6 +119,7 @@ export function WorkDetail({
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
   const [serials, setSerials] = useState<readonly Serial[]>([]);
+  const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -110,6 +139,7 @@ export function WorkDetail({
       api.listBills(organisationId, workId),
       api.listWorkSerials(organisationId, workId),
       api.listIssueChallans(organisationId, workId),
+      api.listWorkAmendments(organisationId, workId),
     ])
       .then(
         ([
@@ -120,6 +150,7 @@ export function WorkDetail({
           loadedBills,
           loadedSerials,
           loadedIssueChallans,
+          loadedAmendments,
         ]) => {
           if (cancelled) return;
           setDetail(loaded);
@@ -129,6 +160,7 @@ export function WorkDetail({
           setBills(loadedBills);
           setSerials(loadedSerials);
           setIssueChallans(loadedIssueChallans);
+          setAmendments(loadedAmendments);
         },
       )
       .catch((cause: unknown) => {
@@ -232,6 +264,51 @@ export function WorkDetail({
           <dt>Status</dt>
           <dd>{work.status}</dd>
         </div>
+        <div>
+          <dt>Excess delivery</dt>
+          <dd>
+            {isOwner ? (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={work.allowExcessDelivery ?? false}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const next = event.currentTarget.checked;
+                    void act(
+                      async () => {
+                        const updated = await api.setWorkSettings(
+                          organisationId,
+                          workId,
+                          next,
+                        );
+                        setDetail((current) =>
+                          current === null
+                            ? current
+                            : {
+                                ...current,
+                                work: {
+                                  ...current.work,
+                                  allowExcessDelivery: updated.allowExcessDelivery,
+                                },
+                              },
+                        );
+                      },
+                      next
+                        ? 'Excess delivery allowed — issues may now exceed the sanctioned quantities.'
+                        : 'Excess delivery disallowed again.',
+                    );
+                  }}
+                />{' '}
+                Allow issuing beyond sanctioned quantities
+              </label>
+            ) : (
+              <span>
+                {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
+              </span>
+            )}
+          </dd>
+        </div>
       </dl>
 
       {schedules.map((schedule) => (
@@ -242,7 +319,8 @@ export function WorkDetail({
           </h2>
           <table className="data-table">
             <caption className="visually-hidden">
-              Awarded items in schedule {schedule.scheduleCode}
+              Awarded items in schedule {schedule.scheduleCode}; amended values show the
+              original beside the sanctioned change
             </caption>
             <thead>
               <tr>
@@ -254,19 +332,122 @@ export function WorkDetail({
               </tr>
             </thead>
             <tbody>
-              {schedule.items.map((item) => (
-                <tr key={item.id}>
-                  <th scope="row">{item.itemNumber}</th>
-                  <td className="cell--wrap">{item.description}</td>
-                  <td>{item.unitCode}</td>
-                  <td className="cell--numeric">{item.awardedQuantity}</td>
-                  <td className="cell--numeric">{item.effectiveRate}</td>
-                </tr>
-              ))}
+              {schedule.items.map((item) => {
+                const flags = itemFlags(item);
+                return (
+                  <tr key={item.id}>
+                    <th scope="row">
+                      {item.itemNumber}
+                      {flags.added && <span className="chip chip--issued">added</span>}
+                      {flags.omitted && (
+                        <span className="chip chip--cancelled">omitted</span>
+                      )}
+                    </th>
+                    <td className="cell--wrap">
+                      <Amended
+                        original={item.description}
+                        effective={item.effectiveDescription}
+                      />
+                    </td>
+                    <td>
+                      <Amended
+                        original={item.unitCode}
+                        effective={item.effectiveUnit}
+                      />
+                    </td>
+                    <td className="cell--numeric">
+                      <Amended
+                        original={item.awardedQuantity}
+                        effective={item.effectiveQuantity}
+                      />
+                    </td>
+                    <td className="cell--numeric">
+                      <Amended
+                        original={item.effectiveRate}
+                        effective={item.effectiveUnitRate}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       ))}
+
+      <h2>Amendments</h2>
+      <p className="muted">
+        Sanctioned changes to quantities, rates, descriptions, and items. The awarded
+        LOA values are never overwritten; approved amendments apply as effective values
+        shown beside the originals above.
+      </p>
+      {amendments.length > 0 ? (
+        <table className="data-table">
+          <caption className="visually-hidden">
+            Amendment requests for this Work
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Item</th>
+              <th scope="col">Change</th>
+              <th scope="col">Reason</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {amendments.map((amendment) => (
+              <tr key={amendment.id}>
+                <th scope="row">{amendment.itemNumber ?? '—'}</th>
+                <td className="cell--wrap">
+                  {amendment.diff
+                    .map(
+                      (entry) =>
+                        `${entry.field}: ${entry.before ?? '—'} → ${entry.after ?? '—'}`,
+                    )
+                    .join('; ')}
+                </td>
+                <td className="cell--wrap">{amendment.reason}</td>
+                <td>
+                  <span className={`chip chip--${amendment.status}`}>
+                    {amendment.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="muted">No amendments proposed yet.</p>
+      )}
+      {canModify && (
+        <AmendmentForm
+          items={workItems}
+          schedules={schedules}
+          pending={pending}
+          onProposeChange={(body) => {
+            void act(async () => {
+              await api.proposeAmendment(organisationId, workId, body);
+              const [freshDetail, freshAmendments] = await Promise.all([
+                api.getWork(organisationId, workId),
+                api.listWorkAmendments(organisationId, workId),
+              ]);
+              setDetail(freshDetail);
+              setAmendments(freshAmendments);
+            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+          }}
+          onProposeAdd={(body) => {
+            void act(async () => {
+              await api.proposeAddItem(organisationId, workId, body);
+              const [freshDetail, freshAmendments] = await Promise.all([
+                api.getWork(organisationId, workId),
+                api.listWorkAmendments(organisationId, workId),
+              ]);
+              setDetail(freshDetail);
+              setAmendments(freshAmendments);
+            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+          }}
+        />
+      )}
 
       <div className="card__header">
         <h2>Delivery Challans</h2>
@@ -834,6 +1015,200 @@ export function WorkDetail({
         </button>
       </div>
     </section>
+  );
+}
+
+interface AmendmentFormProps {
+  readonly items: readonly WorkItem[];
+  readonly schedules: WorkDetailResponse['schedules'];
+  readonly pending: boolean;
+  readonly onProposeChange: (body: {
+    workItemId: string;
+    reason: string;
+    changes: {
+      quantity?: string;
+      rate?: string;
+      description?: string;
+      unit?: string;
+    };
+  }) => void;
+  readonly onProposeAdd: (body: {
+    reason: string;
+    scheduleId: string;
+    itemNumber: string;
+    description: string;
+    unitCode: string;
+    quantity: string;
+    rate: string;
+  }) => void;
+}
+
+/** Proposes an amendment: change an item's values, omit it (quantity 0),
+ * or add a new item to a schedule. Every proposal needs a reason; approval
+ * authority decides whether it applies immediately or waits in the queue. */
+function AmendmentForm({
+  items,
+  schedules,
+  pending,
+  onProposeChange,
+  onProposeAdd,
+}: AmendmentFormProps) {
+  const [kind, setKind] = useState<'change' | 'omit' | 'add'>('change');
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        const reason = formValue(data, 'amendment-reason').trim();
+        if (kind === 'add') {
+          onProposeAdd({
+            reason,
+            scheduleId: formValue(data, 'amendment-schedule'),
+            itemNumber: formValue(data, 'amendment-item-number').trim(),
+            description: formValue(data, 'amendment-description').trim(),
+            unitCode: formValue(data, 'amendment-unit').trim(),
+            quantity: formValue(data, 'amendment-quantity').trim(),
+            rate: formValue(data, 'amendment-rate').trim(),
+          });
+          return;
+        }
+        const workItemId = formValue(data, 'amendment-item');
+        if (kind === 'omit') {
+          onProposeChange({ workItemId, reason, changes: { quantity: '0' } });
+          return;
+        }
+        const quantity = formValue(data, 'amendment-quantity').trim();
+        const rate = formValue(data, 'amendment-rate').trim();
+        const description = formValue(data, 'amendment-description').trim();
+        const unit = formValue(data, 'amendment-unit').trim();
+        onProposeChange({
+          workItemId,
+          reason,
+          changes: {
+            ...(quantity.length > 0 ? { quantity } : {}),
+            ...(rate.length > 0 ? { rate } : {}),
+            ...(description.length > 0 ? { description } : {}),
+            ...(unit.length > 0 ? { unit } : {}),
+          },
+        });
+      }}
+    >
+      <h3>Propose an amendment</h3>
+      <div className="field">
+        <label htmlFor="amendment-kind">Amendment</label>
+        <select
+          id="amendment-kind"
+          name="amendment-kind"
+          value={kind}
+          onChange={(event) => {
+            setKind(event.target.value as 'change' | 'omit' | 'add');
+          }}
+        >
+          <option value="change">Change an item</option>
+          <option value="omit">Omit an item</option>
+          <option value="add">Add a new item</option>
+        </select>
+      </div>
+      {kind !== 'add' && (
+        <div className="field">
+          <label htmlFor="amendment-item">Item to amend</label>
+          <select id="amendment-item" name="amendment-item" required>
+            {items.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.itemNumber} — {item.description}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {kind === 'add' && (
+        <>
+          <div className="field">
+            <label htmlFor="amendment-schedule">Schedule</label>
+            <select id="amendment-schedule" name="amendment-schedule" required>
+              {schedules.map((schedule) => (
+                <option key={schedule.id} value={schedule.id}>
+                  {schedule.scheduleCode} — {schedule.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="amendment-item-number">Item number</label>
+            <input
+              id="amendment-item-number"
+              name="amendment-item-number"
+              required
+              maxLength={100}
+            />
+          </div>
+        </>
+      )}
+      {kind !== 'omit' && (
+        <>
+          <div className="field">
+            <label htmlFor="amendment-quantity">
+              {kind === 'add' ? 'Quantity' : 'New quantity (optional)'}
+            </label>
+            <input
+              id="amendment-quantity"
+              name="amendment-quantity"
+              inputMode="decimal"
+              required={kind === 'add'}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="amendment-rate">
+              {kind === 'add' ? 'Rate (₹)' : 'New rate (₹, optional)'}
+            </label>
+            <input
+              id="amendment-rate"
+              name="amendment-rate"
+              inputMode="decimal"
+              required={kind === 'add'}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="amendment-description">
+              {kind === 'add' ? 'Description' : 'New description (optional)'}
+            </label>
+            <input
+              id="amendment-description"
+              name="amendment-description"
+              required={kind === 'add'}
+              maxLength={4000}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="amendment-unit">
+              {kind === 'add' ? 'Unit' : 'New unit (optional)'}
+            </label>
+            <input
+              id="amendment-unit"
+              name="amendment-unit"
+              required={kind === 'add'}
+              maxLength={20}
+            />
+          </div>
+        </>
+      )}
+      <div className="field">
+        <label htmlFor="amendment-reason">Reason</label>
+        <input
+          id="amendment-reason"
+          name="amendment-reason"
+          required
+          minLength={3}
+          maxLength={2000}
+        />
+      </div>
+      <div className="actions">
+        <button type="submit" disabled={pending}>
+          Submit amendment
+        </button>
+      </div>
+    </form>
   );
 }
 

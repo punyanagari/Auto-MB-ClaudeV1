@@ -88,6 +88,9 @@ export const WorkSchema = Type.Object(
       Type.Literal('cancelled'),
     ]),
     createdAt: Type.String({ format: 'date-time' }),
+    /** Present on the Work detail: PRODUCT.md invariant 5's escape hatch,
+     * set by an owner through PATCH /api/works/:id. */
+    allowExcessDelivery: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -102,6 +105,13 @@ export const WorkItemSchema = Type.Object(
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     awardedQuantity: DecimalStringSchema,
     effectiveRate: DecimalStringSchema,
+    /** Amendment overlays (Milestone 6): null/absent means the original
+     * applies. Present on the Work detail response. */
+    effectiveQuantity: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
+    effectiveUnitRate: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
+    effectiveDescription: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    effectiveUnit: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    amendmentAdded: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

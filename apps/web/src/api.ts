@@ -1,6 +1,8 @@
 import type {
   AddMemberRequest,
   ApiError,
+  ApprovalRequest,
+  ApprovalStatus,
   Bill,
   CancelChallanRequest,
   ChallanDetailResponse,
@@ -23,6 +25,8 @@ import type {
   MemberAssignmentsResponse,
   Membership,
   Organisation,
+  ProposeAddItemRequest,
+  ProposeAmendmentRequest,
   OrganisationProfile,
   Receipt,
   RecordMbEntryRequest,
@@ -49,6 +53,7 @@ import type {
   WorkBalanceResponse,
   WorkCompletionResponse,
   WorkDetailResponse,
+  WorkSettingsResponse,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -403,6 +408,43 @@ export interface ApiClient {
     extensionId: string,
     kind: 'rendered' | 'response',
   ) => Promise<Blob>;
+  readonly listApprovals: (
+    organisationId: string,
+    status?: ApprovalStatus,
+  ) => Promise<readonly ApprovalRequest[]>;
+  readonly listWorkAmendments: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly ApprovalRequest[]>;
+  readonly proposeAmendment: (
+    organisationId: string,
+    workId: string,
+    body: ProposeAmendmentRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeAddItem: (
+    organisationId: string,
+    workId: string,
+    body: ProposeAddItemRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly approveAmendment: (
+    organisationId: string,
+    approvalId: string,
+    note?: string,
+  ) => Promise<ApprovalRequest>;
+  readonly rejectAmendment: (
+    organisationId: string,
+    approvalId: string,
+    note: string,
+  ) => Promise<ApprovalRequest>;
+  readonly withdrawAmendment: (
+    organisationId: string,
+    approvalId: string,
+  ) => Promise<ApprovalRequest>;
+  readonly setWorkSettings: (
+    organisationId: string,
+    workId: string,
+    allowExcessDelivery: boolean,
+  ) => Promise<WorkSettingsResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -988,6 +1030,28 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
+    async listApprovals(organisationId, status) {
+      const query = status !== undefined ? `?status=${status}` : '';
+      const payload = await request<{ approvals: ApprovalRequest[] }>(
+        `/api/approvals${query}`,
+        { organisationId },
+      );
+      return payload.approvals;
+    },
+    async listWorkAmendments(organisationId, workId) {
+      const payload = await request<{ approvals: ApprovalRequest[] }>(
+        `/api/works/${workId}/amendments`,
+        { organisationId },
+      );
+      return payload.approvals;
+    },
+    async proposeAmendment(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
     async createExtensionRequest(organisationId, workId, body) {
       return request<ExtensionRequestDetailResponse>(
         `/api/works/${workId}/extension-requests`,
@@ -1050,6 +1114,40 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async proposeAddItem(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments/items`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async approveAmendment(organisationId, approvalId, note) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/approve`, {
+        method: 'POST',
+        body: note !== undefined ? { note } : {},
+        organisationId,
+      });
+    },
+    async rejectAmendment(organisationId, approvalId, note) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/reject`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async withdrawAmendment(organisationId, approvalId) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/withdraw`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async setWorkSettings(organisationId, workId, allowExcessDelivery) {
+      return request<WorkSettingsResponse>(`/api/works/${workId}`, {
+        method: 'PATCH',
+        body: { allowExcessDelivery },
+        organisationId,
+      });
     },
   };
 }

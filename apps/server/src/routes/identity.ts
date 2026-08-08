@@ -30,6 +30,7 @@ interface MembershipRow {
   work_scope: Membership['workScope'];
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
+  can_approve_amendments: boolean;
   status: Membership['status'];
 }
 
@@ -41,6 +42,7 @@ function toMembership(row: MembershipRow): Membership {
     workScope: row.work_scope,
     canIssueDocuments: row.can_issue_documents,
     canCancelDocuments: row.can_cancel_documents,
+    canApproveAmendments: row.can_approve_amendments,
     status: row.status,
   };
 }
@@ -69,7 +71,8 @@ export function registerIdentityRoutes(
         (tx) =>
           tx<MembershipRow[]>`
           select organisation_id, user_id, role, work_scope,
-                 can_issue_documents, can_cancel_documents, status
+                 can_issue_documents, can_cancel_documents,
+                 can_approve_amendments, status
           from organisation_memberships
           order by organisation_id
         `,
@@ -152,7 +155,8 @@ export function registerIdentityRoutes(
         (tx) =>
           tx<MembershipRow[]>`
             select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents, status
+                   can_issue_documents, can_cancel_documents,
+                   can_approve_amendments, status
             from organisation_memberships
             order by created_at, user_id
           `,
@@ -207,13 +211,15 @@ export function registerIdentityRoutes(
           await tx`
             insert into organisation_memberships (
               organisation_id, user_id, role, work_scope,
-              can_issue_documents, can_cancel_documents, status
+              can_issue_documents, can_cancel_documents,
+              can_approve_amendments, status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
               ${body.workScope ?? 'all'},
               ${body.canIssueDocuments ?? false},
               ${body.canCancelDocuments ?? false},
+              ${body.canApproveAmendments ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -240,7 +246,8 @@ export function registerIdentityRoutes(
 
           return tx<MembershipRow[]>`
             select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents, status
+                   can_issue_documents, can_cancel_documents,
+                   can_approve_amendments, status
             from organisation_memberships
             order by created_at, user_id
           `;
@@ -337,6 +344,8 @@ export function registerIdentityRoutes(
                 coalesce(${body.canIssueDocuments ?? null}, can_issue_documents),
               can_cancel_documents =
                 coalesce(${body.canCancelDocuments ?? null}, can_cancel_documents),
+              can_approve_amendments =
+                coalesce(${body.canApproveAmendments ?? null}, can_approve_amendments),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
@@ -372,7 +381,8 @@ export function registerIdentityRoutes(
           `;
           return tx<MembershipRow[]>`
             select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents, status
+                   can_issue_documents, can_cancel_documents,
+                   can_approve_amendments, status
             from organisation_memberships
             order by created_at, user_id
           `;

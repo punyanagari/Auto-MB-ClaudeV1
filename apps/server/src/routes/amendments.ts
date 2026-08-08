@@ -1,0 +1,910 @@
+import { randomUUID } from 'node:crypto';
+import {
+  ApiErrorSchema,
+  ApprovalListQuerySchema,
+  ApprovalListResponseSchema,
+  ApprovalRequestSchema,
+  ApproveAmendmentRequestSchema,
+  ProposeAddItemRequestSchema,
+  ProposeAmendmentRequestSchema,
+  RejectAmendmentRequestSchema,
+  UpdateWorkSettingsRequestSchema,
+  WorkSettingsResponseSchema,
+  type AmendmentDiffEntry,
+  type ApprovalListQuery,
+  type ApprovalRequest,
+  type ApproveAmendmentRequest,
+  type ProposeAddItemRequest,
+  type ProposeAmendmentRequest,
+  type RejectAmendmentRequest,
+  type UpdateWorkSettingsRequest,
+} from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
+import type { FastifyInstance } from 'fastify';
+import type { Sql, TransactionSql } from '@auto-mb/db';
+import { jsonb } from '@auto-mb/db';
+import type { Auth } from '../auth.js';
+import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import { httpError } from '../http.js';
+import { parseJsonbColumn } from '../jsonb-column.js';
+import { requireUser } from '../session.js';
+import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+
+const errorResponses = {
+  400: ApiErrorSchema,
+  401: ApiErrorSchema,
+  403: ApiErrorSchema,
+  404: ApiErrorSchema,
+  409: ApiErrorSchema,
+} as const;
+
+const IdParamsSchema = Type.Object(
+  {
+    id: Type.String({
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    }),
+  },
+  { additionalProperties: false },
+);
+
+interface ChangeSet {
+  quantity?: string;
+  rate?: string;
+  description?: string;
+  unit?: string;
+}
+
+/** The stored `proposed` snapshot: everything apply needs, verbatim. */
+type ProposedSnapshot =
+  | {
+      kind: 'change_item';
+      workItemId: string;
+      itemNumber: string;
+      changes: ChangeSet;
+    }
+  | {
+      kind: 'add_item';
+      scheduleId: string;
+      itemNumber: string;
+      description: string;
+      unitCode: string;
+      quantity: string;
+      rate: string;
+    };
+
+interface ApprovalRow {
+  id: string;
+  entity_type: 'work_item_amendment';
+  entity_id: string | null;
+  work_id: string;
+  work_code: string;
+  item_number: string | null;
+  proposed: unknown;
+  diff: unknown;
+  reason: string;
+  status: ApprovalRequest['status'];
+  requested_by_user_id: string;
+  decided_by_user_id: string | null;
+  decided_at: Date | null;
+  decision_note: string | null;
+  created_at: Date;
+}
+
+const APPROVAL_SELECT = `
+  select ar.id, ar.entity_type, ar.entity_id, ar.work_id, w.work_code,
+         coalesce(wi.item_number, ar.proposed->>'itemNumber') as item_number,
+         ar.proposed, ar.diff, ar.reason, ar.status, ar.requested_by_user_id,
+         ar.decided_by_user_id, ar.decided_at, ar.decision_note, ar.created_at
+  from approval_requests ar
+  join works w on w.id = ar.work_id
+  left join work_items wi on wi.id = ar.entity_id
+`;
+
+function toApproval(row: ApprovalRow): ApprovalRequest {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    workId: row.work_id,
+    workCode: row.work_code,
+    itemNumber: row.item_number,
+    proposed: parseJsonbColumn(row.proposed),
+    diff: parseJsonbColumn(row.diff) as AmendmentDiffEntry[],
+    reason: row.reason,
+    status: row.status,
+    requestedByUserId: row.requested_by_user_id,
+    decidedByUserId: row.decided_by_user_id,
+    decidedAt: row.decided_at?.toISOString() ?? null,
+    decisionNote: row.decision_note,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+async function readApproval(
+  tx: TransactionSql,
+  approvalId: string,
+): Promise<ApprovalRequest> {
+  const [row] = await tx<ApprovalRow[]>`
+    ${tx.unsafe(APPROVAL_SELECT)}
+    where ar.id = ${approvalId}
+  `;
+  if (!row) throw httpError(404, 'APPROVAL_NOT_FOUND', 'No such approval request.');
+  return toApproval(row);
+}
+
+/** can_approve_amendments is an explicit per-member authority, separate
+ * from role — the same model as can_issue_documents. */
+async function isApprover(tx: TransactionSql, userId: string): Promise<boolean> {
+  const [membership] = await tx<{ can_approve_amendments: boolean }[]>`
+    select can_approve_amendments from organisation_memberships
+    where user_id = ${userId}
+  `;
+  return membership?.can_approve_amendments ?? false;
+}
+
+async function requireApprover(tx: TransactionSql, userId: string): Promise<void> {
+  if (!(await isApprover(tx, userId))) {
+    throw httpError(
+      403,
+      'AUTHORITY_REQUIRED',
+      'Your membership does not carry the amendment-approval authority.',
+    );
+  }
+}
+
+async function audit(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  action: string,
+  entityId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    values (
+      ${organisationId}, ${userId}, ${action}, 'approval_requests',
+      ${entityId}, ${jsonb(tx, details)}
+    )
+  `;
+}
+
+/** Rejects negative decimals before they reach a CHECK constraint, so the
+ * caller gets a friendly 400 instead of a 500. */
+function assertNonNegative(value: string, field: string): void {
+  if (value.startsWith('-')) {
+    throw httpError(400, 'AMENDMENT_INVALID', `${field} cannot be negative.`);
+  }
+}
+
+/**
+ * Applies an approved amendment in the CURRENT transaction and marks the
+ * request approved. Called from the approve endpoint and from direct-apply
+ * proposals. The request row must already be locked and pending, and the
+ * caller must have re-checked the approver authority inside this same
+ * transaction — approval and apply are one atomic step: if any invariant
+ * fails against live state, the whole transaction rolls back and the
+ * request REMAINS PENDING (documented decision: the approve call fails
+ * atomically rather than recording a failed apply).
+ */
+async function applyApproval(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  request: {
+    id: string;
+    entity_id: string | null;
+    work_id: string;
+    proposed: unknown;
+    diff: unknown;
+  },
+  note: string | null,
+): Promise<void> {
+  const proposed = parseJsonbColumn(request.proposed) as ProposedSnapshot;
+  let boundEntityId = request.entity_id;
+
+  if (proposed.kind === 'change_item') {
+    // Lock the target item: delivery-challan issue takes the same lock
+    // before validating quantities, so a ceiling change can never race an
+    // in-flight issue (see challans.ts).
+    const [item] = await tx<{ id: string; item_number: string }[]>`
+      select id, item_number from work_items
+      where id = ${proposed.workItemId} and work_id = ${request.work_id}
+        and deleted_at is null
+      for update
+    `;
+    if (!item) {
+      throw httpError(
+        409,
+        'AMENDMENT_ITEM_MISSING',
+        'The amended Work item no longer exists.',
+      );
+    }
+    const changes = proposed.changes;
+    if (changes.quantity !== undefined) {
+      // Floor revalidation against LIVE state, in exact SQL numeric
+      // arithmetic: the ceiling can never drop below what issued challans
+      // already delivered.
+      const [floor] = await tx<{ delivered: string; violates: boolean }[]>`
+        select coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)::text
+                 as delivered,
+               coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
+                 > ${changes.quantity}::numeric(18,3) as violates
+        from delivery_challan_items dci
+        join delivery_challans dc on dc.id = dci.delivery_challan_id
+        where dci.work_item_id = ${item.id}
+      `;
+      if (floor?.violates === true) {
+        throw httpError(
+          409,
+          'AMENDMENT_FLOOR_VIOLATION',
+          `The quantity of ${item.item_number} cannot go below the already-delivered ${floor.delivered}.`,
+        );
+      }
+    }
+    await tx`
+      update work_items set
+        effective_quantity = case
+          when ${changes.quantity !== undefined}
+          then ${changes.quantity ?? null}::numeric(18,3)
+          else effective_quantity end,
+        effective_unit_rate = case
+          when ${changes.rate !== undefined}
+          then ${changes.rate ?? null}::numeric(18,2)
+          else effective_unit_rate end,
+        effective_description = case
+          when ${changes.description !== undefined}
+          then ${changes.description ?? null}
+          else effective_description end,
+        effective_unit = case
+          when ${changes.unit !== undefined}
+          then ${changes.unit ?? null}
+          else effective_unit end
+      where id = ${item.id}
+    `;
+  } else {
+    // add_item: the approved values become the new item's baseline.
+    const [schedule] = await tx<{ id: string }[]>`
+      select id from work_schedules
+      where id = ${proposed.scheduleId} and work_id = ${request.work_id}
+    `;
+    if (!schedule) {
+      throw httpError(
+        409,
+        'AMENDMENT_SCHEDULE_MISSING',
+        'The target schedule no longer exists on this Work.',
+      );
+    }
+    const newItemId = randomUUID();
+    await tx`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, amendment_added,
+        source_approval_id, source_evidence
+      )
+      values (
+        ${newItemId}, ${organisationId}, ${request.work_id},
+        ${proposed.scheduleId}, ${proposed.itemNumber}, ${proposed.description},
+        ${proposed.unitCode}, ${proposed.quantity}, ${proposed.rate}, true,
+        ${request.id}, ${jsonb(tx, { amendmentApprovalId: request.id })}
+      )
+    `.catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === '23505') {
+        throw httpError(
+          409,
+          'DUPLICATE_ENTRY',
+          `Item number ${proposed.itemNumber} already exists in this Work.`,
+        );
+      }
+      throw error;
+    });
+    boundEntityId = newItemId;
+  }
+
+  await tx`
+    update approval_requests set
+      status = 'approved',
+      decided_by_user_id = ${userId},
+      decided_at = now(),
+      decision_note = ${note},
+      entity_id = ${boundEntityId}
+    where id = ${request.id}
+  `;
+  await audit(tx, organisationId, userId, 'amendment.approved', request.id, {
+    workId: request.work_id,
+    entityId: boundEntityId,
+    kind: proposed.kind,
+    diff: parseJsonbColumn(request.diff),
+  });
+}
+
+export function registerAmendmentRoutes(
+  app: FastifyInstance,
+  auth: Auth,
+  database: Sql,
+): void {
+  // --- Propose a change to an existing item (quantity/rate/description/
+  // unit; quantity '0' omits the item) --------------------------------------
+  app.post(
+    '/api/works/:id/amendments',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ProposeAmendmentRequestSchema,
+        response: { 201: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as ProposeAmendmentRequest;
+      const changed = Object.keys(body.changes);
+      if (changed.length === 0) {
+        throw httpError(
+          400,
+          'AMENDMENT_EMPTY',
+          'An amendment must change at least one field.',
+        );
+      }
+      if (body.changes.quantity !== undefined) {
+        assertNonNegative(body.changes.quantity, 'quantity');
+      }
+      if (body.changes.rate !== undefined) {
+        assertNonNegative(body.changes.rate, 'rate');
+      }
+
+      const approval = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ status: string }[]>`
+            select status from works where id = ${workId} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          if (work.status !== 'active') {
+            throw httpError(
+              409,
+              'WORK_NOT_ACTIVE',
+              'Amendments apply to active Works only.',
+            );
+          }
+          // Lock the item so the diff's before-values are consistent with
+          // any concurrent apply.
+          const [item] = await tx<
+            {
+              id: string;
+              item_number: string;
+              current_quantity: string;
+              current_rate: string;
+              current_description: string;
+              current_unit: string;
+            }[]
+          >`
+            select id, item_number,
+                   coalesce(effective_quantity, awarded_quantity)::text as current_quantity,
+                   coalesce(effective_unit_rate, effective_rate)::text as current_rate,
+                   coalesce(effective_description, description) as current_description,
+                   coalesce(effective_unit, unit_code) as current_unit
+            from work_items
+            where id = ${body.workItemId} and work_id = ${workId}
+              and deleted_at is null
+            for update
+          `;
+          if (!item) {
+            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+          }
+
+          // Normalise proposed decimals through SQL numeric, so the stored
+          // snapshot and diff carry the exact values apply will write.
+          const [normalised] = await tx<
+            { quantity: string | null; rate: string | null }[]
+          >`
+            select ${body.changes.quantity ?? null}::numeric(18,3)::text as quantity,
+                   ${body.changes.rate ?? null}::numeric(18,2)::text as rate
+          `;
+          const changes: ChangeSet = {
+            ...(body.changes.quantity !== undefined && normalised?.quantity != null
+              ? { quantity: normalised.quantity }
+              : {}),
+            ...(body.changes.rate !== undefined && normalised?.rate != null
+              ? { rate: normalised.rate }
+              : {}),
+            ...(body.changes.description !== undefined
+              ? { description: body.changes.description }
+              : {}),
+            ...(body.changes.unit !== undefined ? { unit: body.changes.unit } : {}),
+          };
+          const diff: AmendmentDiffEntry[] = [];
+          if (changes.quantity !== undefined) {
+            diff.push({
+              field: 'quantity',
+              before: item.current_quantity,
+              after: changes.quantity,
+            });
+          }
+          if (changes.rate !== undefined) {
+            diff.push({
+              field: 'rate',
+              before: item.current_rate,
+              after: changes.rate,
+            });
+          }
+          if (changes.description !== undefined) {
+            diff.push({
+              field: 'description',
+              before: item.current_description,
+              after: changes.description,
+            });
+          }
+          if (changes.unit !== undefined) {
+            diff.push({
+              field: 'unit',
+              before: item.current_unit,
+              after: changes.unit,
+            });
+          }
+
+          const proposed: ProposedSnapshot = {
+            kind: 'change_item',
+            workItemId: item.id,
+            itemNumber: item.item_number,
+            changes,
+          };
+          const [created] = await tx<
+            { id: string; entity_id: string | null; work_id: string }[]
+          >`
+            insert into approval_requests (
+              organisation_id, entity_type, entity_id, work_id, proposed,
+              diff, reason, requested_by_user_id
+            )
+            values (
+              ${organisationId}, 'work_item_amendment', ${item.id}, ${workId},
+              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${user.id}
+            )
+            returning id, entity_id, work_id
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'PENDING_EXISTS',
+                'This item already has a pending amendment; decide or withdraw it first.',
+              );
+            }
+            throw error;
+          });
+          if (!created) throw new Error('approval insert returned no row');
+          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+            workId,
+            workItemId: item.id,
+            itemNumber: item.item_number,
+            diff,
+            reason: body.reason,
+          });
+
+          // Direct-apply: an approval-authority holder's proposal applies
+          // immediately, auto-recording the approved request with
+          // decided_by = requester — the audit trail is identical.
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Propose ADDING a new item to a schedule ------------------------------
+  app.post(
+    '/api/works/:id/amendments/items',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ProposeAddItemRequestSchema,
+        response: { 201: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as ProposeAddItemRequest;
+      assertNonNegative(body.rate, 'rate');
+      if (body.quantity.startsWith('-') || Number(body.quantity) === 0) {
+        throw httpError(
+          400,
+          'AMENDMENT_INVALID',
+          'A new item needs a strictly positive quantity.',
+        );
+      }
+
+      const approval = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ status: string }[]>`
+            select status from works where id = ${workId} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          if (work.status !== 'active') {
+            throw httpError(
+              409,
+              'WORK_NOT_ACTIVE',
+              'Amendments apply to active Works only.',
+            );
+          }
+          const [schedule] = await tx<{ id: string }[]>`
+            select id from work_schedules
+            where id = ${body.scheduleId} and work_id = ${workId}
+          `;
+          if (!schedule) {
+            throw httpError(404, 'SCHEDULE_NOT_FOUND', 'No such schedule.');
+          }
+          const [duplicate] = await tx<{ id: string }[]>`
+            select id from work_items
+            where work_id = ${workId} and item_number = ${body.itemNumber}
+          `;
+          if (duplicate) {
+            throw httpError(
+              409,
+              'DUPLICATE_ENTRY',
+              `Item number ${body.itemNumber} already exists in this Work.`,
+            );
+          }
+          const [normalised] = await tx<{ quantity: string; rate: string }[]>`
+            select ${body.quantity}::numeric(18,3)::text as quantity,
+                   ${body.rate}::numeric(18,2)::text as rate
+          `;
+          if (!normalised) throw new Error('normalisation returned no row');
+          const proposed: ProposedSnapshot = {
+            kind: 'add_item',
+            scheduleId: body.scheduleId,
+            itemNumber: body.itemNumber,
+            description: body.description,
+            unitCode: body.unitCode,
+            quantity: normalised.quantity,
+            rate: normalised.rate,
+          };
+          const diff: AmendmentDiffEntry[] = [
+            { field: 'item', before: null, after: body.itemNumber },
+            { field: 'description', before: null, after: body.description },
+            { field: 'unit', before: null, after: body.unitCode },
+            { field: 'quantity', before: null, after: normalised.quantity },
+            { field: 'rate', before: null, after: normalised.rate },
+          ];
+          const [created] = await tx<
+            { id: string; entity_id: string | null; work_id: string }[]
+          >`
+            insert into approval_requests (
+              organisation_id, entity_type, entity_id, work_id, proposed,
+              diff, reason, requested_by_user_id
+            )
+            values (
+              ${organisationId}, 'work_item_amendment', null, ${workId},
+              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${user.id}
+            )
+            returning id, entity_id, work_id
+          `;
+          if (!created) throw new Error('approval insert returned no row');
+          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+            workId,
+            itemNumber: body.itemNumber,
+            diff,
+            reason: body.reason,
+          });
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Per-Work amendment history ------------------------------------------
+  app.get(
+    '/api/works/:id/amendments',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ApprovalListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ id: string }[]>`
+            select id from works where id = ${workId} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          return tx<ApprovalRow[]>`
+            ${tx.unsafe(APPROVAL_SELECT)}
+            where ar.work_id = ${workId}
+            order by ar.created_at desc, ar.id
+          `;
+        },
+      );
+      return { approvals: rows.map(toApproval) };
+    },
+  );
+
+  // --- Organisation-wide approvals queue -----------------------------------
+  app.get(
+    '/api/approvals',
+    {
+      schema: {
+        querystring: ApprovalListQuerySchema,
+        response: { 200: ApprovalListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { status } = request.query as ApprovalListQuery;
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          // 'assigned'-scoped memberships see only their Works' requests.
+          const full = await hasFullWorkScope(tx, user.id);
+          return tx<ApprovalRow[]>`
+            ${tx.unsafe(APPROVAL_SELECT)}
+            where (${status ?? null}::text is null or ar.status = ${status ?? null})
+              and (${full} or exists (
+                select 1 from work_assignments wa
+                where wa.work_id = ar.work_id and wa.user_id = ${user.id}
+              ))
+            order by ar.created_at desc, ar.id
+          `;
+        },
+      );
+      return { approvals: rows.map(toApproval) };
+    },
+  );
+
+  // --- Decide ---------------------------------------------------------------
+  app.post(
+    '/api/approvals/:id/approve',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ApproveAmendmentRequestSchema,
+        response: { 200: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as ApproveAmendmentRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        // Authority is validated HERE, at apply time, in the same
+        // transaction that applies — not merely at submission.
+        await requireApprover(tx, user.id);
+        const [row] = await tx<
+          {
+            id: string;
+            entity_id: string | null;
+            work_id: string;
+            status: string;
+            proposed: unknown;
+            diff: unknown;
+          }[]
+        >`
+          select id, entity_id, work_id, status, proposed, diff
+          from approval_requests where id = ${id}
+          for update
+        `;
+        if (!row) {
+          throw httpError(404, 'APPROVAL_NOT_FOUND', 'No such approval request.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.status !== 'pending') {
+          throw httpError(
+            409,
+            'APPROVAL_NOT_PENDING',
+            `This request is already ${row.status}.`,
+          );
+        }
+        await applyApproval(tx, organisationId, user.id, row, body.note ?? null);
+        return readApproval(tx, id);
+      });
+    },
+  );
+
+  app.post(
+    '/api/approvals/:id/reject',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: RejectAmendmentRequestSchema,
+        response: { 200: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as RejectAmendmentRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireApprover(tx, user.id);
+        const [row] = await tx<{ status: string; work_id: string }[]>`
+          select status, work_id from approval_requests where id = ${id}
+          for update
+        `;
+        if (!row) {
+          throw httpError(404, 'APPROVAL_NOT_FOUND', 'No such approval request.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.status !== 'pending') {
+          throw httpError(
+            409,
+            'APPROVAL_NOT_PENDING',
+            `This request is already ${row.status}.`,
+          );
+        }
+        await tx`
+          update approval_requests set
+            status = 'rejected',
+            decided_by_user_id = ${user.id},
+            decided_at = now(),
+            decision_note = ${body.note}
+          where id = ${id}
+        `;
+        await audit(tx, organisationId, user.id, 'amendment.rejected', id, {
+          note: body.note,
+        });
+        return readApproval(tx, id);
+      });
+    },
+  );
+
+  app.post(
+    '/api/approvals/:id/withdraw',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [row] = await tx<
+          { status: string; work_id: string; requested_by_user_id: string }[]
+        >`
+          select status, work_id, requested_by_user_id
+          from approval_requests where id = ${id}
+          for update
+        `;
+        if (!row) {
+          throw httpError(404, 'APPROVAL_NOT_FOUND', 'No such approval request.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.requested_by_user_id !== user.id) {
+          throw httpError(
+            403,
+            'NOT_REQUESTER',
+            'Only the requester may withdraw their own pending request.',
+          );
+        }
+        if (row.status !== 'pending') {
+          throw httpError(
+            409,
+            'APPROVAL_NOT_PENDING',
+            `This request is already ${row.status}.`,
+          );
+        }
+        await tx`
+          update approval_requests set
+            status = 'withdrawn',
+            decided_by_user_id = ${user.id},
+            decided_at = now()
+          where id = ${id}
+        `;
+        await audit(tx, organisationId, user.id, 'amendment.withdrawn', id, {});
+        return readApproval(tx, id);
+      });
+    },
+  );
+
+  // --- Work settings: the allow_excess_delivery escape hatch ----------------
+  app.patch(
+    '/api/works/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: UpdateWorkSettingsRequestSchema,
+        response: { 200: WorkSettingsResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as UpdateWorkSettingsRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [membership] = await tx<{ role: string }[]>`
+          select role from organisation_memberships where user_id = ${user.id}
+        `;
+        if (membership?.role !== 'owner') {
+          throw httpError(
+            403,
+            'OWNER_REQUIRED',
+            'Only an organisation owner may change excess-delivery permission.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, workId);
+        const [updated] = await tx<{ id: string; allow_excess_delivery: boolean }[]>`
+          update works set allow_excess_delivery = ${body.allowExcessDelivery}
+          where id = ${workId} and deleted_at is null
+          returning id, allow_excess_delivery
+        `;
+        if (!updated) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, entity_id, details
+          )
+          values (
+            ${organisationId}, ${user.id}, 'work.excess_delivery_set', 'works',
+            ${workId}, ${jsonb(tx, { allowExcessDelivery: body.allowExcessDelivery })}
+          )
+        `;
+        return {
+          id: updated.id,
+          allowExcessDelivery: updated.allow_excess_delivery,
+        };
+      });
+    },
+  );
+}

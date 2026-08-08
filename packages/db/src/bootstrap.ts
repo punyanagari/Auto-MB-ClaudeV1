@@ -50,6 +50,8 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   extension_request_counters: 'SELECT, INSERT, UPDATE',
   // Issue Challan numbering state: no DELETE, like the DC counter (0014).
   issue_challan_counters: 'SELECT, INSERT, UPDATE',
+  // Amendment approvals are a decision ledger: no DELETE (0012).
+  approval_requests: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

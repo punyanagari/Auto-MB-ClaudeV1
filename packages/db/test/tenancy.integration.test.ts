@@ -51,6 +51,7 @@ const TENANT_TABLES = [
   'organisation_signatories',
   'extension_requests',
   'extension_request_counters',
+  'approval_requests',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -83,6 +84,7 @@ const DELETE_REVOKED_TABLES = [
   'unit_masters',
   'organisation_signatories',
   'extension_request_counters',
+  'approval_requests',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -328,6 +330,17 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
               '2026-02-03', ${userId})
+    `;
+    await tx`
+      insert into approval_requests (
+        organisation_id, entity_type, entity_id, work_id, proposed, diff,
+        reason, requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'work_item_amendment', ${workItem.id}, ${work.id},
+        '{"kind":"change_item"}'::jsonb, '[]'::jsonb,
+        'Integration seed amendment', ${userId}
+      )
     `;
 
     // Milestone 7 masters tables: one row each.
