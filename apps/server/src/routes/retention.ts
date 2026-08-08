@@ -185,8 +185,13 @@ export function registerRetentionRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          // The row lock serialises receipt recording against concurrent
+          // cancellation: whichever transaction wins, the other sees the
+          // final status.
           const [challan] = await tx<{ status: string; work_id: string }[]>`
-            select status, work_id from delivery_challans where id = ${challanId}
+            select status, work_id from delivery_challans
+            where id = ${challanId}
+            for update
           `;
           if (!challan) {
             throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
@@ -330,7 +335,7 @@ export function registerRetentionRoutes(
             join delivery_challans dc on dc.id = dci.delivery_challan_id
             where dci.id = ${body.challanItemId}
               and dci.delivery_challan_id = ${challanId}
-            for update of dci
+            for update of dci, dc
           `;
           if (!line) {
             throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
@@ -585,6 +590,21 @@ export function registerRetentionRoutes(
       const body = request.body as UpdateInstrumentRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
+        if (body.status !== undefined) {
+          const [current] = await tx<{ status: string }[]>`
+            select status from work_instruments where id = ${id} for update
+          `;
+          if (!current) {
+            throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
+          }
+          if (current.status !== body.status && current.status !== 'active') {
+            throw httpError(
+              409,
+              'INSTRUMENT_STATUS_TERMINAL',
+              `A ${current.status} instrument cannot change status.`,
+            );
+          }
+        }
         const [row] = await tx<InstrumentRow[]>`
           update work_instruments
           set status = coalesce(${body.status ?? null}, status),
@@ -678,6 +698,30 @@ export function registerRetentionRoutes(
           `;
           if (!item) {
             throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+          }
+          if (body.deliveryChallanId !== undefined) {
+            // The claimed provenance must be a real, issued challan of this
+            // Work; the row lock serialises against cancellation, and the
+            // composite foreign key backs this check in the database.
+            const [source] = await tx<{ status: string }[]>`
+              select status from delivery_challans
+              where id = ${body.deliveryChallanId} and work_id = ${workId}
+              for update
+            `;
+            if (!source) {
+              throw httpError(
+                404,
+                'CHALLAN_NOT_FOUND',
+                'The referenced challan does not belong to this Work.',
+              );
+            }
+            if (source.status !== 'issued') {
+              throw httpError(
+                409,
+                'CHALLAN_STATUS_CONFLICT',
+                'Measurements reference issued challans.',
+              );
+            }
           }
           const [exceeds] = await tx<{ exceeded: boolean }[]>`
             select (
@@ -829,6 +873,11 @@ export function registerRetentionRoutes(
             );
           }
 
+          // Aggregate over the EXACT locked ID set — never a fresh
+          // bill_id-is-null scan. A measurement committed after the lock
+          // stays unbilled and lands on the next bill; it must not be
+          // stamped into a snapshot that never counted it.
+          const lockedIds = unbilled.map((entry) => entry.id);
           const [totals] = await tx<{ lines: unknown; total: string }[]>`
             select jsonb_agg(line order by item_number) as lines,
                    sum(amount)::numeric(18,2)::text as total
@@ -845,7 +894,7 @@ export function registerRetentionRoutes(
                      (sum(mb.measured_quantity) * wi.effective_rate)::numeric(18,2) as amount
               from mb_entries mb
               join work_items wi on wi.id = mb.work_item_id
-              where mb.work_id = ${workId} and mb.bill_id is null
+              where mb.id = any(${lockedIds}::uuid[])
               group by wi.id
             ) grouped
           `;
@@ -869,7 +918,7 @@ export function registerRetentionRoutes(
 
           await tx`
             update mb_entries set bill_id = ${row.id}
-            where work_id = ${workId} and bill_id is null
+            where id = any(${lockedIds}::uuid[])
           `;
           await audit(tx, organisationId, user.id, 'bill.prepared', 'bills', row.id, {
             billNumber: row.bill_number,

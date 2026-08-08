@@ -92,6 +92,24 @@ export function registerExportRoutes(
           `,
           ['source_evidence'],
         );
+        const receipts = await tx<Record<string, unknown>[]>`
+          select * from challan_receipts order by created_at
+        `;
+        const serials = await tx<Record<string, unknown>[]>`
+          select * from challan_item_serials order by created_at
+        `;
+        const instruments = await tx<Record<string, unknown>[]>`
+          select * from work_instruments order by created_at
+        `;
+        const mbEntries = await tx<Record<string, unknown>[]>`
+          select * from mb_entries order by measured_on, created_at
+        `;
+        const bills = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from bills order by work_id, bill_number
+          `,
+          ['lines_snapshot'],
+        );
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -111,7 +129,7 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v1',
+          formatVersion: 'export-v2',
           organisation,
           members,
           works,
@@ -120,6 +138,11 @@ export function registerExportRoutes(
           loaDocuments: documents,
           deliveryChallans: challans,
           deliveryChallanItems: challanItems,
+          challanReceipts: receipts,
+          challanItemSerials: serials,
+          workInstruments: instruments,
+          mbEntries,
+          bills,
           auditEvents,
         };
       });

@@ -688,6 +688,32 @@ export function registerChallanRoutes(
         await requireAuthority(tx, user.id, 'cancel');
         const challan = await lockChallan(tx, id);
         requireStatus(challan, 'issued');
+        // Received goods cannot be un-delivered: once a receipt, serial,
+        // or Measurement Book entry references this challan, cancellation
+        // is forbidden (policy 2026-08-08; the DB trigger backs this up).
+        const [evidence] = await tx<
+          { receipts: string; serials: string; measurements: string }[]
+        >`
+          select
+            (select count(*) from challan_receipts
+              where delivery_challan_id = ${id})::text as receipts,
+            (select count(*) from challan_item_serials
+              where delivery_challan_id = ${id})::text as serials,
+            (select count(*) from mb_entries
+              where delivery_challan_id = ${id})::text as measurements
+        `;
+        if (
+          evidence &&
+          (evidence.receipts !== '0' ||
+            evidence.serials !== '0' ||
+            evidence.measurements !== '0')
+        ) {
+          throw httpError(
+            409,
+            'CHALLAN_HAS_EVIDENCE',
+            'This challan has a recorded receipt, serials, or measurements and can no longer be cancelled.',
+          );
+        }
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},
@@ -797,11 +823,20 @@ export function registerChallanRoutes(
       await storage.put(objectKey, pdf);
 
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await tx`
+        const updated = await tx`
           update delivery_challans
           set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
           where id = ${id} and status = 'issued'
         `;
+        if (updated.count === 0) {
+          // The challan stopped being issued while Gotenberg rendered; the
+          // stored PDF is an orphan, not evidence — no audit entry.
+          throw httpError(
+            409,
+            'CHALLAN_STATUS_CONFLICT',
+            'The challan is no longer issued; the render was discarded.',
+          );
+        }
         await auditChallan(tx, organisationId, user.id, 'challan.rendered', id, {
           sha256,
         });
@@ -837,7 +872,11 @@ export function registerChallanRoutes(
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
       await assertNotMalware(scanner, body);
-      const objectKey = `${organisationId}/signed/${id}.pdf`;
+      // Content-addressed key: a replacement upload gets a new object and
+      // never overwrites earlier evidence; the hash is recorded like the
+      // rendered PDF's.
+      const signedSha256 = createHash('sha256').update(body).digest('hex');
+      const objectKey = `${organisationId}/signed/${id}-${signedSha256.slice(0, 16)}.pdf`;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
@@ -845,7 +884,8 @@ export function registerChallanRoutes(
         await storage.put(objectKey, body);
         await tx`
           update delivery_challans
-          set signed_copy_object_key = ${objectKey}
+          set signed_copy_object_key = ${objectKey},
+              signed_copy_sha256 = ${signedSha256}
           where id = ${id}
         `;
         await auditChallan(
@@ -854,7 +894,7 @@ export function registerChallanRoutes(
           user.id,
           'challan.signed_copy_uploaded',
           id,
-          { sizeBytes: body.length },
+          { sizeBytes: body.length, sha256: signedSha256 },
         );
         return readDetail(tx, id);
       });

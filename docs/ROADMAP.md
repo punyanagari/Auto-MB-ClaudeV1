@@ -101,6 +101,15 @@ Delivered (backend, migration 0006 + live HTTP proofs):
 - first partial-billing cycle: bill preparation under issue authority sweeps all unbilled MB entries into an immutable per-item snapshot (quantity × rate in exact numeric), numbered gaplessly per Work through a counter row lock; status moves forward only (prepared → submitted → paid, DB-enforced); bills cannot be deleted;
 - the sixteen-table tenant-isolation matrix now covers every retention table, and the audit trail spans the whole flow (received → serials → installed → measured → billed → paid).
 
+Integrity hardening (2026-08-08, following the external code review):
+
+- bill preparation aggregates and stamps exactly the locked set of unbilled MB entries, so a measurement recorded concurrently can never ride a bill whose immutable snapshot did not count it (proved with a concurrent bill-versus-measurement test);
+- cancellation policy: an issued challan with downstream evidence (receipt, serials, or MB entries) can no longer be cancelled — received goods cannot be un-delivered; enforced in the route and by a database trigger, with the evidence-recording paths taking the challan row lock so cancellation cannot race them;
+- instrument statuses are forward-only from `active` (released/expired/closed are terminal), enforced in the API and by a database trigger;
+- measurement provenance and serial lineage are now database-proven: `mb_entries.delivery_challan_id` carries a composite foreign key to the same organisation and Work, and serial rows prove their challan line belongs to their challan;
+- signed copies are stored content-addressed with their SHA-256 (replacements never overwrite earlier evidence), and a render that loses a race with a status change is discarded instead of leaving a false audit entry;
+- the organisation export (`export-v2`) now includes receipts, serials, instruments, MB entries, and bills — the complete business record again.
+
 Remaining:
 
 - the retention UI (receipt/serials on the challan screen, instruments and MB/billing on the Work screen) — the endpoints are contract-typed and ready for it;
