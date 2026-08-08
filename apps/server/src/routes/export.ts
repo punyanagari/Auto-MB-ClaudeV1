@@ -1,0 +1,141 @@
+import { ApiErrorSchema } from '@auto-mb/contracts';
+import type { FastifyInstance } from 'fastify';
+import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { Auth } from '../auth.js';
+import { httpError } from '../http.js';
+import { parseJsonbColumn } from '../jsonb-column.js';
+import { requireUser } from '../session.js';
+import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+
+const errorResponses = {
+  400: ApiErrorSchema,
+  401: ApiErrorSchema,
+  403: ApiErrorSchema,
+} as const;
+
+function parseColumns<T extends Record<string, unknown>>(
+  rows: readonly T[],
+  jsonbColumns: readonly (keyof T)[],
+): T[] {
+  return rows.map((row) => {
+    const parsed = { ...row };
+    for (const column of jsonbColumns) {
+      parsed[column] = parseJsonbColumn(row[column]) as T[typeof column];
+    }
+    return parsed;
+  });
+}
+
+/**
+ * Full-organisation export (docs/SECURITY.md §incident/export procedures;
+ * Milestone 4 support tooling). Owner-only: this is the tenant's complete
+ * business record — data portability for the contractor, and the escape
+ * hatch an incident procedure needs. RLS scopes every query; nothing here
+ * names the organisation id in SQL.
+ */
+export function registerExportRoutes(
+  app: FastifyInstance,
+  auth: Auth,
+  database: Sql,
+): void {
+  app.get(
+    '/api/export',
+    { schema: { response: { ...errorResponses } } },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+
+        const [organisation] = await tx<Record<string, unknown>[]>`
+          select id, name, slug, timezone, status, created_at from organisations
+        `;
+        const members = await tx<Record<string, unknown>[]>`
+          select user_id, role, work_scope, can_issue_documents,
+                 can_cancel_documents, status, created_at
+          from organisation_memberships order by created_at
+        `;
+        const works = await tx<Record<string, unknown>[]>`
+          select * from works where deleted_at is null order by created_at
+        `;
+        const schedules = await tx<Record<string, unknown>[]>`
+          select * from work_schedules order by work_id, position
+        `;
+        const items = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from work_items where deleted_at is null
+            order by work_id, item_number
+          `,
+          ['source_evidence'],
+        );
+        const documents = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select id, object_key, original_filename, sha256, media_type,
+                   size_bytes, extraction_status, extraction_payload,
+                   confirmed_work_id, uploaded_by_user_id, created_at
+            from loa_documents order by created_at
+          `,
+          ['extraction_payload'],
+        );
+        const challans = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from delivery_challans order by created_at
+          `,
+          ['consignee_snapshot', 'issued_snapshot'],
+        );
+        const challanItems = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from delivery_challan_items
+            order by delivery_challan_id, position
+          `,
+          ['source_evidence'],
+        );
+        // Recorded first so the export contains its own audit record.
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, details
+          )
+          values (
+            ${organisationId}, ${user.id}, 'organisation.exported',
+            'organisations', '{}'::jsonb
+          )
+        `;
+        const auditEvents = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from audit_events order by occurred_at, id
+          `,
+          ['details'],
+        );
+
+        return {
+          exportedAt: new Date().toISOString(),
+          formatVersion: 'export-v1',
+          organisation,
+          members,
+          works,
+          workSchedules: schedules,
+          workItems: items,
+          loaDocuments: documents,
+          deliveryChallans: challans,
+          deliveryChallanItems: challanItems,
+          auditEvents,
+        };
+      });
+    },
+  );
+}
+
+async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
+  const [membership] = await tx<{ role: string }[]>`
+    select role from organisation_memberships where user_id = ${userId}
+  `;
+  if (membership?.role !== 'owner') {
+    throw httpError(
+      403,
+      'OWNER_REQUIRED',
+      'Only an organisation owner may export the organisation.',
+    );
+  }
+}

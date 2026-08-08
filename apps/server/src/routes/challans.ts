@@ -26,6 +26,8 @@ import {
 } from '../challan-html.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import type { MalwareScanner } from '../malware-scan.js';
+import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -254,6 +256,7 @@ export function registerChallanRoutes(
   database: Sql,
   storage: ObjectStorage,
   gotenbergUrl: string,
+  scanner: MalwareScanner,
 ): void {
   app.get(
     '/api/works/:id/balance',
@@ -798,6 +801,7 @@ export function registerChallanRoutes(
       if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
+      await assertNotMalware(scanner, body);
       const objectKey = `${organisationId}/signed/${id}.pdf`;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);

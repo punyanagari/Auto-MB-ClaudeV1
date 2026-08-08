@@ -6,6 +6,9 @@ import { createDatabasePool } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
 import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
+import { createClamdScanner, noScanner } from './malware-scan.js';
+import { createMetricsRegistry } from './metrics.js';
+import { registerExportRoutes } from './routes/export.js';
 import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
@@ -27,6 +30,12 @@ export interface BuildAppOptions {
   /** Gotenberg base URL for Delivery Challan PDF rendering. Defaults to
    * the compose-provided local service. */
   readonly gotenbergUrl?: string;
+  /** clamd endpoint for upload malware scanning. Unset disables scanning
+   * (development posture — docs/SECURITY.md); production sets it. */
+  readonly clamav?: { readonly host: string; readonly port: number };
+  /** Enables GET /metrics (Prometheus text format) behind this bearer
+   * token. Unset disables the endpoint entirely. */
+  readonly metricsToken?: string;
 }
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
@@ -141,6 +150,28 @@ export async function buildApp(
     );
   });
 
+  if (options.metricsToken !== undefined) {
+    const registry = createMetricsRegistry();
+    const token = options.metricsToken;
+    app.addHook('onResponse', (request, reply, done) => {
+      registry.observe(
+        request.method,
+        request.routeOptions.url ?? 'unmatched',
+        reply.statusCode,
+        reply.elapsedTime / 1000,
+      );
+      done();
+    });
+    app.get('/metrics', (request, reply) => {
+      if (request.headers.authorization !== `Bearer ${token}`) {
+        void reply.status(401);
+        return { code: 'UNAUTHENTICATED', message: 'Metrics require the token.' };
+      }
+      void reply.type('text/plain; version=0.0.4');
+      return reply.send(registry.render());
+    });
+  }
+
   registerHealthRoutes(app, database);
 
   if (auth && database) {
@@ -207,13 +238,18 @@ export async function buildApp(
     const storage = createFileSystemStorage(
       options.objectStorageDir ?? './local-data/objects',
     );
-    registerLoaRoutes(app, authInstance, database, storage);
+    const scanner = options.clamav
+      ? createClamdScanner(options.clamav.host, options.clamav.port)
+      : noScanner;
+    registerExportRoutes(app, authInstance, database);
+    registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,
       authInstance,
       database,
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
     );
   }
 

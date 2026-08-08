@@ -1,0 +1,22 @@
+# SITE_ADDRESS (e.g. mb.example.in) comes from the environment; Caddy
+# provisions and renews TLS for it automatically.
+{$SITE_ADDRESS}
+
+encode zstd gzip
+
+# The API, including auth and document streaming.
+handle /api/* {
+	reverse_proxy server:3000
+}
+
+# Metrics are scraped inside the private network only, never proxied.
+handle /metrics {
+	respond 403
+}
+
+# The single-page app; client-side routes fall back to index.html.
+handle {
+	root * /srv/web
+	try_files {path} /index.html
+	file_server
+}

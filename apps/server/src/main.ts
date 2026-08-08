@@ -16,6 +16,7 @@ const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
 
 const app = await buildApp({
   logger: true,
+  ...(process.env.METRICS_TOKEN ? { metricsToken: process.env.METRICS_TOKEN } : {}),
   ...(process.env.DATABASE_URL
     ? {
         databaseUrl: process.env.DATABASE_URL,
@@ -27,6 +28,14 @@ const app = await buildApp({
           : {}),
         ...(process.env.GOTENBERG_URL
           ? { gotenbergUrl: process.env.GOTENBERG_URL }
+          : {}),
+        ...(process.env.CLAMAV_HOST
+          ? {
+              clamav: {
+                host: process.env.CLAMAV_HOST,
+                port: Number(process.env.CLAMAV_PORT ?? '3310'),
+              },
+            }
           : {}),
       }
     : {}),

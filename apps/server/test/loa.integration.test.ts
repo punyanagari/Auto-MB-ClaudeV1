@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import net from 'node:net';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +44,8 @@ const password = `integration-password-${runId}`;
 
 let admin: Sql;
 let app: FastifyInstance;
+let scanningApp: FastifyInstance;
+let clamd: net.Server;
 let storageDir: string;
 let organisationId: string;
 let ownerUserId: string;
@@ -249,6 +252,31 @@ beforeAll(async () => {
     objectStorageDir: storageDir,
   });
 
+  // A second app instance with scanning enabled against a stub clamd,
+  // sharing the same database (and therefore the same sessions).
+  clamd = net.createServer((socket) => {
+    const chunks: Buffer[] = [];
+    socket.on('data', (data) => chunks.push(data));
+    socket.on('end', () => {
+      const infected = Buffer.concat(chunks).includes('EICAR-TEST-MARKER');
+      socket.end(infected ? 'stream: Eicar-Test-Signature FOUND\0' : 'stream: OK\0');
+    });
+  });
+  await new Promise<void>((resolve) => {
+    clamd.listen(0, '127.0.0.1', resolve);
+  });
+  const clamdAddress = clamd.address();
+  if (clamdAddress === null || typeof clamdAddress === 'string') {
+    throw new Error('stub clamd failed to bind');
+  }
+  scanningApp = await buildApp({
+    databaseUrl: appUrl,
+    authSecret: `integration-secret-${'0'.repeat(32)}`,
+    baseUrl: 'http://127.0.0.1:3000',
+    objectStorageDir: storageDir,
+    clamav: { host: '127.0.0.1', port: clamdAddress.port },
+  });
+
   owner = await signUp(ownerEmail, 'LOA Owner');
   viewer = await signUp(viewerEmail, 'LOA Viewer');
 
@@ -303,7 +331,15 @@ afterAll(async () => {
     await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
   }
   await app?.close();
+  await scanningApp?.close();
   await admin?.end();
+  if (clamd) {
+    await new Promise<void>((resolve) => {
+      clamd.close(() => {
+        resolve();
+      });
+    });
+  }
   if (storageDir) await rm(storageDir, { recursive: true, force: true });
 });
 
@@ -509,5 +545,42 @@ describe('review and confirm across the legacy corpus', () => {
       where organisation_id = ${organisationId} and action = 'work.created'
     `;
     expect(events.length).toBeGreaterThanOrEqual(corpus.length);
+  });
+});
+
+describe('upload malware scanning (Milestone 4)', () => {
+  it('rejects a flagged upload before anything is stored and accepts clean ones', async () => {
+    const flagged = buildTestPdf('EICAR-TEST-MARKER inside');
+    const rejected = await scanningApp.inject({
+      method: 'POST',
+      url: '/api/loa-documents?filename=flagged.pdf',
+      headers: {
+        cookie: owner.cookie,
+        'x-organisation-id': organisationId,
+        'content-type': 'application/pdf',
+      },
+      payload: flagged,
+    });
+    expect(rejected.statusCode, rejected.body).toBe(400);
+    expect(rejected.json()).toMatchObject({ code: 'MALWARE_DETECTED' });
+    const [row] = await admin<{ count: string }[]>`
+      select count(*)::text as count from loa_documents
+      where organisation_id = ${organisationId} and sha256 = ${createHash('sha256')
+        .update(flagged)
+        .digest('hex')}
+    `;
+    expect(row?.count).toBe('0');
+
+    const clean = await scanningApp.inject({
+      method: 'POST',
+      url: '/api/loa-documents?filename=clean.pdf',
+      headers: {
+        cookie: owner.cookie,
+        'x-organisation-id': organisationId,
+        'content-type': 'application/pdf',
+      },
+      payload: buildTestPdf('perfectly clean letter'),
+    });
+    expect(clean.statusCode, clean.body).toBe(201);
   });
 });

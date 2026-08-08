@@ -25,6 +25,8 @@ import { requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
+import type { MalwareScanner } from '../malware-scan.js';
+import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -43,6 +45,7 @@ const errorResponses = {
   403: ApiErrorSchema,
   404: ApiErrorSchema,
   409: ApiErrorSchema,
+  502: ApiErrorSchema,
 } as const;
 
 // Params are validated with a pattern rather than the uuid format so the
@@ -169,6 +172,7 @@ export function registerLoaRoutes(
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
+  scanner: MalwareScanner,
 ): void {
   app.post(
     '/api/loa-documents',
@@ -198,6 +202,7 @@ export function registerLoaRoutes(
       if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
+      await assertNotMalware(scanner, body);
 
       const sha256 = createHash('sha256').update(body).digest('hex');
       const documentId = crypto.randomUUID();

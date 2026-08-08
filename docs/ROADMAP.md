@@ -73,14 +73,22 @@ Exit: a design partner completes the exact LOA→DC workflow in staging — pend
 
 ## Milestone 4 — controlled design-partner pilot
 
-- onboarding and support tools;
-- production-like India-region deployment;
-- monitoring and alerts;
-- backup plus successful restore;
-- upload scanning;
-- DAST and external high-risk review;
-- export and incident procedures;
-- three to five design partners.
+Delivered (the engineering half):
+
+- upload malware scanning: a dependency-free clamd INSTREAM client wired into both upload endpoints, fail-closed when configured (unreachable scanner rejects the upload), proven at the protocol level and over live HTTP against a stub daemon; production compose runs the real ClamAV service;
+- monitoring: a dependency-free Prometheus text-format `/metrics` endpoint (requests by method/route/status, latency histogram) behind a bearer token, refused publicly by the edge proxy;
+- export: owner-only `GET /api/export` returning the organisation's complete business record (works, items with evidence, challans with snapshots, audit trail), itself audit-logged;
+- backup plus successful restore: `scripts/backup.sh` / `scripts/restore.sh` (custom-format dump + object store + SHA-256 manifest), with the dump→restore→verify cycle proven live in `packages/db/test/backup-restore.integration.test.ts`;
+- deployment assets: production Dockerfiles, `deploy/docker-compose.prod.yml` (Caddy TLS + web, server, PostgreSQL 17, Gotenberg, ClamAV), env template, and the pilot runbook (docs/RUNBOOK.md: deploy, upgrade, backup cron, restore drill, alert thresholds, incident steps, partner onboarding checklist).
+
+Remaining (needs the operator, real infrastructure, or third parties):
+
+- MFA enrolment/enforcement for owners — the Milestone 1 deferred decision comes due before the first partner account exists (docs/RUNBOOK.md §8);
+- rate limiting on login and upload/extraction — with the hardening pass at deployment;
+- the India-region VM, DNS, and TLS hostname (operator accounts and decisions);
+- external uptime monitor and metrics scraper pointed at the deployment;
+- DAST against staging and the external application-security review;
+- three to five design partners recruited and onboarded per the checklist.
 
 ## Milestone 5 — retention workflow
 

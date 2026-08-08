@@ -590,3 +590,40 @@ describe('Delivery Challan lifecycle', () => {
     expect(cancelledEvents).toHaveLength(1);
   });
 });
+
+describe('organisation export (Milestone 4)', () => {
+  it('gives owners the complete business record and refuses everyone else', async () => {
+    const denied = await authed(clerk, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'OWNER_REQUIRED' });
+
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const exported = response.json<{
+      formatVersion: string;
+      organisation: { id: string };
+      works: unknown[];
+      deliveryChallans: { status: string; issued_snapshot: unknown }[];
+      auditEvents: { action: string }[];
+    }>();
+    expect(exported.formatVersion).toBe('export-v1');
+    expect(exported.organisation.id).toBe(organisationId);
+    expect(exported.works.length).toBeGreaterThanOrEqual(1);
+    const issued = exported.deliveryChallans.find(
+      (challan) => challan.status === 'issued',
+    );
+    expect(issued).toBeDefined();
+    expect(issued?.issued_snapshot).toMatchObject({ challanNumber: 'DC/1' });
+    expect(exported.auditEvents.map((event) => event.action)).toContain(
+      'organisation.exported',
+    );
+  });
+});

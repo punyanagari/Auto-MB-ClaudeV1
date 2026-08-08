@@ -1,5 +1,8 @@
 # Auto-MB operations contract
 
+The concrete pilot procedures implementing this contract live in
+docs/RUNBOOK.md.
+
 ## 1. Environments
 
 - `local`: Docker PostgreSQL and Gotenberg; synthetic or approved fixtures.

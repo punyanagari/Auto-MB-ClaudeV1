@@ -140,14 +140,30 @@ Activated with Milestone 3 (issued documents exist):
   only from the immutable issued snapshot; signed copies are magic-byte
   validated; both stream through authenticated, tenant-scoped requests.
 
+Activated with Milestone 4 (pilot engineering):
+
+- upload malware scanning — a clamd INSTREAM client wired into every
+  upload endpoint, fail-closed when configured (an unreachable scanner
+  rejects the upload rather than waving it through), proven by protocol
+  and live-HTTP tests; the production compose runs ClamAV and configures
+  it. Local development runs unscanned by explicit posture (magic-byte,
+  size, and media-type validation still apply, and uploads are never
+  executed);
+- metrics — Prometheus text format behind a bearer token, refused at the
+  public edge; route templates as labels, never raw URLs, so tenant and
+  document ids cannot leak into label values;
+- export — owner-only full-organisation export, audit-logged, as the
+  incident procedure's evidence snapshot and the contractor's data
+  portability;
+- backup/restore — scripted, manifest-sealed, and proven by an automated
+  dump→restore→verify test; the operational drill cadence lives in
+  docs/RUNBOOK.md.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 
-- container image scan — when an Auto-MB application image exists;
-- upload malware scanning (ClamAV) — before uploads are accepted from
-  design partners (Milestone 4), matching docs/DEPENDENCIES.md; until
-  then uploads are development-only and covered by the magic-byte, size,
-  and media-type validation plus the never-execute rule above.
+- container image scan — when the deploy/ images are first published to a
+  registry (building locally on the host does not publish an artifact).
 
 Before paid production:
 
