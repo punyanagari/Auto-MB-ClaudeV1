@@ -322,6 +322,36 @@ export function WorkDetail({
       )}
 
       <h2>Contract instruments</h2>
+      {typeof work.pbgRequiredAmount === 'string' ? (
+        <dl className="fact-list" aria-label="PBG requirement from the letter">
+          <div>
+            <dt>PBG required by the letter</dt>
+            <dd>{formatInr(work.pbgRequiredAmount)}</dd>
+          </div>
+          <div>
+            <dt>Submission window</dt>
+            <dd>
+              {work.pbgSubmissionDays !== null
+                ? `${String(work.pbgSubmissionDays)} days from the letter date`
+                : '—'}
+              {work.pbgExtensionDays !== null &&
+                ` (+${String(work.pbgExtensionDays)} days extension)`}
+            </dd>
+          </div>
+          <div>
+            <dt>Penal interest</dt>
+            <dd>
+              {work.pbgPenalInterestPercent !== null
+                ? `${work.pbgPenalInterestPercent}% p.a.`
+                : '—'}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <p className="muted">
+          The letter records no Performance Bank Guarantee requirement.
+        </p>
+      )}
       {instruments.length > 0 ? (
         <table className="data-table">
           <caption className="visually-hidden">
