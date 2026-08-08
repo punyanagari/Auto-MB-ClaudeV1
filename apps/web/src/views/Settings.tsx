@@ -59,6 +59,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         gstin: optional('gstin'),
         contactPhone: optional('contactPhone'),
         contactEmail: optional('contactEmail'),
+        warrantyTemplateText: optional('warrantyTemplateText'),
       });
       setProfile(updated);
       setNotice('Company details saved.');
@@ -249,6 +250,20 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               defaultValue={profile.contactEmail ?? ''}
             />
           </div>
+          <div className="field">
+            <label htmlFor="org-warranty-template">Warranty agreement template</label>
+            <textarea
+              id="org-warranty-template"
+              name="warrantyTemplateText"
+              rows={6}
+              maxLength={20000}
+              defaultValue={profile.warrantyTemplateText ?? ''}
+            />
+            <p className="hint">
+              Used by upcoming warranty documents; leave empty until you have your
+              standard wording.
+            </p>
+          </div>
           <div className="actions">
             <button type="submit" disabled={busy}>
               Save company details
@@ -276,6 +291,10 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
           <div>
             <dt>Email</dt>
             <dd>{profile.contactEmail ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Warranty template</dt>
+            <dd>{profile.warrantyTemplateText ?? '—'}</dd>
           </div>
         </dl>
       )}
