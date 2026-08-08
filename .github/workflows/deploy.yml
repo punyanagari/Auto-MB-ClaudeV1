@@ -104,10 +104,13 @@ jobs:
             --env-file deploy/.env.production exec -T \
             -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
             -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
-            server pnpm --filter @auto-mb/db migrate
+            server pnpm --filter @auto-mb/db migrate < /dev/null
+          # (the </dev/null matters: without it, docker exec attaches to
+          # this script's stdin and swallows the lines below)
           # The deploy is not done until the site answers.
           sleep 5
           curl -fsSk --max-time 15 \
             --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
             "https://${SITE_ADDRESS}/api/ready"
+          echo "deploy verified: site is ready"
           DEPLOY
