@@ -8,6 +8,8 @@ import { toWebHeaders, toWebRequest } from './http.js';
 import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
+import { registerLoaRoutes } from './routes/loa.js';
+import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
@@ -17,6 +19,10 @@ export interface BuildAppOptions {
   readonly authSecret?: string;
   readonly baseUrl?: string;
   readonly trustedOrigins?: readonly string[];
+  /** Root directory for uploaded objects (LOA PDFs). Defaults to
+   * ./local-data/objects (gitignored); tests point it at a disposable
+   * directory. */
+  readonly objectStorageDir?: string;
 }
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
@@ -184,6 +190,22 @@ export async function buildApp(
       },
     });
     registerIdentityRoutes(app, authInstance, database);
+
+    // Raw application/pdf bodies for the LOA upload endpoint; every other
+    // route keeps the default JSON-only content types.
+    app.addContentTypeParser(
+      'application/pdf',
+      { parseAs: 'buffer' },
+      (_request, body, done) => {
+        done(null, body);
+      },
+    );
+    registerLoaRoutes(
+      app,
+      authInstance,
+      database,
+      createFileSystemStorage(options.objectStorageDir ?? './local-data/objects'),
+    );
   }
 
   return app;

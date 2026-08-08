@@ -93,6 +93,11 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # pdftotext (poppler-utils) is the LOA text-extraction system
+      # dependency (docs/DEPENDENCIES.md); the server integration tests
+      # exercise it against a real PDF upload.
+      - name: Install poppler-utils
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
       # Proves shell scripts parse and follow shellcheck's static rules;
       # does not prove runtime behaviour on a cloud VM. Globbed via
       # git ls-files so new scripts cannot escape the gate.

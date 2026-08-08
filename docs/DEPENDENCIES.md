@@ -13,6 +13,7 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 | Typed queries | Drizzle ORM              | Adopt when the first module queries land; SQL remains visible |
 | Testing       | Vitest                   | Shared TypeScript test runner                                 |
 | PDF service   | Gotenberg                | Isolated, repeatable Chromium rendering                       |
+| PDF text      | poppler-utils            | `pdftotext -layout` — the exact extraction the LOA parser corpus was built with; system binary, argument-vector invocation, no shell |
 
 ## Adopt with the relevant milestone
 

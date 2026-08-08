@@ -9,25 +9,13 @@ import {
   type CreateOrganisationRequest,
   type Membership,
 } from '@auto-mb/contracts';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { withUserContext } from '@auto-mb/db';
+import { jsonb, withUserContext } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { httpError, toWebHeaders } from './../http.js';
+import { httpError } from './../http.js';
+import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
-
-interface SessionUser {
-  readonly id: string;
-  readonly email: string;
-}
-
-async function requireUser(auth: Auth, request: FastifyRequest): Promise<SessionUser> {
-  const session = await auth.api.getSession({ headers: toWebHeaders(request) });
-  if (!session) {
-    throw httpError(401, 'UNAUTHENTICATED', 'Sign in to use this endpoint.');
-  }
-  return { id: session.user.id, email: session.user.email };
-}
 
 interface MembershipRow {
   organisation_id: string;
@@ -240,7 +228,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.added',
               'organisation_memberships',
-              ${JSON.stringify({ memberUserId: target.id, role: body.role })}::jsonb
+              ${jsonb(tx, { memberUserId: target.id, role: body.role })}
             )
           `;
 

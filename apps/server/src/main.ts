@@ -22,6 +22,9 @@ const app = await buildApp({
         authSecret: assertProductionSecret(process.env.AUTH_SECRET),
         baseUrl: `http://${host}:${String(port)}`,
         trustedOrigins: [webOrigin],
+        ...(process.env.OBJECT_STORAGE_DIR
+          ? { objectStorageDir: process.env.OBJECT_STORAGE_DIR }
+          : {}),
       }
     : {}),
 });
