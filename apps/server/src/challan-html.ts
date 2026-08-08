@@ -1,12 +1,23 @@
 /**
- * Deterministic Delivery Challan HTML (template_version dc-v1), rendered
- * ONLY from the immutable issued_snapshot — never from live rows, so a
- * re-render years later reproduces the same document. The output goes to
- * Gotenberg for PDF conversion; it must be a complete, self-contained
- * page with no external requests.
+ * Deterministic Delivery Challan HTML (template_version dc-v2). The legal
+ * content — parties, items, quantities, totals — renders ONLY from the
+ * immutable issued_snapshot, never from live rows, so a re-render years
+ * later reproduces the same record. Branding (organisation logo, address,
+ * GSTIN, contact) is presentation, applied from the organisation's
+ * current profile at render time. The output goes to Gotenberg for PDF
+ * conversion; it must be a complete, self-contained page with no
+ * external requests, so the logo is embedded as a data URI.
  */
 
-export const CHALLAN_TEMPLATE_VERSION = 'dc-v1';
+export const CHALLAN_TEMPLATE_VERSION = 'dc-v2';
+
+export interface ChallanBranding {
+  readonly logoDataUri?: string;
+  readonly address?: string | null;
+  readonly gstin?: string | null;
+  readonly contactPhone?: string | null;
+  readonly contactEmail?: string | null;
+}
 
 export interface ChallanSnapshotItem {
   readonly position: number;
@@ -48,7 +59,10 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-export function renderChallanHtml(snapshot: ChallanSnapshot): string {
+export function renderChallanHtml(
+  snapshot: ChallanSnapshot,
+  branding: ChallanBranding = {},
+): string {
   const rows = snapshot.items
     .map(
       (item) => `<tr>
@@ -82,12 +96,35 @@ export function renderChallanHtml(snapshot: ChallanSnapshot): string {
   .total td { font-weight: bold; }
   .sign { margin-top: 3rem; display: flex; justify-content: space-between; }
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
+  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
+  .brand img { max-height: 56px; max-width: 180px; }
+  .brand .org { font-size: 15px; font-weight: bold; }
+  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
+  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Delivery Challan ${escapeHtml(snapshot.challanNumber)}</h1>
-  <p>${escapeHtml(snapshot.organisationName)} · Dated ${escapeHtml(snapshot.challanDate)}</p>
+  <div class="brand">
+    ${branding.logoDataUri !== undefined ? `<img src="${branding.logoDataUri}" alt="" />` : ''}
+    <div>
+      <div class="org">${escapeHtml(snapshot.organisationName)}</div>
+      <div class="org-details">${[
+        branding.address ?? null,
+        branding.gstin != null ? `GSTIN ${branding.gstin}` : null,
+        [branding.contactPhone, branding.contactEmail]
+          .filter((value): value is string => value != null)
+          .join(' · ') || null,
+      ]
+        .filter((value): value is string => value !== null)
+        .map((value) => escapeHtml(value))
+        .join('<br />')}</div>
+    </div>
+  </div>
+  <div class="doc-title">
+    <h1>Delivery Challan ${escapeHtml(snapshot.challanNumber)}</h1>
+    <p>Dated ${escapeHtml(snapshot.challanDate)}</p>
+  </div>
 </header>
 <section class="meta">
   <div>

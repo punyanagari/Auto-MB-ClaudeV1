@@ -719,9 +719,11 @@ export function registerChallanRoutes(
       const { id } = request.params as { id: string };
 
       // Snapshot read and PDF write live in separate transactions so the
-      // slow external call holds no database locks; the input is the
-      // immutable issued snapshot, so re-rendering is idempotent.
-      const snapshot = await withBoundTenant(
+      // slow external call holds no database locks; the legal content is
+      // the immutable issued snapshot, so re-rendering reproduces the
+      // record. Branding (logo, company details) is presentation and
+      // comes from the organisation's current profile.
+      const { snapshot, branding } = await withBoundTenant(
         database,
         organisationId,
         user.id,
@@ -732,11 +734,44 @@ export function registerChallanRoutes(
           const [row] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from delivery_challans where id = ${id}
           `;
-          return parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot;
+          const [organisation] = await tx<
+            {
+              address: string | null;
+              gstin: string | null;
+              contact_phone: string | null;
+              contact_email: string | null;
+              logo_object_key: string | null;
+              logo_media_type: string | null;
+            }[]
+          >`
+            select address, gstin, contact_phone, contact_email,
+                   logo_object_key, logo_media_type
+            from organisations
+          `;
+          return {
+            snapshot: parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot,
+            branding: organisation ?? null,
+          };
         },
       );
 
-      const html = renderChallanHtml(snapshot);
+      let logoDataUri: string | undefined;
+      if (branding?.logo_object_key && branding.logo_media_type) {
+        try {
+          const logo = await storage.get(branding.logo_object_key);
+          logoDataUri = `data:${branding.logo_media_type};base64,${logo.toString('base64')}`;
+        } catch (error) {
+          // A missing logo object must not block an issued document.
+          request.log.warn({ err: error }, 'challan render: logo unavailable');
+        }
+      }
+      const html = renderChallanHtml(snapshot, {
+        ...(logoDataUri !== undefined ? { logoDataUri } : {}),
+        address: branding?.address ?? null,
+        gstin: branding?.gstin ?? null,
+        contactPhone: branding?.contact_phone ?? null,
+        contactEmail: branding?.contact_email ?? null,
+      });
       const form = new FormData();
       form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
       let pdf: Buffer;

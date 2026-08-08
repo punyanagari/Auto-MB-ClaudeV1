@@ -46,6 +46,12 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderChallan: vi.fn(),
     uploadSignedCopy: vi.fn(),
     downloadChallanPdf: vi.fn(),
+    dashboard: vi.fn(),
+    organisationProfile: vi.fn(),
+    updateOrganisationProfile: vi.fn(),
+    uploadLogo: vi.fn(),
+    removeLogo: vi.fn().mockResolvedValue(undefined),
+    logoBlob: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
@@ -683,5 +689,144 @@ describe('ChallanDetail', () => {
       });
     });
     expect(await screen.findByText(/Cancelled: Wrong consignee\./)).toBeTruthy();
+  });
+});
+
+describe('Dashboard', () => {
+  it('shows totals, alerts with severity, and routes work opens', async () => {
+    const dashboard = vi.fn().mockResolvedValue({
+      totals: {
+        works: 2,
+        contractValue: '5807500.00',
+        deliveredValue: '1450000.00',
+        billedValue: '300.00',
+        openDrafts: 1,
+        loaAwaitingReview: 1,
+      },
+      alerts: [
+        {
+          kind: 'instrument_expiring',
+          severity: 'warning',
+          message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
+          workId: WORK_ID,
+          workCode: 'PL270-CRB',
+          dueInDays: 38,
+        },
+        {
+          kind: 'loa_review_pending',
+          severity: 'notice',
+          message: '1 LOA letter is waiting for review and confirmation.',
+          workId: null,
+          workCode: null,
+          dueInDays: null,
+        },
+      ],
+      works: [
+        {
+          workId: WORK_ID,
+          workCode: 'PL270-CRB',
+          title: 'Signalling gear, CR Bhusawal',
+          status: 'active',
+          contractValue: '4520000.00',
+          deliveredValue: '1450000.00',
+          billedValue: '300.00',
+          issuedChallans: 3,
+        },
+      ],
+    });
+    const onOpenWork = vi.fn();
+    const { Dashboard } = await import('../src/views/Dashboard.js');
+    render(
+      <Dashboard
+        api={stubApi({ dashboard })}
+        organisationId={ORG_ID}
+        onOpenWork={onOpenWork}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    expect(screen.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
+    expect(screen.getByText('38 days left')).toBeTruthy();
+    expect(
+      screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
+    ).toBeTruthy();
+    // 1450000 / 4520000 = 32%
+    expect(screen.getByText('32%')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open PL270-CRB' }));
+    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+  });
+});
+
+describe('Settings', () => {
+  const PROFILE = {
+    id: ORG_ID,
+    name: 'Sharma Constructions',
+    slug: 'sharma',
+    address: null,
+    gstin: null,
+    contactPhone: null,
+    contactEmail: null,
+    hasLogo: false,
+  };
+
+  it('lets an owner edit company details', async () => {
+    const updateOrganisationProfile = vi.fn().mockResolvedValue({
+      ...PROFILE,
+      address: 'Plot 4, MIDC, Nashik',
+      gstin: '27ABCDE1234F1Z5',
+    });
+    const { Settings } = await import('../src/views/Settings.js');
+    render(
+      <Settings
+        api={stubApi({
+          organisationProfile: vi.fn().mockResolvedValue(PROFILE),
+          updateOrganisationProfile,
+        })}
+        organisationId={ORG_ID}
+        isOwner
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    fireEvent.change(screen.getByLabelText('Address'), {
+      target: { value: 'Plot 4, MIDC, Nashik' },
+    });
+    fireEvent.change(screen.getByLabelText('GSTIN'), {
+      target: { value: '27ABCDE1234F1Z5' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));
+
+    await waitFor(() => {
+      expect(updateOrganisationProfile).toHaveBeenCalledWith(ORG_ID, {
+        name: 'Sharma Constructions',
+        address: 'Plot 4, MIDC, Nashik',
+        gstin: '27ABCDE1234F1Z5',
+        contactPhone: null,
+        contactEmail: null,
+      });
+    });
+    expect(await screen.findByRole('status')).toBeTruthy();
+  });
+
+  it('shows read-only details to non-owners', async () => {
+    const { Settings } = await import('../src/views/Settings.js');
+    render(
+      <Settings
+        api={stubApi({
+          organisationProfile: vi.fn().mockResolvedValue({
+            ...PROFILE,
+            address: 'Plot 4, MIDC, Nashik',
+          }),
+        })}
+        organisationId={ORG_ID}
+        isOwner={false}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
   });
 });

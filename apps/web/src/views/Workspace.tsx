@@ -3,7 +3,9 @@ import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
+import { Dashboard } from './Dashboard.js';
 import { Members } from './Members.js';
+import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail } from './WorkDetail.js';
@@ -18,6 +20,7 @@ interface WorkspaceProps {
 }
 
 type WorkspaceView =
+  | { name: 'dashboard' }
   | { name: 'works' }
   | { name: 'upload' }
   | { name: 'review'; documentId: string }
@@ -25,9 +28,28 @@ type WorkspaceView =
   | { name: 'challan-new'; workId: string; workCode: string }
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
-  | { name: 'members' };
+  | { name: 'members' }
+  | { name: 'settings' };
 
 const MODULES = [
+  {
+    key: 'dashboard' as const,
+    label: 'Dashboard',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2 9.5 8 3l6 6.5" />
+        <path d="M4 8v6h8V8" />
+      </svg>
+    ),
+  },
   {
     key: 'works' as const,
     label: 'Works',
@@ -68,6 +90,24 @@ const MODULES = [
       </svg>
     ),
   },
+  {
+    key: 'settings' as const,
+    label: 'Settings',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="8" cy="8" r="2.4" />
+        <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6 11 5M5 11l-1.4 1.4" />
+      </svg>
+    ),
+  },
 ];
 
 export function Workspace({
@@ -77,7 +117,7 @@ export function Workspace({
   onSwitchOrganisation,
   onSignOut,
 }: WorkspaceProps) {
-  const [view, setView] = useState<WorkspaceView>({ name: 'works' });
+  const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
   const containerRef = useRef<HTMLDivElement>(null);
 
   const membership = me.memberships.find(
@@ -96,7 +136,12 @@ export function Workspace({
     containerRef.current?.querySelector('h1')?.focus();
   }, [view]);
 
-  const activeModule = view.name === 'members' ? 'members' : 'works';
+  const activeModule =
+    view.name === 'dashboard' ||
+    view.name === 'members' ||
+    view.name === 'settings'
+      ? view.name
+      : 'works';
 
   return (
     <div className="app-frame">
@@ -115,7 +160,16 @@ export function Workspace({
               className="sidebar__item"
               aria-current={activeModule === module.key ? 'page' : undefined}
               onClick={() => {
-                setView(module.key === 'works' ? { name: 'works' } : { name: 'members' });
+                const key = module.key;
+                setView(
+                  key === 'dashboard'
+                    ? { name: 'dashboard' }
+                    : key === 'works'
+                      ? { name: 'works' }
+                      : key === 'members'
+                        ? { name: 'members' }
+                        : { name: 'settings' },
+                );
               }}
             >
               {module.icon}
@@ -147,6 +201,22 @@ export function Workspace({
         </header>
 
         <main className="content" ref={containerRef}>
+          {view.name === 'dashboard' && (
+            <Dashboard
+              api={api}
+              organisationId={organisation.id}
+              onOpenWork={(workId) => {
+                setView({ name: 'work', workId });
+              }}
+            />
+          )}
+          {view.name === 'settings' && (
+            <Settings
+              api={api}
+              organisationId={organisation.id}
+              isOwner={membership?.role === 'owner'}
+            />
+          )}
           {view.name === 'works' && (
             <Works
               api={api}

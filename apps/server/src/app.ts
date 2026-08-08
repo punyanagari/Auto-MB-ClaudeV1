@@ -8,7 +8,9 @@ import { toWebHeaders, toWebRequest } from './http.js';
 import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
 import { createClamdScanner, noScanner } from './malware-scan.js';
 import { createMetricsRegistry } from './metrics.js';
+import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
+import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
@@ -227,15 +229,17 @@ export async function buildApp(
     });
     registerIdentityRoutes(app, authInstance, database);
 
-    // Raw application/pdf bodies for the LOA upload endpoint; every other
-    // route keeps the default JSON-only content types.
-    app.addContentTypeParser(
-      'application/pdf',
-      { parseAs: 'buffer' },
-      (_request, body, done) => {
-        done(null, body);
-      },
-    );
+    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo);
+    // every other route keeps the default JSON-only content types.
+    for (const contentType of ['application/pdf', 'image/png', 'image/jpeg']) {
+      app.addContentTypeParser(
+        contentType,
+        { parseAs: 'buffer' },
+        (_request, body, done) => {
+          done(null, body);
+        },
+      );
+    }
     const storage = createFileSystemStorage(
       options.objectStorageDir ?? './local-data/objects',
     );
@@ -243,6 +247,8 @@ export async function buildApp(
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerDashboardRoutes(app, authInstance, database);
+    registerOrganisationRoutes(app, authInstance, database, storage, scanner);
     registerRetentionRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(

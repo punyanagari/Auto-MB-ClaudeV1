@@ -6,11 +6,14 @@ import type {
   Challan,
   ConfirmWorkRequest,
   CreateOrganisationRequest,
+  DashboardResponse,
   LoaDocument,
   LoaDocumentDetail,
   Membership,
   Organisation,
+  OrganisationProfile,
   SaveChallanRequest,
+  UpdateOrganisationProfileRequest,
   Work,
   WorkBalanceResponse,
   WorkDetailResponse,
@@ -115,6 +118,21 @@ export interface ApiClient {
     challanId: string,
     kind: 'rendered' | 'signed',
   ) => Promise<Blob>;
+  readonly dashboard: (organisationId: string) => Promise<DashboardResponse>;
+  readonly organisationProfile: (
+    organisationId: string,
+  ) => Promise<OrganisationProfile>;
+  readonly updateOrganisationProfile: (
+    organisationId: string,
+    body: UpdateOrganisationProfileRequest,
+  ) => Promise<OrganisationProfile>;
+  readonly uploadLogo: (
+    organisationId: string,
+    file: Blob,
+    mediaType: 'image/png' | 'image/jpeg',
+  ) => Promise<OrganisationProfile>;
+  readonly removeLogo: (organisationId: string) => Promise<void>;
+  readonly logoBlob: (organisationId: string) => Promise<Blob | null>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -345,6 +363,49 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         credentials: 'same-origin',
         headers: { 'x-organisation-id': organisationId },
       });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async dashboard(organisationId) {
+      return request<DashboardResponse>('/api/dashboard', { organisationId });
+    },
+    async organisationProfile(organisationId) {
+      return request<OrganisationProfile>('/api/organisation/profile', {
+        organisationId,
+      });
+    },
+    async updateOrganisationProfile(organisationId, body) {
+      return request<OrganisationProfile>('/api/organisation/profile', {
+        method: 'PATCH',
+        body,
+        organisationId,
+      });
+    },
+    async uploadLogo(organisationId, file, mediaType) {
+      const response = await fetchImpl('/api/organisation/logo', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': mediaType,
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as OrganisationProfile;
+    },
+    async removeLogo(organisationId) {
+      await request('/api/organisation/logo', {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async logoBlob(organisationId) {
+      const response = await fetchImpl('/api/organisation/logo', {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (response.status === 404) return null;
       if (!response.ok) throw await parseError(response);
       return response.blob();
     },

@@ -107,6 +107,58 @@ function json(body: unknown, status = 200) {
   };
 }
 
+const DASHBOARD = {
+  totals: {
+    works: 1,
+    contractValue: '4520000.00',
+    deliveredValue: '1450000.00',
+    billedValue: '300.00',
+    openDrafts: 1,
+    loaAwaitingReview: 1,
+  },
+  alerts: [
+    {
+      kind: 'instrument_expiring',
+      severity: 'warning',
+      message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      dueInDays: 38,
+    },
+    {
+      kind: 'loa_review_pending',
+      severity: 'notice',
+      message: '1 LOA letter is waiting for review and confirmation.',
+      workId: null,
+      workCode: null,
+      dueInDays: null,
+    },
+  ],
+  works: [
+    {
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      title: 'Signalling gear, CR Bhusawal',
+      status: 'active',
+      contractValue: '4520000.00',
+      deliveredValue: '1450000.00',
+      billedValue: '300.00',
+      issuedChallans: 3,
+    },
+  ],
+};
+
+const PROFILE = {
+  id: ORG.id,
+  name: ORG.name,
+  slug: ORG.slug,
+  address: 'Plot 4, MIDC, Nashik 422010',
+  gstin: '27ABCDE1234F1Z5',
+  contactPhone: '+91 98220 00000',
+  contactEmail: 'office@sharma.example',
+  hasLogo: false,
+};
+
 async function mockWorkspace(page: Page) {
   await page.route('**/api/me', (route) => route.fulfill(json(ME)));
   await page.route('**/api/organisations', (route) =>
@@ -114,6 +166,13 @@ async function mockWorkspace(page: Page) {
   );
   await page.route('**/api/organisations/current/members', (route) =>
     route.fulfill(json({ members: ME.memberships })),
+  );
+  await page.route('**/api/dashboard', (route) => route.fulfill(json(DASHBOARD)));
+  await page.route('**/api/organisation/profile', (route) =>
+    route.fulfill(json(PROFILE)),
+  );
+  await page.route('**/api/organisation/logo', (route) =>
+    route.fulfill(json({ code: 'NO_LOGO', message: 'No logo.', requestId: 'r' }, 404)),
   );
   await page.route('**/api/works', (route) => route.fulfill(json({ works: [] })));
   await page.route('**/api/loa-documents', (route) =>
@@ -154,6 +213,11 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expectNoSeriousViolations(page, 'organisation picker');
 
   await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeVisible();
+  await expectNoSeriousViolations(page, 'dashboard');
+
+  await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
   await expectNoSeriousViolations(page, 'works list');
 
@@ -161,6 +225,11 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();
   await expectNoSeriousViolations(page, 'members workspace');
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByLabel('Company name')).toHaveValue('Sharma Constructions');
+  await expectNoSeriousViolations(page, 'settings');
 });
 
 test('LOA upload and review screens pass the axe scan', async ({ page }) => {
@@ -168,6 +237,7 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
 
   await page.goto('/');
   await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Upload LOA' }).click();
@@ -207,6 +277,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route('**/api/organisations', (route) =>
     route.fulfill(json({ organisations: [ORG] })),
   );
+  await page.route('**/api/dashboard', (route) => route.fulfill(json(DASHBOARD)));
   await page.route('**/api/loa-documents', (route) =>
     route.fulfill(json({ documents: [] })),
   );
@@ -262,6 +333,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
 
   await page.goto('/');
   await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await page.getByRole('button', { name: 'Works', exact: true }).click();
   await page.getByRole('button', { name: 'DCW-1' }).click();
   await expect(
     page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
@@ -284,6 +356,10 @@ test('the workspace keeps the tenant header on every scoped request', async ({
   await page.route('**/api/organisations', (route) =>
     route.fulfill(json({ organisations: [ORG] })),
   );
+  await page.route('**/api/dashboard', (route) => {
+    scopedHeaders.push(route.request().headers()['x-organisation-id']);
+    return route.fulfill(json(DASHBOARD));
+  });
   await page.route('**/api/works', (route) => {
     scopedHeaders.push(route.request().headers()['x-organisation-id']);
     return route.fulfill(json({ works: [] }));
@@ -295,7 +371,9 @@ test('the workspace keeps the tenant header on every scoped request', async ({
 
   await page.goto('/');
   await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByText(/No Works yet/)).toBeVisible();
 
-  expect(scopedHeaders).toEqual([ORG.id, ORG.id]);
+  expect(scopedHeaders).toEqual([ORG.id, ORG.id, ORG.id]);
 });
