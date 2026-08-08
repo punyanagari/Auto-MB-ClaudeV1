@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Membership } from '@auto-mb/contracts';
+import type { ConfirmWorkRequest, Membership } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
+import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SignIn } from '../src/views/SignIn.js';
+import { UploadLoa } from '../src/views/UploadLoa.js';
+import { Works } from '../src/views/Works.js';
 
 afterEach(cleanup);
 
@@ -19,11 +22,81 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createOrganisation: vi.fn(),
     listMembers: vi.fn().mockResolvedValue([]),
     addMember: vi.fn(),
+    listLoaDocuments: vi.fn().mockResolvedValue([]),
+    getLoaDocument: vi.fn(),
+    uploadLoa: vi.fn(),
+    confirmLoa: vi.fn(),
+    listWorks: vi.fn().mockResolvedValue([]),
+    getWork: vi.fn(),
     ...overrides,
   };
 }
 
 const ORG_ID = '11111111-1111-4111-8111-111111111111';
+const DOC_ID = '22222222-2222-4222-8222-222222222222';
+const WORK_ID = '33333333-3333-4333-8333-333333333333';
+
+const REVIEW_PAYLOAD = {
+  sourceText: 'RAW LETTER TEXT',
+  review: {
+    header: {
+      letterNumber: {
+        value: 'L-42/2025',
+        raw: 'Letter No: L-42/2025',
+        needsReview: false,
+      },
+      letterDate: { value: '2025-06-01', raw: 'Dated: 01/06/2025', needsReview: false },
+      workDescription: {
+        value: 'Supply and installation of switchboards',
+        raw: 'Name of work: Supply and installation of switchboards',
+        needsReview: false,
+      },
+    },
+    pricingShape: {
+      advertised_value: 1000,
+      contract_value: 900,
+      pricing_shape: 'letter_percentage',
+      letter_percentage: 10,
+      letter_percentage_direction: 'below',
+      needsReview: false,
+    },
+    items: [
+      {
+        schedule: { id: 'A' },
+        itemSno: '1',
+        itemCode: 'S01',
+        description: 'Main switchboard, floor mounted',
+        qty: '2.000',
+        qtyUnit: 'Numbers',
+        unitRate: '450.00',
+        bidAmount: '900.00',
+        needsReview: false,
+        raw: { anchorLine: '1  S01  Main switchboard ...' },
+      },
+    ],
+    flags: [
+      {
+        code: 'unresolved_units',
+        scope: 'item',
+        targetId: 'A#1',
+        message: 'The printed unit could not be resolved.',
+        rawBlock: 'Route Kilo Meter (RKM)',
+      },
+    ],
+    needsReview: { total: 1, anyLetterLevel: false },
+  },
+};
+
+const REVIEW_DOCUMENT = {
+  id: DOC_ID,
+  originalFilename: 'loa-letter.pdf',
+  sha256: 'a'.repeat(64),
+  sizeBytes: 1234,
+  extractionStatus: 'review' as const,
+  confirmedWorkId: null,
+  createdAt: '2026-08-08T00:00:00.000Z',
+  extractionPayload: REVIEW_PAYLOAD,
+};
 
 function membership(overrides: Partial<Membership>): Membership {
   return {
@@ -211,5 +284,169 @@ describe('Members', () => {
       role: 'viewer',
     });
     expect(screen.getAllByRole('row')).toHaveLength(3);
+  });
+});
+
+describe('Works', () => {
+  it('lists Works and review-ready documents, and routes the actions', async () => {
+    const api = stubApi({
+      listWorks: vi.fn().mockResolvedValue([
+        {
+          id: WORK_ID,
+          workCode: 'PL270-CRB',
+          letterNumber: 'L-42/2025',
+          letterDate: '2025-06-01',
+          title: 'Supply of switchboards',
+          advertisedValue: '1000.00',
+          contractValue: '900.00',
+          pricingShape: 'letter_percentage',
+          letterPercentage: '10.000',
+          letterPercentageDirection: 'below',
+          status: 'active',
+          createdAt: '2026-08-08T00:00:00.000Z',
+        },
+      ]),
+      listLoaDocuments: vi
+        .fn()
+        .mockResolvedValue([{ ...REVIEW_DOCUMENT, extractionPayload: undefined }]),
+    });
+    const onReview = vi.fn();
+    const onOpenWork = vi.fn();
+    render(
+      <Works
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onUpload={vi.fn()}
+        onReview={onReview}
+        onOpenWork={onOpenWork}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    expect(onReview).toHaveBeenCalledWith(DOC_ID);
+
+    fireEvent.click(screen.getByRole('button', { name: 'PL270-CRB' }));
+    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+  });
+
+  it('hides the upload action from read-only roles', async () => {
+    const api = stubApi();
+    render(
+      <Works
+        api={api}
+        organisationId={ORG_ID}
+        canModify={false}
+        onUpload={vi.fn()}
+        onReview={vi.fn()}
+        onOpenWork={vi.fn()}
+      />,
+    );
+    await screen.findByText(/No Works yet/);
+    expect(screen.queryByRole('button', { name: 'Upload LOA' })).toBeNull();
+  });
+});
+
+describe('UploadLoa', () => {
+  it('requires a chosen file before uploading', async () => {
+    const api = stubApi();
+    render(
+      <UploadLoa
+        api={api}
+        organisationId={ORG_ID}
+        onUploaded={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    fireEvent.submit(
+      screen.getByRole('button', { name: 'Upload and extract' }).closest('form') ??
+        (() => {
+          throw new Error('form missing');
+        })(),
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Choose the Letter of Acceptance PDF');
+    expect(api.uploadLoa).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReviewLoa', () => {
+  it('prefills parsed values, shows flags with printed source, and confirms', async () => {
+    const confirmLoa = vi.fn().mockResolvedValue({
+      work: { id: WORK_ID },
+      schedules: [],
+    });
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      confirmLoa,
+    });
+    const onConfirmed = vi.fn();
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={onConfirmed}
+        onBack={vi.fn()}
+      />,
+    );
+
+    // Parsed values arrive as editable prefills with their provenance.
+    const letterNumber = await screen.findByLabelText('Letter number');
+    expect((letterNumber as HTMLInputElement).value).toBe('L-42/2025');
+    expect(screen.getByText('The printed unit could not be resolved.')).toBeTruthy();
+    expect(screen.getByText('Route Kilo Meter (RKM)')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL270-CRB' },
+    });
+    fireEvent.change(screen.getByLabelText('Rate for row 1 in schedule A'), {
+      target: { value: '451.00' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    await waitFor(() => {
+      expect(onConfirmed).toHaveBeenCalledOnce();
+    });
+    const [orgArg, docArg, requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect(orgArg).toBe(ORG_ID);
+    expect(docArg).toBe(DOC_ID);
+    expect(requestArg.workCode).toBe('PL270-CRB');
+    expect(requestArg.letterPercentage).toBe('10.000');
+    expect(requestArg.letterPercentageDirection).toBe('below');
+    expect(requestArg.schedules).toHaveLength(1);
+    expect(requestArg.schedules[0]?.items[0]).toMatchObject({
+      itemNumber: 'A/1',
+      effectiveRate: '451.00',
+      sourceRef: { scheduleId: 'A', itemSno: '1' },
+    });
+  });
+
+  it('lets read-only roles review but not confirm', async () => {
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify={false}
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByLabelText('Letter number');
+    expect(
+      screen.queryByRole('button', { name: 'Confirm and create Work' }),
+    ).toBeNull();
+    expect(screen.getByText(/ask an owner or office member/)).toBeTruthy();
   });
 });

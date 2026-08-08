@@ -34,15 +34,22 @@ Exit: Organisation A cannot access Organisation B through any endpoint, identifi
 
 ## Milestone 2 — LOA to Work
 
-- private PDF upload;
-- text extraction;
-- adopted deterministic parser;
-- field provenance/confidence;
-- review/correction UI;
-- atomic creation of Work, schedules, and items;
-- parser and confirmation integration tests.
+Delivered:
 
-Exit: all six legacy LOA fixtures can be reviewed and confirmed without losing source evidence.
+- private PDF upload: raw `application/pdf` body, magic-byte and 25 MB validation, server-generated tenant-prefixed object keys in filesystem-backed object storage behind an interface;
+- text extraction via `pdftotext -layout` (poppler, system dependency) — the same layout-preserving extraction the parser corpus was built with — inline at upload;
+- the adopted deterministic parser produces the stored review payload: per-field provenance (value, printed raw source, needsReview), item rows with exact-decimal reconciliation, pricing-shape classification, and the trap flag set;
+- review/correction UI: parsed prefills, a flag panel with printed sources, per-item editing beside each item's printed source row, and owner/office-gated confirmation;
+- atomic confirmation creating the Work, schedules, and items, each item carrying `source_evidence` linked to its parsed source block, with the full extraction payload retained on the document;
+- parser and confirmation integration tests: all six legacy fixtures reviewed and confirmed over live HTTP, with schedule/item counts and contract values matching the corpus manifest and zero unresolved evidence links.
+
+Remaining (tracked for the pre-pilot hardening pass):
+
+- rate limiting on upload/extraction (docs/SECURITY.md lists it with login rate limiting);
+- ClamAV upload quarantine before design-partner uploads (Milestone 4 trigger);
+- the model/OCR fallback for unresolved fields waits for the first real letter the deterministic parser cannot serve.
+
+Exit: all six legacy LOA fixtures can be reviewed and confirmed without losing source evidence — met (`apps/server/test/loa.integration.test.ts`).
 
 ## Milestone 3 — Work to issued Delivery Challan
 

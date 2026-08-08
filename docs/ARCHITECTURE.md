@@ -80,7 +80,12 @@ Money uses `numeric`. Dates use `date`. IDs use opaque UUIDs. Indexes begin with
 
 ## 6. Document architecture
 
-Original uploads and generated PDFs live in private object storage.
+Original uploads and generated PDFs live in private object storage. The
+storage boundary is an interface (`apps/server/src/storage.ts`); the
+current implementation is filesystem-backed with server-generated,
+tenant-prefixed keys — the same prefix rule the database enforces on
+`loa_documents.object_key` — and an S3-compatible implementation slots in
+behind it for the deployed environments (Milestone 4).
 
 Issued documents store:
 
@@ -106,6 +111,19 @@ private PDF
 ```
 
 The existing six-letter / 281-item corpus is a regression baseline. AI output is untrusted proposal data until reviewed.
+
+As delivered in Milestone 2: extraction is `pdftotext -layout` (poppler,
+a system dependency — the same extraction the corpus fixtures were
+produced with), run inline at upload because it is sub-second; the first
+genuinely asynchronous job remains Milestone 3's PDF rendering (§9). The
+parser's review payload — per-field value plus printed raw source plus
+needsReview, item rows with exact-decimal reconciliation, pricing-shape
+classification, and the trap flags — is stored verbatim on the document
+row. Confirmation is one transaction: Work + schedules + items, each item
+carrying `source_evidence` that links back to its parsed source block,
+and the document keeps the full payload after confirmation. The
+model/OCR fallback step remains unbuilt until a real letter defeats the
+deterministic parser.
 
 ## 8. API contracts
 

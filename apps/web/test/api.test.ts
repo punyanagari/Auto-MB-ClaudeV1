@@ -74,4 +74,73 @@ describe('api client', () => {
 
     await expect(api.me()).rejects.toBeInstanceOf(RequestFailedError);
   });
+
+  it('uploads a LOA as a raw PDF body with the tenant header', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(201, {
+        id: '22222222-2222-4222-8222-222222222222',
+        extractionStatus: 'review',
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+    const file = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+
+    await api.uploadLoa('11111111-1111-4111-8111-111111111111', file, 'loa letter.pdf');
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/loa-documents?filename=loa%20letter.pdf');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(file);
+    expect(init.headers).toMatchObject({
+      'content-type': 'application/pdf',
+      'x-organisation-id': '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('confirms a reviewed document against its confirm endpoint', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(201, {
+        work: { id: '33333333-3333-4333-8333-333333333333' },
+        schedules: [],
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    await api.confirmLoa(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      {
+        workCode: 'PL270-CRB',
+        letterNumber: 'L-1',
+        letterDate: '2025-01-01',
+        title: 'Test work',
+        advertisedValue: '100.00',
+        contractValue: '90.00',
+        pricingShape: 'per_schedule',
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'A/1',
+                description: 'An item',
+                unitCode: 'Nos',
+                awardedQuantity: '1',
+                effectiveRate: '90.00',
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/loa-documents/22222222-2222-4222-8222-222222222222/confirm');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({
+      'content-type': 'application/json',
+      'x-organisation-id': '11111111-1111-4111-8111-111111111111',
+    });
+  });
 });

@@ -115,6 +115,19 @@ Activated with the first browser workflow (the Milestone 1 screens):
   frontend sends the tenant header on scoped requests. The API is mocked
   there; server-side authorisation is proven by the integration tests.
 
+Activated with Milestone 2 (uploads and Works exist):
+
+- upload validation — magic bytes and a 25 MB cap enforced server-side,
+  the media type constrained by a database CHECK, bytes never executed,
+  and objects stored under server-generated tenant-prefixed keys that the
+  database and the storage layer validate independently — proven by live
+  tests;
+- source-evidence preservation — confirming a Work never overwrites the
+  extraction payload; reviewer corrections live beside the parsed source,
+  not instead of it — proven across all six corpus letters;
+- role enforcement — upload and confirm are owner/office-only over live
+  HTTP.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 

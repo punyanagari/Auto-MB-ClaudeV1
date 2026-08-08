@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
-import { Members } from './views/Members.js';
 import { OrgPicker } from './views/OrgPicker.js';
 import { SignIn } from './views/SignIn.js';
+import { Workspace } from './views/Workspace.js';
 
 const ORGANISATION_STORAGE_KEY = 'auto-mb.organisation';
 
@@ -135,11 +135,7 @@ export function App({ api: providedApi }: AppProps) {
           />
         )}
         {phase.name === 'workspace' && (
-          <Members
-            api={api}
-            organisationId={phase.organisation.id}
-            currentUserId={phase.me.user.id}
-          />
+          <Workspace api={api} me={phase.me} organisation={phase.organisation} />
         )}
       </main>
     </div>

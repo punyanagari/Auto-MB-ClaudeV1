@@ -1,9 +1,14 @@
 import type {
   AddMemberRequest,
   ApiError,
+  ConfirmWorkRequest,
   CreateOrganisationRequest,
+  LoaDocument,
+  LoaDocumentDetail,
   Membership,
   Organisation,
+  Work,
+  WorkDetailResponse,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -37,6 +42,28 @@ export interface ApiClient {
     organisationId: string,
     body: AddMemberRequest,
   ) => Promise<readonly Membership[]>;
+  readonly listLoaDocuments: (
+    organisationId: string,
+  ) => Promise<readonly LoaDocument[]>;
+  readonly getLoaDocument: (
+    organisationId: string,
+    documentId: string,
+  ) => Promise<LoaDocumentDetail>;
+  readonly uploadLoa: (
+    organisationId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<LoaDocumentDetail>;
+  readonly confirmLoa: (
+    organisationId: string,
+    documentId: string,
+    body: ConfirmWorkRequest,
+  ) => Promise<WorkDetailResponse>;
+  readonly listWorks: (organisationId: string) => Promise<readonly Work[]>;
+  readonly getWork: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkDetailResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -143,6 +170,53 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'POST', body, organisationId },
       );
       return payload.members;
+    },
+    async listLoaDocuments(organisationId) {
+      const payload = await request<{ documents: LoaDocument[] }>(
+        '/api/loa-documents',
+        { organisationId },
+      );
+      return payload.documents;
+    },
+    async getLoaDocument(organisationId, documentId) {
+      return request<LoaDocumentDetail>(`/api/loa-documents/${documentId}`, {
+        organisationId,
+      });
+    },
+    async uploadLoa(organisationId, file, filename) {
+      // Raw binary body — the JSON `request` helper does not apply here.
+      const response = await fetchImpl(
+        `/api/loa-documents?filename=${encodeURIComponent(filename)}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as LoaDocumentDetail;
+    },
+    async confirmLoa(organisationId, documentId, body) {
+      return request<WorkDetailResponse>(`/api/loa-documents/${documentId}/confirm`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listWorks(organisationId) {
+      const payload = await request<{ works: Work[] }>('/api/works', {
+        organisationId,
+      });
+      return payload.works;
+    },
+    async getWork(organisationId, workId) {
+      return request<WorkDetailResponse>(`/api/works/${workId}`, {
+        organisationId,
+      });
     },
   };
 }
