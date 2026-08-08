@@ -16,6 +16,13 @@ COPY apps/server ./apps/server
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/server..." --filter "@auto-mb/db..."
 
 ENV NODE_ENV=production
+
+# The object-store volume mounts at /data/objects; it must be writable
+# by the unprivileged runtime user. A fresh named volume copies this
+# directory's ownership; run `chown node /data/objects` once (as root)
+# on any volume that predates the directory existing in the image.
+RUN mkdir -p /data/objects && chown -R node:node /data
+
 USER node
 EXPOSE 3000
 CMD ["pnpm", "--filter", "@auto-mb/server", "start"]
