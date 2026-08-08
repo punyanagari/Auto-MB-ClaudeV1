@@ -33,11 +33,26 @@ export interface ReviewFlagView {
   readonly rawBlock: string;
 }
 
+/** The parser's performance-guarantee header field (what the LETTER
+ * demands — distinct from any PBG instrument the contractor later
+ * records). Declared optional because older stored payloads travel
+ * untyped; the review screen degrades to a blank requirement block. */
+export interface PerformanceGuaranteeView {
+  readonly amountFigures: number | null;
+  readonly amountWords: string | null;
+  readonly submissionDays: number | null;
+  readonly extensionDays: number | null;
+  readonly penalInterestPercent: number | null;
+  readonly raw: string | null;
+  readonly needsReview: boolean;
+}
+
 export interface ReviewPayloadView {
   readonly header: {
     readonly letterNumber: FieldView;
     readonly letterDate: FieldView;
     readonly workDescription: FieldView;
+    readonly performanceGuarantee?: PerformanceGuaranteeView;
   };
   readonly pricingShape: {
     readonly advertised_value: number | null;
@@ -94,4 +109,61 @@ export function normaliseDecimal(raw: string, maxDp: number): string {
   const intPart = String(BigInt(intRaw));
   const frac = (fracRaw ?? '').slice(0, maxDp).replace(/0+$/, '');
   return frac.length > 0 ? `${intPart}.${frac}` : intPart;
+}
+
+/** Parses a plain non-negative decimal with at most `scale` fractional
+ * digits into exact integer minor units (BigInt), or null when the text
+ * is not such a decimal. Mirrors the parser package's exact-decimal
+ * discipline for the review screen's DISPLAY-ONLY reconciliation total —
+ * no float ever touches a rupee figure, even a cosmetic one. */
+export function parseDecimalMinorUnits(raw: string, scale: number): bigint | null {
+  const cleaned = raw.replaceAll(',', '').trim();
+  const parts = cleaned.split('.');
+  const [wholeRaw, fracRaw] = parts;
+  const digits = /^\d+$/;
+  if (
+    parts.length > 2 ||
+    wholeRaw === undefined ||
+    !digits.test(wholeRaw) ||
+    (fracRaw !== undefined && (!digits.test(fracRaw) || fracRaw.length > scale))
+  ) {
+    return null;
+  }
+  const whole = BigInt(wholeRaw);
+  const frac = (fracRaw ?? '').padEnd(scale, '0');
+  return whole * 10n ** BigInt(scale) + (frac.length > 0 ? BigInt(frac) : 0n);
+}
+
+/** Formats integer minor units back to plain decimal text, trimming
+ * trailing fractional zeros but keeping at least two decimal places for
+ * rupee display. */
+export function formatMinorUnits(minor: bigint, scale: number): string {
+  const divisor = 10n ** BigInt(scale);
+  const whole = minor / divisor;
+  const frac = (minor % divisor).toString().padStart(scale, '0');
+  const trimmed = frac.replace(/0+$/, '');
+  const kept = trimmed.length < 2 ? frac.slice(0, 2) : trimmed;
+  return kept.length > 0 ? `${whole.toString()}.${kept}` : whole.toString();
+}
+
+export interface RowTotalInput {
+  readonly awardedQuantity: string;
+  readonly effectiveRate: string;
+}
+
+/**
+ * Exact reconciliation total over the review screen's current rows:
+ * Σ quantity (≤3 dp) × rate (≤2 dp), computed entirely in BigInt minor
+ * units at scale 5. Null when any row's quantity or rate is not yet a
+ * plain decimal — the total is then simply not shown rather than guessed.
+ */
+export function exactRowsTotal(rows: readonly RowTotalInput[]): string | null {
+  let total = 0n;
+  for (const row of rows) {
+    const qty = parseDecimalMinorUnits(row.awardedQuantity, 3);
+    const rate = parseDecimalMinorUnits(row.effectiveRate, 2);
+    if (qty === null || rate === null) return null;
+    total += qty * rate;
+  }
+  return formatMinorUnits(total, 5);
 }

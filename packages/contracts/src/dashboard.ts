@@ -12,6 +12,9 @@ export const DashboardAlertSchema = Type.Object(
       Type.Literal('loa_review_pending'),
       Type.Literal('challan_draft_open'),
       Type.Literal('bill_unpaid'),
+      Type.Literal('pbg_missing'),
+      Type.Literal('pbg_undervalue'),
+      Type.Literal('pbg_window_missed'),
     ]),
     severity: Type.Union([
       Type.Literal('danger'),
