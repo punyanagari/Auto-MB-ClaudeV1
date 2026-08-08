@@ -24,6 +24,7 @@ import type {
   SaveChallanRequest,
   SaveInstrumentRequest,
   Serial,
+  SerialSearchResponse,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
   UpdateMemberRequest,
@@ -31,6 +32,7 @@ import type {
   Work,
   WorkBalanceResponse,
   WorkDetailResponse,
+  WorkItemSerialsResponse,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -184,6 +186,16 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly Serial[]>;
+  readonly deleteSerial: (organisationId: string, serialId: string) => Promise<void>;
+  readonly searchSerials: (
+    organisationId: string,
+    query: string,
+  ) => Promise<SerialSearchResponse>;
+  readonly updateWorkItemSerials: (
+    organisationId: string,
+    workItemId: string,
+    requiresSerials: boolean,
+  ) => Promise<WorkItemSerialsResponse>;
   readonly listInstruments: (
     organisationId: string,
     workId: string,
@@ -556,6 +568,24 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return payload.serials;
+    },
+    async deleteSerial(organisationId, serialId) {
+      await request(`/api/serials/${serialId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async searchSerials(organisationId, query) {
+      return request<SerialSearchResponse>(
+        `/api/serials/search?q=${encodeURIComponent(query)}`,
+        { organisationId },
+      );
+    },
+    async updateWorkItemSerials(organisationId, workItemId, requiresSerials) {
+      return request<WorkItemSerialsResponse>(
+        `/api/work-items/${workItemId}/requires-serials`,
+        { method: 'PATCH', body: { requiresSerials }, organisationId },
+      );
     },
     async listInstruments(organisationId, workId) {
       const payload = await request<{ instruments: Instrument[] }>(

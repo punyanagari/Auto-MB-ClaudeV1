@@ -7,6 +7,7 @@ import { Dashboard } from './Dashboard.js';
 import { Members } from './Members.js';
 import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
+import { SerialLookup } from './SerialLookup.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail } from './WorkDetail.js';
 import { Works } from './Works.js';
@@ -28,6 +29,7 @@ type WorkspaceView =
   | { name: 'challan-new'; workId: string; workCode: string }
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
+  | { name: 'serials' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -67,6 +69,24 @@ const MODULES = [
         <rect x="9" y="2" width="5" height="5" rx="1" />
         <rect x="2" y="9" width="5" height="5" rx="1" />
         <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'serials' as const,
+    label: 'Serial Lookup',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="7" cy="7" r="4.2" />
+        <path d="m10.2 10.2 3.6 3.6" />
       </svg>
     ),
   },
@@ -140,7 +160,10 @@ export function Workspace({
   }, [view]);
 
   const activeModule =
-    view.name === 'dashboard' || view.name === 'members' || view.name === 'settings'
+    view.name === 'dashboard' ||
+    view.name === 'serials' ||
+    view.name === 'members' ||
+    view.name === 'settings'
       ? view.name
       : 'works';
 
@@ -167,9 +190,11 @@ export function Workspace({
                     ? { name: 'dashboard' }
                     : key === 'works'
                       ? { name: 'works' }
-                      : key === 'members'
-                        ? { name: 'members' }
-                        : { name: 'settings' },
+                      : key === 'serials'
+                        ? { name: 'serials' }
+                        : key === 'members'
+                          ? { name: 'members' }
+                          : { name: 'settings' },
                 );
               }}
             >
@@ -330,6 +355,18 @@ export function Workspace({
               }}
               onBack={() => {
                 setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'serials' && (
+            <SerialLookup
+              api={api}
+              organisationId={organisation.id}
+              onOpenWork={(workId) => {
+                setView({ name: 'work', workId });
+              }}
+              onOpenChallan={(workId, challanId) => {
+                setView({ name: 'challan', workId, workCode: '', challanId });
               }}
             />
           )}

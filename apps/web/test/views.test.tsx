@@ -13,6 +13,7 @@ import { ChallanEditor } from '../src/views/ChallanEditor.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
+import { SerialLookup } from '../src/views/SerialLookup.js';
 import { SignIn } from '../src/views/SignIn.js';
 import { UploadLoa } from '../src/views/UploadLoa.js';
 import { WorkDetail } from '../src/views/WorkDetail.js';
@@ -61,6 +62,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     recordSerials: vi.fn(),
     recordInstallation: vi.fn(),
     listWorkSerials: vi.fn().mockResolvedValue([]),
+    deleteSerial: vi.fn().mockResolvedValue(undefined),
+    searchSerials: vi.fn().mockResolvedValue({ matches: [], truncated: false }),
+    updateWorkItemSerials: vi.fn(),
     listInstruments: vi.fn().mockResolvedValue([]),
     createInstrument: vi.fn(),
     updateInstrument: vi.fn(),
@@ -888,6 +892,7 @@ describe('WorkDetail retention', () => {
             unitCode: 'Nos',
             awardedQuantity: '5.000',
             effectiveRate: '100.00',
+            requiresSerials: false,
           },
         ],
       },
@@ -1223,5 +1228,226 @@ describe('Settings', () => {
     expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
+  });
+});
+
+describe('WorkDetail serial tracking toggle', () => {
+  const SCHEDULE_ID = '88888888-8888-4888-8888-888888888888';
+  const detailWith = (requiresSerials: boolean) => ({
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials,
+          },
+        ],
+      },
+    ],
+  });
+
+  function renderDetail(api: ApiClient, canModify: boolean) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={canModify}
+        canRecordEvidence={canModify}
+        canIssue={canModify}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('turns serial tracking on for an item', async () => {
+    const updateWorkItemSerials = vi.fn().mockResolvedValue({
+      workItemId: ITEM_A,
+      itemNumber: 'A/1',
+      requiresSerials: true,
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(detailWith(false)),
+      updateWorkItemSerials,
+    });
+    renderDetail(api, true);
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Serial tracking for A/1',
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(updateWorkItemSerials).toHaveBeenCalledWith(ORG_ID, ITEM_A, true);
+    });
+    expect(
+      (
+        await screen.findByRole('switch', { name: 'Serial tracking for A/1' })
+      ).getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
+  it('surfaces the completeness conflict when turning on is refused', async () => {
+    const updateWorkItemSerials = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'SERIALS_INCOMPLETE_FOR_FLAG',
+          'Serial tracking cannot be required for A/1: DC/1 has 1 of 3.000 serials. Record the missing serials first.',
+        ),
+      );
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(detailWith(false)),
+      updateWorkItemSerials,
+    });
+    renderDetail(api, true);
+
+    fireEvent.click(
+      await screen.findByRole('switch', { name: 'Serial tracking for A/1' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Serial tracking cannot be required for A/1: DC/1 has 1 of 3.000 serials. Record the missing serials first.',
+    );
+  });
+
+  it('shows read-only members the flag without a control', async () => {
+    const api = stubApi({ getWork: vi.fn().mockResolvedValue(detailWith(true)) });
+    renderDetail(api, false);
+
+    await screen.findByRole('heading', { name: /DCW-1/ });
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getByText('Required')).toBeTruthy();
+  });
+});
+
+describe('SerialLookup', () => {
+  const MATCH = {
+    id: '99999999-9999-4999-8999-999999999999',
+    serialNumber: 'SB-2026-014',
+    workId: WORK_ID,
+    workCode: 'DCW-1',
+    workTitle: 'Supply of switchboards',
+    itemDescription: 'Main switchboard',
+    challanId: CHALLAN_ID,
+    challanNumber: 'DC/1',
+    challanDate: '2026-08-08',
+    challanStatus: 'issued' as const,
+    receiptRecorded: true,
+    installedOn: null,
+  };
+
+  function renderLookup(
+    api: ApiClient,
+    handlers: Partial<{
+      onOpenWork: (workId: string) => void;
+      onOpenChallan: (workId: string, challanId: string) => void;
+    }> = {},
+  ) {
+    return render(
+      <SerialLookup
+        api={api}
+        organisationId={ORG_ID}
+        onOpenWork={handlers.onOpenWork ?? vi.fn()}
+        onOpenChallan={handlers.onOpenChallan ?? vi.fn()}
+      />,
+    );
+  }
+
+  it('searches and links each match to its work and challan', async () => {
+    const searchSerials = vi
+      .fn()
+      .mockResolvedValue({ matches: [MATCH], truncated: false });
+    const onOpenWork = vi.fn();
+    const onOpenChallan = vi.fn();
+    renderLookup(stubApi({ searchSerials }), { onOpenWork, onOpenChallan });
+
+    fireEvent.change(screen.getByLabelText('Serial number'), {
+      target: { value: 'sb-2026' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => {
+      expect(searchSerials).toHaveBeenCalledWith(ORG_ID, 'sb-2026');
+    });
+    expect(await screen.findByText('SB-2026-014')).toBeTruthy();
+    expect(screen.getByText('received')).toBeTruthy();
+    expect(screen.getByText('not installed')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'DCW-1' }));
+    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+    fireEvent.click(screen.getByRole('button', { name: 'DC/1' }));
+    expect(onOpenChallan).toHaveBeenCalledWith(WORK_ID, CHALLAN_ID);
+  });
+
+  it('rejects queries shorter than 2 characters without calling the API', async () => {
+    const searchSerials = vi.fn();
+    renderLookup(stubApi({ searchSerials }));
+
+    fireEvent.change(screen.getByLabelText('Serial number'), {
+      target: { value: 'x' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Enter at least 2 characters of the serial number.',
+    );
+    expect(searchSerials).not.toHaveBeenCalled();
+  });
+
+  it('reports truncation and the empty state', async () => {
+    const searchSerials = vi
+      .fn()
+      .mockResolvedValueOnce({
+        matches: Array.from({ length: 50 }, (_, index) => ({
+          ...MATCH,
+          id: `99999999-9999-4999-8999-${String(index).padStart(12, '0')}`,
+          serialNumber: `SB-${String(index)}`,
+        })),
+        truncated: true,
+      })
+      .mockResolvedValueOnce({ matches: [], truncated: false });
+    renderLookup(stubApi({ searchSerials }));
+
+    fireEvent.change(screen.getByLabelText('Serial number'), {
+      target: { value: 'SB' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText(/Showing the first 50 matches/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Serial number'), {
+      target: { value: 'ZZ-NONE' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText(/No serial matches/)).toBeTruthy();
   });
 });

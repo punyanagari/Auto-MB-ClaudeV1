@@ -231,6 +231,7 @@ export function WorkDetail({
                 <th scope="col">Unit</th>
                 <th scope="col">Awarded quantity</th>
                 <th scope="col">Rate (₹)</th>
+                <th scope="col">Serial tracking</th>
               </tr>
             </thead>
             <tbody>
@@ -241,6 +242,57 @@ export function WorkDetail({
                   <td>{item.unitCode}</td>
                   <td className="cell--numeric">{item.awardedQuantity}</td>
                   <td className="cell--numeric">{item.effectiveRate}</td>
+                  <td>
+                    {canModify ? (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        role="switch"
+                        aria-checked={item.requiresSerials}
+                        aria-label={`Serial tracking for ${item.itemNumber}`}
+                        disabled={pending}
+                        onClick={() =>
+                          void act(
+                            async () => {
+                              const updated = await api.updateWorkItemSerials(
+                                organisationId,
+                                item.id,
+                                !item.requiresSerials,
+                              );
+                              setDetail((current) =>
+                                current === null
+                                  ? current
+                                  : {
+                                      ...current,
+                                      schedules: current.schedules.map((candidate) => ({
+                                        ...candidate,
+                                        items: candidate.items.map((candidateItem) =>
+                                          candidateItem.id === item.id
+                                            ? {
+                                                ...candidateItem,
+                                                requiresSerials:
+                                                  updated.requiresSerials,
+                                              }
+                                            : candidateItem,
+                                        ),
+                                      })),
+                                    },
+                              );
+                            },
+                            item.requiresSerials
+                              ? `Serial tracking switched off for ${item.itemNumber}.`
+                              : `Serial tracking required for ${item.itemNumber}; challans for it now need one serial per unit before issue.`,
+                          )
+                        }
+                      >
+                        {item.requiresSerials ? 'Required' : 'Off'}
+                      </button>
+                    ) : (
+                      <span className={item.requiresSerials ? '' : 'muted'}>
+                        {item.requiresSerials ? 'Required' : 'Off'}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
