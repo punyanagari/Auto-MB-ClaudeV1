@@ -59,11 +59,19 @@ weekly copies, with every backup copied off the VM (object storage in a
 different account/region):
 
 ```cron
-30 21 * * * cd /opt/auto-mb && DATABASE_ADMIN_URL=... OBJECT_STORAGE_DIR=/var/lib/docker/volumes/auto-mb-prod_objects/_data BACKUP_ROOT=/backup ./scripts/backup.sh >> /var/log/auto-mb-backup.log 2>&1
+30 21 * * * cd /opt/auto-mb && DATABASE_ADMIN_URL=... OBJECT_STORAGE_DIR=/var/lib/docker/volumes/auto-mb-prod_objects/_data BACKUP_ROOT=/backup BACKUP_MARKER_DIR=/var/lib/auto-mb/backup-status ./scripts/backup.sh >> /var/log/auto-mb-backup.log 2>&1
 ```
 
 `scripts/backup.sh` produces a custom-format `pg_dump`, an object-store
-tarball, and a SHA-256 manifest.
+tarball, and a SHA-256 manifest, then re-verifies the manifest. Only after
+all of that succeeds does it atomically update the last-success marker
+(`${BACKUP_MARKER_DIR}/last-success`, epoch seconds; temp file + rename) —
+a failed run leaves the previous marker untouched. `BACKUP_MARKER_DIR`
+defaults to `BACKUP_ROOT`; production points it at
+`/var/lib/auto-mb/backup-status`, which `deploy/docker-compose.prod.yml`
+mounts read-only into the server container so `/metrics` can expose the
+`backup_last_success_timestamp_seconds` gauge (§6) without ever exposing
+the dumps themselves to the app container.
 
 ## 5. Restore drill
 
@@ -115,6 +123,15 @@ and requires the application role to connect afterwards.
   `Authorization: Bearer <METRICS_TOKEN>`, scraped from inside the host
   network only — Caddy refuses it publicly. Alert on: 5xx rate above 1%
   over 5 minutes; p95 latency above 2 s; scrape silence (server down);
+- **backup age**: `backup_last_success_timestamp_seconds` on `/metrics` is
+  the epoch of the last backup whose dump, object archive, and manifest
+  verification all succeeded (§4). Alert when
+  `time() - backup_last_success_timestamp_seconds > 26 * 3600` — the
+  nightly cron plus slack, i.e. one missed backup — and treat
+  `absent(backup_last_success_timestamp_seconds)` as the same alert once
+  the first backup has ever run: the series is deliberately omitted (not
+  `0`) when the marker is unset or unreadable, so absence after go-live
+  means the cron or the marker mount is broken;
 - **disk**: alert at 80% on the VM (PostgreSQL volume + objects volume);
 - **logs**: the server logs structured JSON to stdout
   (`docker compose logs server`); review after every alert and weekly.

@@ -40,6 +40,11 @@ export interface BuildAppOptions {
   /** Enables GET /metrics (Prometheus text format) behind this bearer
    * token. Unset disables the endpoint entirely. */
   readonly metricsToken?: string;
+  /** Path to the backup last-success marker written by scripts/backup.sh
+   * (wired from BACKUP_MARKER_PATH). When readable it is exposed as the
+   * backup_last_success_timestamp_seconds gauge on /metrics; unset or
+   * unreadable omits the series. */
+  readonly backupMarkerPath?: string;
   /** Overrides for the built-in login/upload rate limits (tests use
    * tight windows; production keeps the defaults). */
   readonly rateLimits?: {
@@ -174,7 +179,11 @@ export async function buildApp(
   });
 
   if (options.metricsToken !== undefined) {
-    const registry = createMetricsRegistry();
+    const registry = createMetricsRegistry(
+      options.backupMarkerPath !== undefined
+        ? { backupMarkerPath: options.backupMarkerPath }
+        : {},
+    );
     const token = options.metricsToken;
     app.addHook('onResponse', (request, reply, done) => {
       registry.observe(
