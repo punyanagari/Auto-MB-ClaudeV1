@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ConfirmWorkRequest, Membership } from '@auto-mb/contracts';
+import type {
+  ChallanDetailResponse,
+  ConfirmWorkRequest,
+  Membership,
+  SaveChallanRequest,
+} from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
+import { ChallanDetail } from '../src/views/ChallanDetail.js';
+import { ChallanEditor } from '../src/views/ChallanEditor.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
@@ -28,6 +35,17 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     confirmLoa: vi.fn(),
     listWorks: vi.fn().mockResolvedValue([]),
     getWork: vi.fn(),
+    workBalance: vi.fn(),
+    listChallans: vi.fn().mockResolvedValue([]),
+    getChallan: vi.fn(),
+    createChallan: vi.fn(),
+    updateChallan: vi.fn(),
+    deleteChallan: vi.fn(),
+    issueChallan: vi.fn(),
+    cancelChallan: vi.fn(),
+    renderChallan: vi.fn(),
+    uploadSignedCopy: vi.fn(),
+    downloadChallanPdf: vi.fn(),
     ...overrides,
   };
 }
@@ -448,5 +466,222 @@ describe('ReviewLoa', () => {
       screen.queryByRole('button', { name: 'Confirm and create Work' }),
     ).toBeNull();
     expect(screen.getByText(/ask an owner or office member/)).toBeTruthy();
+  });
+});
+
+const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
+const ITEM_A = '55555555-5555-4555-8555-555555555555';
+
+const BALANCE = {
+  allowExcessDelivery: false,
+  items: [
+    {
+      workItemId: ITEM_A,
+      itemNumber: 'A/1',
+      description: 'Main switchboard',
+      unitCode: 'Nos',
+      awardedQuantity: '5.000',
+      deliveredQuantity: '3.000',
+      remainingQuantity: '2.000',
+      effectiveRate: '100.00',
+    },
+  ],
+};
+
+function challanDetail(
+  overrides: Partial<ChallanDetailResponse['challan']> = {},
+): ChallanDetailResponse {
+  return {
+    challan: {
+      id: CHALLAN_ID,
+      workId: WORK_ID,
+      status: 'draft',
+      challanDate: '2026-08-08',
+      challanNumber: null,
+      sequenceNumber: null,
+      prefix: 'DC',
+      consignee: { name: 'Sr. DEE (G)', address: 'Delhi Division' },
+      templateVersion: null,
+      renderedAvailable: false,
+      signedCopyAvailable: false,
+      cancellationNote: null,
+      createdAt: '2026-08-08T00:00:00.000Z',
+      issuedAt: null,
+      cancelledAt: null,
+      ...overrides,
+    },
+    items: [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        workItemId: ITEM_A,
+        description: 'Main switchboard',
+        unit: 'Nos',
+        quantity: '2.000',
+        rate: '100.00',
+        lineAmount: '200.00',
+        position: 1,
+      },
+    ],
+    issuedSnapshot: null,
+  };
+}
+
+describe('ChallanEditor', () => {
+  it('shows remaining balances and saves a draft with the entered quantities', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createChallan,
+    });
+    const onSaved = vi.fn();
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={onSaved}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('2.000')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Consignee name'), {
+      target: { value: 'Sr. DEE (G)' },
+    });
+    fireEvent.change(screen.getByLabelText('Consignee address'), {
+      target: { value: 'Delhi Division' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(CHALLAN_ID);
+    });
+    const [, , body] = createChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveChallanRequest,
+    ];
+    expect(body.prefix).toBe('DCW-1');
+    expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '2' }]);
+  });
+
+  it('refuses to save an empty challan', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    fireEvent.change(screen.getByLabelText('Consignee name'), {
+      target: { value: 'Sr. DEE (G)' },
+    });
+    fireEvent.change(screen.getByLabelText('Consignee address'), {
+      target: { value: 'Delhi Division' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('at least one item');
+    expect(api.createChallan).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChallanDetail', () => {
+  it('issues a draft when the member holds the issue authority', async () => {
+    const issueChallan = vi.fn().mockResolvedValue(
+      challanDetail({
+        status: 'issued',
+        challanNumber: 'DC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-08-08T10:00:00.000Z',
+      }),
+    );
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      issueChallan,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue challan' }));
+    await waitFor(() => {
+      expect(issueChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID);
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Delivery Challan DC/1' }),
+    ).toBeTruthy();
+  });
+
+  it('hides issue from members without the authority and cancels with a note', async () => {
+    const cancelChallan = vi.fn().mockResolvedValue(
+      challanDetail({
+        status: 'cancelled',
+        challanNumber: 'DC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-08-08T10:00:00.000Z',
+        cancelledAt: '2026-08-09T10:00:00.000Z',
+        cancellationNote: 'Wrong consignee.',
+      }),
+    );
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(
+        challanDetail({
+          status: 'issued',
+          challanNumber: 'DC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-08-08T10:00:00.000Z',
+        }),
+      ),
+      cancelChallan,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
+    expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Cancellation note'), {
+      target: { value: 'Wrong consignee.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    await waitFor(() => {
+      expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        note: 'Wrong consignee.',
+      });
+    });
+    expect(await screen.findByText(/Cancelled: Wrong consignee\./)).toBeTruthy();
   });
 });

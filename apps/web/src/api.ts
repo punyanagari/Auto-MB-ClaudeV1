@@ -1,13 +1,18 @@
 import type {
   AddMemberRequest,
   ApiError,
+  CancelChallanRequest,
+  ChallanDetailResponse,
+  Challan,
   ConfirmWorkRequest,
   CreateOrganisationRequest,
   LoaDocument,
   LoaDocumentDetail,
   Membership,
   Organisation,
+  SaveChallanRequest,
   Work,
+  WorkBalanceResponse,
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 
@@ -64,6 +69,52 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<WorkDetailResponse>;
+  readonly workBalance: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkBalanceResponse>;
+  readonly listChallans: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Challan[]>;
+  readonly getChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<ChallanDetailResponse>;
+  readonly createChallan: (
+    organisationId: string,
+    workId: string,
+    body: SaveChallanRequest,
+  ) => Promise<ChallanDetailResponse>;
+  readonly updateChallan: (
+    organisationId: string,
+    challanId: string,
+    body: SaveChallanRequest,
+  ) => Promise<ChallanDetailResponse>;
+  readonly deleteChallan: (organisationId: string, challanId: string) => Promise<void>;
+  readonly issueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<ChallanDetailResponse>;
+  readonly cancelChallan: (
+    organisationId: string,
+    challanId: string,
+    body: CancelChallanRequest,
+  ) => Promise<ChallanDetailResponse>;
+  readonly renderChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<ChallanDetailResponse>;
+  readonly uploadSignedCopy: (
+    organisationId: string,
+    challanId: string,
+    file: Blob,
+  ) => Promise<ChallanDetailResponse>;
+  readonly downloadChallanPdf: (
+    organisationId: string,
+    challanId: string,
+    kind: 'rendered' | 'signed',
+  ) => Promise<Blob>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -217,6 +268,85 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<WorkDetailResponse>(`/api/works/${workId}`, {
         organisationId,
       });
+    },
+    async workBalance(organisationId, workId) {
+      return request<WorkBalanceResponse>(`/api/works/${workId}/balance`, {
+        organisationId,
+      });
+    },
+    async listChallans(organisationId, workId) {
+      const payload = await request<{ challans: Challan[] }>(
+        `/api/works/${workId}/challans`,
+        { organisationId },
+      );
+      return payload.challans;
+    },
+    async getChallan(organisationId, challanId) {
+      return request<ChallanDetailResponse>(`/api/challans/${challanId}`, {
+        organisationId,
+      });
+    },
+    async createChallan(organisationId, workId, body) {
+      return request<ChallanDetailResponse>(`/api/works/${workId}/challans`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async updateChallan(organisationId, challanId, body) {
+      return request<ChallanDetailResponse>(`/api/challans/${challanId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async deleteChallan(organisationId, challanId) {
+      await request(`/api/challans/${challanId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async issueChallan(organisationId, challanId) {
+      return request<ChallanDetailResponse>(`/api/challans/${challanId}/issue`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelChallan(organisationId, challanId, body) {
+      return request<ChallanDetailResponse>(`/api/challans/${challanId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async renderChallan(organisationId, challanId) {
+      return request<ChallanDetailResponse>(`/api/challans/${challanId}/render`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async uploadSignedCopy(organisationId, challanId, file) {
+      const response = await fetchImpl(`/api/challans/${challanId}/signed-copy`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/pdf',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ChallanDetailResponse;
+    },
+    async downloadChallanPdf(organisationId, challanId, kind) {
+      // The tenant header travels on every scoped request, so PDFs are
+      // fetched (not linked) and handed to the browser as object URLs.
+      const response = await fetchImpl(`/api/challans/${challanId}/pdf?kind=${kind}`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
   };
 }

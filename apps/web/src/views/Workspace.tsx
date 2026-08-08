@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
+import { ChallanDetail } from './ChallanDetail.js';
+import { ChallanEditor } from './ChallanEditor.js';
 import { Members } from './Members.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { UploadLoa } from './UploadLoa.js';
@@ -18,19 +20,24 @@ type WorkspaceView =
   | { name: 'upload' }
   | { name: 'review'; documentId: string }
   | { name: 'work'; workId: string }
+  | { name: 'challan-new'; workId: string; workCode: string }
+  | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
+  | { name: 'challan'; workId: string; workCode: string; challanId: string }
   | { name: 'members' };
 
 export function Workspace({ api, me, organisation }: WorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'works' });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Owner/office members may upload and confirm; site/viewer read.
-  const canModify = me.memberships.some(
-    (membership) =>
-      membership.organisationId === organisation.id &&
-      membership.status === 'active' &&
-      (membership.role === 'owner' || membership.role === 'office'),
+  const membership = me.memberships.find(
+    (candidate) =>
+      candidate.organisationId === organisation.id && candidate.status === 'active',
   );
+  // Owner/office members may upload, confirm, and draft; site/viewer read.
+  const canModify = membership?.role === 'owner' || membership?.role === 'office';
+  // Issue and cancel are explicit per-member authorities, not roles.
+  const canIssue = membership?.canIssueDocuments ?? false;
+  const canCancel = membership?.canCancelDocuments ?? false;
 
   // Same convention as the app shell: view changes land keyboard and
   // screen-reader users on the new heading.
@@ -116,8 +123,64 @@ export function Workspace({ api, me, organisation }: WorkspaceProps) {
           api={api}
           organisationId={organisation.id}
           workId={view.workId}
+          canModify={canModify}
+          onNewChallan={(workId, workCode) => {
+            setView({ name: 'challan-new', workId, workCode });
+          }}
+          onOpenChallan={(challanId) => {
+            setView({
+              name: 'challan',
+              workId: view.workId,
+              workCode: '',
+              challanId,
+            });
+          }}
           onBack={() => {
             setView({ name: 'works' });
+          }}
+        />
+      )}
+      {(view.name === 'challan-new' || view.name === 'challan-edit') && (
+        <ChallanEditor
+          api={api}
+          organisationId={organisation.id}
+          workId={view.workId}
+          workCode={view.workCode}
+          challanId={view.name === 'challan-edit' ? view.challanId : null}
+          onSaved={(challanId) => {
+            setView({
+              name: 'challan',
+              workId: view.workId,
+              workCode: view.workCode,
+              challanId,
+            });
+          }}
+          onCancel={() => {
+            setView({ name: 'work', workId: view.workId });
+          }}
+        />
+      )}
+      {view.name === 'challan' && (
+        <ChallanDetail
+          api={api}
+          organisationId={organisation.id}
+          challanId={view.challanId}
+          canModify={canModify}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          onEdit={(challanId) => {
+            setView({
+              name: 'challan-edit',
+              workId: view.workId,
+              workCode: view.workCode,
+              challanId,
+            });
+          }}
+          onDeleted={() => {
+            setView({ name: 'work', workId: view.workId });
+          }}
+          onBack={() => {
+            setView({ name: 'work', workId: view.workId });
           }}
         />
       )}

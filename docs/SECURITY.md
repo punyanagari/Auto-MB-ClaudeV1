@@ -128,6 +128,18 @@ Activated with Milestone 2 (uploads and Works exist):
 - role enforcement — upload and confirm are owner/office-only over live
   HTTP.
 
+Activated with Milestone 3 (issued documents exist):
+
+- issue/cancel authority — explicit per-member flags checked over live
+  HTTP, separate from roles; drafting alone never issues a document;
+- business integrity — serialised per-Work numbering, exact-arithmetic
+  quantity validation, and snapshot immutability proven by live tests,
+  including a concurrent double-issue race producing exactly one issued
+  challan;
+- document integrity — rendered PDFs are hashed (SHA-256) and produced
+  only from the immutable issued snapshot; signed copies are magic-byte
+  validated; both stream through authenticated, tenant-scoped requests.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 

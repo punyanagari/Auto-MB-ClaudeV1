@@ -141,6 +141,12 @@ API rules:
 
 Use PostgreSQL-backed jobs before introducing a second datastore. Adopt `pg-boss` when the first real async workflow lands. Jobs are idempotent, bounded, observable, and refer to records by ids rather than embedding sensitive documents.
 
+Milestone 3 status: challan PDF rendering is a synchronous, idempotent
+endpoint (`POST /api/challans/:id/render`) — issue-state correctness never
+depends on it, a failure is a clean 502 with the challan unaffected, and a
+retry re-renders from the immutable snapshot. That keeps pg-boss at its
+trigger: the first workflow that must retry unattended.
+
 ## 10. Scale target
 
 Initial capacity validation target:

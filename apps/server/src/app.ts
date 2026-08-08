@@ -6,6 +6,7 @@ import { createDatabasePool } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
 import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
+import { registerChallanRoutes } from './routes/challans.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -23,6 +24,9 @@ export interface BuildAppOptions {
    * ./local-data/objects (gitignored); tests point it at a disposable
    * directory. */
   readonly objectStorageDir?: string;
+  /** Gotenberg base URL for Delivery Challan PDF rendering. Defaults to
+   * the compose-provided local service. */
+  readonly gotenbergUrl?: string;
 }
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
@@ -200,11 +204,16 @@ export async function buildApp(
         done(null, body);
       },
     );
-    registerLoaRoutes(
+    const storage = createFileSystemStorage(
+      options.objectStorageDir ?? './local-data/objects',
+    );
+    registerLoaRoutes(app, authInstance, database, storage);
+    registerChallanRoutes(
       app,
       authInstance,
       database,
-      createFileSystemStorage(options.objectStorageDir ?? './local-data/objects'),
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
   }
 

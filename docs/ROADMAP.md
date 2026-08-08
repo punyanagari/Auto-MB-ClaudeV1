@@ -53,16 +53,23 @@ Exit: all six legacy LOA fixtures can be reviewed and confirmed without losing s
 
 ## Milestone 3 — Work to issued Delivery Challan
 
-- DC draft and one-draft invariant;
-- item picker with quantity balance;
-- issue authority;
-- serialised per-Work numbering;
-- concurrency-safe quantity validation;
-- immutable snapshot;
-- PDF generation and signed-copy upload;
-- cancellation and audit timeline.
+Delivered:
 
-Exit: a design partner completes the exact LOA→DC workflow in staging.
+- draft challans with the one-draft-per-Work invariant (DB partial unique index, surfaced as 409), consignee snapshot, and line snapshots (description/unit/rate copied and the line amount computed in exact SQL numeric arithmetic at line creation);
+- balance-aware item picker: per-item awarded/delivered/remaining, where delivered counts issued challans only — cancellation releases its quantities;
+- issue and cancel as explicit per-member authorities (`can_issue_documents` / `can_cancel_documents`), separate from roles and enforced over live HTTP;
+- serialised per-Work numbering via the counter row lock (`prefix/sequence`; a rolled-back issue rolls its number back with it, so numbers are gapless per Work);
+- concurrency-safe quantity validation inside the issue transaction (proved: a concurrent double-issue produces exactly one issued challan; exact-boundary issues pass, one-paisa-over fails);
+- the immutable issued snapshot (organisation, work, consignee, lines, totals) stored on issue; DB triggers keep issued business data and cancelled challans immutable;
+- deterministic HTML template (`dc-v1`) rendered from the snapshot only, converted by Gotenberg, stored with its SHA-256; signed-copy upload with magic-byte validation; authenticated PDF streaming;
+- cancellation with mandatory note and the full audit timeline (created → updated → issued → rendered → signed-copy uploaded → cancelled).
+
+Remaining:
+
+- the render call is a synchronous idempotent endpoint retried by the operator; unattended retry (pg-boss) arrives if the pilot shows renders failing when nobody is watching;
+- the real Gotenberg service is exercised locally via compose; CI proves the render path against a stub PDF service, and the live-service proof lands with the staging deployment.
+
+Exit: a design partner completes the exact LOA→DC workflow in staging — pending Milestone 4's staging deployment; the workflow itself is complete and CI-proven end to end (`apps/server/test/challans.integration.test.ts`).
 
 ## Milestone 4 — controlled design-partner pilot
 

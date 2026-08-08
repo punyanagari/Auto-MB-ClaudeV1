@@ -186,6 +186,96 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await expectNoSeriousViolations(page, 'review');
 });
 
+test('work detail and challan editor pass the axe scan', async ({ page }) => {
+  const WORK_ID = '33333333-3333-4333-8333-333333333333';
+  const ITEM_ID = '55555555-5555-4555-8555-555555555555';
+  const WORK = {
+    id: WORK_ID,
+    workCode: 'DCW-1',
+    letterNumber: 'L-42/2025',
+    letterDate: '2025-06-01',
+    title: 'Supply of switchboards',
+    advertisedValue: '1000.00',
+    contractValue: '900.00',
+    pricingShape: 'per_schedule',
+    letterPercentage: null,
+    letterPercentageDirection: null,
+    status: 'active',
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+  await page.route('**/api/me', (route) => route.fulfill(json(ME)));
+  await page.route('**/api/organisations', (route) =>
+    route.fulfill(json({ organisations: [ORG] })),
+  );
+  await page.route('**/api/loa-documents', (route) =>
+    route.fulfill(json({ documents: [] })),
+  );
+  await page.route('**/api/works', (route) => route.fulfill(json({ works: [WORK] })));
+  await page.route(`**/api/works/${WORK_ID}`, (route) =>
+    route.fulfill(
+      json({
+        work: WORK,
+        schedules: [
+          {
+            id: '77777777-7777-4777-8777-777777777777',
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            position: 1,
+            items: [
+              {
+                id: ITEM_ID,
+                scheduleId: '77777777-7777-4777-8777-777777777777',
+                itemNumber: 'A/1',
+                description: 'Main switchboard',
+                unitCode: 'Nos',
+                awardedQuantity: '5.000',
+                effectiveRate: '100.00',
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
+    route.fulfill(json({ challans: [] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/balance`, (route) =>
+    route.fulfill(
+      json({
+        allowExcessDelivery: false,
+        items: [
+          {
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            deliveredQuantity: '3.000',
+            remainingQuantity: '2.000',
+            effectiveRate: '100.00',
+          },
+        ],
+      }),
+    ),
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await page.getByRole('button', { name: 'DCW-1' }).click();
+  await expect(
+    page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
+  ).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail');
+
+  await page.getByRole('button', { name: 'New Delivery Challan' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'New Delivery Challan' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Quantity of A/1 on this challan')).toBeVisible();
+  await expectNoSeriousViolations(page, 'challan editor');
+});
+
 test('the workspace keeps the tenant header on every scoped request', async ({
   page,
 }) => {

@@ -25,6 +25,9 @@ const app = await buildApp({
         ...(process.env.OBJECT_STORAGE_DIR
           ? { objectStorageDir: process.env.OBJECT_STORAGE_DIR }
           : {}),
+        ...(process.env.GOTENBERG_URL
+          ? { gotenbergUrl: process.env.GOTENBERG_URL }
+          : {}),
       }
     : {}),
 });

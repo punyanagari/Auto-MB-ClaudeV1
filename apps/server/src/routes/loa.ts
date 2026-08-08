@@ -18,10 +18,12 @@ import {
 import { reviewLoaLetter, type LoaReviewPayload } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
-import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
+import { requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
+import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -80,17 +82,6 @@ function toDocument(row: LoaDocumentRow): LoaDocument {
   };
 }
 
-/** postgres.js returns jsonb columns as their raw JSON text; the payload
- * travels as a structured object everywhere else. */
-function parseJsonbColumn(value: unknown): unknown {
-  if (typeof value !== 'string') return value ?? null;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
-}
-
 function toDocumentDetail(row: LoaDocumentRow): LoaDocumentDetail {
   return {
     ...toDocument(row),
@@ -128,21 +119,6 @@ function toWork(row: WorkRow): Work {
     status: row.status,
     createdAt: row.created_at.toISOString(),
   };
-}
-
-/** Upload and confirm mutate Works, so they are owner/office-only —
- * the Milestone 1 roles activating on their first write surface. */
-async function requireWriterRole(tx: TransactionSql, userId: string): Promise<void> {
-  const [membership] = await tx<{ role: string }[]>`
-    select role from organisation_memberships where user_id = ${userId}
-  `;
-  if (membership?.role !== 'owner' && membership?.role !== 'office') {
-    throw httpError(
-      403,
-      'ROLE_FORBIDDEN',
-      'Only owner or office members may modify Works.',
-    );
-  }
 }
 
 /** Links a confirmed item back to the parsed row it came from, so the
