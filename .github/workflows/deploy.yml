@@ -94,6 +94,15 @@ jobs:
           # for credentials; fetch with the job's ephemeral read token,
           # which never touches the host's disk.
           git fetch "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
+          # The deploy checkout must track main exactly, but local edits on
+          # the host (a hand-tweaked doc, a hot-fixed config) must not block
+          # the deploy OR be destroyed: stash them aside, visibly, and keep
+          # them recoverable via `git stash list` on the host.
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "local changes on host; preserving them in a stash:"
+            git status --short
+            git stash push --include-untracked -m "deploy-autostash before $(git rev-parse --short FETCH_HEAD)"
+          fi
           git merge --ff-only FETCH_HEAD
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production up -d --build
