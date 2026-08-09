@@ -704,15 +704,16 @@ describe('amendment approvals', () => {
     expect(approval.decidedByUserId).toBe(ownerUserId);
     expect(approval.decidedAt).not.toBeNull();
 
-    // The identical audit trail exists: proposed AND approved.
+    // The identical audit trail exists: proposed AND approved. Both
+    // events are written in the same deciding transaction, so their
+    // occurred_at timestamps tie — compare as a sorted set, not by time.
     const events = await admin<{ action: string }[]>`
       select action from audit_events
       where organisation_id = ${organisationId} and entity_id = ${approval.id}
-      order by occurred_at
     `;
-    expect(events.map((event) => event.action)).toEqual([
-      'amendment.proposed',
+    expect(events.map((event) => event.action).sort()).toEqual([
       'amendment.approved',
+      'amendment.proposed',
     ]);
   });
 

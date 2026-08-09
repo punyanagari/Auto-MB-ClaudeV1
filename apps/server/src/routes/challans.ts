@@ -26,6 +26,7 @@ import {
   renderChallanHtml,
   type ChallanSnapshot,
 } from '../challan-html.js';
+import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
@@ -467,6 +468,21 @@ export function registerChallanRoutes(
           }
           await assertChallanDate(tx, workId, body.challanDate);
 
+          // One open draft per Work (the partial unique index is the
+          // arbiter): the 409 names the existing draft so the client can
+          // open it instead of parsing the message.
+          const [existingDraft] = await tx<{ id: string }[]>`
+            select id from delivery_challans
+            where work_id = ${workId} and status = 'draft'
+          `;
+          if (existingDraft) {
+            throw draftConflictError(
+              'DRAFT_EXISTS',
+              'This Work already has a draft challan; issue or delete it first.',
+              existingDraft.id,
+            );
+          }
+
           const [created] = await tx<{ id: string }[]>`
             insert into delivery_challans (
               organisation_id, work_id, challan_date, prefix,
@@ -479,6 +495,9 @@ export function registerChallanRoutes(
             returning id
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
+              // A concurrent create won between the pre-check and this
+              // insert; the transaction is aborted, so the route-level
+              // catch names the winner from a fresh read.
               throw httpError(
                 409,
                 'DRAFT_EXISTS',
@@ -503,7 +522,19 @@ export function registerChallanRoutes(
           );
           return readDetail(tx, created.id);
         },
-      );
+      ).catch(async (error: unknown) => {
+        // The unique-index race path could not name the winning draft
+        // inside its aborted transaction; do it from a fresh read.
+        throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from delivery_challans
+              where work_id = ${workId} and status = 'draft'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
       return reply.status(201).send(detail);
     },
   );

@@ -19,6 +19,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { draftConflictError } from '../draft-conflict.js';
 import {
   EXTENSION_TEMPLATE_VERSION,
   renderExtensionHtml,
@@ -395,7 +396,7 @@ export function registerExtensionRoutes(
       );
       const { id: workId } = request.params as { id: string };
       const body = request.body as SaveExtensionRequest;
-      const outcome = await withBoundTenant(
+      const detail = await withBoundTenant(
         database,
         organisationId,
         user.id,
@@ -415,14 +416,19 @@ export function registerExtensionRoutes(
             await assertLetterDate(tx, workId, body.letterDate);
           }
           // One draft per Work: the partial unique index is the proof;
-          // this lookup (under the work row lock) surfaces the existing
-          // draft's id in the 409 for the client to open.
+          // this lookup (under the work row lock, which serialises
+          // concurrent creates) surfaces the existing draft's id in the
+          // 409 for the client to open.
           const [existing] = await tx<{ id: string }[]>`
             select id from extension_requests
             where work_id = ${workId} and status = 'draft'
           `;
           if (existing) {
-            return { draftExists: existing.id };
+            throw draftConflictError(
+              'EXTENSION_DRAFT_EXISTS',
+              'This Work already has a draft extension request; finalise or delete it first.',
+              existing.id,
+            );
           }
           const [created] = await tx<{ id: string }[]>`
             insert into extension_requests (
@@ -446,19 +452,10 @@ export function registerExtensionRoutes(
             created.id,
             { workId, proposedCompletionDate: body.proposedCompletionDate },
           );
-          return { detail: await readDetail(tx, created.id) };
+          return readDetail(tx, created.id);
         },
       );
-      if ('draftExists' in outcome) {
-        return reply.status(409).send({
-          code: 'EXTENSION_DRAFT_EXISTS',
-          message:
-            'This Work already has a draft extension request; finalise or delete it first.',
-          requestId: request.id,
-          details: { draftId: outcome.draftExists },
-        });
-      }
-      return reply.status(201).send(outcome.detail);
+      return reply.status(201).send(detail);
     },
   );
 

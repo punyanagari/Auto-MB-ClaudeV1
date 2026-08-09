@@ -349,7 +349,7 @@ describe('Issue Challan lifecycle', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
       code: 'DRAFT_EXISTS',
-      details: { existingDraftId: firstChallanId },
+      details: { existingRecordId: firstChallanId },
     });
   });
 
@@ -817,5 +817,60 @@ describe('Issue Challan lifecycle', () => {
       select status from issue_challans where id = ${firstChallanId}
     `;
     expect(untouched?.status).toBe('issued');
+  });
+});
+
+describe('one-draft rule under concurrency', () => {
+  it('lets exactly one of two simultaneous creates draft; the 409 names the winner', async () => {
+    // A fresh Work so no earlier draft occupies the slot.
+    const raceWorkId = randomUUID();
+    const raceScheduleId = randomUUID();
+    const raceItemId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, letter_percentage,
+        letter_percentage_direction, created_by_user_id
+      )
+      values (
+        ${raceWorkId}, ${organisationId}, ${`ICR-${runId.toUpperCase()}`},
+        ${`ic-race-letter-${runId}`}, '2025-06-01', 'Issue Challan race work',
+        1000.00, 900.00, 'per_schedule', null, null, ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${raceScheduleId}, ${organisationId}, ${raceWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${raceItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId},
+              'A/1', 'Race switchboard', 'Nos', 5.000, 100.00)
+    `;
+
+    const create = () =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${raceWorkId}/issue-challans`,
+        organisationId,
+        payload: draftBody([{ workItemId: raceItemId, quantity: '1' }]),
+      });
+    const responses = await Promise.all([create(), create()]);
+    const winners = responses.filter((response) => response.statusCode === 201);
+    const losers = responses.filter((response) => response.statusCode === 409);
+    expect(winners.length, responses.map((response) => response.body).join('\n')).toBe(
+      1,
+    );
+    expect(losers.length).toBe(1);
+    const winnerId = winners[0]?.json<IssueChallanDetailResponse>().issueChallan.id;
+    // Whether the loser hit the pre-check or the unique-index race path,
+    // its 409 names the winning draft.
+    expect(losers[0]?.json()).toMatchObject({
+      code: 'DRAFT_EXISTS',
+      details: { existingRecordId: winnerId },
+    });
   });
 });

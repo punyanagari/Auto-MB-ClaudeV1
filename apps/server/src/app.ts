@@ -194,6 +194,13 @@ export async function buildApp(
                 : 'REQUEST_ERROR',
             message: error instanceof Error ? error.message : 'Request failed.',
             requestId: request.id,
+            // Structured conflict payloads (e.g. the one-draft 409s'
+            // { existingRecordId }) ride along verbatim.
+            ...(error instanceof Error &&
+            'details' in error &&
+            error.details !== undefined
+              ? { details: error.details }
+              : {}),
           },
     );
   });

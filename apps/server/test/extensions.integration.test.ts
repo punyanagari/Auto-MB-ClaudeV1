@@ -443,7 +443,7 @@ describe('extension request lifecycle', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
       code: 'EXTENSION_DRAFT_EXISTS',
-      details: { draftId: firstId },
+      details: { existingRecordId: firstId },
     });
   });
 

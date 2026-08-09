@@ -4,7 +4,7 @@ import type {
   SaveChallanRequest,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 
 interface ChallanEditorProps {
   readonly api: ApiClient;
@@ -116,6 +116,13 @@ export function ChallanEditor({
           : await api.updateChallan(organisationId, challanId, body);
       onSaved(detail.challan.id);
     } catch (cause) {
+      // DRAFT_EXISTS conflicts answer with the open draft's id so the
+      // editor routes straight to it instead of dead-ending on an error.
+      const existingId = existingRecordIdOf(cause);
+      if (existingId !== null) {
+        onSaved(existingId);
+        return;
+      }
       setSaveError(
         cause instanceof RequestFailedError
           ? cause.message

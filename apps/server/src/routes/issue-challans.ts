@@ -17,6 +17,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import {
   ISSUE_CHALLAN_TEMPLATE_VERSION,
@@ -421,16 +422,11 @@ export function registerIssueChallanRoutes(
       const body = request.body as SaveIssueChallanRequest;
       const header = normaliseHeader(body);
 
-      const result = await withBoundTenant(
+      const detail = await withBoundTenant(
         database,
         organisationId,
         user.id,
-        async (
-          tx,
-        ): Promise<
-          | { kind: 'created'; detail: IssueChallanDetailResponse }
-          | { kind: 'draft_exists'; existingDraftId: string }
-        > => {
+        async (tx): Promise<IssueChallanDetailResponse> => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
           const [work] = await tx<{ status: string; work_code: string }[]>`
@@ -455,7 +451,11 @@ export function registerIssueChallanRoutes(
             where work_id = ${workId} and status = 'draft'
           `;
           if (existing) {
-            return { kind: 'draft_exists', existingDraftId: existing.id };
+            throw draftConflictError(
+              'DRAFT_EXISTS',
+              'This Work already has a draft Issue Challan; open, issue, or delete it first.',
+              existing.id,
+            );
           }
 
           // Numbering series per §7: default prefix <work_code>-IC.
@@ -476,7 +476,9 @@ export function registerIssueChallanRoutes(
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               // Concurrent creates raced past the pre-check above; the
-              // partial unique index is the arbiter.
+              // partial unique index is the arbiter. The transaction is
+              // aborted, so the route-level catch names the winner from
+              // a fresh read.
               throw httpError(
                 409,
                 'DRAFT_EXISTS',
@@ -500,19 +502,22 @@ export function registerIssueChallanRoutes(
               lineCount: body.lines.length,
             },
           );
-          return { kind: 'created', detail: await readDetail(tx, created.id) };
+          return readDetail(tx, created.id);
         },
-      );
-      if (result.kind === 'draft_exists') {
-        return reply.status(409).send({
-          code: 'DRAFT_EXISTS',
-          message:
-            'This Work already has a draft Issue Challan; open, issue, or delete it first.',
-          requestId: request.id,
-          details: { existingDraftId: result.existingDraftId },
-        });
-      }
-      return reply.status(201).send(result.detail);
+      ).catch(async (error: unknown) => {
+        // The unique-index race path could not name the winning draft
+        // inside its aborted transaction; do it from a fresh read.
+        throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from issue_challans
+              where work_id = ${workId} and status = 'draft'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+      return reply.status(201).send(detail);
     },
   );
 

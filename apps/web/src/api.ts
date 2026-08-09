@@ -73,8 +73,8 @@ export interface MeResponse {
 }
 
 /** Error carrying the server's ApiError envelope for user-facing display.
- * `details` carries structured conflict payloads (e.g. DRAFT_EXISTS
- * answers with the existing draft's id). */
+ * `details` carries structured conflict payloads (e.g. one-draft 409s
+ * answer with the existing draft's id — see existingRecordIdOf). */
 export class RequestFailedError extends Error {
   readonly status: number;
   readonly code: string;
@@ -86,6 +86,18 @@ export class RequestFailedError extends Error {
     this.code = code;
     this.details = details ?? null;
   }
+}
+
+/** Every one-open-draft 409 (DRAFT_EXISTS, EXTENSION_DRAFT_EXISTS, and
+ * future one-draft rules) answers with the existing draft's id as
+ * `details.existingRecordId`; returns it when present so views can open
+ * the existing draft instead of dead-ending on the message. */
+export function existingRecordIdOf(error: unknown): string | null {
+  if (!(error instanceof RequestFailedError) || error.status !== 409) return null;
+  const details = error.details as { existingRecordId?: unknown } | null;
+  return typeof details?.existingRecordId === 'string'
+    ? details.existingRecordId
+    : null;
 }
 
 export interface ApiClient {
