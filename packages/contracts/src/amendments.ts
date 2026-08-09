@@ -61,6 +61,19 @@ export const ProposeAddItemRequestSchema = Type.Object(
 );
 export type ProposeAddItemRequest = Static<typeof ProposeAddItemRequestSchema>;
 
+/** Omits (retires) an existing item by amendment. R7 permits it only
+ * while the item carries no delivery, installation, PAC, or billing
+ * evidence; the removal is a soft-delete, so the item number stays
+ * reserved for the life of the Work and is never handed out again. */
+export const ProposeRemoveItemRequestSchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    reason: Type.String({ minLength: 3, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+export type ProposeRemoveItemRequest = Static<typeof ProposeRemoveItemRequestSchema>;
+
 export const AmendmentDiffEntrySchema = Type.Object(
   {
     field: Type.String(),

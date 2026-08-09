@@ -33,6 +33,7 @@ import type {
   Organisation,
   ProposeAddItemRequest,
   ProposeAmendmentRequest,
+  ProposeRemoveItemRequest,
   OrganisationProfile,
   Receipt,
   RecordMbEntryRequest,
@@ -498,6 +499,11 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
     body: ProposeAddItemRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeItemRemoval: (
+    organisationId: string,
+    workId: string,
+    body: ProposeRemoveItemRequest,
   ) => Promise<ApprovalRequest>;
   readonly approveAmendment: (
     organisationId: string,
@@ -1400,6 +1406,13 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async proposeAddItem(organisationId, workId, body) {
       return request<ApprovalRequest>(`/api/works/${workId}/amendments/items`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async proposeItemRemoval(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments/removals`, {
         method: 'POST',
         body,
         organisationId,

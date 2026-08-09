@@ -234,6 +234,28 @@ completion/reopen/short-closure (R8) with per-category executed value,
 approval-concurrency exit tests, and installation/Issue-Challan
 invariant exit suites.
 
+Retrofit, second half — R7 complete (2026-08-09, migration 0030): the
+amendment floor now names delivered, installed AND PAC-certified
+quantities and is enforced by a work_items trigger, so no writer can
+lower a sanctioned quantity beneath its own evidence; item OMISSION
+exists as an approval-engine path (`POST
+/api/works/:id/amendments/removals`) that soft-deletes, refuses while
+any delivery, installation, PAC certificate, or quantity-bearing
+Measurement Book line references the item, and keeps the retired item
+number reserved forever; and `requires_serials` became genuinely
+one-way. Two real defects surfaced and were fixed: the
+`requires-serials` toggle allowed switching serial tracking OFF with
+serials already recorded (R7's last sentence, unenforced anywhere), and
+the amendment floor was applied to quantity INCREASES as well as
+reductions, which on an excess-delivery Work refused the exact remedy
+R5 prescribes. Exit suites pin the atomic decision claim under a real
+simultaneous double-decide, the audit-shape equivalence of the
+one-party and two-party approval flows, the excess-delivery toggle
+lifting the delivery ceiling but never the installation ceiling, the
+absence of an in-place installation edit, and the Issue Challan
+counter's independence from the Delivery Challan counter on the same
+Work.
+
 ## Milestone 7 — site material movement and document control
 
 Scope:

@@ -117,11 +117,33 @@ export function registerSerialRoutes(
         }
         await assertWorkAccess(tx, user.id, item.work_id);
 
+        if (!body.requiresSerials && item.requires_serials) {
+          // R7, last sentence: serial tracking is ONE-WAY once physical
+          // units exist. Switching it off would orphan every captured
+          // serial and silently drop R6's traceability guarantee, so the
+          // toggle is refused while any serial is recorded against the
+          // item. (Enabling remains legitimate at any time; the 0030
+          // trigger holds this same direction against direct SQL.)
+          const [recorded] = await tx<{ total: string }[]>`
+            select count(*)::text as total
+            from challan_item_serials s
+            join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+            where dci.work_item_id = ${workItemId}
+          `;
+          if (Number(recorded?.total ?? '0') > 0) {
+            throw httpError(
+              409,
+              'SERIALS_EXIST_FOR_FLAG',
+              `Serial tracking cannot be switched off for ${item.item_number}: ${recorded?.total ?? '0'} serial(s) are already recorded against it.`,
+            );
+          }
+        }
+
         if (body.requiresSerials && !item.requires_serials) {
           // Turning ON must not create an instantly-broken invariant:
           // every already-issued line of this item has to be serial-
           // complete, otherwise the flag would claim a guarantee the
-          // record does not hold. Turning OFF is always allowed.
+          // record does not hold.
           const incomplete = await tx<
             { challan_number: string | null; quantity: string; recorded: string }[]
           >`

@@ -378,6 +378,7 @@ afterAll(async () => {
           'delivery_challans',
           'location_masters',
           'work_assignments',
+          'approval_requests',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -1207,5 +1208,210 @@ describe('serials of another Work and the assigned scope', () => {
       organisationId,
     });
     expect(assignedList.statusCode, assignedList.body).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Milestone 6/7 retrofit — the installation invariant exit suite.
+//
+// Already pinned above and NOT repeated here: the LOA cap in exact SQL
+// arithmetic and under the amendment overlay, the cap under simultaneous
+// recordings, the serialised installed-≤-delivered cap, the R11 date
+// window in the API and in the database, one-serial-per-unit, serial
+// existence/lineage/delivery-date/re-installation refusals, the atomic
+// double-attachment race, cancel-with-note releasing serials, and the
+// record freeze against direct SQL.
+//
+// What was NOT pinned, and is pinned here: the excess-delivery toggle
+// lifting the DELIVERY ceiling while leaving the INSTALLATION ceiling
+// exactly where R5 puts it, and the deliberate absence of an in-place
+// quantity-edit endpoint (Milestone 7's settled cancel-and-re-record).
+// ---------------------------------------------------------------------------
+
+describe('the excess-delivery toggle never lifts the installation cap (R5)', () => {
+  let excessWorkId: string;
+  let excessItemId: string;
+
+  beforeAll(async () => {
+    excessWorkId = randomUUID();
+    const scheduleId = randomUUID();
+    excessItemId = randomUUID();
+    // The toggle is ON from the start — this Work is allowed to over-deliver.
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id,
+        allow_excess_delivery
+      )
+      values (
+        ${excessWorkId}, ${organisationId}, ${`INSTX-${runId.toUpperCase()}`},
+        ${`inst-excess-letter-${runId}`}, '2025-06-01', 'Excess delivery work',
+        1000.00, 900.00, 'per_schedule', ${ownerUserId}, true
+      )
+    `;
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position
+      )
+      values (${scheduleId}, ${organisationId}, ${excessWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, requires_serials
+      )
+      values (
+        ${excessItemId}, ${organisationId}, ${excessWorkId}, ${scheduleId},
+        'A/1', 'Over-delivered ballast', 'Cum', 4.000, 300.00, false
+      )
+    `;
+  });
+
+  it('delivers 6 against an awarded 4 — the toggle lifts the DELIVERY ceiling', async () => {
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-01',
+        prefix: 'DCX',
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items: [{ workItemId: excessItemId, quantity: '6' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const challanId = draft.json<ChallanDetailResponse>().challan.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+  });
+
+  it('still caps installation at the LOA quantity, not the delivered quantity', async () => {
+    // 4 installed is exactly the sanctioned quantity and is accepted…
+    const atCap = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: excessItemId,
+        quantity: '4.000',
+        installedOn: '2026-08-02',
+        newLocation: { name: 'Excess ballast yard', kind: 'other' },
+      },
+    });
+    expect(atCap.statusCode, atCap.body).toBe(201);
+
+    // …and the fifth unit is refused even though six were delivered.
+    // Payment is per LOA quantity: the toggle deliberately does not reach
+    // this cap (spec R5, "the excess toggle never applies").
+    const overCap = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: excessItemId,
+        quantity: '1.000',
+        installedOn: '2026-08-02',
+        newLocation: { name: 'Excess ballast yard', kind: 'other' },
+      },
+    });
+    expect(overCap.statusCode).toBe(409);
+    expect(overCap.json()).toMatchObject({ code: 'INSTALLATION_EXCEEDS_LOA' });
+    expect(overCap.json<{ message: string }>().message).toContain(
+      'amend the item quantity first',
+    );
+
+    // The toggle really is on — the refusal is the installation cap
+    // speaking, not a Work that forgot its own setting.
+    const [work] = await admin<{ allow_excess_delivery: boolean }[]>`
+      select allow_excess_delivery from works where id = ${excessWorkId}
+    `;
+    expect(work?.allow_excess_delivery).toBe(true);
+    const [totals] = await admin<{ delivered: string; installed: string }[]>`
+      select
+        (select coalesce(sum(dci.quantity), 0)::text
+         from delivery_challan_items dci
+         join delivery_challans dc on dc.id = dci.delivery_challan_id
+         where dci.work_item_id = ${excessItemId} and dc.status = 'issued')
+          as delivered,
+        (select coalesce(sum(i.quantity), 0)::text from installations i
+         where i.work_item_id = ${excessItemId} and i.status = 'recorded')
+          as installed
+    `;
+    expect(totals?.delivered).toBe('6.000');
+    expect(totals?.installed).toBe('4.000');
+  });
+
+  it('accepts the extra unit only after the item quantity is amended up', async () => {
+    // The lawful path R5 names: amend the sanctioned quantity, then install.
+    await admin`
+      update organisation_memberships set can_approve_amendments = true
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+    const amended = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: excessItemId,
+        reason: 'Railway sanctioned the extra ballast.',
+        changes: { quantity: '5' },
+      },
+    });
+    expect(amended.statusCode, amended.body).toBe(201);
+
+    const accepted = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: excessItemId,
+        quantity: '1.000',
+        installedOn: '2026-08-02',
+        newLocation: { name: 'Excess ballast yard', kind: 'other' },
+      },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(201);
+  });
+});
+
+describe('installation quantity edits are cancel-and-re-record only', () => {
+  it('exposes no in-place edit endpoint for a recorded installation', async () => {
+    const list = await listInstallations();
+    const recorded = list.installations.find(
+      (installation) => installation.status === 'recorded',
+    );
+    expect(recorded).toBeDefined();
+    const id = recorded?.id ?? '';
+
+    // Milestone 7's settled narrowing (ROADMAP): there is deliberately no
+    // approval-gated in-place installation edit, so the obvious verbs on
+    // the record itself do not exist. A 404/405 here is the contract — if
+    // one of these ever starts answering 200, the narrowing was undone
+    // without updating the roadmap.
+    for (const method of ['PUT', 'PATCH'] as const) {
+      const response = await authed(owner, {
+        method,
+        url: `/api/installations/${id}`,
+        organisationId,
+        payload: { quantity: '1.000' },
+      });
+      expect([404, 405], `${method}: ${String(response.statusCode)}`).toContain(
+        response.statusCode,
+      );
+    }
+
+    // The supported path stays open: cancel with a note, then re-record.
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/installations/${id}/cancel`,
+      organisationId,
+      payload: { note: 'Quantity corrected — re-recorded below.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json<Installation>().status).toBe('cancelled');
   });
 });

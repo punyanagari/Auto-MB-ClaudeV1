@@ -7,6 +7,7 @@ import {
   ApproveAmendmentRequestSchema,
   ProposeAddItemRequestSchema,
   ProposeAmendmentRequestSchema,
+  ProposeRemoveItemRequestSchema,
   RejectAmendmentRequestSchema,
   UpdateWorkSettingsRequestSchema,
   WorkSettingsResponseSchema,
@@ -16,6 +17,7 @@ import {
   type ApproveAmendmentRequest,
   type ProposeAddItemRequest,
   type ProposeAmendmentRequest,
+  type ProposeRemoveItemRequest,
   type RejectAmendmentRequest,
   type UpdateWorkSettingsRequest,
 } from '@auto-mb/contracts';
@@ -85,6 +87,11 @@ export type ProposedSnapshot =
       unitCode: string;
       quantity: string;
       rate: string;
+    }
+  | {
+      kind: 'remove_item';
+      workItemId: string;
+      itemNumber: string;
     }
   | ChallanCancelReplaceProposal
   | IssueChallanCancelReplaceProposal
@@ -196,6 +203,33 @@ async function audit(
   `;
 }
 
+/**
+ * R9/§5.6: one pending request per record. The partial unique index
+ * backs this against concurrency; this pre-check exists so the ordinary
+ * (non-racing) caller gets the pending request's id in the uniform
+ * conflict shape — a unique-violation aborts the transaction, so the id
+ * can no longer be read once the index has spoken.
+ */
+async function assertNoPendingRequest(
+  tx: TransactionSql,
+  entityType: ApprovalRequest['entityType'],
+  entityId: string,
+): Promise<void> {
+  const [pending] = await tx<{ id: string }[]>`
+    select id from approval_requests
+    where entity_type = ${entityType} and entity_id = ${entityId}
+      and status = 'pending'
+  `;
+  if (pending) {
+    throw httpError(
+      409,
+      'PENDING_EXISTS',
+      'This record already has a pending request; decide or withdraw it first.',
+      { existingRecordId: pending.id },
+    );
+  }
+}
+
 /** Rejects negative decimals before they reach a CHECK constraint, so the
  * caller gets a friendly 400 instead of a 500. */
 function assertNonNegative(value: string, field: string): void {
@@ -234,8 +268,12 @@ export async function applyApproval(
     // Lock the target item: delivery-challan issue takes the same lock
     // before validating quantities, so a ceiling change can never race an
     // in-flight issue (see challans.ts).
-    const [item] = await tx<{ id: string; item_number: string }[]>`
-      select id, item_number from work_items
+    const [item] = await tx<
+      { id: string; item_number: string; current_quantity: string }[]
+    >`
+      select id, item_number,
+             coalesce(effective_quantity, awarded_quantity)::text as current_quantity
+      from work_items
       where id = ${proposed.workItemId} and work_id = ${request.work_id}
         and deleted_at is null
       for update
@@ -250,13 +288,31 @@ export async function applyApproval(
     const changes = proposed.changes;
     if (changes.quantity !== undefined) {
       // Floor revalidation against LIVE state, in exact SQL numeric
-      // arithmetic: the ceiling can never drop below what issued challans
-      // already delivered NOR below what installation records already
-      // installed (spec R7; the R5 installed-≤-LOA invariant would
-      // otherwise be breached retroactively). Both writers take the same
-      // work_items row lock, so the sums cannot race this apply.
+      // arithmetic: a REDUCTION can never drop the ceiling below what
+      // issued challans already delivered, below what installation
+      // records already installed, NOR below what recorded PAC
+      // certificates already certified (spec R7 completed; the R5
+      // installed-≤-LOA and R18 certified-≤-installed invariants would
+      // otherwise be breached retroactively). Every one of those writers
+      // takes this same work_items row lock, so the sums cannot race this
+      // apply, and the 0030 trigger holds the identical floor against
+      // direct SQL.
+      //
+      // R7 floors REDUCTIONS, so an increase is never blocked. That is
+      // not a nicety: on a Work with the excess-delivery toggle on, R4
+      // permits delivered to exceed the sanctioned quantity, and the
+      // lawful fix R5 prescribes ("amend the item quantity first") is
+      // precisely an increase that may still sit below the delivered
+      // total. Flooring it would refuse the one remedy the rule names.
+      // Installed and certified can never exceed the CURRENT ceiling, so
+      // an increase cannot breach R5 or R18 either.
       const [floor] = await tx<
-        { delivered: string; installed: string; violates: boolean }[]
+        {
+          delivered: string;
+          installed: string;
+          certified: string;
+          violates: boolean;
+        }[]
       >`
         with delivered as (
           select coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
@@ -268,18 +324,26 @@ export async function applyApproval(
           select coalesce(sum(i.quantity), 0) as total
           from installations i
           where i.work_item_id = ${item.id} and i.status = 'recorded'
+        ), certified as (
+          select coalesce(sum(pci.certified_quantity), 0) as total
+          from pac_certificate_items pci
+          join pac_certificates pc on pc.id = pci.pac_certificate_id
+          where pci.work_item_id = ${item.id} and pc.status = 'recorded'
         )
         select delivered.total::text as delivered,
                installed.total::text as installed,
-               greatest(delivered.total, installed.total)
+               certified.total::text as certified,
+               ${changes.quantity}::numeric(18,3)
+                 < ${item.current_quantity}::numeric(18,3)
+               and greatest(delivered.total, installed.total, certified.total)
                  > ${changes.quantity}::numeric(18,3) as violates
-        from delivered, installed
+        from delivered, installed, certified
       `;
       if (floor?.violates === true) {
         throw httpError(
           409,
           'AMENDMENT_FLOOR_VIOLATION',
-          `The quantity of ${item.item_number} cannot go below the already-delivered ${floor.delivered} or the already-installed ${floor.installed}.`,
+          `The quantity of ${item.item_number} cannot go below the already-delivered ${floor.delivered}, the already-installed ${floor.installed}, or the already-certified ${floor.certified}.`,
         );
       }
     }
@@ -303,6 +367,88 @@ export async function applyApproval(
           else effective_unit end
       where id = ${item.id}
     `;
+  } else if (proposed.kind === 'remove_item') {
+    // R7 omission. Soft-delete under the item row lock, never erasure:
+    // the item number stays reserved for the life of the Work (the 0001
+    // uniqueness constraint counts deleted rows), so a later addition
+    // can never reuse it.
+    const [item] = await tx<{ id: string; item_number: string }[]>`
+      select id, item_number from work_items
+      where id = ${proposed.workItemId} and work_id = ${request.work_id}
+        and deleted_at is null
+      for update
+    `;
+    if (!item) {
+      throw httpError(
+        409,
+        'AMENDMENT_ITEM_MISSING',
+        'The Work item is already omitted or no longer exists.',
+      );
+    }
+    // Evidence revalidation against LIVE state — a delivery, installation,
+    // PAC certificate or Measurement Book line may have landed between
+    // filing and deciding. The 0030 trigger refuses the same set against
+    // every writer; this query exists to name what blocks the omission.
+    const [evidence] = await tx<
+      {
+        delivered: string;
+        installed: string;
+        certified: string;
+        billed_lines: string;
+      }[]
+    >`
+      select
+        coalesce((
+          select sum(dci.quantity) from delivery_challan_items dci
+          join delivery_challans dc on dc.id = dci.delivery_challan_id
+          where dci.work_item_id = ${item.id} and dc.status <> 'cancelled'
+        ), 0)::text as delivered,
+        coalesce((
+          select sum(i.quantity) from installations i
+          where i.work_item_id = ${item.id} and i.status = 'recorded'
+        ), 0)::text as installed,
+        coalesce((
+          select sum(pci.certified_quantity) from pac_certificate_items pci
+          join pac_certificates pc on pc.id = pci.pac_certificate_id
+          where pci.work_item_id = ${item.id} and pc.status = 'recorded'
+        ), 0)::text as certified,
+        (
+          select count(*) from measurement_book_lines mbl
+          join measurement_books mb on mb.id = mbl.measurement_book_id
+          where mbl.work_item_id = ${item.id} and mb.status <> 'cancelled'
+            and (
+              mbl.delta_supplied <> 0 or mbl.delta_installed <> 0
+              or mbl.delta_pac <> 0 or mbl.delta_final_bill <> 0
+              or mbl.prior_supplied <> 0 or mbl.prior_installed <> 0
+              or mbl.prior_pac <> 0 or mbl.prior_final_bill <> 0
+            )
+        )::text as billed_lines
+    `;
+    const blocking = [
+      ...(Number(evidence?.delivered) > 0
+        ? [`delivery challans (${evidence?.delivered ?? '0'})`]
+        : []),
+      ...(Number(evidence?.installed) > 0
+        ? [`installations (${evidence?.installed ?? '0'})`]
+        : []),
+      ...(Number(evidence?.certified) > 0
+        ? [`PAC certificates (${evidence?.certified ?? '0'})`]
+        : []),
+      ...(Number(evidence?.billed_lines) > 0
+        ? [`Measurement Book lines (${evidence?.billed_lines ?? '0'})`]
+        : []),
+    ];
+    if (blocking.length > 0) {
+      throw httpError(
+        409,
+        'AMENDMENT_ITEM_HAS_EVIDENCE',
+        `Item ${item.item_number} carries evidence and cannot be omitted: ${blocking.join(', ')}. Cancel that evidence first.`,
+      );
+    }
+    await tx`
+      update work_items set deleted_at = now() where id = ${item.id}
+    `;
+    boundEntityId = item.id;
   } else if (proposed.kind === 'add_item') {
     // add_item: the approved values become the new item's baseline.
     const [schedule] = await tx<{ id: string }[]>`
@@ -376,7 +522,9 @@ export async function applyApproval(
     where id = ${request.id}
   `;
   const approvedAction =
-    proposed.kind === 'change_item' || proposed.kind === 'add_item'
+    proposed.kind === 'change_item' ||
+    proposed.kind === 'add_item' ||
+    proposed.kind === 'remove_item'
       ? 'amendment.approved'
       : 'correction.approved';
   await audit(tx, organisationId, userId, approvedAction, request.id, {
@@ -468,6 +616,7 @@ export function registerAmendmentRoutes(
           if (!item) {
             throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
           }
+          await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
 
           // Normalise proposed decimals through SQL numeric, so the stored
           // snapshot and diff carry the exact values apply will write.
@@ -627,15 +776,21 @@ export function registerAmendmentRoutes(
           if (!schedule) {
             throw httpError(404, 'SCHEDULE_NOT_FOUND', 'No such schedule.');
           }
-          const [duplicate] = await tx<{ id: string }[]>`
-            select id from work_items
+          // Deliberately unfiltered by deleted_at: an OMITTED item keeps
+          // its number reserved forever (R7), so the number can never be
+          // handed to a different item later. The 0001 uniqueness
+          // constraint counts soft-deleted rows for the same reason.
+          const [duplicate] = await tx<{ id: string; deleted_at: Date | null }[]>`
+            select id, deleted_at from work_items
             where work_id = ${workId} and item_number = ${body.itemNumber}
           `;
           if (duplicate) {
             throw httpError(
               409,
               'DUPLICATE_ENTRY',
-              `Item number ${body.itemNumber} already exists in this Work.`,
+              duplicate.deleted_at === null
+                ? `Item number ${body.itemNumber} already exists in this Work.`
+                : `Item number ${body.itemNumber} belonged to an omitted item and stays reserved; use a new number.`,
             );
           }
           const [normalised] = await tx<{ quantity: string; rate: string }[]>`
@@ -677,6 +832,131 @@ export function registerAmendmentRoutes(
           await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
             workId,
             itemNumber: body.itemNumber,
+            diff,
+            reason: body.reason,
+          });
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Propose OMITTING (retiring) an existing item -------------------------
+  // R7's removal half, through the same approval engine as add_item: the
+  // omission is a soft-delete, allowed only while the item is free of
+  // delivery, installation, PAC, and billing evidence, and the item
+  // number stays reserved forever afterwards.
+  app.post(
+    '/api/works/:id/amendments/removals',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ProposeRemoveItemRequestSchema,
+        response: { 201: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as ProposeRemoveItemRequest;
+
+      const approval = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ status: string }[]>`
+            select status from works where id = ${workId} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          if (work.status !== 'active') {
+            throw httpError(
+              409,
+              'WORK_NOT_ACTIVE',
+              'Amendments apply to active Works only.',
+            );
+          }
+          // Lock the item so the before-values recorded in the diff match
+          // whatever a concurrent apply leaves behind.
+          const [item] = await tx<
+            {
+              id: string;
+              item_number: string;
+              current_quantity: string;
+              current_description: string;
+            }[]
+          >`
+            select id, item_number,
+                   coalesce(effective_quantity, awarded_quantity)::text
+                     as current_quantity,
+                   coalesce(effective_description, description)
+                     as current_description
+            from work_items
+            where id = ${body.workItemId} and work_id = ${workId}
+              and deleted_at is null
+            for update
+          `;
+          if (!item) {
+            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+          }
+          await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
+
+          const proposed: ProposedSnapshot = {
+            kind: 'remove_item',
+            workItemId: item.id,
+            itemNumber: item.item_number,
+          };
+          // Before/after evidence for an omission: the item existed with
+          // this description and quantity, and after the amendment it does
+          // not (the number stays reserved).
+          const diff: AmendmentDiffEntry[] = [
+            { field: 'item', before: item.item_number, after: null },
+            { field: 'description', before: item.current_description, after: null },
+            { field: 'quantity', before: item.current_quantity, after: null },
+          ];
+          const [created] = await tx<
+            { id: string; entity_id: string | null; work_id: string }[]
+          >`
+            insert into approval_requests (
+              organisation_id, entity_type, entity_id, work_id, proposed,
+              diff, reason, requested_by_user_id
+            )
+            values (
+              ${organisationId}, 'work_item_amendment', ${item.id}, ${workId},
+              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${user.id}
+            )
+            returning id, entity_id, work_id
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'PENDING_EXISTS',
+                'This item already has a pending amendment; decide or withdraw it first.',
+              );
+            }
+            throw error;
+          });
+          if (!created) throw new Error('approval insert returned no row');
+          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+            workId,
+            workItemId: item.id,
+            itemNumber: item.item_number,
             diff,
             reason: body.reason,
           });

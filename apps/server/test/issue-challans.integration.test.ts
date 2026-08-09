@@ -259,6 +259,10 @@ afterAll(async () => {
           'issue_challan_lines',
           'issue_challan_counters',
           'issue_challans',
+          'delivery_challan_items',
+          'delivery_challan_counters',
+          'delivery_challans',
+          'work_assignments',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -893,5 +897,336 @@ describe('export manifest covers the issue-challan document objects', () => {
       const entry = exported.objectManifest.find((item) => item.kind === kind);
       expect(entry?.sha256, kind).toMatch(/^[0-9a-f]{64}$/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Milestone 6/7 retrofit — the Issue Challan invariant exit suite.
+//
+// Already pinned above and NOT repeated here: one open draft per Work with
+// the uniform 409 (`existingRecordId`), including under a simultaneous
+// double-create; the number appearing only at issue and never on a draft;
+// cancellation taking a mandatory note and keeping its number forever;
+// manual lines and over-LOA quantities issuing by design; issued business
+// data frozen through the API and at the database; the signed copy
+// content-addressed with a sha256 and served back; explicit issue and
+// cancel authorities; gapless per-Work numbering under a concurrent
+// double-issue; and full cross-tenant denial of every endpoint.
+//
+// What was NOT pinned, and is pinned here: the IC counter being wholly
+// independent of the Delivery Challan counter on the same Work, a
+// cancelled number never being re-minted, the `return` movement type,
+// the immutability of a cancelled challan's rendered evidence, and the
+// revalidation of authority AND Work scope inside the issue and cancel
+// transactions.
+// ---------------------------------------------------------------------------
+
+describe('Issue Challan invariant exit suite', () => {
+  let exitWorkId: string;
+  let exitWorkCode: string;
+  let exitItemId: string;
+  let scoped: CookieJar;
+  const scopedEmail = `ic-scoped-${runId}@integration.test`;
+
+  const draftOn = async (
+    jar: CookieJar,
+    lines: Parameters<typeof draftBody>[0],
+    overrides: Record<string, unknown> = {},
+  ) => {
+    const response = await authed(jar, {
+      method: 'POST',
+      url: `/api/works/${exitWorkId}/issue-challans`,
+      organisationId,
+      payload: draftBody(lines, overrides),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return response.json<IssueChallanDetailResponse>().issueChallan.id;
+  };
+
+  const issue = async (id: string) =>
+    authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${id}/issue`,
+      organisationId,
+    });
+
+  beforeAll(async () => {
+    exitWorkId = randomUUID();
+    exitWorkCode = `ICX-${runId.toUpperCase()}`;
+    const scheduleId = randomUUID();
+    exitItemId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${exitWorkId}, ${organisationId}, ${exitWorkCode},
+        ${`ic-exit-letter-${runId}`}, '2025-06-01', 'IC exit-suite work',
+        1000.00, 900.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position
+      )
+      values (${scheduleId}, ${organisationId}, ${exitWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${exitItemId}, ${organisationId}, ${exitWorkId}, ${scheduleId}, 'A/1',
+        'Exit-suite switchboard', 'Nos', 5.000, 100.00
+      )
+    `;
+
+    // An office member with BOTH document authorities but an
+    // assigned-only Work scope and no assignment to this Work: every
+    // refusal below is scope, never a missing grant.
+    scoped = await signUp(scopedEmail, 'IC Scoped');
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email: scopedEmail, role: 'office' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned', can_issue_documents = true,
+          can_cancel_documents = true
+      where organisation_id = ${organisationId}
+        and user_id = (select "id" from auth_users where "email" = ${scopedEmail})
+    `;
+  });
+
+  it('numbers the IC series independently of the Delivery Challan series', async () => {
+    // Same Work, both document types. The legacy product keeps two
+    // per-Work counters; nothing about issuing a DC may move the IC
+    // sequence or the other way round.
+    const icOneId = await draftOn(owner, [{ workItemId: exitItemId, quantity: '2' }]);
+    const icOne = await issue(icOneId);
+    expect(icOne.statusCode, icOne.body).toBe(201);
+    expect(icOne.json<IssueChallanDetailResponse>().issueChallan.challanNumber).toBe(
+      `${exitWorkCode}-IC/1`,
+    );
+
+    const dcDraft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${exitWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-01-15',
+        prefix: `${exitWorkCode}-DC`,
+        consignee: { name: 'Sr. DEE (G) NR', address: 'Delhi Division' },
+        items: [{ workItemId: exitItemId, quantity: '2' }],
+      },
+    });
+    expect(dcDraft.statusCode, dcDraft.body).toBe(201);
+    const dcId = dcDraft.json<{ challan: { id: string } }>().challan.id;
+    const dcIssued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${dcId}/issue`,
+      organisationId,
+    });
+    expect(dcIssued.statusCode, dcIssued.body).toBe(201);
+
+    // The DC took ITS series' first number, not the IC's second.
+    const [dcRow] = await admin<{ challan_number: string; sequence_number: number }[]>`
+      select challan_number, sequence_number from delivery_challans
+      where id = ${dcId}
+    `;
+    expect(dcRow?.sequence_number).toBe(1);
+    expect(dcRow?.challan_number).toBe(`${exitWorkCode}-DC/1`);
+
+    // …and the next IC still takes 2, unmoved by the DC.
+    const icTwoId = await draftOn(owner, [
+      { description: 'Site consumables', unit: 'Pkt', quantity: '4' },
+    ]);
+    const icTwo = await issue(icTwoId);
+    expect(icTwo.statusCode, icTwo.body).toBe(201);
+    expect(icTwo.json<IssueChallanDetailResponse>().issueChallan.challanNumber).toBe(
+      `${exitWorkCode}-IC/2`,
+    );
+
+    // Two counter rows, each at its own value.
+    const [icCounter] = await admin<{ next_value: number }[]>`
+      select next_value from issue_challan_counters where work_id = ${exitWorkId}
+    `;
+    const [dcCounter] = await admin<{ next_value: number }[]>`
+      select next_value from delivery_challan_counters where work_id = ${exitWorkId}
+    `;
+    expect(icCounter?.next_value).toBe(2);
+    expect(dcCounter?.next_value).toBe(1);
+  });
+
+  it('never re-mints a cancelled Issue Challan number', async () => {
+    const [before] = await admin<{ id: string; challan_number: string }[]>`
+      select id, challan_number from issue_challans
+      where work_id = ${exitWorkId} and sequence_number = 2
+    `;
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${before?.id ?? ''}/cancel`,
+      organisationId,
+      payload: { note: 'Material returned to store before dispatch.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+
+    const nextId = await draftOn(owner, [
+      { description: 'Replacement consumables', unit: 'Pkt', quantity: '4' },
+    ]);
+    const next = await issue(nextId);
+    expect(next.statusCode, next.body).toBe(201);
+    // 3, never the released 2.
+    expect(next.json<IssueChallanDetailResponse>().issueChallan.challanNumber).toBe(
+      `${exitWorkCode}-IC/3`,
+    );
+
+    const numbers = await admin<{ challan_number: string; status: string }[]>`
+      select challan_number, status from issue_challans
+      where work_id = ${exitWorkId} and challan_number is not null
+      order by sequence_number
+    `;
+    expect(numbers.map((row) => row.challan_number)).toEqual([
+      `${exitWorkCode}-IC/1`,
+      `${exitWorkCode}-IC/2`,
+      `${exitWorkCode}-IC/3`,
+    ]);
+    expect(numbers[1]?.status).toBe('cancelled');
+  });
+
+  it('accepts the return movement type end to end', async () => {
+    const returnId = await draftOn(
+      owner,
+      [{ description: 'Unused ballast returned to store', unit: 'Cum', quantity: '2' }],
+      { movementType: 'return' },
+    );
+    const issued = await issue(returnId);
+    expect(issued.statusCode, issued.body).toBe(201);
+    const detail = issued.json<IssueChallanDetailResponse>();
+    expect(detail.issueChallan.movementType).toBe('return');
+    const snapshot = detail.issuedSnapshot as { movementType: string };
+    expect(snapshot.movementType).toBe('return');
+  });
+
+  it('freezes a cancelled challan whole, rendered evidence included', async () => {
+    const [cancelledRow] = await admin<{ id: string }[]>`
+      select id from issue_challans
+      where work_id = ${exitWorkId} and status = 'cancelled'
+      limit 1
+    `;
+    const id = cancelledRow?.id ?? '';
+    for (const column of ['rendered_sha256', 'rendered_object_key'] as const) {
+      await expect(
+        admin.unsafe(`update issue_challans set ${column} = $1 where id = $2`, [
+          'f'.repeat(64),
+          id,
+        ]),
+        column,
+      ).rejects.toThrow(/cancelled Issue Challans are immutable/);
+    }
+  });
+
+  it('renders content-addressed evidence: the same snapshot yields the same hash', async () => {
+    const [issuedRow] = await admin<{ id: string }[]>`
+      select id from issue_challans
+      where work_id = ${exitWorkId} and status = 'issued' and sequence_number = 1
+    `;
+    const id = issuedRow?.id ?? '';
+    const first = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${id}/render`,
+      organisationId,
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    const [afterFirst] = await admin<{ rendered_sha256: string | null }[]>`
+      select rendered_sha256 from issue_challans where id = ${id}
+    `;
+    expect(afterFirst?.rendered_sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    // The issued snapshot is frozen, so a re-render is byte-identical:
+    // the recorded hash cannot drift while the document stands.
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${id}/render`,
+      organisationId,
+    });
+    expect(second.statusCode, second.body).toBe(200);
+    const [afterSecond] = await admin<{ rendered_sha256: string | null }[]>`
+      select rendered_sha256 from issue_challans where id = ${id}
+    `;
+    expect(afterSecond?.rendered_sha256).toBe(afterFirst?.rendered_sha256);
+  });
+
+  it('revalidates the issue authority INSIDE the issuing transaction', async () => {
+    const draftId = await draftOn(owner, [
+      { description: 'Authority revalidation line', unit: 'Nos', quantity: '1' },
+    ]);
+    // The authority is withdrawn AFTER the draft exists: if it were only
+    // checked at draft time the issue would still succeed.
+    await admin`
+      update organisation_memberships set can_issue_documents = false
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+    const refused = await issue(draftId);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+    await admin`
+      update organisation_memberships set can_issue_documents = true
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+    const issued = await issue(draftId);
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    // …and the same for cancel, on the challan just issued.
+    await admin`
+      update organisation_memberships set can_cancel_documents = false
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+    const cancelRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${draftId}/cancel`,
+      organisationId,
+      payload: { note: 'Authority revalidation probe.' },
+    });
+    expect(cancelRefused.statusCode).toBe(403);
+    await admin`
+      update organisation_memberships set can_cancel_documents = true
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+  });
+
+  it('revalidates Work scope at issue and at cancel for an assigned-scope member', async () => {
+    const draftId = await draftOn(owner, [
+      { description: 'Scope probe line', unit: 'Nos', quantity: '1' },
+    ]);
+    // The scoped member holds BOTH authorities but no assignment to this
+    // Work: every surface answers 404, never a state-specific 409 that
+    // would confirm the record exists.
+    const probes: (Omit<InjectOptions, 'url'> & { url: string })[] = [
+      { method: 'GET', url: `/api/works/${exitWorkId}/issue-challans` },
+      { method: 'GET', url: `/api/issue-challans/${draftId}` },
+      { method: 'POST', url: `/api/issue-challans/${draftId}/issue` },
+      {
+        method: 'POST',
+        url: `/api/issue-challans/${draftId}/cancel`,
+        payload: { note: 'Scope probe cancel.' },
+      },
+    ];
+    for (const probe of probes) {
+      const response = await authed(scoped, { ...probe, organisationId });
+      expect(
+        response.statusCode,
+        `${String(probe.method)} ${probe.url}: ${response.body}`,
+      ).toBe(404);
+    }
+
+    // The draft is untouched and the owner can still issue it.
+    const issued = await issue(draftId);
+    expect(issued.statusCode, issued.body).toBe(201);
   });
 });
