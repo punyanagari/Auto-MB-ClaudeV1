@@ -17,3 +17,4 @@ export * from './timeline.js';
 export * from './extensions.js';
 export * from './installations.js';
 export * from './corrections.js';
+export * from './payment.js';

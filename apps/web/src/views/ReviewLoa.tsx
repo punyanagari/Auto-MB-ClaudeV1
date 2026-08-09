@@ -3,6 +3,7 @@ import type {
   ConfirmWorkRequest,
   LoaDocumentDetail,
   WorkDetailResponse,
+  WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import {
@@ -38,6 +39,10 @@ interface ItemDraft {
   unitCode: string;
   awardedQuantity: string;
   effectiveRate: string;
+  /** Reviewer-set payment category (Milestone 8); '' = uncategorised.
+   * The parser never proposes it — categorisation is the reviewer's
+   * judgement, and it stays editable on the Work afterwards. */
+  paymentCategory: WorkItemPaymentCategory | '';
 }
 
 interface HeaderDraft {
@@ -122,6 +127,7 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
       unitCode: (item.qtyUnit ?? '').slice(0, 20),
       awardedQuantity: normaliseDecimal(item.qty, 3),
       effectiveRate: normaliseDecimal(item.unitRate, 2),
+      paymentCategory: '',
     };
   });
 }
@@ -252,6 +258,7 @@ export function ReviewLoa({
               unitCode: '',
               awardedQuantity: '',
               effectiveRate: '',
+              paymentCategory: '',
             },
           ],
     );
@@ -320,6 +327,9 @@ export function ReviewLoa({
             unitCode: item.unitCode,
             awardedQuantity: item.awardedQuantity,
             effectiveRate: item.effectiveRate,
+            ...(item.paymentCategory !== ''
+              ? { paymentCategory: item.paymentCategory }
+              : {}),
             ...(item.manual
               ? { manualEntry: true as const }
               : { sourceRef: { scheduleId: item.scheduleId, itemSno: item.itemSno } }),
@@ -648,6 +658,7 @@ export function ReviewLoa({
                   <th scope="col">Unit</th>
                   <th scope="col">Quantity</th>
                   <th scope="col">Rate (₹)</th>
+                  <th scope="col">Payment category</th>
                   <th scope="col">Row actions</th>
                 </tr>
               </thead>
@@ -726,6 +737,30 @@ export function ReviewLoa({
                           required
                           inputMode="decimal"
                         />
+                      </td>
+                      <td>
+                        {/* Optional, reviewer's judgement — the parser
+                            never proposes a category. Percentages are
+                            configured per category on the Work's payment
+                            matrix, never per item (R10). */}
+                        <select
+                          aria-label={`Payment category for row ${item.itemSno} in schedule ${scheduleId}`}
+                          value={item.paymentCategory}
+                          onChange={(event) => {
+                            updateItem(item.key, {
+                              paymentCategory: event.target
+                                .value as ItemDraft['paymentCategory'],
+                            });
+                          }}
+                        >
+                          <option value="">Uncategorised</option>
+                          <option value="SUPPLY">Supply</option>
+                          <option value="SUPPLY_AND_INSTALLATION">
+                            Supply + installation
+                          </option>
+                          <option value="PURE_INSTALLATION">Purely installation</option>
+                          <option value="SPARE_SUPPLY">Spare supply</option>
+                        </select>
                       </td>
                       <td>
                         {removeCandidate === item.key ? (

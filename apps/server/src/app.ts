@@ -35,6 +35,7 @@ import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
+import { registerPaymentRoutes } from './routes/payment.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -402,6 +403,7 @@ export async function buildApp(
     registerTimelineRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
+    registerPaymentRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,

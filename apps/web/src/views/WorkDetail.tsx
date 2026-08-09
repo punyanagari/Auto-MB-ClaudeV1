@@ -17,6 +17,7 @@ import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { Installations } from './Installations.js';
+import { PaymentMatrix } from './PaymentMatrix.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -443,6 +444,31 @@ export function WorkDetail({
           </table>
         </div>
       ))}
+
+      <PaymentMatrix
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        workItems={workItems}
+        canModify={canModify}
+        onItemCategoryChanged={(workItemId, paymentCategory) => {
+          setDetail((current) =>
+            current === null
+              ? current
+              : {
+                  ...current,
+                  schedules: current.schedules.map((candidate) => ({
+                    ...candidate,
+                    items: candidate.items.map((candidateItem) =>
+                      candidateItem.id === workItemId
+                        ? { ...candidateItem, paymentCategory }
+                        : candidateItem,
+                    ),
+                  })),
+                },
+          );
+        }}
+      />
 
       <h2>Amendments</h2>
       <p className="muted">

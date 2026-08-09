@@ -130,6 +130,10 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderCorrectionNotice: vi.fn(),
     cancelCorrectionNotice: vi.fn(),
     downloadCorrectionNoticePdf: vi.fn(),
+    getPaymentMatrix: vi.fn().mockResolvedValue([]),
+    upsertPaymentMatrixRow: vi.fn(),
+    deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
+    setWorkItemPaymentCategory: vi.fn(),
     ...overrides,
   };
 }

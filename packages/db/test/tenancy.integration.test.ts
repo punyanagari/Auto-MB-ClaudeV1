@@ -56,6 +56,7 @@ const TENANT_TABLES = [
   'installation_serials',
   'correction_notices',
   'correction_notice_counters',
+  'payment_matrices',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -110,6 +111,9 @@ const DELETE_ALLOWED_TABLES = [
   'challan_item_serials',
   'work_assignments',
   'extension_requests',
+  // Payment matrix rows are per-Work configuration, not issued
+  // documents; finalised MBs snapshot their percentages (0021).
+  'payment_matrices',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -441,6 +445,16 @@ async function seedTenantGraph(
       select ${organisationId}, ${installation.id}, ${work.id}, s.id
       from challan_item_serials s
       where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
+    `;
+
+    // Milestone 8 payment matrix: one row.
+    await tx`
+      insert into payment_matrices (
+        organisation_id, work_id, category, pct_supply, pct_installation,
+        pct_pac, pct_final_bill, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'SUPPLY', 80.00, 10.00, 0.00,
+              10.00, ${userId})
     `;
 
     return {

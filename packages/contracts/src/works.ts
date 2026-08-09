@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import { WorkItemPaymentCategorySchema } from './payment.js';
 
 export const PricingShapeSchema = Type.Union([
   Type.Literal('letter_percentage'),
@@ -41,6 +42,9 @@ export const ConfirmWorkItemSchema = Type.Object(
       ),
     ),
     manualEntry: Type.Optional(Type.Literal(true)),
+    /** Reviewer-set payment category (Milestone 8, spec §8). The parser
+     * never proposes it; omitting it leaves the item uncategorised. */
+    paymentCategory: Type.Optional(WorkItemPaymentCategorySchema),
   },
   { additionalProperties: false },
 );
@@ -152,6 +156,11 @@ export const WorkItemSchema = Type.Object(
      * quantity-level installation records for the item (Milestone 7) —
      * the authoritative installed quantity Milestone 8 billing reads. */
     installedQuantity: Type.Optional(DecimalStringSchema),
+    /** Milestone 8 payment category; null/absent = uncategorised (the
+     * item resolves through the Work's UNCATEGORISED matrix row). */
+    paymentCategory: Type.Optional(
+      Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );

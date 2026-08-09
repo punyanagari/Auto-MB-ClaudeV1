@@ -65,6 +65,11 @@ import type {
   Installation,
   InstallationListResponse,
   RecordInstallationRequest,
+  PaymentMatrixCategory,
+  PaymentMatrixRow,
+  UpsertPaymentMatrixRowRequest,
+  WorkItemPaymentCategory,
+  WorkItemPaymentCategoryResponse,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -538,6 +543,27 @@ export interface ApiClient {
     organisationId: string,
     noticeId: string,
   ) => Promise<Blob>;
+  /** Per-Work payment matrix and item categories (Milestone 8). */
+  readonly getPaymentMatrix: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly PaymentMatrixRow[]>;
+  readonly upsertPaymentMatrixRow: (
+    organisationId: string,
+    workId: string,
+    category: PaymentMatrixCategory,
+    body: UpsertPaymentMatrixRowRequest,
+  ) => Promise<PaymentMatrixRow>;
+  readonly deletePaymentMatrixRow: (
+    organisationId: string,
+    workId: string,
+    category: PaymentMatrixCategory,
+  ) => Promise<void>;
+  readonly setWorkItemPaymentCategory: (
+    organisationId: string,
+    workItemId: string,
+    paymentCategory: WorkItemPaymentCategory | null,
+  ) => Promise<WorkItemPaymentCategoryResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1343,6 +1369,31 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async getPaymentMatrix(organisationId, workId) {
+      const payload = await request<{ rows: PaymentMatrixRow[] }>(
+        `/api/works/${workId}/payment-matrix`,
+        { organisationId },
+      );
+      return payload.rows;
+    },
+    async upsertPaymentMatrixRow(organisationId, workId, category, body) {
+      return request<PaymentMatrixRow>(
+        `/api/works/${workId}/payment-matrix/${category}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async deletePaymentMatrixRow(organisationId, workId, category) {
+      await request<void>(`/api/works/${workId}/payment-matrix/${category}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async setWorkItemPaymentCategory(organisationId, workItemId, paymentCategory) {
+      return request<WorkItemPaymentCategoryResponse>(
+        `/api/work-items/${workItemId}/payment-category`,
+        { method: 'PATCH', body: { paymentCategory }, organisationId },
+      );
     },
   };
 }
