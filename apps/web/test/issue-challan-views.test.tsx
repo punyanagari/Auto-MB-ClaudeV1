@@ -148,6 +148,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelMeasurementBook: vi.fn(),
     deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),
     prepareBillFromMeasurementBook: vi.fn(),
+    renderMeasurementBook: vi.fn(),
+    downloadMeasurementBookPdf: vi.fn(),
+    downloadMeasurementBookDraftPreview: vi.fn(),
     ...overrides,
   };
 }

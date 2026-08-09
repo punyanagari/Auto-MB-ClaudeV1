@@ -13,6 +13,7 @@ import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
 import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Installations } from '../src/views/Installations.js';
+import { MeasurementBooks } from '../src/views/MeasurementBooks.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { PaymentMatrix } from '../src/views/PaymentMatrix.js';
@@ -163,6 +164,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelMeasurementBook: vi.fn(),
     deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),
     prepareBillFromMeasurementBook: vi.fn(),
+    renderMeasurementBook: vi.fn(),
+    downloadMeasurementBookPdf: vi.fn(),
+    downloadMeasurementBookDraftPreview: vi.fn(),
     ...overrides,
   };
 }
@@ -3936,5 +3940,438 @@ describe('PAC certificates', () => {
     expect(
       screen.queryByRole('button', { name: 'Upload scanned certificate' }),
     ).toBeNull();
+  });
+});
+
+describe('MeasurementBooks workspace', () => {
+  const MB_DRAFT_ID = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+  const MB_FINAL_ID = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
+  const DC_ID = 'cccccccc-3333-4333-8333-cccccccccccc';
+  const INST_ID = 'dddddddd-4444-4444-8444-dddddddddddd';
+  const PAC_ID = 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee';
+  const ITEM_ID = 'ffffffff-6666-4666-8666-ffffffffffff';
+
+  const MB_DRAFT = {
+    id: MB_DRAFT_ID,
+    workId: WORK_ID,
+    status: 'draft' as const,
+    isFinal: false,
+    mbDate: '2026-08-05',
+    mbNumber: null,
+    sequenceNumber: null,
+    totalAmount: null,
+    remarkTemplateVersion: null,
+    templateVersion: null,
+    renderedAvailable: false,
+    cancellationNote: null,
+    billId: null,
+    createdAt: '2026-08-05T00:00:00.000Z',
+    finalizedAt: null,
+    cancelledAt: null,
+  };
+
+  const MB_FINAL = {
+    ...MB_DRAFT,
+    id: MB_FINAL_ID,
+    status: 'finalized' as const,
+    isFinal: true,
+    mbNumber: 'DCW-1-MB-02',
+    sequenceNumber: 2,
+    totalAmount: '4000.00',
+    remarkTemplateVersion: 'mb-remark-v1',
+    finalizedAt: '2026-08-05T10:00:00.000Z',
+  };
+
+  const LINE = {
+    workItemId: ITEM_ID,
+    itemNumber: 'A/1',
+    description: 'Power cable',
+    unitCode: 'mtr',
+    paymentCategory: null,
+    resolvedCategory: 'UNCATEGORISED',
+    pctSupply: '80.00',
+    pctInstallation: '10.00',
+    pctPac: '0.00',
+    pctFinalBill: '10.00',
+    effectiveRate: '1.00',
+    deltaSupplied: '5000.000',
+    deltaInstalled: '0.000',
+    deltaPac: '0.000',
+    deltaFinalBill: '0.000',
+    priorSupplied: '0.000',
+    priorInstalled: '0.000',
+    priorPac: '0.000',
+    priorFinalBill: '0.000',
+    amountSupply: '4000.00',
+    amountInstallation: '0.00',
+    amountPac: '0.00',
+    amountFinalBill: '0.00',
+    lineTotal: '4000.00',
+    remark: 'Now to pay 80% for 5000 mtr.',
+  };
+
+  const DRAFT_DETAIL = {
+    book: MB_DRAFT,
+    sources: [],
+    lines: [LINE],
+    warnings: [],
+    previewTotal: '4000.00',
+  };
+
+  const FINAL_DETAIL = {
+    book: MB_FINAL,
+    sources: [],
+    lines: [LINE],
+    warnings: [],
+    previewTotal: '4000.00',
+  };
+
+  const CANDIDATES: Partial<ApiClient> = {
+    listChallans: vi.fn().mockResolvedValue([
+      {
+        id: DC_ID,
+        workId: WORK_ID,
+        status: 'issued',
+        challanNumber: 'DC/1',
+        challanDate: '2026-08-01',
+      },
+    ]),
+    listWorkInstallations: vi.fn().mockResolvedValue({
+      installations: [
+        {
+          id: INST_ID,
+          workId: WORK_ID,
+          workItemId: ITEM_ID,
+          itemNumber: 'A/1',
+          quantity: '1000.000',
+          installedOn: '2026-08-02',
+          locationName: 'Nashik Road station',
+          status: 'recorded',
+        },
+      ],
+      itemSummaries: [],
+    }),
+    listWorkPacCertificates: vi.fn().mockResolvedValue({
+      certificates: [
+        {
+          id: PAC_ID,
+          workId: WORK_ID,
+          reference: 'PAC/2026/01',
+          issueDate: '2026-08-03',
+          status: 'recorded',
+          items: [],
+        },
+      ],
+      itemSummaries: [],
+    }),
+  };
+
+  function mbApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      listWorkMeasurementBooks: vi
+        .fn()
+        .mockResolvedValue({ books: [MB_FINAL, MB_DRAFT] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(DRAFT_DETAIL),
+      ...CANDIDATES,
+      ...overrides,
+    });
+  }
+
+  function renderMb(
+    api: ApiClient,
+    options: Partial<{
+      canModify: boolean;
+      canIssue: boolean;
+      onBillPrepared: () => void;
+    }> = {},
+  ) {
+    return render(
+      <MeasurementBooks
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={options.canModify ?? true}
+        canIssue={options.canIssue ?? true}
+        onBillPrepared={options.onBillPrepared ?? vi.fn()}
+      />,
+    );
+  }
+
+  it('lists MBs with status chips, totals, and the FINAL BILL badge', async () => {
+    renderMb(mbApi());
+
+    await screen.findByRole('button', { name: 'DCW-1-MB-02' });
+    expect(screen.getByRole('button', { name: 'Draft' })).toBeTruthy();
+    expect(screen.getByText('finalized')).toBeTruthy();
+    expect(screen.getAllByText('FINAL BILL').length).toBeGreaterThan(0);
+    expect(screen.getByText('₹4,000.00')).toBeTruthy();
+    // A draft and a live final MB exist: no create form is offered.
+    expect(screen.queryByLabelText('MB date')).toBeNull();
+  });
+
+  it('creates a draft with the final-MB sweep explanation', async () => {
+    const createWorkMeasurementBook = vi.fn().mockResolvedValue(DRAFT_DETAIL);
+    const api = mbApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [] }),
+      createWorkMeasurementBook,
+    });
+    renderMb(api);
+
+    fireEvent.change(await screen.findByLabelText('MB date'), {
+      target: { value: '2026-08-05' },
+    });
+    expect(screen.getByText(/must sweep every remaining open source/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Final Measurement Book/));
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    await waitFor(() => {
+      expect(createWorkMeasurementBook).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        mbDate: '2026-08-05',
+        isFinal: true,
+      });
+    });
+  });
+
+  it('offers to open the existing draft on the one-draft 409', async () => {
+    const getMeasurementBook = vi.fn().mockResolvedValue(DRAFT_DETAIL);
+    const api = mbApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [] }),
+      createWorkMeasurementBook: vi
+        .fn()
+        .mockRejectedValue(
+          new RequestFailedError(
+            409,
+            'MB_DRAFT_EXISTS',
+            'This Work already has a draft Measurement Book; finalize or delete it first.',
+            { existingRecordId: MB_DRAFT_ID },
+          ),
+        ),
+      getMeasurementBook,
+    });
+    renderMb(api);
+
+    fireEvent.change(await screen.findByLabelText('MB date'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    const open = await screen.findByRole('button', { name: 'Open existing draft' });
+    fireEvent.click(open);
+    await waitFor(() => {
+      expect(getMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID);
+    });
+  });
+
+  it('opens a draft with grouped source candidates, saves the selection, and shows the preview', async () => {
+    const setMeasurementBookSources = vi.fn().mockResolvedValue(DRAFT_DETAIL);
+    const api = mbApi({ setMeasurementBookSources });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+
+    // Candidates grouped by type with human labels.
+    await screen.findByText('Delivery challans (issued)');
+    expect(screen.getByText('Installations (recorded)')).toBeTruthy();
+    expect(screen.getByText('PAC certificates (recorded)')).toBeTruthy();
+    expect(screen.getByText(/DC\/1 · 2026-08-01/)).toBeTruthy();
+    expect(
+      screen.getByText(/A\/1 × 1000\.000 · 2026-08-02 · Nashik Road station/),
+    ).toBeTruthy();
+    expect(screen.getByText(/PAC\/2026\/01 · 2026-08-03/)).toBeTruthy();
+
+    // The live preview mirrors the PDF columns including the remark.
+    expect(screen.getByText('Supplied Δ')).toBeTruthy();
+    expect(screen.getByText('Now to pay 80% for 5000 mtr.')).toBeTruthy();
+    expect(screen.getByText('Total payable this MB')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
+    await waitFor(() => {
+      expect(setMeasurementBookSources).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID, {
+        sources: [{ sourceType: 'delivery_challan', sourceId: DC_ID }],
+      });
+    });
+  });
+
+  it('marks a source claimed by another live MB from the structured 409', async () => {
+    const api = mbApi({
+      setMeasurementBookSources: vi.fn().mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'MB_SOURCE_ALREADY_BILLED',
+          'A source can be billed by at most one live Measurement Book.',
+          {
+            sourceType: 'delivery_challan',
+            sourceId: DC_ID,
+            holdingMeasurementBookId: MB_FINAL_ID,
+            holdingMbNumber: 'DCW-1-MB-02',
+          },
+        ),
+      ),
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
+
+    await screen.findByText('claimed by DCW-1-MB-02');
+    expect(screen.getByRole('alert').textContent).toContain(
+      'at most one live Measurement Book',
+    );
+  });
+
+  it('links unresolved-category warnings to the payment matrix', async () => {
+    const api = mbApi({
+      getMeasurementBook: vi.fn().mockResolvedValue({
+        ...DRAFT_DETAIL,
+        lines: [],
+        warnings: [
+          { workItemId: ITEM_ID, itemNumber: 'A/1', missingCategory: 'SUPPLY' },
+        ],
+        previewTotal: '0.00',
+      }),
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    await screen.findByText(/cannot price every selected item/);
+    const link = screen.getByRole('link', { name: 'payment matrix' });
+    expect(link.getAttribute('href')).toBe('#payment-matrix');
+    expect(screen.getByText(/A\/1:/)).toBeTruthy();
+  });
+
+  it('finalizes through a confirm step naming the next number', async () => {
+    const finalizeMeasurementBook = vi.fn().mockResolvedValue(FINAL_DETAIL);
+    const api = mbApi({ finalizeMeasurementBook });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Finalize…' }));
+    // The number is assigned at finalize; the confirm names the next slot
+    // after the highest existing sequence (02 -> 03).
+    await screen.findByText(/next number 03/);
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize now' }));
+
+    await waitFor(() => {
+      expect(finalizeMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID);
+    });
+  });
+
+  it('streams the draft preview PDF from the preview endpoint', async () => {
+    const downloadMeasurementBookDraftPreview = vi.fn().mockResolvedValue(new Blob());
+    const api = mbApi({ downloadMeasurementBookDraftPreview });
+    const openSpy = vi.fn();
+    vi.stubGlobal('open', openSpy);
+    const createObjectURL = vi.fn().mockReturnValue('blob:mb');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    try {
+      renderMb(api);
+      fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Preview PDF (draft)' }),
+      );
+      await waitFor(() => {
+        expect(downloadMeasurementBookDraftPreview).toHaveBeenCalledWith(
+          ORG_ID,
+          MB_DRAFT_ID,
+        );
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('prepares the bill from a finalized MB and refreshes the Bills section', async () => {
+    const prepareBillFromMeasurementBook = vi.fn().mockResolvedValue({
+      id: '99999999-9999-4999-8999-999999999999',
+      billNumber: 1,
+      mbId: MB_FINAL_ID,
+    });
+    const onBillPrepared = vi.fn();
+    const api = mbApi({
+      getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
+      prepareBillFromMeasurementBook,
+    });
+    renderMb(api, { onBillPrepared });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare bill' }));
+
+    await waitFor(() => {
+      expect(prepareBillFromMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_FINAL_ID);
+      expect(onBillPrepared).toHaveBeenCalled();
+    });
+  });
+
+  it('renders and opens the finalized MB PDF, and cancels with a note', async () => {
+    const renderMeasurementBook = vi.fn().mockResolvedValue({
+      ...FINAL_DETAIL,
+      book: { ...MB_FINAL, renderedAvailable: true, templateVersion: 'mb-v1' },
+    });
+    const downloadMeasurementBookPdf = vi.fn().mockResolvedValue(new Blob());
+    const cancelMeasurementBook = vi.fn().mockResolvedValue({
+      ...FINAL_DETAIL,
+      book: {
+        ...MB_FINAL,
+        status: 'cancelled',
+        cancellationNote: 'Wrong measurement basis.',
+        cancelledAt: '2026-08-06T00:00:00.000Z',
+      },
+    });
+    const api = mbApi({
+      getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
+      renderMeasurementBook,
+      downloadMeasurementBookPdf,
+      cancelMeasurementBook,
+    });
+    const openSpy = vi.fn();
+    vi.stubGlobal('open', openSpy);
+    const createObjectURL = vi.fn().mockReturnValue('blob:mb');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    try {
+      renderMb(api);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Render PDF' }));
+      await waitFor(() => {
+        expect(renderMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_FINAL_ID);
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Open PDF' }));
+      await waitFor(() => {
+        expect(downloadMeasurementBookPdf).toHaveBeenCalledWith(ORG_ID, MB_FINAL_ID);
+      });
+
+      fireEvent.change(screen.getByLabelText(/Cancellation note/), {
+        target: { value: 'Wrong measurement basis.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book' }));
+      await waitFor(() => {
+        expect(cancelMeasurementBook).toHaveBeenCalledWith(
+          ORG_ID,
+          MB_FINAL_ID,
+          'Wrong measurement basis.',
+        );
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('hides drafting and financial actions from members without the rights', async () => {
+    const api = mbApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [MB_FINAL] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
+    });
+    renderMb(api, { canModify: false, canIssue: false });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+    await screen.findByText('Now to pay 80% for 5000 mtr.');
+    expect(screen.queryByLabelText('MB date')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Render PDF' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Finalize/ })).toBeNull();
   });
 });

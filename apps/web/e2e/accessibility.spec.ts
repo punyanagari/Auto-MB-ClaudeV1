@@ -589,6 +589,32 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  await page.route(`**/api/works/${WORK_ID}/measurement-books`, (route) =>
+    route.fulfill(
+      json({
+        books: [
+          {
+            id: 'eeeeeeee-8888-4888-8888-eeeeeeeeeeee',
+            workId: WORK_ID,
+            status: 'finalized',
+            isFinal: true,
+            mbDate: '2026-08-05',
+            mbNumber: 'DCW-1-MB-01',
+            sequenceNumber: 1,
+            totalAmount: '200.00',
+            remarkTemplateVersion: 'mb-remark-v1',
+            templateVersion: 'mb-v1',
+            renderedAvailable: true,
+            cancellationNote: null,
+            billId: null,
+            createdAt: '2026-08-05T00:00:00.000Z',
+            finalizedAt: '2026-08-05T10:00:00.000Z',
+            cancelledAt: null,
+          },
+        ],
+      }),
+    ),
+  );
   await page.route(`**/api/challans/${CHALLAN_ID}/correction-eligibility`, (route) =>
     route.fulfill(
       json({
@@ -628,6 +654,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
   await expect(page.getByLabel('Supply % for Supply')).toHaveValue('80.00');
   await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
+  // Milestone 8 phase 3: the Measurement Book workspace with its list.
+  await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
+  await expect(page.getByText('FINAL BILL')).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 
   await page.getByRole('button', { name: 'DC/1' }).click();

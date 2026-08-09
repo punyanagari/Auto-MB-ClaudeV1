@@ -439,7 +439,13 @@ export async function buildApp(
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
     registerPacRoutes(app, authInstance, database, storage, scanner);
-    registerMeasurementBookRoutes(app, authInstance, database);
+    registerMeasurementBookRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+    );
   }
 
   return app;

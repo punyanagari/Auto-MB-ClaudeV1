@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   ApiErrorSchema,
   BillSchema,
@@ -37,9 +38,16 @@ import {
   type MbComputedLine,
   type MbItemInput,
 } from '../mb-compute.js';
+import {
+  MB_TEMPLATE_VERSION,
+  renderMeasurementBookHtml,
+  type MeasurementBookBranding,
+  type MeasurementBookSnapshot,
+} from '../mb-html.js';
 import { MB_REMARK_TEMPLATE_VERSION } from '../mb-remark.js';
 import { loadPaymentMatrix } from '../payment-matrix.js';
 import { requireUser } from '../session.js';
+import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
 /**
@@ -104,6 +112,8 @@ interface BookRow {
   sequence_number: number | null;
   total_amount: string | null;
   remark_template_version: string | null;
+  template_version: string | null;
+  rendered_object_key: string | null;
   cancellation_note: string | null;
   bill_id: string | null;
   created_at: Date;
@@ -122,6 +132,8 @@ function toBook(row: BookRow): MeasurementBook {
     sequenceNumber: row.sequence_number,
     totalAmount: row.total_amount,
     remarkTemplateVersion: row.remark_template_version,
+    templateVersion: row.template_version,
+    renderedAvailable: row.rendered_object_key !== null,
     cancellationNote: row.cancellation_note,
     billId: row.bill_id,
     createdAt: row.created_at.toISOString(),
@@ -133,7 +145,8 @@ function toBook(row: BookRow): MeasurementBook {
 const BOOK_COLUMNS = `
   mb.id, mb.work_id, mb.status, mb.is_final, mb.mb_date::text as mb_date,
   mb.mb_number, mb.sequence_number, mb.total_amount::text as total_amount,
-  mb.remark_template_version, mb.cancellation_note,
+  mb.remark_template_version, mb.template_version, mb.rendered_object_key,
+  mb.cancellation_note,
   (select b.id from bills b
     where b.mb_id = mb.id) as bill_id,
   mb.created_at, mb.finalized_at, mb.cancelled_at
@@ -720,12 +733,144 @@ async function nameSourceConflict(
   }
 }
 
+// --- The MB document (phase 3) ----------------------------------------------
+
+interface BrandingRow {
+  name: string;
+  address: string | null;
+  gstin: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  logo_object_key: string | null;
+  logo_media_type: string | null;
+}
+
+async function readBranding(tx: TransactionSql): Promise<BrandingRow | undefined> {
+  const [organisation] = await tx<BrandingRow[]>`
+    select name, address, gstin, contact_phone, contact_email,
+           logo_object_key, logo_media_type
+    from organisations
+  `;
+  return organisation;
+}
+
+interface WorkIdentityRow {
+  work_code: string;
+  title: string;
+  letter_number: string;
+  letter_date: string;
+}
+
+async function readWorkIdentity(
+  tx: TransactionSql,
+  workId: string,
+): Promise<WorkIdentityRow> {
+  const [work] = await tx<WorkIdentityRow[]>`
+    select work_code, title, letter_number, letter_date::text as letter_date
+    from works where id = ${workId}
+  `;
+  if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  return work;
+}
+
+function toSnapshot(
+  book: BookRow,
+  organisationName: string,
+  work: WorkIdentityRow,
+  lines: readonly MeasurementBookLine[],
+  totalAmount: string,
+  remarkTemplateVersion: string,
+): MeasurementBookSnapshot {
+  return {
+    templateVersion: MB_TEMPLATE_VERSION,
+    organisationName,
+    status: book.status,
+    mbNumber: book.mb_number,
+    mbDate: book.mb_date,
+    isFinal: book.is_final,
+    work: {
+      workCode: work.work_code,
+      title: work.title,
+      letterNumber: work.letter_number,
+      letterDate: work.letter_date,
+    },
+    lines: lines.map((line) => ({
+      itemNumber: line.itemNumber,
+      description: line.description,
+      unitCode: line.unitCode,
+      deltaSupplied: line.deltaSupplied,
+      deltaInstalled: line.deltaInstalled,
+      deltaPac: line.deltaPac,
+      lineTotal: line.lineTotal,
+      remark: line.remark,
+    })),
+    totalAmount,
+    remarkTemplateVersion,
+  };
+}
+
+/** Branding is presentation, loaded from the organisation's current
+ * profile at render time; a missing logo object must never block the
+ * document (the challan render posture). */
+async function brandingWithLogo(
+  storage: ObjectStorage,
+  branding: BrandingRow | undefined,
+  warn: (error: unknown) => void,
+): Promise<MeasurementBookBranding> {
+  let logoDataUri: string | undefined;
+  if (branding?.logo_object_key && branding.logo_media_type) {
+    try {
+      const logo = await storage.get(branding.logo_object_key);
+      logoDataUri = `data:${branding.logo_media_type};base64,${logo.toString('base64')}`;
+    } catch (error) {
+      warn(error);
+    }
+  }
+  return {
+    ...(logoDataUri !== undefined ? { logoDataUri } : {}),
+    address: branding?.address ?? null,
+    gstin: branding?.gstin ?? null,
+    contactPhone: branding?.contact_phone ?? null,
+    contactEmail: branding?.contact_email ?? null,
+  };
+}
+
+/** HTML -> PDF through Gotenberg; failures surface as a clean 502 that
+ * leaves the Measurement Book untouched. */
+async function convertToPdf(
+  gotenbergUrl: string,
+  html: string,
+  logError: (error: unknown) => void,
+): Promise<Buffer> {
+  const form = new FormData();
+  form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
+  try {
+    const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!response.ok) {
+      throw new Error(`Gotenberg answered ${String(response.status)}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    logError(error);
+    throw httpError(
+      502,
+      'RENDER_FAILED',
+      'The PDF service is unavailable; the Measurement Book is unaffected — retry later.',
+    );
+  }
+}
+
 // --- Routes -----------------------------------------------------------------
 
 export function registerMeasurementBookRoutes(
   app: FastifyInstance,
   auth: Auth,
   database: Sql,
+  storage: ObjectStorage,
+  gotenbergUrl: string,
 ): void {
   app.get(
     '/api/works/:id/measurement-books',
@@ -1554,6 +1699,229 @@ export function registerMeasurementBookRoutes(
         },
       );
       return reply.status(201).send(bill);
+    },
+  );
+
+  // The MB document (phase 3; spec §5.9 "MB document (PDF)"). A
+  // FINALIZED MB renders from its IMMUTABLE stored lines to a
+  // persisted, content-addressed PDF: object key + SHA-256 +
+  // template_version recorded on the row, audit trail appended. The
+  // snapshot read and the PDF write live in separate transactions so
+  // the slow external call holds no database locks; the final write
+  // re-checks the status so a race against cancel discards the orphan
+  // render instead of stamping it (the challan render discipline).
+  app.post(
+    '/api/measurement-books/:id/render',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: {
+          200: MeasurementBookDetailResponseSchema,
+          ...errorResponses,
+          502: ApiErrorSchema,
+        },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+
+      const { snapshot, branding } = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const book = await readBook(tx, id);
+          if (!book) {
+            throw httpError(
+              404,
+              'MEASUREMENT_BOOK_NOT_FOUND',
+              'No such Measurement Book.',
+            );
+          }
+          await assertWorkAccess(tx, user.id, book.work_id);
+          if (book.status !== 'finalized') {
+            throw httpError(
+              409,
+              'MB_STATUS_CONFLICT',
+              `Only finalized Measurement Books render to a persisted PDF (current status: ${book.status}); drafts stream a live preview instead.`,
+            );
+          }
+          const work = await readWorkIdentity(tx, book.work_id);
+          const lines = await readStoredLines(tx, id);
+          const organisation = await readBranding(tx);
+          return {
+            snapshot: toSnapshot(
+              book,
+              organisation?.name ?? '',
+              work,
+              lines,
+              book.total_amount ?? '0.00',
+              book.remark_template_version ?? MB_REMARK_TEMPLATE_VERSION,
+            ),
+            branding: organisation,
+          };
+        },
+      );
+
+      const html = renderMeasurementBookHtml(
+        snapshot,
+        await brandingWithLogo(storage, branding, (error) => {
+          request.log.warn({ err: error }, 'measurement book render: logo unavailable');
+        }),
+      );
+      const pdf = await convertToPdf(gotenbergUrl, html, (error) => {
+        request.log.error({ err: error }, 'measurement book render failed');
+      });
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const objectKey = `${organisationId}/mb/${id}.pdf`;
+      await storage.put(objectKey, pdf);
+
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const updated = await tx`
+          update measurement_books
+          set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256},
+              template_version = ${MB_TEMPLATE_VERSION}
+          where id = ${id} and status = 'finalized'
+        `;
+        if (updated.count === 0) {
+          // The MB stopped being finalized while Gotenberg rendered; the
+          // stored PDF is an orphan, not evidence — no audit entry.
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            'The Measurement Book is no longer finalized; the render was discarded.',
+          );
+        }
+        await audit(tx, organisationId, user.id, 'measurement_book.rendered', id, {
+          sha256,
+          templateVersion: MB_TEMPLATE_VERSION,
+        });
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  // GET .../pdf streams the PERSISTED render of a finalized (or
+  // cancelled-after-finalized) MB — 404 RENDER_MISSING until rendered.
+  // GET .../pdf?preview=1 streams a live DRAFT preview: computed from
+  // live state, watermarked DRAFT, converted, and streamed WITHOUT
+  // persisting — drafts change constantly, so no stored artifact and no
+  // render columns are ever touched. Same authz as the MB read routes.
+  app.get(
+    '/api/measurement-books/:id/pdf',
+    {
+      schema: {
+        params: IdParamsSchema,
+        querystring: Type.Object(
+          { preview: Type.Optional(Type.Literal('1')) },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const { preview } = request.query as { preview?: '1' };
+
+      if (preview === '1') {
+        const { snapshot, branding } = await withBoundTenant(
+          database,
+          organisationId,
+          user.id,
+          async (tx) => {
+            const book = await readBook(tx, id);
+            if (!book) {
+              throw httpError(
+                404,
+                'MEASUREMENT_BOOK_NOT_FOUND',
+                'No such Measurement Book.',
+              );
+            }
+            await assertWorkAccess(tx, user.id, book.work_id);
+            if (book.status !== 'draft') {
+              throw httpError(
+                409,
+                'MB_STATUS_CONFLICT',
+                `The live preview is for draft Measurement Books (current status: ${book.status}); use the persisted render instead.`,
+              );
+            }
+            const work = await readWorkIdentity(tx, book.work_id);
+            const computation = await computeForBook(tx, book);
+            const organisation = await readBranding(tx);
+            return {
+              snapshot: toSnapshot(
+                book,
+                organisation?.name ?? '',
+                work,
+                computation.lines.map(toLine),
+                computation.totalAmount,
+                MB_REMARK_TEMPLATE_VERSION,
+              ),
+              branding: organisation,
+            };
+          },
+        );
+        const html = renderMeasurementBookHtml(
+          snapshot,
+          await brandingWithLogo(storage, branding, (error) => {
+            request.log.warn(
+              { err: error },
+              'measurement book preview: logo unavailable',
+            );
+          }),
+        );
+        const pdf = await convertToPdf(gotenbergUrl, html, (error) => {
+          request.log.error({ err: error }, 'measurement book preview failed');
+        });
+        void reply.type('application/pdf');
+        void reply.header(
+          'content-disposition',
+          `inline; filename="measurement-book-${id}-draft-preview.pdf"`,
+        );
+        return reply.send(pdf);
+      }
+
+      const key = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const book = await readBook(tx, id);
+          if (!book) {
+            throw httpError(
+              404,
+              'MEASUREMENT_BOOK_NOT_FOUND',
+              'No such Measurement Book.',
+            );
+          }
+          await assertWorkAccess(tx, user.id, book.work_id);
+          if (book.rendered_object_key === null) {
+            throw httpError(
+              404,
+              'RENDER_MISSING',
+              book.status === 'draft'
+                ? 'Draft Measurement Books have no persisted PDF; use the live preview.'
+                : 'This Measurement Book has not been rendered yet.',
+            );
+          }
+          return book.rendered_object_key;
+        },
+      );
+      const bytes = await storage.get(key);
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename="measurement-book-${id}.pdf"`,
+      );
+      return reply.send(bytes);
     },
   );
 }
