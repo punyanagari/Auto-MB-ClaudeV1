@@ -17,6 +17,7 @@ import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { Installations } from './Installations.js';
+import { PacCertificates } from './PacCertificates.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -1129,6 +1130,14 @@ export function WorkDetail({
         workItems={workItems}
         serials={serials}
         onSerialsChanged={setSerials}
+      />
+
+      <PacCertificates
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
+        workItems={workItems}
       />
 
       <h2>Serial trace</h2>

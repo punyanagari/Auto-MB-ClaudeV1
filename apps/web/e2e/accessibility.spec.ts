@@ -466,6 +466,63 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  await page.route(`**/api/works/${WORK_ID}/pac-certificates`, (route) =>
+    route.fulfill(
+      json({
+        certificates: [
+          {
+            id: 'aaaaaaaa-9999-4999-8999-aaaaaaaaaaaa',
+            workId: WORK_ID,
+            reference: 'PAC/2026/01',
+            issueDate: '2026-08-04',
+            consigneeMasterId: 'bbbbbbbb-6666-4666-8666-bbbbbbbbbbbb',
+            consigneeDesignation: 'Sr. DEE (G) CR',
+            status: 'recorded',
+            cancellationNote: null,
+            documentAvailable: false,
+            items: [
+              {
+                workItemId: ITEM_ID,
+                itemNumber: 'A/1',
+                certifiedQuantity: '1.000',
+                releasedValue: null,
+              },
+            ],
+            releasedValue: null,
+            createdAt: '2026-08-04T00:00:00.000Z',
+            cancelledAt: null,
+          },
+        ],
+        itemSummaries: [
+          {
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            installedQuantity: '1.000',
+            pacCertifiedQuantity: '1.000',
+            availableQuantity: '0.000',
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route('**/api/masters/consignees', (route) =>
+    route.fulfill(
+      json({
+        consignees: [
+          {
+            id: 'bbbbbbbb-6666-4666-8666-bbbbbbbbbbbb',
+            designation: 'Sr. DEE (G) CR',
+            address: 'Bhusawal Division',
+            contactPerson: null,
+            phone: null,
+            email: null,
+            active: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
   await page.route(`**/api/challans/${CHALLAN_ID}`, (route) =>
     route.fulfill(
       json({

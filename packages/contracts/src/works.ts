@@ -152,6 +152,10 @@ export const WorkItemSchema = Type.Object(
      * quantity-level installation records for the item (Milestone 7) —
      * the authoritative installed quantity Milestone 8 billing reads. */
     installedQuantity: Type.Optional(DecimalStringSchema),
+    /** Present on the Work detail response: SUM of certified quantities
+     * over non-cancelled PAC certificates for the item (Milestone 8
+     * phase 1) — THE pac_qty the Measurement Book engine consumes. */
+    pacCertifiedQuantity: Type.Optional(DecimalStringSchema),
   },
   { additionalProperties: false },
 );

@@ -135,6 +135,13 @@ export function registerExportRoutes(
           `,
           ['snapshot'],
         );
+        const pacCertificates = await tx<Record<string, unknown>[]>`
+          select * from pac_certificates order by issue_date, created_at, id
+        `;
+        const pacCertificateItems = await tx<Record<string, unknown>[]>`
+          select * from pac_certificate_items
+          order by pac_certificate_id, work_item_id
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -202,6 +209,17 @@ export function registerExportRoutes(
                 ]
               : [],
           ),
+          ...pacCertificates.flatMap((certificate) =>
+            certificate.document_object_key !== null
+              ? [
+                  {
+                    kind: 'pac-certificate-document',
+                    objectKey: certificate.document_object_key,
+                    sha256: certificate.document_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
         ];
 
         return {
@@ -225,6 +243,8 @@ export function registerExportRoutes(
           installationSerials,
           approvalRequests,
           correctionNotices,
+          pacCertificates,
+          pacCertificateItems,
           objectManifest,
           auditEvents,
         };

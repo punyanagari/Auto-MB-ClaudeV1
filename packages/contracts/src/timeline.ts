@@ -16,6 +16,7 @@ export const TIMELINE_ENTITY_TYPES = [
   'installations',
   'approval_requests',
   'correction_notices',
+  'pac_certificates',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

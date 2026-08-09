@@ -130,6 +130,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderCorrectionNotice: vi.fn(),
     cancelCorrectionNotice: vi.fn(),
     downloadCorrectionNoticePdf: vi.fn(),
+    listWorkPacCertificates: vi
+      .fn()
+      .mockResolvedValue({ certificates: [], itemSummaries: [] }),
+    recordWorkPacCertificate: vi.fn(),
+    cancelPacCertificate: vi.fn(),
+    uploadPacCertificateDocument: vi.fn(),
+    downloadPacCertificateDocument: vi.fn(),
     ...overrides,
   };
 }

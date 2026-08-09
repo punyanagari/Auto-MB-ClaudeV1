@@ -56,6 +56,8 @@ const TENANT_TABLES = [
   'installation_serials',
   'correction_notices',
   'correction_notice_counters',
+  'pac_certificates',
+  'pac_certificate_items',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -96,6 +98,9 @@ const DELETE_REVOKED_TABLES = [
   // the counter is numbering state (0019).
   'correction_notices',
   'correction_notice_counters',
+  // PAC certificates cancel with a note; their lines are frozen (0022).
+  'pac_certificates',
+  'pac_certificate_items',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -375,13 +380,15 @@ async function seedTenantGraph(
     `;
 
     // Milestone 7 masters tables: one row each.
-    await tx`
+    const [consigneeMaster] = await tx<{ id: string }[]>`
       insert into consignee_masters (
         organisation_id, designation, address, created_by_user_id
       )
       values (${organisationId}, ${`Sr. DEE ${workCode}`},
               'Integration division office', ${userId})
+      returning id
     `;
+    if (!consigneeMaster) throw new Error('seed consignee insert returned no row');
     const [locationMaster] = await tx<{ id: string }[]>`
       insert into location_masters (organisation_id, name, kind, created_by_user_id)
       values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
@@ -441,6 +448,30 @@ async function seedTenantGraph(
       select ${organisationId}, ${installation.id}, ${work.id}, s.id
       from challan_item_serials s
       where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
+    `;
+
+    // Milestone 8 phase 1 PAC tables: one recorded certificate with one
+    // certified line, the consignee designation snapshotted from the
+    // master.
+    const [pacCertificate] = await tx<{ id: string }[]>`
+      insert into pac_certificates (
+        organisation_id, work_id, reference, issue_date, consignee_master_id,
+        consignee_designation, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${`PAC-${workCode}`}, '2026-02-04',
+        ${consigneeMaster.id}, ${`Sr. DEE ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!pacCertificate) throw new Error('seed PAC certificate insert returned no row');
+    await tx`
+      insert into pac_certificate_items (
+        organisation_id, pac_certificate_id, work_id, work_item_id,
+        certified_quantity
+      )
+      values (${organisationId}, ${pacCertificate.id}, ${work.id},
+              ${workItem.id}, '1.000')
     `;
 
     return {

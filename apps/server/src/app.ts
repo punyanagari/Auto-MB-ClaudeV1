@@ -35,6 +35,7 @@ import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
+import { registerPacRoutes } from './routes/pac.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -434,6 +435,7 @@ export async function buildApp(
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
+    registerPacRoutes(app, authInstance, database, storage, scanner);
   }
 
   return app;
