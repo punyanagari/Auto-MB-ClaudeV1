@@ -507,6 +507,11 @@ describe('export completeness', () => {
     expect(Array.isArray(exported.installationSerials)).toBe(true);
     expect(Array.isArray(exported.approvalRequests)).toBe(true);
     expect(Array.isArray(exported.correctionNotices)).toBe(true);
+    // Wave 2 hardening: the Issue Challan register (with its lines and
+    // replacement provenance) and extension requests complete export-v4.
+    expect(Array.isArray(exported.issueChallans)).toBe(true);
+    expect(Array.isArray(exported.issueChallanLines)).toBe(true);
+    expect(Array.isArray(exported.extensionRequests)).toBe(true);
   });
 });
 

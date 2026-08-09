@@ -2,6 +2,24 @@ import { useCallback, useEffect, useState } from 'react';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 
+/** True when the Work's approval list carries a pending cancel-and-replace
+ * request for THIS Issue Challan — surfaced instead of the correction form
+ * so a second filing is not invited only to bounce off PENDING_EXISTS. */
+async function findPendingCorrection(
+  api: ApiClient,
+  organisationId: string,
+  workId: string,
+  challanId: string,
+): Promise<boolean> {
+  const approvals = await api.listWorkAmendments(organisationId, workId);
+  return approvals.some(
+    (approval) =>
+      approval.status === 'pending' &&
+      approval.entityType === 'issue_challan_cancel_replace' &&
+      approval.entityId === challanId,
+  );
+}
+
 interface IssueChallanDetailProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -46,13 +64,23 @@ export function IssueChallanDetail({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
+  const [hasPendingCorrection, setHasPendingCorrection] = useState(false);
 
   const reload = useCallback(() => {
     setLoadError(null);
     api
       .getIssueChallan(organisationId, challanId)
-      .then((loaded) => {
+      .then(async (loaded) => {
         setDetail(loaded);
+        setHasPendingCorrection(
+          loaded.issueChallan.status === 'issued' &&
+            (await findPendingCorrection(
+              api,
+              organisationId,
+              loaded.issueChallan.workId,
+              loaded.issueChallan.id,
+            )),
+        );
       })
       .catch((cause: unknown) => {
         setLoadError(
@@ -365,7 +393,17 @@ export function IssueChallanDetail({
         </form>
       )}
 
-      {issueChallan.status === 'issued' && canModify && (
+      {issueChallan.status === 'issued' && canModify && hasPendingCorrection && (
+        <>
+          <h2>Request correction</h2>
+          <p className="muted" role="note">
+            A correction request for this Issue Challan is already awaiting a decision
+            in the approvals queue.
+          </p>
+        </>
+      )}
+
+      {issueChallan.status === 'issued' && canModify && !hasPendingCorrection && (
         <form
           onSubmit={(event) => {
             event.preventDefault();

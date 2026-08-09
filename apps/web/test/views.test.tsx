@@ -1191,6 +1191,64 @@ describe('WorkDetail retention', () => {
     });
   }
 
+  it('offers Generate PDF for an unrendered correction notice on the Work page', async () => {
+    const NOTICE_ID = 'bbbb4444-4444-4444-8444-444444444444';
+    const notice = {
+      id: NOTICE_ID,
+      workId: WORK_ID,
+      deliveryChallanId: CHALLAN_ID,
+      approvalRequestId: '99999999-9999-4999-8999-999999999999',
+      noticeNumber: 'DCW-1-CN-01',
+      sequenceNumber: 1,
+      status: 'issued' as const,
+      templateVersion: 'correction-notice-v1',
+      renderedAvailable: false,
+      cancellationNote: null,
+      createdAt: '2026-08-09T00:00:00.000Z',
+      cancelledAt: null,
+    };
+    const renderCorrectionNotice = vi.fn().mockResolvedValue({});
+    const listWorkCorrectionNotices = vi
+      .fn()
+      .mockResolvedValueOnce([notice])
+      .mockResolvedValue([{ ...notice, renderedAvailable: true }]);
+    const api = retentionApi({ renderCorrectionNotice, listWorkCorrectionNotices });
+    renderWorkDetail(api);
+
+    // A fresh notice is born unrendered: the Work page offers the render
+    // action rather than a dead-end "not rendered".
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate PDF' }));
+    await waitFor(() => {
+      expect(renderCorrectionNotice).toHaveBeenCalledWith(ORG_ID, NOTICE_ID);
+    });
+    expect(await screen.findByRole('button', { name: 'Open PDF' })).toBeTruthy();
+  });
+
+  it('shows no render action for correction notices without modify rights', async () => {
+    const api = retentionApi({
+      listWorkCorrectionNotices: vi.fn().mockResolvedValue([
+        {
+          id: 'bbbb4444-4444-4444-8444-444444444444',
+          workId: WORK_ID,
+          deliveryChallanId: CHALLAN_ID,
+          approvalRequestId: '99999999-9999-4999-8999-999999999999',
+          noticeNumber: 'DCW-1-CN-01',
+          sequenceNumber: 1,
+          status: 'issued' as const,
+          templateVersion: 'correction-notice-v1',
+          renderedAvailable: false,
+          cancellationNote: null,
+          createdAt: '2026-08-09T00:00:00.000Z',
+          cancelledAt: null,
+        },
+      ]),
+    });
+    renderWorkDetail(api, { canModify: false });
+    expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Generate PDF' })).toBeNull();
+    expect(screen.getByText('not rendered')).toBeTruthy();
+  });
+
   it('records a measurement with challan provenance', async () => {
     const recordMbEntry = vi.fn().mockResolvedValue({
       ...MB_ENTRY,

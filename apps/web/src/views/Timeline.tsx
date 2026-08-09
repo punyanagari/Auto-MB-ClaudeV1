@@ -78,6 +78,9 @@ const ENTITY_FILTERS = [
   { value: 'mb_entries', label: 'Measurements' },
   { value: 'bills', label: 'Bills' },
   { value: 'installations', label: 'Installations' },
+  { value: 'issue_challans', label: 'Issue challans' },
+  { value: 'approval_requests', label: 'Approvals' },
+  { value: 'correction_notices', label: 'Correction notices' },
 ] as const;
 
 function humaniseAction(action: string): string {

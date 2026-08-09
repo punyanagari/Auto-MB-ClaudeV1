@@ -141,6 +141,10 @@ Activated with Milestone 3 (issued documents exist):
 
 - issue/cancel authority — explicit per-member flags checked over live
   HTTP, separate from roles; drafting alone never issues a document;
+  approval-gated correction applies revalidate the same flags on the
+  deciding user at apply time — cancel-and-replace requires the cancel
+  authority and correction-notice issuance requires the issue authority,
+  in addition to the amendment-approval authority;
 - business integrity — serialised per-Work numbering, exact-arithmetic
   quantity validation, and snapshot immutability proven by live tests,
   including a concurrent double-issue race producing exactly one issued

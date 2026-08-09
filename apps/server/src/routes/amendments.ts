@@ -24,7 +24,12 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import {
+  assertWorkAccess,
+  hasFullWorkScope,
+  requireAuthority,
+  requireWriterRole,
+} from '../authz.js';
 import {
   applyChallanCancelReplace,
   applyCorrectionNotice,
@@ -245,21 +250,35 @@ export async function applyApproval(
     if (changes.quantity !== undefined) {
       // Floor revalidation against LIVE state, in exact SQL numeric
       // arithmetic: the ceiling can never drop below what issued challans
-      // already delivered.
-      const [floor] = await tx<{ delivered: string; violates: boolean }[]>`
-        select coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)::text
-                 as delivered,
-               coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
+      // already delivered NOR below what installation records already
+      // installed (spec R7; the R5 installed-≤-LOA invariant would
+      // otherwise be breached retroactively). Both writers take the same
+      // work_items row lock, so the sums cannot race this apply.
+      const [floor] = await tx<
+        { delivered: string; installed: string; violates: boolean }[]
+      >`
+        with delivered as (
+          select coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
+                   as total
+          from delivery_challan_items dci
+          join delivery_challans dc on dc.id = dci.delivery_challan_id
+          where dci.work_item_id = ${item.id}
+        ), installed as (
+          select coalesce(sum(i.quantity), 0) as total
+          from installations i
+          where i.work_item_id = ${item.id} and i.status = 'recorded'
+        )
+        select delivered.total::text as delivered,
+               installed.total::text as installed,
+               greatest(delivered.total, installed.total)
                  > ${changes.quantity}::numeric(18,3) as violates
-        from delivery_challan_items dci
-        join delivery_challans dc on dc.id = dci.delivery_challan_id
-        where dci.work_item_id = ${item.id}
+        from delivered, installed
       `;
       if (floor?.violates === true) {
         throw httpError(
           409,
           'AMENDMENT_FLOOR_VIOLATION',
-          `The quantity of ${item.item_number} cannot go below the already-delivered ${floor.delivered}.`,
+          `The quantity of ${item.item_number} cannot go below the already-delivered ${floor.delivered} or the already-installed ${floor.installed}.`,
         );
       }
     }
@@ -323,8 +342,14 @@ export async function applyApproval(
   } else if (proposed.kind === 'cancel_replace_challan') {
     // Milestone 7 Path A: cancel the issued (still evidence-free) challan
     // and draft its replacement, atomically, revalidating live state.
+    // Cancelling an issued document demands the explicit cancel authority
+    // of the DECIDER, exactly like the direct cancel routes — approval
+    // authority alone does not cancel documents. A 403 here rolls back
+    // and the request remains pending, like any other failed apply.
+    await requireAuthority(tx, userId, 'cancel');
     await applyChallanCancelReplace(tx, organisationId, userId, request.id, proposed);
   } else if (proposed.kind === 'cancel_replace_issue_challan') {
+    await requireAuthority(tx, userId, 'cancel');
     await applyIssueChallanCancelReplace(
       tx,
       organisationId,
@@ -334,7 +359,9 @@ export async function applyApproval(
     );
   } else {
     // Milestone 7 Path B: issue a numbered correction notice; the original
-    // challan is never touched.
+    // challan is never touched. Minting a numbered document demands the
+    // deciding user's issue authority, mirroring the direct issue routes.
+    await requireAuthority(tx, userId, 'issue');
     await applyCorrectionNotice(tx, organisationId, userId, request.id, proposed);
   }
 

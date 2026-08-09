@@ -383,6 +383,7 @@ export function registerInstallationRoutes(
             const serials = await tx<
               {
                 id: string;
+                work_id: string;
                 work_item_id: string;
                 installed_on: string | null;
                 serial_number: string;
@@ -391,7 +392,8 @@ export function registerInstallationRoutes(
                 attached: boolean;
               }[]
             >`
-              select s.id, dci.work_item_id, s.installed_on::text as installed_on,
+              select s.id, s.work_id, dci.work_item_id,
+                     s.installed_on::text as installed_on,
                      s.serial_number, dc.status as challan_status,
                      dc.challan_date::text as challan_date,
                      exists (
@@ -406,6 +408,18 @@ export function registerInstallationRoutes(
               for update of s
             `;
             const byId = new Map(serials.map((serial) => [serial.id, serial]));
+            // First pass — existence within THIS Work. A serial of another
+            // Work answers exactly like an unknown id (the assertWorkAccess
+            // 404 discipline): no state-specific 409 may confirm a serial
+            // outside the caller's scope exists, whatever its state.
+            for (const serialId of serialIds) {
+              const serial = byId.get(serialId);
+              if (!serial || serial.work_id !== workId) {
+                throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
+              }
+            }
+            // Second pass — state checks, now that every serial is proven
+            // to belong to the target Work.
             for (const serialId of serialIds) {
               const serial = byId.get(serialId);
               if (!serial) {

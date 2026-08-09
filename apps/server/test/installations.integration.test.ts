@@ -50,6 +50,7 @@ const ownerEmail = `inst-owner-${runId}@integration.test`;
 const siteEmail = `inst-site-${runId}@integration.test`;
 const viewerEmail = `inst-viewer-${runId}@integration.test`;
 const outsiderEmail = `inst-outsider-${runId}@integration.test`;
+const assignedEmail = `inst-assigned-${runId}@integration.test`;
 const password = `integration-password-${runId}`;
 
 let admin: Sql;
@@ -73,6 +74,7 @@ let owner: CookieJar;
 let site: CookieJar;
 let viewer: CookieJar;
 let outsider: CookieJar;
+let assigned: CookieJar;
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -192,6 +194,7 @@ beforeAll(async () => {
   site = await signUp(siteEmail, 'INST Site');
   viewer = await signUp(viewerEmail, 'INST Viewer');
   outsider = await signUp(outsiderEmail, 'INST Outsider');
+  assigned = await signUp(assignedEmail, 'INST Assigned');
 
   const created = await authed(owner, {
     method: 'POST',
@@ -212,6 +215,7 @@ beforeAll(async () => {
   for (const [email, role] of [
     [siteEmail, 'site'],
     [viewerEmail, 'viewer'],
+    [assignedEmail, 'office'],
   ] as const) {
     const added = await authed(owner, {
       method: 'POST',
@@ -373,6 +377,7 @@ afterAll(async () => {
           'delivery_challan_counters',
           'delivery_challans',
           'location_masters',
+          'work_assignments',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -888,6 +893,24 @@ describe('cancellation with a mandatory note', () => {
       `,
     ).rejects.toThrow(/re-attached/);
   });
+
+  it('refuses a cancellation without a note at the database (0023 NULL-proof CHECK)', async () => {
+    const list = await listInstallations();
+    const recorded = list.installations.find(
+      (candidate) => candidate.status === 'recorded',
+    );
+    if (!recorded) throw new Error('recorded installation missing');
+    // With the pre-0023 CHECK this passed: length(btrim(NULL)) is NULL and
+    // NULL OR FALSE satisfies a CHECK. Now the NOT NULL conjunct holds.
+    await expect(
+      admin`
+        update installations
+        set status = 'cancelled', cancelled_at = now(),
+            cancelled_by_user_id = ${ownerUserId}, cancellation_note = null
+        where id = ${recorded.id}
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+  });
 });
 
 describe('trace, timeline, export, and tenancy', () => {
@@ -983,5 +1006,206 @@ describe('trace, timeline, export, and tenancy', () => {
       payload: { note: 'Cross-tenant attempt' },
     });
     expect(foreignCancel.statusCode).toBe(404);
+  });
+});
+
+describe('serials of another Work and the assigned scope', () => {
+  let workBId: string;
+  let itemB1Id: string;
+  let workBInstallationId: string;
+  let serialB1Id: string; // installed on work B
+  let serialB2Id: string; // delivered on work B, uninstalled
+
+  beforeAll(async () => {
+    // A second Work in the SAME organisation: RLS admits its rows, so only
+    // the Work-scope checks separate them.
+    workBId = randomUUID();
+    const scheduleBId = randomUUID();
+    itemB1Id = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${workBId}, ${organisationId}, ${`INSTB-${runId.toUpperCase()}`},
+        ${`inst-letter-b-${runId}`}, '2025-06-01', 'Installation fixture work B',
+        500.00, 450.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleBId}, ${organisationId}, ${workBId}, 'B', 'Schedule B', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, requires_serials
+      )
+      values (
+        ${itemB1Id}, ${organisationId}, ${workBId}, ${scheduleBId}, 'B/1',
+        'Point machine', 'Nos', 5.000, 300.00, true
+      )
+    `;
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workBId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-01',
+        prefix: 'DCB',
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items: [{ workItemId: itemB1Id, quantity: '2' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const draftDetail = draft.json<ChallanDetailResponse>();
+    const lineB = draftDetail.items.find((item) => item.workItemId === itemB1Id);
+    if (!lineB) throw new Error('work B challan line missing');
+    const serialsRecorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draftDetail.challan.id}/serials`,
+      organisationId,
+      payload: { challanItemId: lineB.id, serialNumbers: ['SN-B1', 'SN-B2'] },
+    });
+    expect(serialsRecorded.statusCode, serialsRecorded.body).toBe(201);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draftDetail.challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    const serials = await admin<{ id: string; serial_number: string }[]>`
+      select id, serial_number from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workBId}
+    `;
+    const b1 = serials.find((serial) => serial.serial_number === 'SN-B1');
+    const b2 = serials.find((serial) => serial.serial_number === 'SN-B2');
+    if (!b1 || !b2) throw new Error('work B serials missing');
+    serialB1Id = b1.id;
+    serialB2Id = b2.id;
+
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workBId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: itemB1Id,
+        quantity: '1',
+        installedOn: '2026-08-05',
+        locationId: stationLocationId,
+        serialIds: [serialB1Id],
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    workBInstallationId = recorded.json<Installation>().id;
+  });
+
+  it('answers 404 — not a state-specific 409 — for serial ids of another Work', async () => {
+    // SN-B2 is delivered-but-uninstalled on work B: naming it on a work-A
+    // recording must NOT confirm it exists (previously a 409
+    // SERIAL_ITEM_MISMATCH echoing the serial number).
+    const uninstalled = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      serialIds: [serialB2Id],
+    });
+    expect(uninstalled.statusCode, uninstalled.body).toBe(404);
+    expect(uninstalled.json<{ code: string }>().code).toBe('SERIAL_NOT_FOUND');
+
+    // SN-B1 is INSTALLED on work B: the answer is identical, so no serial
+    // state leaks across Works.
+    const installed = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      serialIds: [serialB1Id],
+    });
+    expect(installed.statusCode, installed.body).toBe(404);
+    expect(installed.json<{ code: string }>().code).toBe('SERIAL_NOT_FOUND');
+  });
+
+  it('rejects a cross-item serial attachment at the database (item lineage)', async () => {
+    // A recorded installation of item C and a delivered serial of item A:
+    // the composite FKs alone would admit the attachment (same Work), but
+    // the 0023 guard proves the serial resolves to the installation's own
+    // work item.
+    const [installationC] = await admin<{ id: string }[]>`
+      select i.id from installations i
+      where i.organisation_id = ${organisationId}
+        and i.work_id = ${workId} and i.work_item_id = ${itemCId}
+        and i.status = 'recorded'
+      limit 1
+    `;
+    if (!installationC) throw new Error('recorded item-C installation missing');
+    await expect(
+      admin`
+        insert into installation_serials (
+          organisation_id, installation_id, work_id, challan_item_serial_id
+        )
+        values (
+          ${organisationId}, ${installationC.id}, ${workId}, ${serialId('SN-A1')}
+        )
+      `,
+    ).rejects.toThrow(/work item/);
+  });
+
+  it('denies every installation surface for an assigned-scope member outside their Works', async () => {
+    // Office member with assigned scope, covering work A only.
+    const [assignedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${assignedEmail}
+    `;
+    if (!assignedUser) throw new Error('assigned user missing');
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned'
+      where organisation_id = ${organisationId} and user_id = ${assignedUser.id}
+    `;
+    await admin`
+      insert into work_assignments (
+        organisation_id, work_id, user_id, created_by_user_id
+      )
+      values (${organisationId}, ${workId}, ${assignedUser.id}, ${ownerUserId})
+    `;
+
+    const foreignList = await authed(assigned, {
+      method: 'GET',
+      url: `/api/works/${workBId}/installations`,
+      organisationId,
+    });
+    expect(foreignList.statusCode, foreignList.body).toBe(404);
+
+    const foreignRecord = await authed(assigned, {
+      method: 'POST',
+      url: `/api/works/${workBId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: itemB1Id,
+        quantity: '1.000',
+        installedOn: '2026-08-06',
+        locationId: stationLocationId,
+      },
+    });
+    expect(foreignRecord.statusCode, foreignRecord.body).toBe(404);
+
+    const foreignCancel = await authed(assigned, {
+      method: 'POST',
+      url: `/api/installations/${workBInstallationId}/cancel`,
+      organisationId,
+      payload: { note: 'Assigned-scope attempt' },
+    });
+    expect(foreignCancel.statusCode, foreignCancel.body).toBe(404);
+
+    // Positive control: the assigned Work answers normally.
+    const assignedList = await authed(assigned, {
+      method: 'GET',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+    });
+    expect(assignedList.statusCode, assignedList.body).toBe(200);
   });
 });

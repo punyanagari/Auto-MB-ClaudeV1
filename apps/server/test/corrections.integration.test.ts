@@ -43,6 +43,8 @@ const ownerEmail = `cor-owner-${runId}@integration.test`;
 const clerkEmail = `cor-clerk-${runId}@integration.test`;
 const viewerEmail = `cor-viewer-${runId}@integration.test`;
 const outsiderEmail = `cor-outsider-${runId}@integration.test`;
+const approverEmail = `cor-approver-${runId}@integration.test`;
+const assignedEmail = `cor-assigned-${runId}@integration.test`;
 const password = `integration-password-${runId}`;
 
 let admin: Sql;
@@ -69,6 +71,8 @@ let owner: CookieJar;
 let clerk: CookieJar;
 let viewer: CookieJar;
 let outsider: CookieJar;
+let approverOnly: CookieJar;
+let assigned: CookieJar;
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -224,6 +228,8 @@ beforeAll(async () => {
   clerk = await signUp(clerkEmail, 'Correction Clerk');
   viewer = await signUp(viewerEmail, 'Correction Viewer');
   outsider = await signUp(outsiderEmail, 'Outside Owner');
+  approverOnly = await signUp(approverEmail, 'Approver Without Authorities');
+  assigned = await signUp(assignedEmail, 'Assigned Scope Member');
 
   const created = await authed(owner, {
     method: 'POST',
@@ -244,6 +250,8 @@ beforeAll(async () => {
   for (const [email, role] of [
     [clerkEmail, 'office'],
     [viewerEmail, 'viewer'],
+    [approverEmail, 'office'],
+    [assignedEmail, 'office'],
   ] as const) {
     const added = await authed(owner, {
       method: 'POST',
@@ -266,6 +274,17 @@ beforeAll(async () => {
     set can_issue_documents = true, can_cancel_documents = true,
         can_approve_amendments = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+  `;
+  // The approver-only member decides amendments but holds NEITHER document
+  // authority: correction applies must refuse them at apply time.
+  const [approverUser] = await admin<{ id: string }[]>`
+    select "id" from auth_users where "email" = ${approverEmail}
+  `;
+  if (!approverUser) throw new Error('approver user missing');
+  await admin`
+    update organisation_memberships
+    set can_approve_amendments = true
+    where organisation_id = ${organisationId} and user_id = ${approverUser.id}
   `;
   // The outsider holds every authority in their OWN organisation, so the
   // cross-tenant denials prove tenancy, not missing authority.
@@ -345,6 +364,7 @@ afterAll(async () => {
           'issue_challans',
           'delivery_challans',
           'approval_requests',
+          'work_assignments',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -612,7 +632,12 @@ describe('Path A — cancel and replace for an issued Delivery Challan', () => {
     `;
     expect(original?.status).toBe('cancelled');
     expect(original?.challan_number).toBe(dc1Number);
+    // The note carries the approval reference AND the requester's human
+    // reason (R17): the cancelled document explains itself.
     expect(original?.cancellation_note).toContain(requestId);
+    expect(original?.cancellation_note).toContain(
+      'Wrong consignee and quantity on the issued copy.',
+    );
 
     // Replacement: a DRAFT carrying provenance and the corrected content.
     const [replacement] = await admin<
@@ -812,6 +837,7 @@ describe('Path A — cancel and replace for an issued Issue Challan', () => {
     `;
     expect(original?.status).toBe('cancelled');
     expect(original?.cancellation_note).toContain(approval.id);
+    expect(original?.cancellation_note).toContain('Issued to the wrong engineer.');
 
     const [replacement] = await admin<
       { id: string; replaces_issue_challan_id: string | null; issued_to_name: string }[]
@@ -1366,6 +1392,9 @@ describe('export and timeline', () => {
       correctionNotices: { id: string; snapshot: unknown }[];
       approvalRequests: { id: string; entity_type: string }[];
       objectManifest: { kind: string; objectKey: string; sha256: string | null }[];
+      issueChallans: { id: string; replaces_issue_challan_id: string | null }[];
+      issueChallanLines: { issue_challan_id: string }[];
+      extensionRequests: unknown[];
     }>();
     expect(payload.correctionNotices.length).toBeGreaterThanOrEqual(3);
     expect(
@@ -1378,6 +1407,14 @@ describe('export and timeline', () => {
         (entry) => entry.kind === 'correction-notice-rendered-pdf',
       ),
     ).toBe(true);
+    // Issue Challans — their register, lines, and the replacement
+    // provenance the corrections track added — are part of the record.
+    expect(payload.issueChallans.length).toBeGreaterThanOrEqual(2);
+    expect(
+      payload.issueChallans.some((row) => row.replaces_issue_challan_id !== null),
+    ).toBe(true);
+    expect(payload.issueChallanLines.length).toBeGreaterThan(0);
+    expect(Array.isArray(payload.extensionRequests)).toBe(true);
   });
 
   it('surfaces the correction trail in the Work timeline and entity history', async () => {
@@ -1445,5 +1482,515 @@ describe('export and timeline', () => {
         where id = ${issuedIcReplacement.id}
       `,
     ).rejects.toThrowError(/provenance is immutable/);
+  });
+
+  it('surfaces Issue Challan correction events in the Work timeline and entity history', async () => {
+    const timeline = await authed(clerk, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/timeline?entityTypes=issue_challans`,
+      organisationId,
+    });
+    expect(timeline.statusCode, timeline.body).toBe(200);
+    const actions = timeline
+      .json<TimelineResponse>()
+      .events.map((event) => event.action);
+    expect(actions).toContain('issue_challan.cancelled');
+    expect(actions).toContain('issue_challan.replacement_drafted');
+
+    // The entity-history API accepts issue_challans and serves the
+    // per-document cancellation trail.
+    const [cancelledIc] = await admin<{ id: string }[]>`
+      select id from issue_challans
+      where organisation_id = ${organisationId} and status = 'cancelled'
+      limit 1
+    `;
+    if (!cancelledIc) throw new Error('no cancelled Issue Challan to inspect');
+    const history = await authed(clerk, {
+      method: 'GET',
+      url: `/api/audit/entity/issue_challans/${cancelledIc.id}`,
+      organisationId,
+    });
+    expect(history.statusCode, history.body).toBe(200);
+    expect(
+      history.json<TimelineResponse>().events.map((event) => event.action),
+    ).toContain('issue_challan.cancelled');
+  });
+});
+
+describe('Issue Challan manual-line quantity normalisation', () => {
+  it('treats a replacement identical up to decimal formatting as no change', async () => {
+    // The issued IC replacement carries the manual line at 12.000; a
+    // "replacement" restating everything with '12' (and '4' for the
+    // work-item line) is materially identical and must NOT cancel a
+    // lawful document.
+    const [issuedIc] = await admin<
+      { id: string; issued_to_name: string; challan_date: string }[]
+    >`
+      select id, issued_to_name, challan_date::text as challan_date
+      from issue_challans
+      where organisation_id = ${organisationId}
+        and status = 'issued' and replaces_issue_challan_id is not null
+      limit 1
+    `;
+    if (!issuedIc) throw new Error('no issued IC replacement to correct');
+
+    const filed = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${issuedIc.id}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'Restating the same content differently formatted.',
+        replacement: {
+          challanDate: issuedIc.challan_date,
+          movementType: 'issue',
+          issuedToName: issuedIc.issued_to_name,
+          lines: [
+            { workItemId: item1AId, quantity: '4' },
+            {
+              description: 'Cable ties (site consumables)',
+              unit: 'Pkt',
+              quantity: '12',
+            },
+          ],
+        },
+      },
+    });
+    expect(filed.statusCode).toBe(400);
+    expect(filed.json<{ code: string }>().code).toBe('CORRECTION_EMPTY');
+
+    // The document is untouched — no cancel, no draft.
+    const [after] = await admin<{ status: string }[]>`
+      select status from issue_challans where id = ${issuedIc.id}
+    `;
+    expect(after?.status).toBe('issued');
+  });
+});
+
+describe('correction applies revalidate the document authorities of the decider', () => {
+  let dcId: string;
+  let cancelReplaceRequestId: string;
+
+  it('refuses a cancel-and-replace apply from an approver without the cancel authority, releasing the claim', async () => {
+    ({ challanId: dcId } = await issueChallan(work1Id, `${work1Code}-DC`, [
+      { workItemId: item1AId, quantity: '6.000' },
+    ]));
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${dcId}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'Authority fixture: quantity wrong.',
+        replacement: {
+          challanDate: '2026-08-08',
+          prefix: `${work1Code}-DC`,
+          consignee: consignee(),
+          items: [{ workItemId: item1AId, quantity: '7.000' }],
+        },
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    cancelReplaceRequestId = filed.json<ApprovalRequest>().id;
+
+    const denied = await authed(approverOnly, {
+      method: 'POST',
+      url: `/api/approvals/${cancelReplaceRequestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+    expect(denied.json<{ message: string }>().message).toContain('cancel');
+
+    // The claim was released: still pending, the challan untouched.
+    const pending = await authed(clerk, {
+      method: 'GET',
+      url: '/api/approvals?status=pending',
+      organisationId,
+    });
+    expect(
+      pending.json<{ approvals: ApprovalRequest[] }>().approvals.map((row) => row.id),
+    ).toContain(cancelReplaceRequestId);
+    const [challan] = await admin<{ status: string }[]>`
+      select status from delivery_challans where id = ${dcId}
+    `;
+    expect(challan?.status).toBe('issued');
+
+    // The full-authority owner decides the same request without friction.
+    const approved = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${cancelReplaceRequestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    // Clear the resulting draft so later suites see a clean Work.
+    const [draft] = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where work_id = ${work1Id} and status = 'draft'
+    `;
+    if (!draft) throw new Error('authority fixture left no replacement draft');
+    const removed = await authed(clerk, {
+      method: 'DELETE',
+      url: `/api/challans/${draft.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(204);
+  });
+
+  it('refuses a correction-notice apply from an approver without the issue authority', async () => {
+    // dc22 carries a receipt, so Path B applies; no pending request rides
+    // on it after the race test withdrew.
+    const [withEvidence] = await admin<{ id: string }[]>`
+      select dc.id from delivery_challans dc
+      where dc.organisation_id = ${organisationId}
+        and dc.work_id = ${work2Id} and dc.status = 'issued'
+        and exists (
+          select 1 from challan_receipts cr where cr.delivery_challan_id = dc.id
+        )
+        and not exists (
+          select 1 from approval_requests ar
+          where ar.entity_id = dc.id and ar.status = 'pending'
+        )
+      limit 1
+    `;
+    if (!withEvidence) throw new Error('no evidence-bearing challan available');
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${withEvidence.id}/corrections/notice`,
+      organisationId,
+      payload: {
+        reason: 'Authority fixture: unit misprinted.',
+        statement: 'The recorded unit is Nos, not Set.',
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const noticeRequestId = filed.json<ApprovalRequest>().id;
+
+    const denied = await authed(approverOnly, {
+      method: 'POST',
+      url: `/api/approvals/${noticeRequestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+    expect(denied.json<{ message: string }>().message).toContain('issue');
+
+    // Released back to pending; no notice was minted.
+    const pending = await authed(clerk, {
+      method: 'GET',
+      url: '/api/approvals?status=pending',
+      organisationId,
+    });
+    expect(
+      pending.json<{ approvals: ApprovalRequest[] }>().approvals.map((row) => row.id),
+    ).toContain(noticeRequestId);
+    const [minted] = await admin<{ count: number }[]>`
+      select count(*)::int as count from correction_notices
+      where approval_request_id = ${noticeRequestId}
+    `;
+    expect(minted?.count).toBe(0);
+
+    const withdrawn = await authed(clerk, {
+      method: 'POST',
+      url: `/api/approvals/${noticeRequestId}/withdraw`,
+      organisationId,
+    });
+    expect(withdrawn.statusCode).toBe(200);
+  });
+
+  it('still requires plain amendment approvals to carry no document authority', async () => {
+    // Control: the approver-only member CAN decide an ordinary item
+    // amendment — the new gates bind the correction paths only.
+    const proposed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${work3Id}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: item3AId,
+        reason: 'Rate correction control fixture.',
+        changes: { rate: '11.00' },
+      },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(201);
+    const requestId = proposed.json<ApprovalRequest>().id;
+    const approved = await authed(approverOnly, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+  });
+});
+
+describe('assigned-scope denial (work_scope = assigned)', () => {
+  let assignedUserId: string;
+  let work2IssueChallanId: string;
+  let work2NoticeId: string;
+  let work2ChallanId: string;
+
+  beforeAll(async () => {
+    const [assignedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${assignedEmail}
+    `;
+    if (!assignedUser) throw new Error('assigned user missing');
+    assignedUserId = assignedUser.id;
+    // Office member with EVERY document authority, narrowed to work 1:
+    // the 404s below prove the assignment scope, not a missing authority.
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned', can_issue_documents = true,
+          can_cancel_documents = true, can_approve_amendments = true
+      where organisation_id = ${organisationId} and user_id = ${assignedUserId}
+    `;
+    await admin`
+      insert into work_assignments (
+        organisation_id, work_id, user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work1Id}, ${assignedUserId}, ${ownerUserId})
+    `;
+
+    // Work-2 fixtures to probe: an issued Issue Challan and an existing
+    // correction notice.
+    const icDraft = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${work2Id}/issue-challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        movementType: 'issue',
+        issuedToName: 'SSE/Signal/Delhi',
+        lines: [{ workItemId: item2AId, quantity: '1.000' }],
+      },
+    });
+    expect(icDraft.statusCode, icDraft.body).toBe(201);
+    work2IssueChallanId = icDraft.json<IssueChallanDetailResponse>().issueChallan.id;
+    const icIssued = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${work2IssueChallanId}/issue`,
+      organisationId,
+    });
+    expect(icIssued.statusCode, icIssued.body).toBe(201);
+
+    const [notice] = await admin<{ id: string; delivery_challan_id: string }[]>`
+      select id, delivery_challan_id from correction_notices
+      where organisation_id = ${organisationId} and work_id = ${work2Id}
+      limit 1
+    `;
+    if (!notice) throw new Error('no work-2 notice to probe');
+    work2NoticeId = notice.id;
+    work2ChallanId = notice.delivery_challan_id;
+  });
+
+  it('answers 404 on every correction surface addressed with an unassigned Work', async () => {
+    const probes = await Promise.all([
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/challans/${work2ChallanId}/correction-eligibility`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'POST',
+        url: `/api/challans/${work2ChallanId}/corrections/cancel-replace`,
+        organisationId,
+        payload: {
+          reason: 'Assigned-scope probe.',
+          replacement: {
+            challanDate: '2026-08-08',
+            prefix: `${work2Code}-DC`,
+            consignee: consignee(),
+            items: [{ workItemId: item2AId, quantity: '1.000' }],
+          },
+        },
+      }),
+      authed(assigned, {
+        method: 'POST',
+        url: `/api/challans/${work2ChallanId}/corrections/notice`,
+        organisationId,
+        payload: { reason: 'Assigned-scope probe.', statement: 'Probe.' },
+      }),
+      authed(assigned, {
+        method: 'POST',
+        url: `/api/issue-challans/${work2IssueChallanId}/corrections/cancel-replace`,
+        organisationId,
+        payload: {
+          reason: 'Assigned-scope probe.',
+          replacement: {
+            challanDate: '2026-08-08',
+            movementType: 'issue',
+            issuedToName: 'SSE/Works/Delhi',
+            lines: [{ workItemId: item2AId, quantity: '1.000' }],
+          },
+        },
+      }),
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/works/${work2Id}/correction-notices`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/challans/${work2ChallanId}/correction-notices`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/correction-notices/${work2NoticeId}`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'POST',
+        url: `/api/correction-notices/${work2NoticeId}/render`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/correction-notices/${work2NoticeId}/pdf`,
+        organisationId,
+      }),
+      authed(assigned, {
+        method: 'POST',
+        url: `/api/correction-notices/${work2NoticeId}/cancel`,
+        organisationId,
+        payload: { note: 'Assigned-scope cancel probe.' },
+      }),
+      authed(assigned, {
+        method: 'GET',
+        url: `/api/works/${work2Id}/amendments`,
+        organisationId,
+      }),
+    ]);
+    for (const probe of probes) {
+      expect(probe.statusCode, probe.body).toBe(404);
+    }
+  });
+
+  it('answers 404 on decisions over an unassigned Work and hides them from the queue', async () => {
+    // A pending correction request on an unassigned Work (filed by the
+    // clerk, full scope).
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/issue-challans/${work2IssueChallanId}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'Queue-visibility fixture.',
+        replacement: {
+          challanDate: '2026-08-08',
+          movementType: 'issue',
+          issuedToName: 'SSE/Works/Delhi',
+          lines: [{ workItemId: item2AId, quantity: '1.000' }],
+        },
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const foreignRequestId = filed.json<ApprovalRequest>().id;
+
+    for (const action of ['approve', 'reject'] as const) {
+      const denied = await authed(assigned, {
+        method: 'POST',
+        url: `/api/approvals/${foreignRequestId}/${action}`,
+        organisationId,
+        payload: action === 'reject' ? { note: 'Assigned-scope probe.' } : {},
+      });
+      expect(denied.statusCode, denied.body).toBe(404);
+    }
+
+    const queue = await authed(assigned, {
+      method: 'GET',
+      url: '/api/approvals',
+      organisationId,
+    });
+    expect(queue.statusCode, queue.body).toBe(200);
+    const visible = queue.json<{ approvals: ApprovalRequest[] }>().approvals;
+    expect(visible.map((row) => row.id)).not.toContain(foreignRequestId);
+    for (const approval of visible) {
+      expect(approval.workId).toBe(work1Id);
+    }
+
+    const withdrawn = await authed(clerk, {
+      method: 'POST',
+      url: `/api/approvals/${foreignRequestId}/withdraw`,
+      organisationId,
+    });
+    expect(withdrawn.statusCode).toBe(200);
+  });
+
+  it('serves the assigned Work normally (positive control)', async () => {
+    const [work1Challan] = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where organisation_id = ${organisationId} and work_id = ${work1Id}
+      limit 1
+    `;
+    if (!work1Challan) throw new Error('no work-1 challan for the control');
+    const eligible = await authed(assigned, {
+      method: 'GET',
+      url: `/api/challans/${work1Challan.id}/correction-eligibility`,
+      organisationId,
+    });
+    expect(eligible.statusCode, eligible.body).toBe(200);
+    const notices = await authed(assigned, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/correction-notices`,
+      organisationId,
+    });
+    expect(notices.statusCode, notices.body).toBe(200);
+  });
+});
+
+describe('Wave 2 schema hardening (0023)', () => {
+  it('refuses a NULL cancellation note on challans at the database', async () => {
+    // Pre-0023 the cancelled branch evaluated to NULL for a NULL note and
+    // the CHECK passed; the explicit NOT NULL conjunct now holds. A fresh
+    // evidence-free challan keeps the 0008 evidence guard out of the way.
+    const { challanId } = await issueChallan(work1Id, `${work1Code}-DC`, [
+      { workItemId: item1AId, quantity: '1.000' },
+    ]);
+    await expect(
+      admin`
+        update delivery_challans
+        set status = 'cancelled', cancelled_at = now(),
+            cancelled_by_user_id = ${ownerUserId}, cancellation_note = null
+        where id = ${challanId}
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+
+    const [issuedIc] = await admin<{ id: string }[]>`
+      select id from issue_challans
+      where organisation_id = ${organisationId} and status = 'issued'
+      limit 1
+    `;
+    if (!issuedIc) throw new Error('no issued Issue Challan to probe');
+    await expect(
+      admin`
+        update issue_challans
+        set status = 'cancelled', cancelled_at = now(),
+            cancelled_by_user_id = ${ownerUserId}, cancellation_note = null
+        where id = ${issuedIc.id}
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('never deletes a correction notice, even for the table owner', async () => {
+    await expect(
+      admin`
+        delete from correction_notices where organisation_id = ${organisationId}
+      `,
+    ).rejects.toThrow(/never delete/);
+  });
+
+  it('forces correction requests to name their target document', async () => {
+    await expect(
+      admin`
+        insert into approval_requests (
+          organisation_id, entity_type, entity_id, work_id, proposed, diff,
+          reason, requested_by_user_id
+        )
+        values (
+          ${organisationId}, 'challan_cancel_replace', null, ${work1Id},
+          '{}'::jsonb, '[]'::jsonb, 'entity binding probe', ${ownerUserId}
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });
