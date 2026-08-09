@@ -178,6 +178,8 @@ export function registerTimelineRoutes(
               (ae.entity_type = 'works' and ae.entity_id = ${workId})
               or (ae.entity_type = 'delivery_challans' and ae.entity_id in (
                 select id from delivery_challans where work_id = ${workId}))
+              or (ae.entity_type = 'issue_challans' and ae.entity_id in (
+                select id from issue_challans where work_id = ${workId}))
               or (ae.entity_type = 'challan_receipts' and ae.entity_id in (
                 select id from challan_receipts where work_id = ${workId}))
               or (ae.entity_type = 'challan_item_serials' and (

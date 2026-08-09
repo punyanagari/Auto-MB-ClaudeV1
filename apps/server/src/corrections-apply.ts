@@ -91,6 +91,20 @@ export async function challanEvidenceCounts(
   return row ?? { receipts: 0, serials: 0, measurements: 0 };
 }
 
+/** The cancellation note carries the requester's HUMAN reason (spec R17)
+ * plus the approval reference — the cancelled document must explain
+ * itself without a queue lookup. */
+async function cancellationNote(
+  tx: TransactionSql,
+  approvalId: string,
+): Promise<string> {
+  const [request] = await tx<{ reason: string }[]>`
+    select reason from approval_requests where id = ${approvalId}
+  `;
+  if (!request) throw new Error('correction apply without its approval request');
+  return `Cancelled and replaced (approval ${approvalId}): ${request.reason}`;
+}
+
 // --- Path A apply: Delivery Challan cancel-and-replace ----------------------
 
 export async function applyChallanCancelReplace(
@@ -151,9 +165,10 @@ export async function applyChallanCancelReplace(
   }
   await assertChallanDate(tx, challan.work_id, proposed.replacement.challanDate);
 
-  // Cancel the original with a note referencing the approval. The 0008
-  // trigger re-proves the evidence-free invariant at the database.
-  const note = `Cancelled and replaced under correction approval ${approvalId}`;
+  // Cancel the original with the human reason plus the approval
+  // reference. The 0008 trigger re-proves the evidence-free invariant at
+  // the database.
+  const note = await cancellationNote(tx, approvalId);
   await tx`
     update delivery_challans
     set status = 'cancelled', cancelled_by_user_id = ${userId},
@@ -278,7 +293,7 @@ export async function applyIssueChallanCancelReplace(
   }
   await assertChallanDate(tx, challan.work_id, proposed.replacement.challanDate);
 
-  const note = `Cancelled and replaced under correction approval ${approvalId}`;
+  const note = await cancellationNote(tx, approvalId);
   await tx`
     update issue_challans
     set status = 'cancelled', cancelled_by_user_id = ${userId},

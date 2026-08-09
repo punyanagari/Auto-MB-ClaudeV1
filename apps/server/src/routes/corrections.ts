@@ -551,8 +551,13 @@ export function registerCorrectionRoutes(
 
           // Validate lines: work-item lines must belong to this Work;
           // quantities must be positive (looser IC content rules keep
-          // manual lines and un-ceilinged quantities by design).
+          // manual lines and un-ceilinged quantities by design). EVERY
+          // quantity — manual lines included — normalises through the
+          // same numeric(18,3) cast, so the diff below compares
+          // like-for-like against the stored numeric columns and the
+          // stored proposal carries exactly what apply will write.
           const labels: { label: string; quantity: string }[] = [];
+          const normalisedLines: typeof body.replacement.lines = [];
           for (const line of body.replacement.lines) {
             if (line.quantity.startsWith('-') || Number(line.quantity) === 0) {
               throw httpError(
@@ -576,8 +581,17 @@ export function registerCorrectionRoutes(
                 );
               }
               labels.push({ label: row.item_number, quantity: row.quantity });
+              normalisedLines.push({ ...line, quantity: row.quantity });
             } else {
-              labels.push({ label: line.description.trim(), quantity: line.quantity });
+              const [normalised] = await tx<{ quantity: string }[]>`
+                select ${line.quantity}::numeric(18,3)::text as quantity
+              `;
+              if (!normalised) throw new Error('normalisation returned no row');
+              labels.push({
+                label: line.description.trim(),
+                quantity: normalised.quantity,
+              });
+              normalisedLines.push({ ...line, quantity: normalised.quantity });
             }
           }
 
@@ -630,6 +644,7 @@ export function registerCorrectionRoutes(
             challanNumber: challan.challan_number ?? '',
             replacement: {
               ...body.replacement,
+              lines: normalisedLines,
               issuedToName: header.issuedToName,
               ...(header.issuedToRole !== null
                 ? { issuedToRole: header.issuedToRole }

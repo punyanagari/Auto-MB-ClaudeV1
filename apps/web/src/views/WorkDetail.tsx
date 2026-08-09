@@ -627,6 +627,28 @@ export function WorkDetail({
                       >
                         Open PDF
                       </button>
+                    ) : canModify && correctionNotice.status === 'issued' ? (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        disabled={pending}
+                        onClick={() =>
+                          void act(async () => {
+                            await api.renderCorrectionNotice(
+                              organisationId,
+                              correctionNotice.id,
+                            );
+                            setCorrectionNotices(
+                              await api.listWorkCorrectionNotices(
+                                organisationId,
+                                workId,
+                              ),
+                            );
+                          }, 'Correction notice PDF generated.')
+                        }
+                      >
+                        Generate PDF
+                      </button>
                     ) : (
                       <span className="muted">not rendered</span>
                     )}

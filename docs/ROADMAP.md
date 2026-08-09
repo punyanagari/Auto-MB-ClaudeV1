@@ -244,6 +244,11 @@ Scope:
   the 2026-08-08 cancellation policy) gets an approval-gated
   cancel-and-replace or adjustment document — the promise migration 0008
   already makes — never an edit of the issued snapshot;
+- settled scope narrowing: installation-record quantity edits are
+  deliberately cancel-and-re-record in this milestone — there is no
+  approval-gated in-place installation edit; the approval-gated variant
+  (legacy §5.4/§5.6, blocked while serials are attached) is deferred to
+  the Milestone 6/7 retrofit wave;
 - tenant-wide serial lookup (work-scope filtered) with the full trace,
   and enforcement of the `requires_serials` flag (stored since migration
   0001, never enforced): serial count must equal shipped quantity at

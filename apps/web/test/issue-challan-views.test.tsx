@@ -579,6 +579,64 @@ describe('Issue Challan correction flow', () => {
     expect(body.replacement.lines.length).toBeGreaterThan(0);
   });
 
+  it('surfaces an already-pending correction request instead of the form', async () => {
+    const listWorkAmendments = vi.fn().mockResolvedValue([
+      {
+        id: '99999999-9999-4999-8999-999999999999',
+        entityType: 'issue_challan_cancel_replace' as const,
+        entityId: CHALLAN_ID,
+        workId: WORK_ID,
+        workCode: 'DCW-1',
+        itemNumber: null,
+        documentNumber: 'DCW-1-IC/1',
+        proposed: { kind: 'cancel_replace_issue_challan' },
+        diff: [{ field: 'issuedToName', before: 'A', after: 'B' }],
+        reason: 'Issued to the wrong engineer.',
+        status: 'pending' as const,
+        requestedByUserId: 'user-b',
+        decidedByUserId: null,
+        decidedAt: null,
+        decisionNote: null,
+        createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    ]);
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+      listWorkAmendments,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        'A correction request for this Issue Challan is already awaiting a decision in the approvals queue.',
+      ),
+    ).toBeTruthy();
+    expect(listWorkAmendments).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    // The filing form stays hidden while the request is pending.
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+  });
+
   it('hides the correction form without modify rights', async () => {
     const api = stubApi({
       getIssueChallan: vi.fn().mockResolvedValue(

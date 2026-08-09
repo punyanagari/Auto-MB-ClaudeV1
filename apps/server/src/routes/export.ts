@@ -105,9 +105,24 @@ export function registerExportRoutes(
         const serials = await tx<Record<string, unknown>[]>`
           select * from challan_item_serials order by created_at
         `;
+        const issueChallans = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from issue_challans order by created_at, id
+          `,
+          ['issued_snapshot'],
+        );
+        const issueChallanLines = await tx<Record<string, unknown>[]>`
+          select * from issue_challan_lines order by issue_challan_id, position
+        `;
         const instruments = await tx<Record<string, unknown>[]>`
           select * from work_instruments order by created_at
         `;
+        const extensionRequests = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from extension_requests order by created_at, id
+          `,
+          ['finalised_snapshot'],
+        );
         const mbEntries = await tx<Record<string, unknown>[]>`
           select * from mb_entries order by measured_on, created_at
         `;
@@ -218,7 +233,10 @@ export function registerExportRoutes(
           deliveryChallanItems: challanItems,
           challanReceipts: receipts,
           challanItemSerials: serials,
+          issueChallans,
+          issueChallanLines,
           workInstruments: instruments,
+          extensionRequests,
           mbEntries,
           bills,
           installations,

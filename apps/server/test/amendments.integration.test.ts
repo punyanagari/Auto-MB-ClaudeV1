@@ -271,6 +271,8 @@ afterAll(async () => {
       try {
         for (const table of [
           'audit_events',
+          'installations',
+          'location_masters',
           'delivery_challan_items',
           'delivery_challan_counters',
           'delivery_challans',
@@ -1108,5 +1110,113 @@ describe('amendment approvals', () => {
       'amendment.rejected',
       'amendment.withdrawn',
     ]);
+  });
+});
+
+describe('the amendment floor includes installed quantities (R7)', () => {
+  let itemDId: string;
+
+  it('refuses to lower a quantity below the recorded installations of a non-serial item', async () => {
+    // A fresh non-serial item with NOTHING delivered: the delivered floor
+    // is 0, so only the installed floor can protect it.
+    itemDId = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${itemDId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/9',
+        'Trenching metres', 'Mtr', 10.000, 50.00
+      )
+    `;
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: itemDId,
+        quantity: '8.000',
+        installedOn: '2026-08-01',
+        newLocation: { name: 'Amendment floor yard', kind: 'other' },
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+
+    const proposed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: itemDId,
+        reason: 'Attempt to lower below installed.',
+        changes: { quantity: '5' },
+      },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(201);
+    const requestId = proposed.json<ApprovalRequest>().id;
+
+    const approve = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approve.statusCode).toBe(409);
+    expect(approve.json()).toMatchObject({ code: 'AMENDMENT_FLOOR_VIOLATION' });
+    // The refusal names BOTH sums: delivered 0, installed 8.
+    const message = approve.json<{ message: string }>().message;
+    expect(message).toContain('already-installed 8.000');
+    expect(message).toContain('already-delivered 0');
+
+    // The failed apply rolled back atomically: still pending, unchanged.
+    const queue = await authed(viewer, {
+      method: 'GET',
+      url: '/api/approvals?status=pending',
+      organisationId,
+    });
+    expect(
+      queue.json<ApprovalListResponse>().approvals.map((approval) => approval.id),
+    ).toContain(requestId);
+    const [item] = await admin<{ effective_quantity: string | null }[]>`
+      select effective_quantity::text as effective_quantity
+      from work_items where id = ${itemDId}
+    `;
+    expect(item?.effective_quantity).toBeNull();
+
+    const withdrawn = await authed(clerk, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/withdraw`,
+      organisationId,
+    });
+    expect(withdrawn.statusCode).toBe(200);
+  });
+
+  it('lowers to exactly the installed quantity', async () => {
+    const proposed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: itemDId,
+        reason: 'Reduce to the installed total.',
+        changes: { quantity: '8' },
+      },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(201);
+    const requestId = proposed.json<ApprovalRequest>().id;
+
+    const approve = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approve.statusCode, approve.body).toBe(200);
+    const [item] = await admin<{ effective_quantity: string | null }[]>`
+      select effective_quantity::text as effective_quantity
+      from work_items where id = ${itemDId}
+    `;
+    expect(item?.effective_quantity).toBe('8.000');
   });
 });

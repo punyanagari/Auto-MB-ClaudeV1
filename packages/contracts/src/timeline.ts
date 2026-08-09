@@ -8,6 +8,7 @@ import { UuidSchema } from './primitives.js';
 export const TIMELINE_ENTITY_TYPES = [
   'works',
   'delivery_challans',
+  'issue_challans',
   'challan_receipts',
   'challan_item_serials',
   'work_instruments',
