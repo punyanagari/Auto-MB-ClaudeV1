@@ -632,6 +632,20 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
   ) => Promise<Bill>;
+  /** Phase 3: the MB document. Finalized MBs render to a persisted PDF;
+   * drafts stream a watermarked live preview that is never stored. */
+  readonly renderMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly downloadMeasurementBookPdf: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Blob>;
+  readonly downloadMeasurementBookDraftPreview: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Blob>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1551,6 +1565,34 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         method: 'POST',
         organisationId,
       });
+    },
+    async renderMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async downloadMeasurementBookPdf(organisationId, measurementBookId) {
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/pdf`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async downloadMeasurementBookDraftPreview(organisationId, measurementBookId) {
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/pdf?preview=1`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
   };
 }

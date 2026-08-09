@@ -166,7 +166,7 @@ export function PaymentMatrix({
   if (loadError !== null) {
     return (
       <>
-        <h2>Payment matrix</h2>
+        <h2 id="payment-matrix">Payment matrix</h2>
         <p className="form-error" role="alert">
           {loadError}
         </p>
@@ -176,7 +176,7 @@ export function PaymentMatrix({
   if (rows === null) {
     return (
       <>
-        <h2>Payment matrix</h2>
+        <h2 id="payment-matrix">Payment matrix</h2>
         <p className="muted" role="status">
           Loading payment matrix…
         </p>
@@ -186,7 +186,7 @@ export function PaymentMatrix({
 
   return (
     <>
-      <h2>Payment matrix</h2>
+      <h2 id="payment-matrix">Payment matrix</h2>
       <p className="muted">
         Stage percentages per item category — supply, installation, PAC, and final bill
         must sum to exactly 100. Uncategorised items pay per the Uncategorised row.

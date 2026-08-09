@@ -1,6 +1,7 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,6 +83,8 @@ let admin: Sql;
 let appPool: Sql;
 let app: FastifyInstance;
 let storageDir: string;
+let fakeGotenberg: http.Server;
+const gotenbergBodies: string[] = [];
 let organisationId: string;
 let outsiderOrganisationId: string;
 let ownerUserId: string;
@@ -344,12 +347,33 @@ beforeAll(async () => {
     applicationName: 'auto-mb-mb-app-pool',
   });
 
+  // A stub PDF service (the challan integration pattern): the render and
+  // preview endpoints run their full HTTP path against it, and request
+  // bodies are retained so tests can assert on the exact HTML sent.
+  fakeGotenberg = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => {
+      gotenbergBodies.push(Buffer.concat(chunks).toString('utf8'));
+      response.setHeader('content-type', 'application/pdf');
+      response.end(Buffer.from(`%PDF-1.4 stub ${runId}`));
+    });
+  });
+  await new Promise<void>((resolve) => {
+    fakeGotenberg.listen(0, '127.0.0.1', resolve);
+  });
+  const gotenbergAddress = fakeGotenberg.address();
+  if (gotenbergAddress === null || typeof gotenbergAddress === 'string') {
+    throw new Error('stub Gotenberg failed to bind a port');
+  }
+
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-mb-objects-'));
   app = await buildApp({
     databaseUrl: appUrl,
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+    gotenbergUrl: `http://127.0.0.1:${String(gotenbergAddress.port)}`,
   });
 
   owner = await signUp(ownerEmail, 'MB Owner');
@@ -531,8 +555,25 @@ afterAll(async () => {
   await app?.close();
   await appPool?.end();
   await admin?.end();
+  await new Promise<void>((resolve) => {
+    if (fakeGotenberg) {
+      fakeGotenberg.close(() => {
+        resolve();
+      });
+    } else resolve();
+  });
   if (storageDir) await rm(storageDir, { recursive: true, force: true });
 });
+
+/** Every stored object path, sorted — proves the draft preview leaves
+ * the object store untouched. */
+async function storedObjects(): Promise<string[]> {
+  const entries = await readdir(storageDir, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .sort();
+}
 
 describe('draft lifecycle (Work 1, the workbook scenario)', () => {
   it('creates one draft per Work, validates the date, and names the existing draft', async () => {
@@ -1342,5 +1383,295 @@ describe('export and timeline', () => {
     ]) {
       expect(actions, actions.join(', ')).toContain(expected);
     }
+  });
+});
+
+describe('the MB document (phase 3): persisted render, streaming, draft preview', () => {
+  const STUB_PDF = () => Buffer.from(`%PDF-1.4 stub ${runId}`);
+  let previewDraftId: string;
+  let previewDcId: string;
+
+  it('render on a draft answers 409 and pdf on an unrendered MB answers RENDER_MISSING', async () => {
+    previewDcId = await issueChallan(work1Id, `${work1Code}DC`, [
+      { workItemId: cableItemId, quantity: '250' },
+    ]);
+    const draft = await createDraft(work1Id, { mbDate: '2026-08-07' });
+    previewDraftId = draft.book.id;
+    const claimed = await setSources(previewDraftId, [
+      { sourceType: 'delivery_challan', sourceId: previewDcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    const renderRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${previewDraftId}/render`,
+      organisationId,
+    });
+    expect(renderRefused.statusCode).toBe(409);
+    expect(renderRefused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+
+    const missing = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${previewDraftId}/pdf`,
+      organisationId,
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({ code: 'RENDER_MISSING' });
+
+    const unrendered = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${mb4Id}/pdf`,
+      organisationId,
+    });
+    expect(unrendered.statusCode).toBe(404);
+    expect(unrendered.json()).toMatchObject({ code: 'RENDER_MISSING' });
+  });
+
+  it('streams the DRAFT-watermarked live preview without persisting anything', async () => {
+    const before = await storedObjects();
+    const preview = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${previewDraftId}/pdf?preview=1`,
+      organisationId,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.headers['content-type']).toContain('application/pdf');
+    expect(preview.rawPayload.equals(STUB_PDF())).toBe(true);
+
+    // The HTML sent to the converter carries the watermark, the DRAFT
+    // title, and the live-computed remark.
+    const html = gotenbergBodies.at(-1) ?? '';
+    expect(html).toContain('class="watermark"');
+    expect(html).toContain('Measurement Book DRAFT');
+    expect(html).toContain('Now to pay 80% for 250 mtr.');
+    expect(html).toContain('Rupees Two Hundred Only');
+
+    // No object leaked; no render columns touched.
+    expect(await storedObjects()).toEqual(before);
+    const [row] = await admin<
+      {
+        template_version: string | null;
+        rendered_object_key: string | null;
+        rendered_sha256: string | null;
+      }[]
+    >`
+      select template_version, rendered_object_key, rendered_sha256
+      from measurement_books where id = ${previewDraftId}
+    `;
+    expect(row).toMatchObject({
+      template_version: null,
+      rendered_object_key: null,
+      rendered_sha256: null,
+    });
+
+    // The preview is a draft affair: a finalized MB answers 409.
+    const refused = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${mb4Id}/pdf?preview=1`,
+      organisationId,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+
+    const deleted = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${previewDraftId}`,
+      organisationId,
+    });
+    expect(deleted.statusCode, deleted.body).toBe(204);
+  });
+
+  it('renders the finalized final MB to a persisted content-addressed PDF with audit', async () => {
+    const rendered = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${finalMbId}/render`,
+      organisationId,
+    });
+    expect(rendered.statusCode, rendered.body).toBe(200);
+    const detail = rendered.json<MeasurementBookDetailResponse>();
+    expect(detail.book.renderedAvailable).toBe(true);
+    expect(detail.book.templateVersion).toBe('mb-v1');
+
+    // FINAL BILL banner on the final MB; no watermark once finalized.
+    const html = gotenbergBodies.at(-1) ?? '';
+    expect(html).toContain('FINAL BILL');
+    expect(html).not.toContain('class="watermark"');
+    expect(html).toContain(`Measurement Book ${work2Code}-MB-01`);
+    expect(html).toContain('Rupees Ninety-Eight Only');
+
+    // The recorded SHA-256 is the hash of the stored bytes.
+    const expectedSha = createHash('sha256').update(STUB_PDF()).digest('hex');
+    const [row] = await admin<
+      { rendered_sha256: string | null; rendered_object_key: string | null }[]
+    >`
+      select rendered_sha256, rendered_object_key
+      from measurement_books where id = ${finalMbId}
+    `;
+    expect(row?.rendered_sha256).toBe(expectedSha);
+    expect(row?.rendered_object_key).toBe(`${organisationId}/mb/${finalMbId}.pdf`);
+
+    const [auditRow] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'measurement_book.rendered' and entity_id = ${finalMbId}
+    `;
+    expect(auditRow?.count).toBe('1');
+
+    // The persisted PDF streams back byte-for-byte.
+    const pdf = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${finalMbId}/pdf`,
+      organisationId,
+    });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-type']).toContain('application/pdf');
+    expect(pdf.rawPayload.equals(STUB_PDF())).toBe(true);
+  });
+
+  it('re-render is idempotent: same key, refreshed hash, another audit entry', async () => {
+    const again = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${finalMbId}/render`,
+      organisationId,
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const objects = await storedObjects();
+    expect(objects.filter((file) => file.endsWith(`mb/${finalMbId}.pdf`))).toHaveLength(
+      1,
+    );
+    const [auditRow] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'measurement_book.rendered' and entity_id = ${finalMbId}
+    `;
+    expect(auditRow?.count).toBe('2');
+  });
+
+  it('a cancelled-after-finalized MB keeps its render downloadable but re-renders no more', async () => {
+    // Work 3's MB-02 is the newest live finalized MB and carries no bill.
+    const [mb02] = await admin<{ id: string }[]>`
+      select id from measurement_books
+      where work_id = ${work3Id} and sequence_number = 2
+    `;
+    expect(mb02).toBeDefined();
+    const mb02Id = mb02?.id ?? '';
+
+    const rendered = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mb02Id}/render`,
+      organisationId,
+    });
+    expect(rendered.statusCode, rendered.body).toBe(200);
+
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mb02Id}/cancel`,
+      organisationId,
+      payload: { note: 'Cancelled after rendering; the PDF must survive.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    const detail = cancelled.json<MeasurementBookDetailResponse>();
+    expect(detail.book.status).toBe('cancelled');
+    expect(detail.book.renderedAvailable).toBe(true);
+
+    const pdf = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${mb02Id}/pdf`,
+      organisationId,
+    });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.rawPayload.equals(STUB_PDF())).toBe(true);
+
+    const renderRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mb02Id}/render`,
+      organisationId,
+    });
+    expect(renderRefused.statusCode).toBe(409);
+    expect(renderRefused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+  });
+
+  it('the database refuses render fields on drafts and drops of finalized render evidence', async () => {
+    // Status-shape CHECK: drafts carry no render fields.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        const draft = await tx<{ id: string }[]>`
+          insert into measurement_books (
+            organisation_id, work_id, mb_date, created_by_user_id,
+            template_version, rendered_object_key, rendered_sha256
+          )
+          values (${organisationId}, ${work1Id}, '2026-08-07', ${ownerUserId},
+                  'mb-v1', ${`${organisationId}/mb/x.pdf`}, ${'a'.repeat(64)})
+          returning id
+        `;
+        return draft;
+      }),
+    ).rejects.toThrowError(/check|constraint/i);
+
+    // The render evidence travels as a complete pair.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update measurement_books
+          set rendered_sha256 = null
+          where id = ${finalMbId}
+        `;
+      }),
+    ).rejects.toThrowError(/check|constraint/i);
+
+    // Frozen business data stays frozen even while render fields move.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update measurement_books
+          set total_amount = '1.00', rendered_sha256 = ${'b'.repeat(64)}
+          where id = ${finalMbId}
+        `;
+      }),
+    ).rejects.toThrowError(/immutable/);
+  });
+
+  it('cross-tenant and assigned-scope probes answer 404 on the document routes', async () => {
+    const outsiderPdf = await authed(outsider, {
+      method: 'GET',
+      url: `/api/measurement-books/${finalMbId}/pdf`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(outsiderPdf.statusCode).toBe(404);
+    expect(outsiderPdf.json()).toMatchObject({ code: 'MEASUREMENT_BOOK_NOT_FOUND' });
+
+    const outsiderRender = await authed(outsider, {
+      method: 'POST',
+      url: `/api/measurement-books/${finalMbId}/render`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(outsiderRender.statusCode).toBe(404);
+    expect(outsiderRender.json()).toMatchObject({
+      code: 'MEASUREMENT_BOOK_NOT_FOUND',
+    });
+
+    // The assigned-scope member without the assignment sees no Work.
+    const sitePdf = await authed(site, {
+      method: 'GET',
+      url: `/api/measurement-books/${finalMbId}/pdf`,
+      organisationId,
+    });
+    expect(sitePdf.statusCode).toBe(404);
+    expect(sitePdf.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
+
+    const sitePreview = await authed(site, {
+      method: 'GET',
+      url: `/api/measurement-books/${finalMbId}/pdf?preview=1`,
+      organisationId,
+    });
+    expect(sitePreview.statusCode).toBe(404);
+    expect(sitePreview.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
+
+    const siteRender = await authed(site, {
+      method: 'POST',
+      url: `/api/measurement-books/${finalMbId}/render`,
+      organisationId,
+    });
+    expect([403, 404]).toContain(siteRender.statusCode);
   });
 });

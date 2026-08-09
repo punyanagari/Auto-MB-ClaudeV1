@@ -19,6 +19,7 @@ import { CompletionExtensions } from './CompletionExtensions.js';
 import { Installations } from './Installations.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
 import { PacCertificates } from './PacCertificates.js';
+import { MeasurementBooks } from './MeasurementBooks.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -1070,8 +1071,8 @@ export function WorkDetail({
       </div>
       {canIssue && (
         <p className="muted">
-          Bills are prepared from a finalized stage-wise Measurement Book — the
-          Measurement Book workspace arrives with the next milestone slice.
+          Bills are prepared from a finalized stage-wise Measurement Book — use the
+          Measurement Books section below.
         </p>
       )}
       {bills.length > 0 ? (
@@ -1166,6 +1167,17 @@ export function WorkDetail({
         workId={workId}
         canModify={canModify}
         workItems={workItems}
+      />
+
+      <MeasurementBooks
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
+        canIssue={canIssue}
+        onBillPrepared={() => {
+          void api.listBills(organisationId, workId).then(setBills);
+        }}
       />
 
       <h2>Serial trace</h2>

@@ -83,6 +83,12 @@ export const MeasurementBookSchema = Type.Object(
     /** Finalize-written; null while draft. */
     totalAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     remarkTemplateVersion: Type.Union([Type.String(), Type.Null()]),
+    /** The document template the persisted PDF was rendered under
+     * (mb-v1); null until the finalized MB is first rendered. */
+    templateVersion: Type.Union([Type.String(), Type.Null()]),
+    /** True once a persisted PDF render exists (finalized MBs only;
+     * a cancelled-after-finalized MB keeps its render). */
+    renderedAvailable: Type.Boolean(),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     /** Set when a bill has been prepared from this MB (1:1). */
     billId: Type.Union([UuidSchema, Type.Null()]),
