@@ -163,6 +163,16 @@ export function ChallanDetail({
             <dd>{challan.issuedAt.slice(0, 10)}</dd>
           </div>
         )}
+        {challan.status !== 'draft' && (
+          <div>
+            <dt>Warranty certificate</dt>
+            <dd>
+              {challan.warrantyTemplateVersion != null
+                ? `Included (template ${challan.warrantyTemplateVersion})`
+                : 'Not included'}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {challan.status === 'cancelled' && challan.cancellationNote !== null && (
