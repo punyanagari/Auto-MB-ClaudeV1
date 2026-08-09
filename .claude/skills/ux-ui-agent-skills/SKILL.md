@@ -53,8 +53,9 @@ bundled revision differs from the one Playwright expects, set
 
 ## Relationship to the other skills
 
-- `frontend-design` and `impeccable` decide how the UI should look and hold the
-  craft floor.
+- `impeccable` holds the craft floor and decides how the UI should look.
+  Anthropic's `frontend-design` covers aesthetic direction but is not vendored
+  here for licence reasons — load it from the plugin marketplace.
 - `ux-designer` supplies usability and compliance reference material.
 - This skill proves the result on the rendered page. It settles disputes; the
-  other three do not.
+  others do not.

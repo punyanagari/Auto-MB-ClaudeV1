@@ -1,31 +1,31 @@
 # Third-party agent skills — provenance
 
-Four design skills back UI work in `apps/web`. Three are vendored into this
-directory; one is consumed from npm. Nothing here is authored by this project
+Three design skills back UI work in `apps/web`: two vendored into this
+directory, one consumed from npm. A fourth, Anthropic's `frontend-design`, is
+used but deliberately not committed — see below. Nothing here is authored by this project
 except `ux-ui-agent-skills/SKILL.md`, which is a thin wrapper, and this file.
 
 | Skill | Source | Pinned at | Licence | How it arrives |
 | --- | --- | --- | --- | --- |
-| `frontend-design` | `anthropics/claude-code`, `plugins/frontend-design/skills/frontend-design` | `2bb60696142b` | Anthropic Commercial ToS — **see warning below** | vendored |
 | `impeccable` | `pbakaus/impeccable`, `.claude/skills/impeccable` | `1cbee026c319` | Apache-2.0 | vendored |
 | `ux-designer` | `szilu/ux-designer-skill` | `28b24d5a9511` | MIT | vendored |
 | `ux-ui-agent-skills` | `plugin87/ux-ui-agent-skills` | npm `^2.4.0` | MIT | devDependency |
 
-## Licence warning — `frontend-design`
+## `frontend-design` is deliberately not vendored
 
-Unlike the other three, this one is **not open source**. Its licence reads
-"© Anthropic PBC. All rights reserved. Use is subject to Anthropic's Commercial
-Terms of Service." Using it while building with Claude Code is ordinary;
-*redistributing* a copy inside this repository is a different act, and this
-repository is a commercial product. Before this tree is ever made public, sold,
-or handed to a third party, either confirm redistribution is permitted or drop
-`frontend-design/` and load it from the plugin marketplace instead. The other
-three carry permissive licences and are safe to vendor.
+Anthropic's `frontend-design` skill governed the aesthetic direction of this
+rehaul, and its guidance is baked into the result. It is **not** committed here.
+Its licence reads "© Anthropic PBC. All rights reserved. Use is subject to
+Anthropic's Commercial Terms of Service" — using it while building is ordinary,
+but redistributing a copy inside a commercial product repository is a different
+act, and not one to perform by default.
+
+Load it from the plugin marketplace when doing visual-direction work:
+`anthropics/claude-code`, `plugins/frontend-design`. The three skills below carry
+permissive licences and are safe to vendor.
 
 ## What each is for
 
-- **`frontend-design`** — aesthetic direction. Stops the UI reading as a
-  template. Consulted when choosing a visual language, not when fixing a bug.
 - **`impeccable`** — the craft floor plus a deterministic detector of 59 rules
   (`node .claude/skills/impeccable/scripts/detect.mjs <files>`). Catches
   overused typefaces, coloured side borders, flat type scales, eyebrow-above-
