@@ -48,7 +48,7 @@ document vs payment tracking) into one table.
    its amount equal to the MB's snapshotted total. Bills still cannot be
    cancelled.
 3. MB cancellation is therefore permitted only while the MB has no bill.
-   The legacy rule releases an MB when its *invoice* is cancelled; this
+   The legacy rule releases an MB when its _invoice_ is cancelled; this
    repository's bills are stricter than legacy invoices (no cancel), so
    a billed MB is permanently locked and corrections happen as
    compensating entries on a subsequent MB. This deliberately keeps the
