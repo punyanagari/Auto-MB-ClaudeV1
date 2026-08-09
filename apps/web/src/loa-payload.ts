@@ -153,17 +153,17 @@ export interface RowTotalInput {
 
 /**
  * Exact reconciliation total over the review screen's current rows:
- * Σ quantity (≤3 dp) × rate (≤2 dp), computed entirely in BigInt minor
- * units at scale 5. Null when any row's quantity or rate is not yet a
+ * Σ quantity (≤3 dp) × rate (≤6 dp), computed entirely in BigInt minor
+ * units at scale 9. Null when any row's quantity or rate is not yet a
  * plain decimal — the total is then simply not shown rather than guessed.
  */
 export function exactRowsTotal(rows: readonly RowTotalInput[]): string | null {
   let total = 0n;
   for (const row of rows) {
     const qty = parseDecimalMinorUnits(row.awardedQuantity, 3);
-    const rate = parseDecimalMinorUnits(row.effectiveRate, 2);
+    const rate = parseDecimalMinorUnits(row.effectiveRate, 6);
     if (qty === null || rate === null) return null;
     total += qty * rate;
   }
-  return formatMinorUnits(total, 5);
+  return formatMinorUnits(total, 9);
 }

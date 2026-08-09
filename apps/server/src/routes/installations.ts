@@ -246,6 +246,35 @@ export function registerInstallationRoutes(
           await requireEvidenceRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
 
+          // The works row lock pairs with the one the MB finalize
+          // transaction holds, so recording and a final-MB finalize on
+          // the same Work serialise: an installation recorded first is
+          // caught by the final sweep, and a final MB finalized first
+          // makes this recording fail the FINAL_MB_EXISTS check below
+          // (the 0027 insert guard backstops it in the database). Lock
+          // order works -> work_items matches every other writer taking
+          // both.
+          const [workRow] = await tx<{ id: string }[]>`
+            select id from works where id = ${workId} and deleted_at is null
+            for update
+          `;
+          if (!workRow) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+
+          // A live final Measurement Book closes the Work's payment
+          // cycle (spec §5.9): an installation recorded after it could
+          // never be billed, so the recording is refused outright.
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${workId} and is_final and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; an installation recorded now could never be billed.`,
+            );
+          }
+
           // The item row lock serialises every installation recording for
           // this item: both caps below read committed sums under the lock,
           // so concurrent recordings cannot jointly breach them (same
@@ -536,9 +565,14 @@ export function registerInstallationRoutes(
         // The row lock serialises cancellation against a concurrent
         // cancel; whichever wins, the loser sees the final status.
         const [existing] = await tx<
-          { work_id: string; status: string; item_number: string }[]
+          {
+            work_id: string;
+            work_item_id: string;
+            status: string;
+            item_number: string;
+          }[]
         >`
-          select i.work_id, i.status, wi.item_number
+          select i.work_id, i.work_item_id, i.status, wi.item_number
           from installations i
           join work_items wi on wi.id = i.work_item_id
           where i.id = ${id}
@@ -563,6 +597,56 @@ export function registerInstallationRoutes(
         // be cancelled — the MB must be cancelled first (the 0024
         // database guard backstops this against every writer).
         await assertSourceNotBilled(tx, 'installation', id);
+        // R18: cancelling may not leave PAC-certified quantity above
+        // the remaining installed quantity for the item — the covering
+        // certificate(s) must cancel first. The work_items row lock
+        // serialises this read against concurrent PAC recording (which
+        // locks the same row before certifying), and the 0027 database
+        // guard backstops it against every writer.
+        await tx`
+          select id from work_items where id = ${existing.work_item_id}
+          for update
+        `;
+        const [coverage] = await tx<
+          { certified: string; remaining: string; uncovered: boolean }[]
+        >`
+          select certified.total::text as certified,
+                 remaining.total::text as remaining,
+                 (certified.total > remaining.total) as uncovered
+          from (
+            select coalesce(sum(pci.certified_quantity), 0)::numeric(18,3) as total
+            from pac_certificate_items pci
+            join pac_certificates pc on pc.id = pci.pac_certificate_id
+            where pci.work_item_id = ${existing.work_item_id}
+              and pc.status = 'recorded'
+          ) certified,
+          (
+            select coalesce(sum(i.quantity), 0)::numeric(18,3) as total
+            from installations i
+            where i.work_item_id = ${existing.work_item_id}
+              and i.status = 'recorded' and i.id <> ${id}
+          ) remaining
+        `;
+        if (coverage?.uncovered === true) {
+          const covering = await tx<{ reference: string; certified: string }[]>`
+            select pc.reference,
+                   sum(pci.certified_quantity)::numeric(18,3)::text as certified
+            from pac_certificate_items pci
+            join pac_certificates pc on pc.id = pci.pac_certificate_id
+            where pci.work_item_id = ${existing.work_item_id}
+              and pc.status = 'recorded'
+            group by pc.reference
+            order by pc.reference
+          `;
+          const names = covering
+            .map((row) => `${row.reference} (${row.certified})`)
+            .join('; ');
+          throw httpError(
+            409,
+            'INSTALLATION_COVERED_BY_PAC',
+            `Cancelling this installation would leave PAC-certified quantity ${coverage.certified} above the remaining installed quantity ${coverage.remaining} for ${existing.item_number} (R18). Cancel the covering PAC certificate(s) first: ${names}.`,
+          );
+        }
         await tx`
           update installations
           set status = 'cancelled', cancellation_note = ${body.note},

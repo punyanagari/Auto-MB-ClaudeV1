@@ -74,6 +74,41 @@ describe('rate limiting', () => {
     expect(health.statusCode).toBe(200);
   });
 
+  it('covers the PAC document and extension response uploads with the upload window', async () => {
+    // Both endpoints take 25MB PDF bodies through the malware scan, so
+    // they must share the per-address upload limiter with the other
+    // scan-bearing uploads (review hardening; previously unlimited).
+    const uploads = await buildApp({
+      objectStorageDir: storageDir,
+      rateLimits: { upload: { windowMs: 60_000, max: 2 } },
+    });
+    try {
+      const paths = [
+        '/api/pac-certificates/6b1f8f4e-5c15-4dc5-9d94-111111111111/document',
+        '/api/extension-requests/6b1f8f4e-5c15-4dc5-9d94-222222222222/response-document',
+      ];
+      const attempt = (url: string) =>
+        uploads.inject({
+          method: 'POST',
+          url,
+          headers: { 'content-type': 'application/pdf' },
+          payload: Buffer.from('%PDF-1.4 limiter probe'),
+        });
+      // The shared window spans both endpoints (2 allowed, third 429s) —
+      // unauthenticated probes are fine: the limiter runs before auth.
+      expect((await attempt(paths[0] ?? '')).statusCode).not.toBe(429);
+      expect((await attempt(paths[1] ?? '')).statusCode).not.toBe(429);
+      const limited = await attempt(paths[0] ?? '');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json<{ code: string }>().code).toBe('RATE_LIMITED');
+      // A read of the same document path is NOT an upload and stays open.
+      const read = await uploads.inject({ method: 'GET', url: paths[0] ?? '' });
+      expect(read.statusCode).not.toBe(429);
+    } finally {
+      await uploads.close();
+    }
+  });
+
   it('keys per forwarded client behind a trusted proxy hop', async () => {
     // Production topology: every connection reaches Fastify from the
     // Caddy container, which stamps the real client into

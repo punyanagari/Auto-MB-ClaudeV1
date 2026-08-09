@@ -14,6 +14,22 @@ export function formatInr(decimal: string): string {
   return rupees.format(value);
 }
 
+/** Rupee display for RATES, which carry up to six fraction digits
+ * (numeric(18,6)): at least the conventional two decimals, trailing
+ * zeros beyond them trimmed — ₹100.00, ₹0.8517, ₹3.175636. */
+const rupeeRates = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+
+export function formatRate(decimal: string): string {
+  const value = Number(decimal);
+  if (!Number.isFinite(value)) return decimal;
+  return rupeeRates.format(value);
+}
+
 /** Whole-percent progress, clamped to 0–100 for display. */
 export function progressPercent(part: string, whole: string): number {
   const partValue = Number(part);

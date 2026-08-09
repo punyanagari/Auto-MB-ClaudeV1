@@ -874,3 +874,24 @@ describe('one-draft rule under concurrency', () => {
     });
   });
 });
+
+describe('export manifest covers the issue-challan document objects', () => {
+  it('lists the rendered PDF and the signed copy with their hashes', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const exported = response.json<{
+      objectManifest: { kind: string; objectKey: string; sha256: string | null }[];
+    }>();
+    const kinds = exported.objectManifest.map((entry) => entry.kind);
+    expect(kinds).toContain('issue-challan-rendered-pdf');
+    expect(kinds).toContain('issue-challan-signed-copy');
+    for (const kind of ['issue-challan-rendered-pdf', 'issue-challan-signed-copy']) {
+      const entry = exported.objectManifest.find((item) => item.kind === kind);
+      expect(entry?.sha256, kind).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+});

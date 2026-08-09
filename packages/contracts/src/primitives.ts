@@ -15,3 +15,13 @@ export const DecimalStringSchema = Type.String({
     'Decimal value transported as a string; authoritative arithmetic is not binary floating point.',
 });
 export type DecimalString = Static<typeof DecimalStringSchema>;
+
+/** RATE fields carry up to six fraction digits (rate columns are
+ * numeric(18,6); v1 agreement rates run to 0.8517/mtr and finer).
+ * Quantities and money amounts keep the 3dp DecimalString shape. */
+export const RateStringSchema = Type.String({
+  pattern: '^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,6})?$',
+  description:
+    'Rate value transported as a string with up to six fraction digits; authoritative arithmetic is not binary floating point.',
+});
+export type RateString = Static<typeof RateStringSchema>;

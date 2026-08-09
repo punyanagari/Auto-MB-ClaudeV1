@@ -1169,6 +1169,7 @@ describe('WorkDetail retention', () => {
       canModify: boolean;
       canRecordEvidence: boolean;
       canIssue: boolean;
+      canCancel: boolean;
       isOwner: boolean;
     }> = {},
   ) {
@@ -1180,6 +1181,7 @@ describe('WorkDetail retention', () => {
         canModify={flags.canModify ?? true}
         canRecordEvidence={flags.canRecordEvidence ?? true}
         canIssue={flags.canIssue ?? true}
+        canCancel={flags.canCancel ?? true}
         isOwner={flags.isOwner ?? false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
@@ -2034,6 +2036,33 @@ describe('Timeline', () => {
     });
   });
 
+  it('offers filters for every wave-added record type: items, payment matrix, PACs', async () => {
+    const workTimeline = vi
+      .fn()
+      .mockResolvedValue({ events: [EVENT_ISSUED], nextCursor: null });
+    render(
+      <Timeline
+        api={stubApi({ workTimeline })}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />,
+    );
+    await screen.findByText('Challan issued');
+    const filter = screen.getByLabelText<HTMLSelectElement>(
+      'Filter timeline by record type',
+    );
+    const values = [...filter.options].map((option) => option.value);
+    expect(values).toContain('work_items');
+    expect(values).toContain('payment_matrices');
+    expect(values).toContain('pac_certificates');
+    fireEvent.change(filter, { target: { value: 'pac_certificates' } });
+    await waitFor(() => {
+      expect(workTimeline).toHaveBeenLastCalledWith(ORG_ID, WORK_ID, {
+        entityTypes: ['pac_certificates'],
+      });
+    });
+  });
+
   it('shows the same component on the challan detail via the entity history', async () => {
     const entityTimeline = vi
       .fn()
@@ -2286,6 +2315,7 @@ describe('WorkDetail amendments', () => {
         canModify={true}
         canRecordEvidence={true}
         canIssue={true}
+        canCancel={true}
         isOwner={flags.isOwner ?? false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -2448,6 +2478,7 @@ describe('WorkDetail serial tracking toggle', () => {
         canModify={canModify}
         canRecordEvidence={canModify}
         canIssue={canModify}
+        canCancel={canModify}
         isOwner={false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -2889,6 +2920,7 @@ describe('WorkDetail PBG requirement', () => {
         canModify={false}
         canRecordEvidence={false}
         canIssue={false}
+        canCancel={false}
         isOwner={false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -4082,6 +4114,7 @@ describe('MeasurementBooks workspace', () => {
     options: Partial<{
       canModify: boolean;
       canIssue: boolean;
+      canCancel: boolean;
       onBillPrepared: () => void;
     }> = {},
   ) {
@@ -4092,6 +4125,7 @@ describe('MeasurementBooks workspace', () => {
         workId={WORK_ID}
         canModify={options.canModify ?? true}
         canIssue={options.canIssue ?? true}
+        canCancel={options.canCancel ?? true}
         onBillPrepared={options.onBillPrepared ?? vi.fn()}
       />,
     );
@@ -4365,7 +4399,7 @@ describe('MeasurementBooks workspace', () => {
       listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [MB_FINAL] }),
       getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
     });
-    renderMb(api, { canModify: false, canIssue: false });
+    renderMb(api, { canModify: false, canIssue: false, canCancel: false });
 
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
     await screen.findByText('Now to pay 80% for 5000 mtr.');
@@ -4373,5 +4407,31 @@ describe('MeasurementBooks workspace', () => {
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Render PDF' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Finalize/ })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Cancel Measurement Book' }),
+    ).toBeNull();
+  });
+
+  it('gates the cancel form on the CANCEL authority, not the issue authority', async () => {
+    const api = mbApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [MB_FINAL] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
+    });
+    // Issue authority without cancel authority: financial actions offered,
+    // the cancel form withheld (the server route requires can_cancel_documents).
+    renderMb(api, { canIssue: true, canCancel: false });
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+    await screen.findByRole('button', { name: 'Prepare bill' });
+    expect(
+      screen.queryByRole('button', { name: 'Cancel Measurement Book' }),
+    ).toBeNull();
+    cleanup();
+
+    // Cancel authority without issue authority: the cancel form is
+    // offered, the financial actions are not.
+    renderMb(api, { canIssue: false, canCancel: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+    await screen.findByRole('button', { name: 'Cancel Measurement Book' });
+    expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
   });
 });

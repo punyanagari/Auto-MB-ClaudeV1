@@ -7,7 +7,7 @@ import type {
   Serial,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr } from '../format.js';
+import { formatInr, formatRate } from '../format.js';
 import { Timeline } from './Timeline.js';
 
 interface ChallanDetailProps {
@@ -226,7 +226,7 @@ export function ChallanDetail({
               <td className="cell--wrap">{item.description}</td>
               <td>{item.unit}</td>
               <td className="cell--numeric">{item.quantity}</td>
-              <td className="cell--numeric">{formatInr(item.rate)}</td>
+              <td className="cell--numeric">{formatRate(item.rate)}</td>
               <td className="cell--numeric">{formatInr(item.lineAmount)}</td>
             </tr>
           ))}

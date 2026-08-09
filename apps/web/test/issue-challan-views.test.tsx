@@ -493,6 +493,7 @@ describe('WorkDetail Issue Challans section', () => {
         canModify
         canRecordEvidence
         canIssue
+        canCancel
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  RateStringSchema,
+  UuidSchema,
+} from './primitives.js';
 import { WorkItemPaymentCategorySchema } from './payment.js';
 
 export const PricingShapeSchema = Type.Union([
@@ -31,7 +36,7 @@ export const ConfirmWorkItemSchema = Type.Object(
     description: Type.String({ minLength: 3 }),
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     awardedQuantity: DecimalStringSchema,
-    effectiveRate: DecimalStringSchema,
+    effectiveRate: RateStringSchema,
     sourceRef: Type.Optional(
       Type.Object(
         {
@@ -143,11 +148,11 @@ export const WorkItemSchema = Type.Object(
     description: Type.String({ minLength: 3 }),
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     awardedQuantity: DecimalStringSchema,
-    effectiveRate: DecimalStringSchema,
+    effectiveRate: RateStringSchema,
     /** Amendment overlays (Milestone 6): null/absent means the original
      * applies. Present on the Work detail response. */
     effectiveQuantity: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
-    effectiveUnitRate: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
+    effectiveUnitRate: Type.Optional(Type.Union([RateStringSchema, Type.Null()])),
     effectiveDescription: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     effectiveUnit: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     amendmentAdded: Type.Optional(Type.Boolean()),

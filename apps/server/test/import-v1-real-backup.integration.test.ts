@@ -101,6 +101,100 @@ describe.skipIf(!backupPresent)(
         expect(exception.rule.length).toBeGreaterThan(0);
       }
 
+      const partronics = report.organisations.find(
+        (org) => org.slug === 'partronics-eboards',
+      );
+      const par = report.organisations.find((org) => org.slug === 'par-electronics');
+      expect(partronics && par).toBeTruthy();
+      if (!partronics || !par) throw new Error('unreachable');
+
+      // Suffixed challan numbers import (approved change): 607 of the
+      // 609 Partronics challans land — only the zero-quantity-lines
+      // challan and the second challan of the pending pair (one draft
+      // per Work) remain excepted.
+      expect(partronics.counts.delivery_challan).toMatchObject({
+        source: 609,
+        imported: 607,
+        excepted: 2,
+      });
+      const challanExceptionRules = partronics.exceptions
+        .filter((exception) => exception.entityType === 'delivery_challan')
+        .map((exception) => exception.rule)
+        .sort();
+      // pending-below-series-head entries are advisory (the challan
+      // still imports as an unnumbered draft); the only challans NOT
+      // imported are the two counted above.
+      expect(challanExceptionRules).toEqual([
+        'no-importable-lines',
+        'one-draft-per-work',
+        'pending-below-series-head',
+        'pending-below-series-head',
+      ]);
+      const suffixed = partronics.challanSeries
+        .flatMap((series) => series.suffixedAssignments)
+        .map((assignment) => ({
+          challanNo: assignment.challanNo,
+          assignedSequence: assignment.assignedSequence,
+        }))
+        .sort((a, b) => a.challanNo.localeCompare(b.challanNo));
+      expect(suffixed).toEqual([
+        { challanNo: 'PL-236-BB-DC-15A', assignedSequence: 49 },
+        { challanNo: 'PL-242-BB-DC-36-T', assignedSequence: 60 },
+        { challanNo: 'PL-PL-243-SUR-DC-38A', assignedSequence: 45 },
+      ]);
+
+      // Every series line names the exact number the live route will
+      // mint (the '/' separator disclosure).
+      for (const series of [...partronics.challanSeries, ...par.challanSeries]) {
+        expect(series.nextIssueNumber).toMatch(/\/\d+$/);
+        expect(
+          series.nextIssueNumber?.endsWith(`/${String(series.counterValue + 1)}`),
+        ).toBe(true);
+      }
+
+      // 'TO' range tokens never import as serials: each of the 14
+      // range lines is a named exception carrying its endpoints, and
+      // the serial ledger balances exactly — source = imported +
+      // unchanged + excepted (finding: tokens on excepted challans and
+      // lines previously vanished from the accounting).
+      const rangeNotations = partronics.exceptions.filter(
+        (exception) => exception.rule === 'serial-range-notation',
+      );
+      expect(rangeNotations).toHaveLength(14);
+      for (const exception of rangeNotations) {
+        expect(exception.detail).toMatch(
+          /^serial range notation \S+ TO \S+ — expand or correct in v1/,
+        );
+      }
+      for (const org of [partronics, par]) {
+        expect(org.serials.sourceTokens).toBe(
+          org.serials.imported + org.serials.unchanged + org.serials.excepted,
+        );
+      }
+      expect(partronics.serials).toMatchObject({ sourceTokens: 5448, excepted: 73 });
+
+      // Rate precision (approved change, numeric(18,6)): challan line
+      // rates carry over with zero drift in both organisations, and so
+      // do Par Electronics' agreement rates. The only remaining rate
+      // drift is honest: one Partronics v1 work stores computed
+      // agreement rates with EIGHT decimals (13.82141922), which
+      // numeric(18,6) must round — 21 items, reported, never hidden.
+      expect(partronics.quantization.line_rate?.changed).toBe(0);
+      expect(par.quantization.line_rate?.changed).toBe(0);
+      expect(par.quantization.effective_rate?.changed).toBe(0);
+      expect(partronics.quantization.effective_rate?.changed).toBe(21);
+      for (const drift of partronics.quantizationWorst) {
+        if (drift.fieldClass === 'effective_rate') {
+          expect(drift.sourceId).toContain('item-w-1785581787627-ed9hy');
+        }
+      }
+
+      // The quantization counter is decimal-level honest now: contract
+      // values genuinely rounded to paise report as changed (the old
+      // relative threshold said 0/32 while rounding all of them).
+      expect(partronics.quantization.contract_value?.changed).toBe(29);
+      expect(par.quantization.contract_value?.changed).toBe(2);
+
       // Dry-run left nothing behind: the mapped production slugs must not
       // exist in the shared test database.
       const [organisations] = await admin<{ count: string }[]>`

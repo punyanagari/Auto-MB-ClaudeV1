@@ -10,7 +10,12 @@
 export interface Quantized {
   /** Exact decimal string at the requested scale, e.g. '50735921.29'. */
   readonly text: string;
-  /** True when quantization moved the value by more than 1e-9 relative. */
+  /** True when rounding DROPPED nonzero decimal digits beyond the
+   * double's representation noise — a decimal-level comparison, so a
+   * large money value losing sub-paisa digits reports changed even
+   * when the relative move is tiny (the 0/32 contract-value defect),
+   * while IEEE-754 shortest-round-trip noise tails
+   * ('2.2562999999999995' -> 2.2563) do not. */
   readonly changed: boolean;
   /** |quantized - original| / max(|original|, 1e-12). */
   readonly relativeDelta: number;
@@ -66,10 +71,36 @@ export function roundDecimalString(plain: string, scale: number): string {
   return `${negative && !isZero ? '-' : ''}${magnitude}`;
 }
 
+/** True when two plain decimal strings denote different values
+ * (fractions compared padded to a common scale — '1.50' equals '1.5'). */
+function decimalStringsDiffer(a: string, b: string): boolean {
+  const [aWhole = '0', aFrac = ''] = (a.startsWith('-') ? a.slice(1) : a).split('.');
+  const [bWhole = '0', bFrac = ''] = (b.startsWith('-') ? b.slice(1) : b).split('.');
+  const scale = Math.max(aFrac.length, bFrac.length);
+  const negA = a.startsWith('-') && !/^0*\.?0*$/.test(aWhole + aFrac);
+  const negB = b.startsWith('-') && !/^0*\.?0*$/.test(bWhole + bFrac);
+  return (
+    negA !== negB ||
+    BigInt(aWhole + aFrac.padEnd(scale, '0')) !==
+      BigInt(bWhole + bFrac.padEnd(scale, '0'))
+  );
+}
+
+/** Digits dropped at or below a few ULPs of the double are shortest-
+ * round-trip noise ('...999999995'/'...000000001' tails), not source
+ * decimals: a real decimal difference the double could represent is
+ * always far above this. 64 ULPs relative ~ 1.42e-14. */
+const REPRESENTATION_NOISE = 64 * Number.EPSILON;
+
 export function quantize(value: number, scale: number): Quantized {
-  const text = roundDecimalString(plainDecimalString(value), scale);
+  const plain = plainDecimalString(value);
+  const text = roundDecimalString(plain, scale);
   const back = Number(text);
   const delta = Math.abs(back - value);
   const relativeDelta = delta / Math.max(Math.abs(value), 1e-12);
-  return { text, changed: relativeDelta > 1e-9, relativeDelta };
+  return {
+    text,
+    changed: decimalStringsDiffer(plain, text) && relativeDelta > REPRESENTATION_NOISE,
+    relativeDelta,
+  };
 }

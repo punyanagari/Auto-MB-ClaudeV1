@@ -38,6 +38,7 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
+import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -907,10 +908,13 @@ export function registerLoaRoutes(
               description: item.description,
               unitCode: item.unit_code,
               awardedQuantity: item.awarded_quantity,
-              effectiveRate: item.effective_rate,
+              effectiveRate: canonicalRateText(item.effective_rate),
               // Amendment overlays (Milestone 6): null = original applies.
               effectiveQuantity: item.effective_quantity,
-              effectiveUnitRate: item.effective_unit_rate,
+              effectiveUnitRate:
+                item.effective_unit_rate === null
+                  ? null
+                  : canonicalRateText(item.effective_unit_rate),
               effectiveDescription: item.effective_description,
               effectiveUnit: item.effective_unit,
               amendmentAdded: item.amendment_added,

@@ -987,3 +987,190 @@ describe('released value resolves through the active payment matrix', () => {
     expect(again?.items[0]?.releasedValue).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review hardening: R18 on the installation-cancel side, and the
+// NULL-proof pac_certificates cancellation CHECK (migration 0027).
+// ---------------------------------------------------------------------------
+
+describe('R18 backstop: cancelling an installation never strands certified quantity', () => {
+  let r18WorkId: string;
+  let r18ItemId: string;
+  let installFullId: string;
+  let pacCoverId: string;
+
+  it('refuses the cancel while recorded PAC certificates cover the quantity (API 409)', async () => {
+    r18WorkId = randomUUID();
+    const scheduleId = randomUUID();
+    r18ItemId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${r18WorkId}, ${organisationId}, ${`PACR18-${runId.toUpperCase()}`},
+        ${`pac-r18-letter-${runId}`}, '2025-06-01', 'R18 cancel fixture work',
+        3000.00, 2700.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleId}, ${organisationId}, ${r18WorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, requires_serials
+      )
+      values (${r18ItemId}, ${organisationId}, ${r18WorkId}, ${scheduleId}, 'R/1',
+              'R18 cable set', 'Set', 20.000, 100.00, false)
+    `;
+    const location = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/locations',
+      organisationId,
+      payload: { name: `R18 station ${runId}`, kind: 'station' },
+    });
+    expect(location.statusCode, location.body).toBe(201);
+    const locationId = location.json<{ id: string }>().id;
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${r18WorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: r18ItemId,
+        quantity: '10.000',
+        installedOn: '2026-08-01',
+        locationId,
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+    installFullId = installed.json<{ id: string }>().id;
+
+    const pac = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${r18WorkId}/pac-certificates`,
+      organisationId,
+      payload: {
+        reference: `PAC-R18-${runId}`,
+        issueDate: '2026-08-02',
+        consigneeMasterId: consigneeId,
+        items: [{ workItemId: r18ItemId, certifiedQuantity: '10.000' }],
+      },
+    });
+    expect(pac.statusCode, pac.body).toBe(201);
+    pacCoverId = pac.json<{ id: string }>().id;
+
+    // Cancelling the installation would leave certified 10 > installed 0.
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/installations/${installFullId}/cancel`,
+      organisationId,
+      payload: { note: 'Trying to strand the PAC certification.' },
+    });
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('INSTALLATION_COVERED_BY_PAC');
+    // The 409 names the covering certificate reference and the amounts.
+    expect(body.message).toContain(`PAC-R18-${runId}`);
+    expect(body.message).toContain('10.000');
+    expect(body.message).toContain('0.000');
+  });
+
+  it('cancelling the covering certificate first releases the installation', async () => {
+    const pacCancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/pac-certificates/${pacCoverId}/cancel`,
+      organisationId,
+      payload: { note: 'Releasing the coverage first, as the 409 instructed.' },
+    });
+    expect(pacCancelled.statusCode, pacCancelled.body).toBe(200);
+
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/installations/${installFullId}/cancel`,
+      organisationId,
+      payload: { note: 'Now free to cancel.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+  });
+
+  it('the 0027 database guard refuses the same cancel against every writer', async () => {
+    // Rebuild coverage: install 10, certify 6; a direct SQL cancel of
+    // the installation must raise (certified 6 > remaining 0).
+    const location = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/locations',
+      organisationId,
+      payload: { name: `R18 db station ${runId}`, kind: 'station' },
+    });
+    const locationId = location.json<{ id: string }>().id;
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${r18WorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: r18ItemId,
+        quantity: '10.000',
+        installedOn: '2026-08-03',
+        locationId,
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+    const installId = installed.json<{ id: string }>().id;
+    const pac = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${r18WorkId}/pac-certificates`,
+      organisationId,
+      payload: {
+        reference: `PAC-R18-DB-${runId}`,
+        issueDate: '2026-08-03',
+        consigneeMasterId: consigneeId,
+        items: [{ workItemId: r18ItemId, certifiedQuantity: '6.000' }],
+      },
+    });
+    expect(pac.statusCode, pac.body).toBe(201);
+
+    await expect(
+      admin`
+        update installations
+        set status = 'cancelled', cancellation_note = 'direct SQL misuse',
+            cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+        where id = ${installId}
+      `,
+    ).rejects.toThrow(/certified quantity above installed \(R18\)/);
+  });
+});
+
+describe('the pac_certificates cancellation CHECK is NULL-proof (0027)', () => {
+  it('refuses a cancelled certificate whose note is NULL', async () => {
+    const [certificate] = await admin<{ id: string }[]>`
+      insert into pac_certificates (
+        organisation_id, work_id, reference, issue_date,
+        consignee_master_id, consignee_designation, recorded_by_user_id
+      )
+      values (${organisationId}, ${workId}, ${`PAC-NULLPROOF-${runId}`},
+              '2026-08-05', ${consigneeId}, 'Sr. DEE (G) CR', ${ownerUserId})
+      returning id
+    `;
+    if (!certificate) throw new Error('certificate insert returned no row');
+    // The 0022 shape passed this because NULL OR FALSE is NULL; 0027
+    // restates the constraint with cancellation_note IS NOT NULL.
+    await expect(
+      admin`
+        update pac_certificates
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now()
+        where id = ${certificate.id}
+      `,
+    ).rejects.toThrow(/pac_certificates_check1/);
+    // The complete cancellation shape still passes.
+    await admin`
+      update pac_certificates
+      set status = 'cancelled', cancellation_note = 'complete cancellation',
+          cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+      where id = ${certificate.id}
+    `;
+  });
+});

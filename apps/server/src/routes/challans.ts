@@ -30,6 +30,7 @@ import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
+import { canonicalRateText } from '../rate-text.js';
 import { assertSourceNotBilled } from './measurement-books.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
@@ -132,7 +133,7 @@ function toChallanItem(row: ChallanItemRow): ChallanItem {
     description: row.description_snapshot,
     unit: row.unit_snapshot,
     quantity: row.quantity,
-    rate: row.rate_snapshot,
+    rate: canonicalRateText(row.rate_snapshot),
     lineAmount: row.line_amount,
     position: row.position,
   };
@@ -393,7 +394,7 @@ export function registerChallanRoutes(
             effectiveQuantity: row.effective,
             deliveredQuantity: row.delivered,
             remainingQuantity: row.remaining,
-            effectiveRate: row.rate,
+            effectiveRate: canonicalRateText(row.rate),
           })),
         };
       });
@@ -679,6 +680,14 @@ export function registerChallanRoutes(
           await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'draft');
 
+          // The works row lock pairs with the one the MB finalize
+          // transaction holds: an issue and a final-MB finalize on the
+          // same Work serialise here, so whichever commits second sees
+          // the other — a challan issued first is caught by the final
+          // sweep, and a final MB finalized first makes this issue fail
+          // the FINAL_MB_EXISTS check below (the 0027 challan-update
+          // guard backstops it in the database). Lock order works ->
+          // work_items matches every other writer taking both.
           const [work] = await tx<
             {
               allow_excess_delivery: boolean;
@@ -691,8 +700,25 @@ export function registerChallanRoutes(
             select allow_excess_delivery, work_code, title, letter_number,
                    letter_date::text as letter_date
             from works where id = ${challan.work_id}
+            for update
           `;
           if (!work) throw new Error('challan without a Work');
+
+          // A live final Measurement Book closes the Work's payment
+          // cycle (spec §5.9): a challan issued after it could never be
+          // billed, so the issue is refused outright.
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${challan.work_id} and is_final
+              and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a challan issued now could never be billed.`,
+            );
+          }
 
           // Concurrency-safe quantity validation: this challan's lines plus
           // everything already ISSUED must stay within the delivery ceiling
@@ -868,7 +894,7 @@ export function registerChallanRoutes(
               description: line.description_snapshot,
               unit: line.unit_snapshot,
               quantity: line.quantity,
-              rate: line.rate_snapshot,
+              rate: canonicalRateText(line.rate_snapshot),
               lineAmount: line.line_amount,
             })),
             totalAmount: total?.amount ?? '0.00',

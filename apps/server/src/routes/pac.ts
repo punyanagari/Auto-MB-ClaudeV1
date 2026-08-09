@@ -400,14 +400,38 @@ export function registerPacRoutes(
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
 
+          // The works row lock pairs with the one the MB finalize
+          // transaction holds, so recording and a final-MB finalize on
+          // the same Work serialise: a certificate recorded first is
+          // caught by the final sweep, and a final MB finalized first
+          // makes this recording fail the FINAL_MB_EXISTS check below
+          // (the 0027 insert guard backstops it in the database). Lock
+          // order works -> work_items matches every other writer taking
+          // both.
           const [work] = await tx<{ letter_date: string; today: string }[]>`
             select w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
             where w.id = ${workId} and w.deleted_at is null
+            for update of w
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+
+          // A live final Measurement Book closes the Work's payment
+          // cycle (spec §5.9): a PAC certificate recorded after it
+          // could never be billed, so the recording is refused outright.
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${workId} and is_final and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a PAC certificate recorded now could never be billed.`,
+            );
+          }
 
           // §5.5, friendly form (the 0022 trigger holds it against every
           // writer): issue date not in the future in the organisation's

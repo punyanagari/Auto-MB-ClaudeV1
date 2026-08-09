@@ -899,6 +899,27 @@ describe('dashboard completion alerts', () => {
   });
 });
 
+describe('export manifest covers the extension document objects', () => {
+  it('lists the rendered letter and the railway response with their hashes', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const exported = response.json<{
+      objectManifest: { kind: string; objectKey: string; sha256: string | null }[];
+    }>();
+    const kinds = exported.objectManifest.map((entry) => entry.kind);
+    expect(kinds).toContain('extension-rendered-pdf');
+    expect(kinds).toContain('extension-response-document');
+    for (const kind of ['extension-rendered-pdf', 'extension-response-document']) {
+      const entry = exported.objectManifest.find((item) => item.kind === kind);
+      expect(entry?.sha256, kind).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+});
+
 describe('cross-tenant denial', () => {
   let foreignExtensionId: string;
 

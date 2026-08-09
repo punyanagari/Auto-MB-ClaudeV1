@@ -126,7 +126,7 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
       description: item.description,
       unitCode: (item.qtyUnit ?? '').slice(0, 20),
       awardedQuantity: normaliseDecimal(item.qty, 3),
-      effectiveRate: normaliseDecimal(item.unitRate, 2),
+      effectiveRate: normaliseDecimal(item.unitRate, 6),
       paymentCategory: '',
     };
   });
