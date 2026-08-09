@@ -37,6 +37,7 @@ import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
+import { registerMeasurementBookRoutes } from './routes/measurement-books.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -438,6 +439,7 @@ export async function buildApp(
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
     registerPacRoutes(app, authInstance, database, storage, scanner);
+    registerMeasurementBookRoutes(app, authInstance, database);
   }
 
   return app;

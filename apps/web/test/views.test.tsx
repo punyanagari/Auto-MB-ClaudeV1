@@ -87,7 +87,6 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listMbEntries: vi.fn().mockResolvedValue([]),
     recordMbEntry: vi.fn(),
     listBills: vi.fn().mockResolvedValue([]),
-    prepareBill: vi.fn(),
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
@@ -156,6 +155,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelPacCertificate: vi.fn(),
     uploadPacCertificateDocument: vi.fn(),
     downloadPacCertificateDocument: vi.fn(),
+    listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [] }),
+    createWorkMeasurementBook: vi.fn(),
+    getMeasurementBook: vi.fn(),
+    setMeasurementBookSources: vi.fn(),
+    finalizeMeasurementBook: vi.fn(),
+    cancelMeasurementBook: vi.fn(),
+    deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),
+    prepareBillFromMeasurementBook: vi.fn(),
     ...overrides,
   };
 }
@@ -1283,26 +1290,20 @@ describe('WorkDetail retention', () => {
     expect(screen.getAllByText('A/1').length).toBeGreaterThan(1);
   });
 
-  it('prepares a bill from unbilled measurements and moves it forward', async () => {
-    const prepareBill = vi.fn().mockResolvedValue(BILL);
+  it('lists bills and moves them forward; the Milestone 5 sweep button is gone', async () => {
     const setBillStatus = vi.fn().mockResolvedValue({
       ...BILL,
       status: 'submitted',
       submittedAt: '2026-08-08T11:00:00.000Z',
     });
-    const listBills = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([BILL]);
-    const listMbEntries = vi
-      .fn()
-      .mockResolvedValueOnce([MB_ENTRY])
-      .mockResolvedValue([{ ...MB_ENTRY, billId: BILL.id }]);
-    const api = retentionApi({ prepareBill, setBillStatus, listBills, listMbEntries });
+    const listBills = vi.fn().mockResolvedValue([BILL]);
+    const api = retentionApi({ setBillStatus, listBills });
     renderWorkDetail(api);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Prepare bill' }));
-    await waitFor(() => {
-      expect(prepareBill).toHaveBeenCalledWith(ORG_ID, WORK_ID);
-    });
     expect(await screen.findByRole('heading', { name: /Bill #1/ })).toBeTruthy();
+    // Bill preparation now runs from a finalized Measurement Book
+    // (ADR-0006 decision 4); the sweep button no longer exists.
+    expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark submitted' }));
     await waitFor(() => {

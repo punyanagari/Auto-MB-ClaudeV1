@@ -212,6 +212,10 @@ export const BillSchema = Type.Object(
     createdAt: Type.String({ format: 'date-time' }),
     submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     paidAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** The finalized Measurement Book this bill was prepared from
+     * (Milestone 8, ADR-0006 decision 2). Null on Milestone 5 sweep-era
+     * bills; optional so older fixtures stay valid. */
+    mbId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
   },
   { additionalProperties: false },
 );

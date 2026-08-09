@@ -160,6 +160,16 @@ export function registerExportRoutes(
           select * from pac_certificate_items
           order by pac_certificate_id, work_item_id
         `;
+        const measurementBooks = await tx<Record<string, unknown>[]>`
+          select * from measurement_books order by created_at, id
+        `;
+        const measurementBookLines = await tx<Record<string, unknown>[]>`
+          select * from measurement_book_lines
+          order by measurement_book_id, item_number, id
+        `;
+        const mbSources = await tx<Record<string, unknown>[]>`
+          select * from mb_sources order by created_at, id
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -267,6 +277,12 @@ export function registerExportRoutes(
           paymentMatrices,
           pacCertificates,
           pacCertificateItems,
+          // Milestone 8 phase 2 (Measurement Book lifecycle). The
+          // format stays 'export-v5': v5 was defined as the complete
+          // Milestone 8 record, and these sections complete it.
+          measurementBooks,
+          measurementBookLines,
+          mbSources,
           objectManifest,
           auditEvents,
         };

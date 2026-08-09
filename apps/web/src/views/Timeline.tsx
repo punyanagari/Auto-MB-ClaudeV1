@@ -81,6 +81,7 @@ const ENTITY_FILTERS = [
   { value: 'issue_challans', label: 'Issue challans' },
   { value: 'approval_requests', label: 'Approvals' },
   { value: 'correction_notices', label: 'Correction notices' },
+  { value: 'measurement_books', label: 'Measurement books' },
 ] as const;
 
 function humaniseAction(action: string): string {

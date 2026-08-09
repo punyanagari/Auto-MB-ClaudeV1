@@ -68,6 +68,13 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // lines are frozen by trigger (0022).
   pac_certificates: 'SELECT, INSERT, UPDATE',
   pac_certificate_items: 'SELECT, INSERT, UPDATE',
+  // Measurement Books: drafts (and their source claims) delete, guarded
+  // by trigger; finalized snapshots and numbering state keep no DELETE
+  // (0024).
+  measurement_books: 'SELECT, INSERT, UPDATE, DELETE',
+  mb_sources: 'SELECT, INSERT, UPDATE, DELETE',
+  measurement_book_lines: 'SELECT, INSERT, UPDATE',
+  measurement_book_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

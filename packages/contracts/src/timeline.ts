@@ -20,6 +20,7 @@ export const TIMELINE_ENTITY_TYPES = [
   'work_items',
   'payment_matrices',
   'pac_certificates',
+  'measurement_books',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

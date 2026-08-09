@@ -238,8 +238,6 @@ export function WorkDetail({
   const challanNumberById = new Map(
     (challans ?? []).map((challan) => [challan.id, challan.challanNumber]),
   );
-  const unbilledCount = mbEntries.filter((entry) => entry.billId === null).length;
-
   return (
     <section className="card card--wide" aria-labelledby="work-title">
       <h1 id="work-title" tabIndex={-1}>
@@ -1069,29 +1067,11 @@ export function WorkDetail({
 
       <div className="card__header">
         <h2>Bills</h2>
-        {canIssue && (
-          <button
-            type="button"
-            disabled={pending || unbilledCount === 0}
-            onClick={() =>
-              void act(async () => {
-                await api.prepareBill(organisationId, workId);
-                const [freshBills, freshEntries] = await Promise.all([
-                  api.listBills(organisationId, workId),
-                  api.listMbEntries(organisationId, workId),
-                ]);
-                setBills(freshBills);
-                setMbEntries(freshEntries);
-              }, 'Bill prepared from the unbilled measurements.')
-            }
-          >
-            Prepare bill
-          </button>
-        )}
       </div>
-      {canIssue && unbilledCount === 0 && (
+      {canIssue && (
         <p className="muted">
-          Preparing a bill needs at least one unbilled measurement.
+          Bills are prepared from a finalized stage-wise Measurement Book — the
+          Measurement Book workspace arrives with the next milestone slice.
         </p>
       )}
       {bills.length > 0 ? (

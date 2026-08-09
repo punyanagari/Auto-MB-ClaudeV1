@@ -73,6 +73,10 @@ import type {
   PacCertificate,
   PacCertificateListResponse,
   RecordPacCertificateRequest,
+  CreateMeasurementBookRequest,
+  MeasurementBookDetailResponse,
+  MeasurementBookListResponse,
+  SetMbSourcesRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -324,7 +328,6 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly Bill[]>;
-  readonly prepareBill: (organisationId: string, workId: string) => Promise<Bill>;
   readonly setBillStatus: (
     organisationId: string,
     billId: string,
@@ -591,6 +594,44 @@ export interface ApiClient {
     organisationId: string,
     certificateId: string,
   ) => Promise<Blob>;
+  /** Stage-wise Measurement Books (Milestone 8 phase 2). Bill
+   * preparation moved here: a bill is prepared FROM a finalized MB
+   * (the Milestone 5 unbilled-measurements sweep endpoint is gone). */
+  readonly listWorkMeasurementBooks: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<MeasurementBookListResponse>;
+  readonly createWorkMeasurementBook: (
+    organisationId: string,
+    workId: string,
+    body: CreateMeasurementBookRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly getMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly setMeasurementBookSources: (
+    organisationId: string,
+    measurementBookId: string,
+    body: SetMbSourcesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly finalizeMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly cancelMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+    note: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly deleteMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<void>;
+  readonly prepareBillFromMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Bill>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1067,12 +1108,6 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
       return payload.bills;
     },
-    async prepareBill(organisationId, workId) {
-      return request<Bill>(`/api/works/${workId}/bills`, {
-        method: 'POST',
-        organisationId,
-      });
-    },
     async setBillStatus(organisationId, billId, body) {
       return request<Bill>(`/api/bills/${billId}/status`, {
         method: 'POST',
@@ -1468,6 +1503,54 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async listWorkMeasurementBooks(organisationId, workId) {
+      return request<MeasurementBookListResponse>(
+        `/api/works/${workId}/measurement-books`,
+        { organisationId },
+      );
+    },
+    async createWorkMeasurementBook(organisationId, workId, body) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/works/${workId}/measurement-books`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async getMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}`,
+        { organisationId },
+      );
+    },
+    async setMeasurementBookSources(organisationId, measurementBookId, body) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/sources`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async finalizeMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/finalize`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelMeasurementBook(organisationId, measurementBookId, note) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/cancel`,
+        { method: 'POST', body: { note }, organisationId },
+      );
+    },
+    async deleteMeasurementBook(organisationId, measurementBookId) {
+      await request<void>(`/api/measurement-books/${measurementBookId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async prepareBillFromMeasurementBook(organisationId, measurementBookId) {
+      return request<Bill>(`/api/measurement-books/${measurementBookId}/bill`, {
+        method: 'POST',
+        organisationId,
+      });
     },
   };
 }
