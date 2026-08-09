@@ -486,7 +486,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v4');
+    expect(exported.formatVersion).toBe('export-v5');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -512,6 +512,10 @@ describe('export completeness', () => {
     expect(Array.isArray(exported.issueChallans)).toBe(true);
     expect(Array.isArray(exported.issueChallanLines)).toBe(true);
     expect(Array.isArray(exported.extensionRequests)).toBe(true);
+    // export-v5: the Milestone 8 phase-1 records.
+    expect(Array.isArray(exported.paymentMatrices)).toBe(true);
+    expect(Array.isArray(exported.pacCertificates)).toBe(true);
+    expect(Array.isArray(exported.pacCertificateItems)).toBe(true);
   });
 });
 

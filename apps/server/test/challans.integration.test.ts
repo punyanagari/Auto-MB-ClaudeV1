@@ -652,7 +652,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe('export-v4');
+    expect(exported.formatVersion).toBe('export-v5');
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(

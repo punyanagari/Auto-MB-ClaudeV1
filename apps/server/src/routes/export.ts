@@ -242,7 +242,7 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v4',
+          formatVersion: 'export-v5',
           organisation,
           members,
           workAssignments: assignments,
