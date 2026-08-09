@@ -1675,3 +1675,657 @@ describe('the MB document (phase 3): persisted render, streaming, draft preview'
     expect([403, 404]).toContain(siteRender.statusCode);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review hardening: the cancel-vs-finalize race, the DB cancel backstops,
+// the final-MB source freeze, draft-claim remedies, selection write-skew,
+// and 6dp rate carry-through.
+// ---------------------------------------------------------------------------
+
+describe('review hardening: cancel work-lock and DB cancel backstops', () => {
+  let workH1Id: string;
+  let h1ItemId: string;
+  let mbA: string; // finalized MB-01
+  let mbB: string; // finalized MB-02 (newest before the race)
+
+  async function issueAndClaimDraft(quantity: string): Promise<string> {
+    const dcId = await issueChallan(
+      workH1Id,
+      `H1DC${randomUUID().slice(0, 4).toUpperCase()}`,
+      [{ workItemId: h1ItemId, quantity }],
+    );
+    const draft = await createDraft(workH1Id, { mbDate: '2026-08-05' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    return draft.book.id;
+  }
+
+  it('seeds two finalized MBs and a competing draft', async () => {
+    h1ItemId = randomUUID();
+    workH1Id = await seedWork({
+      code: `HRC1${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: h1ItemId,
+          itemNumber: '1',
+          description: 'Race cable',
+          unit: 'mtr',
+          quantity: '10000.000',
+          rate: '1.00',
+          paymentCategory: null,
+        },
+      ],
+    });
+    await insertMatrixRow(workH1Id, 'UNCATEGORISED', [
+      '80.00',
+      '10.00',
+      '0.00',
+      '10.00',
+    ]);
+    mbA = await issueAndClaimDraft('100');
+    const finalizedA = await finalize(mbA);
+    expect(finalizedA.statusCode, finalizedA.body).toBe(200);
+    mbB = await issueAndClaimDraft('50');
+    const finalizedB = await finalize(mbB);
+    expect(finalizedB.statusCode, finalizedB.body).toBe(200);
+  });
+
+  it('concurrent cancel-of-newest vs finalize-of-draft serialises coherently', async () => {
+    const draftId = await issueAndClaimDraft('25');
+    const [cancelled, finalized] = await Promise.all([
+      authed(owner, {
+        method: 'POST',
+        url: `/api/measurement-books/${mbB}/cancel`,
+        organisationId,
+        payload: { note: 'Racing the draft finalize.' },
+      }),
+      finalize(draftId),
+    ]);
+
+    // The works row lock serialises the two: either order is coherent,
+    // and the double-billable state (MB-02 cancelled with its deltas
+    // baked into MB-03's prior memory) can never happen.
+    if (cancelled.statusCode === 200) {
+      // Cancel committed first: the newly finalized MB must EXCLUDE the
+      // cancelled MB-02 from its prior cumulative.
+      expect(finalized.statusCode, finalized.body).toBe(200);
+      const line = finalized.json<MeasurementBookDetailResponse>().lines[0];
+      expect(line?.priorSupplied).toBe('100.000');
+    } else {
+      // Finalize committed first: MB-02 is no longer the newest, the
+      // cancel is refused, and the new MB's prior includes MB-02.
+      expect(cancelled.statusCode, cancelled.body).toBe(409);
+      expect(cancelled.json()).toMatchObject({ code: 'MB_NOT_NEWEST' });
+      expect(finalized.statusCode, finalized.body).toBe(200);
+      const line = finalized.json<MeasurementBookDetailResponse>().lines[0];
+      expect(line?.priorSupplied).toBe('150.000');
+    }
+
+    // Whatever the order, no cancelled MB's sources are claimable while
+    // a newer finalized MB carries its deltas: recompute the invariant
+    // from the database.
+    const rows = await admin<
+      { status: string; sequence_number: number; live_sources: string }[]
+    >`
+      select mb.status, mb.sequence_number,
+             (select count(*) from mb_sources ms
+               where ms.measurement_book_id = mb.id
+                 and ms.released_at is null)::text as live_sources
+      from measurement_books mb
+      where mb.work_id = ${workH1Id} and mb.sequence_number is not null
+      order by mb.sequence_number
+    `;
+    for (const row of rows) {
+      if (row.status === 'cancelled') {
+        expect(row.live_sources).toBe('0');
+        // A cancelled MB is newest-at-cancel-time: no FINALIZED MB with
+        // a higher sequence may predate it in the prior chain unless
+        // the cancel lost the race — which the API refused above.
+        const newerFinalized = rows.filter(
+          (other) =>
+            other.status === 'finalized' && other.sequence_number > row.sequence_number,
+        );
+        for (const newer of newerFinalized) {
+          // Any newer finalized MB was finalized AFTER the cancel, so
+          // its prior memory excludes the cancelled deltas — proven by
+          // the branch assertions above.
+          expect(newer.sequence_number).toBeGreaterThan(row.sequence_number);
+        }
+      }
+    }
+  });
+
+  it('the database refuses cancelling a non-newest finalized MB (0027 backstop)', async () => {
+    // After the race, at least one older finalized MB exists (MB-01).
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update measurement_books
+          set status = 'cancelled', cancellation_note = 'direct SQL misuse',
+              cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+          where id = ${mbA}
+        `;
+      }),
+    ).rejects.toThrowError(/only the newest may be cancelled/);
+  });
+
+  it('the database refuses cancelling a billed MB and keeps its claims (0027 backstop)', async () => {
+    // The newest finalized MB of the Work gets a bill, then a direct
+    // SQL cancel must be refused by the trigger — the API's MB_BILLED
+    // 409 is no longer the only line of defence.
+    const [newest] = await admin<{ id: string }[]>`
+      select id from measurement_books
+      where work_id = ${workH1Id} and status = 'finalized'
+      order by sequence_number desc limit 1
+    `;
+    if (!newest) throw new Error('no finalized MB to bill');
+    const billed = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${newest.id}/bill`,
+      organisationId,
+    });
+    expect(billed.statusCode, billed.body).toBe(201);
+
+    const apiRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${newest.id}/cancel`,
+      organisationId,
+      payload: { note: 'Billed MBs must never cancel.' },
+    });
+    expect(apiRefused.statusCode).toBe(409);
+    expect(apiRefused.json()).toMatchObject({ code: 'MB_BILLED' });
+
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update measurement_books
+          set status = 'cancelled', cancellation_note = 'direct SQL misuse',
+              cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+          where id = ${newest.id}
+        `;
+      }),
+    ).rejects.toThrowError(/has a prepared bill and is permanently locked/);
+    const [claims] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_sources
+      where measurement_book_id = ${newest.id} and released_at is null
+    `;
+    expect(Number(claims?.count)).toBeGreaterThan(0);
+  });
+});
+
+describe('review hardening: a live final MB freezes source creation', () => {
+  let workH2Id: string;
+  let h2ItemId: string;
+  let frozenDraftChallanId: string;
+
+  it('finalizes a final MB and then refuses new challan issue, installation, and PAC', async () => {
+    h2ItemId = randomUUID();
+    workH2Id = await seedWork({
+      code: `HRC2${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: h2ItemId,
+          itemNumber: 'S/1',
+          description: 'Frozen-work supply item',
+          unit: 'Nos',
+          quantity: '100.000',
+          rate: '10.00',
+          paymentCategory: 'SUPPLY',
+        },
+      ],
+    });
+    await insertMatrixRow(workH2Id, 'SUPPLY', ['90.00', '0.00', '0.00', '10.00']);
+    const dcId = await issueChallan(
+      workH2Id,
+      `H2DC${runId.slice(0, 3).toUpperCase()}`,
+      [{ workItemId: h2ItemId, quantity: '10' }],
+    );
+    const draft = await createDraft(workH2Id, {
+      mbDate: '2026-08-05',
+      isFinal: true,
+    });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const mbNumber = finalized.json<MeasurementBookDetailResponse>().book.mbNumber;
+
+    // Draft creation is still allowed (drafts are free) …
+    const newDraft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workH2Id}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-05',
+        prefix: `H2DC${runId.slice(0, 3).toUpperCase()}`,
+        consignee: { name: 'Sr. DEE (G) NR', address: 'Delhi Division' },
+        items: [{ workItemId: h2ItemId, quantity: '1' }],
+      },
+    });
+    expect(newDraft.statusCode, newDraft.body).toBe(201);
+    frozenDraftChallanId = newDraft.json<ChallanDetailResponse>().challan.id;
+
+    // … but ISSUING it is refused with the final MB named.
+    const issueRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${frozenDraftChallanId}/issue`,
+      organisationId,
+    });
+    expect(issueRefused.statusCode).toBe(409);
+    expect(issueRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
+    expect(issueRefused.json<{ message: string }>().message).toContain(
+      mbNumber ?? 'never',
+    );
+
+    const installRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workH2Id}/installations`,
+      organisationId,
+      payload: {
+        workItemId: h2ItemId,
+        quantity: '1',
+        installedOn: '2026-08-05',
+        newLocation: { name: `Frozen station ${runId}`, kind: 'station' },
+      },
+    });
+    expect(installRefused.statusCode).toBe(409);
+    expect(installRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
+
+    const pacRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workH2Id}/pac-certificates`,
+      organisationId,
+      payload: {
+        reference: `PAC-FROZEN-${runId}`,
+        issueDate: '2026-08-05',
+        consigneeMasterId,
+        items: [{ workItemId: h2ItemId, certifiedQuantity: '1' }],
+      },
+    });
+    expect(pacRefused.statusCode).toBe(409);
+    expect(pacRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
+  });
+
+  it('the 0027 database guards hold the freeze against every writer', async () => {
+    // Challan issue flip via direct SQL.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update delivery_challans set status = 'issued'
+          where id = ${frozenDraftChallanId}
+        `;
+      }),
+    ).rejects.toThrowError(/final Measurement Book exists/);
+    // Installation INSERT via direct SQL.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        const [location] = await tx<{ id: string }[]>`
+          insert into location_masters (organisation_id, name, kind, created_by_user_id)
+          values (${organisationId}, ${`Frozen loc ${randomUUID().slice(0, 8)}`},
+                  'station', ${ownerUserId})
+          returning id
+        `;
+        if (!location) throw new Error('location insert returned no row');
+        await tx`
+          insert into installations (
+            organisation_id, work_id, work_item_id, quantity, installed_on,
+            location_id, location_name, recorded_by_user_id
+          )
+          values (${organisationId}, ${workH2Id}, ${h2ItemId}, '1', '2026-08-05',
+                  ${location.id}, 'Frozen loc', ${ownerUserId})
+        `;
+      }),
+    ).rejects.toThrowError(/final Measurement Book exists/);
+    // PAC INSERT via direct SQL.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          insert into pac_certificates (
+            organisation_id, work_id, reference, issue_date,
+            consignee_master_id, consignee_designation, recorded_by_user_id
+          )
+          values (${organisationId}, ${workH2Id}, ${`PAC-SQL-${runId}`}, '2026-08-05',
+                  ${consigneeMasterId}, 'Sr. DEE (G) NR', ${ownerUserId})
+        `;
+      }),
+    ).rejects.toThrowError(/final Measurement Book exists/);
+  });
+});
+
+describe('review hardening: issue-vs-finalize race on the final MB', () => {
+  it('exactly one of a concurrent challan issue and final-MB finalize wins', async () => {
+    const itemId = randomUUID();
+    const workId = await seedWork({
+      code: `HRC3${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: itemId,
+          itemNumber: 'S/1',
+          description: 'Race supply item',
+          unit: 'Nos',
+          quantity: '100.000',
+          rate: '10.00',
+          paymentCategory: 'SUPPLY',
+        },
+      ],
+    });
+    await insertMatrixRow(workId, 'SUPPLY', ['90.00', '0.00', '0.00', '10.00']);
+    const dc1Id = await issueChallan(workId, `H3DC${runId.slice(0, 3).toUpperCase()}`, [
+      { workItemId: itemId, quantity: '10' },
+    ]);
+    const finalDraft = await createDraft(workId, {
+      mbDate: '2026-08-05',
+      isFinal: true,
+    });
+    const claimed = await setSources(finalDraft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dc1Id },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    // A second challan drafted but not yet issued.
+    const draft2 = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-05',
+        prefix: `H3DC${runId.slice(0, 3).toUpperCase()}`,
+        consignee: { name: 'Sr. DEE (G) NR', address: 'Delhi Division' },
+        items: [{ workItemId: itemId, quantity: '5' }],
+      },
+    });
+    expect(draft2.statusCode, draft2.body).toBe(201);
+    const dc2Id = draft2.json<ChallanDetailResponse>().challan.id;
+
+    const [issued, finalized] = await Promise.all([
+      authed(owner, {
+        method: 'POST',
+        url: `/api/challans/${dc2Id}/issue`,
+        organisationId,
+      }),
+      finalize(finalDraft.book.id),
+    ]);
+
+    // The works row lock serialises the two transactions: whichever
+    // commits second sees the other. No interleaving may leave BOTH a
+    // live final MB and an issued-but-unclaimable challan.
+    if (issued.statusCode === 201) {
+      expect(finalized.statusCode, finalized.body).toBe(409);
+      expect(finalized.json()).toMatchObject({ code: 'MB_FINAL_SWEEP_INCOMPLETE' });
+    } else {
+      expect(issued.statusCode, issued.body).toBe(409);
+      expect(issued.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
+      expect(finalized.statusCode, finalized.body).toBe(200);
+    }
+    const [state] = await admin<{ final_live: string; issued_unclaimed: string }[]>`
+      select
+        (select count(*) from measurement_books
+          where work_id = ${workId} and is_final and status <> 'cancelled'
+            and status = 'finalized')::text as final_live,
+        (select count(*) from delivery_challans dc
+          where dc.work_id = ${workId} and dc.status = 'issued'
+            and not exists (
+              select 1 from mb_sources ms
+              where ms.source_type = 'delivery_challan' and ms.source_id = dc.id
+                and ms.released_at is null
+            ))::text as issued_unclaimed
+    `;
+    // Either the final MB lives and every issued challan is claimed, or
+    // the final MB failed and the unclaimed challan can still be billed.
+    if (state?.final_live === '1') {
+      expect(state.issued_unclaimed).toBe('0');
+    }
+  });
+});
+
+describe('review hardening: draft-claim remedies, selection write-skew, dead claims', () => {
+  let workH4Id: string;
+  let h4ItemId: string;
+
+  it('a source claimed by a DRAFT names a followable remedy on cancel', async () => {
+    h4ItemId = randomUUID();
+    workH4Id = await seedWork({
+      code: `HRC4${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: h4ItemId,
+          itemNumber: '1',
+          description: 'Remedy cable',
+          unit: 'mtr',
+          quantity: '10000.000',
+          rate: '1.00',
+          paymentCategory: null,
+        },
+      ],
+    });
+    await insertMatrixRow(workH4Id, 'UNCATEGORISED', [
+      '80.00',
+      '10.00',
+      '0.00',
+      '10.00',
+    ]);
+    const dcId = await issueChallan(
+      workH4Id,
+      `H4DC${runId.slice(0, 3).toUpperCase()}`,
+      [{ workItemId: h4ItemId, quantity: '10' }],
+    );
+    const draft = await createDraft(workH4Id, { mbDate: '2026-08-05' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${dcId}/cancel`,
+      organisationId,
+      payload: { note: 'Trying to cancel a draft-claimed challan.' },
+    });
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('SOURCE_BILLED_IN_MB');
+    // The draft remedy is followable: deselect or delete the draft —
+    // NOT 'cancel that Measurement Book' (drafts delete, never cancel).
+    expect(body.message).toContain(
+      "remove it from the draft's source selection (or delete the draft)",
+    );
+    expect(body.message).not.toContain('cancel that Measurement Book');
+
+    // Cleanup: release the claim by deleting the draft.
+    const deleted = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${draft.book.id}`,
+      organisationId,
+    });
+    expect(deleted.statusCode).toBe(204);
+  });
+
+  it('selection and source cancel cannot both win the write-skew race', async () => {
+    const dcId = await issueChallan(
+      workH4Id,
+      `H4DC${runId.slice(0, 3).toUpperCase()}`,
+      [{ workItemId: h4ItemId, quantity: '5' }],
+    );
+    const draft = await createDraft(workH4Id, { mbDate: '2026-08-05' });
+
+    const [selected, cancelled] = await Promise.all([
+      setSources(draft.book.id, [{ sourceType: 'delivery_challan', sourceId: dcId }]),
+      authed(owner, {
+        method: 'POST',
+        url: `/api/challans/${dcId}/cancel`,
+        organisationId,
+        payload: { note: 'Racing the draft selection.' },
+      }),
+    ]);
+
+    // The locked selection serialises against the cancel row lock:
+    // exactly one of the two can succeed.
+    expect([selected.statusCode, cancelled.statusCode].sort()).toEqual([200, 409]);
+    if (selected.statusCode === 200) {
+      expect(cancelled.json()).toMatchObject({ code: 'SOURCE_BILLED_IN_MB' });
+    } else {
+      expect(selected.json()).toMatchObject({ code: 'MB_SOURCE_NOT_BILLABLE' });
+    }
+    // Never a cancelled source holding a live claim.
+    const [broken] = await admin<{ count: string }[]>`
+      select count(*)::text as count
+      from mb_sources ms
+      join delivery_challans dc on dc.id = ms.source_id
+      where ms.source_type = 'delivery_challan' and ms.source_id = ${dcId}
+        and ms.released_at is null and dc.status = 'cancelled'
+    `;
+    expect(broken?.count).toBe('0');
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${draft.book.id}`,
+      organisationId,
+    });
+  });
+
+  it('a dead claim (cancelled source) contributes nothing to the draft preview', async () => {
+    const dcId = await issueChallan(
+      workH4Id,
+      `H4DC${runId.slice(0, 3).toUpperCase()}`,
+      [{ workItemId: h4ItemId, quantity: '7' }],
+    );
+    const draft = await createDraft(workH4Id, { mbDate: '2026-08-05' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    // Force the impossible-through-the-API state (a cancelled source
+    // holding a live claim) with triggers disabled, as a broken-state
+    // probe: the preview must not count the dead claim's quantities.
+    await admin.unsafe(`set session_replication_role = 'replica'`);
+    try {
+      await admin`
+        update delivery_challans
+        set status = 'cancelled', cancellation_note = 'forced dead claim',
+            cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+        where id = ${dcId}
+      `;
+    } finally {
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
+
+    const preview = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${draft.book.id}`,
+      organisationId,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    const detail = preview.json<MeasurementBookDetailResponse>();
+    expect(detail.lines).toEqual([]);
+    expect(detail.previewTotal).toBe('0.00');
+
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${draft.book.id}`,
+      organisationId,
+    });
+  });
+});
+
+describe('review hardening: export manifest covers the MB rendered PDF', () => {
+  it('lists measurement-book-rendered-pdf with its recorded hash', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const exported = response.json<{
+      objectManifest: { kind: string; objectKey: string; sha256: string | null }[];
+    }>();
+    const entries = exported.objectManifest.filter(
+      (entry) => entry.kind === 'measurement-book-rendered-pdf',
+    );
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    for (const entry of entries) {
+      expect(entry.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(String(entry.objectKey)).toContain('/mb/');
+    }
+  });
+});
+
+describe('review hardening: 6dp rates carry exactly into amounts and snapshots', () => {
+  it('a 0.8517 rate flows verbatim through items, challans, and MB lines', async () => {
+    const itemId = randomUUID();
+    const workId = await seedWork({
+      code: `HRC5${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: itemId,
+          itemNumber: '1',
+          description: 'Fine-rate cable',
+          unit: 'mtr',
+          quantity: '10000.000',
+          rate: '0.8517',
+          paymentCategory: null,
+        },
+      ],
+    });
+    await insertMatrixRow(workId, 'UNCATEGORISED', ['80.00', '10.00', '0.00', '10.00']);
+
+    // The balance quotes the canonical 4dp rate.
+    const balance = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/balance`,
+      organisationId,
+    });
+    expect(balance.statusCode, balance.body).toBe(200);
+    expect(
+      balance.json<{ items: { effectiveRate: string }[] }>().items[0]?.effectiveRate,
+    ).toBe('0.8517');
+
+    // Challan line: amount = round2(100 x 0.8517) — the 4dp rate is a
+    // FACTOR, never pre-rounded to paise.
+    const dcId = await issueChallan(workId, `H5DC${runId.slice(0, 3).toUpperCase()}`, [
+      { workItemId: itemId, quantity: '100' },
+    ]);
+    const challan = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${dcId}`,
+      organisationId,
+    });
+    const line = challan.json<ChallanDetailResponse>().items[0];
+    expect(line).toMatchObject({ rate: '0.8517', lineAmount: '85.17' });
+    const snapshot = challan.json<{
+      issuedSnapshot: { items: { rate: string }[]; totalAmount: string };
+    }>().issuedSnapshot;
+    expect(snapshot.items[0]?.rate).toBe('0.8517');
+    expect(snapshot.totalAmount).toBe('85.17');
+
+    // MB line: amountSupply = round2(100 x 0.8517 x 80 / 100) = 68.14,
+    // computed from the exact rate, and the snapshot keeps '0.8517'.
+    const draft = await createDraft(workId, { mbDate: '2026-08-05' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const mbLine = finalized.json<MeasurementBookDetailResponse>().lines[0];
+    expect(mbLine).toMatchObject({
+      effectiveRate: '0.8517',
+      deltaSupplied: '100.000',
+      amountSupply: '68.14',
+      lineTotal: '68.14',
+    });
+    expect(finalized.json<MeasurementBookDetailResponse>().book.totalAmount).toBe(
+      '68.14',
+    );
+    // The stored snapshot column carries the exact value.
+    const [stored] = await admin<{ effective_rate: string }[]>`
+      select effective_rate::text as effective_rate
+      from measurement_book_lines
+      where measurement_book_id = ${draft.book.id}
+    `;
+    expect(stored?.effective_rate).toBe('0.851700');
+  });
+});

@@ -271,7 +271,13 @@ export async function buildApp(
       (request.method === 'POST' || request.method === 'PUT') &&
       (path === '/api/loa-documents' ||
         path === '/api/organisation/logo' ||
-        path.endsWith('/signed-copy'));
+        path.endsWith('/signed-copy') ||
+        // PAC scanned-certificate and extension railway-response uploads:
+        // both are 25MB PDF bodies that run the malware scan, so they
+        // carry the same per-address limit as every other scan-bearing
+        // upload.
+        (path.startsWith('/api/pac-certificates/') && path.endsWith('/document')) ||
+        path.endsWith('/response-document'));
     const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
     if (limiter !== null && !limiter.allow(request.ip)) {
       return reply.status(429).send(rateLimitedBody(request.id));

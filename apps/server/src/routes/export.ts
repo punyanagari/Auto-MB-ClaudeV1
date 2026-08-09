@@ -248,6 +248,57 @@ export function registerExportRoutes(
                 ]
               : [],
           ),
+          ...issueChallans.flatMap((challan) => [
+            ...(challan.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'issue-challan-rendered-pdf',
+                    objectKey: challan.rendered_object_key,
+                    sha256: challan.rendered_sha256 ?? null,
+                  },
+                ]
+              : []),
+            ...(challan.signed_copy_object_key !== null
+              ? [
+                  {
+                    kind: 'issue-challan-signed-copy',
+                    objectKey: challan.signed_copy_object_key,
+                    sha256: challan.signed_copy_sha256 ?? null,
+                  },
+                ]
+              : []),
+          ]),
+          ...extensionRequests.flatMap((extension) => [
+            ...(extension.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'extension-rendered-pdf',
+                    objectKey: extension.rendered_object_key,
+                    sha256: extension.rendered_sha256 ?? null,
+                  },
+                ]
+              : []),
+            ...(extension.response_object_key !== null
+              ? [
+                  {
+                    kind: 'extension-response-document',
+                    objectKey: extension.response_object_key,
+                    sha256: extension.response_sha256 ?? null,
+                  },
+                ]
+              : []),
+          ]),
+          ...measurementBooks.flatMap((book) =>
+            book.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'measurement-book-rendered-pdf',
+                    objectKey: book.rendered_object_key,
+                    sha256: book.rendered_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
         ];
 
         return {

@@ -46,6 +46,7 @@ import {
 } from '../mb-html.js';
 import { MB_REMARK_TEMPLATE_VERSION } from '../mb-remark.js';
 import { loadPaymentMatrix } from '../payment-matrix.js';
+import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -228,7 +229,10 @@ interface ItemInputRow {
  * billed quantities (SUM of deltas over other FINALIZED MBs' lines —
  * cancelled MBs excluded), and the Work-lifetime delivered/installed
  * aggregates for the final-bill base. All sums run in exact SQL
- * numeric arithmetic.
+ * numeric arithmetic. The delta joins filter on the source's billable
+ * status, so a dead claim (source cancelled while selected on a draft
+ * in a write-skew race) contributes nothing to the preview; finalize
+ * revalidates the locked sources, for which the filter is a no-op.
  */
 async function loadItemInputs(
   tx: TransactionSql,
@@ -252,6 +256,7 @@ async function loadItemInputs(
     cross join lateral (
       select coalesce(sum(dci.quantity), 0)::numeric(18,3) as total
       from mb_sources ms
+      join delivery_challans dc on dc.id = ms.source_id and dc.status = 'issued'
       join delivery_challan_items dci on dci.delivery_challan_id = ms.source_id
       where ms.measurement_book_id = ${bookId}
         and ms.source_type = 'delivery_challan'
@@ -260,7 +265,7 @@ async function loadItemInputs(
     cross join lateral (
       select coalesce(sum(i.quantity), 0)::numeric(18,3) as total
       from mb_sources ms
-      join installations i on i.id = ms.source_id
+      join installations i on i.id = ms.source_id and i.status = 'recorded'
       where ms.measurement_book_id = ${bookId}
         and ms.source_type = 'installation'
         and i.work_item_id = wi.id
@@ -268,6 +273,7 @@ async function loadItemInputs(
     cross join lateral (
       select coalesce(sum(pci.certified_quantity), 0)::numeric(18,3) as total
       from mb_sources ms
+      join pac_certificates pc on pc.id = ms.source_id and pc.status = 'recorded'
       join pac_certificate_items pci on pci.pac_certificate_id = ms.source_id
       where ms.measurement_book_id = ${bookId}
         and ms.source_type = 'pac_certificate'
@@ -304,7 +310,7 @@ async function loadItemInputs(
     description: row.description,
     unitCode: row.unit_code,
     paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
-    effectiveRate: row.effective_rate,
+    effectiveRate: canonicalRateText(row.effective_rate),
     deltaSupplied: row.delta_supplied,
     deltaInstalled: row.delta_installed,
     deltaPac: row.delta_pac,
@@ -427,7 +433,7 @@ async function readStoredLines(
     pctInstallation: row.pct_installation,
     pctPac: row.pct_pac,
     pctFinalBill: row.pct_final_bill,
-    effectiveRate: row.effective_rate,
+    effectiveRate: canonicalRateText(row.effective_rate),
     deltaSupplied: row.delta_supplied,
     deltaInstalled: row.delta_installed,
     deltaPac: row.delta_pac,
@@ -487,15 +493,20 @@ const SOURCE_LABELS: Record<MbSourceType, string> = {
  * App half of R19 (shared with the challan/installation/PAC cancel
  * routes): refuses when the source is claimed by a LIVE (unreleased)
  * Measurement Book. The 0024 database guards backstop this against
- * every writer.
+ * every writer. The remedy branches on the holding MB's status: a
+ * DRAFT holder has billed nothing and cannot be cancelled (drafts are
+ * deleted), so the followable remedy is deselecting the source or
+ * deleting the draft.
  */
 export async function assertSourceNotBilled(
   tx: TransactionSql,
   sourceType: MbSourceType,
   sourceId: string,
 ): Promise<void> {
-  const [claim] = await tx<{ measurement_book_id: string; mb_number: string | null }[]>`
-    select ms.measurement_book_id, mb.mb_number
+  const [claim] = await tx<
+    { measurement_book_id: string; mb_number: string | null; status: string }[]
+  >`
+    select ms.measurement_book_id, mb.mb_number, mb.status
     from mb_sources ms
     join measurement_books mb on mb.id = ms.measurement_book_id
     where ms.source_type = ${sourceType} and ms.source_id = ${sourceId}
@@ -508,12 +519,11 @@ export async function assertSourceNotBilled(
       holdingMeasurementBookId: claim.measurement_book_id,
       holdingMbNumber: claim.mb_number,
     };
-    throw httpError(
-      409,
-      'SOURCE_BILLED_IN_MB',
-      `This ${SOURCE_LABELS[sourceType]} is billed in Measurement Book ${claim.mb_number ?? claim.measurement_book_id}; cancel that Measurement Book first.`,
-      details,
-    );
+    const message =
+      claim.status === 'draft'
+        ? `This ${SOURCE_LABELS[sourceType]} is selected on draft Measurement Book ${claim.measurement_book_id}; remove it from the draft's source selection (or delete the draft) first.`
+        : `This ${SOURCE_LABELS[sourceType]} is billed in Measurement Book ${claim.mb_number ?? claim.measurement_book_id}; cancel that Measurement Book first.`;
+    throw httpError(409, 'SOURCE_BILLED_IN_MB', message, details);
   }
 }
 
@@ -1106,7 +1116,11 @@ export function registerMeasurementBookRoutes(
             'Sources are selected while the Measurement Book is draft.',
           );
         }
-        await validateSources(tx, book.work_id, body.sources, false);
+        // lock=true: row-locking the selected sources serialises the
+        // selection against the source cancel routes' FOR UPDATE locks
+        // (same single-type lock order finalize uses), closing the
+        // write-skew where a source is cancelled and claimed at once.
+        await validateSources(tx, book.work_id, body.sources, true);
         await assertSourcesUnclaimed(tx, id, body.sources);
         await tx`
           delete from mb_sources where measurement_book_id = ${id}
@@ -1442,6 +1456,20 @@ export function registerMeasurementBookRoutes(
             'This Measurement Book is already cancelled.',
           );
         }
+        // The Work row lock serialises cancel against a concurrent
+        // finalize of the same Work's draft (finalize holds this lock
+        // for its prior-cumulative reads and numbering). Lock order
+        // matches finalize — own MB row first, then the works row — so
+        // the two transactions cannot deadlock, and the newest/billed
+        // checks below always run against committed finalize state.
+        // The 0027 guard_measurement_book_update backstops both checks
+        // in the database against every writer.
+        const [workRow] = await tx<{ id: string }[]>`
+          select id from works
+          where id = ${book.work_id} and deleted_at is null
+          for update
+        `;
+        if (!workRow) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         // Only the newest live MB may be cancelled (deltas must stay
         // coherent, spec §5.9).
         const [newer] = await tx<{ id: string; mb_number: string | null }[]>`

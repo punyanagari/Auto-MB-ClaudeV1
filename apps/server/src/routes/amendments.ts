@@ -40,6 +40,7 @@ import {
 } from '../corrections-apply.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
@@ -290,7 +291,7 @@ export async function applyApproval(
           else effective_quantity end,
         effective_unit_rate = case
           when ${changes.rate !== undefined}
-          then ${changes.rate ?? null}::numeric(18,2)
+          then ${changes.rate ?? null}::numeric(18,6)
           else effective_unit_rate end,
         effective_description = case
           when ${changes.description !== undefined}
@@ -474,14 +475,14 @@ export function registerAmendmentRoutes(
             { quantity: string | null; rate: string | null }[]
           >`
             select ${body.changes.quantity ?? null}::numeric(18,3)::text as quantity,
-                   ${body.changes.rate ?? null}::numeric(18,2)::text as rate
+                   ${body.changes.rate ?? null}::numeric(18,6)::text as rate
           `;
           const changes: ChangeSet = {
             ...(body.changes.quantity !== undefined && normalised?.quantity != null
               ? { quantity: normalised.quantity }
               : {}),
             ...(body.changes.rate !== undefined && normalised?.rate != null
-              ? { rate: normalised.rate }
+              ? { rate: canonicalRateText(normalised.rate) }
               : {}),
             ...(body.changes.description !== undefined
               ? { description: body.changes.description }
@@ -499,7 +500,7 @@ export function registerAmendmentRoutes(
           if (changes.rate !== undefined) {
             diff.push({
               field: 'rate',
-              before: item.current_rate,
+              before: canonicalRateText(item.current_rate),
               after: changes.rate,
             });
           }
@@ -639,7 +640,7 @@ export function registerAmendmentRoutes(
           }
           const [normalised] = await tx<{ quantity: string; rate: string }[]>`
             select ${body.quantity}::numeric(18,3)::text as quantity,
-                   ${body.rate}::numeric(18,2)::text as rate
+                   ${body.rate}::numeric(18,6)::text as rate
           `;
           if (!normalised) throw new Error('normalisation returned no row');
           const proposed: ProposedSnapshot = {
@@ -649,14 +650,14 @@ export function registerAmendmentRoutes(
             description: body.description,
             unitCode: body.unitCode,
             quantity: normalised.quantity,
-            rate: normalised.rate,
+            rate: canonicalRateText(normalised.rate),
           };
           const diff: AmendmentDiffEntry[] = [
             { field: 'item', before: null, after: body.itemNumber },
             { field: 'description', before: null, after: body.description },
             { field: 'unit', before: null, after: body.unitCode },
             { field: 'quantity', before: null, after: normalised.quantity },
-            { field: 'rate', before: null, after: normalised.rate },
+            { field: 'rate', before: null, after: canonicalRateText(normalised.rate) },
           ];
           const [created] = await tx<
             { id: string; entity_id: string | null; work_id: string }[]

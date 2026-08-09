@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DecimalStringSchema, UuidSchema } from './primitives.js';
+import { DecimalStringSchema, RateStringSchema, UuidSchema } from './primitives.js';
 
 // --- Approval engine (first consumer: work-item amendments) ----------------
 
@@ -26,7 +26,7 @@ export type ApprovalEntityType = Static<typeof ApprovalEntityTypeSchema>;
 export const AmendmentChangesSchema = Type.Object(
   {
     quantity: Type.Optional(DecimalStringSchema),
-    rate: Type.Optional(DecimalStringSchema),
+    rate: Type.Optional(RateStringSchema),
     description: Type.Optional(Type.String({ minLength: 3, maxLength: 4000 })),
     unit: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   },
@@ -55,7 +55,7 @@ export const ProposeAddItemRequestSchema = Type.Object(
     description: Type.String({ minLength: 3, maxLength: 4000 }),
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     quantity: DecimalStringSchema,
-    rate: DecimalStringSchema,
+    rate: RateStringSchema,
   },
   { additionalProperties: false },
 );

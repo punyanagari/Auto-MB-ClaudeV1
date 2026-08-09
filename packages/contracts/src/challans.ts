@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  RateStringSchema,
+  UuidSchema,
+} from './primitives.js';
 
 export const ChallanStatusSchema = Type.Union([
   Type.Literal('draft'),
@@ -55,7 +60,7 @@ export const ChallanItemSchema = Type.Object(
     description: Type.String(),
     unit: Type.String(),
     quantity: DecimalStringSchema,
-    rate: DecimalStringSchema,
+    rate: RateStringSchema,
     lineAmount: DecimalStringSchema,
     position: Type.Integer({ minimum: 1 }),
   },
@@ -126,7 +131,7 @@ export const WorkBalanceItemSchema = Type.Object(
       description:
         'COALESCE(effective, awarded) − delivered as exact decimal text; negative only when excess delivery was allowed.',
     }),
-    effectiveRate: DecimalStringSchema,
+    effectiveRate: RateStringSchema,
   },
   { additionalProperties: false },
 );

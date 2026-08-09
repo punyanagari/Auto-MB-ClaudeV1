@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  RateStringSchema,
+  UuidSchema,
+} from './primitives.js';
 import { WorkItemPaymentCategorySchema } from './payment.js';
 
 /**
@@ -131,7 +136,7 @@ export const MeasurementBookLineSchema = Type.Object(
     pctInstallation: DecimalStringSchema,
     pctPac: DecimalStringSchema,
     pctFinalBill: DecimalStringSchema,
-    effectiveRate: DecimalStringSchema,
+    effectiveRate: RateStringSchema,
     deltaSupplied: DecimalStringSchema,
     deltaInstalled: DecimalStringSchema,
     deltaPac: DecimalStringSchema,
