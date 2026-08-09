@@ -486,7 +486,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v3');
+    expect(exported.formatVersion).toBe('export-v4');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -501,6 +501,12 @@ describe('export completeness', () => {
     // This fixture seeds Works directly, so the manifest may hold no
     // uploads — its presence and shape are the contract here.
     expect(Array.isArray(exported.objectManifest)).toBe(true);
+    // export-v4: the Milestone 7 records — installations with their
+    // serial attachments, the approval ledger, and correction notices.
+    expect(Array.isArray(exported.installations)).toBe(true);
+    expect(Array.isArray(exported.installationSerials)).toBe(true);
+    expect(Array.isArray(exported.approvalRequests)).toBe(true);
+    expect(Array.isArray(exported.correctionNotices)).toBe(true);
   });
 });
 
