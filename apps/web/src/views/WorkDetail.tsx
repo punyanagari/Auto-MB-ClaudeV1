@@ -661,7 +661,7 @@ export function WorkDetail({
                         type="button"
                         className="button--ghost"
                         role="switch"
-                        aria-checked={item.requiresSerials}
+                        aria-checked={item.requiresSerials === true}
                         aria-label={`Serial tracking for ${item.itemNumber}`}
                         disabled={pending}
                         onClick={() =>
