@@ -513,6 +513,25 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route(`**/api/works/${WORK_ID}/correction-notices`, (route) =>
     route.fulfill(json({ notices: [] })),
   );
+  await page.route(`**/api/works/${WORK_ID}/payment-matrix`, (route) =>
+    route.fulfill(
+      json({
+        rows: [
+          {
+            id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            workId: WORK_ID,
+            category: 'SUPPLY',
+            pctSupply: '80.00',
+            pctInstallation: '10.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+            createdAt: '2026-08-09T00:00:00.000Z',
+            updatedAt: '2026-08-09T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
   await page.route(`**/api/challans/${CHALLAN_ID}/correction-eligibility`, (route) =>
     route.fulfill(
       json({
@@ -548,6 +567,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     page.getByRole('heading', { name: 'Record installation' }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
+  // Milestone 8: the payment matrix editor with its R10 note.
+  await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
+  await expect(page.getByLabel('Supply % for Supply')).toHaveValue('80.00');
+  await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 
   await page.getByRole('button', { name: 'DC/1' }).click();

@@ -15,6 +15,7 @@ import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Installations } from '../src/views/Installations.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
+import { PaymentMatrix } from '../src/views/PaymentMatrix.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SerialLookup } from '../src/views/SerialLookup.js';
 import { SignIn } from '../src/views/SignIn.js';
@@ -143,6 +144,10 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderCorrectionNotice: vi.fn(),
     cancelCorrectionNotice: vi.fn(),
     downloadCorrectionNoticePdf: vi.fn(),
+    getPaymentMatrix: vi.fn().mockResolvedValue([]),
+    upsertPaymentMatrixRow: vi.fn(),
+    deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
+    setWorkItemPaymentCategory: vi.fn(),
     ...overrides,
   };
 }
@@ -3349,5 +3354,261 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(await screen.findByText('Challan cancel & replace')).toBeTruthy();
     expect(screen.getByText('· DC/1')).toBeTruthy();
     expect(screen.getByText('A/1 ×3.000')).toBeTruthy();
+  });
+});
+
+describe('PaymentMatrix', () => {
+  const MATRIX_ITEM = {
+    id: ITEM_A,
+    scheduleId: '77777777-7777-4777-8777-777777777777',
+    itemNumber: 'A/1',
+    description: 'Main switchboard',
+    unitCode: 'Nos',
+    awardedQuantity: '5.000',
+    effectiveRate: '100.00',
+    requiresSerials: false,
+    paymentCategory: null,
+  };
+  const SUPPLY_ROW = {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    workId: WORK_ID,
+    category: 'SUPPLY' as const,
+    pctSupply: '80.00',
+    pctInstallation: '10.00',
+    pctPac: '0.00',
+    pctFinalBill: '10.00',
+    createdAt: '2026-08-09T00:00:00.000Z',
+    updatedAt: '2026-08-09T00:00:00.000Z',
+  };
+
+  it('shows saved rows, states the R10 rule, and saves an edited row', async () => {
+    const upsertPaymentMatrixRow = vi.fn().mockResolvedValue({
+      ...SUPPLY_ROW,
+      pctSupply: '70.00',
+      pctFinalBill: '20.00',
+    });
+    const api = stubApi({
+      getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]),
+      upsertPaymentMatrixRow,
+    });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[MATRIX_ITEM]}
+        canModify
+        onItemCategoryChanged={vi.fn()}
+      />,
+    );
+
+    const supplyInput =
+      await screen.findByLabelText<HTMLInputElement>('Supply % for Supply');
+    expect(supplyInput.value).toBe('80.00');
+    // Percentages are per category, never per item — the settled R10 note.
+    expect(screen.getByText(/never per item/)).toBeTruthy();
+    expect(screen.getByText(/settled decision R10/)).toBeTruthy();
+
+    fireEvent.change(supplyInput, { target: { value: '70.00' } });
+    fireEvent.change(screen.getByLabelText('Final bill % for Supply'), {
+      target: { value: '20.00' },
+    });
+    const saveButtons = screen.getAllByRole('button', { name: 'Save' });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+    await waitFor(() => {
+      expect(upsertPaymentMatrixRow).toHaveBeenCalledWith(ORG_ID, WORK_ID, 'SUPPLY', {
+        pctSupply: '70.00',
+        pctInstallation: '10.00',
+        pctPac: '0.00',
+        pctFinalBill: '20.00',
+      });
+    });
+    expect((await screen.findByRole('status')).textContent).toContain(
+      'Percentages saved',
+    );
+  });
+
+  it('flags a sum that is not exactly 100 inline and disables the save', async () => {
+    const upsertPaymentMatrixRow = vi.fn();
+    const api = stubApi({
+      getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]),
+      upsertPaymentMatrixRow,
+    });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        canModify
+        onItemCategoryChanged={vi.fn()}
+      />,
+    );
+    const supplyInput = await screen.findByLabelText('Supply % for Supply');
+    fireEvent.change(supplyInput, { target: { value: '75.00' } });
+    const alerts = await screen.findAllByRole('alert');
+    expect(
+      alerts.some((alert) =>
+        (alert.textContent ?? '').includes('must sum to exactly 100'),
+      ),
+    ).toBe(true);
+    const saveButtons = screen.getAllByRole('button', { name: 'Save' });
+    expect((saveButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    expect(upsertPaymentMatrixRow).not.toHaveBeenCalled();
+  });
+
+  it('removes a configured row', async () => {
+    const deletePaymentMatrixRow = vi.fn().mockResolvedValue(undefined);
+    const api = stubApi({
+      getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]),
+      deletePaymentMatrixRow,
+    });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        canModify
+        onItemCategoryChanged={vi.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    await waitFor(() => {
+      expect(deletePaymentMatrixRow).toHaveBeenCalledWith(ORG_ID, WORK_ID, 'SUPPLY');
+    });
+    expect((await screen.findByRole('status')).textContent).toContain('row removed');
+  });
+
+  it('sets an item payment category and reports it to the parent', async () => {
+    const setWorkItemPaymentCategory = vi.fn().mockResolvedValue({
+      id: ITEM_A,
+      itemNumber: 'A/1',
+      paymentCategory: 'SUPPLY',
+    });
+    const onItemCategoryChanged = vi.fn();
+    const api = stubApi({
+      getPaymentMatrix: vi.fn().mockResolvedValue([]),
+      setWorkItemPaymentCategory,
+    });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[MATRIX_ITEM]}
+        canModify
+        onItemCategoryChanged={onItemCategoryChanged}
+      />,
+    );
+    fireEvent.change(await screen.findByLabelText('Payment category for A/1'), {
+      target: { value: 'SUPPLY' },
+    });
+    await waitFor(() => {
+      expect(setWorkItemPaymentCategory).toHaveBeenCalledWith(ORG_ID, ITEM_A, 'SUPPLY');
+    });
+    expect(onItemCategoryChanged).toHaveBeenCalledWith(ITEM_A, 'SUPPLY');
+  });
+
+  it('renders read-only percentages and categories for viewers', async () => {
+    const api = stubApi({
+      getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]),
+    });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[{ ...MATRIX_ITEM, paymentCategory: 'SUPPLY' as const }]}
+        canModify={false}
+        onItemCategoryChanged={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('80.00')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.queryByLabelText('Payment category for A/1')).toBeNull();
+    expect(screen.getAllByText('Supply').length).toBeGreaterThan(0);
+  });
+});
+
+describe('ReviewLoa payment categories', () => {
+  it('sends the reviewer-selected category and omits it when uncategorised', async () => {
+    const confirmLoa = vi
+      .fn()
+      .mockResolvedValue({ work: { id: WORK_ID }, schedules: [] });
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      confirmLoa,
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const categorySelect = await screen.findByLabelText<HTMLSelectElement>(
+      'Payment category for row 1 in schedule A',
+    );
+    expect(categorySelect.value).toBe('');
+    fireEvent.change(categorySelect, { target: { value: 'SUPPLY_AND_INSTALLATION' } });
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL270-CAT' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect(requestArg.schedules[0]?.items[0]?.paymentCategory).toBe(
+      'SUPPLY_AND_INSTALLATION',
+    );
+  });
+
+  it('omits the field entirely when the reviewer leaves an item uncategorised', async () => {
+    const confirmLoa = vi
+      .fn()
+      .mockResolvedValue({ work: { id: WORK_ID }, schedules: [] });
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      confirmLoa,
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const categorySelect = await screen.findByLabelText<HTMLSelectElement>(
+      'Payment category for row 1 in schedule A',
+    );
+    expect(categorySelect.value).toBe('');
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL270-UNC' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    const [, , requestArg] = confirmLoa.mock.calls[0] as [
+      string,
+      string,
+      ConfirmWorkRequest,
+    ];
+    expect('paymentCategory' in (requestArg.schedules[0]?.items[0] ?? {})).toBe(false);
   });
 });

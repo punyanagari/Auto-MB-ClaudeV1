@@ -135,6 +135,9 @@ export function registerExportRoutes(
           `,
           ['snapshot'],
         );
+        const paymentMatrices = await tx<Record<string, unknown>[]>`
+          select * from payment_matrices order by work_id, category
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -225,6 +228,7 @@ export function registerExportRoutes(
           installationSerials,
           approvalRequests,
           correctionNotices,
+          paymentMatrices,
           objectManifest,
           auditEvents,
         };

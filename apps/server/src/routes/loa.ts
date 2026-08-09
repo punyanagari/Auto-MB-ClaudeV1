@@ -623,13 +623,13 @@ export function registerLoaRoutes(
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
                   description, unit_code, awarded_quantity, effective_rate,
-                  source_evidence
+                  payment_category, source_evidence
                 )
                 values (
                   ${organisationId}, ${work.id}, ${scheduleRow.id},
                   ${item.itemNumber}, ${item.description}, ${item.unitCode},
                   ${item.awardedQuantity}, ${item.effectiveRate},
-                  ${jsonb(tx, evidence)}
+                  ${item.paymentCategory ?? null}, ${jsonb(tx, evidence)}
                 )
                 returning id
               `;
@@ -646,6 +646,10 @@ export function registerLoaRoutes(
                 // confirmation, once the contractor knows which items
                 // ship serialised equipment.
                 requiresSerials: false,
+                // Milestone 8: reviewer-set at confirmation (the parser
+                // never proposes it); editable later via the payment
+                // category route.
+                paymentCategory: item.paymentCategory ?? null,
               });
             }
             schedules.push({
@@ -681,6 +685,13 @@ export function registerLoaRoutes(
                   (total, schedule) =>
                     total +
                     schedule.items.filter((item) => item.manualEntry === true).length,
+                  0,
+                ),
+                categorisedItemCount: body.schedules.reduce(
+                  (total, schedule) =>
+                    total +
+                    schedule.items.filter((item) => item.paymentCategory !== undefined)
+                      .length,
                   0,
                 ),
                 pbgRequirement:
@@ -845,6 +856,12 @@ export function registerLoaRoutes(
             effective_unit: string | null;
             amendment_added: boolean;
             requires_serials: boolean;
+            payment_category:
+              | 'SUPPLY'
+              | 'SUPPLY_AND_INSTALLATION'
+              | 'PURE_INSTALLATION'
+              | 'SPARE_SUPPLY'
+              | null;
             installed_quantity: string;
           }[]
         >`
@@ -853,7 +870,7 @@ export function registerLoaRoutes(
                  effective_quantity::text as effective_quantity,
                  effective_unit_rate::text as effective_unit_rate,
                  effective_description, effective_unit, amendment_added,
-                 requires_serials,
+                 requires_serials, payment_category,
                  -- Milestone 7: the authoritative installed quantity —
                  -- SUM over non-cancelled installation records.
                  coalesce((
@@ -888,6 +905,9 @@ export function registerLoaRoutes(
               amendmentAdded: item.amendment_added,
               requiresSerials: item.requires_serials,
               installedQuantity: item.installed_quantity,
+              // Milestone 8: null = uncategorised (resolves through the
+              // Work's UNCATEGORISED matrix row).
+              paymentCategory: item.payment_category,
             })),
         }));
         return {

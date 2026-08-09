@@ -60,6 +60,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // disappear; the counter is numbering state (0019).
   correction_notices: 'SELECT, INSERT, UPDATE',
   correction_notice_counters: 'SELECT, INSERT, UPDATE',
+  // Payment matrix rows are per-Work payment configuration, not issued
+  // documents: finalised MBs snapshot their percentages, so deleting a
+  // row for an unused category is legitimate (0021).
+  payment_matrices: 'SELECT, INSERT, UPDATE, DELETE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
