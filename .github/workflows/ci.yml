@@ -284,7 +284,9 @@ jobs:
           DATABASE_ADMIN_URL="$FRESH_ADMIN_URL" \
             pnpm --filter @auto-mb/db exec tsx src/bootstrap.ts --roles-only
           # 2. The restore itself, with the real script.
-          backup_dir=$(ls -d /tmp/backups/*)
+          # Directories only: the backup script also writes the last-success
+          # marker FILE beside the timestamped directory (backup-age gauge).
+          backup_dir=$(ls -d /tmp/backups/*/)
           RESTORE_DATABASE_URL="$FRESH_ADMIN_URL" \
             RESTORE_OBJECT_STORAGE_DIR=/tmp/restored-objects \
             bash scripts/restore.sh "$backup_dir"

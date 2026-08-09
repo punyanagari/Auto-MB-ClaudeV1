@@ -325,6 +325,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
                 unitCode: 'Nos',
                 awardedQuantity: '5.000',
                 effectiveRate: '100.00',
+                requiresSerials: false,
               },
             ],
           },
@@ -582,6 +583,23 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route(`**/api/works/${WORK_ID}/correction-notices`, (route) =>
     route.fulfill(json({ notices: [] })),
   );
+  await page.route(`**/api/works/${WORK_ID}/amendments`, (route) =>
+    route.fulfill(json({ approvals: [] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/issue-challans`, (route) =>
+    route.fulfill(json({ issueChallans: [] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/completion`, (route) =>
+    route.fulfill(
+      json({
+        completion: { originalCompletionDate: null, currentCompletionDate: null },
+        extensionRequests: [],
+      }),
+    ),
+  );
+  await page.route('**/api/approvals*', (route) =>
+    route.fulfill(json({ approvals: [] })),
+  );
   await page.route(`**/api/works/${WORK_ID}/payment-matrix`, (route) =>
     route.fulfill(
       json({
@@ -653,7 +671,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Contract instruments' }),
   ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Measurement Book' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Measurement Book', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
@@ -664,12 +684,14 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   // Milestone 8: the payment matrix editor with its R10 note.
   await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
-  await expect(page.getByLabel('Supply % for Supply')).toHaveValue('80.00');
+  await expect(page.getByLabel('Supply % for Supply', { exact: true })).toHaveValue(
+    '80.00',
+  );
   await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
   // Milestone 8 phase 3: the Measurement Book workspace with its list.
   await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
-  await expect(page.getByText('FINAL BILL')).toBeVisible();
+  await expect(page.getByText('FINAL BILL', { exact: true })).toBeVisible();
   // R8 completion panel: the labelled note field is the only control that
   // can close the contract, and it rides the same axe scan.
   await expect(page.getByRole('heading', { name: 'Completion status' })).toBeVisible();
