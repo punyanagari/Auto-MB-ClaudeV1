@@ -416,6 +416,54 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  await page.route(`**/api/works/${WORK_ID}/installations`, (route) =>
+    route.fulfill(
+      json({
+        installations: [
+          {
+            id: '99999999-9999-4999-8999-999999999999',
+            workId: WORK_ID,
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            quantity: '1.000',
+            installedOn: '2026-08-03',
+            locationId: '66666666-6666-4666-8666-666666666666',
+            locationName: 'Nashik Road station',
+            remarks: null,
+            status: 'recorded',
+            cancellationNote: null,
+            serials: [
+              {
+                serialId: '88888888-8888-4888-8888-888888888888',
+                serialNumber: 'SN-001',
+                challanNumber: 'DC/1',
+              },
+            ],
+            createdAt: '2026-08-03T00:00:00.000Z',
+            cancelledAt: null,
+          },
+        ],
+        itemSummaries: [
+          { workItemId: ITEM_ID, itemNumber: 'A/1', installedQuantity: '1.000' },
+        ],
+      }),
+    ),
+  );
+  await page.route('**/api/masters/locations', (route) =>
+    route.fulfill(
+      json({
+        locations: [
+          {
+            id: '66666666-6666-4666-8666-666666666666',
+            name: 'Nashik Road station',
+            kind: 'station',
+            active: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
   await page.route(`**/api/challans/${CHALLAN_ID}`, (route) =>
     route.fulfill(
       json({
@@ -474,6 +522,12 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Measurement Book' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Installations', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Record installation' }),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 

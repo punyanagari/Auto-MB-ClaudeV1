@@ -1,0 +1,987 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { FastifyInstance, InjectOptions } from 'fastify';
+import type {
+  ChallanDetailResponse,
+  Installation,
+  InstallationListResponse,
+  LocationMaster,
+  Serial,
+  SerialSearchResponse,
+  TimelineResponse,
+  WorkDetailResponse,
+} from '@auto-mb/contracts';
+import type { Sql } from '@auto-mb/db';
+import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { buildApp } from '../src/app.js';
+
+/**
+ * Quantity-level installation records (Milestone 7, legacy §5.4 and rules
+ * R5/R6/R11): caps in exact SQL arithmetic under row locks, atomic serial
+ * attachment, snapshot-on-use locations with inline creation, cancel-with-
+ * note releasing serials, and the audit/timeline/export surfaces.
+ */
+
+const adminUrl =
+  process.env.DATABASE_ADMIN_URL ??
+  'postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb';
+const appUrl =
+  process.env.DATABASE_URL ??
+  'postgres://auto_mb_app:local-app-change-me@127.0.0.1:5432/auto_mb';
+const appPassword = process.env.AUTO_MB_APP_DB_PASSWORD ?? 'local-app-change-me';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDirectory = path.resolve(
+  here,
+  '..',
+  '..',
+  '..',
+  'packages',
+  'db',
+  'migrations',
+);
+
+const runId = randomBytes(5).toString('hex');
+const ownerEmail = `inst-owner-${runId}@integration.test`;
+const siteEmail = `inst-site-${runId}@integration.test`;
+const viewerEmail = `inst-viewer-${runId}@integration.test`;
+const outsiderEmail = `inst-outsider-${runId}@integration.test`;
+const password = `integration-password-${runId}`;
+
+let admin: Sql;
+let app: FastifyInstance;
+let storageDir: string;
+let organisationId: string;
+let outsiderOrganisationId: string;
+let ownerUserId: string;
+let workId: string;
+let itemAId: string; // plain quantity item, awarded 10.000
+let itemBId: string; // plain quantity item, awarded 2.000 (cap fixture)
+let itemCId: string; // requires_serials, awarded 5.000, delivered 3.000
+let issuedChallanId: string;
+let stationLocationId: string;
+let serialByNumber: Map<string, Serial>;
+
+interface CookieJar {
+  cookie: string;
+}
+let owner: CookieJar;
+let site: CookieJar;
+let viewer: CookieJar;
+let outsider: CookieJar;
+
+function extractCookies(setCookie: string | string[] | undefined): string {
+  const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
+  return raw.map((entry) => entry.split(';')[0] ?? '').join('; ');
+}
+
+async function signUp(email: string, name: string): Promise<CookieJar> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/sign-up/email',
+    payload: { email, password, name },
+  });
+  expect(response.statusCode, `sign-up ${email}: ${response.body}`).toBe(200);
+  return { cookie: extractCookies(response.headers['set-cookie']) };
+}
+
+async function authed(
+  jar: CookieJar,
+  options: InjectOptions & { organisationId?: string },
+) {
+  const { organisationId: org, ...rest } = options;
+  return app.inject({
+    ...rest,
+    headers: {
+      ...(rest.headers ?? {}),
+      cookie: jar.cookie,
+      ...(org !== undefined ? { 'x-organisation-id': org } : {}),
+    },
+  });
+}
+
+async function refreshSerials(): Promise<void> {
+  const response = await authed(owner, {
+    method: 'GET',
+    url: `/api/works/${workId}/serials`,
+    organisationId,
+  });
+  expect(response.statusCode, response.body).toBe(200);
+  const { serials } = response.json<{ serials: Serial[] }>();
+  serialByNumber = new Map(serials.map((serial) => [serial.serialNumber, serial]));
+}
+
+function serialId(serialNumber: string): string {
+  const serial = serialByNumber.get(serialNumber);
+  if (!serial) throw new Error(`serial ${serialNumber} missing from fixture`);
+  return serial.id;
+}
+
+async function record(
+  jar: CookieJar,
+  payload: Record<string, unknown>,
+  organisation = organisationId,
+) {
+  return authed(jar, {
+    method: 'POST',
+    url: `/api/works/${workId}/installations`,
+    organisationId: organisation,
+    payload,
+  });
+}
+
+async function listInstallations(): Promise<InstallationListResponse> {
+  const response = await authed(owner, {
+    method: 'GET',
+    url: `/api/works/${workId}/installations`,
+    organisationId,
+  });
+  expect(response.statusCode, response.body).toBe(200);
+  return response.json<InstallationListResponse>();
+}
+
+function summaryOf(
+  list: InstallationListResponse,
+  workItemId: string,
+): string | undefined {
+  return list.itemSummaries.find((summary) => summary.workItemId === workItemId)
+    ?.installedQuantity;
+}
+
+beforeAll(async () => {
+  admin = createDatabasePool({
+    url: adminUrl,
+    max: 1,
+    applicationName: 'auto-mb-installations-admin',
+  });
+  try {
+    await admin`select 1 as ready`;
+  } catch (error) {
+    throw new Error(
+      'PostgreSQL is not reachable for the installation integration tests. ' +
+        `Start it with \`docker compose up -d postgres\`. Underlying error: ${String(error)}`,
+    );
+  }
+
+  const escapedPassword = appPassword.replaceAll("'", "''");
+  await admin.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
+        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+      END IF;
+    END
+    $$;
+  `);
+  await runMigrations(admin, migrationsDirectory);
+
+  storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-inst-objects-'));
+  app = await buildApp({
+    databaseUrl: appUrl,
+    authSecret: `integration-secret-${'0'.repeat(32)}`,
+    baseUrl: 'http://127.0.0.1:3000',
+    objectStorageDir: storageDir,
+  });
+
+  owner = await signUp(ownerEmail, 'INST Owner');
+  site = await signUp(siteEmail, 'INST Site');
+  viewer = await signUp(viewerEmail, 'INST Viewer');
+  outsider = await signUp(outsiderEmail, 'INST Outsider');
+
+  const created = await authed(owner, {
+    method: 'POST',
+    url: '/api/organisations',
+    payload: { name: 'INST Constructions', slug: `inst-org-${runId}` },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  organisationId = created.json<{ id: string }>().id;
+
+  const foreign = await authed(outsider, {
+    method: 'POST',
+    url: '/api/organisations',
+    payload: { name: 'INST Outsiders', slug: `inst-out-${runId}` },
+  });
+  expect(foreign.statusCode, foreign.body).toBe(201);
+  outsiderOrganisationId = foreign.json<{ id: string }>().id;
+
+  for (const [email, role] of [
+    [siteEmail, 'site'],
+    [viewerEmail, 'viewer'],
+  ] as const) {
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email, role },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+  }
+
+  const [ownerUser] = await admin<{ id: string }[]>`
+    select "id" from auth_users where "email" = ${ownerEmail}
+  `;
+  if (!ownerUser) throw new Error('owner user missing');
+  ownerUserId = ownerUser.id;
+  await admin`
+    update organisation_memberships
+    set can_issue_documents = true, can_cancel_documents = true
+    where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+  `;
+
+  workId = randomUUID();
+  const scheduleId = randomUUID();
+  itemAId = randomUUID();
+  itemBId = randomUUID();
+  itemCId = randomUUID();
+  await admin`
+    insert into works (
+      id, organisation_id, work_code, letter_number, letter_date, title,
+      advertised_value, contract_value, pricing_shape, created_by_user_id
+    )
+    values (
+      ${workId}, ${organisationId}, ${`INSTW-${runId.toUpperCase()}`},
+      ${`inst-letter-${runId}`}, '2025-06-01', 'Installation fixture work',
+      2000.00, 1800.00, 'per_schedule', ${ownerUserId}
+    )
+  `;
+  await admin`
+    insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+    values (${scheduleId}, ${organisationId}, ${workId}, 'A', 'Schedule A', 1)
+  `;
+  await admin`
+    insert into work_items (
+      id, organisation_id, work_id, schedule_id, item_number, description,
+      unit_code, awarded_quantity, effective_rate, requires_serials
+    )
+    values
+      (${itemAId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
+       'Cable set', 'Set', 10.000, 250.00, false),
+      (${itemBId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
+       'Junction box', 'Nos', 2.000, 120.00, false),
+      (${itemCId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/3',
+       'Main switchboard', 'Nos', 5.000, 100.00, true)
+  `;
+
+  // One issued challan delivering C: 3 (serials mandatory before issue)
+  // and A: 5 (serials voluntary, recorded post-issue for the
+  // wrong-item-serial case).
+  const draft = await authed(owner, {
+    method: 'POST',
+    url: `/api/works/${workId}/challans`,
+    organisationId,
+    payload: {
+      challanDate: '2026-08-01',
+      prefix: 'DC',
+      consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+      items: [
+        { workItemId: itemCId, quantity: '3' },
+        { workItemId: itemAId, quantity: '5' },
+      ],
+    },
+  });
+  expect(draft.statusCode, draft.body).toBe(201);
+  const draftDetail = draft.json<ChallanDetailResponse>();
+  issuedChallanId = draftDetail.challan.id;
+  const lineC = draftDetail.items.find((item) => item.workItemId === itemCId);
+  const lineA = draftDetail.items.find((item) => item.workItemId === itemAId);
+  if (!lineC || !lineA) throw new Error('challan lines missing');
+
+  const serialsRecorded = await authed(owner, {
+    method: 'POST',
+    url: `/api/challans/${issuedChallanId}/serials`,
+    organisationId,
+    payload: {
+      challanItemId: lineC.id,
+      serialNumbers: ['SN-C1', 'SN-C2', 'SN-C3'],
+    },
+  });
+  expect(serialsRecorded.statusCode, serialsRecorded.body).toBe(201);
+
+  const issued = await authed(owner, {
+    method: 'POST',
+    url: `/api/challans/${issuedChallanId}/issue`,
+    organisationId,
+  });
+  expect(issued.statusCode, issued.body).toBe(201);
+
+  const voluntary = await authed(owner, {
+    method: 'POST',
+    url: `/api/challans/${issuedChallanId}/serials`,
+    organisationId,
+    payload: { challanItemId: lineA.id, serialNumbers: ['SN-A1'] },
+  });
+  expect(voluntary.statusCode, voluntary.body).toBe(201);
+
+  // A second, never-issued draft with an (undelivered) serial for C.
+  const secondDraft = await authed(owner, {
+    method: 'POST',
+    url: `/api/works/${workId}/challans`,
+    organisationId,
+    payload: {
+      challanDate: '2026-08-02',
+      prefix: 'DC',
+      consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+      items: [{ workItemId: itemCId, quantity: '2' }],
+    },
+  });
+  expect(secondDraft.statusCode, secondDraft.body).toBe(201);
+  const secondDetail = secondDraft.json<ChallanDetailResponse>();
+  const draftLineC = secondDetail.items.find((item) => item.workItemId === itemCId);
+  if (!draftLineC) throw new Error('draft challan line missing');
+  const draftSerial = await authed(owner, {
+    method: 'POST',
+    url: `/api/challans/${secondDetail.challan.id}/serials`,
+    organisationId,
+    payload: { challanItemId: draftLineC.id, serialNumbers: ['SN-C9'] },
+  });
+  expect(draftSerial.statusCode, draftSerial.body).toBe(201);
+
+  const location = await authed(owner, {
+    method: 'POST',
+    url: '/api/masters/locations',
+    organisationId,
+    payload: { name: 'Nashik Road station', kind: 'station' },
+  });
+  expect(location.statusCode, location.body).toBe(201);
+  stationLocationId = location.json<LocationMaster>().id;
+
+  await refreshSerials();
+}, 60_000);
+
+afterAll(async () => {
+  if (admin) {
+    for (const orgId of [organisationId, outsiderOrganisationId]) {
+      if (!orgId) continue;
+      await admin.unsafe(`set session_replication_role = 'replica'`);
+      try {
+        for (const table of [
+          'audit_events',
+          'installation_serials',
+          'installations',
+          'challan_item_serials',
+          'challan_receipts',
+          'mb_entries',
+          'bills',
+          'bill_counters',
+          'work_instruments',
+          'delivery_challan_items',
+          'delivery_challan_counters',
+          'delivery_challans',
+          'location_masters',
+          'work_items',
+          'work_schedules',
+          'loa_documents',
+          'works',
+          'organisation_memberships',
+          'organisations',
+        ]) {
+          await admin.unsafe(
+            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
+            [orgId],
+          );
+        }
+      } finally {
+        await admin.unsafe(`set session_replication_role = 'origin'`);
+      }
+    }
+    await admin`
+      delete from identity_audit_events
+      where user_id in (
+        select "id" from auth_users
+        where "email" like ${`%-${runId}@integration.test`}
+      )
+    `;
+    await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
+  }
+  await app?.close();
+  await admin?.end();
+  if (storageDir) await rm(storageDir, { recursive: true, force: true });
+});
+
+describe('recording installations by quantity', () => {
+  it('lets site staff record a quantity against an existing location, viewers denied', async () => {
+    const denied = await record(viewer, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const recorded = await record(site, {
+      workItemId: itemAId,
+      quantity: '2.500',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      remarks: 'First stretch done',
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const installation = recorded.json<Installation>();
+    expect(installation.status).toBe('recorded');
+    expect(installation.itemNumber).toBe('A/1');
+    expect(installation.quantity).toBe('2.500');
+    expect(installation.locationId).toBe(stationLocationId);
+    expect(installation.locationName).toBe('Nashik Road station');
+    expect(installation.serials).toEqual([]);
+
+    const list = await listInstallations();
+    expect(summaryOf(list, itemAId)).toBe('2.500');
+    expect(summaryOf(list, itemBId)).toBe('0');
+  });
+
+  it('requires exactly one of an existing location or a new one', async () => {
+    const neither = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+    });
+    expect(neither.statusCode).toBe(400);
+    expect(neither.json<{ code: string }>().code).toBe('LOCATION_CHOICE_INVALID');
+
+    const both = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      newLocation: { name: 'Somewhere', kind: 'other' },
+    });
+    expect(both.statusCode).toBe(400);
+    expect(both.json<{ code: string }>().code).toBe('LOCATION_CHOICE_INVALID');
+  });
+
+  it('inline-creates a location, snapshots its name, and reuses an existing active master', async () => {
+    const recorded = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      newLocation: { name: 'Bhusawal yard', kind: 'installation_point' },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const installation = recorded.json<Installation>();
+    expect(installation.locationName).toBe('Bhusawal yard');
+    const inlineLocationId = installation.locationId;
+
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/masters/locations',
+      organisationId,
+    });
+    expect(listed.statusCode).toBe(200);
+    const { locations } = listed.json<{ locations: LocationMaster[] }>();
+    expect(
+      locations.some(
+        (candidate) =>
+          candidate.id === inlineLocationId && candidate.name === 'Bhusawal yard',
+      ),
+    ).toBe(true);
+
+    // A case-insensitive duplicate is a pick, not an error.
+    const reused = await record(site, {
+      workItemId: itemAId,
+      quantity: '0.500',
+      installedOn: '2026-08-06',
+      newLocation: { name: 'bhusawal YARD', kind: 'installation_point' },
+    });
+    expect(reused.statusCode, reused.body).toBe(201);
+    expect(reused.json<Installation>().locationId).toBe(inlineLocationId);
+
+    // Editing the master afterwards never rewrites the snapshot.
+    const renamed = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/locations/${inlineLocationId}`,
+      organisationId,
+      payload: { name: 'Renamed yard', kind: 'installation_point' },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    const list = await listInstallations();
+    const kept = list.installations.find(
+      (candidate) => candidate.id === installation.id,
+    );
+    expect(kept?.locationName).toBe('Bhusawal yard');
+
+    // A retired master can no longer be picked, by id or by name.
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/locations/${inlineLocationId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    const pickRetired = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-06',
+      locationId: inlineLocationId,
+    });
+    expect(pickRetired.statusCode).toBe(409);
+    expect(pickRetired.json<{ code: string }>().code).toBe('LOCATION_MASTER_RETIRED');
+    const nameRetired = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-06',
+      newLocation: { name: 'renamed YARD', kind: 'installation_point' },
+    });
+    expect(nameRetired.statusCode).toBe(409);
+    expect(nameRetired.json<{ code: string }>().code).toBe('LOCATION_MASTER_RETIRED');
+  });
+
+  it('holds the R11 date window in the API and in the database', async () => {
+    const future = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2027-01-01',
+      locationId: stationLocationId,
+    });
+    expect(future.statusCode).toBe(400);
+    expect(future.json<{ code: string }>().code).toBe('INSTALLATION_DATE_FUTURE');
+
+    const early = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2025-05-31',
+      locationId: stationLocationId,
+    });
+    expect(early.statusCode).toBe(400);
+    expect(early.json<{ code: string }>().code).toBe('INSTALLATION_DATE_BEFORE_LOA');
+
+    // The 0017 trigger holds the invariant against every writer.
+    await expect(
+      admin`
+        insert into installations (
+          organisation_id, work_id, work_item_id, quantity, installed_on,
+          location_id, location_name, recorded_by_user_id
+        )
+        values (
+          ${organisationId}, ${workId}, ${itemAId}, '1.000', '2027-01-01',
+          ${stationLocationId}, 'Nashik Road station', ${ownerUserId}
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+describe('the LOA quantity cap (R5)', () => {
+  it('caps cumulative installed quantity at the awarded quantity in exact SQL arithmetic', async () => {
+    const first = await record(site, {
+      workItemId: itemBId,
+      quantity: '1.500',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    const over = await record(site, {
+      workItemId: itemBId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+    });
+    expect(over.statusCode).toBe(409);
+    expect(over.json<{ code: string }>().code).toBe('INSTALLATION_EXCEEDS_LOA');
+
+    // Exactly at the cap is allowed: 1.500 + 0.500 = 2.000.
+    const exact = await record(site, {
+      workItemId: itemBId,
+      quantity: '0.500',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+    });
+    expect(exact.statusCode, exact.body).toBe(201);
+  });
+
+  it('uses the amendment overlay (effective_quantity) when present', async () => {
+    // The Milestone 6 amendment overlay lifts the cap to 3.000.
+    await admin`
+      update work_items set effective_quantity = 3.000 where id = ${itemBId}
+    `;
+    const allowed = await record(site, {
+      workItemId: itemBId,
+      quantity: '0.500',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+    });
+    expect(allowed.statusCode, allowed.body).toBe(201);
+    const over = await record(site, {
+      workItemId: itemBId,
+      quantity: '0.750',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+    });
+    expect(over.statusCode).toBe(409);
+    expect(over.json<{ code: string }>().code).toBe('INSTALLATION_EXCEEDS_LOA');
+  });
+
+  it('holds the cap under simultaneous recordings', async () => {
+    // Installed 2.500 of effective 3.000: two concurrent 0.500 recordings
+    // both pass a stale read — the work-item row lock serialises them, so
+    // exactly one commits.
+    const [first, second] = await Promise.all([
+      record(site, {
+        workItemId: itemBId,
+        quantity: '0.500',
+        installedOn: '2026-08-07',
+        locationId: stationLocationId,
+      }),
+      record(owner, {
+        workItemId: itemBId,
+        quantity: '0.500',
+        installedOn: '2026-08-07',
+        locationId: stationLocationId,
+      }),
+    ]);
+    const statuses = [first.statusCode, second.statusCode].sort();
+    expect(statuses, `${first.body} | ${second.body}`).toEqual([201, 409]);
+    const list = await listInstallations();
+    expect(summaryOf(list, itemBId)).toBe('3.000');
+  });
+});
+
+describe('serial attachment (R6)', () => {
+  it('demands exactly one serial per unit for serial-flagged items', async () => {
+    const short = await record(site, {
+      workItemId: itemCId,
+      quantity: '2',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C1')],
+    });
+    expect(short.statusCode).toBe(409);
+    expect(short.json<{ code: string }>().code).toBe('SERIAL_COUNT_MISMATCH');
+
+    const fractional = await record(site, {
+      workItemId: itemCId,
+      quantity: '1.5',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C1')],
+    });
+    expect(fractional.statusCode).toBe(409);
+    expect(fractional.json<{ code: string }>().code).toBe('SERIAL_COUNT_MISMATCH');
+
+    const none = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+    });
+    expect(none.statusCode).toBe(409);
+    expect(none.json<{ code: string }>().code).toBe('SERIAL_COUNT_MISMATCH');
+  });
+
+  it('refuses serials on unflagged items and serials of another item', async () => {
+    const untracked = await record(site, {
+      workItemId: itemAId,
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-A1')],
+    });
+    expect(untracked.statusCode).toBe(409);
+    expect(untracked.json<{ code: string }>().code).toBe('SERIALS_NOT_TRACKED');
+
+    const wrongItem = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-A1')],
+    });
+    expect(wrongItem.statusCode).toBe(409);
+    expect(wrongItem.json<{ code: string }>().code).toBe('SERIAL_ITEM_MISMATCH');
+  });
+
+  it('refuses undelivered serials and installation before the delivery date', async () => {
+    const undelivered = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C9')],
+    });
+    expect(undelivered.statusCode).toBe(409);
+    expect(undelivered.json<{ code: string }>().code).toBe('SERIAL_NOT_DELIVERED');
+
+    const tooEarly = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-07-01',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C1')],
+    });
+    expect(tooEarly.statusCode).toBe(409);
+    expect(tooEarly.json<{ code: string }>().code).toBe('SERIAL_BEFORE_DELIVERY');
+  });
+
+  it('attaches atomically, stamps the per-serial trace, and blocks re-installation', async () => {
+    const recorded = await record(site, {
+      workItemId: itemCId,
+      quantity: '2',
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C1'), serialId('SN-C2')],
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const installation = recorded.json<Installation>();
+    expect(installation.serials.map((serial) => serial.serialNumber).sort()).toEqual([
+      'SN-C1',
+      'SN-C2',
+    ]);
+
+    await refreshSerials();
+    const c1 = serialByNumber.get('SN-C1');
+    expect(c1?.installedOn).toBe('2026-08-05');
+    expect(c1?.installationId).toBe(installation.id);
+    expect(c1?.installationLocation).toBe('Nashik Road station');
+
+    const again = await record(site, {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C1')],
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json<{ code: string }>().code).toBe('SERIAL_ALREADY_INSTALLED');
+
+    // The legacy per-serial surface stays coherent: an attached serial is
+    // managed through its installation record.
+    const perSerial = await authed(site, {
+      method: 'PUT',
+      url: `/api/serials/${serialId('SN-C1')}/installation`,
+      organisationId,
+      payload: { installedOn: '2026-08-07' },
+    });
+    expect(perSerial.statusCode).toBe(409);
+    expect(perSerial.json<{ code: string }>().code).toBe(
+      'SERIAL_ATTACHED_TO_INSTALLATION',
+    );
+  });
+
+  it('caps serialised items at the delivered quantity (Milestone 8 refines the supply-type predicate)', async () => {
+    const over = await record(site, {
+      workItemId: itemCId,
+      quantity: '2',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C3'), serialId('SN-C9')],
+    });
+    expect(over.statusCode).toBe(409);
+    expect(over.json<{ code: string }>().code).toBe('INSTALLATION_EXCEEDS_DELIVERY');
+  });
+
+  it('makes double-attachment of one serial impossible under concurrency', async () => {
+    const payload = {
+      workItemId: itemCId,
+      quantity: '1',
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      serialIds: [serialId('SN-C3')],
+    };
+    const [first, second] = await Promise.all([
+      record(site, payload),
+      record(owner, payload),
+    ]);
+    const statuses = [first.statusCode, second.statusCode].sort();
+    expect(statuses, `${first.body} | ${second.body}`).toEqual([201, 409]);
+
+    const [attachments] = await admin<{ count: string }[]>`
+      select count(*)::text as count from installation_serials
+      where challan_item_serial_id = ${serialId('SN-C3')} and released_at is null
+    `;
+    expect(attachments?.count).toBe('1');
+    const list = await listInstallations();
+    expect(summaryOf(list, itemCId)).toBe('3.000');
+  });
+});
+
+describe('cancellation with a mandatory note', () => {
+  let cancelTargetId: string;
+
+  it('cancels a record, releases its serials back to the pool, and audits before/after', async () => {
+    const list = await listInstallations();
+    const target = list.installations.find(
+      (candidate) =>
+        candidate.status === 'recorded' &&
+        candidate.serials.some((serial) => serial.serialNumber === 'SN-C3'),
+    );
+    if (!target) throw new Error('cancel target missing');
+    cancelTargetId = target.id;
+
+    const deniedViewer = await authed(viewer, {
+      method: 'POST',
+      url: `/api/installations/${cancelTargetId}/cancel`,
+      organisationId,
+      payload: { note: 'Viewer cannot do this' },
+    });
+    expect(deniedViewer.statusCode).toBe(403);
+
+    const missingNote = await authed(site, {
+      method: 'POST',
+      url: `/api/installations/${cancelTargetId}/cancel`,
+      organisationId,
+      payload: {},
+    });
+    expect(missingNote.statusCode).toBe(400);
+
+    const cancelled = await authed(site, {
+      method: 'POST',
+      url: `/api/installations/${cancelTargetId}/cancel`,
+      organisationId,
+      payload: { note: 'Recorded against the wrong span' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    const installation = cancelled.json<Installation>();
+    expect(installation.status).toBe('cancelled');
+    expect(installation.cancellationNote).toBe('Recorded against the wrong span');
+    // The attachment history stays on the cancelled record.
+    expect(installation.serials.map((serial) => serial.serialNumber)).toEqual([
+      'SN-C3',
+    ]);
+
+    await refreshSerials();
+    const released = serialByNumber.get('SN-C3');
+    expect(released?.installedOn).toBeNull();
+    expect(released?.installationId).toBeNull();
+
+    const after = await listInstallations();
+    expect(summaryOf(after, itemCId)).toBe('2.000');
+
+    const again = await authed(site, {
+      method: 'POST',
+      url: `/api/installations/${cancelTargetId}/cancel`,
+      organisationId,
+      payload: { note: 'Second attempt' },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json<{ code: string }>().code).toBe('INSTALLATION_ALREADY_CANCELLED');
+  });
+
+  it('freezes installation records against edits and deletes in the database', async () => {
+    const list = await listInstallations();
+    const recorded = list.installations.find(
+      (candidate) => candidate.status === 'recorded',
+    );
+    if (!recorded) throw new Error('recorded installation missing');
+
+    await expect(
+      admin`update installations set quantity = 999 where id = ${recorded.id}`,
+    ).rejects.toThrow(/immutable/);
+    await expect(
+      admin`delete from installations where id = ${recorded.id}`,
+    ).rejects.toThrow(/never deleted/);
+    await expect(
+      admin`
+        update installations set status = 'recorded', cancellation_note = null,
+          cancelled_by_user_id = null, cancelled_at = null
+        where id = ${cancelTargetId}
+      `,
+    ).rejects.toThrow(/immutable/);
+    // A released attachment can never be re-attached.
+    await expect(
+      admin`
+        update installation_serials set released_at = null
+        where installation_id = ${cancelTargetId}
+      `,
+    ).rejects.toThrow(/re-attached/);
+  });
+});
+
+describe('trace, timeline, export, and tenancy', () => {
+  it('serves the installed quantity on the Work detail and the serial lookup trace', async () => {
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const { schedules } = detail.json<WorkDetailResponse>();
+    const items = schedules.flatMap((schedule) => schedule.items);
+    expect(items.find((item) => item.id === itemBId)?.installedQuantity).toBe('3.000');
+    expect(items.find((item) => item.id === itemCId)?.installedQuantity).toBe('2.000');
+
+    const search = await authed(owner, {
+      method: 'GET',
+      url: '/api/serials/search?q=SN-C1',
+      organisationId,
+    });
+    expect(search.statusCode, search.body).toBe(200);
+    const { matches } = search.json<SerialSearchResponse>();
+    const match = matches.find((candidate) => candidate.serialNumber === 'SN-C1');
+    expect(match?.installedOn).toBe('2026-08-05');
+    expect(typeof match?.installationId).toBe('string');
+    expect(match?.installationLocation).toBe('Nashik Road station');
+  });
+
+  it('surfaces installation.recorded and installation.cancelled on the Work timeline', async () => {
+    const timeline = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/timeline?entityTypes=installations`,
+      organisationId,
+    });
+    expect(timeline.statusCode, timeline.body).toBe(200);
+    const { events } = timeline.json<TimelineResponse>();
+    const actions = events.map((event) => event.action);
+    expect(actions).toContain('installation.recorded');
+    expect(actions).toContain('installation.cancelled');
+    const cancelledEvent = events.find(
+      (event) => event.action === 'installation.cancelled',
+    );
+    expect(cancelledEvent?.details).toMatchObject({
+      before: { status: 'recorded' },
+      after: { status: 'cancelled' },
+      note: 'Recorded against the wrong span',
+    });
+  });
+
+  it('includes installations and their serial attachments in the owner export', async () => {
+    const exported = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(exported.statusCode, exported.body).toBe(200);
+    const payload = exported.json<{
+      installations: { id: string; status: string }[];
+      installationSerials: { installation_id: string }[];
+    }>();
+    expect(payload.installations.length).toBeGreaterThan(0);
+    expect(payload.installationSerials.length).toBeGreaterThan(0);
+  });
+
+  it('denies every installation surface across tenants with 404s', async () => {
+    const list = await listInstallations();
+    const anyInstallation = list.installations[0];
+    if (!anyInstallation) throw new Error('installation fixture missing');
+
+    const foreignList = await authed(outsider, {
+      method: 'GET',
+      url: `/api/works/${workId}/installations`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(foreignList.statusCode).toBe(404);
+
+    const foreignRecord = await record(
+      outsider,
+      {
+        workItemId: itemAId,
+        quantity: '1.000',
+        installedOn: '2026-08-05',
+        newLocation: { name: 'Foreign yard', kind: 'other' },
+      },
+      outsiderOrganisationId,
+    );
+    expect(foreignRecord.statusCode).toBe(404);
+
+    const foreignCancel = await authed(outsider, {
+      method: 'POST',
+      url: `/api/installations/${anyInstallation.id}/cancel`,
+      organisationId: outsiderOrganisationId,
+      payload: { note: 'Cross-tenant attempt' },
+    });
+    expect(foreignCancel.statusCode).toBe(404);
+  });
+});

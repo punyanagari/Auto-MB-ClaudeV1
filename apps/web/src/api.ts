@@ -56,6 +56,9 @@ import type {
   WorkDetailResponse,
   WorkSettingsResponse,
   WorkItemSerialsResponse,
+  Installation,
+  InstallationListResponse,
+  RecordInstallationRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -457,6 +460,21 @@ export interface ApiClient {
     workId: string,
     allowExcessDelivery: boolean,
   ) => Promise<WorkSettingsResponse>;
+  /** Quantity-level installation records (Milestone 7). */
+  readonly listWorkInstallations: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<InstallationListResponse>;
+  readonly recordWorkInstallation: (
+    organisationId: string,
+    workId: string,
+    body: RecordInstallationRequest,
+  ) => Promise<Installation>;
+  readonly cancelWorkInstallation: (
+    organisationId: string,
+    installationId: string,
+    note: string,
+  ) => Promise<Installation>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1176,6 +1194,25 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<WorkSettingsResponse>(`/api/works/${workId}`, {
         method: 'PATCH',
         body: { allowExcessDelivery },
+        organisationId,
+      });
+    },
+    async listWorkInstallations(organisationId, workId) {
+      return request<InstallationListResponse>(`/api/works/${workId}/installations`, {
+        organisationId,
+      });
+    },
+    async recordWorkInstallation(organisationId, workId, body) {
+      return request<Installation>(`/api/works/${workId}/installations`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelWorkInstallation(organisationId, installationId, note) {
+      return request<Installation>(`/api/installations/${installationId}/cancel`, {
+        method: 'POST',
+        body: { note },
         organisationId,
       });
     },

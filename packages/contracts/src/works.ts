@@ -148,6 +148,10 @@ export const WorkItemSchema = Type.Object(
     effectiveUnit: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     amendmentAdded: Type.Optional(Type.Boolean()),
     requiresSerials: Type.Boolean(),
+    /** Present on the Work detail response: SUM of non-cancelled
+     * quantity-level installation records for the item (Milestone 7) —
+     * the authoritative installed quantity Milestone 8 billing reads. */
+    installedQuantity: Type.Optional(DecimalStringSchema),
   },
   { additionalProperties: false },
 );

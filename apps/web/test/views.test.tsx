@@ -12,6 +12,7 @@ import { Approvals } from '../src/views/Approvals.js';
 import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
 import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
+import { Installations } from '../src/views/Installations.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
@@ -121,6 +122,11 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     rejectAmendment: vi.fn(),
     withdrawAmendment: vi.fn(),
     setWorkSettings: vi.fn(),
+    listWorkInstallations: vi
+      .fn()
+      .mockResolvedValue({ installations: [], itemSummaries: [] }),
+    recordWorkInstallation: vi.fn(),
+    cancelWorkInstallation: vi.fn(),
     ...overrides,
   };
 }
@@ -2677,5 +2683,301 @@ describe('WorkDetail PBG requirement', () => {
       'The letter records no Performance Bank Guarantee requirement.',
     );
     expect(screen.queryByText('PBG required by the letter')).toBeNull();
+  });
+});
+
+describe('Installations', () => {
+  const ITEM_PLAIN = '44444444-4444-4444-8444-444444444444';
+  const ITEM_SERIAL = '55555555-5555-4555-8555-555555555555';
+  const LOCATION_ID = '66666666-6666-4666-8666-666666666666';
+  const INSTALLATION_ID = '99999999-9999-4999-8999-999999999999';
+  const SERIAL_ONE = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+  const SERIAL_TWO = 'aaaaaaaa-2222-4222-8222-aaaaaaaaaaaa';
+  const CHALLAN = '77777777-1111-4111-8111-777777777777';
+  const CHALLAN_ITEM = '77777777-2222-4222-8222-777777777777';
+
+  const WORK_ITEMS = [
+    {
+      id: ITEM_PLAIN,
+      scheduleId: '77777777-7777-4777-8777-777777777777',
+      itemNumber: 'A/1',
+      description: 'Cable set',
+      unitCode: 'Set',
+      awardedQuantity: '10.000',
+      effectiveRate: '250.00',
+      requiresSerials: false,
+    },
+    {
+      id: ITEM_SERIAL,
+      scheduleId: '77777777-7777-4777-8777-777777777777',
+      itemNumber: 'A/2',
+      description: 'Main switchboard',
+      unitCode: 'Nos',
+      awardedQuantity: '5.000',
+      effectiveRate: '100.00',
+      requiresSerials: true,
+    },
+  ];
+
+  const SERIALS = [
+    {
+      id: SERIAL_ONE,
+      deliveryChallanId: CHALLAN,
+      challanItemId: CHALLAN_ITEM,
+      challanNumber: 'DC/1',
+      itemDescription: 'Main switchboard',
+      serialNumber: 'SN-001',
+      installedOn: null,
+      installationRemarks: null,
+      workItemId: ITEM_SERIAL,
+      challanStatus: 'issued' as const,
+      installationId: null,
+      installationLocation: null,
+    },
+    {
+      id: SERIAL_TWO,
+      deliveryChallanId: CHALLAN,
+      challanItemId: CHALLAN_ITEM,
+      challanNumber: 'DC/1',
+      itemDescription: 'Main switchboard',
+      serialNumber: 'SN-002',
+      installedOn: null,
+      installationRemarks: null,
+      workItemId: ITEM_SERIAL,
+      challanStatus: 'issued' as const,
+      installationId: null,
+      installationLocation: null,
+    },
+    {
+      id: 'aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa',
+      deliveryChallanId: CHALLAN,
+      challanItemId: CHALLAN_ITEM,
+      challanNumber: 'DC/1',
+      itemDescription: 'Main switchboard',
+      serialNumber: 'SN-003',
+      installedOn: '2026-08-01',
+      installationRemarks: null,
+      workItemId: ITEM_SERIAL,
+      challanStatus: 'issued' as const,
+      installationId: INSTALLATION_ID,
+      installationLocation: 'Nashik Road station',
+    },
+  ];
+
+  const LOCATION = {
+    id: LOCATION_ID,
+    name: 'Nashik Road station',
+    kind: 'station' as const,
+    active: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  const RECORDED = {
+    id: INSTALLATION_ID,
+    workId: WORK_ID,
+    workItemId: ITEM_SERIAL,
+    itemNumber: 'A/2',
+    quantity: '1.000',
+    installedOn: '2026-08-01',
+    locationId: LOCATION_ID,
+    locationName: 'Nashik Road station',
+    remarks: null,
+    status: 'recorded' as const,
+    cancellationNote: null,
+    serials: [
+      {
+        serialId: 'aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa',
+        serialNumber: 'SN-003',
+        challanNumber: 'DC/1',
+      },
+    ],
+    createdAt: '2026-08-01T00:00:00.000Z',
+    cancelledAt: null,
+  };
+
+  const LIST = {
+    installations: [RECORDED],
+    itemSummaries: [
+      { workItemId: ITEM_PLAIN, itemNumber: 'A/1', installedQuantity: '0.000' },
+      { workItemId: ITEM_SERIAL, itemNumber: 'A/2', installedQuantity: '1.000' },
+    ],
+  };
+
+  function installationsApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      listWorkInstallations: vi.fn().mockResolvedValue(LIST),
+      listLocationMasters: vi.fn().mockResolvedValue([LOCATION]),
+      listWorkSerials: vi.fn().mockResolvedValue(SERIALS),
+      ...overrides,
+    });
+  }
+
+  function renderInstallations(
+    api: ApiClient,
+    options: Partial<{ canRecordEvidence: boolean }> = {},
+  ) {
+    return render(
+      <Installations
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canRecordEvidence={options.canRecordEvidence ?? true}
+        workItems={WORK_ITEMS}
+        serials={SERIALS}
+        onSerialsChanged={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows the per-item installed summary and the records', async () => {
+    renderInstallations(installationsApi());
+
+    await screen.findByRole('heading', { name: 'Record installation' });
+    // Summary rows: the authoritative installed quantity per item.
+    expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
+    expect(screen.getByText('0.000')).toBeTruthy();
+    // The record row with its snapshot location and serials.
+    expect(screen.getAllByText('Nashik Road station').length).toBeGreaterThan(0);
+    expect(screen.getByText('SN-003')).toBeTruthy();
+    expect(screen.getByText('recorded')).toBeTruthy();
+  });
+
+  it('records a plain quantity installation against an existing location', async () => {
+    const recordWorkInstallation = vi.fn().mockResolvedValue({
+      ...RECORDED,
+      id: 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
+      workItemId: ITEM_PLAIN,
+      itemNumber: 'A/1',
+      quantity: '2.500',
+      serials: [],
+      locationId: LOCATION_ID,
+    });
+    const api = installationsApi({ recordWorkInstallation });
+    renderInstallations(api);
+
+    fireEvent.change(await screen.findByLabelText('Work item'), {
+      target: { value: ITEM_PLAIN },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+      target: { value: '2.500' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: LOCATION_ID },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+
+    await waitFor(() => {
+      expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        workItemId: ITEM_PLAIN,
+        quantity: '2.500',
+        installedOn: '2026-08-05',
+        locationId: LOCATION_ID,
+      });
+    });
+  });
+
+  it('records a serialised installation with tap-selected serials and an inline location', async () => {
+    const recordWorkInstallation = vi.fn().mockResolvedValue(RECORDED);
+    const api = installationsApi({ recordWorkInstallation });
+    renderInstallations(api);
+
+    fireEvent.change(await screen.findByLabelText('Work item'), {
+      target: { value: ITEM_SERIAL },
+    });
+    // The pool offers only delivered-but-uninstalled serials of the item.
+    expect(screen.getByLabelText(/SN-001/)).toBeTruthy();
+    expect(screen.getByLabelText(/SN-002/)).toBeTruthy();
+    expect(screen.queryByLabelText(/SN-003/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: '__new__' },
+    });
+    fireEvent.change(screen.getByLabelText('New location name'), {
+      target: { value: 'Bhusawal yard' },
+    });
+    fireEvent.change(screen.getByLabelText('New location kind'), {
+      target: { value: 'installation_point' },
+    });
+    fireEvent.click(screen.getByLabelText(/SN-001/));
+    fireEvent.click(screen.getByLabelText(/SN-002/));
+    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+
+    await waitFor(() => {
+      expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        workItemId: ITEM_SERIAL,
+        quantity: '2',
+        installedOn: '2026-08-05',
+        newLocation: { name: 'Bhusawal yard', kind: 'installation_point' },
+        serialIds: [SERIAL_ONE, SERIAL_TWO],
+      });
+    });
+  });
+
+  it('cancels a record with a mandatory note', async () => {
+    const cancelWorkInstallation = vi.fn().mockResolvedValue({
+      ...RECORDED,
+      status: 'cancelled',
+      cancellationNote: 'Wrong item picked',
+      cancelledAt: '2026-08-06T00:00:00.000Z',
+    });
+    const api = installationsApi({ cancelWorkInstallation });
+    renderInstallations(api);
+
+    fireEvent.change(
+      await screen.findByLabelText(/Cancellation note for A\/2 on 2026-08-01/),
+      { target: { value: 'Wrong item picked' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel record' }));
+
+    await waitFor(() => {
+      expect(cancelWorkInstallation).toHaveBeenCalledWith(
+        ORG_ID,
+        INSTALLATION_ID,
+        'Wrong item picked',
+      );
+    });
+  });
+
+  it('announces a cap conflict in an alert region', async () => {
+    const recordWorkInstallation = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'INSTALLATION_EXCEEDS_LOA',
+          'Cumulative installation for A/1 would exceed the sanctioned LOA quantity.',
+        ),
+      );
+    const api = installationsApi({ recordWorkInstallation });
+    renderInstallations(api);
+
+    fireEvent.change(await screen.findByLabelText('Quantity installed'), {
+      target: { value: '99' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('exceed the sanctioned LOA quantity');
+  });
+
+  it('hides recording and cancellation from read-only members', async () => {
+    renderInstallations(installationsApi(), { canRecordEvidence: false });
+
+    await screen.findByRole('heading', { name: 'Installations' });
+    expect(screen.getByText('SN-003')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel record' })).toBeNull();
   });
 });

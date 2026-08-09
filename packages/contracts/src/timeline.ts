@@ -13,6 +13,7 @@ export const TIMELINE_ENTITY_TYPES = [
   'work_instruments',
   'mb_entries',
   'bills',
+  'installations',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

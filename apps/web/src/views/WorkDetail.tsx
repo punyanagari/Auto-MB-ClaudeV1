@@ -15,6 +15,7 @@ import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
+import { Installations } from './Installations.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -1055,6 +1056,16 @@ export function WorkDetail({
         <p className="muted">No bills prepared yet.</p>
       )}
 
+      <Installations
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canRecordEvidence={canRecordEvidence}
+        workItems={workItems}
+        serials={serials}
+        onSerialsChanged={setSerials}
+      />
+
       <h2>Serial trace</h2>
       {serials.length > 0 ? (
         <table className="data-table">
@@ -1079,6 +1090,9 @@ export function WorkDetail({
                   {serial.installedOn !== null ? (
                     <span className="chip chip--installed">
                       installed {serial.installedOn}
+                      {typeof serial.installationLocation === 'string'
+                        ? ` at ${serial.installationLocation}`
+                        : ''}
                     </span>
                   ) : (
                     <span className="muted">not installed</span>

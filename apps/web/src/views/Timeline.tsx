@@ -77,6 +77,7 @@ const ENTITY_FILTERS = [
   { value: 'work_instruments', label: 'Instruments' },
   { value: 'mb_entries', label: 'Measurements' },
   { value: 'bills', label: 'Bills' },
+  { value: 'installations', label: 'Installations' },
 ] as const;
 
 function humaniseAction(action: string): string {

@@ -109,6 +109,11 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteSerial: vi.fn(),
     searchSerials: vi.fn().mockResolvedValue({ results: [], truncated: false }),
     updateWorkItemSerials: vi.fn(),
+    listWorkInstallations: vi
+      .fn()
+      .mockResolvedValue({ installations: [], itemSummaries: [] }),
+    recordWorkInstallation: vi.fn(),
+    cancelWorkInstallation: vi.fn(),
     ...overrides,
   };
 }

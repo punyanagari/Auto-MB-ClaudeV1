@@ -117,6 +117,12 @@ export function registerExportRoutes(
           `,
           ['lines_snapshot'],
         );
+        const installations = await tx<Record<string, unknown>[]>`
+          select * from installations order by installed_on, created_at, id
+        `;
+        const installationSerials = await tx<Record<string, unknown>[]>`
+          select * from installation_serials order by created_at, id
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -192,6 +198,8 @@ export function registerExportRoutes(
           workInstruments: instruments,
           mbEntries,
           bills,
+          installations,
+          installationSerials,
           objectManifest,
           auditEvents,
         };

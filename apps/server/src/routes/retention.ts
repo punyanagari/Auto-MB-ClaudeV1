@@ -455,6 +455,20 @@ export function registerRetentionRoutes(
             throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
           }
           await assertWorkAccess(tx, user.id, serial.work_id);
+          // A serial covered by a live quantity-level installation record
+          // (Milestone 7) is managed through that record: cancel it to
+          // release the serial instead of editing the per-serial date.
+          const [attachment] = await tx<{ installation_id: string }[]>`
+            select installation_id from installation_serials
+            where challan_item_serial_id = ${id} and released_at is null
+          `;
+          if (attachment) {
+            throw httpError(
+              409,
+              'SERIAL_ATTACHED_TO_INSTALLATION',
+              'This serial is covered by an installation record; cancel that record to release it.',
+            );
+          }
           const [updated] = await tx<{ work_id: string }[]>`
             update challan_item_serials
             set installed_on = ${body.installedOn},
@@ -1085,6 +1099,10 @@ async function listSerials(
     serialNumber: string;
     installedOn: string | null;
     installationRemarks: string | null;
+    workItemId: string;
+    challanStatus: 'draft' | 'issued' | 'cancelled';
+    installationId: string | null;
+    installationLocation: string | null;
   }[]
 > {
   const rows = await tx<
@@ -1097,14 +1115,26 @@ async function listSerials(
       serial_number: string;
       installed_on: string | null;
       installation_remarks: string | null;
+      work_item_id: string;
+      challan_status: 'draft' | 'issued' | 'cancelled';
+      installation_id: string | null;
+      installation_location: string | null;
     }[]
   >`
     select s.id, s.delivery_challan_id, s.delivery_challan_item_id,
            dc.challan_number, dci.description_snapshot, s.serial_number,
-           s.installed_on::text as installed_on, s.installation_remarks
+           s.installed_on::text as installed_on, s.installation_remarks,
+           dci.work_item_id, dc.status as challan_status,
+           inst.id as installation_id,
+           inst.location_name as installation_location
     from challan_item_serials s
     join delivery_challans dc on dc.id = s.delivery_challan_id
     join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+    -- Milestone 7: the live quantity-level installation record covering
+    -- this serial, if any (released attachments no longer count).
+    left join installation_serials att
+      on att.challan_item_serial_id = s.id and att.released_at is null
+    left join installations inst on inst.id = att.installation_id
     where s.work_id = ${workId}
     order by s.serial_number
   `;
@@ -1117,5 +1147,9 @@ async function listSerials(
     serialNumber: row.serial_number,
     installedOn: row.installed_on,
     installationRemarks: row.installation_remarks,
+    workItemId: row.work_item_id,
+    challanStatus: row.challan_status,
+    installationId: row.installation_id,
+    installationLocation: row.installation_location,
   }));
 }

@@ -159,6 +159,9 @@ export function SerialLookup({
                     {match.installedOn !== null ? (
                       <span className="chip chip--installed">
                         installed {match.installedOn}
+                        {typeof match.installationLocation === 'string'
+                          ? ` at ${match.installationLocation}`
+                          : ''}
                       </span>
                     ) : (
                       <span className="muted">not installed</span>

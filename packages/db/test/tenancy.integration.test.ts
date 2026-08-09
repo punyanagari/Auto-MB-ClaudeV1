@@ -52,6 +52,8 @@ const TENANT_TABLES = [
   'extension_requests',
   'extension_request_counters',
   'approval_requests',
+  'installations',
+  'installation_serials',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -85,6 +87,9 @@ const DELETE_REVOKED_TABLES = [
   'organisation_signatories',
   'extension_request_counters',
   'approval_requests',
+  // Installation records cancel with a note; attachments release (0017).
+  'installations',
+  'installation_serials',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -351,10 +356,12 @@ async function seedTenantGraph(
       values (${organisationId}, ${`Sr. DEE ${workCode}`},
               'Integration division office', ${userId})
     `;
-    await tx`
+    const [locationMaster] = await tx<{ id: string }[]>`
       insert into location_masters (organisation_id, name, kind, created_by_user_id)
       values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
+      returning id
     `;
+    if (!locationMaster) throw new Error('seed location insert returned no row');
     await tx`
       insert into unit_masters (organisation_id, name, created_by_user_id)
       values (${organisationId}, ${`Unit-${workCode}`}, ${userId})
@@ -385,6 +392,29 @@ async function seedTenantGraph(
     await tx`
       insert into extension_request_counters (organisation_id, work_id)
       values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 installation tables: one recorded installation with a
+    // serial attachment, the location name snapshotted from the master.
+    const [installation] = await tx<{ id: string }[]>`
+      insert into installations (
+        organisation_id, work_id, work_item_id, quantity, installed_on,
+        location_id, location_name, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${workItem.id}, '1.000', '2026-02-03',
+        ${locationMaster.id}, ${`Station ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!installation) throw new Error('seed installation insert returned no row');
+    await tx`
+      insert into installation_serials (
+        organisation_id, installation_id, work_id, challan_item_serial_id
+      )
+      select ${organisationId}, ${installation.id}, ${work.id}, s.id
+      from challan_item_serials s
+      where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
     `;
 
     return {
