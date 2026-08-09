@@ -117,6 +117,18 @@ export function registerExportRoutes(
           `,
           ['lines_snapshot'],
         );
+        const approvalRequests = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from approval_requests order by created_at, id
+          `,
+          ['proposed', 'diff'],
+        );
+        const correctionNotices = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from correction_notices order by created_at, id
+          `,
+          ['snapshot'],
+        );
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -173,6 +185,17 @@ export function registerExportRoutes(
                 ]
               : []),
           ]),
+          ...correctionNotices.flatMap((notice) =>
+            notice.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'correction-notice-rendered-pdf',
+                    objectKey: notice.rendered_object_key,
+                    sha256: notice.rendered_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
         ];
 
         return {
@@ -192,6 +215,8 @@ export function registerExportRoutes(
           workInstruments: instruments,
           mbEntries,
           bills,
+          approvalRequests,
+          correctionNotices,
           objectManifest,
           auditEvents,
         };

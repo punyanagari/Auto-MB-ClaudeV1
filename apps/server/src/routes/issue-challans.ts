@@ -226,7 +226,7 @@ function requireStatus(row: IssueChallanRow, status: IssueChallan['status']): vo
   }
 }
 
-interface NormalisedHeader {
+export interface NormalisedHeader {
   issuedToName: string;
   issuedToRole: string | null;
   location: string | null;
@@ -235,8 +235,9 @@ interface NormalisedHeader {
 
 /** Trims the free-text snapshot fields with friendly errors; the 0014
  * CHECK constraints enforce the same bounds on btrimmed values, so
- * whitespace padding must not slip past the contract's raw minLength. */
-function normaliseHeader(body: SaveIssueChallanRequest): NormalisedHeader {
+ * whitespace padding must not slip past the contract's raw minLength.
+ * (Exported for the correction flow's replacement proposals.) */
+export function normaliseHeader(body: SaveIssueChallanRequest): NormalisedHeader {
   const issuedToName = body.issuedToName.trim();
   if (issuedToName.length < 2) {
     throw httpError(
@@ -270,8 +271,9 @@ function normaliseHeader(body: SaveIssueChallanRequest): NormalisedHeader {
  * snapshot description/unit from the live Work item; manual lines carry
  * their own description/unit — quantities are free of any awarded or
  * delivered ceiling BY DESIGN (Issue Challans may exceed work
- * quantities; legacy spec §5.3). */
-async function writeLines(
+ * quantities; legacy spec §5.3). (Exported for the correction flow,
+ * which writes replacement drafts through the same path.) */
+export async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   challanId: string,

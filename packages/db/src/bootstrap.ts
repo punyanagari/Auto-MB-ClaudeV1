@@ -52,6 +52,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   issue_challan_counters: 'SELECT, INSERT, UPDATE',
   // Amendment approvals are a decision ledger: no DELETE (0012).
   approval_requests: 'SELECT, INSERT, UPDATE',
+  // Correction notices are numbered legal records that cancel, never
+  // disappear; the counter is numbering state (0019).
+  correction_notices: 'SELECT, INSERT, UPDATE',
+  correction_notice_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

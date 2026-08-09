@@ -25,6 +25,14 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import {
+  applyChallanCancelReplace,
+  applyCorrectionNotice,
+  applyIssueChallanCancelReplace,
+  type ChallanCancelReplaceProposal,
+  type CorrectionNoticeProposal,
+  type IssueChallanCancelReplaceProposal,
+} from '../corrections-apply.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
@@ -54,8 +62,9 @@ interface ChangeSet {
   unit?: string;
 }
 
-/** The stored `proposed` snapshot: everything apply needs, verbatim. */
-type ProposedSnapshot =
+/** The stored `proposed` snapshot: everything apply needs, verbatim.
+ * Milestone 7 adds the correction paths for issued documents. */
+export type ProposedSnapshot =
   | {
       kind: 'change_item';
       workItemId: string;
@@ -70,15 +79,19 @@ type ProposedSnapshot =
       unitCode: string;
       quantity: string;
       rate: string;
-    };
+    }
+  | ChallanCancelReplaceProposal
+  | IssueChallanCancelReplaceProposal
+  | CorrectionNoticeProposal;
 
 interface ApprovalRow {
   id: string;
-  entity_type: 'work_item_amendment';
+  entity_type: ApprovalRequest['entityType'];
   entity_id: string | null;
   work_id: string;
   work_code: string;
   item_number: string | null;
+  document_number: string | null;
   proposed: unknown;
   diff: unknown;
   reason: string;
@@ -92,12 +105,17 @@ interface ApprovalRow {
 
 const APPROVAL_SELECT = `
   select ar.id, ar.entity_type, ar.entity_id, ar.work_id, w.work_code,
-         coalesce(wi.item_number, ar.proposed->>'itemNumber') as item_number,
+         case when ar.entity_type = 'work_item_amendment'
+           then coalesce(wi.item_number, ar.proposed->>'itemNumber') end
+           as item_number,
+         case when ar.entity_type <> 'work_item_amendment'
+           then ar.proposed->>'challanNumber' end as document_number,
          ar.proposed, ar.diff, ar.reason, ar.status, ar.requested_by_user_id,
          ar.decided_by_user_id, ar.decided_at, ar.decision_note, ar.created_at
   from approval_requests ar
   join works w on w.id = ar.work_id
-  left join work_items wi on wi.id = ar.entity_id
+  left join work_items wi
+    on wi.id = ar.entity_id and ar.entity_type = 'work_item_amendment'
 `;
 
 function toApproval(row: ApprovalRow): ApprovalRequest {
@@ -108,6 +126,7 @@ function toApproval(row: ApprovalRow): ApprovalRequest {
     workId: row.work_id,
     workCode: row.work_code,
     itemNumber: row.item_number,
+    documentNumber: row.document_number,
     proposed: parseJsonbColumn(row.proposed),
     diff: parseJsonbColumn(row.diff) as AmendmentDiffEntry[],
     reason: row.reason,
@@ -120,7 +139,7 @@ function toApproval(row: ApprovalRow): ApprovalRequest {
   };
 }
 
-async function readApproval(
+export async function readApproval(
   tx: TransactionSql,
   approvalId: string,
 ): Promise<ApprovalRequest> {
@@ -134,7 +153,7 @@ async function readApproval(
 
 /** can_approve_amendments is an explicit per-member authority, separate
  * from role — the same model as can_issue_documents. */
-async function isApprover(tx: TransactionSql, userId: string): Promise<boolean> {
+export async function isApprover(tx: TransactionSql, userId: string): Promise<boolean> {
   const [membership] = await tx<{ can_approve_amendments: boolean }[]>`
     select can_approve_amendments from organisation_memberships
     where user_id = ${userId}
@@ -189,7 +208,7 @@ function assertNonNegative(value: string, field: string): void {
  * request REMAINS PENDING (documented decision: the approve call fails
  * atomically rather than recording a failed apply).
  */
-async function applyApproval(
+export async function applyApproval(
   tx: TransactionSql,
   organisationId: string,
   userId: string,
@@ -264,7 +283,7 @@ async function applyApproval(
           else effective_unit end
       where id = ${item.id}
     `;
-  } else {
+  } else if (proposed.kind === 'add_item') {
     // add_item: the approved values become the new item's baseline.
     const [schedule] = await tx<{ id: string }[]>`
       select id from work_schedules
@@ -301,6 +320,22 @@ async function applyApproval(
       throw error;
     });
     boundEntityId = newItemId;
+  } else if (proposed.kind === 'cancel_replace_challan') {
+    // Milestone 7 Path A: cancel the issued (still evidence-free) challan
+    // and draft its replacement, atomically, revalidating live state.
+    await applyChallanCancelReplace(tx, organisationId, userId, request.id, proposed);
+  } else if (proposed.kind === 'cancel_replace_issue_challan') {
+    await applyIssueChallanCancelReplace(
+      tx,
+      organisationId,
+      userId,
+      request.id,
+      proposed,
+    );
+  } else {
+    // Milestone 7 Path B: issue a numbered correction notice; the original
+    // challan is never touched.
+    await applyCorrectionNotice(tx, organisationId, userId, request.id, proposed);
   }
 
   await tx`
@@ -312,7 +347,11 @@ async function applyApproval(
       entity_id = ${boundEntityId}
     where id = ${request.id}
   `;
-  await audit(tx, organisationId, userId, 'amendment.approved', request.id, {
+  const approvedAction =
+    proposed.kind === 'change_item' || proposed.kind === 'add_item'
+      ? 'amendment.approved'
+      : 'correction.approved';
+  await audit(tx, organisationId, userId, approvedAction, request.id, {
     workId: request.work_id,
     entityId: boundEntityId,
     kind: proposed.kind,
@@ -772,8 +811,11 @@ export function registerAmendmentRoutes(
       const body = request.body as RejectAmendmentRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireApprover(tx, user.id);
-        const [row] = await tx<{ status: string; work_id: string }[]>`
-          select status, work_id from approval_requests where id = ${id}
+        const [row] = await tx<
+          { status: string; work_id: string; entity_type: string }[]
+        >`
+          select status, work_id, entity_type from approval_requests
+          where id = ${id}
           for update
         `;
         if (!row) {
@@ -795,7 +837,11 @@ export function registerAmendmentRoutes(
             decision_note = ${body.note}
           where id = ${id}
         `;
-        await audit(tx, organisationId, user.id, 'amendment.rejected', id, {
+        const rejectedAction =
+          row.entity_type === 'work_item_amendment'
+            ? 'amendment.rejected'
+            : 'correction.rejected';
+        await audit(tx, organisationId, user.id, rejectedAction, id, {
           note: body.note,
         });
         return readApproval(tx, id);
@@ -819,9 +865,14 @@ export function registerAmendmentRoutes(
       const { id } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [row] = await tx<
-          { status: string; work_id: string; requested_by_user_id: string }[]
+          {
+            status: string;
+            work_id: string;
+            requested_by_user_id: string;
+            entity_type: string;
+          }[]
         >`
-          select status, work_id, requested_by_user_id
+          select status, work_id, requested_by_user_id, entity_type
           from approval_requests where id = ${id}
           for update
         `;
@@ -850,7 +901,11 @@ export function registerAmendmentRoutes(
             decided_at = now()
           where id = ${id}
         `;
-        await audit(tx, organisationId, user.id, 'amendment.withdrawn', id, {});
+        const withdrawnAction =
+          row.entity_type === 'work_item_amendment'
+            ? 'amendment.withdrawn'
+            : 'correction.withdrawn';
+        await audit(tx, organisationId, user.id, withdrawnAction, id, {});
         return readApproval(tx, id);
       });
     },

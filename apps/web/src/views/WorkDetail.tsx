@@ -3,6 +3,7 @@ import type {
   ApprovalRequest,
   Bill,
   Challan,
+  CorrectionNotice,
   Instrument,
   InstrumentStatus,
   IssueChallan,
@@ -120,6 +121,9 @@ export function WorkDetail({
   const [bills, setBills] = useState<readonly Bill[]>([]);
   const [serials, setSerials] = useState<readonly Serial[]>([]);
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
+  const [correctionNotices, setCorrectionNotices] = useState<
+    readonly CorrectionNotice[]
+  >([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,6 +144,7 @@ export function WorkDetail({
       api.listWorkSerials(organisationId, workId),
       api.listIssueChallans(organisationId, workId),
       api.listWorkAmendments(organisationId, workId),
+      api.listWorkCorrectionNotices(organisationId, workId),
     ])
       .then(
         ([
@@ -151,6 +156,7 @@ export function WorkDetail({
           loadedSerials,
           loadedIssueChallans,
           loadedAmendments,
+          loadedCorrectionNotices,
         ]) => {
           if (cancelled) return;
           setDetail(loaded);
@@ -161,6 +167,7 @@ export function WorkDetail({
           setSerials(loadedSerials);
           setIssueChallans(loadedIssueChallans);
           setAmendments(loadedAmendments);
+          setCorrectionNotices(loadedCorrectionNotices);
         },
       )
       .catch((cause: unknown) => {
@@ -570,6 +577,64 @@ export function WorkDetail({
         </table>
       ) : (
         <p className="muted">No Delivery Challans yet.</p>
+      )}
+
+      {correctionNotices.length > 0 && (
+        <>
+          <h2>Correction notices</h2>
+          <table className="data-table">
+            <caption className="visually-hidden">
+              Correction notices issued for this Work
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Notice</th>
+                <th scope="col">Status</th>
+                <th scope="col">Issued</th>
+                <th scope="col">PDF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {correctionNotices.map((correctionNotice) => (
+                <tr key={correctionNotice.id}>
+                  <th scope="row">{correctionNotice.noticeNumber}</th>
+                  <td>
+                    <span className={`chip chip--${correctionNotice.status}`}>
+                      {correctionNotice.status}
+                    </span>
+                  </td>
+                  <td>{correctionNotice.createdAt.slice(0, 10)}</td>
+                  <td>
+                    {correctionNotice.renderedAvailable ? (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        disabled={pending}
+                        onClick={() =>
+                          void act(async () => {
+                            const blob = await api.downloadCorrectionNoticePdf(
+                              organisationId,
+                              correctionNotice.id,
+                            );
+                            const url = URL.createObjectURL(blob);
+                            window.open(url, '_blank', 'noopener');
+                            setTimeout(() => {
+                              URL.revokeObjectURL(url);
+                            }, 60_000);
+                          }, 'Correction notice PDF opened in a new tab.')
+                        }
+                      >
+                        Open PDF
+                      </button>
+                    ) : (
+                      <span className="muted">not rendered</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
 
       <div className="card__header">

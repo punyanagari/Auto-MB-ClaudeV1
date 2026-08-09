@@ -109,6 +109,22 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteSerial: vi.fn(),
     searchSerials: vi.fn().mockResolvedValue({ results: [], truncated: false }),
     updateWorkItemSerials: vi.fn(),
+    challanCorrectionEligibility: vi.fn().mockResolvedValue({
+      challanId: 'aaaa4444-4444-4444-8444-444444444444',
+      status: 'issued',
+      evidence: { receipts: 0, serials: 0, measurements: 0 },
+      path: 'cancel_replace',
+      pendingRequestId: null,
+    }),
+    proposeChallanCancelReplace: vi.fn(),
+    proposeIssueChallanCancelReplace: vi.fn(),
+    proposeChallanCorrectionNotice: vi.fn(),
+    listWorkCorrectionNotices: vi.fn().mockResolvedValue([]),
+    listChallanCorrectionNotices: vi.fn().mockResolvedValue([]),
+    getCorrectionNotice: vi.fn(),
+    renderCorrectionNotice: vi.fn(),
+    cancelCorrectionNotice: vi.fn(),
+    downloadCorrectionNoticePdf: vi.fn(),
     ...overrides,
   };
 }
@@ -495,5 +511,94 @@ describe('WorkDetail Issue Challans section', () => {
     );
     expect(onOpenIssueChallan).toHaveBeenCalledWith(CHALLAN_ID);
     expect(screen.queryByRole('button', { name: 'New Issue Challan' })).toBeNull();
+  });
+});
+
+describe('Issue Challan correction flow', () => {
+  it('files a cancel-and-replace correction for an issued Issue Challan', async () => {
+    const proposeIssueChallanCancelReplace = vi.fn().mockResolvedValue({});
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+      proposeIssueChallanCancelReplace,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Request correction' }),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Issued to'), {
+      target: { value: 'SSE/Works/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason for correction'), {
+      target: { value: 'Issued to the wrong site engineer.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request cancel & replace' }));
+
+    await waitFor(() => {
+      expect(proposeIssueChallanCancelReplace).toHaveBeenCalled();
+    });
+    const [, , body] = proposeIssueChallanCancelReplace.mock.calls[0] as [
+      string,
+      string,
+      {
+        reason: string;
+        replacement: {
+          issuedToName: string;
+          movementType: string;
+          lines: readonly Record<string, string>[];
+        };
+      },
+    ];
+    expect(body.reason).toBe('Issued to the wrong site engineer.');
+    expect(body.replacement.issuedToName).toBe('SSE/Works/Delhi');
+    expect(body.replacement.movementType).toBe('issue');
+    expect(body.replacement.lines.length).toBeGreaterThan(0);
+  });
+
+  it('hides the correction form without modify rights', async () => {
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+    expect(screen.queryByRole('heading', { name: 'Request correction' })).toBeNull();
   });
 });

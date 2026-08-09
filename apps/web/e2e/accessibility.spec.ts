@@ -460,6 +460,23 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  await page.route(`**/api/works/${WORK_ID}/correction-notices`, (route) =>
+    route.fulfill(json({ notices: [] })),
+  );
+  await page.route(`**/api/challans/${CHALLAN_ID}/correction-eligibility`, (route) =>
+    route.fulfill(
+      json({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 0, serials: 1, measurements: 0 },
+        path: 'correction_notice',
+        pendingRequestId: null,
+      }),
+    ),
+  );
+  await page.route(`**/api/challans/${CHALLAN_ID}/correction-notices`, (route) =>
+    route.fulfill(json({ notices: [] })),
+  );
 
   await page.goto('/');
   await page.getByRole('button', { name: /Sharma Constructions/ }).click();
@@ -484,6 +501,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Delivery receipt' })).toBeVisible();
   await expect(page.getByLabel('Serial numbers (one per line)')).toBeVisible();
   await expect(page.getByLabel('Installed on')).toBeVisible();
+  // The correction flow states the lawful path for an evidence-carrying
+  // challan and offers the notice form.
+  await expect(page.getByRole('heading', { name: 'Request correction' })).toBeVisible();
+  await expect(page.getByLabel('Correction statement')).toBeVisible();
   await expectNoSeriousViolations(page, 'challan detail with evidence');
 
   await page.getByRole('button', { name: 'Back to Work' }).click();
