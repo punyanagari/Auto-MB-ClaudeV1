@@ -1414,3 +1414,60 @@ input[type='radio'] {
     padding: 0;
   }
 }
+
+/* The Work page's tab strip. The counts are the point: they say what is
+ * inside an area before it is opened, which the old single scroll could
+ * only answer by scrolling to it. */
+.work-tabs {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  margin: var(--space-4) 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.work-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.work-tabs__tab:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.work-tabs__tab[aria-current='page'] {
+  color: var(--foreground);
+  font-weight: 600;
+  border-bottom-color: var(--primary);
+}
+
+.work-tabs__count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.work-tabs__tab[aria-current='page'] .work-tabs__count {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}

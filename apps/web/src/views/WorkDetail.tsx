@@ -49,6 +49,34 @@ const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
 };
 /** Renders "original → effective" when an approved amendment changed the
  * value, and the original alone otherwise. */
+/** The Work page's areas. Eleven sections used to stack on one scroll; each
+ * now answers for itself, and Overview summarises the rest. */
+const WORK_TABS = [
+  'overview',
+  'schedules',
+  'deliveries',
+  'issues',
+  'measurement',
+  'bills',
+  'instruments',
+  'amendments',
+  'timeline',
+] as const;
+
+type WorkTab = (typeof WORK_TABS)[number];
+
+const WORK_TAB_LABELS: Record<WorkTab, string> = {
+  overview: 'Overview',
+  schedules: 'Schedules & items',
+  deliveries: 'Deliveries',
+  issues: 'Issues',
+  measurement: 'Measurement',
+  bills: 'Bills',
+  instruments: 'Instruments',
+  amendments: 'Amendments',
+  timeline: 'Timeline',
+};
+
 function Amended({
   original,
   effective,
@@ -207,6 +235,7 @@ export function WorkDetail({
   const [pending, setPending] = useState(false);
   const [unfinished, setUnfinished] = useState<readonly UnfinishedWorkItem[]>([]);
   const [blockers, setBlockers] = useState<readonly WorkCompletionBlocker[]>([]);
+  const [tab, setTab] = useState<WorkTab>('overview');
 
   useEffect(() => {
     let cancelled = false;
@@ -354,6 +383,17 @@ export function WorkDetail({
   const canCreateDocuments = canModify && workActive;
   const canRecordSiteEvidence = canRecordEvidence && workActive;
   const canIssueDocuments = canIssue && workActive;
+  const tabCounts: Record<WorkTab, number | null> = {
+    overview: null,
+    schedules: workItems.length,
+    deliveries: challans?.length ?? 0,
+    issues: issueChallans?.length ?? 0,
+    measurement: mbEntries.length,
+    bills: bills.length,
+    instruments: instruments.length,
+    amendments: amendments.length,
+    timeline: null,
+  };
   return (
     <section className="card card--wide" aria-labelledby="work-title">
       <h1 id="work-title" tabIndex={-1}>
@@ -445,595 +485,654 @@ export function WorkDetail({
         </div>
       </dl>
 
-      <section aria-labelledby="work-completion-heading">
-        <h2 id="work-completion-heading">Completion status</h2>
-        {work.status === 'completed' ? (
-          <>
-            <p>
-              This Work is <strong>completed</strong>
-              {work.completedAt === null ? '' : ` on ${work.completedAt.slice(0, 10)}`}.
-              No new challan, installation, PAC certificate, Measurement Book, extension
-              request, or change proposal can be recorded until it is reopened.
-            </p>
-            {work.completionNote !== null && (
-              <p className="muted">Completion note: {work.completionNote}</p>
-            )}
-          </>
-        ) : (
-          <p className="muted">
-            A Work completes only at 100% executed value (every item fully delivered
-            and/or installed per its payment category). For a short closure, amend the
-            quantities down through the approval path first.
-          </p>
-        )}
-
-        {canModify && workActive && (
-          <form
-            className="stacked-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const data = new FormData(event.currentTarget);
-              const note = formValue(data, 'completion-note');
-              void transition(async () => {
-                const updated = await api.completeWork(organisationId, workId, {
-                  note,
-                });
-                return updated.work;
-              }, 'Work marked completed.');
-            }}
-          >
-            <div className="field">
-              <label htmlFor="work-completion-note">
-                Why this Work is being completed
-              </label>
-              <textarea
-                id="work-completion-note"
-                name="completion-note"
-                required
-                minLength={3}
-                maxLength={2000}
-                rows={2}
-              />
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
-                Complete Work
-              </button>
-            </div>
-          </form>
-        )}
-
-        {canModify && !workActive && (
-          <form
-            className="stacked-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const data = new FormData(event.currentTarget);
-              const note = formValue(data, 'reopen-note');
-              void transition(async () => {
-                const updated = await api.reopenWork(organisationId, workId, {
-                  note,
-                });
-                return updated.work;
-              }, 'Work reopened.');
-            }}
-          >
-            <div className="field">
-              <label htmlFor="work-reopen-note">Why this Work is being reopened</label>
-              <textarea
-                id="work-reopen-note"
-                name="reopen-note"
-                required
-                minLength={3}
-                maxLength={2000}
-                rows={2}
-              />
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
-                Reopen Work
-              </button>
-            </div>
-          </form>
-        )}
-
-        {blockers.length > 0 && (
-          <table className="data-table">
-            <caption>
-              Finish or discard these records before completing the Work
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Record</th>
-              </tr>
-            </thead>
-            <tbody>
-              {blockers.map((blocker) => (
-                <tr key={blocker.recordId}>
-                  <th scope="row">{blocker.label}</th>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {unfinished.length > 0 && (
-          <table className="data-table">
-            <caption>Items not yet at 100% executed value</caption>
-            <thead>
-              <tr>
-                <th scope="col">Item number</th>
-                <th scope="col">Payment category</th>
-                <th scope="col">Requires</th>
-                <th scope="col">Remedy</th>
-                <th scope="col">Required</th>
-                <th scope="col">Delivered</th>
-                <th scope="col">Installed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {unfinished.map((item) => (
-                <tr key={item.workItemId}>
-                  <th scope="row">{item.itemNumber}</th>
-                  <td>{item.category ?? 'uncategorised'}</td>
-                  <td>{REQUIREMENT_LABELS[item.requirement]}</td>
-                  <td>{DIRECTION_REMEDIES[item.direction]}</td>
-                  <td className="cell--numeric">{item.requiredQuantity}</td>
-                  <td className="cell--numeric">{item.deliveredQuantity}</td>
-                  <td className="cell--numeric">{item.installedQuantity}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {schedules.map((schedule) => (
-        <div key={schedule.id}>
-          <h2>
-            Schedule {schedule.scheduleCode}
-            <span className="muted"> · {schedule.items.length} items</span>
-          </h2>
-          <table className="data-table">
-            <caption className="visually-hidden">
-              Awarded items in schedule {schedule.scheduleCode}; amended values show the
-              original beside the sanctioned change
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Item number</th>
-                <th scope="col">Description</th>
-                <th scope="col">Unit</th>
-                <th scope="col">Awarded quantity</th>
-                <th scope="col">Rate (₹)</th>
-                <th scope="col">Serial tracking</th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedule.items.map((item) => {
-                const flags = itemFlags(item, pendingRemovals);
-                return (
-                  <tr key={item.id}>
-                    <th scope="row">
-                      {item.itemNumber}
-                      {flags.added && <span className="chip chip--issued">added</span>}
-                      {flags.removalPending && (
-                        <span className="chip chip--pending">omission pending</span>
-                      )}
-                    </th>
-                    <td className="cell--wrap">
-                      <Amended
-                        original={item.description}
-                        effective={item.effectiveDescription}
-                      />
-                    </td>
-                    <td>
-                      <Amended
-                        original={item.unitCode}
-                        effective={item.effectiveUnit}
-                      />
-                    </td>
-                    <td className="cell--numeric">
-                      <Amended
-                        original={item.awardedQuantity}
-                        effective={item.effectiveQuantity}
-                      />
-                    </td>
-                    <td className="cell--numeric">
-                      <Amended
-                        original={item.effectiveRate}
-                        effective={item.effectiveUnitRate}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-              {schedule.items.map((item) => (
-                <tr key={item.id}>
-                  <th scope="row">{item.itemNumber}</th>
-                  <td className="cell--wrap">{item.description}</td>
-                  <td>{item.unitCode}</td>
-                  <td className="cell--numeric">{item.awardedQuantity}</td>
-                  <td className="cell--numeric">{item.effectiveRate}</td>
-                  <td>
-                    {canModify ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
-                        role="switch"
-                        aria-checked={item.requiresSerials === true}
-                        aria-label={`Serial tracking for ${item.itemNumber}`}
-                        disabled={pending}
-                        onClick={() =>
-                          void act(
-                            async () => {
-                              const updated = await api.updateWorkItemSerials(
-                                organisationId,
-                                item.id,
-                                !item.requiresSerials,
-                              );
-                              setDetail((current) =>
-                                current === null
-                                  ? current
-                                  : {
-                                      ...current,
-                                      schedules: current.schedules.map((candidate) => ({
-                                        ...candidate,
-                                        items: candidate.items.map((candidateItem) =>
-                                          candidateItem.id === item.id
-                                            ? {
-                                                ...candidateItem,
-                                                requiresSerials:
-                                                  updated.requiresSerials,
-                                              }
-                                            : candidateItem,
-                                        ),
-                                      })),
-                                    },
-                              );
-                            },
-                            item.requiresSerials
-                              ? `Serial tracking switched off for ${item.itemNumber}.`
-                              : `Serial tracking required for ${item.itemNumber}; challans for it now need one serial per unit before issue.`,
-                          )
-                        }
-                      >
-                        {item.requiresSerials ? 'Required' : 'Off'}
-                      </button>
-                    ) : (
-                      <span className={item.requiresSerials ? '' : 'muted'}>
-                        {item.requiresSerials ? 'Required' : 'Off'}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-
-      <PaymentMatrix
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        workItems={workItems}
-        canModify={canModify}
-        onItemCategoryChanged={(workItemId, paymentCategory) => {
-          setDetail((current) =>
-            current === null
-              ? current
-              : {
-                  ...current,
-                  schedules: current.schedules.map((candidate) => ({
-                    ...candidate,
-                    items: candidate.items.map((candidateItem) =>
-                      candidateItem.id === workItemId
-                        ? { ...candidateItem, paymentCategory }
-                        : candidateItem,
-                    ),
-                  })),
-                },
+      {/* Eleven sections used to stack on one scroll. Each area now answers
+          for itself, and the counts show what is inside before it is opened. */}
+      <nav className="work-tabs" aria-label="Work sections">
+        {WORK_TABS.map((candidate) => {
+          const count = tabCounts[candidate];
+          return (
+            <button
+              key={candidate}
+              type="button"
+              className="work-tabs__tab"
+              aria-current={tab === candidate ? 'page' : undefined}
+              onClick={() => {
+                setTab(candidate);
+              }}
+            >
+              {WORK_TAB_LABELS[candidate]}
+              {count !== null && <span className="work-tabs__count">{count}</span>}
+            </button>
           );
-        }}
-      />
+        })}
+      </nav>
 
-      <h2>Amendments</h2>
-      <p className="muted">
-        Sanctioned changes to quantities, rates, descriptions, and items. The awarded
-        LOA values are never overwritten; approved amendments apply as effective values
-        shown beside the originals above.
-      </p>
-      {amendments.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Amendment requests for this Work
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Item</th>
-              <th scope="col">Change</th>
-              <th scope="col">Reason</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {amendments.map((amendment) => (
-              <tr key={amendment.id}>
-                <th scope="row">{amendment.itemNumber ?? '—'}</th>
-                <td className="cell--wrap">
-                  {amendment.diff
-                    .map(
-                      (entry) =>
-                        `${entry.field}: ${entry.before ?? '—'} → ${entry.after ?? '—'}`,
-                    )
-                    .join('; ')}
-                </td>
-                <td className="cell--wrap">{amendment.reason}</td>
-                <td>
-                  <span className={`chip chip--${amendment.status}`}>
-                    {amendment.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">No amendments proposed yet.</p>
-      )}
-      {canCreateDocuments && (
-        <AmendmentForm
-          items={workItems}
-          schedules={schedules}
-          pending={pending}
-          onProposeChange={(body) => {
-            void act(async () => {
-              await api.proposeAmendment(organisationId, workId, body);
-              const [freshDetail, freshAmendments] = await Promise.all([
-                api.getWork(organisationId, workId),
-                api.listWorkAmendments(organisationId, workId),
-              ]);
-              setDetail(freshDetail);
-              setAmendments(freshAmendments);
-            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-          onProposeAdd={(body) => {
-            void act(async () => {
-              await api.proposeAddItem(organisationId, workId, body);
-              const [freshDetail, freshAmendments] = await Promise.all([
-                api.getWork(organisationId, workId),
-                api.listWorkAmendments(organisationId, workId),
-              ]);
-              setDetail(freshDetail);
-              setAmendments(freshAmendments);
-            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-          onProposeRemove={(body) => {
-            void act(async () => {
-              await api.proposeItemRemoval(organisationId, workId, body);
-              const [freshDetail, freshAmendments] = await Promise.all([
-                api.getWork(organisationId, workId),
-                api.listWorkAmendments(organisationId, workId),
-              ]);
-              setDetail(freshDetail);
-              setAmendments(freshAmendments);
-            }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-        />
-      )}
-
-      <div className="card__header">
-        <h2>Delivery Challans</h2>
-        {canCreateDocuments &&
-          (challans?.some((challan) => challan.status === 'draft') === true ? (
-            <button
-              type="button"
-              onClick={() => {
-                const draft = challans.find((challan) => challan.status === 'draft');
-                if (draft) onOpenChallan(draft.id);
-              }}
-            >
-              Open draft challan
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                onNewChallan(workId, work.workCode);
-              }}
-            >
-              New Delivery Challan
-            </button>
-          ))}
-      </div>
-      {challans !== null && challans.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">Delivery Challans for this Work</caption>
-          <thead>
-            <tr>
-              <th scope="col">Number</th>
-              <th scope="col">Date</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {challans.map((challan) => (
-              <tr key={challan.id}>
-                <th scope="row">
-                  <button
-                    type="button"
-                    className="button--link"
-                    onClick={() => {
-                      onOpenChallan(challan.id);
-                    }}
-                  >
-                    {challan.challanNumber ?? 'Draft'}
-                  </button>
-                </th>
-                <td>{challan.challanDate}</td>
-                <td>
-                  <span className={`chip chip--${challan.status}`}>
-                    {challan.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">No Delivery Challans yet.</p>
-      )}
-
-      {correctionNotices.length > 0 && (
+      {tab === 'overview' && (
         <>
-          <h2>Correction notices</h2>
-          <table className="data-table">
-            <caption className="visually-hidden">
-              Correction notices issued for this Work
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Notice</th>
-                <th scope="col">Status</th>
-                <th scope="col">Issued</th>
-                <th scope="col">PDF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {correctionNotices.map((correctionNotice) => (
-                <tr key={correctionNotice.id}>
-                  <th scope="row">{correctionNotice.noticeNumber}</th>
-                  <td>
-                    <span className={`chip chip--${correctionNotice.status}`}>
-                      {correctionNotice.status}
-                    </span>
-                  </td>
-                  <td>{correctionNotice.createdAt.slice(0, 10)}</td>
-                  <td>
-                    {correctionNotice.renderedAvailable ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
-                        disabled={pending}
-                        onClick={() =>
-                          void act(async () => {
-                            const blob = await api.downloadCorrectionNoticePdf(
-                              organisationId,
-                              correctionNotice.id,
-                            );
-                            const url = URL.createObjectURL(blob);
-                            window.open(url, '_blank', 'noopener');
-                            setTimeout(() => {
-                              URL.revokeObjectURL(url);
-                            }, 60_000);
-                          }, 'Correction notice PDF opened in a new tab.')
-                        }
-                      >
-                        Open PDF
-                      </button>
-                    ) : canCreateDocuments && correctionNotice.status === 'issued' ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
-                        disabled={pending}
-                        onClick={() =>
-                          void act(async () => {
-                            await api.renderCorrectionNotice(
-                              organisationId,
-                              correctionNotice.id,
-                            );
-                            setCorrectionNotices(
-                              await api.listWorkCorrectionNotices(
-                                organisationId,
-                                workId,
-                              ),
-                            );
-                          }, 'Correction notice PDF generated.')
-                        }
-                      >
-                        Generate PDF
-                      </button>
-                    ) : (
-                      <span className="muted">not rendered</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <section aria-labelledby="work-completion-heading">
+            <h2 id="work-completion-heading">Completion status</h2>
+            {work.status === 'completed' ? (
+              <>
+                <p>
+                  This Work is <strong>completed</strong>
+                  {work.completedAt === null
+                    ? ''
+                    : ` on ${work.completedAt.slice(0, 10)}`}
+                  . No new challan, installation, PAC certificate, Measurement Book,
+                  extension request, or change proposal can be recorded until it is
+                  reopened.
+                </p>
+                {work.completionNote !== null && (
+                  <p className="muted">Completion note: {work.completionNote}</p>
+                )}
+              </>
+            ) : (
+              <p className="muted">
+                A Work completes only at 100% executed value (every item fully delivered
+                and/or installed per its payment category). For a short closure, amend
+                the quantities down through the approval path first.
+              </p>
+            )}
+
+            {canModify && workActive && (
+              <form
+                className="stacked-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const note = formValue(data, 'completion-note');
+                  void transition(async () => {
+                    const updated = await api.completeWork(organisationId, workId, {
+                      note,
+                    });
+                    return updated.work;
+                  }, 'Work marked completed.');
+                }}
+              >
+                <div className="field">
+                  <label htmlFor="work-completion-note">
+                    Why this Work is being completed
+                  </label>
+                  <textarea
+                    id="work-completion-note"
+                    name="completion-note"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                    rows={2}
+                  />
+                </div>
+                <div className="actions">
+                  <button type="submit" disabled={pending}>
+                    Complete Work
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {canModify && !workActive && (
+              <form
+                className="stacked-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const note = formValue(data, 'reopen-note');
+                  void transition(async () => {
+                    const updated = await api.reopenWork(organisationId, workId, {
+                      note,
+                    });
+                    return updated.work;
+                  }, 'Work reopened.');
+                }}
+              >
+                <div className="field">
+                  <label htmlFor="work-reopen-note">
+                    Why this Work is being reopened
+                  </label>
+                  <textarea
+                    id="work-reopen-note"
+                    name="reopen-note"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                    rows={2}
+                  />
+                </div>
+                <div className="actions">
+                  <button type="submit" disabled={pending}>
+                    Reopen Work
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {blockers.length > 0 && (
+              <table className="data-table">
+                <caption>
+                  Finish or discard these records before completing the Work
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Record</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {blockers.map((blocker) => (
+                    <tr key={blocker.recordId}>
+                      <th scope="row">{blocker.label}</th>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {unfinished.length > 0 && (
+              <table className="data-table">
+                <caption>Items not yet at 100% executed value</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Item number</th>
+                    <th scope="col">Payment category</th>
+                    <th scope="col">Requires</th>
+                    <th scope="col">Remedy</th>
+                    <th scope="col">Required</th>
+                    <th scope="col">Delivered</th>
+                    <th scope="col">Installed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unfinished.map((item) => (
+                    <tr key={item.workItemId}>
+                      <th scope="row">{item.itemNumber}</th>
+                      <td>{item.category ?? 'uncategorised'}</td>
+                      <td>{REQUIREMENT_LABELS[item.requirement]}</td>
+                      <td>{DIRECTION_REMEDIES[item.direction]}</td>
+                      <td className="cell--numeric">{item.requiredQuantity}</td>
+                      <td className="cell--numeric">{item.deliveredQuantity}</td>
+                      <td className="cell--numeric">{item.installedQuantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
         </>
       )}
 
-      <div className="card__header">
-        <h2>Issue Challans</h2>
-        {canCreateDocuments &&
-          (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
-            <button
-              type="button"
-              onClick={() => {
-                const draft = issueChallans.find(
-                  (challan) => challan.status === 'draft',
-                );
-                if (draft) onOpenIssueChallan(draft.id);
-              }}
-            >
-              Open draft Issue Challan
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                onNewIssueChallan(workId);
-              }}
-            >
-              New Issue Challan
-            </button>
+      {tab === 'schedules' && (
+        <>
+          {schedules.map((schedule) => (
+            <div key={schedule.id}>
+              <h2>
+                Schedule {schedule.scheduleCode}
+                <span className="muted"> · {schedule.items.length} items</span>
+              </h2>
+              <table className="data-table">
+                <caption className="visually-hidden">
+                  Awarded items in schedule {schedule.scheduleCode}; amended values show
+                  the original beside the sanctioned change
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Item number</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Unit</th>
+                    <th scope="col">Awarded quantity</th>
+                    <th scope="col">Rate (₹)</th>
+                    <th scope="col">Serial tracking</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedule.items.map((item) => {
+                    const flags = itemFlags(item, pendingRemovals);
+                    return (
+                      <tr key={item.id}>
+                        <th scope="row">
+                          {item.itemNumber}
+                          {flags.added && (
+                            <span className="chip chip--issued">added</span>
+                          )}
+                          {flags.removalPending && (
+                            <span className="chip chip--pending">omission pending</span>
+                          )}
+                        </th>
+                        <td className="cell--wrap">
+                          <Amended
+                            original={item.description}
+                            effective={item.effectiveDescription}
+                          />
+                        </td>
+                        <td>
+                          <Amended
+                            original={item.unitCode}
+                            effective={item.effectiveUnit}
+                          />
+                        </td>
+                        <td className="cell--numeric">
+                          <Amended
+                            original={item.awardedQuantity}
+                            effective={item.effectiveQuantity}
+                          />
+                        </td>
+                        <td className="cell--numeric">
+                          <Amended
+                            original={item.effectiveRate}
+                            effective={item.effectiveUnitRate}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {schedule.items.map((item) => (
+                    <tr key={item.id}>
+                      <th scope="row">{item.itemNumber}</th>
+                      <td className="cell--wrap">{item.description}</td>
+                      <td>{item.unitCode}</td>
+                      <td className="cell--numeric">{item.awardedQuantity}</td>
+                      <td className="cell--numeric">{item.effectiveRate}</td>
+                      <td>
+                        {canModify ? (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            role="switch"
+                            aria-checked={item.requiresSerials === true}
+                            aria-label={`Serial tracking for ${item.itemNumber}`}
+                            disabled={pending}
+                            onClick={() =>
+                              void act(
+                                async () => {
+                                  const updated = await api.updateWorkItemSerials(
+                                    organisationId,
+                                    item.id,
+                                    !item.requiresSerials,
+                                  );
+                                  setDetail((current) =>
+                                    current === null
+                                      ? current
+                                      : {
+                                          ...current,
+                                          schedules: current.schedules.map(
+                                            (candidate) => ({
+                                              ...candidate,
+                                              items: candidate.items.map(
+                                                (candidateItem) =>
+                                                  candidateItem.id === item.id
+                                                    ? {
+                                                        ...candidateItem,
+                                                        requiresSerials:
+                                                          updated.requiresSerials,
+                                                      }
+                                                    : candidateItem,
+                                              ),
+                                            }),
+                                          ),
+                                        },
+                                  );
+                                },
+                                item.requiresSerials
+                                  ? `Serial tracking switched off for ${item.itemNumber}.`
+                                  : `Serial tracking required for ${item.itemNumber}; challans for it now need one serial per unit before issue.`,
+                              )
+                            }
+                          >
+                            {item.requiresSerials ? 'Required' : 'Off'}
+                          </button>
+                        ) : (
+                          <span className={item.requiresSerials ? '' : 'muted'}>
+                            {item.requiresSerials ? 'Required' : 'Off'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ))}
-      </div>
-      {issueChallans !== null && issueChallans.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">Issue Challans for this Work</caption>
-          <thead>
-            <tr>
-              <th scope="col">Number</th>
-              <th scope="col">Movement</th>
-              <th scope="col">Date</th>
-              <th scope="col">Issued to</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {issueChallans.map((challan) => (
-              <tr key={challan.id}>
-                <th scope="row">
-                  <button
-                    type="button"
-                    className="button--link"
-                    onClick={() => {
-                      onOpenIssueChallan(challan.id);
-                    }}
-                  >
-                    {challan.challanNumber ?? 'Draft'}
-                  </button>
-                </th>
-                <td>{MOVEMENT_LABELS[challan.movementType]}</td>
-                <td>{challan.challanDate}</td>
-                <td className="cell--wrap">{challan.issuedToName}</td>
-                <td>
-                  <span className={`chip chip--${challan.status}`}>
-                    {challan.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">
-          No Issue Challans yet. Issue Challans record material sent out to site, job
-          work, loans, and returns.
-        </p>
+
+          <PaymentMatrix
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            workItems={workItems}
+            canModify={canModify}
+            onItemCategoryChanged={(workItemId, paymentCategory) => {
+              setDetail((current) =>
+                current === null
+                  ? current
+                  : {
+                      ...current,
+                      schedules: current.schedules.map((candidate) => ({
+                        ...candidate,
+                        items: candidate.items.map((candidateItem) =>
+                          candidateItem.id === workItemId
+                            ? { ...candidateItem, paymentCategory }
+                            : candidateItem,
+                        ),
+                      })),
+                    },
+              );
+            }}
+          />
+        </>
+      )}
+
+      {tab === 'amendments' && (
+        <>
+          <h2>Amendments</h2>
+          <p className="muted">
+            Sanctioned changes to quantities, rates, descriptions, and items. The
+            awarded LOA values are never overwritten; approved amendments apply as
+            effective values shown beside the originals above.
+          </p>
+          {amendments.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Amendment requests for this Work
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col">Change</th>
+                  <th scope="col">Reason</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {amendments.map((amendment) => (
+                  <tr key={amendment.id}>
+                    <th scope="row">{amendment.itemNumber ?? '—'}</th>
+                    <td className="cell--wrap">
+                      {amendment.diff
+                        .map(
+                          (entry) =>
+                            `${entry.field}: ${entry.before ?? '—'} → ${entry.after ?? '—'}`,
+                        )
+                        .join('; ')}
+                    </td>
+                    <td className="cell--wrap">{amendment.reason}</td>
+                    <td>
+                      <span className={`chip chip--${amendment.status}`}>
+                        {amendment.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">No amendments proposed yet.</p>
+          )}
+          {canCreateDocuments && (
+            <AmendmentForm
+              items={workItems}
+              schedules={schedules}
+              pending={pending}
+              onProposeChange={(body) => {
+                void act(async () => {
+                  await api.proposeAmendment(organisationId, workId, body);
+                  const [freshDetail, freshAmendments] = await Promise.all([
+                    api.getWork(organisationId, workId),
+                    api.listWorkAmendments(organisationId, workId),
+                  ]);
+                  setDetail(freshDetail);
+                  setAmendments(freshAmendments);
+                }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+              }}
+              onProposeAdd={(body) => {
+                void act(async () => {
+                  await api.proposeAddItem(organisationId, workId, body);
+                  const [freshDetail, freshAmendments] = await Promise.all([
+                    api.getWork(organisationId, workId),
+                    api.listWorkAmendments(organisationId, workId),
+                  ]);
+                  setDetail(freshDetail);
+                  setAmendments(freshAmendments);
+                }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+              }}
+              onProposeRemove={(body) => {
+                void act(async () => {
+                  await api.proposeItemRemoval(organisationId, workId, body);
+                  const [freshDetail, freshAmendments] = await Promise.all([
+                    api.getWork(organisationId, workId),
+                    api.listWorkAmendments(organisationId, workId),
+                  ]);
+                  setDetail(freshDetail);
+                  setAmendments(freshAmendments);
+                }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {tab === 'deliveries' && (
+        <>
+          <div className="card__header">
+            <h2>Delivery Challans</h2>
+            {canCreateDocuments &&
+              (challans?.some((challan) => challan.status === 'draft') === true ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const draft = challans.find(
+                      (challan) => challan.status === 'draft',
+                    );
+                    if (draft) onOpenChallan(draft.id);
+                  }}
+                >
+                  Open draft challan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNewChallan(workId, work.workCode);
+                  }}
+                >
+                  New Delivery Challan
+                </button>
+              ))}
+          </div>
+          {challans !== null && challans.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Delivery Challans for this Work
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Number</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {challans.map((challan) => (
+                  <tr key={challan.id}>
+                    <th scope="row">
+                      <button
+                        type="button"
+                        className="button--link"
+                        onClick={() => {
+                          onOpenChallan(challan.id);
+                        }}
+                      >
+                        {challan.challanNumber ?? 'Draft'}
+                      </button>
+                    </th>
+                    <td>{challan.challanDate}</td>
+                    <td>
+                      <span className={`chip chip--${challan.status}`}>
+                        {challan.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">No Delivery Challans yet.</p>
+          )}
+
+          {correctionNotices.length > 0 && (
+            <>
+              <h2>Correction notices</h2>
+              <table className="data-table">
+                <caption className="visually-hidden">
+                  Correction notices issued for this Work
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Notice</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Issued</th>
+                    <th scope="col">PDF</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {correctionNotices.map((correctionNotice) => (
+                    <tr key={correctionNotice.id}>
+                      <th scope="row">{correctionNotice.noticeNumber}</th>
+                      <td>
+                        <span className={`chip chip--${correctionNotice.status}`}>
+                          {correctionNotice.status}
+                        </span>
+                      </td>
+                      <td>{correctionNotice.createdAt.slice(0, 10)}</td>
+                      <td>
+                        {correctionNotice.renderedAvailable ? (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            disabled={pending}
+                            onClick={() =>
+                              void act(async () => {
+                                const blob = await api.downloadCorrectionNoticePdf(
+                                  organisationId,
+                                  correctionNotice.id,
+                                );
+                                const url = URL.createObjectURL(blob);
+                                window.open(url, '_blank', 'noopener');
+                                setTimeout(() => {
+                                  URL.revokeObjectURL(url);
+                                }, 60_000);
+                              }, 'Correction notice PDF opened in a new tab.')
+                            }
+                          >
+                            Open PDF
+                          </button>
+                        ) : canCreateDocuments &&
+                          correctionNotice.status === 'issued' ? (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            disabled={pending}
+                            onClick={() =>
+                              void act(async () => {
+                                await api.renderCorrectionNotice(
+                                  organisationId,
+                                  correctionNotice.id,
+                                );
+                                setCorrectionNotices(
+                                  await api.listWorkCorrectionNotices(
+                                    organisationId,
+                                    workId,
+                                  ),
+                                );
+                              }, 'Correction notice PDF generated.')
+                            }
+                          >
+                            Generate PDF
+                          </button>
+                        ) : (
+                          <span className="muted">not rendered</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === 'issues' && (
+        <>
+          <div className="card__header">
+            <h2>Issue Challans</h2>
+            {canCreateDocuments &&
+              (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const draft = issueChallans.find(
+                      (challan) => challan.status === 'draft',
+                    );
+                    if (draft) onOpenIssueChallan(draft.id);
+                  }}
+                >
+                  Open draft Issue Challan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNewIssueChallan(workId);
+                  }}
+                >
+                  New Issue Challan
+                </button>
+              ))}
+          </div>
+          {issueChallans !== null && issueChallans.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Issue Challans for this Work
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Number</th>
+                  <th scope="col">Movement</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Issued to</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {issueChallans.map((challan) => (
+                  <tr key={challan.id}>
+                    <th scope="row">
+                      <button
+                        type="button"
+                        className="button--link"
+                        onClick={() => {
+                          onOpenIssueChallan(challan.id);
+                        }}
+                      >
+                        {challan.challanNumber ?? 'Draft'}
+                      </button>
+                    </th>
+                    <td>{MOVEMENT_LABELS[challan.movementType]}</td>
+                    <td>{challan.challanDate}</td>
+                    <td className="cell--wrap">{challan.issuedToName}</td>
+                    <td>
+                      <span className={`chip chip--${challan.status}`}>
+                        {challan.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">
+              No Issue Challans yet. Issue Challans record material sent out to site,
+              job work, loans, and returns.
+            </p>
+          )}
+        </>
       )}
 
       {notice !== null && (
@@ -1047,474 +1146,520 @@ export function WorkDetail({
         </p>
       )}
 
-      <CompletionExtensions
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canModify={canCreateDocuments}
-        canIssue={canIssueDocuments}
-        canApprove={canApprove}
-      />
+      {tab === 'overview' && (
+        <>
+          <CompletionExtensions
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canApprove={canApprove}
+          />
 
-      <WorkConsignees
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canModify={canModify}
-      />
-
-      <h2>Contract instruments</h2>
-      {typeof work.pbgRequiredAmount === 'string' ? (
-        <dl className="fact-list" aria-label="PBG requirement from the letter">
-          <div>
-            <dt>PBG required by the letter</dt>
-            <dd>{formatInr(work.pbgRequiredAmount)}</dd>
-          </div>
-          <div>
-            <dt>Submission window</dt>
-            <dd>
-              {work.pbgSubmissionDays !== null
-                ? `${String(work.pbgSubmissionDays)} days from the letter date`
-                : '—'}
-              {work.pbgExtensionDays !== null &&
-                ` (+${String(work.pbgExtensionDays)} days extension)`}
-            </dd>
-          </div>
-          <div>
-            <dt>Penal interest</dt>
-            <dd>
-              {work.pbgPenalInterestPercent !== null
-                ? `${work.pbgPenalInterestPercent}% p.a.`
-                : '—'}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <p className="muted">
-          The letter records no Performance Bank Guarantee requirement.
-        </p>
-      )}
-      {instruments.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Bank guarantees and certificates held for this Work
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Kind</th>
-              <th scope="col">Reference</th>
-              <th scope="col" className="cell--numeric">
-                Amount
-              </th>
-              <th scope="col">Issued</th>
-              <th scope="col">Expires</th>
-              <th scope="col">Status</th>
-              {canModify && <th scope="col">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {instruments.map((instrument) => (
-              <tr key={instrument.id}>
-                <td>{INSTRUMENT_LABELS[instrument.kind]}</td>
-                <th scope="row">{instrument.reference}</th>
-                <td className="cell--numeric">
-                  {instrument.amount !== null ? formatInr(instrument.amount) : '—'}
-                </td>
-                <td>{instrument.issuedOn}</td>
-                <td>{instrument.expiresOn ?? '—'}</td>
-                <td>
-                  <span className={`chip chip--${instrument.status}`}>
-                    {instrument.status}
-                  </span>
-                </td>
-                {canModify && (
-                  <td>
-                    {instrument.status === 'active' ? (
-                      <InstrumentStatusEditor
-                        instrument={instrument}
-                        pending={pending}
-                        onApply={(status) =>
-                          void act(async () => {
-                            const updated = await api.updateInstrument(
-                              organisationId,
-                              instrument.id,
-                              { status },
-                            );
-                            setInstruments((current) =>
-                              current.map((candidate) =>
-                                candidate.id === updated.id ? updated : candidate,
-                              ),
-                            );
-                          }, `${instrument.reference} marked ${status}.`)
-                        }
-                      />
-                    ) : (
-                      <span className="muted">final</span>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">No PBG, PAC, or document instruments recorded yet.</p>
-      )}
-      {canModify && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const data = new FormData(form);
-            const kind = formValue(data, 'instrument-kind') || 'pbg';
-            const reference = formValue(data, 'instrument-reference');
-            const amount = formValue(data, 'instrument-amount').trim();
-            const issuedOn = formValue(data, 'instrument-issued');
-            const expiresOn = formValue(data, 'instrument-expires');
-            const notes = formValue(data, 'instrument-notes').trim();
-            void act(async () => {
-              const created = await api.createInstrument(organisationId, workId, {
-                kind: kind as Instrument['kind'],
-                reference,
-                issuedOn,
-                ...(amount.length > 0 ? { amount } : {}),
-                ...(expiresOn.length > 0 ? { expiresOn } : {}),
-                ...(notes.length > 0 ? { notes } : {}),
-              });
-              setInstruments((current) => [...current, created]);
-              form.reset();
-            }, `${reference} recorded.`);
-          }}
-        >
-          <h3>Add instrument</h3>
-          <div className="field">
-            <label htmlFor="instrument-kind">Kind</label>
-            <select id="instrument-kind" name="instrument-kind" required>
-              <option value="pbg">PBG — Performance Bank Guarantee</option>
-              <option value="pac">PAC — Provisional Acceptance Certificate</option>
-              <option value="doc">DOC — other contract document</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="instrument-reference">Reference</label>
-            <input
-              id="instrument-reference"
-              name="instrument-reference"
-              required
-              maxLength={200}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="instrument-amount">Amount (₹, optional)</label>
-            <input
-              id="instrument-amount"
-              name="instrument-amount"
-              inputMode="decimal"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="instrument-issued">Issued on</label>
-            <input
-              id="instrument-issued"
-              name="instrument-issued"
-              type="date"
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="instrument-expires">Expires on (optional)</label>
-            <input id="instrument-expires" name="instrument-expires" type="date" />
-          </div>
-          <div className="field">
-            <label htmlFor="instrument-notes">Notes (optional)</label>
-            <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
-              Add instrument
-            </button>
-          </div>
-        </form>
+          <WorkConsignees
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canModify}
+          />
+        </>
       )}
 
-      <h2>Measurement Book</h2>
-      {mbEntries.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Measurement Book entries for this Work
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Item</th>
-              <th scope="col" className="cell--numeric">
-                Quantity
-              </th>
-              <th scope="col">Measured on</th>
-              <th scope="col">Challan</th>
-              <th scope="col">MB book</th>
-              <th scope="col">Billing</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mbEntries.map((entry) => (
-              <tr key={entry.id}>
-                <th scope="row">{entry.itemNumber}</th>
-                <td className="cell--numeric">{entry.measuredQuantity}</td>
-                <td>{entry.measuredOn}</td>
-                <td>
-                  {entry.deliveryChallanId !== null
-                    ? (challanNumberById.get(entry.deliveryChallanId) ?? '—')
+      {tab === 'instruments' && (
+        <>
+          <h2>Contract instruments</h2>
+          {typeof work.pbgRequiredAmount === 'string' ? (
+            <dl className="fact-list" aria-label="PBG requirement from the letter">
+              <div>
+                <dt>PBG required by the letter</dt>
+                <dd>{formatInr(work.pbgRequiredAmount)}</dd>
+              </div>
+              <div>
+                <dt>Submission window</dt>
+                <dd>
+                  {work.pbgSubmissionDays !== null
+                    ? `${String(work.pbgSubmissionDays)} days from the letter date`
                     : '—'}
-                </td>
-                <td>{entry.mbBookRef ?? '—'}</td>
-                <td>
-                  {entry.billId !== null ? (
-                    <span className="chip chip--confirmed">billed</span>
-                  ) : (
-                    <span className="muted">unbilled</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">No measurements recorded yet.</p>
-      )}
-      {canRecordSiteEvidence && workItems.length > 0 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const data = new FormData(form);
-            const workItemId = formValue(data, 'mb-item');
-            const measuredQuantity = formValue(data, 'mb-quantity');
-            const measuredOn = formValue(data, 'mb-date');
-            const deliveryChallanId = formValue(data, 'mb-challan');
-            const mbBookRef = formValue(data, 'mb-book').trim();
-            const remarks = formValue(data, 'mb-remarks').trim();
-            void act(async () => {
-              const entry = await api.recordMbEntry(organisationId, workId, {
-                workItemId,
-                measuredQuantity,
-                measuredOn,
-                ...(deliveryChallanId.length > 0 ? { deliveryChallanId } : {}),
-                ...(mbBookRef.length > 0 ? { mbBookRef } : {}),
-                ...(remarks.length > 0 ? { remarks } : {}),
-              });
-              setMbEntries((current) => [...current, entry]);
-              form.reset();
-            }, 'Measurement recorded.');
-          }}
-        >
-          <h3>Record measurement</h3>
-          <div className="field">
-            <label htmlFor="mb-item">Work item</label>
-            <select id="mb-item" name="mb-item" required>
-              {workItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.itemNumber} — {item.description}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="mb-quantity">Measured quantity</label>
-            <input id="mb-quantity" name="mb-quantity" inputMode="decimal" required />
-          </div>
-          <div className="field">
-            <label htmlFor="mb-date">Measured on</label>
-            <input id="mb-date" name="mb-date" type="date" required />
-          </div>
-          <div className="field">
-            <label htmlFor="mb-challan">Source challan (optional)</label>
-            <select id="mb-challan" name="mb-challan">
-              <option value="">Not tied to a challan</option>
-              {issuedChallans.map((challan) => (
-                <option key={challan.id} value={challan.id}>
-                  {challan.challanNumber ?? challan.id}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="mb-book">MB book reference (optional)</label>
-            <input id="mb-book" name="mb-book" maxLength={100} />
-          </div>
-          <div className="field">
-            <label htmlFor="mb-remarks">Remarks (optional)</label>
-            <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
-              Record measurement
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="card__header">
-        <h2>Bills</h2>
-      </div>
-      {canIssue && (
-        <p className="muted">
-          Bills are prepared from a finalized stage-wise Measurement Book — use the
-          Measurement Books section below.
-        </p>
-      )}
-      {bills.length > 0 ? (
-        bills.map((bill) => (
-          <div key={bill.id}>
-            <h3>
-              Bill #{bill.billNumber}{' '}
-              <span className={`chip chip--${bill.status}`}>{bill.status}</span>
-            </h3>
+                  {work.pbgExtensionDays !== null &&
+                    ` (+${String(work.pbgExtensionDays)} days extension)`}
+                </dd>
+              </div>
+              <div>
+                <dt>Penal interest</dt>
+                <dd>
+                  {work.pbgPenalInterestPercent !== null
+                    ? `${work.pbgPenalInterestPercent}% p.a.`
+                    : '—'}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="muted">
+              The letter records no Performance Bank Guarantee requirement.
+            </p>
+          )}
+          {instruments.length > 0 ? (
             <table className="data-table">
               <caption className="visually-hidden">
-                Lines of bill {bill.billNumber}
+                Bank guarantees and certificates held for this Work
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Reference</th>
+                  <th scope="col" className="cell--numeric">
+                    Amount
+                  </th>
+                  <th scope="col">Issued</th>
+                  <th scope="col">Expires</th>
+                  <th scope="col">Status</th>
+                  {canModify && <th scope="col">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {instruments.map((instrument) => (
+                  <tr key={instrument.id}>
+                    <td>{INSTRUMENT_LABELS[instrument.kind]}</td>
+                    <th scope="row">{instrument.reference}</th>
+                    <td className="cell--numeric">
+                      {instrument.amount !== null ? formatInr(instrument.amount) : '—'}
+                    </td>
+                    <td>{instrument.issuedOn}</td>
+                    <td>{instrument.expiresOn ?? '—'}</td>
+                    <td>
+                      <span className={`chip chip--${instrument.status}`}>
+                        {instrument.status}
+                      </span>
+                    </td>
+                    {canModify && (
+                      <td>
+                        {instrument.status === 'active' ? (
+                          <InstrumentStatusEditor
+                            instrument={instrument}
+                            pending={pending}
+                            onApply={(status) =>
+                              void act(async () => {
+                                const updated = await api.updateInstrument(
+                                  organisationId,
+                                  instrument.id,
+                                  { status },
+                                );
+                                setInstruments((current) =>
+                                  current.map((candidate) =>
+                                    candidate.id === updated.id ? updated : candidate,
+                                  ),
+                                );
+                              }, `${instrument.reference} marked ${status}.`)
+                            }
+                          />
+                        ) : (
+                          <span className="muted">final</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">No PBG, PAC, or document instruments recorded yet.</p>
+          )}
+          {canModify && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = new FormData(form);
+                const kind = formValue(data, 'instrument-kind') || 'pbg';
+                const reference = formValue(data, 'instrument-reference');
+                const amount = formValue(data, 'instrument-amount').trim();
+                const issuedOn = formValue(data, 'instrument-issued');
+                const expiresOn = formValue(data, 'instrument-expires');
+                const notes = formValue(data, 'instrument-notes').trim();
+                void act(async () => {
+                  const created = await api.createInstrument(organisationId, workId, {
+                    kind: kind as Instrument['kind'],
+                    reference,
+                    issuedOn,
+                    ...(amount.length > 0 ? { amount } : {}),
+                    ...(expiresOn.length > 0 ? { expiresOn } : {}),
+                    ...(notes.length > 0 ? { notes } : {}),
+                  });
+                  setInstruments((current) => [...current, created]);
+                  form.reset();
+                }, `${reference} recorded.`);
+              }}
+            >
+              <h3>Add instrument</h3>
+              <div className="field">
+                <label htmlFor="instrument-kind">Kind</label>
+                <select id="instrument-kind" name="instrument-kind" required>
+                  <option value="pbg">PBG — Performance Bank Guarantee</option>
+                  <option value="pac">PAC — Provisional Acceptance Certificate</option>
+                  <option value="doc">DOC — other contract document</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="instrument-reference">Reference</label>
+                <input
+                  id="instrument-reference"
+                  name="instrument-reference"
+                  required
+                  maxLength={200}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="instrument-amount">Amount (₹, optional)</label>
+                <input
+                  id="instrument-amount"
+                  name="instrument-amount"
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="instrument-issued">Issued on</label>
+                <input
+                  id="instrument-issued"
+                  name="instrument-issued"
+                  type="date"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="instrument-expires">Expires on (optional)</label>
+                <input id="instrument-expires" name="instrument-expires" type="date" />
+              </div>
+              <div className="field">
+                <label htmlFor="instrument-notes">Notes (optional)</label>
+                <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Add instrument
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+
+      {tab === 'measurement' && (
+        <>
+          <h2>Measurement Book</h2>
+          {mbEntries.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Measurement Book entries for this Work
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Item</th>
-                  <th scope="col">Unit</th>
                   <th scope="col" className="cell--numeric">
                     Quantity
                   </th>
-                  <th scope="col" className="cell--numeric">
-                    Rate
-                  </th>
-                  <th scope="col" className="cell--numeric">
-                    Amount
-                  </th>
+                  <th scope="col">Measured on</th>
+                  <th scope="col">Challan</th>
+                  <th scope="col">MB book</th>
+                  <th scope="col">Billing</th>
                 </tr>
               </thead>
               <tbody>
-                {billLines(bill.linesSnapshot).map((line) => (
-                  <tr key={`${bill.id}-${line.itemNumber}`}>
-                    <th scope="row">{line.itemNumber}</th>
-                    <td>{line.unitCode}</td>
-                    <td className="cell--numeric">{line.quantity}</td>
-                    <td className="cell--numeric">{formatRate(line.rate)}</td>
-                    <td className="cell--numeric">{formatInr(line.amount)}</td>
+                {mbEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <th scope="row">{entry.itemNumber}</th>
+                    <td className="cell--numeric">{entry.measuredQuantity}</td>
+                    <td>{entry.measuredOn}</td>
+                    <td>
+                      {entry.deliveryChallanId !== null
+                        ? (challanNumberById.get(entry.deliveryChallanId) ?? '—')
+                        : '—'}
+                    </td>
+                    <td>{entry.mbBookRef ?? '—'}</td>
+                    <td>
+                      {entry.billId !== null ? (
+                        <span className="chip chip--confirmed">billed</span>
+                      ) : (
+                        <span className="muted">unbilled</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
-                <tr>
-                  <th scope="row" colSpan={4}>
-                    Total
-                  </th>
-                  <td className="cell--numeric">
-                    <strong>{formatInr(bill.totalAmount)}</strong>
-                  </td>
-                </tr>
               </tbody>
             </table>
-            {canIssue && bill.status !== 'paid' && (
+          ) : (
+            <p className="muted">No measurements recorded yet.</p>
+          )}
+          {canRecordSiteEvidence && workItems.length > 0 && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = new FormData(form);
+                const workItemId = formValue(data, 'mb-item');
+                const measuredQuantity = formValue(data, 'mb-quantity');
+                const measuredOn = formValue(data, 'mb-date');
+                const deliveryChallanId = formValue(data, 'mb-challan');
+                const mbBookRef = formValue(data, 'mb-book').trim();
+                const remarks = formValue(data, 'mb-remarks').trim();
+                void act(async () => {
+                  const entry = await api.recordMbEntry(organisationId, workId, {
+                    workItemId,
+                    measuredQuantity,
+                    measuredOn,
+                    ...(deliveryChallanId.length > 0 ? { deliveryChallanId } : {}),
+                    ...(mbBookRef.length > 0 ? { mbBookRef } : {}),
+                    ...(remarks.length > 0 ? { remarks } : {}),
+                  });
+                  setMbEntries((current) => [...current, entry]);
+                  form.reset();
+                }, 'Measurement recorded.');
+              }}
+            >
+              <h3>Record measurement</h3>
+              <div className="field">
+                <label htmlFor="mb-item">Work item</label>
+                <select id="mb-item" name="mb-item" required>
+                  {workItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.itemNumber} — {item.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="mb-quantity">Measured quantity</label>
+                <input
+                  id="mb-quantity"
+                  name="mb-quantity"
+                  inputMode="decimal"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="mb-date">Measured on</label>
+                <input id="mb-date" name="mb-date" type="date" required />
+              </div>
+              <div className="field">
+                <label htmlFor="mb-challan">Source challan (optional)</label>
+                <select id="mb-challan" name="mb-challan">
+                  <option value="">Not tied to a challan</option>
+                  {issuedChallans.map((challan) => (
+                    <option key={challan.id} value={challan.id}>
+                      {challan.challanNumber ?? challan.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="mb-book">MB book reference (optional)</label>
+                <input id="mb-book" name="mb-book" maxLength={100} />
+              </div>
+              <div className="field">
+                <label htmlFor="mb-remarks">Remarks (optional)</label>
+                <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
+              </div>
               <div className="actions">
-                <button
-                  type="button"
-                  className="button--ghost"
-                  disabled={pending}
-                  onClick={() => {
-                    const next = bill.status === 'prepared' ? 'submitted' : 'paid';
-                    void act(async () => {
-                      const updated = await api.setBillStatus(organisationId, bill.id, {
-                        status: next,
-                      });
-                      setBills((current) =>
-                        current.map((candidate) =>
-                          candidate.id === updated.id ? updated : candidate,
-                        ),
-                      );
-                    }, `Bill #${bill.billNumber} marked ${next}.`);
-                  }}
-                >
-                  {bill.status === 'prepared' ? 'Mark submitted' : 'Mark paid'}
+                <button type="submit" disabled={pending}>
+                  Record measurement
                 </button>
               </div>
-            )}
+            </form>
+          )}
+        </>
+      )}
+
+      {tab === 'bills' && (
+        <>
+          <div className="card__header">
+            <h2>Bills</h2>
           </div>
-        ))
-      ) : (
-        <p className="muted">No bills prepared yet.</p>
+          {canIssue && (
+            <p className="muted">
+              Bills are prepared from a finalized stage-wise Measurement Book — use the
+              Measurement Books section below.
+            </p>
+          )}
+          {bills.length > 0 ? (
+            bills.map((bill) => (
+              <div key={bill.id}>
+                <h3>
+                  Bill #{bill.billNumber}{' '}
+                  <span className={`chip chip--${bill.status}`}>{bill.status}</span>
+                </h3>
+                <table className="data-table">
+                  <caption className="visually-hidden">
+                    Lines of bill {bill.billNumber}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col">Unit</th>
+                      <th scope="col" className="cell--numeric">
+                        Quantity
+                      </th>
+                      <th scope="col" className="cell--numeric">
+                        Rate
+                      </th>
+                      <th scope="col" className="cell--numeric">
+                        Amount
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billLines(bill.linesSnapshot).map((line) => (
+                      <tr key={`${bill.id}-${line.itemNumber}`}>
+                        <th scope="row">{line.itemNumber}</th>
+                        <td>{line.unitCode}</td>
+                        <td className="cell--numeric">{line.quantity}</td>
+                        <td className="cell--numeric">{formatRate(line.rate)}</td>
+                        <td className="cell--numeric">{formatInr(line.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <th scope="row" colSpan={4}>
+                        Total
+                      </th>
+                      <td className="cell--numeric">
+                        <strong>{formatInr(bill.totalAmount)}</strong>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                {canIssue && bill.status !== 'paid' && (
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="button--ghost"
+                      disabled={pending}
+                      onClick={() => {
+                        const next = bill.status === 'prepared' ? 'submitted' : 'paid';
+                        void act(async () => {
+                          const updated = await api.setBillStatus(
+                            organisationId,
+                            bill.id,
+                            {
+                              status: next,
+                            },
+                          );
+                          setBills((current) =>
+                            current.map((candidate) =>
+                              candidate.id === updated.id ? updated : candidate,
+                            ),
+                          );
+                        }, `Bill #${bill.billNumber} marked ${next}.`);
+                      }}
+                    >
+                      {bill.status === 'prepared' ? 'Mark submitted' : 'Mark paid'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="muted">No bills prepared yet.</p>
+          )}
+        </>
       )}
 
-      <Installations
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canRecordEvidence={canRecordSiteEvidence}
-        workItems={workItems}
-        serials={serials}
-        onSerialsChanged={setSerials}
-      />
-
-      <PacCertificates
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canModify={canCreateDocuments}
-        workItems={workItems}
-      />
-
-      <MeasurementBooks
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canModify={canCreateDocuments}
-        canIssue={canIssue}
-        canCancel={canCancel}
-        onBillPrepared={() => {
-          void api.listBills(organisationId, workId).then(setBills);
-        }}
-      />
-
-      <h2>Serial trace</h2>
-      {serials.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Every serial number delivered under this Work
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Serial</th>
-              <th scope="col">Item</th>
-              <th scope="col">Challan</th>
-              <th scope="col">Installation</th>
-            </tr>
-          </thead>
-          <tbody>
-            {serials.map((serial) => (
-              <tr key={serial.id}>
-                <th scope="row">{serial.serialNumber}</th>
-                <td className="cell--wrap">{serial.itemDescription}</td>
-                <td>{serial.challanNumber ?? '—'}</td>
-                <td>
-                  {serial.installedOn !== null ? (
-                    <span className="chip chip--installed">
-                      installed {serial.installedOn}
-                      {typeof serial.installationLocation === 'string'
-                        ? ` at ${serial.installationLocation}`
-                        : ''}
-                    </span>
-                  ) : (
-                    <span className="muted">not installed</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">
-          No serial numbers recorded yet. Serials are recorded on each issued challan.
-        </p>
+      {tab === 'deliveries' && (
+        <>
+          <Installations
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canRecordEvidence={canRecordSiteEvidence}
+            workItems={workItems}
+            serials={serials}
+            onSerialsChanged={setSerials}
+          />
+        </>
       )}
 
-      <Timeline
-        api={api}
-        organisationId={organisationId}
-        scope={{ kind: 'work', workId }}
-      />
+      {tab === 'instruments' && (
+        <>
+          <PacCertificates
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canCreateDocuments}
+            workItems={workItems}
+          />
+        </>
+      )}
+
+      {tab === 'measurement' && (
+        <>
+          <MeasurementBooks
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canCreateDocuments}
+            canIssue={canIssue}
+            canCancel={canCancel}
+            onBillPrepared={() => {
+              void api.listBills(organisationId, workId).then(setBills);
+            }}
+          />
+        </>
+      )}
+
+      {tab === 'deliveries' && (
+        <>
+          <h2>Serial trace</h2>
+          {serials.length > 0 ? (
+            <table className="data-table">
+              <caption className="visually-hidden">
+                Every serial number delivered under this Work
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Serial</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Challan</th>
+                  <th scope="col">Installation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serials.map((serial) => (
+                  <tr key={serial.id}>
+                    <th scope="row">{serial.serialNumber}</th>
+                    <td className="cell--wrap">{serial.itemDescription}</td>
+                    <td>{serial.challanNumber ?? '—'}</td>
+                    <td>
+                      {serial.installedOn !== null ? (
+                        <span className="chip chip--installed">
+                          installed {serial.installedOn}
+                          {typeof serial.installationLocation === 'string'
+                            ? ` at ${serial.installationLocation}`
+                            : ''}
+                        </span>
+                      ) : (
+                        <span className="muted">not installed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">
+              No serial numbers recorded yet. Serials are recorded on each issued
+              challan.
+            </p>
+          )}
+        </>
+      )}
+
+      {tab === 'timeline' && (
+        <>
+          <Timeline
+            api={api}
+            organisationId={organisationId}
+            scope={{ kind: 'work', workId }}
+          />
+        </>
+      )}
 
       <div className="actions">
         <button type="button" className="button--ghost" onClick={onBack}>

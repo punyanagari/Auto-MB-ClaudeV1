@@ -1347,6 +1347,19 @@ describe('ChallanDetail', () => {
   });
 });
 
+/** The Work page splits its areas across tabs, so a test that asserts on one
+ * area opens it first — exactly as an operator does. The tab's accessible
+ * name carries its count, so match on the label prefix. */
+async function openWorkTab(label: string) {
+  // A name matcher rather than a constructed RegExp: the tab's accessible
+  // name carries its count, so match on the label prefix.
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: (accessibleName: string) => accessibleName.startsWith(label),
+    }),
+  );
+}
+
 describe('WorkDetail retention', () => {
   const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
   const WORK_DETAIL = {
@@ -1508,6 +1521,7 @@ describe('WorkDetail retention', () => {
       .mockResolvedValue([{ ...notice, renderedAvailable: true }]);
     const api = retentionApi({ renderCorrectionNotice, listWorkCorrectionNotices });
     renderWorkDetail(api);
+    await openWorkTab('Deliveries');
 
     // A fresh notice is born unrendered: the Work page offers the render
     // action rather than a dead-end "not rendered".
@@ -1538,6 +1552,7 @@ describe('WorkDetail retention', () => {
       ]),
     });
     renderWorkDetail(api, { canModify: false });
+    await openWorkTab('Deliveries');
     expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Generate PDF' })).toBeNull();
     expect(screen.getByText('not rendered')).toBeTruthy();
@@ -1553,6 +1568,7 @@ describe('WorkDetail retention', () => {
     });
     const api = retentionApi({ recordMbEntry });
     renderWorkDetail(api);
+    await openWorkTab('Measurement');
 
     fireEvent.change(await screen.findByLabelText('Measured quantity'), {
       target: { value: '1.000' },
@@ -1586,6 +1602,7 @@ describe('WorkDetail retention', () => {
     const listBills = vi.fn().mockResolvedValue([BILL]);
     const api = retentionApi({ setBillStatus, listBills });
     renderWorkDetail(api);
+    await openWorkTab('Bills');
 
     expect(await screen.findByRole('heading', { name: /Bill #1/ })).toBeTruthy();
     // Bill preparation now runs from a finalized Measurement Book
@@ -1607,6 +1624,7 @@ describe('WorkDetail retention', () => {
       .mockResolvedValue({ ...INSTRUMENT, status: 'released' });
     const api = retentionApi({ updateInstrument });
     renderWorkDetail(api);
+    await openWorkTab('Instruments');
 
     fireEvent.change(await screen.findByLabelText('New status for BG/22'), {
       target: { value: 'released' },
@@ -1628,9 +1646,11 @@ describe('WorkDetail retention', () => {
       canRecordEvidence: false,
       canIssue: false,
     });
+    await openWorkTab('Instruments');
 
     await screen.findByRole('heading', { name: 'Contract instruments' });
     expect(screen.getByText('BG/22')).toBeTruthy();
+    await openWorkTab('Measurement');
     expect(screen.getByText('MB-12/34')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add instrument' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
@@ -1838,6 +1858,7 @@ describe('WorkDetail R8 completion panel', () => {
       reopenWork,
     });
     renderDetail(api);
+    await openWorkTab('Overview');
 
     await screen.findByRole('heading', { name: 'Completion status' });
     fireEvent.change(screen.getByLabelText('Why this Work is being reopened'), {
@@ -1851,7 +1872,9 @@ describe('WorkDetail R8 completion panel', () => {
       });
     });
     expect(
-      await screen.findByRole('button', { name: 'New Delivery Challan' }),
+      await openWorkTab('Deliveries').then(() =>
+        screen.findByRole('button', { name: 'New Delivery Challan' }),
+      ),
     ).toBeTruthy();
   });
 
@@ -3141,8 +3164,8 @@ describe('WorkDetail amendments', () => {
 
   it('shows original and effective values side by side when they differ', async () => {
     renderAmended(amendedApi());
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     // Quantity 5.000 → 8.000: the original stays visible, struck through.
     // Other sections (serials, balances) may repeat the bare numbers, so
     // assert the struck-through original exists among the matches.
@@ -3190,8 +3213,8 @@ describe('WorkDetail amendments', () => {
         listWorkAmendments: vi.fn().mockResolvedValue([REMOVAL_APPROVAL]),
       }),
     );
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     expect(screen.getByText('omission pending')).toBeTruthy();
   });
 
@@ -3215,8 +3238,8 @@ describe('WorkDetail amendments', () => {
           .mockResolvedValue([{ ...REMOVAL_APPROVAL, status: 'approved' as const }]),
       }),
     );
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     expect(screen.queryByText('omission pending')).toBeNull();
     expect(screen.queryByText('Main switchboard')).toBeNull();
   });
@@ -3228,6 +3251,7 @@ describe('WorkDetail amendments', () => {
     });
     const proposeAmendment = vi.fn();
     renderAmended(amendedApi({ proposeItemRemoval, proposeAmendment }));
+    await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
     fireEvent.change(screen.getByLabelText('Amendment'), {
@@ -3256,6 +3280,7 @@ describe('WorkDetail amendments', () => {
       status: 'pending',
     });
     renderAmended(amendedApi({ proposeAmendment }));
+    await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
     fireEvent.change(screen.getByLabelText('Item to amend'), {
@@ -3283,6 +3308,7 @@ describe('WorkDetail amendments', () => {
       .fn()
       .mockResolvedValue({ id: WORK_ID, allowExcessDelivery: true });
     renderAmended(amendedApi({ setWorkSettings }), { isOwner: true });
+    await screen.findByRole('button', { name: /^Overview/ });
 
     const toggle = await screen.findByLabelText(
       'Allow issuing beyond sanctioned quantities',
@@ -3294,11 +3320,12 @@ describe('WorkDetail amendments', () => {
 
     cleanup();
     renderAmended(amendedApi());
-    await screen.findByRole('heading', { name: 'Amendments' });
+    // The second render has to finish loading before the read-only variant
+    // of the switch exists to assert on.
+    expect(await screen.findByText('Not allowed')).toBeTruthy();
     expect(
       screen.queryByLabelText('Allow issuing beyond sanctioned quantities'),
     ).toBeNull();
-    expect(screen.getByText('Not allowed')).toBeTruthy();
   });
 });
 
@@ -3404,6 +3431,7 @@ describe('WorkDetail serial tracking toggle', () => {
       updateWorkItemSerials,
     });
     renderDetail(api, true);
+    await openWorkTab('Schedules & items');
 
     const toggle = await screen.findByRole('switch', {
       name: 'Serial tracking for A/1',
@@ -3436,6 +3464,7 @@ describe('WorkDetail serial tracking toggle', () => {
       updateWorkItemSerials,
     });
     renderDetail(api, true);
+    await openWorkTab('Schedules & items');
 
     fireEvent.click(
       await screen.findByRole('switch', { name: 'Serial tracking for A/1' }),
@@ -3449,6 +3478,7 @@ describe('WorkDetail serial tracking toggle', () => {
   it('shows read-only members the flag without a control', async () => {
     const api = stubApi({ getWork: vi.fn().mockResolvedValue(detailWith(true)) });
     renderDetail(api, false);
+    await openWorkTab('Schedules & items');
 
     await screen.findByRole('heading', { name: /DCW-1/ });
     expect(screen.queryByRole('switch')).toBeNull();
@@ -3959,6 +3989,7 @@ describe('WorkDetail PBG requirement', () => {
         pbgPenalInterestPercent: '12.000',
       }),
     );
+    await openWorkTab('Instruments');
 
     await screen.findByText('PBG required by the letter');
     expect(screen.getByText(/45,000/)).toBeTruthy();
@@ -3982,6 +4013,7 @@ describe('WorkDetail PBG requirement', () => {
         pbgPenalInterestPercent: null,
       }),
     );
+    await openWorkTab('Instruments');
 
     await screen.findByText(
       'The letter records no Performance Bank Guarantee requirement.',

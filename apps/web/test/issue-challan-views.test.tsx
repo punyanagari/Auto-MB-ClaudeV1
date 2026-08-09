@@ -611,6 +611,19 @@ describe('IssueChallanDetail', () => {
   });
 });
 
+/** The Work page splits its areas across tabs, so a test that asserts on one
+ * area opens it first — exactly as an operator does. The tab's accessible
+ * name carries its count, so match on the label prefix. */
+async function openWorkTab(label: string) {
+  // A name matcher rather than a constructed RegExp: the tab's accessible
+  // name carries its count, so match on the label prefix.
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: (accessibleName: string) => accessibleName.startsWith(label),
+    }),
+  );
+}
+
 describe('WorkDetail Issue Challans section', () => {
   const WORK_DETAIL = {
     work: {
@@ -688,6 +701,7 @@ describe('WorkDetail Issue Challans section', () => {
       listIssueChallans: vi.fn().mockResolvedValue([issued]),
     });
     renderWorkDetail(api, { onOpenIssueChallan });
+    await openWorkTab('Issues');
 
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-IC/1' }));
     expect(onOpenIssueChallan).toHaveBeenCalledWith(CHALLAN_ID);
@@ -703,6 +717,7 @@ describe('WorkDetail Issue Challans section', () => {
       listIssueChallans: vi.fn().mockResolvedValue([draft]),
     });
     renderWorkDetail(api, { onOpenIssueChallan });
+    await openWorkTab('Issues');
 
     fireEvent.click(
       await screen.findByRole('button', { name: 'Open draft Issue Challan' }),
