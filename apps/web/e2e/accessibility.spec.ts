@@ -292,6 +292,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     letterPercentage: null,
     letterPercentageDirection: null,
     status: 'active',
+    completedAt: null,
+    completedByUserId: null,
+    completionNote: null,
     createdAt: '2026-08-08T00:00:00.000Z',
   };
   await page.route('**/api/me', (route) => route.fulfill(json(ME)));
@@ -667,6 +670,11 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
   await expect(page.getByText('FINAL BILL')).toBeVisible();
+  // R8 completion panel: the labelled note field is the only control that
+  // can close the contract, and it rides the same axe scan.
+  await expect(page.getByRole('heading', { name: 'Completion status' })).toBeVisible();
+  await expect(page.getByLabel('Why this Work is being completed')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete Work' })).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 
   await page.getByRole('button', { name: 'DC/1' }).click();

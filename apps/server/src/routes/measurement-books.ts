@@ -50,6 +50,7 @@ import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 /**
  * Milestone 8 phase 2: the stage-wise Measurement Book lifecycle engine
@@ -973,15 +974,15 @@ export function registerMeasurementBookRoutes(
             from works w
             join organisations o on o.id = w.organisation_id
             where w.id = ${workId} and w.deleted_at is null
+            for update of w
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Measurement Books are raised on active Works only.',
-            );
-          }
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above pairs with the one POST
+          // /api/works/:id/complete holds, so a draft MB can never appear
+          // behind a completed Work's refusals; the 0031 insert guard
+          // backstops it in the database.
+          assertWorkOperable(work.status, 'raising a Measurement Book');
           // §5.9, friendly form (the 0024 trigger holds it against every
           // writer): MB date not in the future in the organisation's
           // timezone, not before the LOA letter date.

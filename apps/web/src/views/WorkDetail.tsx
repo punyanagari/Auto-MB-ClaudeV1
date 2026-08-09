@@ -9,6 +9,8 @@ import type {
   IssueChallan,
   MbEntry,
   Serial,
+  UnfinishedWorkItem,
+  WorkCompletionBlocker,
   WorkDetailResponse,
   WorkItem,
 } from '@auto-mb/contracts';
@@ -69,6 +71,38 @@ function itemFlags(item: WorkItem) {
     item.effectiveQuantity !== null && Number(item.effectiveQuantity) === 0;
   return { omitted, added: item.amendmentAdded === true };
 }
+
+/** The two R8 completion 409s carry the operator's worklist in
+ * `details`; anything that does not match the expected shape is dropped
+ * rather than rendered as "[object Object]". */
+function unfinishedItemsOf(error: unknown): readonly UnfinishedWorkItem[] {
+  if (
+    !(error instanceof RequestFailedError) ||
+    error.code !== 'WORK_NOT_FULLY_EXECUTED'
+  ) {
+    return [];
+  }
+  const details = error.details as { unfinishedItems?: unknown } | null;
+  return Array.isArray(details?.unfinishedItems)
+    ? (details.unfinishedItems as readonly UnfinishedWorkItem[])
+    : [];
+}
+
+function completionBlockersOf(error: unknown): readonly WorkCompletionBlocker[] {
+  if (!(error instanceof RequestFailedError) || error.code !== 'WORK_NOT_CLEAN') {
+    return [];
+  }
+  const details = error.details as { blockers?: unknown } | null;
+  return Array.isArray(details?.blockers)
+    ? (details.blockers as readonly WorkCompletionBlocker[])
+    : [];
+}
+
+const REQUIREMENT_LABELS: Record<UnfinishedWorkItem['requirement'], string> = {
+  delivery: 'full delivery',
+  installation: 'full installation',
+  delivery_and_installation: 'full delivery and installation',
+};
 
 const DIRECTION_LABELS = {
   below: 'below advertised',
@@ -138,6 +172,8 @@ export function WorkDetail({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [unfinished, setUnfinished] = useState<readonly UnfinishedWorkItem[]>([]);
+  const [blockers, setBlockers] = useState<readonly WorkCompletionBlocker[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +247,37 @@ export function WorkDetail({
     }
   }, []);
 
+  /** The R8 lifecycle transitions. Unlike `act`, these keep the 409's
+   * structured worklist so the panel can render it: the message alone
+   * would send the operator hunting for the short items. */
+  const transition = useCallback(
+    async (run: () => Promise<WorkDetailResponse['work']>, done: string) => {
+      setPending(true);
+      setActionError(null);
+      setNotice(null);
+      setUnfinished([]);
+      setBlockers([]);
+      try {
+        const updated = await run();
+        setDetail((current) =>
+          current === null ? current : { ...current, work: updated },
+        );
+        setNotice(done);
+      } catch (cause) {
+        setUnfinished(unfinishedItemsOf(cause));
+        setBlockers(completionBlockersOf(cause));
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The action failed; nothing was changed.',
+        );
+      } finally {
+        setPending(false);
+      }
+    },
+    [],
+  );
+
   if (loadError !== null) {
     return (
       <section className="card" aria-labelledby="work-title">
@@ -245,6 +312,14 @@ export function WorkDetail({
   const challanNumberById = new Map(
     (challans ?? []).map((challan) => [challan.id, challan.challanNumber]),
   );
+  // R8: a completed Work accepts no new operational documents until it
+  // is reopened, so every create/record surface below closes with it.
+  // The server refuses regardless (and the database backstops that) —
+  // hiding the forms just stops the operator walking into the refusal.
+  const workActive = work.status === 'active';
+  const canCreateDocuments = canModify && workActive;
+  const canRecordSiteEvidence = canRecordEvidence && workActive;
+  const canIssueDocuments = canIssue && workActive;
   return (
     <section className="card card--wide" aria-labelledby="work-title">
       <h1 id="work-title" tabIndex={-1}>
@@ -277,7 +352,17 @@ export function WorkDetail({
         </div>
         <div>
           <dt>Status</dt>
-          <dd>{work.status}</dd>
+          <dd>
+            <span
+              className={
+                work.status === 'completed'
+                  ? 'chip chip--completed'
+                  : 'chip chip--active'
+              }
+            >
+              {work.status}
+            </span>
+          </dd>
         </div>
         <div>
           <dt>Excess delivery</dt>
@@ -325,6 +410,147 @@ export function WorkDetail({
           </dd>
         </div>
       </dl>
+
+      <section aria-labelledby="work-completion-heading">
+        <h2 id="work-completion-heading">Completion status</h2>
+        {work.status === 'completed' ? (
+          <>
+            <p>
+              This Work is <strong>completed</strong>
+              {work.completedAt === null ? '' : ` on ${work.completedAt.slice(0, 10)}`}.
+              No new challan, installation, PAC certificate, Measurement Book, extension
+              request, or change proposal can be recorded until it is reopened.
+            </p>
+            {work.completionNote !== null && (
+              <p className="muted">Completion note: {work.completionNote}</p>
+            )}
+          </>
+        ) : (
+          <p className="muted">
+            A Work completes only at 100% executed value (every item fully delivered
+            and/or installed per its payment category). For a short closure, amend the
+            quantities down through the approval path first.
+          </p>
+        )}
+
+        {canModify && workActive && (
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const note = formValue(data, 'completion-note');
+              void transition(async () => {
+                const updated = await api.completeWork(organisationId, workId, {
+                  note,
+                });
+                return updated.work;
+              }, 'Work marked completed.');
+            }}
+          >
+            <div className="field">
+              <label htmlFor="work-completion-note">
+                Why this Work is being completed
+              </label>
+              <textarea
+                id="work-completion-note"
+                name="completion-note"
+                required
+                minLength={3}
+                maxLength={2000}
+                rows={2}
+              />
+            </div>
+            <div className="actions">
+              <button type="submit" disabled={pending}>
+                Complete Work
+              </button>
+            </div>
+          </form>
+        )}
+
+        {canModify && !workActive && (
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const note = formValue(data, 'reopen-note');
+              void transition(async () => {
+                const updated = await api.reopenWork(organisationId, workId, {
+                  note,
+                });
+                return updated.work;
+              }, 'Work reopened.');
+            }}
+          >
+            <div className="field">
+              <label htmlFor="work-reopen-note">Why this Work is being reopened</label>
+              <textarea
+                id="work-reopen-note"
+                name="reopen-note"
+                required
+                minLength={3}
+                maxLength={2000}
+                rows={2}
+              />
+            </div>
+            <div className="actions">
+              <button type="submit" disabled={pending}>
+                Reopen Work
+              </button>
+            </div>
+          </form>
+        )}
+
+        {blockers.length > 0 && (
+          <table className="data-table">
+            <caption>
+              Finish or discard these records before completing the Work
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Record</th>
+              </tr>
+            </thead>
+            <tbody>
+              {blockers.map((blocker) => (
+                <tr key={blocker.recordId}>
+                  <th scope="row">{blocker.label}</th>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {unfinished.length > 0 && (
+          <table className="data-table">
+            <caption>Items still short of 100% executed value</caption>
+            <thead>
+              <tr>
+                <th scope="col">Item number</th>
+                <th scope="col">Payment category</th>
+                <th scope="col">Requires</th>
+                <th scope="col">Required</th>
+                <th scope="col">Delivered</th>
+                <th scope="col">Installed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unfinished.map((item) => (
+                <tr key={item.workItemId}>
+                  <th scope="row">{item.itemNumber}</th>
+                  <td>{item.category ?? 'uncategorised'}</td>
+                  <td>{REQUIREMENT_LABELS[item.requirement]}</td>
+                  <td className="cell--numeric">{item.requiredQuantity}</td>
+                  <td className="cell--numeric">{item.deliveredQuantity}</td>
+                  <td className="cell--numeric">{item.installedQuantity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       {schedules.map((schedule) => (
         <div key={schedule.id}>
@@ -520,7 +746,7 @@ export function WorkDetail({
       ) : (
         <p className="muted">No amendments proposed yet.</p>
       )}
-      {canModify && (
+      {canCreateDocuments && (
         <AmendmentForm
           items={workItems}
           schedules={schedules}
@@ -552,7 +778,7 @@ export function WorkDetail({
 
       <div className="card__header">
         <h2>Delivery Challans</h2>
-        {canModify &&
+        {canCreateDocuments &&
           (challans?.some((challan) => challan.status === 'draft') === true ? (
             <button
               type="button"
@@ -659,7 +885,7 @@ export function WorkDetail({
                       >
                         Open PDF
                       </button>
-                    ) : canModify && correctionNotice.status === 'issued' ? (
+                    ) : canCreateDocuments && correctionNotice.status === 'issued' ? (
                       <button
                         type="button"
                         className="button--ghost"
@@ -694,7 +920,7 @@ export function WorkDetail({
 
       <div className="card__header">
         <h2>Issue Challans</h2>
-        {canModify &&
+        {canCreateDocuments &&
           (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
             <button
               type="button"
@@ -778,8 +1004,8 @@ export function WorkDetail({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        canModify={canModify}
-        canIssue={canIssue}
+        canModify={canCreateDocuments}
+        canIssue={canIssueDocuments}
         canApprove={canApprove}
       />
 
@@ -1008,7 +1234,7 @@ export function WorkDetail({
       ) : (
         <p className="muted">No measurements recorded yet.</p>
       )}
-      {canRecordEvidence && workItems.length > 0 && (
+      {canRecordSiteEvidence && workItems.length > 0 && (
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -1169,7 +1395,7 @@ export function WorkDetail({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        canRecordEvidence={canRecordEvidence}
+        canRecordEvidence={canRecordSiteEvidence}
         workItems={workItems}
         serials={serials}
         onSerialsChanged={setSerials}
@@ -1179,7 +1405,7 @@ export function WorkDetail({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        canModify={canModify}
+        canModify={canCreateDocuments}
         workItems={workItems}
       />
 
@@ -1187,7 +1413,7 @@ export function WorkDetail({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        canModify={canModify}
+        canModify={canCreateDocuments}
         canIssue={canIssue}
         canCancel={canCancel}
         onBillPrepared={() => {

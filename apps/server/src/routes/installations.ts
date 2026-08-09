@@ -19,6 +19,7 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import { assertSourceNotBilled } from './measurement-books.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 /**
  * Milestone 7: quantity-level installation records (legacy spec §5.4,
@@ -254,11 +255,16 @@ export function registerInstallationRoutes(
           // (the 0027 insert guard backstops it in the database). Lock
           // order works -> work_items matches every other writer taking
           // both.
-          const [workRow] = await tx<{ id: string }[]>`
-            select id from works where id = ${workId} and deleted_at is null
+          const [workRow] = await tx<{ id: string; status: string }[]>`
+            select id, status from works where id = ${workId} and deleted_at is null
             for update
           `;
           if (!workRow) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above serialises this against completion, and
+          // the 0031 insert guard backstops it in the database.
+          assertWorkOperable(workRow.status, 'recording an installation');
 
           // A live final Measurement Book closes the Work's payment
           // cycle (spec §5.9): an installation recorded after it could

@@ -36,6 +36,7 @@ import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -457,17 +458,17 @@ export function registerChallanRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds: a draft created here and a
+          // completion on the same Work serialise, so a draft can never
+          // appear behind a completed Work's refusals (the 0031 insert
+          // guard backstops it in the database).
           const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
+            for update
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Delivery Challans can only be drafted for active Works.',
-            );
-          }
+          assertWorkOperable(work.status, 'drafting a delivery challan');
           await assertChallanDate(tx, workId, body.challanDate);
 
           // One open draft per Work (the partial unique index is the
@@ -695,14 +696,20 @@ export function registerChallanRoutes(
               title: string;
               letter_number: string;
               letter_date: string;
+              status: string;
             }[]
           >`
             select allow_excess_delivery, work_code, title, letter_number,
-                   letter_date::text as letter_date
+                   letter_date::text as letter_date, status
             from works where id = ${challan.work_id}
             for update
           `;
           if (!work) throw new Error('challan without a Work');
+
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above serialises this against completion, and
+          // the 0031 challan-update guard backstops it in the database.
+          assertWorkOperable(work.status, 'issuing a delivery challan');
 
           // A live final Measurement Book closes the Work's payment
           // cycle (spec §5.9): a challan issued after it could never be

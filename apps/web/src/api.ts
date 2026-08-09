@@ -61,6 +61,9 @@ import type {
   Work,
   WorkBalanceResponse,
   WorkCompletionResponse,
+  CompleteWorkRequest,
+  ReopenWorkRequest,
+  WorkStatusResponse,
   WorkDetailResponse,
   WorkSettingsResponse,
   WorkItemSerialsResponse,
@@ -675,6 +678,19 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
   ) => Promise<Blob>;
+  /** R8 completion: refuses with WORK_NOT_CLEAN (details.blockers) or
+   * WORK_NOT_FULLY_EXECUTED (details.unfinishedItems) — both are the
+   * operator's worklist, rendered by the Work detail panel. */
+  readonly completeWork: (
+    organisationId: string,
+    workId: string,
+    body: CompleteWorkRequest,
+  ) => Promise<WorkStatusResponse>;
+  readonly reopenWork: (
+    organisationId: string,
+    workId: string,
+    body: ReopenWorkRequest,
+  ) => Promise<WorkStatusResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1663,6 +1679,20 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async completeWork(organisationId, workId, body) {
+      return request<WorkStatusResponse>(`/api/works/${workId}/complete`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async reopenWork(organisationId, workId, body) {
+      return request<WorkStatusResponse>(`/api/works/${workId}/reopen`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
   };
 }

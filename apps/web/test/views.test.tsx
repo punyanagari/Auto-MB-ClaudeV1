@@ -172,6 +172,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderMeasurementBook: vi.fn(),
     downloadMeasurementBookPdf: vi.fn(),
     downloadMeasurementBookDraftPreview: vi.fn(),
+    completeWork: vi.fn(),
+    reopenWork: vi.fn(),
     ...overrides,
   };
 }
@@ -1362,6 +1364,229 @@ describe('WorkDetail retention', () => {
     expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Mark submitted' })).toBeNull();
+  });
+});
+
+describe('WorkDetail R8 completion panel', () => {
+  const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
+  const ACTIVE_WORK = {
+    id: WORK_ID,
+    workCode: 'DCW-1',
+    letterNumber: 'L-42/2025',
+    letterDate: '2025-06-01',
+    title: 'Supply of switchboards',
+    advertisedValue: '1000.00',
+    contractValue: '900.00',
+    pricingShape: 'per_schedule' as const,
+    letterPercentage: null,
+    letterPercentageDirection: null,
+    pbgRequiredAmount: null,
+    pbgSubmissionDays: null,
+    pbgExtensionDays: null,
+    pbgPenalInterestPercent: null,
+    status: 'active' as const,
+    completedAt: null,
+    completedByUserId: null,
+    completionNote: null,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+  const COMPLETED_WORK = {
+    ...ACTIVE_WORK,
+    status: 'completed' as const,
+    completedAt: '2026-08-09T09:00:00.000Z',
+    completedByUserId: 'user-a',
+    completionNote: 'Everything executed and accepted at site.',
+  };
+  const DETAIL = {
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials: false,
+          },
+        ],
+      },
+    ],
+  };
+
+  function renderDetail(api: ApiClient, canModify = true) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={canModify}
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('renders the unfinished-item worklist from the 409 details', async () => {
+    const completeWork = vi.fn().mockRejectedValue(
+      new RequestFailedError(
+        409,
+        'WORK_NOT_FULLY_EXECUTED',
+        'A Work completes only at 100% executed value; 2 item(s) are short: A/1, A/2.',
+        {
+          unfinishedItems: [
+            {
+              workItemId: ITEM_A,
+              itemNumber: 'A/1',
+              category: 'SUPPLY_AND_INSTALLATION',
+              requirement: 'delivery_and_installation',
+              requiredQuantity: '5.000',
+              deliveredQuantity: '5.000',
+              installedQuantity: '2.000',
+            },
+            {
+              workItemId: '55555555-5555-4555-8555-555555555556',
+              itemNumber: 'A/2',
+              category: null,
+              requirement: 'installation',
+              requiredQuantity: '3.000',
+              deliveredQuantity: '0.000',
+              installedQuantity: '0.000',
+            },
+          ],
+        },
+      ),
+    );
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: ACTIVE_WORK, ...DETAIL }),
+      completeWork,
+    });
+    renderDetail(api);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    fireEvent.change(screen.getByLabelText('Why this Work is being completed'), {
+      target: { value: 'Closing the contract.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Work' }));
+
+    await waitFor(() => {
+      expect(completeWork).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        note: 'Closing the contract.',
+      });
+    });
+    // The worklist is the point of the refusal: every short item, with
+    // what it owes and what it has.
+    expect(
+      await screen.findByText('Items still short of 100% executed value'),
+    ).toBeTruthy();
+    expect(screen.getByText('full delivery and installation')).toBeTruthy();
+    expect(screen.getByText('uncategorised')).toBeTruthy();
+    expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
+  });
+
+  it('names every clean-state blocker from the 409 details', async () => {
+    const completeWork = vi.fn().mockRejectedValue(
+      new RequestFailedError(409, 'WORK_NOT_CLEAN', 'Finish or discard these first.', {
+        blockers: [
+          {
+            kind: 'draft_measurement_book',
+            recordId: '99999999-9999-4999-8999-999999999999',
+            label: 'Draft Measurement Book dated 2026-08-06',
+          },
+          {
+            kind: 'pending_approval_request',
+            recordId: '99999999-9999-4999-8999-999999999998',
+            label: 'Pending change proposal (work_item_amendment)',
+          },
+        ],
+      }),
+    );
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: ACTIVE_WORK, ...DETAIL }),
+      completeWork,
+    });
+    renderDetail(api);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    fireEvent.change(screen.getByLabelText('Why this Work is being completed'), {
+      target: { value: 'Closing the contract.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Work' }));
+
+    expect(
+      await screen.findByText('Draft Measurement Book dated 2026-08-06'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Pending change proposal (work_item_amendment)'),
+    ).toBeTruthy();
+  });
+
+  it('closes the create surfaces on a completed Work and offers the reopen', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: COMPLETED_WORK, ...DETAIL }),
+    });
+    renderDetail(api);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    expect(
+      screen.getByText('Completion note: Everything executed and accepted at site.'),
+    ).toBeTruthy();
+    // Every document-creating surface is closed until the reopen.
+    expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New Issue Challan' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Propose an amendment' })).toBeNull();
+    expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reopen Work' })).toBeTruthy();
+  });
+
+  it('reopens with a note and reopens the create surfaces', async () => {
+    const reopenWork = vi.fn().mockResolvedValue({ work: ACTIVE_WORK });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: COMPLETED_WORK, ...DETAIL }),
+      reopenWork,
+    });
+    renderDetail(api);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    fireEvent.change(screen.getByLabelText('Why this Work is being reopened'), {
+      target: { value: 'Variation order 7 sanctioned more quantity.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen Work' }));
+
+    await waitFor(() => {
+      expect(reopenWork).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        note: 'Variation order 7 sanctioned more quantity.',
+      });
+    });
+    expect(
+      await screen.findByRole('button', { name: 'New Delivery Challan' }),
+    ).toBeTruthy();
+  });
+
+  it('shows the status without either form to read-only members', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: COMPLETED_WORK, ...DETAIL }),
+    });
+    renderDetail(api, false);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    expect(screen.queryByRole('button', { name: 'Complete Work' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reopen Work' })).toBeNull();
   });
 });
 

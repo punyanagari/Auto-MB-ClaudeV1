@@ -37,6 +37,7 @@ import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -414,13 +415,10 @@ export function registerExtensionRoutes(
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
           const work = await lockWork(tx, workId);
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Extension requests can only be drafted for active Works.',
-            );
-          }
+          // R8: a completed Work accepts no new operational documents.
+          // lockWork holds the works row, so this serialises against
+          // completion; the 0031 insert guard is the database backstop.
+          assertWorkOperable(work.status, 'raising an extension request');
           assertProposedExtends(work, body.proposedCompletionDate);
           if (body.letterDate !== undefined) {
             await assertLetterDate(tx, workId, body.letterDate);
@@ -504,13 +502,10 @@ export function registerExtensionRoutes(
           await requireAuthority(tx, user.id, 'issue');
           await assertWorkAccess(tx, user.id, workId);
           const work = await lockWork(tx, workId);
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Extension letters can only be back-filled for active Works.',
-            );
-          }
+          // R8: a completed Work accepts no new operational documents —
+          // a back-filled paper letter consumes a number slot like any
+          // other finalisation.
+          assertWorkOperable(work.status, 'back-filling an extension letter');
           assertProposedExtends(work, body.proposedCompletionDate);
           await assertLetterDate(tx, workId, body.letterDate);
           if (work.original_completion_date === null) {

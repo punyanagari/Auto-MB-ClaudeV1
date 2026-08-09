@@ -131,6 +131,13 @@ export const WorkSchema = Type.Object(
       Type.Literal('completed'),
       Type.Literal('cancelled'),
     ]),
+    /** R8 completion state (migration 0031). All null while the Work is
+     * active; a reopen clears them again. The full history of every
+     * completion and reopen — including the reopen notes, which are not
+     * part of the current-state row — is on the Work's timeline. */
+    completedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    completedByUserId: Type.Union([Type.String(), Type.Null()]),
+    completionNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     /** Present on the Work detail: PRODUCT.md invariant 5's escape hatch,
      * set by an owner through PATCH /api/works/:id. */
@@ -201,3 +208,97 @@ export const WorkDetailResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type WorkDetailResponse = Static<typeof WorkDetailResponseSchema>;
+
+/* --- R8 work completion / reopen (Milestone 6/7 retrofit) ------------- */
+
+/** Both lifecycle transitions take a human-entered note (R8, R17); the
+ * database CHECK and the 0031 transition trigger hold the same floor. */
+export const WorkCompletionNoteSchema = Type.String({ minLength: 3, maxLength: 2000 });
+
+export const CompleteWorkRequestSchema = Type.Object(
+  { note: WorkCompletionNoteSchema },
+  { additionalProperties: false },
+);
+export type CompleteWorkRequest = Static<typeof CompleteWorkRequestSchema>;
+
+export const ReopenWorkRequestSchema = Type.Object(
+  { note: WorkCompletionNoteSchema },
+  { additionalProperties: false },
+);
+export type ReopenWorkRequest = Static<typeof ReopenWorkRequestSchema>;
+
+export const WorkStatusResponseSchema = Type.Object(
+  { work: WorkSchema },
+  { additionalProperties: false },
+);
+export type WorkStatusResponse = Static<typeof WorkStatusResponseSchema>;
+
+/** What the item still owes before the Work is 100% executed. The
+ * requirement follows the item's payment category over EFFECTIVE
+ * quantities (spec §8 + R8): supply categories owe delivery, pure
+ * installation owes installation, supply-and-installation owes both, and
+ * an uncategorised item owes installation when its description mentions
+ * installation and delivery otherwise. */
+export const WorkCompletionRequirementSchema = Type.Union([
+  Type.Literal('delivery'),
+  Type.Literal('installation'),
+  Type.Literal('delivery_and_installation'),
+]);
+export type WorkCompletionRequirement = Static<typeof WorkCompletionRequirementSchema>;
+
+export const UnfinishedWorkItemSchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    itemNumber: Type.String(),
+    /** null = uncategorised: the requirement was derived from the
+     * description, which the client shows verbatim. */
+    category: Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
+    requirement: WorkCompletionRequirementSchema,
+    /** coalesce(effective_quantity, awarded_quantity) — the effective
+     * baseline the aggregates must equal exactly. */
+    requiredQuantity: DecimalStringSchema,
+    deliveredQuantity: DecimalStringSchema,
+    installedQuantity: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type UnfinishedWorkItem = Static<typeof UnfinishedWorkItemSchema>;
+
+/** `details` of the 409 WORK_NOT_FULLY_EXECUTED — the operator's
+ * worklist. Short closure: amend the quantities down through the
+ * approval path first, then complete. */
+export const WorkNotFullyExecutedDetailsSchema = Type.Object(
+  { unfinishedItems: Type.Array(UnfinishedWorkItemSchema) },
+  { additionalProperties: false },
+);
+export type WorkNotFullyExecutedDetails = Static<
+  typeof WorkNotFullyExecutedDetailsSchema
+>;
+
+export const WORK_COMPLETION_BLOCKER_KINDS = [
+  'draft_delivery_challan',
+  'draft_issue_challan',
+  'draft_extension_request',
+  'draft_measurement_book',
+  'pending_approval_request',
+] as const;
+
+export const WorkCompletionBlockerSchema = Type.Object(
+  {
+    kind: Type.Union(WORK_COMPLETION_BLOCKER_KINDS.map((kind) => Type.Literal(kind))),
+    recordId: UuidSchema,
+    /** Human-readable identity of the blocking record (draft label,
+     * proposed item number, …) for the operator's worklist. */
+    label: Type.String(),
+  },
+  { additionalProperties: false },
+);
+export type WorkCompletionBlocker = Static<typeof WorkCompletionBlockerSchema>;
+
+/** `details` of the 409 WORK_NOT_CLEAN: the adopted clean-state rule —
+ * a Work completes only with nothing live still holding a claim. */
+export const WorkNotCleanDetailsSchema = Type.Object(
+  { blockers: Type.Array(WorkCompletionBlockerSchema) },
+  { additionalProperties: false },
+);
+export type WorkNotCleanDetails = Static<typeof WorkNotCleanDetailsSchema>;

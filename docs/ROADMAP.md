@@ -234,6 +234,31 @@ completion/reopen/short-closure (R8) with per-category executed value,
 approval-concurrency exit tests, and installation/Issue-Challan
 invariant exit suites.
 
+Retrofit, second half — work completion (2026-08-09, migration 0031):
+the R8/R15 status lifecycle, which migration 0001 modelled in a CHECK
+constraint and no writer ever reached. Completion computes the
+100%-executed predicate in exact SQL per payment category over EFFECTIVE
+quantities — supply categories owe full delivery, pure installation owes
+full installation, supply-and-installation owes both, and an
+uncategorised item owes installation when its description says so —
+with numeric equality and no tolerance, soft-deleted items excluded; a
+short Work is refused with the operator's worklist naming every item and
+what it still owes, and the short-closure instruction to amend the
+quantities down through the approval path first. Completion also refuses
+while anything live still holds a claim (draft delivery/issue challans,
+draft extension requests, draft Measurement Books, pending approval
+requests), naming each. A completed Work then accepts no new operational
+document — every creation route refuses with WORK_COMPLETED and every
+refusal has a database guard behind it, so raw SQL is refused too — and
+reopen (same authority, mandatory note, no predicate) restores every
+path. Both transitions take a note the database enforces in both
+directions, are audited with before/after, and ride the Work timeline;
+completed Works stop raising the dashboard completion alerts. R15's
+third status, `cancelled`, stays deliberately unreachable: the removal
+path this product implements is the soft delete, and the transition
+guard refuses any move into or out of `cancelled` rather than leaving an
+unimplemented state reachable through SQL.
+
 ## Milestone 7 — site material movement and document control
 
 Scope:
