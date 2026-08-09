@@ -521,6 +521,250 @@ describe('LOA document scope', () => {
   });
 });
 
+describe('assigned-scope LOA confirmation self-assignment', () => {
+  // An office member scoped to assigned Works confirms an LOA: the very
+  // transaction that creates the Work must also grant the confirmer's
+  // assignment, or they 404 on the Work they just created.
+  const confirmerEmail = `scope-confirmer-${runId}@integration.test`;
+  const allScopeEmail = `scope-fullconf-${runId}@integration.test`;
+  let confirmer: CookieJar;
+  let allScope: CookieJar;
+  let confirmerUserId: string;
+  let allScopeUserId: string;
+  let confirmedWorkId: string;
+  let fullScopeWorkId: string;
+
+  function confirmPayload(code: string) {
+    return {
+      workCode: code,
+      letterNumber: `L-${code}-${runId}`,
+      letterDate: '2026-02-01',
+      title: `Confirm scope work ${code}`,
+      advertisedValue: '50000.00',
+      contractValue: '45000.00',
+      pricingShape: 'per_schedule',
+      schedules: [
+        {
+          scheduleCode: 'A',
+          title: 'Schedule A',
+          items: [
+            {
+              itemNumber: 'A/1',
+              description: 'Confirm scope item',
+              unitCode: 'Nos',
+              awardedQuantity: '10.000',
+              effectiveRate: '100.00',
+              manualEntry: true,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  async function seedReviewDocument(): Promise<string> {
+    const id = randomUUID();
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, extraction_status, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
+        'confirm-scope.pdf', ${'d'.repeat(32) + id.replaceAll('-', '')},
+        'application/pdf', 1000, 'review',
+        ${jsonb(admin, { sourceText: 'CONFIRM SCOPE LETTER TEXT' })},
+        ${ownerUserId}
+      )
+    `;
+    return id;
+  }
+
+  beforeAll(async () => {
+    confirmer = await signUp(confirmerEmail, 'Scope Confirmer');
+    allScope = await signUp(allScopeEmail, 'Scope Full Confirmer');
+    for (const email of [confirmerEmail, allScopeEmail]) {
+      const added = await authed(owner, {
+        method: 'POST',
+        url: '/api/organisations/current/members',
+        organisationId,
+        payload: { email, role: 'office' },
+      });
+      expect(added.statusCode, added.body).toBe(201);
+    }
+    const users = await admin<{ id: string; email: string }[]>`
+      select "id", "email" from auth_users
+      where "email" in (${confirmerEmail}, ${allScopeEmail})
+    `;
+    const byEmail = new Map(users.map((row) => [row.email, row.id]));
+    confirmerUserId = byEmail.get(confirmerEmail) ?? '';
+    allScopeUserId = byEmail.get(allScopeEmail) ?? '';
+    expect(confirmerUserId && allScopeUserId).toBeTruthy();
+    await admin`
+      update organisation_memberships set work_scope = 'assigned'
+      where organisation_id = ${organisationId} and user_id = ${confirmerUserId}
+    `;
+  }, 30_000);
+
+  it('lets the assigned-scope confirmer see the Work they just created', async () => {
+    const documentId = await seedReviewDocument();
+    const code = `CFA${runId.slice(0, 4).toUpperCase()}`;
+    const confirmed = await authed(confirmer, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: confirmPayload(code),
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    confirmedWorkId = confirmed.json<{ work: Work }>().work.id;
+
+    // Immediately reachable: detail, list, dashboard, and balance.
+    const detail = await authed(confirmer, {
+      method: 'GET',
+      url: `/api/works/${confirmedWorkId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+
+    const list = await authed(confirmer, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    expect(list.json<{ works: Work[] }>().works.map((work) => work.id)).toContain(
+      confirmedWorkId,
+    );
+
+    const dashboard = await authed(confirmer, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    expect(
+      dashboard.json<DashboardResponse>().works.map((work) => work.workId),
+    ).toContain(confirmedWorkId);
+
+    const balance = await authed(confirmer, {
+      method: 'GET',
+      url: `/api/works/${confirmedWorkId}/balance`,
+      organisationId,
+    });
+    expect(balance.statusCode, balance.body).toBe(200);
+  });
+
+  it('records exactly one assignment row, matching the owner-managed shape', async () => {
+    const rows = await admin<
+      { user_id: string; created_by_user_id: string; organisation_id: string }[]
+    >`
+      select user_id, created_by_user_id, organisation_id
+      from work_assignments where work_id = ${confirmedWorkId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.user_id).toBe(confirmerUserId);
+    expect(rows[0]?.created_by_user_id).toBe(confirmerUserId);
+    expect(rows[0]?.organisation_id).toBe(organisationId);
+  });
+
+  it('audits the self-assignment like owner-managed assignment writes', async () => {
+    const events = await admin<
+      { action: string; entity_type: string; details: unknown }[]
+    >`
+      select action, entity_type, details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'membership.assignments_set'
+        and details->>'memberUserId' = ${confirmerUserId}
+    `;
+    expect(events).toHaveLength(1);
+    expect(events[0]?.entity_type).toBe('work_assignments');
+    const details = events[0]?.details as {
+      memberUserId: string;
+      before: { workIds: string[] };
+      after: { workIds: string[] };
+    };
+    expect(details.before.workIds).toEqual([]);
+    expect(details.after.workIds).toEqual([confirmedWorkId]);
+  });
+
+  it('creates no assignment row when a full-scope member confirms', async () => {
+    const documentId = await seedReviewDocument();
+    const code = `CFB${runId.slice(0, 4).toUpperCase()}`;
+    const confirmed = await authed(allScope, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: confirmPayload(code),
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    fullScopeWorkId = confirmed.json<{ work: Work }>().work.id;
+
+    const [count] = await admin<{ count: string }[]>`
+      select count(*)::text as count from work_assignments
+      where work_id = ${fullScopeWorkId}
+    `;
+    expect(count?.count).toBe('0');
+
+    // Full scope still sees it, no assignment needed.
+    const detail = await authed(allScope, {
+      method: 'GET',
+      url: `/api/works/${fullScopeWorkId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+  });
+
+  it('grants only the created Work — other Works stay invisible', async () => {
+    const blocked = await authed(confirmer, {
+      method: 'GET',
+      url: `/api/works/${fullScopeWorkId}`,
+      organisationId,
+    });
+    expect(blocked.statusCode).toBe(404);
+
+    const list = await authed(confirmer, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    const ids = list.json<{ works: Work[] }>().works.map((work) => work.id);
+    expect(ids).toContain(confirmedWorkId);
+    expect(ids).not.toContain(fullScopeWorkId);
+    expect(ids).not.toContain(workBId);
+  });
+
+  it('stays single-grant under simultaneous confirms of one document', async () => {
+    const documentId = await seedReviewDocument();
+    const codeBase = `CFC${runId.slice(0, 4).toUpperCase()}`;
+    const [first, second] = await Promise.all([
+      authed(confirmer, {
+        method: 'POST',
+        url: `/api/loa-documents/${documentId}/confirm`,
+        organisationId,
+        payload: confirmPayload(`${codeBase}1`),
+      }),
+      authed(confirmer, {
+        method: 'POST',
+        url: `/api/loa-documents/${documentId}/confirm`,
+        organisationId,
+        payload: confirmPayload(`${codeBase}2`),
+      }),
+    ]);
+    const responses = [first, second].sort((a, b) => a.statusCode - b.statusCode);
+    expect(responses[0]?.statusCode, responses[0]?.body).toBe(201);
+    expect(responses[1]?.statusCode, responses[1]?.body).toBe(409);
+    expect(responses[1]?.json<{ code: string }>().code).toBe('DOCUMENT_NOT_REVIEWABLE');
+
+    const winnerWorkId = responses[0]?.json<{ work: Work }>().work.id ?? '';
+    const rows = await admin<{ user_id: string }[]>`
+      select user_id from work_assignments where work_id = ${winnerWorkId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.user_id).toBe(confirmerUserId);
+  });
+});
+
 describe('member lifecycle', () => {
   it('updates role, scope, and authorities, audited and owner-only', async () => {
     const denied = await authed(viewer, {

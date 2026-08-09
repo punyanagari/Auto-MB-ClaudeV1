@@ -27,6 +27,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
+import { auditDiff } from '../audit-diff.js';
 import {
   assertWorkAccess,
   hasFullWorkScope,
@@ -695,6 +696,47 @@ export function registerLoaRoutes(
               })}
             )
           `;
+
+          // An 'assigned'-scoped confirmer must be able to see the Work
+          // they just created: grant their assignment in this same
+          // transaction, mirroring the owner-managed assignment writes
+          // (identity.ts) in column set and audit shape. Owners and
+          // 'all'-scope members see every Work and need no row.
+          const membership = await membershipOf(tx, user.id);
+          if (membership?.work_scope === 'assigned') {
+            const previousAssignments = await tx<{ work_id: string }[]>`
+              select work_id from work_assignments
+              where user_id = ${user.id}
+              order by created_at
+            `;
+            await tx`
+              insert into work_assignments (
+                organisation_id, work_id, user_id, created_by_user_id
+              )
+              values (${organisationId}, ${work.id}, ${user.id}, ${user.id})
+            `;
+            const previousWorkIds = previousAssignments.map((row) => row.work_id);
+            // Assignments are a set; both sides sort so the trail matches
+            // the owner-managed replace-set audits exactly.
+            const assignmentChanges = auditDiff(
+              { workIds: [...previousWorkIds].sort() },
+              { workIds: [...previousWorkIds, work.id].sort() },
+            );
+            await tx`
+              insert into audit_events (
+                organisation_id, actor_user_id, action, entity_type, details
+              )
+              values (
+                ${organisationId}, ${user.id}, 'membership.assignments_set',
+                'work_assignments',
+                ${jsonb(tx, {
+                  memberUserId: user.id,
+                  before: assignmentChanges.before,
+                  after: assignmentChanges.after,
+                })}
+              )
+            `;
+          }
 
           return { work: toWork(work), schedules };
         },
