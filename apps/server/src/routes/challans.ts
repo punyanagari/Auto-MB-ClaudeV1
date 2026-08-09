@@ -22,6 +22,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import {
   CHALLAN_TEMPLATE_VERSION,
+  WARRANTY_TEMPLATE_VERSION,
   renderChallanHtml,
   type ChallanSnapshot,
 } from '../challan-html.js';
@@ -71,6 +72,8 @@ interface ChallanRow {
   prefix: string;
   consignee_snapshot: unknown;
   template_version: string | null;
+  warranty_template_version: string | null;
+  warranty_text_sha256: string | null;
   rendered_object_key: string | null;
   signed_copy_object_key: string | null;
   cancellation_note: string | null;
@@ -82,6 +85,7 @@ interface ChallanRow {
 const CHALLAN_COLUMNS = `
   id, work_id, status, challan_date::text as challan_date, challan_number,
   sequence_number, prefix, consignee_snapshot, template_version,
+  warranty_template_version, warranty_text_sha256,
   rendered_object_key, signed_copy_object_key, cancellation_note,
   created_at, issued_at, cancelled_at
 `;
@@ -97,6 +101,8 @@ function toChallan(row: ChallanRow): Challan {
     prefix: row.prefix,
     consignee: parseJsonbColumn(row.consignee_snapshot) as Consignee,
     templateVersion: row.template_version,
+    warrantyTemplateVersion: row.warranty_template_version,
+    warrantyTextSha256: row.warranty_text_sha256,
     renderedAvailable: row.rendered_object_key !== null,
     signedCopyAvailable: row.signed_copy_object_key !== null,
     cancellationNote: row.cancellation_note,
@@ -769,8 +775,10 @@ export function registerChallanRoutes(
           const sequence = counter.next_value;
           const challanNumber = `${challan.prefix}/${String(sequence)}`;
 
-          const [organisation] = await tx<{ name: string }[]>`
-            select name from organisations
+          const [organisation] = await tx<
+            { name: string; warranty_template_text: string | null }[]
+          >`
+            select name, warranty_template_text from organisations
           `;
           const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
             select dci.id, dci.work_item_id, dci.description_snapshot,
@@ -787,6 +795,24 @@ export function registerChallanRoutes(
             select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
             from delivery_challan_items where delivery_challan_id = ${id}
           `;
+
+          // Legacy §11: the warranty/guarantee certificate page is
+          // optional — it exists exactly when the organisation has
+          // template text at issue time. The FULL text is frozen into
+          // the immutable snapshot (with the certificate template
+          // version and the SHA-256 of the exact text), so later
+          // profile edits never change an issued certificate.
+          const warrantyText = organisation?.warranty_template_text ?? null;
+          const warranty =
+            warrantyText !== null
+              ? {
+                  templateVersion: WARRANTY_TEMPLATE_VERSION,
+                  textSha256: createHash('sha256')
+                    .update(warrantyText, 'utf8')
+                    .digest('hex'),
+                  text: warrantyText,
+                }
+              : undefined;
 
           const issuedAt = new Date().toISOString();
           const snapshot: ChallanSnapshot = {
@@ -812,6 +838,7 @@ export function registerChallanRoutes(
               lineAmount: line.line_amount,
             })),
             totalAmount: total?.amount ?? '0.00',
+            ...(warranty !== undefined ? { warranty } : {}),
           };
 
           await tx`
@@ -820,7 +847,9 @@ export function registerChallanRoutes(
                 sequence_number = ${sequence},
                 issued_snapshot = ${jsonb(tx, snapshot)},
                 issued_by_user_id = ${user.id}, issued_at = ${issuedAt},
-                template_version = ${CHALLAN_TEMPLATE_VERSION}
+                template_version = ${CHALLAN_TEMPLATE_VERSION},
+                warranty_template_version = ${warranty?.templateVersion ?? null},
+                warranty_text_sha256 = ${warranty?.textSha256 ?? null}
             where id = ${id}
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {

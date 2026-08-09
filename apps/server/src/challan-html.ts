@@ -1,5 +1,5 @@
 /**
- * Deterministic Delivery Challan HTML (template_version dc-v2). The legal
+ * Deterministic Delivery Challan HTML (template_version dc-v3). The legal
  * content — parties, items, quantities, totals — renders ONLY from the
  * immutable issued_snapshot, never from live rows, so a re-render years
  * later reproduces the same record. Branding (organisation logo, address,
@@ -7,9 +7,18 @@
  * current profile at render time. The output goes to Gotenberg for PDF
  * conversion; it must be a complete, self-contained page with no
  * external requests, so the logo is embedded as a data URI.
+ *
+ * dc-v3 adds the optional warranty/guarantee certificate as page 2
+ * (legacy §11): present exactly when the snapshot carries a warranty
+ * block, frozen at issue time from the organisation's template text.
  */
 
-export const CHALLAN_TEMPLATE_VERSION = 'dc-v2';
+export const CHALLAN_TEMPLATE_VERSION = 'dc-v3';
+
+/** Version of the warranty/guarantee certificate page layout. Frozen
+ * into the issued snapshot (with the exact template text and its
+ * SHA-256) whenever the organisation has template text at issue time. */
+export const WARRANTY_TEMPLATE_VERSION = 'wc-v1';
 
 export interface ChallanBranding {
   readonly logoDataUri?: string;
@@ -48,6 +57,14 @@ export interface ChallanSnapshot {
   };
   readonly items: readonly ChallanSnapshotItem[];
   readonly totalAmount: string;
+  /** Present only when the organisation had warranty template text at
+   * issue time; the challan then carries the certificate page forever,
+   * rendered verbatim from this frozen copy. */
+  readonly warranty?: {
+    readonly templateVersion: string;
+    readonly textSha256: string;
+    readonly text: string;
+  };
 }
 
 export function escapeHtml(value: string): string {
@@ -63,6 +80,54 @@ export function renderChallanHtml(
   snapshot: ChallanSnapshot,
   branding: ChallanBranding = {},
 ): string {
+  const brandBlock = `<div class="brand">
+    ${branding.logoDataUri !== undefined ? `<img src="${branding.logoDataUri}" alt="" />` : ''}
+    <div>
+      <div class="org">${escapeHtml(snapshot.organisationName)}</div>
+      <div class="org-details">${[
+        branding.address ?? null,
+        branding.gstin != null ? `GSTIN ${branding.gstin}` : null,
+        [branding.contactPhone, branding.contactEmail]
+          .filter((value): value is string => value != null)
+          .join(' · ') || null,
+      ]
+        .filter((value): value is string => value !== null)
+        .map((value) => escapeHtml(value))
+        .join('<br />')}</div>
+    </div>
+  </div>`;
+
+  // The certificate page renders ONLY from the frozen snapshot copy —
+  // line breaks preserved (white-space: pre-wrap) because the text is a
+  // legal template that must reproduce faithfully on every re-render.
+  const warrantyPage =
+    snapshot.warranty !== undefined
+      ? `<section class="warranty-page">
+  ${brandBlock}
+  <div class="doc-title">
+    <h1>Warranty / Guarantee Certificate</h1>
+    <p>Dated ${escapeHtml(snapshot.challanDate)}</p>
+  </div>
+  <p class="label">Against Delivery Challan ${escapeHtml(snapshot.challanNumber)} · Work ${escapeHtml(snapshot.work.workCode)}</p>
+  <div class="warranty-text">${escapeHtml(snapshot.warranty.text)}</div>
+  <section class="sign">
+    <div>Received by (Consignee)</div>
+    <div>Authorised signatory</div>
+  </section>
+  <footer>
+    <p class="label">Warranty template ${escapeHtml(snapshot.warranty.templateVersion)} · SHA-256 ${escapeHtml(snapshot.warranty.textSha256)}</p>
+  </footer>
+</section>`
+      : '';
+
+  const versionTrail = [
+    `Template ${escapeHtml(snapshot.templateVersion)}`,
+    ...(snapshot.warranty !== undefined
+      ? [`Warranty template ${escapeHtml(snapshot.warranty.templateVersion)}`]
+      : []),
+    `Issued at ${escapeHtml(snapshot.issuedAt)}`,
+  ].join(' · ');
+
   const rows = snapshot.items
     .map(
       (item) => `<tr>
@@ -101,26 +166,13 @@ export function renderChallanHtml(
   .brand .org { font-size: 15px; font-weight: bold; }
   .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
   .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+  .warranty-page { break-before: page; page-break-before: always; }
+  .warranty-text { white-space: pre-wrap; margin-top: 1rem; line-height: 1.5; }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">
-    ${branding.logoDataUri !== undefined ? `<img src="${branding.logoDataUri}" alt="" />` : ''}
-    <div>
-      <div class="org">${escapeHtml(snapshot.organisationName)}</div>
-      <div class="org-details">${[
-        branding.address ?? null,
-        branding.gstin != null ? `GSTIN ${branding.gstin}` : null,
-        [branding.contactPhone, branding.contactEmail]
-          .filter((value): value is string => value != null)
-          .join(' · ') || null,
-      ]
-        .filter((value): value is string => value !== null)
-        .map((value) => escapeHtml(value))
-        .join('<br />')}</div>
-    </div>
-  </div>
+  ${brandBlock}
   <div class="doc-title">
     <h1>Delivery Challan ${escapeHtml(snapshot.challanNumber)}</h1>
     <p>Dated ${escapeHtml(snapshot.challanDate)}</p>
@@ -159,8 +211,9 @@ ${rows}
   <div>Authorised signatory</div>
 </section>
 <footer>
-  <p class="label">Template ${escapeHtml(snapshot.templateVersion)} · Issued at ${escapeHtml(snapshot.issuedAt)}</p>
+  <p class="label">${versionTrail}</p>
 </footer>
+${warrantyPage}
 </body>
 </html>
 `;

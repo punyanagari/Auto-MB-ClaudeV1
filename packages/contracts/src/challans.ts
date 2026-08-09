@@ -74,6 +74,14 @@ export const ChallanSchema = Type.Object(
     prefix: PrefixSchema,
     consignee: ConsigneeSchema,
     templateVersion: Type.Union([Type.String(), Type.Null()]),
+    /** Warranty/guarantee certificate facts, set at issue time only when
+     * the organisation had template text; null otherwise (the certificate
+     * page is optional — legacy §11). */
+    warrantyTemplateVersion: Type.Union([Type.String(), Type.Null()]),
+    warrantyTextSha256: Type.Union([
+      Type.String({ pattern: '^[0-9a-f]{64}$' }),
+      Type.Null(),
+    ]),
     renderedAvailable: Type.Boolean(),
     signedCopyAvailable: Type.Boolean(),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),

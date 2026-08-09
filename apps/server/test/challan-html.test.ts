@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHALLAN_TEMPLATE_VERSION,
+  WARRANTY_TEMPLATE_VERSION,
   escapeHtml,
   renderChallanHtml,
   type ChallanSnapshot,
@@ -57,5 +58,54 @@ describe('challan HTML template', () => {
 
   it('escapeHtml covers the five significant characters', () => {
     expect(escapeHtml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&#39;');
+  });
+
+  describe('warranty certificate page (Milestone 7)', () => {
+    const WARRANTY_SNAPSHOT: ChallanSnapshot = {
+      ...SNAPSHOT,
+      warranty: {
+        templateVersion: WARRANTY_TEMPLATE_VERSION,
+        textSha256: 'ab'.repeat(32),
+        text: 'Clause 1 <terms> & conditions.\nClause 2: 24-month "guarantee".',
+      },
+    };
+
+    it('renders page 2 only when the snapshot carries a warranty block', () => {
+      const withWarranty = renderChallanHtml(WARRANTY_SNAPSHOT);
+      expect(withWarranty).toContain('class="warranty-page"');
+      expect(withWarranty).toContain('Warranty / Guarantee Certificate');
+      // The page break lives in the stylesheet keyed to the page class.
+      expect(withWarranty).toContain('page-break-before: always');
+
+      const withoutWarranty = renderChallanHtml(SNAPSHOT);
+      expect(withoutWarranty).not.toContain('class="warranty-page"');
+      expect(withoutWarranty).not.toContain('Warranty / Guarantee Certificate');
+    });
+
+    it('escapes the template text and preserves its line breaks', () => {
+      const html = renderChallanHtml(WARRANTY_SNAPSHOT);
+      expect(html).not.toContain('<terms>');
+      expect(html).toContain(
+        'Clause 1 &lt;terms&gt; &amp; conditions.\nClause 2: 24-month &quot;guarantee&quot;.',
+      );
+      // pre-wrap makes the raw newline render as a real line break.
+      expect(html).toContain('white-space: pre-wrap');
+    });
+
+    it('shows both template versions in the version trail, deterministically', () => {
+      const first = renderChallanHtml(WARRANTY_SNAPSHOT);
+      const second = renderChallanHtml({ ...WARRANTY_SNAPSHOT });
+      expect(first).toBe(second);
+      expect(first).toContain(
+        `Template ${CHALLAN_TEMPLATE_VERSION} · Warranty template ${WARRANTY_TEMPLATE_VERSION} · Issued at`,
+      );
+      expect(first).toContain(`SHA-256 ${'ab'.repeat(32)}`);
+
+      const withoutWarranty = renderChallanHtml(SNAPSHOT);
+      expect(withoutWarranty).toContain(
+        `Template ${CHALLAN_TEMPLATE_VERSION} · Issued at`,
+      );
+      expect(withoutWarranty).not.toContain('Warranty template');
+    });
   });
 });

@@ -584,6 +584,8 @@ function challanDetail(
       prefix: 'DC',
       consignee: { name: 'Sr. DEE (G)', address: 'Delhi Division' },
       templateVersion: null,
+      warrantyTemplateVersion: null,
+      warrantyTextSha256: null,
       renderedAvailable: false,
       signedCopyAvailable: false,
       cancellationNote: null,
@@ -912,6 +914,79 @@ describe('ChallanDetail', () => {
     expect(screen.queryByRole('button', { name: 'Record receipt' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record serials' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+  });
+
+  it('marks an issued challan that carries a warranty certificate', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(
+        challanDetail({
+          status: 'issued',
+          challanNumber: 'DC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-08-08T10:00:00.000Z',
+          warrantyTemplateVersion: 'wc-v1',
+          warrantyTextSha256: 'ab'.repeat(32),
+        }),
+      ),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Warranty certificate')).toBeTruthy();
+    expect(screen.getByText('Included (template wc-v1)')).toBeTruthy();
+  });
+
+  it('marks an issued challan without a certificate, and drafts not at all', async () => {
+    const api = stubApi({ getChallan: vi.fn().mockResolvedValue(ISSUED()) });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('Warranty certificate')).toBeTruthy();
+    expect(screen.getByText('Not included')).toBeTruthy();
+    cleanup();
+
+    const draftApi = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+    });
+    render(
+      <ChallanDetail
+        api={draftApi}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    await screen.findByRole('heading', { name: 'Draft Delivery Challan' });
+    expect(screen.queryByText('Warranty certificate')).toBeNull();
   });
 });
 
