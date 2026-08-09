@@ -31,6 +31,8 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   delivery_challans: 'SELECT, INSERT, UPDATE, DELETE',
   delivery_challan_items: 'SELECT, INSERT, UPDATE, DELETE',
   challan_item_serials: 'SELECT, INSERT, UPDATE, DELETE',
+  issue_challans: 'SELECT, INSERT, UPDATE, DELETE',
+  issue_challan_lines: 'SELECT, INSERT, UPDATE, DELETE',
   work_assignments: 'SELECT, INSERT, DELETE',
   // Retention financial records: no DELETE (0006).
   challan_receipts: 'SELECT, INSERT, UPDATE',
@@ -38,9 +40,57 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   bills: 'SELECT, INSERT, UPDATE',
   bill_counters: 'SELECT, INSERT, UPDATE',
   mb_entries: 'SELECT, INSERT, UPDATE',
+  // Master data retires via the active flag; no DELETE exists (0013).
+  location_masters: 'SELECT, INSERT, UPDATE',
+  unit_masters: 'SELECT, INSERT, UPDATE',
+  organisation_signatories: 'SELECT, INSERT, UPDATE',
+  // The unified Contacts master (0028): retire-not-delete like every
+  // master. consignee_masters is a compatibility VIEW over contacts since
+  // 0028 (security_invoker, so base grants and RLS are re-checked for the
+  // caller); its own ACL stays narrow — read for pickers, insert for the
+  // importer's master upsert.
+  contacts: 'SELECT, INSERT, UPDATE',
+  consignee_masters: 'SELECT, INSERT',
+  // Work<->consignee association (0028): a preference list, not a
+  // document — unlinking deletes nothing but the preference.
+  work_consignees: 'SELECT, INSERT, DELETE',
+  // Extension requests (0011): drafts deletable, counters keep no DELETE.
+  extension_requests: 'SELECT, INSERT, UPDATE, DELETE',
+  extension_request_counters: 'SELECT, INSERT, UPDATE',
+  // Issue Challan numbering state: no DELETE, like the DC counter (0014).
+  issue_challan_counters: 'SELECT, INSERT, UPDATE',
+  // Amendment approvals are a decision ledger: no DELETE (0012).
+  approval_requests: 'SELECT, INSERT, UPDATE',
+  // Installation records cancel with a note, never delete; attachments
+  // release, never delete (0017).
+  installations: 'SELECT, INSERT, UPDATE',
+  installation_serials: 'SELECT, INSERT, UPDATE',
+  // Correction notices are numbered legal records that cancel, never
+  // disappear; the counter is numbering state (0019).
+  correction_notices: 'SELECT, INSERT, UPDATE',
+  correction_notice_counters: 'SELECT, INSERT, UPDATE',
+  // Payment matrix rows are per-Work payment configuration, not issued
+  // documents: finalised MBs snapshot their percentages, so deleting a
+  // row for an unused category is legitimate (0021).
+  payment_matrices: 'SELECT, INSERT, UPDATE, DELETE',
+  // PAC certificates cancel with a note, never delete; their certified
+  // lines are frozen by trigger (0022).
+  pac_certificates: 'SELECT, INSERT, UPDATE',
+  pac_certificate_items: 'SELECT, INSERT, UPDATE',
+  // Measurement Books: drafts (and their source claims) delete, guarded
+  // by trigger; finalized snapshots and numbering state keep no DELETE
+  // (0024).
+  measurement_books: 'SELECT, INSERT, UPDATE, DELETE',
+  mb_sources: 'SELECT, INSERT, UPDATE, DELETE',
+  measurement_book_lines: 'SELECT, INSERT, UPDATE',
+  measurement_book_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
+  // Cutover provenance is a ledger: append-only for the application role;
+  // the importer itself runs as the administrator role (0025).
+  import_batches: 'SELECT, INSERT',
+  import_records: 'SELECT, INSERT',
   // Better Auth owns these shapes (0004).
   auth_users: 'SELECT, INSERT, UPDATE, DELETE',
   auth_sessions: 'SELECT, INSERT, UPDATE, DELETE',

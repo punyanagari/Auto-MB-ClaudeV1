@@ -1,22 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  LayoutDashboard,
-  LayoutList,
-  Users,
-  Settings as SettingsIcon,
-  LogOut,
-  ArrowLeftRight,
-} from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
-import { initials } from '../format.js';
-import { cn } from '../lib/cn.js';
+import { Approvals } from './Approvals.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
+import { IssueChallanDetail } from './IssueChallanDetail.js';
+import { IssueChallanEditor } from './IssueChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
+import { Masters } from './Masters.js';
 import { Members } from './Members.js';
 import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
+import { SerialLookup } from './SerialLookup.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail } from './WorkDetail.js';
 import { Works } from './Works.js';
@@ -38,48 +33,147 @@ type WorkspaceView =
   | { name: 'challan-new'; workId: string; workCode: string }
   | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
   | { name: 'challan'; workId: string; workCode: string; challanId: string }
+  | { name: 'masters' }
+  | { name: 'issue-challan-new'; workId: string }
+  | { name: 'issue-challan-edit'; workId: string; challanId: string }
+  | { name: 'issue-challan'; workId: string; challanId: string }
+  | { name: 'approvals' }
+  | { name: 'serials' }
   | { name: 'members' }
   | { name: 'settings' };
 
 const MODULES = [
-  { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'works' as const, label: 'Works', icon: LayoutList },
-  { key: 'members' as const, label: 'Members', icon: Users },
-  { key: 'settings' as const, label: 'Settings', icon: SettingsIcon },
-];
-
-/** The study's rail monogram: two rails, sleepers, a signal dot. */
-function BrandMark() {
-  return (
-    <span
-      className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 24 24" fill="none" className="size-5">
-        <path
-          d="M7 21 10 5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M17 21 14 5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M6.4 17.5H17.6M7 13H17M7.6 8.5H16.4"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          opacity="0.85"
-        />
-        <circle cx="12" cy="4" r="1.9" fill="currentColor" />
+  {
+    key: 'dashboard' as const,
+    label: 'Dashboard',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2 9.5 8 3l6 6.5" />
+        <path d="M4 8v6h8V8" />
       </svg>
-    </span>
-  );
-}
+    ),
+  },
+  {
+    key: 'works' as const,
+    label: 'Works',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <rect x="2" y="2" width="5" height="5" rx="1" />
+        <rect x="9" y="2" width="5" height="5" rx="1" />
+        <rect x="2" y="9" width="5" height="5" rx="1" />
+        <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'approvals' as const,
+    label: 'Approvals',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2.5 8.5 6 12l7.5-8" />
+      </svg>
+    ),
+  },
+  {
+    key: 'serials' as const,
+    label: 'Serial Lookup',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="7" cy="7" r="4.2" />
+        <path d="m10.2 10.2 3.6 3.6" />
+      </svg>
+    ),
+  },
+  {
+    key: 'masters' as const,
+    label: 'Masters',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M2.5 4.5 8 2l5.5 2.5L8 7 2.5 4.5Z" />
+        <path d="M2.5 8 8 10.5 13.5 8" />
+        <path d="M2.5 11.5 8 14l5.5-2.5" />
+      </svg>
+    ),
+  },
+  {
+    key: 'members' as const,
+    label: 'Members',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="5.5" cy="5" r="2.5" />
+        <path d="M1.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4" />
+        <circle cx="11.5" cy="5.5" r="2" />
+        <path d="M11 10.2c2 .2 3.5 1.8 3.5 3.8" />
+      </svg>
+    ),
+  },
+  {
+    key: 'settings' as const,
+    label: 'Settings',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <circle cx="8" cy="8" r="2.4" />
+        <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6 11 5M5 11l-1.4 1.4" />
+      </svg>
+    ),
+  },
+];
 
 export function Workspace({
   api,
@@ -89,6 +183,7 @@ export function Workspace({
   onSignOut,
 }: WorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const membership = me.memberships.find(
@@ -100,9 +195,30 @@ export function Workspace({
   // Site engineers record delivery evidence (receipts, serials,
   // installations, measurements) but cannot draft or issue.
   const canRecordEvidence = canModify || membership?.role === 'site';
-  // Issue and cancel are explicit per-member authorities, not roles.
+  // Issue, cancel, and amendment approval are explicit per-member
+  // authorities, not roles.
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
+  const canApprove = membership?.canApproveAmendments ?? false;
+  const isOwner = membership?.role === 'owner';
+
+  // The nav badge: how many amendment requests await a decision. Refreshed
+  // on navigation and whenever an approval decision lands.
+  const refreshPendingApprovals = useCallback(() => {
+    api
+      .listApprovals(organisation.id, 'pending')
+      .then((approvals) => {
+        setPendingApprovals(approvals.length);
+      })
+      .catch(() => {
+        // A failed count never blocks the workspace; the queue page
+        // reports its own errors.
+      });
+  }, [api, organisation.id]);
+
+  useEffect(() => {
+    refreshPendingApprovals();
+  }, [refreshPendingApprovals, view.name]);
 
   // Same convention as the app shell: view changes land keyboard and
   // screen-reader users on the new heading.
@@ -111,117 +227,87 @@ export function Workspace({
   }, [view]);
 
   const activeModule =
-    view.name === 'dashboard' || view.name === 'members' || view.name === 'settings'
+    view.name === 'dashboard' ||
+    view.name === 'masters' ||
+    view.name === 'approvals' ||
+    view.name === 'serials' ||
+    view.name === 'members' ||
+    view.name === 'settings'
       ? view.name
       : 'works';
 
-  const membershipRole = membership?.role ?? 'member';
-
   return (
-    <div className="flex min-h-dvh">
-      <nav
-        className="sticky top-0 flex h-dvh w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground"
-        aria-label="Modules"
-      >
-        <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-4">
-          <div className="flex items-center gap-2.5">
-            <BrandMark />
-            <div className="leading-tight">
-              <div className="font-semibold tracking-tight text-sidebar-accent-foreground">
-                Auto<span className="text-[oklch(0.72_0.13_258)]">-MB</span>
-              </div>
-              <div className="max-w-40 truncate text-[10px] font-medium tracking-widest text-sidebar-faint uppercase">
-                {organisation.name}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4">
-          <p
-            className="px-2 pb-2 text-[10px] font-semibold tracking-widest text-sidebar-faint uppercase"
-            aria-hidden="true"
-          >
-            Navigation
-          </p>
-          <ul className="flex flex-col gap-0.5">
-            {MODULES.map((module) => {
-              const active = activeModule === module.key;
-              const Icon = module.icon;
-              return (
-                <li key={module.key}>
-                  <button
-                    type="button"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => {
-                      const key = module.key;
-                      setView(
-                        key === 'dashboard'
-                          ? { name: 'dashboard' }
-                          : key === 'works'
-                            ? { name: 'works' }
+    <div className="app-frame">
+      <nav className="sidebar" aria-label="Modules">
+        <span className="sidebar__brand">
+          <span className="sidebar__brand-mark" aria-hidden="true">
+            MB
+          </span>
+          Auto-MB
+        </span>
+        <div className="sidebar__nav">
+          {MODULES.map((module) => (
+            <button
+              key={module.key}
+              type="button"
+              className="sidebar__item"
+              aria-current={activeModule === module.key ? 'page' : undefined}
+              onClick={() => {
+                const key = module.key;
+                setView(
+                  key === 'dashboard'
+                    ? { name: 'dashboard' }
+                    : key === 'works'
+                      ? { name: 'works' }
+                      : key === 'masters'
+                        ? { name: 'masters' }
+                        : key === 'approvals'
+                          ? { name: 'approvals' }
+                          : key === 'serials'
+                            ? { name: 'serials' }
                             : key === 'members'
                               ? { name: 'members' }
                               : { name: 'settings' },
-                      );
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium transition-colors',
-                      active
-                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
-                    )}
-                  >
-                    <Icon className="size-4 shrink-0" aria-hidden="true" />
-                    <span className="flex-1">{module.label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-            <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
-              aria-hidden="true"
+                );
+              }}
             >
-              {initials(me.user.email)}
-            </span>
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-sm font-medium text-sidebar-accent-foreground">
-                {me.user.email}
-              </div>
-              <div className="truncate text-xs text-sidebar-faint">
-                {membershipRole}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onSwitchOrganisation}
-            className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-          >
-            <ArrowLeftRight className="size-4" aria-hidden="true" />
-            Switch organisation
-          </button>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-          >
-            <LogOut className="size-4" aria-hidden="true" />
-            Sign out
-          </button>
+              {module.icon}
+              {module.label}
+              {module.key === 'approvals' && pendingApprovals > 0 && (
+                <span
+                  className="chip chip--draft"
+                  aria-label={`${String(pendingApprovals)} pending approvals`}
+                >
+                  {pendingApprovals}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
+        <span className="sidebar__foot">{organisation.name}</span>
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <main
-          className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-6 py-6 lg:px-8"
-          ref={containerRef}
-        >
+      <div className="app-main">
+        <header className="topbar">
+          <div className="topbar__session">
+            <span className="topbar__org">{organisation.name}</span>
+            <button
+              type="button"
+              className="button--ghost"
+              onClick={onSwitchOrganisation}
+            >
+              Switch organisation
+            </button>
+          </div>
+          <div className="topbar__session">
+            <span className="muted">{me.user.email}</span>
+            <button type="button" className="button--ghost" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <main className="content" ref={containerRef}>
           {view.name === 'dashboard' && (
             <Dashboard
               api={api}
@@ -284,6 +370,15 @@ export function Workspace({
               }}
             />
           )}
+          {view.name === 'approvals' && (
+            <Approvals
+              api={api}
+              organisationId={organisation.id}
+              currentUserId={me.user.id}
+              canApprove={canApprove}
+              onChanged={refreshPendingApprovals}
+            />
+          )}
           {view.name === 'work' && (
             <WorkDetail
               api={api}
@@ -292,6 +387,9 @@ export function Workspace({
               canModify={canModify}
               canRecordEvidence={canRecordEvidence}
               canIssue={canIssue}
+              canCancel={canCancel}
+              canApprove={canApprove}
+              isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });
               }}
@@ -302,6 +400,12 @@ export function Workspace({
                   workCode: '',
                   challanId,
                 });
+              }}
+              onNewIssueChallan={(workId) => {
+                setView({ name: 'issue-challan-new', workId });
+              }}
+              onOpenIssueChallan={(challanId) => {
+                setView({ name: 'issue-challan', workId: view.workId, challanId });
               }}
               onBack={() => {
                 setView({ name: 'works' });
@@ -350,6 +454,59 @@ export function Workspace({
               }}
               onBack={() => {
                 setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'masters' && (
+            <Masters api={api} organisationId={organisation.id} canModify={canModify} />
+          )}
+          {(view.name === 'issue-challan-new' ||
+            view.name === 'issue-challan-edit') && (
+            <IssueChallanEditor
+              api={api}
+              organisationId={organisation.id}
+              workId={view.workId}
+              challanId={view.name === 'issue-challan-edit' ? view.challanId : null}
+              onSaved={(challanId) => {
+                setView({ name: 'issue-challan', workId: view.workId, challanId });
+              }}
+              onCancel={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'issue-challan' && (
+            <IssueChallanDetail
+              api={api}
+              organisationId={organisation.id}
+              challanId={view.challanId}
+              canModify={canModify}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              onEdit={(challanId) => {
+                setView({
+                  name: 'issue-challan-edit',
+                  workId: view.workId,
+                  challanId,
+                });
+              }}
+              onDeleted={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+              onBack={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+            />
+          )}
+          {view.name === 'serials' && (
+            <SerialLookup
+              api={api}
+              organisationId={organisation.id}
+              onOpenWork={(workId) => {
+                setView({ name: 'work', workId });
+              }}
+              onOpenChallan={(workId, challanId) => {
+                setView({ name: 'challan', workId, workCode: '', challanId });
               }}
             />
           )}

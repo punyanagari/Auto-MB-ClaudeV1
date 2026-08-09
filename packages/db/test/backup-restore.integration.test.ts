@@ -117,6 +117,7 @@ describe('backup and restore', () => {
       return;
     }
     const backupRoot = path.join(workDir, 'backups');
+    const beforeBackup = Math.floor(Date.now() / 1000);
     const { stdout } = await execFileAsync(
       'bash',
       [path.join(repoRoot, 'scripts', 'backup.sh')],
@@ -132,6 +133,16 @@ describe('backup and restore', () => {
     const backupDir = /backup written to (.+)$/m.exec(stdout)?.[1];
     expect(backupDir, stdout).toBeTruthy();
     if (!backupDir) return;
+
+    // The last-success marker certifies dump + archive + verified manifest;
+    // it must hold the epoch of exactly this run.
+    const marker = (
+      await readFile(path.join(backupRoot, 'last-success'), 'utf8')
+    ).trim();
+    expect(marker).toMatch(/^\d+$/);
+    const markerEpoch = Number(marker);
+    expect(markerEpoch).toBeGreaterThanOrEqual(beforeBackup);
+    expect(markerEpoch).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
 
     await admin.unsafe(`create database ${restoreDbName}`);
     const restoreUrl = adminUrl.replace(/\/[^/]+$/, `/${restoreDbName}`);
@@ -172,5 +183,73 @@ describe('backup and restore', () => {
       'utf8',
     );
     expect(restoredObject).toBe(`%PDF-1.4 backup ${runId}`);
+  }, 120_000);
+});
+
+describe('backup last-success marker', () => {
+  it('does not update the marker when the dump step fails', async () => {
+    // Self-contained (no live database, no pg_dump/server version match):
+    // the dump step fails either way, which is exactly the point — a failed
+    // run must leave the previous marker untouched.
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-marker-'));
+    try {
+      const objectsDir = path.join(scratch, 'objects');
+      await mkdir(objectsDir, { recursive: true });
+      await writeFile(path.join(objectsDir, 'object.txt'), 'content');
+      const backupRoot = path.join(scratch, 'backups');
+      await mkdir(backupRoot, { recursive: true });
+      const markerPath = path.join(backupRoot, 'last-success');
+      await writeFile(markerPath, '12345\n');
+      await expect(
+        execFileAsync('bash', [path.join(repoRoot, 'scripts', 'backup.sh')], {
+          env: {
+            ...process.env,
+            // Discard port: the connection is refused, so pg_dump fails
+            // after the object-directory check but before any artefact
+            // is produced. The password is the repo-wide secretlint
+            // placeholder, not a credential.
+            DATABASE_ADMIN_URL:
+              'postgres://nobody:local-app-change-me@127.0.0.1:9/absent',
+            OBJECT_STORAGE_DIR: objectsDir,
+            BACKUP_ROOT: backupRoot,
+          },
+        }),
+      ).rejects.toThrow();
+      expect((await readFile(markerPath, 'utf8')).trim()).toBe('12345');
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('writes the marker into BACKUP_MARKER_DIR when redirected (production topology)', async () => {
+    if (!compatible) {
+      console.warn(`skipped: ${skipReason}`);
+      return;
+    }
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-marker-dir-'));
+    try {
+      const objectsDir = path.join(scratch, 'objects');
+      await mkdir(objectsDir, { recursive: true });
+      await writeFile(path.join(objectsDir, 'object.txt'), 'content');
+      const backupRoot = path.join(scratch, 'backups');
+      const markerDir = path.join(scratch, 'backup-status');
+      await execFileAsync('bash', [path.join(repoRoot, 'scripts', 'backup.sh')], {
+        env: {
+          ...process.env,
+          DATABASE_ADMIN_URL: adminUrl,
+          OBJECT_STORAGE_DIR: objectsDir,
+          BACKUP_ROOT: backupRoot,
+          BACKUP_MARKER_DIR: markerDir,
+        },
+      });
+      const marker = await readFile(path.join(markerDir, 'last-success'), 'utf8');
+      expect(marker.trim()).toMatch(/^\d+$/);
+      // Redirection means exactly that: nothing lands at the default path.
+      await expect(
+        readFile(path.join(backupRoot, 'last-success'), 'utf8'),
+      ).rejects.toThrow();
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
   }, 120_000);
 });

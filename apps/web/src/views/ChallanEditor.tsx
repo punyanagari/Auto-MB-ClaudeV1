@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { SaveChallanRequest, WorkBalanceResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import type {
+  Contact,
+  SaveChallanRequest,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
+import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 
 interface ChallanEditorProps {
   readonly api: ApiClient;
@@ -33,6 +37,8 @@ export function ChallanEditor({
 }: ChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
+  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -47,10 +53,18 @@ export function ChallanEditor({
       challanId === null
         ? Promise.resolve(null)
         : api.getChallan(organisationId, challanId),
+      // The picker is a convenience: an unavailable master list must not
+      // block manual consignee entry.
+      api.listContacts(organisationId, { role: 'consignee' }).catch(() => []),
+      // R16: the Work's linked consignees are offered first; any active
+      // consignee stays selectable below them.
+      api.listWorkConsignees(organisationId, workId).catch(() => []),
     ])
-      .then(([loadedBalance, existing]) => {
+      .then(([loadedBalance, existing, loadedConsignees, loadedWorkConsignees]) => {
         if (cancelled) return;
         setBalance(loadedBalance);
+        setConsignees(loadedConsignees);
+        setWorkConsignees(loadedWorkConsignees);
         const quantities: Record<string, string> = {};
         for (const item of existing?.items ?? []) {
           quantities[item.workItemId] = item.quantity;
@@ -107,6 +121,13 @@ export function ChallanEditor({
           : await api.updateChallan(organisationId, challanId, body);
       onSaved(detail.challan.id);
     } catch (cause) {
+      // DRAFT_EXISTS conflicts answer with the open draft's id so the
+      // editor routes straight to it instead of dead-ending on an error.
+      const existingId = existingRecordIdOf(cause);
+      if (existingId !== null) {
+        onSaved(existingId);
+        return;
+      }
       setSaveError(
         cause instanceof RequestFailedError
           ? cause.message
@@ -178,6 +199,55 @@ export function ChallanEditor({
             />
           </div>
         </div>
+        {consignees.length > 0 && (
+          <div className="field">
+            <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
+            <select
+              id="consignee-picker"
+              defaultValue=""
+              onChange={(event) => {
+                // The picker only PREFILLS the snapshot fields below —
+                // the challan keeps its own free-text copy, and every
+                // field stays editable after picking.
+                const chosen = [...workConsignees, ...consignees].find(
+                  (candidate) => candidate.id === event.target.value,
+                );
+                if (chosen === undefined) return;
+                setState({
+                  ...state,
+                  name: chosen.designation,
+                  address: chosen.address ?? '',
+                  phone: chosen.phone ?? '',
+                });
+              }}
+            >
+              <option value="">Manual entry</option>
+              {workConsignees.length > 0 && (
+                <optgroup label="Linked to this Work">
+                  {workConsignees.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.designation}
+                      {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="All consignees">
+                {consignees.map((candidate) => (
+                  <option key={`all-${candidate.id}`} value={candidate.id}>
+                    {candidate.designation}
+                    {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <p className="hint">
+              Consignees linked to this Work are listed first; any active consignee can
+              be picked. Picking copies the details into this challan; edits here never
+              change the contact.
+            </p>
+          </div>
+        )}
         <div className="field-row">
           <div className="field">
             <label htmlFor="consignee-name">Consignee name</label>
@@ -239,7 +309,19 @@ export function ChallanEditor({
                 <th scope="row">{item.itemNumber}</th>
                 <td className="cell--wrap">{item.description}</td>
                 <td>{item.unitCode}</td>
-                <td className="cell--numeric">{item.awardedQuantity}</td>
+                <td className="cell--numeric">
+                  {item.effectiveQuantity !== null &&
+                  item.effectiveQuantity !== undefined &&
+                  item.effectiveQuantity !== item.awardedQuantity ? (
+                    // An approved amendment moved the ceiling: show both.
+                    <>
+                      <s className="muted">{item.awardedQuantity}</s> →{' '}
+                      {item.effectiveQuantity}
+                    </>
+                  ) : (
+                    item.awardedQuantity
+                  )}
+                </td>
                 <td className="cell--numeric">{item.deliveredQuantity}</td>
                 <td className="cell--numeric">{item.remainingQuantity}</td>
                 <td>

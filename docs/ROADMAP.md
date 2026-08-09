@@ -219,6 +219,95 @@ amendment → every completion extension → current effective baseline with
 no historical record overwritten, and every change shows who proposed it
 and who applied it.
 
+Retrofit, first half (2026-08-09, migration 0029): extension-letter
+completeness against the legacy §5.5 list — manual back-fill of paper
+letters occupying the next sequence slot as final (top-of-sequence
+deletion only, by an approvals holder, counter rolled back under the
+lock so the slot is reused), DRAFT-watermarked draft previews streamed
+without stored render state, and exit tests pinning every
+already-held invariant (uniform draft-conflict shape, date ordering,
+response-preserves-request, permanent undeletability of software
+letters, alerts on the current effective completion date). Remaining
+retrofit (second half, scheduled): the full R7 amendment floors
+including the PAC certified floor and omission rules, work
+completion/reopen/short-closure (R8) with per-category executed value,
+approval-concurrency exit tests, and installation/Issue-Challan
+invariant exit suites.
+
+Retrofit, second half — R7 complete (2026-08-09, migration 0030): the
+amendment floor now names delivered, installed AND PAC-certified
+quantities and is enforced by a work_items trigger, so no writer can
+lower a sanctioned quantity beneath its own evidence; item OMISSION
+exists as an approval-engine path (`POST
+/api/works/:id/amendments/removals`) that soft-deletes, refuses while
+any delivery, installation, PAC certificate, or quantity-bearing
+Measurement Book line references the item, and keeps the retired item
+number reserved forever; and `requires_serials` became genuinely
+one-way. Two real defects surfaced and were fixed: the
+`requires-serials` toggle allowed switching serial tracking OFF with
+serials already recorded (R7's last sentence, unenforced anywhere), and
+the amendment floor was applied to quantity INCREASES as well as
+reductions, which on an excess-delivery Work refused the exact remedy
+R5 prescribes. Exit suites pin the atomic decision claim under a real
+simultaneous double-decide, the audit-shape equivalence of the
+one-party and two-party approval flows, the excess-delivery toggle
+lifting the delivery ceiling but never the installation ceiling, the
+absence of an in-place installation edit, and the Issue Challan
+counter's independence from the Delivery Challan counter on the same
+Work.
+
+Retrofit, second half — work completion (2026-08-09, migration 0031):
+the R8/R15 status lifecycle, which migration 0001 modelled in a CHECK
+constraint and no writer ever reached. Completion computes the
+100%-executed predicate in exact SQL per payment category over EFFECTIVE
+quantities — supply categories owe full delivery, pure installation owes
+full installation, supply-and-installation owes both, and an
+uncategorised item owes installation when its description says so —
+with numeric equality and no tolerance, soft-deleted items excluded; a
+short Work is refused with the operator's worklist naming every item and
+what it still owes, and the short-closure instruction to amend the
+quantities down through the approval path first. Completion also refuses
+while anything live still holds a claim (draft delivery/issue challans,
+draft extension requests, draft Measurement Books, pending approval
+requests), naming each. A completed Work then accepts no new operational
+document — every creation route refuses with WORK_COMPLETED and every
+refusal has a database guard behind it, so raw SQL is refused too — and
+reopen (same authority, mandatory note, no predicate) restores every
+path. Both transitions take a note the database enforces in both
+directions, are audited with before/after, and ride the Work timeline;
+completed Works stop raising the dashboard completion alerts. R15's
+third status, `cancelled`, stays deliberately unreachable: the
+transition guard refuses any move into or out of `cancelled` rather
+than leaving an unimplemented state reachable through SQL. A Work has
+no removal path at all today — `works.deleted_at` exists from migration
+0001 and every read honours it, but nothing writes it — so `cancelled`
+stays refused until work removal is built with its own rules and
+evidence refusals.
+
+Retrofit, closing hardening (2026-08-09, migration 0032): the freeze on
+a completed Work now runs in both directions. 0031 closed every path
+that ADDS a document; nothing stopped the evidence the predicate was
+measured against being cancelled out from under it afterwards, so a
+Work could sit at `completed` while its delivered and installed sums
+had fallen below the quantities that admitted it. Cancelling a delivery
+challan, an issue challan, an installation record, a PAC certificate or
+a Measurement Book on a completed Work is now refused at the route
+(under the works row lock, taken after the document row so cancel and
+completion serialise) and at the database, each naming the reopen; the
+decision is refuse, not auto-reopen, so the operator states why the
+closure was wrong in the note R8 already audits. Bill status transitions
+(prepared → submitted → paid) stay open by design: payment continues
+long after execution finishes and moves no quantity. The R7 item-removal
+proposal route, which the two retrofit tracks merged past without
+converting, now takes the same works lock and the same shared refusal as
+its sibling proposal routes. The unfinished-item worklist carries the
+DIRECTION of each item's remedy — a Work with the excess-delivery toggle
+on can be over-delivered, and the R7 floor refuses amending down, so
+those rows are told to amend the sanctioned quantity UP to match the
+delivery instead. In the web client, "Omit an item" files through the R7
+removal path rather than a quantity-0 change, and an item carrying an
+undecided omission shows it.
+
 ## Milestone 7 — site material movement and document control
 
 Scope:
@@ -244,18 +333,45 @@ Scope:
   the 2026-08-08 cancellation policy) gets an approval-gated
   cancel-and-replace or adjustment document — the promise migration 0008
   already makes — never an edit of the issued snapshot;
+- settled scope narrowing: installation-record quantity edits are
+  deliberately cancel-and-re-record in this milestone — there is no
+  approval-gated in-place installation edit; the approval-gated variant
+  (legacy §5.4/§5.6, blocked while serials are attached) is deferred to
+  the Milestone 6/7 retrofit wave;
 - tenant-wide serial lookup (work-scope filtered) with the full trace,
   and enforcement of the `requires_serials` flag (stored since migration
   0001, never enforced): serial count must equal shipped quantity at
   issue. Multiline batch capture already shipped in Milestone 5; range
   expansion and spreadsheet import stay evidence-gated in Milestone 9.
 
+Delivered (2026-08-09, migrations 0017–0019 plus the review-hardening
+pass in 0023): quantity-level installation records with inline-creatable
+location snapshots, serial attachment against the delivered pool, and
+exact-arithmetic caps under row locks; the warranty/guarantee
+certificate as page 2 of the Delivery Challan, frozen into the issued
+snapshot with template version and content hash; the correction flow
+through the Milestone 6 approval engine — evidence-free issued
+documents get approval-gated cancel-and-replace with provenance,
+evidence-locked ones get gapless numbered correction notices, and
+deciders revalidate the document authorities at apply time; issue
+challans joined the timeline and export; the amendment floor includes
+installed quantities. The Contacts unification (2026-08-09, migration 0028) upgraded the consignee master into the role-flagged Contacts
+model — consignee role active, vendor/client dormant until procurement
+— with GSTIN validation (deductor `…D` accepted), R16 authority
+refusal, and per-Work consignee associations.
+
 Exit: a material unit can be traced awarded → delivered → received →
 issued to site → installed, including its documents, custody, serial
 identity, and location, and a wrong issued document has a lawful
-correction path that preserves the original.
+correction path that preserves the original — met
+(`apps/server/test/installations.integration.test.ts`,
+`corrections.integration.test.ts`, `challans.integration.test.ts`).
 
-## Milestone 8 — stage-wise payment eligibility
+## Milestone 8 — stage-wise Measurement Book lifecycle and payment eligibility
+
+(Renamed from "stage-wise payment eligibility" after the second auditor
+review: the legacy spec defines a Measurement Book lifecycle, not just a
+bill formula. ADR-0006 records the settled design.)
 
 Scope:
 
@@ -282,9 +398,48 @@ staged contract would be a permanently wrong financial record. The
 richer maths already deferred (security deposit deductions, price
 variation) still wait for a partner's real bill format.
 
+Delivered (2026-08-09, migrations 0021–0027): item payment categories
+with the per-Work matrix (four categories plus an optional UNCATEGORISED
+row; finalization names every unresolved item; R10 honoured — no
+per-item percentages); PAC certificates with the R18
+installed-minus-covered cap under row locks, consignee snapshots, and
+display-only released values; the Measurement Book lifecycle per
+ADR-0006 — database-enforced one-live-MB-per-source, draft recompute,
+gapless `<work_code>-MB-NN` finalisation snapshotting categories,
+percentages, rates, per-stage deltas and true-cumulative priors,
+newest-live-only cancel (works-row serialised with DB backstops),
+final-MB sweep enforcement with a post-final source freeze, and R19
+coherence guards both directions at API and database level; bills
+prepared 1:1 from finalized MBs (the Milestone 5 measured-quantity
+sweep is retired); the contractual MB remark algorithm proven
+character-for-character against the agency workbook fixture; the MB
+document with DRAFT watermark, FINAL BILL banner, and Indian-system
+amount in words; rates at six-decimal precision end to end (amounts
+stay two-decimal per R13).
+
 Exit: the first stage-based bill is computed entirely from recorded
 contract terms and operational evidence, with no payment percentages
-calculated in an external spreadsheet.
+calculated in an external spreadsheet — met
+(`apps/server/test/measurement-books.integration.test.ts`,
+`mb-remark.test.ts` against
+`apps/server/test/fixtures/mb-remark-workbook.v1.json`).
+
+## Legacy v1 cutover
+
+The live v1 system (SQLite) holds real production data — 34 works,
+650 delivery challans with serials across two legal entities — and
+stops at launch. Delivered (2026-08-09, migration 0025): the idempotent
+cutover importer (`scripts/import-v1.ts`) with append-only import
+provenance, exact preservation of printed challan numbers (including
+suffixed ones), historical timestamps, counter continuity after the
+highest historical number, serial parsing with named exceptions
+(never silent dedup, ranges never fabricated), deterministic
+quantization with honest drift accounting, per-organisation
+reconciliation reports, and dry-run rollback. The cutover runbook is
+in docs/OPERATIONS.md: dry-run now, freeze v1 at launch, final backup,
+apply, reconcile, invite users. Data-quality exceptions found in the
+real backup were delivered to the operator for correction in v1 before
+the final run.
 
 ## Milestone 9 — operational depth, evidence-gated
 

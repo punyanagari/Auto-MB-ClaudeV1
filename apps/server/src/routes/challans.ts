@@ -17,20 +17,26 @@ import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import {
   CHALLAN_TEMPLATE_VERSION,
+  WARRANTY_TEMPLATE_VERSION,
   renderChallanHtml,
   type ChallanSnapshot,
 } from '../challan-html.js';
+import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
+import { canonicalRateText } from '../rate-text.js';
+import { assertSourceNotBilled } from './measurement-books.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -70,6 +76,8 @@ interface ChallanRow {
   prefix: string;
   consignee_snapshot: unknown;
   template_version: string | null;
+  warranty_template_version: string | null;
+  warranty_text_sha256: string | null;
   rendered_object_key: string | null;
   signed_copy_object_key: string | null;
   cancellation_note: string | null;
@@ -81,6 +89,7 @@ interface ChallanRow {
 const CHALLAN_COLUMNS = `
   id, work_id, status, challan_date::text as challan_date, challan_number,
   sequence_number, prefix, consignee_snapshot, template_version,
+  warranty_template_version, warranty_text_sha256,
   rendered_object_key, signed_copy_object_key, cancellation_note,
   created_at, issued_at, cancelled_at
 `;
@@ -96,6 +105,8 @@ function toChallan(row: ChallanRow): Challan {
     prefix: row.prefix,
     consignee: parseJsonbColumn(row.consignee_snapshot) as Consignee,
     templateVersion: row.template_version,
+    warrantyTemplateVersion: row.warranty_template_version,
+    warrantyTextSha256: row.warranty_text_sha256,
     renderedAvailable: row.rendered_object_key !== null,
     signedCopyAvailable: row.signed_copy_object_key !== null,
     cancellationNote: row.cancellation_note,
@@ -123,7 +134,7 @@ function toChallanItem(row: ChallanItemRow): ChallanItem {
     description: row.description_snapshot,
     unit: row.unit_snapshot,
     quantity: row.quantity,
-    rate: row.rate_snapshot,
+    rate: canonicalRateText(row.rate_snapshot),
     lineAmount: row.line_amount,
     position: row.position,
   };
@@ -163,8 +174,9 @@ async function readDetail(
 /** Product contract: a document date is never in the future and never
  * before the Work's LOA letter date. "Today" is the organisation's own
  * timezone (default Asia/Kolkata), not the server clock — an evening
- * entry in India must not be rejected as tomorrow's date. */
-async function assertChallanDate(
+ * entry in India must not be rejected as tomorrow's date. (Exported for
+ * the correction flow, which validates replacement drafts.) */
+export async function assertChallanDate(
   tx: TransactionSql,
   workId: string,
   challanDate: string,
@@ -218,14 +230,22 @@ function requireStatus(row: ChallanRow, status: Challan['status']): void {
 
 /** Replaces the challan's lines from the request, snapshotting
  * description/unit/rate from the live work items and computing the line
- * amount in exact SQL numeric arithmetic. */
-async function writeLines(
+ * amount in exact SQL numeric arithmetic. (Exported for the correction
+ * flow, which writes replacement drafts through the same path.) */
+export async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   challanId: string,
   workId: string,
   body: SaveChallanRequest,
 ): Promise<void> {
+  // Draft-time serials hang off the line rows being replaced (serial
+  // lineage FK); they are draft-stage records — deletable by rule — and
+  // cannot outlive their lines, so a line rewrite clears them and they
+  // are re-recorded against the new lines before issue.
+  await tx`
+    delete from challan_item_serials where delivery_challan_id = ${challanId}
+  `;
   await tx`
     delete from delivery_challan_items where delivery_challan_id = ${challanId}
   `;
@@ -237,9 +257,11 @@ async function writeLines(
         line_amount, position
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
-             wi.description, wi.unit_code, ${item.quantity},
-             wi.effective_rate,
-             (${item.quantity}::numeric(18,3) * wi.effective_rate)::numeric(18,2),
+             coalesce(wi.effective_description, wi.description),
+             coalesce(wi.effective_unit, wi.unit_code), ${item.quantity},
+             coalesce(wi.effective_unit_rate, wi.effective_rate),
+             (${item.quantity}::numeric(18,3)
+               * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
              ${index + 1}
       from work_items wi
       where wi.id = ${item.workItemId} and wi.work_id = ${workId}
@@ -263,6 +285,22 @@ async function writeLines(
       );
     }
   }
+}
+
+/** The challan's lines in request-input shape ({workItemId, quantity})
+ * for audit diffing; quantity text comes normalised from the numeric
+ * column so before/after compare like for like. */
+async function readLineInputs(
+  tx: TransactionSql,
+  challanId: string,
+): Promise<{ workItemId: string; quantity: string }[]> {
+  const rows = await tx<{ work_item_id: string; quantity: string }[]>`
+    select work_item_id, quantity::text as quantity
+    from delivery_challan_items
+    where delivery_challan_id = ${challanId}
+    order by position
+  `;
+  return rows.map((row) => ({ workItemId: row.work_item_id, quantity: row.quantity }));
 }
 
 async function auditChallan(
@@ -313,6 +351,10 @@ export function registerChallanRoutes(
           where id = ${workId} and deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // The delivery ceiling is COALESCE(effective_quantity,
+        // awarded_quantity): approved amendments (Milestone 6) raise or
+        // lower it, and the rate/description an amendment changed is what
+        // new challan lines will snapshot.
         const rows = await tx<
           {
             work_item_id: string;
@@ -320,18 +362,21 @@ export function registerChallanRoutes(
             description: string;
             unit_code: string;
             awarded: string;
+            effective: string | null;
             delivered: string;
             remaining: string;
             rate: string;
           }[]
         >`
-          select wi.id as work_item_id, wi.item_number, wi.description,
-                 wi.unit_code,
+          select wi.id as work_item_id, wi.item_number,
+                 coalesce(wi.effective_description, wi.description) as description,
+                 coalesce(wi.effective_unit, wi.unit_code) as unit_code,
                  wi.awarded_quantity::text as awarded,
+                 wi.effective_quantity::text as effective,
                  coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)::text as delivered,
-                 (wi.awarded_quantity
+                 (coalesce(wi.effective_quantity, wi.awarded_quantity)
                    - coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0))::text as remaining,
-                 wi.effective_rate::text as rate
+                 coalesce(wi.effective_unit_rate, wi.effective_rate)::text as rate
           from work_items wi
           left join delivery_challan_items dci on dci.work_item_id = wi.id
           left join delivery_challans dc on dc.id = dci.delivery_challan_id
@@ -347,9 +392,10 @@ export function registerChallanRoutes(
             description: row.description,
             unitCode: row.unit_code,
             awardedQuantity: row.awarded,
+            effectiveQuantity: row.effective,
             deliveredQuantity: row.delivered,
             remainingQuantity: row.remaining,
-            effectiveRate: row.rate,
+            effectiveRate: canonicalRateText(row.rate),
           })),
         };
       });
@@ -412,18 +458,33 @@ export function registerChallanRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds: a draft created here and a
+          // completion on the same Work serialise, so a draft can never
+          // appear behind a completed Work's refusals (the 0031 insert
+          // guard backstops it in the database).
           const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
+            for update
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Delivery Challans can only be drafted for active Works.',
+          assertWorkOperable(work.status, 'drafting a delivery challan');
+          await assertChallanDate(tx, workId, body.challanDate);
+
+          // One open draft per Work (the partial unique index is the
+          // arbiter): the 409 names the existing draft so the client can
+          // open it instead of parsing the message.
+          const [existingDraft] = await tx<{ id: string }[]>`
+            select id from delivery_challans
+            where work_id = ${workId} and status = 'draft'
+          `;
+          if (existingDraft) {
+            throw draftConflictError(
+              'DRAFT_EXISTS',
+              'This Work already has a draft challan; issue or delete it first.',
+              existingDraft.id,
             );
           }
-          await assertChallanDate(tx, workId, body.challanDate);
 
           const [created] = await tx<{ id: string }[]>`
             insert into delivery_challans (
@@ -437,6 +498,9 @@ export function registerChallanRoutes(
             returning id
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
+              // A concurrent create won between the pre-check and this
+              // insert; the transaction is aborted, so the route-level
+              // catch names the winner from a fresh read.
               throw httpError(
                 409,
                 'DRAFT_EXISTS',
@@ -461,7 +525,19 @@ export function registerChallanRoutes(
           );
           return readDetail(tx, created.id);
         },
-      );
+      ).catch(async (error: unknown) => {
+        // The unique-index race path could not name the winning draft
+        // inside its aborted transaction; do it from a fresh read.
+        throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from delivery_challans
+              where work_id = ${workId} and status = 'draft'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
       return reply.status(201).send(detail);
     },
   );
@@ -515,6 +591,7 @@ export function registerChallanRoutes(
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
         await assertChallanDate(tx, challan.work_id, body.challanDate);
+        const linesBefore = await readLineInputs(tx, id);
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
@@ -522,8 +599,26 @@ export function registerChallanRoutes(
           where id = ${id}
         `;
         await writeLines(tx, organisationId, id, challan.work_id, body);
+        // Milestone 6: the trail records what each changed field was and
+        // became. Lines round-trip through the database on both sides so
+        // quantities compare in the same normalised numeric text.
+        const changes = auditDiff(
+          {
+            challanDate: challan.challan_date,
+            prefix: challan.prefix,
+            consignee: parseJsonbColumn(challan.consignee_snapshot),
+            items: linesBefore,
+          },
+          {
+            challanDate: body.challanDate,
+            prefix: body.prefix,
+            consignee: body.consignee,
+            items: await readLineInputs(tx, id),
+          },
+        );
         await auditChallan(tx, organisationId, user.id, 'challan.updated', id, {
-          itemCount: body.items.length,
+          before: changes.before,
+          after: changes.after,
         });
         return readDetail(tx, id);
       });
@@ -549,6 +644,9 @@ export function registerChallanRoutes(
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
+        // A deleted draft takes its draft-stage serials with it (they
+        // reference the lines and would otherwise orphan the delete).
+        await tx`delete from challan_item_serials where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challans where id = ${id}`;
         await auditChallan(tx, organisationId, user.id, 'challan.deleted', id, {
@@ -583,6 +681,14 @@ export function registerChallanRoutes(
           await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'draft');
 
+          // The works row lock pairs with the one the MB finalize
+          // transaction holds: an issue and a final-MB finalize on the
+          // same Work serialise here, so whichever commits second sees
+          // the other — a challan issued first is caught by the final
+          // sweep, and a final MB finalized first makes this issue fail
+          // the FINAL_MB_EXISTS check below (the 0027 challan-update
+          // guard backstops it in the database). Lock order works ->
+          // work_items matches every other writer taking both.
           const [work] = await tx<
             {
               allow_excess_delivery: boolean;
@@ -590,18 +696,52 @@ export function registerChallanRoutes(
               title: string;
               letter_number: string;
               letter_date: string;
+              status: string;
             }[]
           >`
             select allow_excess_delivery, work_code, title, letter_number,
-                   letter_date::text as letter_date
+                   letter_date::text as letter_date, status
             from works where id = ${challan.work_id}
+            for update
           `;
           if (!work) throw new Error('challan without a Work');
 
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above serialises this against completion, and
+          // the 0031 challan-update guard backstops it in the database.
+          assertWorkOperable(work.status, 'issuing a delivery challan');
+
+          // A live final Measurement Book closes the Work's payment
+          // cycle (spec §5.9): a challan issued after it could never be
+          // billed, so the issue is refused outright.
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${challan.work_id} and is_final
+              and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a challan issued now could never be billed.`,
+            );
+          }
+
           // Concurrency-safe quantity validation: this challan's lines plus
-          // everything already ISSUED must stay within the awarded quantity
-          // (exact numeric arithmetic in SQL). The row lock above serialises
-          // competing issues of this work's single draft.
+          // everything already ISSUED must stay within the delivery ceiling
+          // COALESCE(effective_quantity, awarded_quantity) — exact numeric
+          // arithmetic in SQL. The challan row lock above serialises
+          // competing issues of this work's single draft, and the item row
+          // locks below serialise against amendment apply (Milestone 6),
+          // which takes the same locks before lowering a ceiling.
+          await tx`
+            select wi.id from work_items wi
+            where wi.id in (
+              select dci.work_item_id from delivery_challan_items dci
+              where dci.delivery_challan_id = ${id}
+            )
+            for update
+          `;
           if (!work.allow_excess_delivery) {
             const exceeded = await tx<{ item_number: string }[]>`
               select wi.item_number
@@ -614,16 +754,75 @@ export function registerChallanRoutes(
                   join delivery_challans dc on dc.id = q.delivery_challan_id
                   where q.work_item_id = dci.work_item_id
                     and dc.status = 'issued'
-                ), 0) > wi.awarded_quantity
+                ), 0) > coalesce(wi.effective_quantity, wi.awarded_quantity)
               order by wi.item_number
             `;
             if (exceeded.length > 0) {
               throw httpError(
                 409,
                 'QUANTITY_EXCEEDED',
-                `Issuing would exceed the awarded quantity for: ${exceeded
+                `Issuing would exceed the permitted quantity for: ${exceeded
                   .map((row) => row.item_number)
                   .join(', ')}.`,
+              );
+            }
+          }
+
+          // requires_serials enforcement. The challan's work_items rows
+          // are locked FOR UPDATE (no flag predicate) so a concurrent
+          // flag toggle serialises with this check in both orders: a
+          // toggle that committed first is visible in the locked read;
+          // a toggle waiting on these locks re-validates against the
+          // now-issued lines after we commit. Serial recording/deletion
+          // already serialises against issue through the challan row
+          // lock taken above.
+          const challanWorkItems = await tx<
+            { id: string; item_number: string; requires_serials: boolean }[]
+          >`
+            select wi.id, wi.item_number, wi.requires_serials
+            from work_items wi
+            where wi.id in (
+              select work_item_id from delivery_challan_items
+              where delivery_challan_id = ${id}
+            )
+            order by wi.id
+            for update of wi
+          `;
+          const flaggedItemIds = challanWorkItems
+            .filter((item) => item.requires_serials)
+            .map((item) => item.id);
+          if (flaggedItemIds.length > 0) {
+            // Exact count check in SQL: recorded serials must equal the
+            // line quantity (numeric comparison, no floats).
+            const incomplete = await tx<
+              { item_number: string; quantity: string; recorded: string }[]
+            >`
+              select wi.item_number, dci.quantity::text as quantity,
+                     (
+                       select count(*) from challan_item_serials s
+                       where s.delivery_challan_item_id = dci.id
+                     )::text as recorded
+              from delivery_challan_items dci
+              join work_items wi on wi.id = dci.work_item_id
+              where dci.delivery_challan_id = ${id}
+                and dci.work_item_id = any(${flaggedItemIds}::uuid[])
+                and (
+                  select count(*) from challan_item_serials s
+                  where s.delivery_challan_item_id = dci.id
+                ) <> dci.quantity
+              order by wi.item_number
+            `;
+            if (incomplete.length > 0) {
+              const detail = incomplete
+                .map(
+                  (line) =>
+                    `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,
+                )
+                .join('; ');
+              throw httpError(
+                409,
+                'SERIALS_INCOMPLETE',
+                `These items require one serial per unit before issue: ${detail}.`,
               );
             }
           }
@@ -643,8 +842,10 @@ export function registerChallanRoutes(
           const sequence = counter.next_value;
           const challanNumber = `${challan.prefix}/${String(sequence)}`;
 
-          const [organisation] = await tx<{ name: string }[]>`
-            select name from organisations
+          const [organisation] = await tx<
+            { name: string; warranty_template_text: string | null }[]
+          >`
+            select name, warranty_template_text from organisations
           `;
           const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
             select dci.id, dci.work_item_id, dci.description_snapshot,
@@ -661,6 +862,24 @@ export function registerChallanRoutes(
             select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
             from delivery_challan_items where delivery_challan_id = ${id}
           `;
+
+          // Legacy §11: the warranty/guarantee certificate page is
+          // optional — it exists exactly when the organisation has
+          // template text at issue time. The FULL text is frozen into
+          // the immutable snapshot (with the certificate template
+          // version and the SHA-256 of the exact text), so later
+          // profile edits never change an issued certificate.
+          const warrantyText = organisation?.warranty_template_text ?? null;
+          const warranty =
+            warrantyText !== null
+              ? {
+                  templateVersion: WARRANTY_TEMPLATE_VERSION,
+                  textSha256: createHash('sha256')
+                    .update(warrantyText, 'utf8')
+                    .digest('hex'),
+                  text: warrantyText,
+                }
+              : undefined;
 
           const issuedAt = new Date().toISOString();
           const snapshot: ChallanSnapshot = {
@@ -682,10 +901,11 @@ export function registerChallanRoutes(
               description: line.description_snapshot,
               unit: line.unit_snapshot,
               quantity: line.quantity,
-              rate: line.rate_snapshot,
+              rate: canonicalRateText(line.rate_snapshot),
               lineAmount: line.line_amount,
             })),
             totalAmount: total?.amount ?? '0.00',
+            ...(warranty !== undefined ? { warranty } : {}),
           };
 
           await tx`
@@ -694,7 +914,9 @@ export function registerChallanRoutes(
                 sequence_number = ${sequence},
                 issued_snapshot = ${jsonb(tx, snapshot)},
                 issued_by_user_id = ${user.id}, issued_at = ${issuedAt},
-                template_version = ${CHALLAN_TEMPLATE_VERSION}
+                template_version = ${CHALLAN_TEMPLATE_VERSION},
+                warranty_template_version = ${warranty?.templateVersion ?? null},
+                warranty_text_sha256 = ${warranty?.textSha256 ?? null}
             where id = ${id}
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -740,6 +962,19 @@ export function registerChallanRoutes(
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
+        // R8: cancelling this challan would drop the delivered quantity
+        // the completion predicate was measured against, leaving a Work
+        // that says 'completed' below 100% executed. Lock order is the
+        // creation paths' — document row first, then works — so cancel
+        // and completion serialise instead of deadlocking, and the 0032
+        // challan-update guard backstops the refusal in the database.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${challan.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling a delivery challan');
         // Received goods cannot be un-delivered: once a receipt, serial,
         // or Measurement Book entry references this challan, cancellation
         // is forbidden (policy 2026-08-08; the DB trigger backs this up).
@@ -766,6 +1001,10 @@ export function registerChallanRoutes(
             'This challan has a recorded receipt, serials, or measurements and can no longer be cancelled.',
           );
         }
+        // R19: a challan billed in a live Measurement Book cannot be
+        // cancelled — the MB must be cancelled first (the 0024 database
+        // guard backstops this against every writer).
+        await assertSourceNotBilled(tx, 'delivery_challan', id);
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},

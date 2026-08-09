@@ -770,6 +770,36 @@ button:disabled {
   text-decoration: none;
   cursor: pointer;
   white-space: normal;
+
+/* Amendment approvals (Milestone 6). */
+.chip--pending {
+  background: var(--color-notice-surface);
+  color: var(--color-notice);
+  border-color: transparent;
+}
+
+.chip--approved {
+  background: var(--color-success-surface);
+  color: var(--color-success-ink);
+  border-color: transparent;
+}
+
+.chip--rejected,
+.chip--omitted {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  border-color: transparent;
+}
+
+/* Editors keep their primary actions visible while the form scrolls —
+ * the Zoho bottom action bar. */
+.action-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-card);
+  border-top: 1px solid var(--color-line);
+  padding: var(--space-3) 0;
+  margin-top: var(--space-6);
 }
 
 .button--link:hover {
@@ -1250,5 +1280,132 @@ input[type='radio'] {
 
   .content {
     padding: var(--space-4);
+  }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Timeline (audit trail)                                              */
+
+.timeline-section {
+  margin-top: var(--space-6);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 2px solid var(--color-line-strong);
+}
+
+.timeline__event {
+  position: relative;
+  padding: 0 0 var(--space-4) var(--space-4);
+}
+
+.timeline__event::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-1) - 3px);
+  top: 0.4rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.timeline__headline {
+  margin: 0;
+}
+
+.timeline__action {
+  font-weight: 600;
+}
+
+.timeline__facts {
+  margin: var(--space-1) 0 0;
+  font-size: 0.875rem;
+}
+
+.timeline__diff {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.timeline__diff-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.timeline__diff-row dt {
+  min-width: 8rem;
+  font-weight: 600;
+}
+
+.timeline__diff-row dd {
+  margin: 0;
+}
+
+.timeline__before {
+  color: var(--color-ink-muted);
+  text-decoration: line-through;
+}
+
+.timeline__after {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.timeline__arrow {
+  color: var(--color-ink-muted);
+}
+
+/* Tab strip: flat category switcher used by the Masters screen. The
+ * selected tab carries the accent underline, mirroring the sidebar's
+ * active treatment. */
+.tab-strip {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-line);
+  margin-bottom: var(--space-4);
+}
+
+.tab-strip__tab {
+  border: none;
+  background: none;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-ink-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-weight: 550;
+}
+
+.tab-strip__tab:hover {
+  color: var(--color-ink);
+}
+
+.tab-strip__tab[aria-selected='true'] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Documents are legal artifacts: anything that reaches paper drops chrome. */
+@media print {
+  .sidebar,
+  .topbar,
+  .actions,
+  form {
+    display: none;
+  }
+
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
   }
 }

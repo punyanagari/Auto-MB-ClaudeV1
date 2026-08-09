@@ -1,36 +1,88 @@
 import type {
   AddMemberRequest,
   ApiError,
+  ApprovalRequest,
+  ApprovalStatus,
+  CorrectionEligibilityResponse,
+  CorrectionNotice,
+  CorrectionNoticeDetailResponse,
+  ProposeChallanCancelReplaceRequest,
+  ProposeCorrectionNoticeRequest,
+  ProposeIssueChallanCancelReplaceRequest,
   Bill,
   CancelChallanRequest,
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
+  Contact,
   CreateOrganisationRequest,
   DashboardResponse,
+  ExtensionRequestDetailResponse,
   InstallSerialRequest,
   Instrument,
+  IssueChallan,
+  IssueChallanDetailResponse,
+  CancelIssueChallanRequest,
+  SaveIssueChallanRequest,
   LoaDocument,
   LoaDocumentDetail,
+  LocationMaster,
   MbEntry,
   MemberAssignmentsResponse,
   Membership,
   Organisation,
+  ProposeAddItemRequest,
+  ProposeAmendmentRequest,
+  ProposeRemoveItemRequest,
   OrganisationProfile,
   Receipt,
   RecordMbEntryRequest,
   RecordReceiptRequest,
   RecordSerialsRequest,
+  RespondExtensionRequest,
+  BackfillExtensionRequest,
+  BackfillExtensionResponse,
   SaveChallanRequest,
+  SaveContactRequest,
+  SaveExtensionRequest,
   SaveInstrumentRequest,
+  SaveLocationMasterRequest,
+  SaveSignatoryRequest,
+  SaveUnitMasterRequest,
   Serial,
+  TimelineResponse,
+  Signatory,
+  UnitMaster,
+  SetCompletionDateRequest,
+  SerialSearchResponse,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
   UpdateMemberRequest,
   UpdateOrganisationProfileRequest,
   Work,
   WorkBalanceResponse,
+  WorkCompletionResponse,
+  CompleteWorkRequest,
+  ReopenWorkRequest,
+  WorkStatusResponse,
   WorkDetailResponse,
+  WorkSettingsResponse,
+  WorkItemSerialsResponse,
+  Installation,
+  InstallationListResponse,
+  RecordInstallationRequest,
+  PaymentMatrixCategory,
+  PaymentMatrixRow,
+  UpsertPaymentMatrixRowRequest,
+  WorkItemPaymentCategory,
+  WorkItemPaymentCategoryResponse,
+  PacCertificate,
+  PacCertificateListResponse,
+  RecordPacCertificateRequest,
+  CreateMeasurementBookRequest,
+  MeasurementBookDetailResponse,
+  MeasurementBookListResponse,
+  SetMbSourcesRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -38,16 +90,32 @@ export interface MeResponse {
   readonly memberships: readonly Membership[];
 }
 
-/** Error carrying the server's ApiError envelope for user-facing display. */
+/** Error carrying the server's ApiError envelope for user-facing display.
+ * `details` carries structured conflict payloads (e.g. one-draft 409s
+ * answer with the existing draft's id — see existingRecordIdOf). */
 export class RequestFailedError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: unknown;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details ?? null;
   }
+}
+
+/** Every one-open-draft 409 (DRAFT_EXISTS, EXTENSION_DRAFT_EXISTS, and
+ * future one-draft rules) answers with the existing draft's id as
+ * `details.existingRecordId`; returns it when present so views can open
+ * the existing draft instead of dead-ending on the message. */
+export function existingRecordIdOf(error: unknown): string | null {
+  if (!(error instanceof RequestFailedError) || error.status !== 409) return null;
+  const details = error.details as { existingRecordId?: unknown } | null;
+  return typeof details?.existingRecordId === 'string'
+    ? details.existingRecordId
+    : null;
 }
 
 export interface ApiClient {
@@ -146,6 +214,51 @@ export interface ApiClient {
     challanId: string,
     kind: 'rendered' | 'signed',
   ) => Promise<Blob>;
+  readonly listIssueChallans: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly IssueChallan[]>;
+  readonly getIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly createIssueChallan: (
+    organisationId: string,
+    workId: string,
+    body: SaveIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly updateIssueChallan: (
+    organisationId: string,
+    challanId: string,
+    body: SaveIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly deleteIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<void>;
+  readonly issueIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly cancelIssueChallan: (
+    organisationId: string,
+    challanId: string,
+    body: CancelIssueChallanRequest,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly renderIssueChallan: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly uploadIssueChallanSignedCopy: (
+    organisationId: string,
+    challanId: string,
+    file: Blob,
+  ) => Promise<IssueChallanDetailResponse>;
+  readonly downloadIssueChallanPdf: (
+    organisationId: string,
+    challanId: string,
+    kind: 'rendered' | 'signed',
+  ) => Promise<Blob>;
   readonly dashboard: (organisationId: string) => Promise<DashboardResponse>;
   readonly organisationProfile: (
     organisationId: string,
@@ -184,6 +297,16 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly Serial[]>;
+  readonly deleteSerial: (organisationId: string, serialId: string) => Promise<void>;
+  readonly searchSerials: (
+    organisationId: string,
+    query: string,
+  ) => Promise<SerialSearchResponse>;
+  readonly updateWorkItemSerials: (
+    organisationId: string,
+    workItemId: string,
+    requiresSerials: boolean,
+  ) => Promise<WorkItemSerialsResponse>;
   readonly listInstruments: (
     organisationId: string,
     workId: string,
@@ -211,12 +334,369 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly Bill[]>;
-  readonly prepareBill: (organisationId: string, workId: string) => Promise<Bill>;
   readonly setBillStatus: (
     organisationId: string,
     billId: string,
     body: UpdateBillStatusRequest,
   ) => Promise<Bill>;
+  readonly workTimeline: (
+    organisationId: string,
+    workId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly entityTypes?: readonly string[];
+      readonly limit?: number;
+    },
+  ) => Promise<TimelineResponse>;
+  readonly entityTimeline: (
+    organisationId: string,
+    entityType: string,
+    entityId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ) => Promise<TimelineResponse>;
+  /** Master data (pickers only): `save` with a null id creates, with an id
+   * updates; `setActive` retires (false) or reactivates (true). */
+  readonly listContacts: (
+    organisationId: string,
+    options?: { includeRetired?: boolean; role?: 'consignee' },
+  ) => Promise<readonly Contact[]>;
+  readonly saveContact: (
+    organisationId: string,
+    id: string | null,
+    body: SaveContactRequest,
+  ) => Promise<Contact>;
+  readonly setContactActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<Contact>;
+  readonly listWorkConsignees: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Contact[]>;
+  readonly linkWorkConsignee: (
+    organisationId: string,
+    workId: string,
+    contactId: string,
+  ) => Promise<Contact>;
+  readonly unlinkWorkConsignee: (
+    organisationId: string,
+    workId: string,
+    contactId: string,
+  ) => Promise<void>;
+  readonly listLocationMasters: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly LocationMaster[]>;
+  readonly saveLocationMaster: (
+    organisationId: string,
+    id: string | null,
+    body: SaveLocationMasterRequest,
+  ) => Promise<LocationMaster>;
+  readonly setLocationMasterActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<LocationMaster>;
+  readonly listUnitMasters: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly UnitMaster[]>;
+  readonly saveUnitMaster: (
+    organisationId: string,
+    id: string | null,
+    body: SaveUnitMasterRequest,
+  ) => Promise<UnitMaster>;
+  readonly setUnitMasterActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<UnitMaster>;
+  readonly listSignatories: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly Signatory[]>;
+  readonly saveSignatory: (
+    organisationId: string,
+    id: string | null,
+    body: SaveSignatoryRequest,
+  ) => Promise<Signatory>;
+  readonly setSignatoryActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<Signatory>;
+  readonly getWorkCompletion: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkCompletionResponse>;
+  readonly setCompletionDate: (
+    organisationId: string,
+    workId: string,
+    body: SetCompletionDateRequest,
+  ) => Promise<WorkCompletionResponse>;
+  readonly createExtensionRequest: (
+    organisationId: string,
+    workId: string,
+    body: SaveExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly updateExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+    body: SaveExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly deleteExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<void>;
+  readonly finaliseExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly renderExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly uploadExtensionResponse: (
+    organisationId: string,
+    extensionId: string,
+    file: Blob,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly respondExtensionRequest: (
+    organisationId: string,
+    extensionId: string,
+    body: RespondExtensionRequest,
+  ) => Promise<ExtensionRequestDetailResponse>;
+  readonly downloadExtensionPdf: (
+    organisationId: string,
+    extensionId: string,
+    kind: 'rendered' | 'response',
+  ) => Promise<Blob>;
+  /** Streams the DRAFT-watermarked preview of a draft letter (§5.5);
+   * nothing is stored server-side. */
+  readonly downloadExtensionDraftPreview: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<Blob>;
+  /** Back-fills a paper letter as a finalised record occupying the next
+   * sequence slot; the response carries non-blocking warnings. */
+  readonly backfillExtensionRequest: (
+    organisationId: string,
+    workId: string,
+    body: BackfillExtensionRequest,
+  ) => Promise<BackfillExtensionResponse>;
+  readonly listApprovals: (
+    organisationId: string,
+    status?: ApprovalStatus,
+  ) => Promise<readonly ApprovalRequest[]>;
+  readonly listWorkAmendments: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly ApprovalRequest[]>;
+  readonly proposeAmendment: (
+    organisationId: string,
+    workId: string,
+    body: ProposeAmendmentRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeAddItem: (
+    organisationId: string,
+    workId: string,
+    body: ProposeAddItemRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeItemRemoval: (
+    organisationId: string,
+    workId: string,
+    body: ProposeRemoveItemRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly approveAmendment: (
+    organisationId: string,
+    approvalId: string,
+    note?: string,
+  ) => Promise<ApprovalRequest>;
+  readonly rejectAmendment: (
+    organisationId: string,
+    approvalId: string,
+    note: string,
+  ) => Promise<ApprovalRequest>;
+  readonly withdrawAmendment: (
+    organisationId: string,
+    approvalId: string,
+  ) => Promise<ApprovalRequest>;
+  readonly setWorkSettings: (
+    organisationId: string,
+    workId: string,
+    allowExcessDelivery: boolean,
+  ) => Promise<WorkSettingsResponse>;
+  /** Quantity-level installation records (Milestone 7). */
+  readonly listWorkInstallations: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<InstallationListResponse>;
+  readonly recordWorkInstallation: (
+    organisationId: string,
+    workId: string,
+    body: RecordInstallationRequest,
+  ) => Promise<Installation>;
+  readonly cancelWorkInstallation: (
+    organisationId: string,
+    installationId: string,
+    note: string,
+  ) => Promise<Installation>;
+  /** Correction flow for issued documents (Milestone 7). */
+  readonly challanCorrectionEligibility: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<CorrectionEligibilityResponse>;
+  readonly proposeChallanCancelReplace: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeChallanCancelReplaceRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeIssueChallanCancelReplace: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeIssueChallanCancelReplaceRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeChallanCorrectionNotice: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeCorrectionNoticeRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly listWorkCorrectionNotices: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly CorrectionNotice[]>;
+  readonly listChallanCorrectionNotices: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<readonly CorrectionNotice[]>;
+  readonly getCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly renderCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly cancelCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+    note: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly downloadCorrectionNoticePdf: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<Blob>;
+  /** Per-Work payment matrix and item categories (Milestone 8). */
+  readonly getPaymentMatrix: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly PaymentMatrixRow[]>;
+  readonly upsertPaymentMatrixRow: (
+    organisationId: string,
+    workId: string,
+    category: PaymentMatrixCategory,
+    body: UpsertPaymentMatrixRowRequest,
+  ) => Promise<PaymentMatrixRow>;
+  readonly deletePaymentMatrixRow: (
+    organisationId: string,
+    workId: string,
+    category: PaymentMatrixCategory,
+  ) => Promise<void>;
+  readonly setWorkItemPaymentCategory: (
+    organisationId: string,
+    workItemId: string,
+    paymentCategory: WorkItemPaymentCategory | null,
+  ) => Promise<WorkItemPaymentCategoryResponse>;
+  /** PAC certificates (Milestone 8 phase 1). */
+  readonly listWorkPacCertificates: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<PacCertificateListResponse>;
+  readonly recordWorkPacCertificate: (
+    organisationId: string,
+    workId: string,
+    body: RecordPacCertificateRequest,
+  ) => Promise<PacCertificate>;
+  readonly cancelPacCertificate: (
+    organisationId: string,
+    certificateId: string,
+    note: string,
+  ) => Promise<PacCertificate>;
+  readonly uploadPacCertificateDocument: (
+    organisationId: string,
+    certificateId: string,
+    file: Blob,
+  ) => Promise<PacCertificate>;
+  readonly downloadPacCertificateDocument: (
+    organisationId: string,
+    certificateId: string,
+  ) => Promise<Blob>;
+  /** Stage-wise Measurement Books (Milestone 8 phase 2). Bill
+   * preparation moved here: a bill is prepared FROM a finalized MB
+   * (the Milestone 5 unbilled-measurements sweep endpoint is gone). */
+  readonly listWorkMeasurementBooks: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<MeasurementBookListResponse>;
+  readonly createWorkMeasurementBook: (
+    organisationId: string,
+    workId: string,
+    body: CreateMeasurementBookRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly getMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly setMeasurementBookSources: (
+    organisationId: string,
+    measurementBookId: string,
+    body: SetMbSourcesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly finalizeMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly cancelMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+    note: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly deleteMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<void>;
+  readonly prepareBillFromMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Bill>;
+  /** Phase 3: the MB document. Finalized MBs render to a persisted PDF;
+   * drafts stream a watermarked live preview that is never stored. */
+  readonly renderMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly downloadMeasurementBookPdf: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Blob>;
+  readonly downloadMeasurementBookDraftPreview: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<Blob>;
+  /** R8 completion: refuses with WORK_NOT_CLEAN (details.blockers) or
+   * WORK_NOT_FULLY_EXECUTED (details.unfinishedItems) — both are the
+   * operator's worklist, rendered by the Work detail panel. */
+  readonly completeWork: (
+    organisationId: string,
+    workId: string,
+    body: CompleteWorkRequest,
+  ) => Promise<WorkStatusResponse>;
+  readonly reopenWork: (
+    organisationId: string,
+    workId: string,
+    body: ReopenWorkRequest,
+  ) => Promise<WorkStatusResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -232,14 +712,16 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 async function parseError(response: Response): Promise<RequestFailedError> {
   let code = 'REQUEST_ERROR';
   let message = `The server answered ${String(response.status)}.`;
+  let details: unknown;
   try {
     const body = (await response.json()) as Partial<ApiError>;
     if (typeof body.code === 'string') code = body.code;
     if (typeof body.message === 'string') message = body.message;
+    details = body.details;
   } catch {
     // Non-JSON error body: keep the status-based message.
   }
-  return new RequestFailedError(response.status, code, message);
+  return new RequestFailedError(response.status, code, message, details);
 }
 
 /**
@@ -469,6 +951,81 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       if (!response.ok) throw await parseError(response);
       return response.blob();
     },
+    async listIssueChallans(organisationId, workId) {
+      const payload = await request<{ issueChallans: IssueChallan[] }>(
+        `/api/works/${workId}/issue-challans`,
+        { organisationId },
+      );
+      return payload.issueChallans;
+    },
+    async getIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(`/api/issue-challans/${challanId}`, {
+        organisationId,
+      });
+    },
+    async createIssueChallan(organisationId, workId, body) {
+      return request<IssueChallanDetailResponse>(
+        `/api/works/${workId}/issue-challans`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async updateIssueChallan(organisationId, challanId, body) {
+      return request<IssueChallanDetailResponse>(`/api/issue-challans/${challanId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async deleteIssueChallan(organisationId, challanId) {
+      await request(`/api/issue-challans/${challanId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async issueIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/issue`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelIssueChallan(organisationId, challanId, body) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async renderIssueChallan(organisationId, challanId) {
+      return request<IssueChallanDetailResponse>(
+        `/api/issue-challans/${challanId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async uploadIssueChallanSignedCopy(organisationId, challanId, file) {
+      const response = await fetchImpl(`/api/issue-challans/${challanId}/signed-copy`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/pdf',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as IssueChallanDetailResponse;
+    },
+    async downloadIssueChallanPdf(organisationId, challanId, kind) {
+      // The tenant header travels on every scoped request, so PDFs are
+      // fetched (not linked) and handed to the browser as object URLs.
+      const response = await fetchImpl(
+        `/api/issue-challans/${challanId}/pdf?kind=${kind}`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
     async dashboard(organisationId) {
       return request<DashboardResponse>('/api/dashboard', { organisationId });
     },
@@ -557,6 +1114,24 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       return payload.serials;
     },
+    async deleteSerial(organisationId, serialId) {
+      await request(`/api/serials/${serialId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async searchSerials(organisationId, query) {
+      return request<SerialSearchResponse>(
+        `/api/serials/search?q=${encodeURIComponent(query)}`,
+        { organisationId },
+      );
+    },
+    async updateWorkItemSerials(organisationId, workItemId, requiresSerials) {
+      return request<WorkItemSerialsResponse>(
+        `/api/work-items/${workItemId}/requires-serials`,
+        { method: 'PATCH', body: { requiresSerials }, organisationId },
+      );
+    },
     async listInstruments(organisationId, workId) {
       const payload = await request<{ instruments: Instrument[] }>(
         `/api/works/${workId}/instruments`,
@@ -598,14 +1173,535 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
       return payload.bills;
     },
-    async prepareBill(organisationId, workId) {
-      return request<Bill>(`/api/works/${workId}/bills`, {
+    async setBillStatus(organisationId, billId, body) {
+      return request<Bill>(`/api/bills/${billId}/status`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async workTimeline(organisationId, workId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) {
+        parameters.set('limit', String(options.limit));
+      }
+      if (options.entityTypes !== undefined && options.entityTypes.length > 0) {
+        parameters.set('entityTypes', options.entityTypes.join(','));
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<TimelineResponse>(`/api/works/${workId}/timeline${suffix}`, {
+        organisationId,
+      });
+    },
+    async entityTimeline(organisationId, entityType, entityId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) {
+        parameters.set('limit', String(options.limit));
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<TimelineResponse>(
+        `/api/audit/entity/${entityType}/${entityId}${suffix}`,
+        { organisationId },
+      );
+    },
+    async listContacts(organisationId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.includeRetired === true) query.set('includeRetired', 'true');
+      if (options.role !== undefined) query.set('role', options.role);
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      const payload = await request<{ contacts: Contact[] }>(
+        `/api/masters/contacts${suffix}`,
+        { organisationId },
+      );
+      return payload.contacts;
+    },
+    async saveContact(organisationId, id, body) {
+      return request<Contact>(
+        id === null ? '/api/masters/contacts' : `/api/masters/contacts/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setContactActive(organisationId, id, active) {
+      return request<Contact>(
+        `/api/masters/contacts/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listWorkConsignees(organisationId, workId) {
+      const payload = await request<{ consignees: Contact[] }>(
+        `/api/works/${workId}/consignees`,
+        { organisationId },
+      );
+      return payload.consignees;
+    },
+    async linkWorkConsignee(organisationId, workId, contactId) {
+      return request<Contact>(`/api/works/${workId}/consignees`, {
+        method: 'POST',
+        body: { contactId },
+        organisationId,
+      });
+    },
+    async unlinkWorkConsignee(organisationId, workId, contactId) {
+      await request(`/api/works/${workId}/consignees/${contactId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async listLocationMasters(organisationId, includeRetired = false) {
+      const payload = await request<{ locations: LocationMaster[] }>(
+        `/api/masters/locations${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.locations;
+    },
+    async saveLocationMaster(organisationId, id, body) {
+      return request<LocationMaster>(
+        id === null ? '/api/masters/locations' : `/api/masters/locations/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setLocationMasterActive(organisationId, id, active) {
+      return request<LocationMaster>(
+        `/api/masters/locations/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listUnitMasters(organisationId, includeRetired = false) {
+      const payload = await request<{ units: UnitMaster[] }>(
+        `/api/masters/units${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.units;
+    },
+    async saveUnitMaster(organisationId, id, body) {
+      return request<UnitMaster>(
+        id === null ? '/api/masters/units' : `/api/masters/units/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setUnitMasterActive(organisationId, id, active) {
+      return request<UnitMaster>(
+        `/api/masters/units/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listSignatories(organisationId, includeRetired = false) {
+      const payload = await request<{ signatories: Signatory[] }>(
+        `/api/masters/signatories${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.signatories;
+    },
+    async saveSignatory(organisationId, id, body) {
+      return request<Signatory>(
+        id === null ? '/api/masters/signatories' : `/api/masters/signatories/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setSignatoryActive(organisationId, id, active) {
+      return request<Signatory>(
+        `/api/masters/signatories/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async getWorkCompletion(organisationId, workId) {
+      return request<WorkCompletionResponse>(`/api/works/${workId}/completion`, {
+        organisationId,
+      });
+    },
+    async setCompletionDate(organisationId, workId, body) {
+      return request<WorkCompletionResponse>(`/api/works/${workId}/completion-dates`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listApprovals(organisationId, status) {
+      const query = status !== undefined ? `?status=${status}` : '';
+      const payload = await request<{ approvals: ApprovalRequest[] }>(
+        `/api/approvals${query}`,
+        { organisationId },
+      );
+      return payload.approvals;
+    },
+    async listWorkAmendments(organisationId, workId) {
+      const payload = await request<{ approvals: ApprovalRequest[] }>(
+        `/api/works/${workId}/amendments`,
+        { organisationId },
+      );
+      return payload.approvals;
+    },
+    async proposeAmendment(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async createExtensionRequest(organisationId, workId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/works/${workId}/extension-requests`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async updateExtensionRequest(organisationId, extensionId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async deleteExtensionRequest(organisationId, extensionId) {
+      await request(`/api/extension-requests/${extensionId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async finaliseExtensionRequest(organisationId, extensionId) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/finalise`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async renderExtensionRequest(organisationId, extensionId) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async uploadExtensionResponse(organisationId, extensionId, file) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/response-document`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ExtensionRequestDetailResponse;
+    },
+    async respondExtensionRequest(organisationId, extensionId, body) {
+      return request<ExtensionRequestDetailResponse>(
+        `/api/extension-requests/${extensionId}/respond`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async downloadExtensionPdf(organisationId, extensionId, kind) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/pdf?kind=${kind}`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async downloadExtensionDraftPreview(organisationId, extensionId) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/draft-preview`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async backfillExtensionRequest(organisationId, workId, body) {
+      return request<BackfillExtensionResponse>(
+        `/api/works/${workId}/extension-requests/backfill`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async proposeAddItem(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments/items`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async proposeItemRemoval(organisationId, workId, body) {
+      return request<ApprovalRequest>(`/api/works/${workId}/amendments/removals`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async approveAmendment(organisationId, approvalId, note) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/approve`, {
+        method: 'POST',
+        body: note !== undefined ? { note } : {},
+        organisationId,
+      });
+    },
+    async rejectAmendment(organisationId, approvalId, note) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/reject`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async withdrawAmendment(organisationId, approvalId) {
+      return request<ApprovalRequest>(`/api/approvals/${approvalId}/withdraw`, {
         method: 'POST',
         organisationId,
       });
     },
-    async setBillStatus(organisationId, billId, body) {
-      return request<Bill>(`/api/bills/${billId}/status`, {
+    async setWorkSettings(organisationId, workId, allowExcessDelivery) {
+      return request<WorkSettingsResponse>(`/api/works/${workId}`, {
+        method: 'PATCH',
+        body: { allowExcessDelivery },
+        organisationId,
+      });
+    },
+    async listWorkInstallations(organisationId, workId) {
+      return request<InstallationListResponse>(`/api/works/${workId}/installations`, {
+        organisationId,
+      });
+    },
+    async recordWorkInstallation(organisationId, workId, body) {
+      return request<Installation>(`/api/works/${workId}/installations`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async challanCorrectionEligibility(organisationId, challanId) {
+      return request<CorrectionEligibilityResponse>(
+        `/api/challans/${challanId}/correction-eligibility`,
+        { organisationId },
+      );
+    },
+    async proposeChallanCancelReplace(organisationId, challanId, body) {
+      return request<ApprovalRequest>(
+        `/api/challans/${challanId}/corrections/cancel-replace`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async proposeIssueChallanCancelReplace(organisationId, challanId, body) {
+      return request<ApprovalRequest>(
+        `/api/issue-challans/${challanId}/corrections/cancel-replace`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async proposeChallanCorrectionNotice(organisationId, challanId, body) {
+      return request<ApprovalRequest>(`/api/challans/${challanId}/corrections/notice`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelWorkInstallation(organisationId, installationId, note) {
+      return request<Installation>(`/api/installations/${installationId}/cancel`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async listWorkCorrectionNotices(organisationId, workId) {
+      const payload = await request<{ notices: CorrectionNotice[] }>(
+        `/api/works/${workId}/correction-notices`,
+        { organisationId },
+      );
+      return payload.notices;
+    },
+    async listChallanCorrectionNotices(organisationId, challanId) {
+      const payload = await request<{ notices: CorrectionNotice[] }>(
+        `/api/challans/${challanId}/correction-notices`,
+        { organisationId },
+      );
+      return payload.notices;
+    },
+    async getCorrectionNotice(organisationId, noticeId) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}`,
+        { organisationId },
+      );
+    },
+    async renderCorrectionNotice(organisationId, noticeId) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelCorrectionNotice(organisationId, noticeId, note) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}/cancel`,
+        { method: 'POST', body: { note }, organisationId },
+      );
+    },
+    async downloadCorrectionNoticePdf(organisationId, noticeId) {
+      const response = await fetchImpl(`/api/correction-notices/${noticeId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async getPaymentMatrix(organisationId, workId) {
+      const payload = await request<{ rows: PaymentMatrixRow[] }>(
+        `/api/works/${workId}/payment-matrix`,
+        { organisationId },
+      );
+      return payload.rows;
+    },
+    async upsertPaymentMatrixRow(organisationId, workId, category, body) {
+      return request<PaymentMatrixRow>(
+        `/api/works/${workId}/payment-matrix/${category}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async deletePaymentMatrixRow(organisationId, workId, category) {
+      await request<void>(`/api/works/${workId}/payment-matrix/${category}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async setWorkItemPaymentCategory(organisationId, workItemId, paymentCategory) {
+      return request<WorkItemPaymentCategoryResponse>(
+        `/api/work-items/${workItemId}/payment-category`,
+        { method: 'PATCH', body: { paymentCategory }, organisationId },
+      );
+    },
+    async listWorkPacCertificates(organisationId, workId) {
+      return request<PacCertificateListResponse>(
+        `/api/works/${workId}/pac-certificates`,
+        { organisationId },
+      );
+    },
+    async recordWorkPacCertificate(organisationId, workId, body) {
+      return request<PacCertificate>(`/api/works/${workId}/pac-certificates`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelPacCertificate(organisationId, certificateId, note) {
+      return request<PacCertificate>(`/api/pac-certificates/${certificateId}/cancel`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async uploadPacCertificateDocument(organisationId, certificateId, file) {
+      const response = await fetchImpl(
+        `/api/pac-certificates/${certificateId}/document`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as PacCertificate;
+    },
+    async downloadPacCertificateDocument(organisationId, certificateId) {
+      const response = await fetchImpl(
+        `/api/pac-certificates/${certificateId}/document`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async listWorkMeasurementBooks(organisationId, workId) {
+      return request<MeasurementBookListResponse>(
+        `/api/works/${workId}/measurement-books`,
+        { organisationId },
+      );
+    },
+    async createWorkMeasurementBook(organisationId, workId, body) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/works/${workId}/measurement-books`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async getMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}`,
+        { organisationId },
+      );
+    },
+    async setMeasurementBookSources(organisationId, measurementBookId, body) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/sources`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async finalizeMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/finalize`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelMeasurementBook(organisationId, measurementBookId, note) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/cancel`,
+        { method: 'POST', body: { note }, organisationId },
+      );
+    },
+    async deleteMeasurementBook(organisationId, measurementBookId) {
+      await request<void>(`/api/measurement-books/${measurementBookId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async prepareBillFromMeasurementBook(organisationId, measurementBookId) {
+      return request<Bill>(`/api/measurement-books/${measurementBookId}/bill`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async renderMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async downloadMeasurementBookPdf(organisationId, measurementBookId) {
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/pdf`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async downloadMeasurementBookDraftPreview(organisationId, measurementBookId) {
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/pdf?preview=1`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async completeWork(organisationId, workId, body) {
+      return request<WorkStatusResponse>(`/api/works/${workId}/complete`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async reopenWork(organisationId, workId, body) {
+      return request<WorkStatusResponse>(`/api/works/${workId}/reopen`, {
         method: 'POST',
         body,
         organisationId,

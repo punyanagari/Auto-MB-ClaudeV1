@@ -226,80 +226,34 @@ afterAll(async () => {
   if (storageDir) await rm(storageDir, { recursive: true, force: true });
 });
 
-describe('bill preparation versus concurrent measurement', () => {
-  it('never stamps an entry the bill snapshot did not count', async () => {
+describe('site measurement evidence after the sweep removal', () => {
+  it('keeps mb-entries recordable but the Milestone 5 bill sweep endpoint is gone', async () => {
     await issueChallan('50000.000');
 
-    const measure = (quantity: string) =>
-      authed(owner, {
-        method: 'POST',
-        url: `/api/works/${workId}/mb-entries`,
-        organisationId,
-        payload: {
-          workItemId,
-          measuredQuantity: quantity,
-          measuredOn: '2026-08-08',
-        },
-      });
+    // mb_entries stay recordable site measurement evidence (ADR-0006
+    // decision 4): the delivered-quantity cap and endpoint are intact.
+    const measured = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/mb-entries`,
+      organisationId,
+      payload: {
+        workItemId,
+        measuredQuantity: '1.000',
+        measuredOn: '2026-08-08',
+      },
+    });
+    expect(measured.statusCode, measured.body).toBe(201);
 
-    // Seed one measurement so every bill attempt has something to sweep.
-    expect((await measure('1.000')).statusCode).toBe(201);
-
-    for (let round = 0; round < 8; round += 1) {
-      const [billResponse, mbResponse] = await Promise.all([
-        authed(owner, {
-          method: 'POST',
-          url: `/api/works/${workId}/bills`,
-          organisationId,
-        }),
-        measure('1.000'),
-      ]);
-      // 201: bill swept something; 409: the concurrent measurement had
-      // not committed yet and nothing was unbilled — a legitimate outcome.
-      expect([201, 409]).toContain(billResponse.statusCode);
-      expect(mbResponse.statusCode, mbResponse.body).toBe(201);
-    }
-    // Sweep any straggler into a final bill so every entry is billed.
-    const finalBill = await authed(owner, {
+    // The 100%-of-measured sweep (POST /api/works/:id/bills) is REMOVED:
+    // bills are prepared from a finalized Measurement Book instead
+    // (measurement-books.integration.test.ts proves that path).
+    const sweep = await authed(owner, {
       method: 'POST',
       url: `/api/works/${workId}/bills`,
       organisationId,
     });
-    expect([201, 409]).toContain(finalBill.statusCode);
-
-    // Invariant: for every bill, the measured sum of the entries stamped
-    // with the bill id equals the quantity total inside its immutable
-    // snapshot — no entry rides a bill that never counted it.
-    const bills = await admin<
-      { id: string; lines_snapshot: unknown; total_amount: string }[]
-    >`
-      select id, lines_snapshot, total_amount::text as total_amount
-      from bills where work_id = ${workId}
-    `;
-    expect(bills.length).toBeGreaterThan(0);
-    for (const bill of bills) {
-      const [stamped] = await admin<{ qty: string | null; count: string }[]>`
-        select sum(measured_quantity)::text as qty, count(*)::text as count
-        from mb_entries where bill_id = ${bill.id}
-      `;
-      const lines =
-        typeof bill.lines_snapshot === 'string'
-          ? (JSON.parse(bill.lines_snapshot) as { quantity: string }[])
-          : (bill.lines_snapshot as { quantity: string }[]);
-      const snapshotQty = lines.reduce((sum, line) => sum + Number(line.quantity), 0);
-      expect(
-        Number(stamped?.qty ?? '0'),
-        `bill ${bill.id}: stamped entries must equal snapshot quantities`,
-      ).toBeCloseTo(snapshotQty, 3);
-    }
-    // And nothing measured was lost: every entry is either billed or free.
-    const [orphans] = await admin<{ count: string }[]>`
-      select count(*)::text as count from mb_entries mb
-      where mb.work_id = ${workId} and mb.bill_id is not null
-        and not exists (select 1 from bills b where b.id = mb.bill_id)
-    `;
-    expect(Number(orphans?.count ?? '0')).toBe(0);
-  }, 60_000);
+    expect(sweep.statusCode).toBe(404);
+  });
 });
 
 describe('cancellation after downstream evidence', () => {
@@ -486,11 +440,11 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v3');
+    expect(exported.formatVersion).toBe('export-v5');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
-    expect(exported.bills?.length).toBeGreaterThan(0);
+    expect(Array.isArray(exported.bills)).toBe(true);
     expect(Array.isArray(exported.challanItemSerials)).toBe(true);
     // export-v3: assignments, the full organisation profile, and a
     // portable manifest of every referenced stored object.
@@ -501,6 +455,30 @@ describe('export completeness', () => {
     // This fixture seeds Works directly, so the manifest may hold no
     // uploads — its presence and shape are the contract here.
     expect(Array.isArray(exported.objectManifest)).toBe(true);
+    // export-v4: the Milestone 7 records — installations with their
+    // serial attachments, the approval ledger, and correction notices.
+    expect(Array.isArray(exported.installations)).toBe(true);
+    expect(Array.isArray(exported.installationSerials)).toBe(true);
+    expect(Array.isArray(exported.approvalRequests)).toBe(true);
+    expect(Array.isArray(exported.correctionNotices)).toBe(true);
+    // Wave 2 hardening: the Issue Challan register (with its lines and
+    // replacement provenance) and extension requests complete export-v4.
+    expect(Array.isArray(exported.issueChallans)).toBe(true);
+    expect(Array.isArray(exported.issueChallanLines)).toBe(true);
+    expect(Array.isArray(exported.extensionRequests)).toBe(true);
+    // export-v5: the Milestone 8 phase-1 records.
+    expect(Array.isArray(exported.paymentMatrices)).toBe(true);
+    expect(Array.isArray(exported.pacCertificates)).toBe(true);
+    expect(Array.isArray(exported.pacCertificateItems)).toBe(true);
+    // export-v5 completion (Milestone 8 phase 2): the Measurement Book
+    // lifecycle record — the format version deliberately stays v5.
+    expect(Array.isArray(exported.measurementBooks)).toBe(true);
+    expect(Array.isArray(exported.measurementBookLines)).toBe(true);
+    expect(Array.isArray(exported.mbSources)).toBe(true);
+    // M6/7 retrofit (migration 0028): the unified Contacts master and the
+    // Work<->consignee association — additive sections, still export-v5.
+    expect(Array.isArray(exported.contacts)).toBe(true);
+    expect(Array.isArray(exported.workConsignees)).toBe(true);
   });
 });
 

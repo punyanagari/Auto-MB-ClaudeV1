@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type {
   ConfirmWorkRequest,
   LoaDocumentDetail,
   WorkDetailResponse,
+  WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import {
   asExtractionPayload,
+  exactRowsTotal,
+  formatMinorUnits,
   normaliseDecimal,
+  parseDecimalMinorUnits,
   type ExtractionPayloadView,
 } from '../loa-payload.js';
 
@@ -25,12 +29,20 @@ interface ItemDraft {
   readonly scheduleId: string;
   readonly itemSno: string;
   readonly needsReview: boolean;
+  /** True for a row the reviewer added at review time (no parsed source
+   * row exists); confirmed with an explicit manual-entry marker instead
+   * of a sourceRef. */
+  readonly manual: boolean;
   readonly anchorLine: string;
   itemNumber: string;
   description: string;
   unitCode: string;
   awardedQuantity: string;
   effectiveRate: string;
+  /** Reviewer-set payment category (Milestone 8); '' = uncategorised.
+   * The parser never proposes it — categorisation is the reviewer's
+   * judgement, and it stays editable on the Work afterwards. */
+  paymentCategory: WorkItemPaymentCategory | '';
 }
 
 interface HeaderDraft {
@@ -43,6 +55,42 @@ interface HeaderDraft {
   pricingShape: 'letter_percentage' | 'per_schedule';
   letterPercentage: string;
   letterPercentageDirection: 'below' | 'at_par' | 'above' | '';
+}
+
+interface PbgDraft {
+  required: boolean;
+  requiredAmount: string;
+  submissionDays: string;
+  extensionDays: string;
+  penalInterestPercent: string;
+}
+
+function buildPbgDraft(payload: ExtractionPayloadView): PbgDraft {
+  const guarantee = payload.review.header.performanceGuarantee;
+  if (
+    guarantee === undefined ||
+    guarantee.amountFigures === null ||
+    guarantee.submissionDays === null
+  ) {
+    return {
+      required: false,
+      requiredAmount: '',
+      submissionDays: '',
+      extensionDays: '',
+      penalInterestPercent: '',
+    };
+  }
+  return {
+    required: true,
+    requiredAmount: guarantee.amountFigures.toFixed(2),
+    submissionDays: String(guarantee.submissionDays),
+    extensionDays:
+      guarantee.extensionDays !== null ? String(guarantee.extensionDays) : '',
+    penalInterestPercent:
+      guarantee.penalInterestPercent !== null
+        ? String(guarantee.penalInterestPercent)
+        : '',
+  };
 }
 
 function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
@@ -72,12 +120,14 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
       scheduleId,
       itemSno: item.itemSno,
       needsReview: item.needsReview,
+      manual: false,
       anchorLine: item.raw.anchorLine,
       itemNumber: `${scheduleId}/${item.itemSno}`,
       description: item.description,
       unitCode: (item.qtyUnit ?? '').slice(0, 20),
       awardedQuantity: normaliseDecimal(item.qty, 3),
-      effectiveRate: normaliseDecimal(item.unitRate, 2),
+      effectiveRate: normaliseDecimal(item.unitRate, 6),
+      paymentCategory: '',
     };
   });
 }
@@ -94,14 +144,19 @@ export function ReviewLoa({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [header, setHeader] = useState<HeaderDraft | null>(null);
   const [items, setItems] = useState<ItemDraft[] | null>(null);
+  const [pbg, setPbg] = useState<PbgDraft | null>(null);
+  const [addSchedule, setAddSchedule] = useState('A');
+  const [removeCandidate, setRemoveCandidate] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const manualSequence = useRef(1);
 
   useEffect(() => {
     let cancelled = false;
     setDocument(null);
     setHeader(null);
     setItems(null);
+    setPbg(null);
     setLoadError(null);
     api
       .getLoaDocument(organisationId, documentId)
@@ -110,8 +165,12 @@ export function ReviewLoa({
         setDocument(loaded);
         const payload = asExtractionPayload(loaded.extractionPayload);
         if (payload !== null) {
+          const drafts = buildItemDrafts(payload);
           setHeader(buildHeaderDraft(payload));
-          setItems(buildItemDrafts(payload));
+          setItems(drafts);
+          setPbg(buildPbgDraft(payload));
+          const lastDraft = drafts[drafts.length - 1];
+          setAddSchedule(lastDraft !== undefined ? lastDraft.scheduleId : 'A');
         }
       })
       .catch((cause: unknown) => {
@@ -141,8 +200,30 @@ export function ReviewLoa({
     return ids;
   }, [items]);
 
+  // Exact-decimal reconciliation over the CURRENT rows (edits, added and
+  // removed rows included): Σ quantity × rate in BigInt minor units,
+  // never floats. Null until every row carries plain decimals.
+  const rowsTotal = useMemo(
+    () => (items === null ? null : exactRowsTotal(items)),
+    [items],
+  );
+  const totalsDifference = useMemo(() => {
+    if (rowsTotal === null || header === null) return null;
+    const totalMinor = parseDecimalMinorUnits(rowsTotal, 5);
+    const contractMinor = parseDecimalMinorUnits(header.contractValue, 5);
+    if (totalMinor === null || contractMinor === null) return null;
+    const diff = totalMinor - contractMinor;
+    const negative = diff < 0n;
+    const magnitude = negative ? -diff : diff;
+    return `${negative ? '-' : ''}₹${formatMinorUnits(magnitude, 5)}`;
+  }, [rowsTotal, header]);
+
   function updateHeader<K extends keyof HeaderDraft>(key: K, value: HeaderDraft[K]) {
     setHeader((current) => (current === null ? null : { ...current, [key]: value }));
+  }
+
+  function updatePbg<K extends keyof PbgDraft>(key: K, value: PbgDraft[K]) {
+    setPbg((current) => (current === null ? null : { ...current, [key]: value }));
   }
 
   function updateItem(key: string, patch: Partial<ItemDraft>) {
@@ -153,12 +234,58 @@ export function ReviewLoa({
     );
   }
 
+  function addManualRow() {
+    const scheduleId =
+      addSchedule.trim().length > 0
+        ? addSchedule.trim()
+        : (scheduleIds[scheduleIds.length - 1] ?? 'A');
+    const sno = `M${String(manualSequence.current)}`;
+    manualSequence.current += 1;
+    setItems((current) =>
+      current === null
+        ? null
+        : [
+            ...current,
+            {
+              key: `manual#${sno}`,
+              scheduleId,
+              itemSno: sno,
+              needsReview: true,
+              manual: true,
+              anchorLine: '',
+              itemNumber: `${scheduleId}/${sno}`,
+              description: '',
+              unitCode: '',
+              awardedQuantity: '',
+              effectiveRate: '',
+              paymentCategory: '',
+            },
+          ],
+    );
+  }
+
+  function removeRow(key: string) {
+    setItems((current) =>
+      current === null ? null : current.filter((item) => item.key !== key),
+    );
+    setRemoveCandidate(null);
+  }
+
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (header === null || items === null) return;
+    if (header === null || items === null || pbg === null) return;
     const withPercentage = header.pricingShape === 'letter_percentage';
     if (withPercentage && header.letterPercentageDirection === '') {
       setConfirmError('Select the percentage direction printed on the letter.');
+      return;
+    }
+    if (items.length === 0) {
+      setConfirmError('Add at least one item row before confirming.');
+      return;
+    }
+    const submissionDays = Number.parseInt(pbg.submissionDays, 10);
+    if (pbg.required && (!Number.isInteger(submissionDays) || submissionDays < 1)) {
+      setConfirmError('Enter the PBG submission window in days (1–180).');
       return;
     }
     const request: ConfirmWorkRequest = {
@@ -175,6 +302,20 @@ export function ReviewLoa({
             letterPercentageDirection: header.letterPercentageDirection,
           }
         : {}),
+      ...(pbg.required
+        ? {
+            pbgRequirement: {
+              requiredAmount: pbg.requiredAmount.trim(),
+              submissionDays,
+              ...(pbg.extensionDays.trim().length > 0
+                ? { extensionDays: Number.parseInt(pbg.extensionDays, 10) }
+                : {}),
+              ...(pbg.penalInterestPercent.trim().length > 0
+                ? { penalInterestPercent: pbg.penalInterestPercent.trim() }
+                : {}),
+            },
+          }
+        : {}),
       schedules: scheduleIds.map((scheduleId) => ({
         scheduleCode: scheduleId,
         title: `Schedule ${scheduleId}`,
@@ -186,7 +327,12 @@ export function ReviewLoa({
             unitCode: item.unitCode,
             awardedQuantity: item.awardedQuantity,
             effectiveRate: item.effectiveRate,
-            sourceRef: { scheduleId: item.scheduleId, itemSno: item.itemSno },
+            ...(item.paymentCategory !== ''
+              ? { paymentCategory: item.paymentCategory }
+              : {}),
+            ...(item.manual
+              ? { manualEntry: true as const }
+              : { sourceRef: { scheduleId: item.scheduleId, itemSno: item.itemSno } }),
           })),
       })),
     };
@@ -230,7 +376,7 @@ export function ReviewLoa({
     );
   }
 
-  if (payload === null || header === null || items === null) {
+  if (payload === null || header === null || items === null || pbg === null) {
     return (
       <section className="card" aria-labelledby="review-title">
         <h1 id="review-title" tabIndex={-1}>
@@ -412,6 +558,92 @@ export function ReviewLoa({
           </div>
         )}
 
+        <h2>Performance guarantee requirement</h2>
+        <p className="muted">
+          What the letter demands, not what has been submitted — record the submitted
+          bank guarantee later as a PBG instrument on the Work.
+        </p>
+        {payload.review.header.performanceGuarantee?.needsReview === true && (
+          <p className="muted">
+            <span className="chip chip--review">needs review</span> The parser could not
+            fully read the performance-guarantee clause; check the printed source below
+            and correct the values.
+          </p>
+        )}
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={pbg.required}
+              onChange={(event) => {
+                updatePbg('required', event.target.checked);
+              }}
+            />{' '}
+            The letter demands a Performance Bank Guarantee
+          </label>
+        </div>
+        {pbg.required && (
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="pbg-amount">Required amount (₹)</label>
+              <input
+                id="pbg-amount"
+                value={pbg.requiredAmount}
+                onChange={(event) => {
+                  updatePbg('requiredAmount', event.target.value);
+                }}
+                required
+                inputMode="decimal"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pbg-submission-days">Submit within (days)</label>
+              <input
+                id="pbg-submission-days"
+                type="number"
+                min={1}
+                max={180}
+                value={pbg.submissionDays}
+                onChange={(event) => {
+                  updatePbg('submissionDays', event.target.value);
+                }}
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pbg-extension-days">Extension window (days)</label>
+              <input
+                id="pbg-extension-days"
+                type="number"
+                min={0}
+                value={pbg.extensionDays}
+                onChange={(event) => {
+                  updatePbg('extensionDays', event.target.value);
+                }}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
+              <input
+                id="pbg-penal-interest"
+                value={pbg.penalInterestPercent}
+                onChange={(event) => {
+                  updatePbg('penalInterestPercent', event.target.value);
+                }}
+                inputMode="decimal"
+              />
+            </div>
+          </div>
+        )}
+        {typeof payload.review.header.performanceGuarantee?.raw === 'string' && (
+          <details>
+            <summary>Printed source (performance guarantee)</summary>
+            <pre className="raw-block">
+              {payload.review.header.performanceGuarantee.raw}
+            </pre>
+          </details>
+        )}
+
         {scheduleIds.map((scheduleId) => (
           <div key={scheduleId}>
             <h2>Schedule {scheduleId}</h2>
@@ -426,6 +658,8 @@ export function ReviewLoa({
                   <th scope="col">Unit</th>
                   <th scope="col">Quantity</th>
                   <th scope="col">Rate (₹)</th>
+                  <th scope="col">Payment category</th>
+                  <th scope="col">Row actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -457,10 +691,17 @@ export function ReviewLoa({
                           minLength={3}
                           rows={2}
                         />
-                        <details>
-                          <summary>Printed source row</summary>
-                          <pre className="raw-block">{item.anchorLine}</pre>
-                        </details>
+                        {item.manual ? (
+                          <p className="muted">
+                            <span className="chip chip--review">manual row</span> Added
+                            by you — the parsed letter has no printed source row for it.
+                          </p>
+                        ) : (
+                          <details>
+                            <summary>Printed source row</summary>
+                            <pre className="raw-block">{item.anchorLine}</pre>
+                          </details>
+                        )}
                       </td>
                       <td>
                         <input
@@ -497,12 +738,106 @@ export function ReviewLoa({
                           inputMode="decimal"
                         />
                       </td>
+                      <td>
+                        {/* Optional, reviewer's judgement — the parser
+                            never proposes a category. Percentages are
+                            configured per category on the Work's payment
+                            matrix, never per item (R10). */}
+                        <select
+                          aria-label={`Payment category for row ${item.itemSno} in schedule ${scheduleId}`}
+                          value={item.paymentCategory}
+                          onChange={(event) => {
+                            updateItem(item.key, {
+                              paymentCategory: event.target
+                                .value as ItemDraft['paymentCategory'],
+                            });
+                          }}
+                        >
+                          <option value="">Uncategorised</option>
+                          <option value="SUPPLY">Supply</option>
+                          <option value="SUPPLY_AND_INSTALLATION">
+                            Supply + installation
+                          </option>
+                          <option value="PURE_INSTALLATION">Purely installation</option>
+                          <option value="SPARE_SUPPLY">Spare supply</option>
+                        </select>
+                      </td>
+                      <td>
+                        {removeCandidate === item.key ? (
+                          <span className="actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                removeRow(item.key);
+                              }}
+                            >
+                              Confirm remove
+                            </button>
+                            <button
+                              type="button"
+                              className="button--ghost"
+                              onClick={() => {
+                                setRemoveCandidate(null);
+                              }}
+                            >
+                              Keep
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            aria-label={`Remove row ${item.itemSno} in schedule ${scheduleId}`}
+                            onClick={() => {
+                              setRemoveCandidate(item.key);
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
               </tbody>
             </table>
           </div>
         ))}
+
+        <h2>Add a row</h2>
+        <p className="muted">
+          For letters the parser could not fully serve: added rows are flagged for
+          review and confirmed with a manual-entry marker instead of a printed source
+          row. Removing a parsed row never edits the stored letter — the extraction
+          stays intact on the document.
+        </p>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="add-row-schedule">Schedule for the new row</label>
+            <input
+              id="add-row-schedule"
+              value={addSchedule}
+              onChange={(event) => {
+                setAddSchedule(event.target.value);
+              }}
+              maxLength={50}
+            />
+          </div>
+          <div className="actions">
+            <button type="button" onClick={addManualRow}>
+              Add row
+            </button>
+          </div>
+        </div>
+
+        <p className="muted" data-testid="reconciliation-totals">
+          {rowsTotal === null
+            ? 'Row totals will appear when every quantity and rate is a plain decimal number.'
+            : `Entered rows total ₹${rowsTotal} across ${String(items.length)} row${items.length === 1 ? '' : 's'}${
+                totalsDifference === null
+                  ? ''
+                  : ` — contract value ₹${header.contractValue} (difference ${totalsDifference})`
+              }.`}
+        </p>
 
         {confirmError !== null && (
           <p className="form-error" role="alert">

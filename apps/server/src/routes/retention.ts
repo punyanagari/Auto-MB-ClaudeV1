@@ -31,6 +31,7 @@ import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
+import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
   assertWorkAccess,
@@ -143,6 +144,7 @@ interface BillRow {
   status: Bill['status'];
   lines_snapshot: unknown;
   total_amount: string;
+  mb_id: string | null;
   created_at: Date;
   submitted_at: Date | null;
   paid_at: Date | null;
@@ -159,6 +161,7 @@ function toBill(row: BillRow): Bill {
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
     paidAt: row.paid_at?.toISOString() ?? null,
+    mbId: row.mb_id,
   };
 }
 
@@ -353,11 +356,14 @@ export function registerRetentionRoutes(
           if (!line) {
             throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
           }
-          if (line.challan_status !== 'issued') {
+          // Serials are recorded post-issue (the historical evidence
+          // flow) or on the draft (required before issue for items with
+          // requires_serials). Cancelled challans take no new evidence.
+          if (line.challan_status !== 'issued' && line.challan_status !== 'draft') {
             throw httpError(
               409,
               'CHALLAN_STATUS_CONFLICT',
-              'Serials are recorded against issued challans.',
+              'Serials are recorded against draft or issued challans.',
             );
           }
           await assertWorkAccess(tx, user.id, line.work_id);
@@ -435,13 +441,36 @@ export function registerRetentionRoutes(
         user.id,
         async (tx) => {
           await requireEvidenceRole(tx, user.id);
-          const [serial] = await tx<{ work_id: string }[]>`
-            select work_id from challan_item_serials where id = ${id}
+          const [serial] = await tx<
+            {
+              work_id: string;
+              installed_on: string | null;
+              installation_remarks: string | null;
+            }[]
+          >`
+            select work_id, installed_on::text as installed_on,
+                   installation_remarks
+            from challan_item_serials where id = ${id}
+            for update
           `;
           if (!serial) {
             throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
           }
           await assertWorkAccess(tx, user.id, serial.work_id);
+          // A serial covered by a live quantity-level installation record
+          // (Milestone 7) is managed through that record: cancel it to
+          // release the serial instead of editing the per-serial date.
+          const [attachment] = await tx<{ installation_id: string }[]>`
+            select installation_id from installation_serials
+            where challan_item_serial_id = ${id} and released_at is null
+          `;
+          if (attachment) {
+            throw httpError(
+              409,
+              'SERIAL_ATTACHED_TO_INSTALLATION',
+              'This serial is covered by an installation record; cancel that record to release it.',
+            );
+          }
           const [updated] = await tx<{ work_id: string }[]>`
             update challan_item_serials
             set installed_on = ${body.installedOn},
@@ -452,6 +481,18 @@ export function registerRetentionRoutes(
           if (!updated) {
             throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
           }
+          // Re-recording an installation overwrites the previous date, so
+          // the trail keeps the old value alongside the new one.
+          const changes = auditDiff(
+            {
+              installedOn: serial.installed_on,
+              installationRemarks: serial.installation_remarks,
+            },
+            {
+              installedOn: body.installedOn,
+              installationRemarks: body.remarks ?? null,
+            },
+          );
           await audit(
             tx,
             organisationId,
@@ -459,9 +500,7 @@ export function registerRetentionRoutes(
             'serial.installed',
             'challan_item_serials',
             id,
-            {
-              installedOn: body.installedOn,
-            },
+            { before: changes.before, after: changes.after },
           );
           return listSerials(tx, updated.work_id);
         },
@@ -621,27 +660,34 @@ export function registerRetentionRoutes(
       const body = request.body as UpdateInstrumentRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
-        const [existing] = await tx<{ work_id: string }[]>`
-          select work_id from work_instruments where id = ${id}
+        // The row lock serialises concurrent status edits, and the locked
+        // values are the audit trail's before-image.
+        const [existing] = await tx<
+          {
+            work_id: string;
+            status: string;
+            expires_on: string | null;
+            notes: string | null;
+          }[]
+        >`
+          select work_id, status, expires_on::text as expires_on, notes
+          from work_instruments where id = ${id}
+          for update
         `;
         if (!existing) {
           throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
         }
         await assertWorkAccess(tx, user.id, existing.work_id);
-        if (body.status !== undefined) {
-          const [current] = await tx<{ status: string }[]>`
-            select status from work_instruments where id = ${id} for update
-          `;
-          if (!current) {
-            throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
-          }
-          if (current.status !== body.status && current.status !== 'active') {
-            throw httpError(
-              409,
-              'INSTRUMENT_STATUS_TERMINAL',
-              `A ${current.status} instrument cannot change status.`,
-            );
-          }
+        if (
+          body.status !== undefined &&
+          existing.status !== body.status &&
+          existing.status !== 'active'
+        ) {
+          throw httpError(
+            409,
+            'INSTRUMENT_STATUS_TERMINAL',
+            `A ${existing.status} instrument cannot change status.`,
+          );
         }
         const [row] = await tx<InstrumentRow[]>`
           update work_instruments
@@ -654,6 +700,18 @@ export function registerRetentionRoutes(
                     status, notes, created_at
         `;
         if (!row) throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
+        const changes = auditDiff(
+          {
+            status: existing.status,
+            expiresOn: existing.expires_on,
+            notes: existing.notes,
+          },
+          {
+            status: body.status ?? existing.status,
+            expiresOn: body.expiresOn ?? existing.expires_on,
+            notes: body.notes ?? existing.notes,
+          },
+        );
         await audit(
           tx,
           organisationId,
@@ -661,9 +719,7 @@ export function registerRetentionRoutes(
           'instrument.updated',
           'work_instruments',
           id,
-          {
-            status: body.status ?? null,
-          },
+          { before: changes.before, after: changes.after },
         );
         return toInstrument(row);
       });
@@ -847,8 +903,8 @@ export function registerRetentionRoutes(
           await assertWorkAccess(tx, user.id, workId);
           return tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
-                 total_amount::text as total_amount, created_at, submitted_at,
-                 paid_at
+                 total_amount::text as total_amount, mb_id, created_at,
+                 submitted_at, paid_at
           from bills where work_id = ${workId}
           order by bill_number desc
         `;
@@ -858,125 +914,13 @@ export function registerRetentionRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/bills',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 201: BillSchema, ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const bill = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Preparing a bill is a financial act: issue authority required.
-          await requireAuthority(tx, user.id, 'issue');
-          await assertWorkAccess(tx, user.id, workId);
-
-          // The counter row lock serialises concurrent bill preparation for
-          // the Work (numbering AND the unbilled-set selection).
-          const [counter] = await tx<{ next_value: number }[]>`
-            insert into bill_counters (organisation_id, work_id)
-            values (${organisationId}, ${workId})
-            on conflict (organisation_id, work_id)
-            do update set next_value = bill_counters.next_value + 1,
-                          updated_at = now()
-            returning next_value
-          `;
-          if (!counter) throw new Error('bill counter upsert returned no row');
-
-          const unbilled = await tx<
-            {
-              id: string;
-              work_item_id: string;
-              item_number: string;
-              unit_code: string;
-              effective_rate: string;
-              measured: string;
-            }[]
-          >`
-            select mb.id, mb.work_item_id, wi.item_number, wi.unit_code,
-                   wi.effective_rate::text as effective_rate,
-                   mb.measured_quantity::text as measured
-            from mb_entries mb
-            join work_items wi on wi.id = mb.work_item_id
-            where mb.work_id = ${workId} and mb.bill_id is null
-            for update of mb
-          `;
-          if (unbilled.length === 0) {
-            throw httpError(
-              409,
-              'NO_UNBILLED_MEASUREMENTS',
-              'Every Measurement Book entry for this Work is already billed.',
-            );
-          }
-
-          // Aggregate over the EXACT locked ID set — never a fresh
-          // bill_id-is-null scan. A measurement committed after the lock
-          // stays unbilled and lands on the next bill; it must not be
-          // stamped into a snapshot that never counted it.
-          const lockedIds = unbilled.map((entry) => entry.id);
-          const [totals] = await tx<{ lines: unknown; total: string }[]>`
-            select jsonb_agg(line order by item_number) as lines,
-                   sum(amount)::numeric(18,2)::text as total
-            from (
-              select wi.item_number,
-                     jsonb_build_object(
-                       'workItemId', wi.id,
-                       'itemNumber', wi.item_number,
-                       'unitCode', wi.unit_code,
-                       'quantity', sum(mb.measured_quantity)::text,
-                       'rate', wi.effective_rate::text,
-                       'amount', (sum(mb.measured_quantity) * wi.effective_rate)::numeric(18,2)::text
-                     ) as line,
-                     (sum(mb.measured_quantity) * wi.effective_rate)::numeric(18,2) as amount
-              from mb_entries mb
-              join work_items wi on wi.id = mb.work_item_id
-              where mb.id = any(${lockedIds}::uuid[])
-              group by wi.id
-            ) grouped
-          `;
-          if (!totals) throw new Error('bill aggregation returned no row');
-
-          const [row] = await tx<BillRow[]>`
-            insert into bills (
-              organisation_id, work_id, bill_number, lines_snapshot,
-              total_amount, prepared_by_user_id
-            )
-            values (
-              ${organisationId}, ${workId}, ${counter.next_value},
-              ${jsonb(tx, parseJsonbColumn(totals.lines))}, ${totals.total},
-              ${user.id}
-            )
-            returning id, work_id, bill_number, status, lines_snapshot,
-                      total_amount::text as total_amount, created_at,
-                      submitted_at, paid_at
-          `;
-          if (!row) throw new Error('bill insert returned no row');
-
-          await tx`
-            update mb_entries set bill_id = ${row.id}
-            where id = any(${lockedIds}::uuid[])
-          `;
-          await audit(tx, organisationId, user.id, 'bill.prepared', 'bills', row.id, {
-            billNumber: row.bill_number,
-            totalAmount: totals.total,
-            entryCount: unbilled.length,
-          });
-          return toBill(row);
-        },
-      );
-      return reply.status(201).send(bill);
-    },
-  );
+  // The Milestone 5 sweep endpoint (POST /api/works/:id/bills — every
+  // unbilled mb_entry at 100% of measured value) is REMOVED (ADR-0006
+  // decision 4): bills are now prepared from a finalized Measurement
+  // Book (POST /api/measurement-books/:id/bill in
+  // measurement-books.ts), whose snapshot prices each stage through the
+  // payment matrix. mb_entries stay recordable site measurement
+  // evidence; they are no longer a billing input.
 
   app.post(
     '/api/bills/:id/status',
@@ -1001,6 +945,15 @@ export function registerRetentionRoutes(
         `;
         if (!current) throw httpError(404, 'BILL_NOT_FOUND', 'No such bill.');
         await assertWorkAccess(tx, user.id, current.work_id);
+        // Deliberately NO completed-Work refusal here (R8). The freeze on
+        // a completed Work covers its OPERATIONAL record — the quantities
+        // the 100%-executed predicate was measured against, and the
+        // documents that carry them. A bill moving prepared -> submitted
+        // -> paid records what the payer did with a bill already prepared;
+        // it moves no quantity and creates no document. Payment legitimately
+        // continues for months after execution finishes, so refusing it
+        // would force an operator to reopen a finished Work merely to
+        // record that the railway paid.
         const allowed =
           (current.status === 'prepared' && body.status === 'submitted') ||
           (current.status === 'submitted' && body.status === 'paid');
@@ -1018,19 +971,14 @@ export function registerRetentionRoutes(
               paid_at = case when ${body.status} = 'paid' then now() else paid_at end
           where id = ${id}
           returning id, work_id, bill_number, status, lines_snapshot,
-                    total_amount::text as total_amount, created_at,
+                    total_amount::text as total_amount, mb_id, created_at,
                     submitted_at, paid_at
         `;
         if (!row) throw new Error('bill status update returned no row');
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          `bill.${body.status}`,
-          'bills',
-          id,
-          {},
-        );
+        await audit(tx, organisationId, user.id, `bill.${body.status}`, 'bills', id, {
+          before: { status: current.status },
+          after: { status: body.status },
+        });
         return toBill(row);
       });
     },
@@ -1050,6 +998,10 @@ async function listSerials(
     serialNumber: string;
     installedOn: string | null;
     installationRemarks: string | null;
+    workItemId: string;
+    challanStatus: 'draft' | 'issued' | 'cancelled';
+    installationId: string | null;
+    installationLocation: string | null;
   }[]
 > {
   const rows = await tx<
@@ -1062,14 +1014,26 @@ async function listSerials(
       serial_number: string;
       installed_on: string | null;
       installation_remarks: string | null;
+      work_item_id: string;
+      challan_status: 'draft' | 'issued' | 'cancelled';
+      installation_id: string | null;
+      installation_location: string | null;
     }[]
   >`
     select s.id, s.delivery_challan_id, s.delivery_challan_item_id,
            dc.challan_number, dci.description_snapshot, s.serial_number,
-           s.installed_on::text as installed_on, s.installation_remarks
+           s.installed_on::text as installed_on, s.installation_remarks,
+           dci.work_item_id, dc.status as challan_status,
+           inst.id as installation_id,
+           inst.location_name as installation_location
     from challan_item_serials s
     join delivery_challans dc on dc.id = s.delivery_challan_id
     join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+    -- Milestone 7: the live quantity-level installation record covering
+    -- this serial, if any (released attachments no longer count).
+    left join installation_serials att
+      on att.challan_item_serial_id = s.id and att.released_at is null
+    left join installations inst on inst.id = att.installation_id
     where s.work_id = ${workId}
     order by s.serial_number
   `;
@@ -1082,5 +1046,9 @@ async function listSerials(
     serialNumber: row.serial_number,
     installedOn: row.installed_on,
     installationRemarks: row.installation_remarks,
+    workItemId: row.work_item_id,
+    challanStatus: row.challan_status,
+    installationId: row.installation_id,
+    installationLocation: row.installation_location,
   }));
 }

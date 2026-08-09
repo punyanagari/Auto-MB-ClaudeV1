@@ -219,6 +219,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
               <th scope="col">Work scope</th>
               <th scope="col">Can issue</th>
               <th scope="col">Can cancel</th>
+              <th scope="col">Can approve</th>
               <th scope="col">Status</th>
             </tr>
           </thead>
@@ -233,6 +234,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                     <td>{member.workScope === 'all' ? 'All Works' : 'Assigned'}</td>
                     <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
                     <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
+                    <td>{member.canApproveAmendments ? 'Yes' : 'No'}</td>
                     <td>{member.status}</td>
                   </tr>
                 );
@@ -316,6 +318,21 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                           member.userId,
                           { canCancelDocuments: event.currentTarget.checked },
                           `Cancel authority updated for ${label}.`,
+                        );
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Amendment approval authority of ${label}`}
+                      checked={member.canApproveAmendments}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          { canApproveAmendments: event.currentTarget.checked },
+                          `Amendment approval authority updated for ${label}.`,
                         );
                       }}
                     />

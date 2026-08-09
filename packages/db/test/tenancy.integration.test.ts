@@ -34,6 +34,9 @@ const TENANT_TABLES = [
   'delivery_challans',
   'delivery_challan_items',
   'delivery_challan_counters',
+  'issue_challans',
+  'issue_challan_lines',
+  'issue_challan_counters',
   'audit_events',
   'challan_receipts',
   'challan_item_serials',
@@ -42,6 +45,30 @@ const TENANT_TABLES = [
   'bills',
   'mb_entries',
   'work_assignments',
+  // The unified Contacts master and the Work<->consignee association
+  // (0028). consignee_masters is a VIEW over contacts since 0028 — views
+  // are compatibility surfaces, not tenant tables; RLS lives on contacts.
+  'contacts',
+  'work_consignees',
+  'location_masters',
+  'unit_masters',
+  'organisation_signatories',
+  'extension_requests',
+  'extension_request_counters',
+  'approval_requests',
+  'installations',
+  'installation_serials',
+  'correction_notices',
+  'correction_notice_counters',
+  'payment_matrices',
+  'pac_certificates',
+  'pac_certificate_items',
+  'measurement_books',
+  'measurement_book_lines',
+  'mb_sources',
+  'measurement_book_counters',
+  'import_batches',
+  'import_records',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -50,7 +77,16 @@ type TenantTable = (typeof TENANT_TABLES)[number];
  * UPDATE/DELETE privilege at all, so generic zero-row mutation assertions
  * (which expect privilege to exist but RLS to hide rows) do not apply. */
 const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
-  (table) => table !== 'audit_events' && table !== 'work_assignments',
+  (table) =>
+    table !== 'audit_events' &&
+    table !== 'work_assignments' &&
+    // The Work<->consignee association is create/delete only, like
+    // work_assignments: no UPDATE privilege exists (0028).
+    table !== 'work_consignees' &&
+    // Cutover provenance is append-only for the application role (0025):
+    // UPDATE raises 42501 instead of matching zero rows.
+    table !== 'import_batches' &&
+    table !== 'import_records',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -62,11 +98,37 @@ const DELETE_REVOKED_TABLES = [
   'work_items',
   'loa_documents',
   'delivery_challan_counters',
+  'issue_challan_counters',
   'challan_receipts',
   'work_instruments',
   'bill_counters',
   'bills',
   'mb_entries',
+  // Masters retire via the active flag; the app role holds no DELETE
+  // (0013; contacts follows in 0028).
+  'contacts',
+  'location_masters',
+  'unit_masters',
+  'organisation_signatories',
+  'extension_request_counters',
+  'approval_requests',
+  // Installation records cancel with a note; attachments release (0017).
+  'installations',
+  'installation_serials',
+  // Correction notices are numbered legal records: cancel, never delete;
+  // the counter is numbering state (0019).
+  'correction_notices',
+  'correction_notice_counters',
+  // PAC certificates cancel with a note; their lines are frozen (0022).
+  'pac_certificates',
+  'pac_certificate_items',
+  // Measurement Book snapshots are immutable legal records; the counter
+  // is numbering state (0024).
+  'measurement_book_lines',
+  'measurement_book_counters',
+  // Cutover provenance is an append-only ledger (0025).
+  'import_batches',
+  'import_records',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -76,8 +138,21 @@ const DELETE_ALLOWED_TABLES = [
   'work_schedules',
   'delivery_challans',
   'delivery_challan_items',
+  'issue_challans',
+  'issue_challan_lines',
   'challan_item_serials',
   'work_assignments',
+  // Unlinking a Work<->consignee association deletes only the preference;
+  // documents keep their snapshots (0028).
+  'work_consignees',
+  'extension_requests',
+  // Payment matrix rows are per-Work configuration, not issued
+  // documents; finalised MBs snapshot their percentages (0021).
+  'payment_matrices',
+  // Measurement Book drafts (and their source claims) delete, guarded
+  // by trigger (0024).
+  'measurement_books',
+  'mb_sources',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -222,6 +297,32 @@ async function seedTenantGraph(
       values (${organisationId}, ${work.id})
     `;
 
+    // Milestone 7 Issue Challan tables: one row each.
+    const [issueChallan] = await tx<{ id: string }[]>`
+      insert into issue_challans (
+        organisation_id, work_id, movement_type, challan_date, prefix,
+        issued_to_name, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'issue', '2026-02-01',
+              ${`${workCode}-IC`}, 'Integration site engineer', ${userId})
+      returning id
+    `;
+    if (!issueChallan) throw new Error('seed issue challan insert returned no row');
+    await tx`
+      insert into issue_challan_lines (
+        organisation_id, issue_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, position
+      )
+      values (
+        ${organisationId}, ${issueChallan.id}, ${work.id}, ${workItem.id},
+        'Integration test item', 'Nos', '1.000', 1
+      )
+    `;
+    await tx`
+      insert into issue_challan_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
     const [auditEvent] = await tx<{ id: string }[]>`
       insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id)
       values (${organisationId}, ${userId}, 'integration.seed', 'works', ${work.id})
@@ -283,6 +384,218 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
               '2026-02-03', ${userId})
+    `;
+    const [approvalRequest] = await tx<{ id: string }[]>`
+      insert into approval_requests (
+        organisation_id, entity_type, entity_id, work_id, proposed, diff,
+        reason, requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'work_item_amendment', ${workItem.id}, ${work.id},
+        '{"kind":"change_item"}'::jsonb, '[]'::jsonb,
+        'Integration seed amendment', ${userId}
+      )
+      returning id
+    `;
+    if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // Milestone 7 correction-flow tables: one row each.
+    await tx`
+      insert into correction_notices (
+        organisation_id, work_id, delivery_challan_id, approval_request_id,
+        notice_number, sequence_number, snapshot, template_version,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${challan.id}, ${approvalRequest.id},
+        ${`${workCode}-CN-01`}, 1, '{}'::jsonb, 'correction-notice-v1',
+        ${userId}
+      )
+    `;
+    await tx`
+      insert into correction_notice_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 masters tables (contacts since 0028): one row each,
+    // plus the Work<->consignee association.
+    const [consigneeContact] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, address, is_consignee,
+        created_by_user_id
+      )
+      values (${organisationId}, ${`Sr. DEE ${workCode}`},
+              'Integration division office', true, ${userId})
+      returning id
+    `;
+    if (!consigneeContact) throw new Error('seed contact insert returned no row');
+    await tx`
+      insert into work_consignees (
+        organisation_id, work_id, contact_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id}, ${userId})
+    `;
+    const [locationMaster] = await tx<{ id: string }[]>`
+      insert into location_masters (organisation_id, name, kind, created_by_user_id)
+      values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
+      returning id
+    `;
+    if (!locationMaster) throw new Error('seed location insert returned no row');
+    await tx`
+      insert into unit_masters (organisation_id, name, created_by_user_id)
+      values (${organisationId}, ${`Unit-${workCode}`}, ${userId})
+    `;
+    await tx`
+      insert into organisation_signatories (
+        organisation_id, name, designation, created_by_user_id
+      )
+      values (${organisationId}, ${`Signatory ${workCode}`}, 'Director', ${userId})
+    `;
+
+    // Milestone 6 completion/extension tables: the one-time completion
+    // date set (allowed by the works guard), then a draft extension.
+    await tx`
+      update works
+      set original_completion_date = '2026-12-31',
+          current_completion_date = '2026-12-31'
+      where id = ${work.id}
+    `;
+    await tx`
+      insert into extension_requests (
+        organisation_id, work_id, proposed_completion_date, reason,
+        addressee, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2027-03-31',
+              'Integration test extension reason', 'Sr. DEE (G)', ${userId})
+    `;
+    await tx`
+      insert into extension_request_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 installation tables: one recorded installation with a
+    // serial attachment, the location name snapshotted from the master.
+    const [installation] = await tx<{ id: string }[]>`
+      insert into installations (
+        organisation_id, work_id, work_item_id, quantity, installed_on,
+        location_id, location_name, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${workItem.id}, '1.000', '2026-02-03',
+        ${locationMaster.id}, ${`Station ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!installation) throw new Error('seed installation insert returned no row');
+    await tx`
+      insert into installation_serials (
+        organisation_id, installation_id, work_id, challan_item_serial_id
+      )
+      select ${organisationId}, ${installation.id}, ${work.id}, s.id
+      from challan_item_serials s
+      where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
+    `;
+
+    // Milestone 8 payment matrix: one row.
+    await tx`
+      insert into payment_matrices (
+        organisation_id, work_id, category, pct_supply, pct_installation,
+        pct_pac, pct_final_bill, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'SUPPLY', 80.00, 10.00, 0.00,
+              10.00, ${userId})
+    `;
+
+    // Milestone 8 phase 1 PAC tables: one recorded certificate with one
+    // certified line, the consignee designation snapshotted from the
+    // contact (consignee_master_id references contacts since 0028).
+    const [pacCertificate] = await tx<{ id: string }[]>`
+      insert into pac_certificates (
+        organisation_id, work_id, reference, issue_date, consignee_master_id,
+        consignee_designation, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${`PAC-${workCode}`}, '2026-02-04',
+        ${consigneeContact.id}, ${`Sr. DEE ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!pacCertificate) throw new Error('seed PAC certificate insert returned no row');
+    await tx`
+      insert into pac_certificate_items (
+        organisation_id, pac_certificate_id, work_id, work_item_id,
+        certified_quantity
+      )
+      values (${organisationId}, ${pacCertificate.id}, ${work.id},
+              ${workItem.id}, '1.000')
+    `;
+
+    // Milestone 8 phase 2 Measurement Book tables: a draft claiming the
+    // recorded installation, one snapshot line written while draft (the
+    // line guard requires it), then the finalize-shaped update.
+    const [measurementBook] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2026-02-05', ${userId})
+      returning id
+    `;
+    if (!measurementBook)
+      throw new Error('seed measurement book insert returned no row');
+    await tx`
+      insert into mb_sources (
+        organisation_id, measurement_book_id, work_id, source_type, source_id
+      )
+      values (${organisationId}, ${measurementBook.id}, ${work.id},
+              'installation', ${installation.id})
+    `;
+    await tx`
+      insert into measurement_book_lines (
+        organisation_id, measurement_book_id, work_id, work_item_id,
+        item_number, description, unit_code, payment_category,
+        resolved_category, pct_supply, pct_installation, pct_pac,
+        pct_final_bill, effective_rate, delta_installed, prior_supplied,
+        amount_supply, amount_installation, amount_pac, amount_final_bill,
+        line_total, remark
+      )
+      values (
+        ${organisationId}, ${measurementBook.id}, ${work.id}, ${workItem.id},
+        '1', 'Integration test item', 'Nos', 'SUPPLY', 'SUPPLY',
+        80.00, 10.00, 0.00, 10.00, '100.00', '1.000', '1.000',
+        '0.00', '10.00', '0.00', '0.00', '10.00',
+        'Prepaid 80% for 1 Nos. Now to pay 10% for 1 Nos.'
+      )
+    `;
+    await tx`
+      update measurement_books
+      set status = 'finalized', mb_number = ${`${workCode}-MB-01`},
+          sequence_number = 1, total_amount = '10.00',
+          remark_template_version = 'mb-remark-v1',
+          finalized_by_user_id = ${userId}, finalized_at = now()
+      where id = ${measurementBook.id}
+    `;
+    await tx`
+      insert into measurement_book_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 1)
+    `;
+
+    // Wave 5 cutover provenance tables: one batch with one record.
+    const [importBatch] = await tx<{ id: string }[]>`
+      insert into import_batches (
+        organisation_id, source_system, importer_version, input_digest, dry_run
+      )
+      values (${organisationId}, 'auto-mb-v1', 'integration-test',
+              ${shaFill.repeat(64)}, false)
+      returning id
+    `;
+    if (!importBatch) throw new Error('seed import batch insert returned no row');
+    await tx`
+      insert into import_records (
+        organisation_id, entity_type, source_system, source_id, target_id,
+        batch_id, payload_fingerprint
+      )
+      values (${organisationId}, 'work', 'auto-mb-v1', ${`w-${workCode}`},
+              ${work.id}, ${importBatch.id}, ${shaFill.repeat(64)})
     `;
 
     return {
@@ -415,14 +728,55 @@ describe('application role security posture', () => {
   it('covers every organisation-scoped table in the database with this suite', async () => {
     // If a new table with an organisation_id column lands without being
     // added to TENANT_TABLES, this fails instead of silently narrowing the
-    // proofs below.
+    // proofs below. Restricted to BASE TABLES: the consignee_masters
+    // compatibility VIEW (0028) also exposes organisation_id, but a view
+    // has no RLS of its own — with security_invoker the base table's
+    // policy applies, and that base table (contacts) is in the list.
     const rows = await admin<{ table_name: string }[]>`
-      select table_name from information_schema.columns
-      where table_schema = 'public' and column_name = 'organisation_id'
-      order by table_name
+      select c.table_name
+      from information_schema.columns c
+      join information_schema.tables t
+        on t.table_schema = c.table_schema and t.table_name = c.table_name
+      where c.table_schema = 'public' and c.column_name = 'organisation_id'
+        and t.table_type = 'BASE TABLE'
+      order by c.table_name
     `;
     const expected = TENANT_TABLES.filter((table) => table !== 'organisations');
     expect(rows.map((row) => row.table_name).sort()).toEqual([...expected].sort());
+  });
+
+  it('keeps the consignee_masters compatibility view invoker-scoped over contacts', async () => {
+    // The 0028 view must stay security_invoker (the caller's own RLS and
+    // grants apply underneath) — a definer view would read contacts with
+    // the view owner's privileges and could leak across tenants.
+    const [view] = await admin<{ options: string[] | null }[]>`
+      select reloptions as options from pg_class
+      where relname = 'consignee_masters' and relkind = 'v'
+    `;
+    expect(view).toBeDefined();
+    expect(view?.options ?? []).toContain('security_invoker=true');
+
+    // Behavioural proof: the view answers nothing without a bound tenant
+    // and only the caller's rows with one — the contacts policy applied
+    // through the view.
+    const bare = (await app.unsafe(
+      `select count(*)::int as count from consignee_masters`,
+    )) as unknown as { count: number }[];
+    expect(bare[0]?.count).toBe(0);
+
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const rows = await tx<{ organisation_id: string }[]>`
+          select organisation_id from consignee_masters
+        `;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const row of rows) {
+          expect(row.organisation_id).toBe(organisationA.id);
+        }
+      },
+    );
   });
 });
 

@@ -7,6 +7,7 @@ import {
   UploadLoaQuerySchema,
   WorkDetailResponseSchema,
   WorkListResponseSchema,
+  type ConfirmPbgRequirement,
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
   type LoaDocument,
@@ -15,12 +16,18 @@ import {
   type Work,
   type WorkSchedule,
 } from '@auto-mb/contracts';
-import { reviewLoaLetter, type LoaReviewPayload } from '@auto-mb/loa-parser';
+import {
+  parseDecimalToMinorUnits,
+  reviewLoaLetter,
+  type LoaReviewPayload,
+  type PerformanceGuaranteeField,
+} from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
+import { auditDiff } from '../audit-diff.js';
 import {
   assertWorkAccess,
   hasFullWorkScope,
@@ -31,6 +38,7 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
+import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -108,7 +116,14 @@ interface WorkRow {
   pricing_shape: Work['pricingShape'];
   letter_percentage: string | null;
   letter_percentage_direction: Work['letterPercentageDirection'];
+  pbg_required_amount: string | null;
+  pbg_submission_days: number | null;
+  pbg_extension_days: number | null;
+  pbg_penal_interest_percent: string | null;
   status: Work['status'];
+  completed_at: Date | null;
+  completed_by_user_id: string | null;
+  completion_note: string | null;
   created_at: Date;
 }
 
@@ -124,26 +139,66 @@ function toWork(row: WorkRow): Work {
     pricingShape: row.pricing_shape,
     letterPercentage: row.letter_percentage,
     letterPercentageDirection: row.letter_percentage_direction,
+    pbgRequiredAmount: row.pbg_required_amount,
+    pbgSubmissionDays: row.pbg_submission_days,
+    pbgExtensionDays: row.pbg_extension_days,
+    pbgPenalInterestPercent: row.pbg_penal_interest_percent,
     status: row.status,
+    // R8 completion state (migration 0031); all null while active.
+    completedAt: row.completed_at === null ? null : row.completed_at.toISOString(),
+    completedByUserId: row.completed_by_user_id,
+    completionNote: row.completion_note,
     createdAt: row.created_at.toISOString(),
   };
 }
 
 /** Links a confirmed item back to the parsed row it came from, so the
  * work_items.source_evidence column carries the parser's verbatim source
- * block for that item — corrections never overwrite evidence. */
+ * block for that item — corrections never overwrite evidence.
+ *
+ * Every item must resolve: a parsed row's sourceRef must point at a real
+ * row of the stored extraction payload, and a reviewer-added row must
+ * declare itself with `manualEntry: true` (recorded as an explicit
+ * manual-entry marker). A confirmed Work therefore never carries an
+ * unresolved evidence link. */
 function sourceEvidenceFor(
   payload: ExtractionPayload | null,
   item: ConfirmWorkItem,
 ): Record<string, unknown> {
-  if (!payload || !item.sourceRef) return {};
+  if (item.manualEntry === true) {
+    if (item.sourceRef) {
+      throw httpError(
+        400,
+        'ITEM_EVIDENCE_CONFLICT',
+        `Item ${item.itemNumber} claims both a parsed source row and manual entry; it must carry exactly one.`,
+      );
+    }
+    return {
+      resolved: true,
+      manualEntry: true,
+      note: 'Row added by the reviewer at confirmation; the parsed letter has no corresponding item row.',
+    };
+  }
+  if (!item.sourceRef) {
+    throw httpError(
+      400,
+      'ITEM_EVIDENCE_REQUIRED',
+      `Item ${item.itemNumber} carries neither a sourceRef into the parsed letter nor a manualEntry marker.`,
+    );
+  }
   const ref = item.sourceRef;
-  const parsed = payload.review.items.find(
+  const parsed = payload?.review.items.find(
     (candidate) =>
       (candidate.schedule?.id ?? 'UNBOUND') === ref.scheduleId &&
       candidate.itemSno === ref.itemSno,
   );
-  if (!parsed) return { sourceRef: ref, resolved: false };
+  if (!parsed) {
+    throw httpError(
+      400,
+      'SOURCE_REF_UNRESOLVED',
+      `Item ${item.itemNumber} references parsed row ${ref.scheduleId}#${ref.itemSno}, which the stored extraction payload does not contain.`,
+    );
+  }
   return {
     sourceRef: ref,
     resolved: true,
@@ -155,6 +210,75 @@ function sourceEvidenceFor(
     needsReview: parsed.needsReview,
     raw: parsed.raw,
   };
+}
+
+/** True when the submitted decimal string and the parser's float denote
+ * the same value, compared in exact integer minor units — never float
+ * arithmetic. A parser value that does not round-trip through
+ * `String()` into a plain decimal (never observed on the corpus) simply
+ * compares unequal. */
+function decimalMatchesParserValue(
+  submitted: string | undefined,
+  parserValue: number | null,
+  scale: number,
+): boolean {
+  if (submitted === undefined || parserValue === null) {
+    return submitted === undefined && parserValue === null;
+  }
+  const submittedMinor = parseDecimalToMinorUnits(submitted, scale);
+  const parserMinor = parseDecimalToMinorUnits(String(parserValue), scale);
+  return submittedMinor !== null && submittedMinor === parserMinor;
+}
+
+/** Builds works.pbg_requirement_source: the parser's printed raw block and
+ * proposal (verbatim, from the STORED extraction payload — never from the
+ * client) plus the provenance verdict. Values that match the parser's
+ * complete proposal are 'parser'; anything else — including a requirement
+ * entered for a letter whose clause the parser could not read — is
+ * 'corrected'. */
+function pbgRequirementSourceFor(
+  payload: ExtractionPayload | null,
+  requirement: ConfirmPbgRequirement,
+): Record<string, unknown> {
+  const parser: PerformanceGuaranteeField | null =
+    payload?.review.header.performanceGuarantee ?? null;
+  const matchesParser =
+    parser !== null &&
+    decimalMatchesParserValue(requirement.requiredAmount, parser.amountFigures, 2) &&
+    requirement.submissionDays === parser.submissionDays &&
+    (requirement.extensionDays ?? null) === parser.extensionDays &&
+    decimalMatchesParserValue(
+      requirement.penalInterestPercent,
+      parser.penalInterestPercent,
+      3,
+    );
+  return {
+    provenance: matchesParser ? 'parser' : 'corrected',
+    raw: parser?.raw ?? null,
+    parser:
+      parser === null
+        ? null
+        : {
+            amountFigures: parser.amountFigures,
+            amountWords: parser.amountWords,
+            submissionDays: parser.submissionDays,
+            extensionDays: parser.extensionDays,
+            penalInterestPercent: parser.penalInterestPercent,
+            needsReview: parser.needsReview,
+          },
+  };
+}
+
+function assertPbgRequirementCoherent(body: ConfirmWorkRequest): void {
+  if (body.pbgRequirement === undefined) return;
+  const amountMinor = parseDecimalToMinorUnits(body.pbgRequirement.requiredAmount, 2);
+  if (amountMinor === null || amountMinor <= 0n) {
+    throw httpError(
+      400,
+      'PBG_AMOUNT_INVALID',
+      'The PBG required amount must be a positive rupee amount with at most two decimal places.',
+    );
+  }
 }
 
 function assertPricingShapeCoherent(body: ConfirmWorkRequest): void {
@@ -405,6 +529,7 @@ export function registerLoaRoutes(
       const { id: documentId } = request.params as { id: string };
       const body = request.body as ConfirmWorkRequest;
       assertPricingShapeCoherent(body);
+      assertPbgRequirementCoherent(body);
 
       const result = await withBoundTenant(
         database,
@@ -439,11 +564,20 @@ export function registerLoaRoutes(
               ? (parsedPayload as unknown as ExtractionPayload)
               : null;
 
+          // The reviewer-confirmed PBG requirement lands on the Work in
+          // this same atomic transaction; its provenance payload is built
+          // from the STORED extraction payload, never from the client.
+          const pbg = body.pbgRequirement;
+          const pbgSource =
+            pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
+
           const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
               letter_percentage, letter_percentage_direction,
+              pbg_required_amount, pbg_submission_days, pbg_extension_days,
+              pbg_penal_interest_percent, pbg_requirement_source,
               created_by_user_id
             )
             values (
@@ -451,12 +585,20 @@ export function registerLoaRoutes(
               ${body.letterDate}, ${body.title}, ${body.advertisedValue},
               ${body.contractValue}, ${body.pricingShape},
               ${body.letterPercentage ?? null},
-              ${body.letterPercentageDirection ?? null}, ${user.id}
+              ${body.letterPercentageDirection ?? null},
+              ${pbg?.requiredAmount ?? null}, ${pbg?.submissionDays ?? null},
+              ${pbg?.extensionDays ?? null}, ${pbg?.penalInterestPercent ?? null},
+              ${pbgSource === null ? null : jsonb(tx, pbgSource)},
+              ${user.id}
             )
             returning id, work_code, letter_number, letter_date::text as letter_date,
                       title, advertised_value, contract_value, pricing_shape,
-                      letter_percentage, letter_percentage_direction, status,
-                      created_at
+                      letter_percentage, letter_percentage_direction,
+                      pbg_required_amount::text as pbg_required_amount,
+                      pbg_submission_days, pbg_extension_days,
+                      pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                      status, completed_at, completed_by_user_id,
+                      completion_note, created_at
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               throw httpError(
@@ -490,13 +632,13 @@ export function registerLoaRoutes(
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
                   description, unit_code, awarded_quantity, effective_rate,
-                  source_evidence
+                  payment_category, source_evidence
                 )
                 values (
                   ${organisationId}, ${work.id}, ${scheduleRow.id},
                   ${item.itemNumber}, ${item.description}, ${item.unitCode},
                   ${item.awardedQuantity}, ${item.effectiveRate},
-                  ${jsonb(tx, evidence)}
+                  ${item.paymentCategory ?? null}, ${jsonb(tx, evidence)}
                 )
                 returning id
               `;
@@ -509,6 +651,14 @@ export function registerLoaRoutes(
                 unitCode: item.unitCode,
                 awardedQuantity: item.awardedQuantity,
                 effectiveRate: item.effectiveRate,
+                // Serial traceability is switched on per item after
+                // confirmation, once the contractor knows which items
+                // ship serialised equipment.
+                requiresSerials: false,
+                // Milestone 8: reviewer-set at confirmation (the parser
+                // never proposes it); editable later via the payment
+                // category route.
+                paymentCategory: item.paymentCategory ?? null,
               });
             }
             schedules.push({
@@ -540,9 +690,73 @@ export function registerLoaRoutes(
                   (total, schedule) => total + schedule.items.length,
                   0,
                 ),
+                manualItemCount: body.schedules.reduce(
+                  (total, schedule) =>
+                    total +
+                    schedule.items.filter((item) => item.manualEntry === true).length,
+                  0,
+                ),
+                categorisedItemCount: body.schedules.reduce(
+                  (total, schedule) =>
+                    total +
+                    schedule.items.filter((item) => item.paymentCategory !== undefined)
+                      .length,
+                  0,
+                ),
+                pbgRequirement:
+                  pbg === undefined
+                    ? null
+                    : {
+                        requiredAmount: pbg.requiredAmount,
+                        submissionDays: pbg.submissionDays,
+                        extensionDays: pbg.extensionDays ?? null,
+                        penalInterestPercent: pbg.penalInterestPercent ?? null,
+                        provenance: pbgSource?.provenance ?? null,
+                      },
               })}
             )
           `;
+
+          // An 'assigned'-scoped confirmer must be able to see the Work
+          // they just created: grant their assignment in this same
+          // transaction, mirroring the owner-managed assignment writes
+          // (identity.ts) in column set and audit shape. Owners and
+          // 'all'-scope members see every Work and need no row.
+          const membership = await membershipOf(tx, user.id);
+          if (membership?.work_scope === 'assigned') {
+            const previousAssignments = await tx<{ work_id: string }[]>`
+              select work_id from work_assignments
+              where user_id = ${user.id}
+              order by created_at
+            `;
+            await tx`
+              insert into work_assignments (
+                organisation_id, work_id, user_id, created_by_user_id
+              )
+              values (${organisationId}, ${work.id}, ${user.id}, ${user.id})
+            `;
+            const previousWorkIds = previousAssignments.map((row) => row.work_id);
+            // Assignments are a set; both sides sort so the trail matches
+            // the owner-managed replace-set audits exactly.
+            const assignmentChanges = auditDiff(
+              { workIds: [...previousWorkIds].sort() },
+              { workIds: [...previousWorkIds, work.id].sort() },
+            );
+            await tx`
+              insert into audit_events (
+                organisation_id, actor_user_id, action, entity_type, details
+              )
+              values (
+                ${organisationId}, ${user.id}, 'membership.assignments_set',
+                'work_assignments',
+                ${jsonb(tx, {
+                  memberUserId: user.id,
+                  before: assignmentChanges.before,
+                  after: assignmentChanges.after,
+                })}
+              )
+            `;
+          }
 
           return { work: toWork(work), schedules };
         },
@@ -580,7 +794,11 @@ export function registerLoaRoutes(
           return tx<WorkRow[]>`
             select id, work_code, letter_number, letter_date::text as letter_date,
                    title, advertised_value, contract_value, pricing_shape,
-                   letter_percentage, letter_percentage_direction, status,
+                   letter_percentage, letter_percentage_direction,
+                   pbg_required_amount::text as pbg_required_amount,
+                   pbg_submission_days, pbg_extension_days,
+                   pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                   status, completed_at, completed_by_user_id, completion_note,
                    created_at
             from works w
             where deleted_at is null
@@ -612,11 +830,15 @@ export function registerLoaRoutes(
       const { id } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, id);
-        const [work] = await tx<WorkRow[]>`
+        const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,
-                 letter_percentage, letter_percentage_direction, status,
-                 created_at
+                 letter_percentage, letter_percentage_direction,
+                 pbg_required_amount::text as pbg_required_amount,
+                 pbg_submission_days, pbg_extension_days,
+                 pbg_penal_interest_percent::text as pbg_penal_interest_percent,
+                 status, completed_at, completed_by_user_id, completion_note,
+                 created_at, allow_excess_delivery
           from works
           where id = ${id} and deleted_at is null
         `;
@@ -639,10 +861,44 @@ export function registerLoaRoutes(
             unit_code: string;
             awarded_quantity: string;
             effective_rate: string;
+            effective_quantity: string | null;
+            effective_unit_rate: string | null;
+            effective_description: string | null;
+            effective_unit: string | null;
+            amendment_added: boolean;
+            requires_serials: boolean;
+            payment_category:
+              | 'SUPPLY'
+              | 'SUPPLY_AND_INSTALLATION'
+              | 'PURE_INSTALLATION'
+              | 'SPARE_SUPPLY'
+              | null;
+            installed_quantity: string;
+            pac_certified_quantity: string;
           }[]
         >`
           select id, schedule_id, item_number, description, unit_code,
-                 awarded_quantity, effective_rate
+                 awarded_quantity, effective_rate,
+                 effective_quantity::text as effective_quantity,
+                 effective_unit_rate::text as effective_unit_rate,
+                 effective_description, effective_unit, amendment_added,
+                 requires_serials, payment_category,
+                 -- Milestone 7: the authoritative installed quantity —
+                 -- SUM over non-cancelled installation records.
+                 coalesce((
+                   select sum(i.quantity) from installations i
+                   where i.work_item_id = work_items.id and i.status = 'recorded'
+                 ), 0)::text as installed_quantity,
+                 -- Milestone 8 phase 1: THE pac_qty the Measurement Book
+                 -- engine consumes — SUM of certified quantities over
+                 -- non-cancelled PAC certificates (legacy §8).
+                 coalesce((
+                   select sum(pci.certified_quantity)
+                   from pac_certificate_items pci
+                   join pac_certificates pc on pc.id = pci.pac_certificate_id
+                   where pci.work_item_id = work_items.id
+                     and pc.status = 'recorded'
+                 ), 0)::numeric(18,3)::text as pac_certified_quantity
           from work_items
           where work_id = ${id} and deleted_at is null
           order by item_number
@@ -662,10 +918,28 @@ export function registerLoaRoutes(
               description: item.description,
               unitCode: item.unit_code,
               awardedQuantity: item.awarded_quantity,
-              effectiveRate: item.effective_rate,
+              effectiveRate: canonicalRateText(item.effective_rate),
+              // Amendment overlays (Milestone 6): null = original applies.
+              effectiveQuantity: item.effective_quantity,
+              effectiveUnitRate:
+                item.effective_unit_rate === null
+                  ? null
+                  : canonicalRateText(item.effective_unit_rate),
+              effectiveDescription: item.effective_description,
+              effectiveUnit: item.effective_unit,
+              amendmentAdded: item.amendment_added,
+              requiresSerials: item.requires_serials,
+              installedQuantity: item.installed_quantity,
+              // Milestone 8: null = uncategorised (resolves through the
+              // Work's UNCATEGORISED matrix row).
+              paymentCategory: item.payment_category,
+              pacCertifiedQuantity: item.pac_certified_quantity,
             })),
         }));
-        return { work: toWork(work), schedules };
+        return {
+          work: { ...toWork(work), allowExcessDelivery: work.allow_excess_delivery },
+          schedules,
+        };
       });
     },
   );

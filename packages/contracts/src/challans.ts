@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  RateStringSchema,
+  UuidSchema,
+} from './primitives.js';
 
 export const ChallanStatusSchema = Type.Union([
   Type.Literal('draft'),
@@ -55,7 +60,7 @@ export const ChallanItemSchema = Type.Object(
     description: Type.String(),
     unit: Type.String(),
     quantity: DecimalStringSchema,
-    rate: DecimalStringSchema,
+    rate: RateStringSchema,
     lineAmount: DecimalStringSchema,
     position: Type.Integer({ minimum: 1 }),
   },
@@ -74,6 +79,14 @@ export const ChallanSchema = Type.Object(
     prefix: PrefixSchema,
     consignee: ConsigneeSchema,
     templateVersion: Type.Union([Type.String(), Type.Null()]),
+    /** Warranty/guarantee certificate facts, set at issue time only when
+     * the organisation had template text; null otherwise (the certificate
+     * page is optional — legacy §11). */
+    warrantyTemplateVersion: Type.Union([Type.String(), Type.Null()]),
+    warrantyTextSha256: Type.Union([
+      Type.String({ pattern: '^[0-9a-f]{64}$' }),
+      Type.Null(),
+    ]),
     renderedAvailable: Type.Boolean(),
     signedCopyAvailable: Type.Boolean(),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
@@ -109,13 +122,16 @@ export const WorkBalanceItemSchema = Type.Object(
     description: Type.String(),
     unitCode: Type.String(),
     awardedQuantity: DecimalStringSchema,
+    /** Amended ceiling when an approved amendment changed the quantity;
+     * null means the awarded quantity applies. */
+    effectiveQuantity: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
     /** Sum of quantities on ISSUED challans; cancelled ones release theirs. */
     deliveredQuantity: DecimalStringSchema,
     remainingQuantity: Type.String({
       description:
-        'awarded − delivered as exact decimal text; negative only when excess delivery was allowed.',
+        'COALESCE(effective, awarded) − delivered as exact decimal text; negative only when excess delivery was allowed.',
     }),
-    effectiveRate: DecimalStringSchema,
+    effectiveRate: RateStringSchema,
   },
   { additionalProperties: false },
 );

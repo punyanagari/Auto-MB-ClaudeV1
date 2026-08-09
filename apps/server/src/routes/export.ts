@@ -105,9 +105,24 @@ export function registerExportRoutes(
         const serials = await tx<Record<string, unknown>[]>`
           select * from challan_item_serials order by created_at
         `;
+        const issueChallans = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from issue_challans order by created_at, id
+          `,
+          ['issued_snapshot'],
+        );
+        const issueChallanLines = await tx<Record<string, unknown>[]>`
+          select * from issue_challan_lines order by issue_challan_id, position
+        `;
         const instruments = await tx<Record<string, unknown>[]>`
           select * from work_instruments order by created_at
         `;
+        const extensionRequests = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from extension_requests order by created_at, id
+          `,
+          ['finalised_snapshot'],
+        );
         const mbEntries = await tx<Record<string, unknown>[]>`
           select * from mb_entries order by measured_on, created_at
         `;
@@ -117,6 +132,54 @@ export function registerExportRoutes(
           `,
           ['lines_snapshot'],
         );
+        const installations = await tx<Record<string, unknown>[]>`
+          select * from installations order by installed_on, created_at, id
+        `;
+        const installationSerials = await tx<Record<string, unknown>[]>`
+          select * from installation_serials order by created_at, id
+        `;
+        const approvalRequests = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from approval_requests order by created_at, id
+          `,
+          ['proposed', 'diff'],
+        );
+        const correctionNotices = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from correction_notices order by created_at, id
+          `,
+          ['snapshot'],
+        );
+        const paymentMatrices = await tx<Record<string, unknown>[]>`
+          select * from payment_matrices order by work_id, category
+        `;
+        const pacCertificates = await tx<Record<string, unknown>[]>`
+          select * from pac_certificates order by issue_date, created_at, id
+        `;
+        const pacCertificateItems = await tx<Record<string, unknown>[]>`
+          select * from pac_certificate_items
+          order by pac_certificate_id, work_item_id
+        `;
+        const measurementBooks = await tx<Record<string, unknown>[]>`
+          select * from measurement_books order by created_at, id
+        `;
+        const measurementBookLines = await tx<Record<string, unknown>[]>`
+          select * from measurement_book_lines
+          order by measurement_book_id, item_number, id
+        `;
+        const mbSources = await tx<Record<string, unknown>[]>`
+          select * from mb_sources order by created_at, id
+        `;
+        // M6/7 retrofit (migration 0028): the unified Contacts master and
+        // the Work<->consignee association. consignee_masters was never a
+        // section of this export; contacts supersedes it, so the format
+        // stays 'export-v5' with two purely additive sections.
+        const contacts = await tx<Record<string, unknown>[]>`
+          select * from contacts order by created_at, id
+        `;
+        const workConsignees = await tx<Record<string, unknown>[]>`
+          select * from work_consignees order by created_at, id
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -173,11 +236,84 @@ export function registerExportRoutes(
                 ]
               : []),
           ]),
+          ...correctionNotices.flatMap((notice) =>
+            notice.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'correction-notice-rendered-pdf',
+                    objectKey: notice.rendered_object_key,
+                    sha256: notice.rendered_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
+          ...pacCertificates.flatMap((certificate) =>
+            certificate.document_object_key !== null
+              ? [
+                  {
+                    kind: 'pac-certificate-document',
+                    objectKey: certificate.document_object_key,
+                    sha256: certificate.document_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
+          ...issueChallans.flatMap((challan) => [
+            ...(challan.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'issue-challan-rendered-pdf',
+                    objectKey: challan.rendered_object_key,
+                    sha256: challan.rendered_sha256 ?? null,
+                  },
+                ]
+              : []),
+            ...(challan.signed_copy_object_key !== null
+              ? [
+                  {
+                    kind: 'issue-challan-signed-copy',
+                    objectKey: challan.signed_copy_object_key,
+                    sha256: challan.signed_copy_sha256 ?? null,
+                  },
+                ]
+              : []),
+          ]),
+          ...extensionRequests.flatMap((extension) => [
+            ...(extension.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'extension-rendered-pdf',
+                    objectKey: extension.rendered_object_key,
+                    sha256: extension.rendered_sha256 ?? null,
+                  },
+                ]
+              : []),
+            ...(extension.response_object_key !== null
+              ? [
+                  {
+                    kind: 'extension-response-document',
+                    objectKey: extension.response_object_key,
+                    sha256: extension.response_sha256 ?? null,
+                  },
+                ]
+              : []),
+          ]),
+          ...measurementBooks.flatMap((book) =>
+            book.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'measurement-book-rendered-pdf',
+                    objectKey: book.rendered_object_key,
+                    sha256: book.rendered_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
         ];
 
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v3',
+          formatVersion: 'export-v5',
           organisation,
           members,
           workAssignments: assignments,
@@ -189,9 +325,29 @@ export function registerExportRoutes(
           deliveryChallanItems: challanItems,
           challanReceipts: receipts,
           challanItemSerials: serials,
+          issueChallans,
+          issueChallanLines,
           workInstruments: instruments,
+          extensionRequests,
           mbEntries,
           bills,
+          installations,
+          installationSerials,
+          approvalRequests,
+          correctionNotices,
+          paymentMatrices,
+          pacCertificates,
+          pacCertificateItems,
+          // Milestone 8 phase 2 (Measurement Book lifecycle). The
+          // format stays 'export-v5': v5 was defined as the complete
+          // Milestone 8 record, and these sections complete it.
+          measurementBooks,
+          measurementBookLines,
+          mbSources,
+          // M6/7 retrofit (migration 0028): additive sections completing
+          // the export-v5 record with the unified Contacts master.
+          contacts,
+          workConsignees,
           objectManifest,
           auditEvents,
         };

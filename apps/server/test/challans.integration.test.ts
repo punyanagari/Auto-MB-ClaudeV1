@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -40,6 +40,7 @@ let admin: Sql;
 let app: FastifyInstance;
 let storageDir: string;
 let fakeGotenberg: http.Server;
+const gotenbergBodies: string[] = [];
 let organisationId: string;
 let ownerUserId: string;
 let workId: string;
@@ -127,10 +128,16 @@ beforeAll(async () => {
 
   // A stub PDF service: the render endpoint's full HTTP path runs against
   // it without depending on a real Gotenberg container. The real service
-  // is proven at staging (docs/ROADMAP.md Milestone 4).
-  fakeGotenberg = http.createServer((_request, response) => {
-    response.setHeader('content-type', 'application/pdf');
-    response.end(Buffer.from(`%PDF-1.4 stub ${runId}`));
+  // is proven at staging (docs/ROADMAP.md Milestone 4). Request bodies
+  // are retained so tests can assert on the exact HTML the route sent.
+  fakeGotenberg = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => {
+      gotenbergBodies.push(Buffer.concat(chunks).toString('utf8'));
+      response.setHeader('content-type', 'application/pdf');
+      response.end(Buffer.from(`%PDF-1.4 stub ${runId}`));
+    });
   });
   await new Promise<void>((resolve) => {
     fakeGotenberg.listen(0, '127.0.0.1', resolve);
@@ -297,7 +304,7 @@ describe('Delivery Challan lifecycle', () => {
     });
   });
 
-  it('enforces one draft per Work', async () => {
+  it('enforces one draft per Work, naming the existing draft in the 409', async () => {
     const response = await authed(owner, {
       method: 'POST',
       url: `/api/works/${workId}/challans`,
@@ -305,7 +312,10 @@ describe('Delivery Challan lifecycle', () => {
       payload: draftBody([{ workItemId: itemBId, quantity: '1' }]),
     });
     expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({ code: 'DRAFT_EXISTS' });
+    expect(response.json()).toMatchObject({
+      code: 'DRAFT_EXISTS',
+      details: { existingRecordId: firstChallanId },
+    });
   });
 
   it('rejects challan dates outside the product-contract window', async () => {
@@ -642,7 +652,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe('export-v3');
+    expect(exported.formatVersion).toBe('export-v5');
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(
@@ -653,5 +663,236 @@ describe('organisation export (Milestone 4)', () => {
     expect(exported.auditEvents.map((event) => event.action)).toContain(
       'organisation.exported',
     );
+  });
+});
+
+describe('warranty/guarantee certificate (Milestone 7)', () => {
+  const WARRANTY_TEXT =
+    'Clause 1 <terms> & conditions.\nClause 2: goods carry a 24-month "guarantee".';
+  const WARRANTY_SHA = createHash('sha256').update(WARRANTY_TEXT, 'utf8').digest('hex');
+  let withCertificateId: string;
+
+  async function setWarrantyText(text: string | null) {
+    const response = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { warrantyTemplateText: text },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+  }
+
+  async function issueDraft(quantity: string): Promise<ChallanDetailResponse> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: draftBody([{ workItemId: itemAId, quantity }]),
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draft = created.json<ChallanDetailResponse>();
+    // Drafts never carry certificate facts, even with org text present.
+    expect(draft.challan.warrantyTemplateVersion).toBeNull();
+    expect(draft.challan.warrantyTextSha256).toBeNull();
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draft.challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    return issued.json<ChallanDetailResponse>();
+  }
+
+  it('freezes the template text, version, and content hash at issue time', async () => {
+    await setWarrantyText(WARRANTY_TEXT);
+    const detail = await issueDraft('1');
+    withCertificateId = detail.challan.id;
+    expect(detail.challan.warrantyTemplateVersion).toBe('wc-v1');
+    expect(detail.challan.warrantyTextSha256).toBe(WARRANTY_SHA);
+    const snapshot = detail.issuedSnapshot as {
+      templateVersion: string;
+      warranty?: { templateVersion: string; textSha256: string; text: string };
+    };
+    expect(snapshot.templateVersion).toBe('dc-v3');
+    expect(snapshot.warranty).toEqual({
+      templateVersion: 'wc-v1',
+      textSha256: WARRANTY_SHA,
+      text: WARRANTY_TEXT,
+    });
+  });
+
+  it('keeps the challan.issued audit event shape unchanged', async () => {
+    const [event] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and entity_id = ${withCertificateId} and action = 'challan.issued'
+    `;
+    const details =
+      typeof event?.details === 'string'
+        ? (JSON.parse(event.details) as Record<string, unknown>)
+        : (event?.details as Record<string, unknown>);
+    expect(Object.keys(details).sort()).toEqual([
+      'challanNumber',
+      'sequence',
+      'totalAmount',
+    ]);
+  });
+
+  it('renders the certificate as page 2 from the snapshot, immune to org edits', async () => {
+    const render = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${withCertificateId}/render`,
+      organisationId,
+    });
+    expect(render.statusCode, render.body).toBe(200);
+    const firstHtml = gotenbergBodies.at(-1) ?? '';
+    expect(firstHtml).toContain('class="warranty-page"');
+    expect(firstHtml).toContain('Warranty / Guarantee Certificate');
+    expect(firstHtml).toContain('Clause 1 &lt;terms&gt; &amp; conditions.');
+    expect(firstHtml).toContain('Warranty template wc-v1');
+    expect(firstHtml).toContain(`SHA-256 ${WARRANTY_SHA}`);
+
+    // A later org-profile edit must NEVER change the issued certificate.
+    await setWarrantyText('Replaced template text entirely.');
+    const again = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${withCertificateId}/render`,
+      organisationId,
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const secondHtml = gotenbergBodies.at(-1) ?? '';
+    expect(secondHtml).toContain('Clause 1 &lt;terms&gt; &amp; conditions.');
+    expect(secondHtml).not.toContain('Replaced template text entirely.');
+
+    const [row] = await admin<
+      { warranty_template_version: string; warranty_text_sha256: string }[]
+    >`
+      select warranty_template_version, warranty_text_sha256
+      from delivery_challans where id = ${withCertificateId}
+    `;
+    expect(row).toEqual({
+      warranty_template_version: 'wc-v1',
+      warranty_text_sha256: WARRANTY_SHA,
+    });
+  });
+
+  it('issues without a certificate page when the organisation has no text', async () => {
+    await setWarrantyText(null);
+    const detail = await issueDraft('1');
+    expect(detail.challan.warrantyTemplateVersion).toBeNull();
+    expect(detail.challan.warrantyTextSha256).toBeNull();
+    expect(Object.keys(detail.issuedSnapshot as Record<string, unknown>)).not.toContain(
+      'warranty',
+    );
+
+    const render = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/render`,
+      organisationId,
+    });
+    expect(render.statusCode, render.body).toBe(200);
+    const html = gotenbergBodies.at(-1) ?? '';
+    expect(html).not.toContain('class="warranty-page"');
+    expect(html).not.toContain('Warranty / Guarantee Certificate');
+    expect(html).toContain('Template dc-v3 · Issued at');
+  });
+
+  it('freezes the certificate columns at the database layer', async () => {
+    // The 0018 immutability guard covers the new columns on issued rows.
+    await expect(
+      admin`
+        update delivery_challans
+        set warranty_template_version = 'wc-v0'
+        where id = ${withCertificateId}
+      `,
+    ).rejects.toThrowError(/issued Delivery Challan business data is immutable/);
+
+    // Drafts can never carry certificate facts (status-shape CHECK)…
+    await expect(
+      admin`
+        insert into delivery_challans (
+          organisation_id, work_id, challan_date, prefix,
+          consignee_snapshot, created_by_user_id,
+          warranty_template_version, warranty_text_sha256
+        )
+        values (
+          ${organisationId}, ${workId}, '2026-08-08', 'BADDRAFT',
+          '{}'::jsonb, ${ownerUserId}, 'wc-v1', ${WARRANTY_SHA}
+        )
+      `,
+    ).rejects.toThrowError(/delivery_challans_warranty_status_check/);
+
+    // …and the version/hash pair travels together (pair CHECK), checked
+    // on an issued-shaped row where the status CHECK would allow them.
+    await expect(
+      admin`
+        insert into delivery_challans (
+          organisation_id, work_id, status, challan_date, prefix,
+          consignee_snapshot, issued_snapshot, challan_number,
+          sequence_number, created_by_user_id, issued_by_user_id,
+          issued_at, warranty_template_version
+        )
+        values (
+          ${organisationId}, ${workId}, 'issued', '2026-08-08', 'BADPAIR',
+          '{}'::jsonb, '{}'::jsonb, 'BADPAIR/99', 99, ${ownerUserId},
+          ${ownerUserId}, now(), 'wc-v1'
+        )
+      `,
+    ).rejects.toThrowError(/delivery_challans_warranty_pair_check/);
+  });
+});
+
+describe('one-draft rule under concurrency', () => {
+  it('lets exactly one of two simultaneous creates draft; the 409 names the winner', async () => {
+    // A fresh Work so no earlier draft occupies the slot.
+    const raceWorkId = randomUUID();
+    const raceScheduleId = randomUUID();
+    const raceItemId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, letter_percentage,
+        letter_percentage_direction, created_by_user_id
+      )
+      values (
+        ${raceWorkId}, ${organisationId}, ${`DCR-${runId.toUpperCase()}`},
+        ${`dc-race-letter-${runId}`}, '2025-06-01', 'Challan race work',
+        1000.00, 900.00, 'per_schedule', null, null, ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${raceScheduleId}, ${organisationId}, ${raceWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${raceItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId},
+              'A/1', 'Race switchboard', 'Nos', 5.000, 100.00)
+    `;
+
+    const create = () =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${raceWorkId}/challans`,
+        organisationId,
+        payload: draftBody([{ workItemId: raceItemId, quantity: '1' }]),
+      });
+    const responses = await Promise.all([create(), create()]);
+    const winners = responses.filter((response) => response.statusCode === 201);
+    const losers = responses.filter((response) => response.statusCode === 409);
+    expect(winners.length, responses.map((response) => response.body).join('\n')).toBe(
+      1,
+    );
+    expect(losers.length).toBe(1);
+    const winnerId = winners[0]?.json<ChallanDetailResponse>().challan.id;
+    // Whether the loser hit the pre-check or the unique-index race path,
+    // its 409 names the winning draft.
+    expect(losers[0]?.json()).toMatchObject({
+      code: 'DRAFT_EXISTS',
+      details: { existingRecordId: winnerId },
+    });
   });
 });

@@ -11,6 +11,10 @@ export default tseslint.config(
       '**/node_modules/**',
       'docs/reference/**',
       'packages/loa-parser/fixtures/**',
+      // Harness-managed agent worktrees live inside the repo checkout;
+      // linting them double-lints foreign checkouts and fails on files
+      // outside the project service.
+      '.claude/**',
     ],
   },
   eslint.configs.recommended,
@@ -65,8 +69,15 @@ export default tseslint.config(
     // Standalone config and script files that sit outside every package
     // tsconfig, so the type-aware project service cannot parse them.
     // apps/web/vite.config.ts is excluded: its tsconfig includes it, so it
-    // keeps full type-aware linting.
-    files: ['**/*.config.{js,ts,mjs}', 'eslint.config.js', 'scripts/**/*.mjs'],
+    // keeps full type-aware linting. scripts/*.ts entry points stay thin
+    // shells over package code that IS type-checked (e.g. import-v1.ts
+    // delegates to apps/server/src/import/cli.ts).
+    files: [
+      '**/*.config.{js,ts,mjs}',
+      'eslint.config.js',
+      'scripts/**/*.mjs',
+      'scripts/**/*.ts',
+    ],
     ignores: ['apps/web/vite.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
   },

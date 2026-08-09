@@ -5,18 +5,40 @@ import pg from 'pg';
 import { createDatabasePool } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
-import { identityActionForPath, recordIdentityEvent } from './identity-audit.js';
+import {
+  identityActionForPath,
+  recordIdentityEvent,
+  recordLoginLockout,
+} from './identity-audit.js';
 import { createClamdScanner, noScanner } from './malware-scan.js';
 import { createMetricsRegistry } from './metrics.js';
-import { createRateLimiter, type RateLimitRule } from './rate-limit.js';
+import {
+  accountLockoutKey,
+  createAccountLockout,
+  createRateLimiter,
+  type AccountLockoutRule,
+  type RateLimitRule,
+} from './rate-limit.js';
+import { registerAmendmentRoutes } from './routes/amendments.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
+import { registerExtensionRoutes } from './routes/extensions.js';
 import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
+import { registerIssueChallanRoutes } from './routes/issue-challans.js';
+import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
+import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
+import { registerTimelineRoutes } from './routes/timeline.js';
+import { registerSerialRoutes } from './routes/serials.js';
+import { registerInstallationRoutes } from './routes/installations.js';
+import { registerPaymentRoutes } from './routes/payment.js';
+import { registerPacRoutes } from './routes/pac.js';
+import { registerMeasurementBookRoutes } from './routes/measurement-books.js';
+import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -40,11 +62,18 @@ export interface BuildAppOptions {
   /** Enables GET /metrics (Prometheus text format) behind this bearer
    * token. Unset disables the endpoint entirely. */
   readonly metricsToken?: string;
-  /** Overrides for the built-in login/upload rate limits (tests use
-   * tight windows; production keeps the defaults). */
+  /** Path to the backup last-success marker written by scripts/backup.sh
+   * (wired from BACKUP_MARKER_PATH). When readable it is exposed as the
+   * backup_last_success_timestamp_seconds gauge on /metrics; unset or
+   * unreadable omits the series. */
+  readonly backupMarkerPath?: string;
+  /** Overrides for the built-in login/upload rate limits and the
+   * account-scoped login lockout (tests use tight windows; production
+   * keeps the defaults). */
   readonly rateLimits?: {
     readonly auth?: RateLimitRule;
     readonly upload?: RateLimitRule;
+    readonly accountLockout?: AccountLockoutRule;
   };
   /** Number of reverse-proxy hops to trust for client addressing. In the
    * production topology the server sits exactly one hop behind Caddy,
@@ -169,12 +198,23 @@ export async function buildApp(
                 : 'REQUEST_ERROR',
             message: error instanceof Error ? error.message : 'Request failed.',
             requestId: request.id,
+            // Structured conflict payloads (e.g. the one-draft 409s'
+            // { existingRecordId }) ride along verbatim.
+            ...(error instanceof Error &&
+            'details' in error &&
+            error.details !== undefined
+              ? { details: error.details }
+              : {}),
           },
     );
   });
 
   if (options.metricsToken !== undefined) {
-    const registry = createMetricsRegistry();
+    const registry = createMetricsRegistry(
+      options.backupMarkerPath !== undefined
+        ? { backupMarkerPath: options.backupMarkerPath }
+        : {},
+    );
     const token = options.metricsToken;
     app.addHook('onResponse', (request, reply, done) => {
       registry.observe(
@@ -197,12 +237,31 @@ export async function buildApp(
 
   // Login and upload throttling (docs/SECURITY.md): both endpoints do
   // expensive work (password hashing; malware scans and extraction), so
-  // they carry per-address sliding-window limits.
+  // they carry per-address sliding-window limits. The identical envelope
+  // is shared with the account-scoped lockout below so a locked account
+  // is indistinguishable from an exhausted address window.
+  const rateLimitedBody = (requestId: string) => ({
+    code: 'RATE_LIMITED',
+    message: 'Too many attempts; wait a few minutes and try again.',
+    requestId,
+  });
   const authLimiter = createRateLimiter(
     options.rateLimits?.auth ?? { windowMs: 5 * 60_000, max: 20 },
   );
   const uploadLimiter = createRateLimiter(
     options.rateLimits?.upload ?? { windowMs: 10 * 60_000, max: 30 },
+  );
+  // Second throttling dimension for sign-in only: the per-address window
+  // above is trivially bypassed by rotating source addresses, so repeated
+  // failures against ONE account (keyed by a hash of the normalised
+  // email, never the raw address) earn a temporary account lock that is
+  // checked in the auth route handler where the parsed body is available.
+  const accountLockout = createAccountLockout(
+    options.rateLimits?.accountLockout ?? {
+      windowMs: 15 * 60_000,
+      maxFailures: 10,
+      lockMs: 15 * 60_000,
+    },
   );
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0] ?? '';
@@ -213,14 +272,16 @@ export async function buildApp(
       (request.method === 'POST' || request.method === 'PUT') &&
       (path === '/api/loa-documents' ||
         path === '/api/organisation/logo' ||
-        path.endsWith('/signed-copy'));
+        path.endsWith('/signed-copy') ||
+        // PAC scanned-certificate and extension railway-response uploads:
+        // both are 25MB PDF bodies that run the malware scan, so they
+        // carry the same per-address limit as every other scan-bearing
+        // upload.
+        (path.startsWith('/api/pac-certificates/') && path.endsWith('/document')) ||
+        path.endsWith('/response-document'));
     const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
     if (limiter !== null && !limiter.allow(request.ip)) {
-      return reply.status(429).send({
-        code: 'RATE_LIMITED',
-        message: 'Too many attempts; wait a few minutes and try again.',
-        requestId: request.id,
-      });
+      return reply.status(429).send(rateLimitedBody(request.id));
     }
     return undefined;
   });
@@ -245,7 +306,25 @@ export async function buildApp(
       method: ['GET', 'POST'],
       url: '/api/auth/*',
       handler: async (request, reply) => {
-        const action = identityActionForPath(request.url.split('?')[0] ?? '');
+        const path = request.url.split('?')[0] ?? '';
+        const action = identityActionForPath(path);
+
+        // Account-scoped login lockout: keyed by a hash of the submitted
+        // email, so it holds across rotating source addresses. The check
+        // runs BEFORE the request reaches Better Auth, and the locked
+        // response is the exact rate-limit envelope whether or not the
+        // account exists — no existence oracle, in content or in timing.
+        let lockoutKey: string | null = null;
+        if (request.method === 'POST' && path === '/api/auth/sign-in/email') {
+          const email = (request.body as { email?: unknown } | null | undefined)?.email;
+          if (typeof email === 'string' && email.trim() !== '') {
+            lockoutKey = accountLockoutKey(email);
+            if (accountLockout.isLocked(lockoutKey)) {
+              return reply.status(429).send(rateLimitedBody(request.id));
+            }
+          }
+        }
+
         // Sign-out revokes the session, so the acting user must be read
         // BEFORE the request is forwarded — afterwards the cookie is dead.
         let signOutUserId: string | null = null;
@@ -257,6 +336,25 @@ export async function buildApp(
         }
 
         const response = await authInstance.handler(toWebRequest(request));
+
+        if (lockoutKey !== null) {
+          if (response.status < 400) {
+            accountLockout.clear(lockoutKey);
+          } else if (accountLockout.recordFailure(lockoutKey)) {
+            // The lockout just engaged: audit it once per episode. Only
+            // the email hash is recorded — never the raw email or any
+            // password material — and a lost audit row must not turn
+            // into a different response for the caller.
+            try {
+              await recordLoginLockout(database, {
+                emailHash: lockoutKey,
+                requestId: request.id,
+              });
+            } catch (error) {
+              request.log.error({ err: error }, 'login lockout audit write failed');
+            }
+          }
+        }
         reply.status(response.status);
         response.headers.forEach((value, key) => {
           if (key.toLowerCase() !== 'set-cookie') void reply.header(key, value);
@@ -306,9 +404,15 @@ export async function buildApp(
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerAmendmentRoutes(app, authInstance, database);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
+    registerMasterRoutes(app, authInstance, database);
     registerRetentionRoutes(app, authInstance, database);
+    registerTimelineRoutes(app, authInstance, database);
+    registerSerialRoutes(app, authInstance, database);
+    registerInstallationRoutes(app, authInstance, database);
+    registerPaymentRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,
@@ -318,6 +422,38 @@ export async function buildApp(
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
       scanner,
     );
+    registerExtensionRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
+    );
+    registerIssueChallanRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
+    );
+    registerCorrectionRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+    );
+    registerPacRoutes(app, authInstance, database, storage, scanner);
+    registerMeasurementBookRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+    );
+    registerWorkCompletionRoutes(app, authInstance, database);
   }
 
   return app;

@@ -22,6 +22,11 @@ const errorResponses = {
  * extend, so the window is generous. */
 const EXPIRY_WARNING_DAYS = 60;
 
+/** Works whose current completion date is this close (or past) surface on
+ * the dashboard: a DOC extension request takes time to draft, finalise,
+ * and post before the date lapses. */
+const COMPLETION_WARNING_DAYS = 30;
+
 interface ProgressRow extends Record<string, unknown> {
   work_id: string;
   work_code: string;
@@ -40,6 +45,30 @@ interface InstrumentRow extends Record<string, unknown> {
   reference: string;
   expires_on: string;
   due_in_days: string;
+}
+
+interface CompletionRow extends Record<string, unknown> {
+  work_id: string;
+  work_code: string;
+  due_on: string;
+  due_in_days: string;
+}
+
+/** One Work whose LOA letter demands a PBG (works.pbg_required_amount is
+ * set), joined against its ACTIVE kind='pbg' instruments. Due dates are
+ * derived in SQL date arithmetic: normal due = letter date + submission
+ * days, extended due = normal due + extension days. */
+interface PbgRequirementRow extends Record<string, unknown> {
+  work_id: string;
+  work_code: string;
+  required_amount: string;
+  normal_due: string;
+  extended_due: string;
+  days_to_normal: string;
+  days_to_extended: string;
+  active_count: string;
+  active_amount: string;
+  under_required: boolean;
 }
 
 /**
@@ -128,6 +157,58 @@ export function registerDashboardRoutes(
           order by wi.expires_on asc
         `;
 
+        const completions = await tx<CompletionRow[]>`
+          select
+            w.id as work_id,
+            w.work_code,
+            w.current_completion_date::text as due_on,
+            (w.current_completion_date - current_date)::text as due_in_days
+          from works w
+          where w.deleted_at is null
+            and w.status = 'active'
+            and w.current_completion_date is not null
+            and w.current_completion_date <= current_date + ${COMPLETION_WARNING_DAYS}::int
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
+          order by w.current_completion_date asc
+        `;
+
+        // PBG requirement vs submission: every Work whose letter demands
+        // a PBG, with the exact-numeric total of its active 'pbg'
+        // instruments. Comparison and date arithmetic both stay in SQL.
+        const pbgRequirements = await tx<PbgRequirementRow[]>`
+          select
+            w.id as work_id,
+            w.work_code,
+            w.pbg_required_amount::text as required_amount,
+            (w.letter_date + w.pbg_submission_days)::text as normal_due,
+            (w.letter_date + w.pbg_submission_days
+              + coalesce(w.pbg_extension_days, 0))::text as extended_due,
+            ((w.letter_date + w.pbg_submission_days) - current_date)::text
+              as days_to_normal,
+            ((w.letter_date + w.pbg_submission_days
+              + coalesce(w.pbg_extension_days, 0)) - current_date)::text
+              as days_to_extended,
+            coalesce(active.count, 0)::text as active_count,
+            coalesce(active.total, 0)::numeric(18,2)::text as active_amount,
+            (coalesce(active.total, 0) < w.pbg_required_amount) as under_required
+          from works w
+          left join lateral (
+            select count(*) as count, sum(wi.amount) as total
+            from work_instruments wi
+            where wi.work_id = w.id and wi.kind = 'pbg' and wi.status = 'active'
+          ) active on true
+          where w.deleted_at is null
+            and w.pbg_required_amount is not null
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = w.id and wa.user_id = ${user.id}
+            ))
+          order by w.created_at desc
+        `;
+
         const unpaidBills = await tx<
           { work_id: string; work_code: string; bill_number: number; status: string }[]
         >`
@@ -155,6 +236,20 @@ export function registerDashboardRoutes(
               : `${label} ${instrument.reference} for ${instrument.work_code} expires on ${instrument.expires_on}.`,
             workId: instrument.work_id,
             workCode: instrument.work_code,
+            dueInDays,
+          });
+        }
+        for (const completion of completions) {
+          const dueInDays = Number(completion.due_in_days);
+          const overdue = dueInDays < 0;
+          alerts.push({
+            kind: overdue ? 'completion_overdue' : 'completion_due',
+            severity: overdue || dueInDays <= 7 ? 'danger' : 'warning',
+            message: overdue
+              ? `${completion.work_code} passed its completion date on ${completion.due_on}; request a DOC extension.`
+              : `${completion.work_code} reaches its completion date on ${completion.due_on} (${String(dueInDays)} days left).`,
+            workId: completion.work_id,
+            workCode: completion.work_code,
             dueInDays,
           });
         }
@@ -195,6 +290,49 @@ export function registerDashboardRoutes(
             workCode: bill.work_code,
             dueInDays: null,
           });
+        }
+        // PBG requirement panels: (a) required but no active instrument,
+        // with days to/past the normal due date; (b) active instruments
+        // exist but their exact-numeric total sits below the required
+        // amount; (c) the extended window has passed with still no active
+        // instrument — the window is missed outright.
+        for (const requirement of pbgRequirements) {
+          const activeCount = Number(requirement.active_count);
+          const daysToNormal = Number(requirement.days_to_normal);
+          const daysToExtended = Number(requirement.days_to_extended);
+          if (activeCount === 0) {
+            if (daysToExtended < 0) {
+              alerts.push({
+                kind: 'pbg_window_missed',
+                severity: 'danger',
+                message: `PBG of ₹${requirement.required_amount} for ${requirement.work_code} was not submitted within the extended window (final due ${requirement.extended_due}).`,
+                workId: requirement.work_id,
+                workCode: requirement.work_code,
+                dueInDays: daysToExtended,
+              });
+            } else {
+              const overdue = daysToNormal < 0;
+              alerts.push({
+                kind: 'pbg_missing',
+                severity: overdue || daysToNormal <= 15 ? 'danger' : 'warning',
+                message: overdue
+                  ? `PBG of ₹${requirement.required_amount} for ${requirement.work_code} is overdue (normal due ${requirement.normal_due}; extended window ends ${requirement.extended_due}).`
+                  : `PBG of ₹${requirement.required_amount} for ${requirement.work_code} is due by ${requirement.normal_due}.`,
+                workId: requirement.work_id,
+                workCode: requirement.work_code,
+                dueInDays: daysToNormal,
+              });
+            }
+          } else if (requirement.under_required) {
+            alerts.push({
+              kind: 'pbg_undervalue',
+              severity: 'warning',
+              message: `Active PBG for ${requirement.work_code} totals ₹${requirement.active_amount} against the required ₹${requirement.required_amount}.`,
+              workId: requirement.work_id,
+              workCode: requirement.work_code,
+              dueInDays: null,
+            });
+          }
         }
 
         const sumDecimal = (values: readonly string[]): string => {

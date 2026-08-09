@@ -1,9 +1,19 @@
 import type { FastifyRequest } from 'fastify';
 
 /** An Error carrying an HTTP status and stable code; the app-level error
- * handler forwards both into the ApiError envelope. */
-export function httpError(statusCode: number, code: string, message: string): Error {
-  return Object.assign(new Error(message), { statusCode, code });
+ * handler forwards both into the ApiError envelope. Optional `details`
+ * carry a structured payload (e.g. one-draft 409s answer with
+ * `{ existingRecordId }` — see DraftConflictDetails in @auto-mb/contracts). */
+export function httpError(
+  statusCode: number,
+  code: string,
+  message: string,
+  details?: unknown,
+): Error {
+  return Object.assign(
+    new Error(message),
+    details === undefined ? { statusCode, code } : { statusCode, code, details },
+  );
 }
 
 /** Copies the incoming Fastify headers into a WHATWG Headers object for

@@ -1,18 +1,37 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { Sql } from '@auto-mb/db';
+import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
- * Ops-batch behaviours: rate limiting on authentication attempts and the
- * component-aware readiness probe.
+ * Ops-batch behaviours: rate limiting on authentication attempts, the
+ * account-scoped login lockout, and the component-aware readiness probe.
  */
 
+const adminUrl =
+  process.env.DATABASE_ADMIN_URL ??
+  'postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb';
 const appUrl =
   process.env.DATABASE_URL ??
   'postgres://auto_mb_app:local-app-change-me@127.0.0.1:5432/auto_mb';
+const appPassword = process.env.AUTO_MB_APP_DB_PASSWORD ?? 'local-app-change-me';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDirectory = path.resolve(
+  here,
+  '..',
+  '..',
+  '..',
+  'packages',
+  'db',
+  'migrations',
+);
 
 let storageDir: string;
 
@@ -53,6 +72,41 @@ describe('rate limiting', () => {
     // Other endpoints stay unthrottled.
     const health = await app.inject({ method: 'GET', url: '/api/health' });
     expect(health.statusCode).toBe(200);
+  });
+
+  it('covers the PAC document and extension response uploads with the upload window', async () => {
+    // Both endpoints take 25MB PDF bodies through the malware scan, so
+    // they must share the per-address upload limiter with the other
+    // scan-bearing uploads (review hardening; previously unlimited).
+    const uploads = await buildApp({
+      objectStorageDir: storageDir,
+      rateLimits: { upload: { windowMs: 60_000, max: 2 } },
+    });
+    try {
+      const paths = [
+        '/api/pac-certificates/6b1f8f4e-5c15-4dc5-9d94-111111111111/document',
+        '/api/extension-requests/6b1f8f4e-5c15-4dc5-9d94-222222222222/response-document',
+      ];
+      const attempt = (url: string) =>
+        uploads.inject({
+          method: 'POST',
+          url,
+          headers: { 'content-type': 'application/pdf' },
+          payload: Buffer.from('%PDF-1.4 limiter probe'),
+        });
+      // The shared window spans both endpoints (2 allowed, third 429s) —
+      // unauthenticated probes are fine: the limiter runs before auth.
+      expect((await attempt(paths[0] ?? '')).statusCode).not.toBe(429);
+      expect((await attempt(paths[1] ?? '')).statusCode).not.toBe(429);
+      const limited = await attempt(paths[0] ?? '');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json<{ code: string }>().code).toBe('RATE_LIMITED');
+      // A read of the same document path is NOT an upload and stays open.
+      const read = await uploads.inject({ method: 'GET', url: paths[0] ?? '' });
+      expect(read.statusCode).not.toBe(429);
+    } finally {
+      await uploads.close();
+    }
   });
 
   it('keys per forwarded client behind a trusted proxy hop', async () => {
@@ -107,6 +161,315 @@ describe('rate limiting', () => {
       expect((await attempt('203.0.113.3')).statusCode).toBe(429);
     } finally {
       await direct.close();
+    }
+  });
+});
+
+describe('account-scoped login lockout', () => {
+  // Unique per run so this suite can never collide with other suites or
+  // an earlier crashed run.
+  const runId = randomBytes(5).toString('hex');
+  const password = `ops-lockout-password-${runId}`;
+  const targetEmail = `lockout-target-${runId}@integration.test`;
+  const clearingEmail = `lockout-clearing-${runId}@integration.test`;
+  const concurrentEmail = `lockout-concurrent-${runId}@integration.test`;
+  const expiryEmail = `lockout-expiry-${runId}@integration.test`;
+  const ghostEmail = `lockout-ghost-${runId}@integration.test`;
+
+  // Mirrors accountLockoutKey in src/rate-limit.ts: the audit trail and
+  // the lockout map key on the sha256 of the normalised email.
+  const emailHash = (email: string): string =>
+    createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+
+  let admin: Sql;
+  let app: FastifyInstance;
+
+  const signIn = (
+    email: string,
+    attemptPassword: string,
+    clientIp: string,
+    requestId?: string,
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      headers: {
+        'x-forwarded-for': clientIp,
+        ...(requestId !== undefined ? { 'x-request-id': requestId } : {}),
+      },
+      payload: { email, password: attemptPassword },
+    });
+
+  const signUp = async (email: string) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: { email, password, name: 'Lockout Fixture' },
+    });
+    expect(response.statusCode, `sign-up ${email}: ${response.body}`).toBe(200);
+  };
+
+  beforeAll(async () => {
+    admin = createDatabasePool({
+      url: adminUrl,
+      max: 1,
+      applicationName: 'auto-mb-ops-lockout-admin',
+    });
+    const escapedPassword = appPassword.replaceAll("'", "''");
+    await admin.unsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
+          CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+        END IF;
+      END
+      $$;
+    `);
+    await runMigrations(admin, migrationsDirectory);
+
+    app = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      trustProxyHops: 1,
+      rateLimits: {
+        // Generous per-address window so every 429 in this suite is the
+        // account lock, not the address limiter.
+        auth: { windowMs: 60_000, max: 1_000 },
+        accountLockout: { windowMs: 60_000, maxFailures: 3, lockMs: 60_000 },
+      },
+    });
+    await signUp(targetEmail);
+    await signUp(clearingEmail);
+    await signUp(concurrentEmail);
+    await signUp(expiryEmail);
+  });
+
+  afterAll(async () => {
+    if (admin) {
+      const hashes = [
+        targetEmail,
+        clearingEmail,
+        concurrentEmail,
+        expiryEmail,
+        ghostEmail,
+      ].map((email) => `email-sha256:${emailHash(email)}`);
+      await admin`
+        delete from identity_audit_events where user_id = any(${hashes})
+      `;
+      await admin`
+        delete from identity_audit_events
+        where user_id in (
+          select "id" from auth_users
+          where "email" like ${`lockout-%-${runId}@integration.test`}
+        )
+      `;
+      await admin`
+        delete from auth_users
+        where "email" like ${`lockout-%-${runId}@integration.test`}
+      `;
+    }
+    await app?.close();
+    await admin?.end();
+  });
+
+  it('locks one account after failures from DIFFERENT addresses', async () => {
+    // Rotating source addresses walks straight past the per-IP window;
+    // the account dimension must still slam shut.
+    for (const clientIp of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) {
+      const failed = await signIn(targetEmail, 'wrong-password-guess', clientIp);
+      expect(failed.statusCode, failed.body).toBe(401);
+    }
+    const locked = await signIn(targetEmail, 'wrong-password-guess', '198.51.100.4');
+    expect(locked.statusCode).toBe(429);
+    expect(locked.json<{ code: string }>().code).toBe('RATE_LIMITED');
+
+    // Even the CORRECT password is refused while the lock holds — the
+    // response must not become a password oracle either.
+    const correctWhileLocked = await signIn(targetEmail, password, '198.51.100.5');
+    expect(correctWhileLocked.statusCode).toBe(429);
+  });
+
+  it('answers byte-identically for a NONEXISTENT locked account', async () => {
+    for (const clientIp of ['198.51.100.6', '198.51.100.7', '198.51.100.8']) {
+      const failed = await signIn(ghostEmail, 'wrong-password-guess', clientIp);
+      expect(failed.statusCode).toBe(401);
+    }
+    // Pinning the request id makes the two locked responses comparable
+    // byte for byte: any remaining difference would be an existence
+    // oracle.
+    const requestId = `lockout-oracle-${runId}`;
+    const ghostLocked = await signIn(
+      ghostEmail,
+      'wrong-password-guess',
+      '198.51.100.9',
+      requestId,
+    );
+    const realLocked = await signIn(
+      targetEmail,
+      'wrong-password-guess',
+      '198.51.100.9',
+      requestId,
+    );
+    expect(ghostLocked.statusCode).toBe(429);
+    expect(realLocked.statusCode).toBe(429);
+    expect(ghostLocked.body).toBe(realLocked.body);
+    expect(ghostLocked.headers['content-type']).toBe(
+      realLocked.headers['content-type'],
+    );
+  });
+
+  it('keeps the per-address limit for failures spread across accounts', async () => {
+    // The account dimension must not replace the address dimension: one
+    // address hammering MANY accounts still exhausts its own window.
+    const tightIp = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      trustProxyHops: 1,
+      rateLimits: {
+        auth: { windowMs: 60_000, max: 3 },
+        accountLockout: { windowMs: 60_000, maxFailures: 3, lockMs: 60_000 },
+      },
+    });
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        const response = await tightIp.inject({
+          method: 'POST',
+          url: '/api/auth/sign-in/email',
+          headers: { 'x-forwarded-for': '198.51.100.40' },
+          payload: {
+            email: `spread-${String(index)}-${runId}@integration.test`,
+            password: 'wrong-password-guess',
+          },
+        });
+        // One failure per account: far below the account threshold.
+        expect(response.statusCode, response.body).toBe(401);
+      }
+      const limited = await tightIp.inject({
+        method: 'POST',
+        url: '/api/auth/sign-in/email',
+        headers: { 'x-forwarded-for': '198.51.100.40' },
+        payload: {
+          email: `spread-3-${runId}@integration.test`,
+          password: 'wrong-password-guess',
+        },
+      });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json<{ code: string }>().code).toBe('RATE_LIMITED');
+    } finally {
+      await tightIp.close();
+    }
+  });
+
+  it('clears the failure count on successful login', async () => {
+    for (const clientIp of ['198.51.100.10', '198.51.100.11']) {
+      const failed = await signIn(clearingEmail, 'wrong-password-guess', clientIp);
+      expect(failed.statusCode).toBe(401);
+    }
+    const success = await signIn(clearingEmail, password, '198.51.100.12');
+    expect(success.statusCode, success.body).toBe(200);
+
+    // Two more failures land on a CLEARED counter: four lifetime failures
+    // would have locked (threshold three) had the success not reset it.
+    for (const clientIp of ['198.51.100.13', '198.51.100.14']) {
+      const failed = await signIn(clearingEmail, 'wrong-password-guess', clientIp);
+      expect(failed.statusCode).toBe(401);
+    }
+    const again = await signIn(clearingEmail, password, '198.51.100.15');
+    expect(again.statusCode, again.body).toBe(200);
+  });
+
+  it('audits the lockout once per episode with no password or raw email', async () => {
+    // Concurrent burst: simultaneous failures must produce ONE lockout
+    // transition, not one audit row per racing request.
+    const burst = await Promise.all(
+      [
+        '198.51.100.20',
+        '198.51.100.21',
+        '198.51.100.22',
+        '198.51.100.23',
+        '198.51.100.24',
+      ].map((clientIp) => signIn(concurrentEmail, 'wrong-password-guess', clientIp)),
+    );
+    for (const response of burst) {
+      expect([401, 429]).toContain(response.statusCode);
+    }
+    const locked = await signIn(
+      concurrentEmail,
+      'wrong-password-guess',
+      '198.51.100.25',
+    );
+    expect(locked.statusCode).toBe(429);
+
+    const concurrentRows = await admin<
+      { user_id: string; request_id: string | null; details: unknown }[]
+    >`
+      select user_id, request_id, details from identity_audit_events
+      where action = 'login_locked'
+        and user_id = ${`email-sha256:${emailHash(concurrentEmail)}`}
+    `;
+    expect(concurrentRows).toHaveLength(1);
+
+    // The earlier suites locked the real target and the ghost: both are
+    // audited identically, keyed by hash.
+    for (const email of [targetEmail, ghostEmail]) {
+      const rows = await admin<{ user_id: string }[]>`
+        select user_id from identity_audit_events
+        where action = 'login_locked'
+          and user_id = ${`email-sha256:${emailHash(email)}`}
+      `;
+      expect(rows, email).toHaveLength(1);
+    }
+
+    // No password material, no raw email anywhere in the audit rows.
+    const allRows = await admin<Record<string, unknown>[]>`
+      select * from identity_audit_events where action = 'login_locked'
+    `;
+    const serialised = JSON.stringify(allRows);
+    expect(serialised).not.toContain('wrong-password-guess');
+    expect(serialised).not.toContain(password);
+    expect(serialised).not.toContain('@integration.test');
+    expect(serialised).not.toContain(`lockout-target-${runId}`);
+  });
+
+  it('expires the lock after its window', async () => {
+    const expiring = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      trustProxyHops: 1,
+      rateLimits: {
+        auth: { windowMs: 60_000, max: 1_000 },
+        // Short lock, and a window that outlives the test so only the
+        // lock expiry (not failure decay) can unlock the account.
+        accountLockout: { windowMs: 60_000, maxFailures: 3, lockMs: 400 },
+      },
+    });
+    try {
+      const attempt = (attemptPassword: string, clientIp: string) =>
+        expiring.inject({
+          method: 'POST',
+          url: '/api/auth/sign-in/email',
+          headers: { 'x-forwarded-for': clientIp },
+          payload: { email: expiryEmail, password: attemptPassword },
+        });
+      for (const clientIp of ['198.51.100.30', '198.51.100.31', '198.51.100.32']) {
+        expect((await attempt('wrong-password-guess', clientIp)).statusCode).toBe(401);
+      }
+      expect((await attempt(password, '198.51.100.33')).statusCode).toBe(429);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      // The lock has lapsed: the legitimate owner signs straight in (and
+      // the success clears the lingering failure history).
+      const recovered = await attempt(password, '198.51.100.34');
+      expect(recovered.statusCode, recovered.body).toBe(200);
+    } finally {
+      await expiring.close();
     }
   });
 });

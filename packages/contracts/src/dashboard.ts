@@ -7,9 +7,14 @@ export const DashboardAlertSchema = Type.Object(
     kind: Type.Union([
       Type.Literal('instrument_expired'),
       Type.Literal('instrument_expiring'),
+      Type.Literal('completion_overdue'),
+      Type.Literal('completion_due'),
       Type.Literal('loa_review_pending'),
       Type.Literal('challan_draft_open'),
       Type.Literal('bill_unpaid'),
+      Type.Literal('pbg_missing'),
+      Type.Literal('pbg_undervalue'),
+      Type.Literal('pbg_window_missed'),
     ]),
     severity: Type.Union([
       Type.Literal('danger'),

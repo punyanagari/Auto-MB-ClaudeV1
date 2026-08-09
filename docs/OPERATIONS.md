@@ -22,6 +22,12 @@ No production secret, database dump, or customer document belongs in local devel
 - edge/WAF and TLS termination;
 - central logs, metrics, traces, and alerting.
 
+The API's login/upload rate limits and the account-scoped login lockout
+keep their counters in process memory: they protect a SINGLE API
+instance only. Running more than one API instance divides (and for the
+lockout, weakens) these thresholds — before scaling out, move that state
+into PostgreSQL or a shared store (docs/SECURITY.md).
+
 ## 3. Deployment rules
 
 1. Build immutable artifacts from a reviewed commit.
@@ -66,6 +72,8 @@ Minimum signals:
 - authentication failures and suspicious access;
 - object-storage errors;
 - tenant-boundary denial events;
+- backup recency: age of the last fully verified backup, exposed as a
+  metric and alerted on before it exceeds one missed backup cycle;
 - deployment and migration status.
 
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.
@@ -86,3 +94,50 @@ For every material incident: contain, preserve evidence, communicate, remediate,
 - customer exports are scoped and reproducible;
 - deletion/erasure requests preserve legally required immutable records while removing eligible personal data;
 - no manual database edit without a ticket, peer review, backup, and audit record.
+
+## 9. v1 cutover runbook (legacy-data import)
+
+The v1 legacy product's SQLite backup is imported once per organisation
+with `scripts/import-v1.ts` (engine: `apps/server/src/import/`). The
+importer is an administrator-role operational tool: it runs with
+`DATABASE_ADMIN_URL`, keeps every schema guard and trigger active
+(`session_replication_role` tricks are forbidden), records provenance in
+`import_batches` / `import_records` (migration 0025), and is idempotent —
+re-running the same input is a no-op; a changed source row is reported as
+drift and never silently repaired.
+
+Order of operations:
+
+1. **Dry run.** Against the production database (or a restored copy):
+   `pnpm exec tsx scripts/import-v1.ts --backup <v1.sqlite> --mapping
+scripts/import-v1.mapping.json --mode dry-run`. The whole pipeline runs
+   in one transaction and rolls back; only the reconciliation report
+   remains.
+2. **Review the report** with the customer: per-organisation source vs
+   imported counts, contract-value and challan-line totals, per-Work
+   challan-number continuity (gaps are reported, never filled; counters
+   land so the next issued number continues the historical series),
+   serial counts, quantization statistics, and EVERY exception with its
+   source id and violated rule. Exceptions are expected in real data
+   (non-numeric challan suffixes, variation-only zero-quantity items,
+   duplicate serials); agree what, if anything, is fixed in v1 first.
+3. **Freeze v1.** Stop all v1 data entry; announce the cutover window.
+4. **Fresh backup.** Take a new v1 backup AFTER the freeze and re-run the
+   dry run on it; the report must match expectations.
+5. **Apply.** Same command with `--mode apply` (one transaction per
+   organisation). Store the printed report with the change ticket; it is
+   also persisted in `import_batches.reconciliation`.
+6. **Verify reconciliation.** Re-run `--mode dry-run` on the same input:
+   every entity must now show `unchanged`, zero `imported`, zero drift.
+   Spot-check a handful of challans against printed v1 documents.
+7. **Invite users.** Imported organisations are created idle (no
+   memberships): create owner invitations through the product; assign
+   roles and authorities explicitly.
+8. **Launch.** Enable access, monitor the first issued challan per Work —
+   its number must be `highest imported sequence + 1` in the historical
+   series.
+
+The v1 backup contains customer production data: it never enters the
+repository, agent workspaces, or fixtures. The importer's tests build
+synthetic SQLite fixtures; the optional real-backup smoke test runs only
+where an operator has placed a backup locally.
