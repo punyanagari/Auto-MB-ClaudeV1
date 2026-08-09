@@ -76,7 +76,7 @@ document vs payment tracking) into one table.
 
 ## Consequences
 
-- Migration 0023 adds `measurement_books`, `measurement_book_lines`,
+- Migration 0024 adds `measurement_books`, `measurement_book_lines`,
   `mb_sources`, and `measurement_book_counters`, plus R19 coherence
   guards: a DC, installation, or PAC billed in a live MB cannot be
   cancelled, and approval-applied edits to them are blocked while
