@@ -82,6 +82,9 @@ const ENTITY_FILTERS = [
   { value: 'approval_requests', label: 'Approvals' },
   { value: 'correction_notices', label: 'Correction notices' },
   { value: 'measurement_books', label: 'Measurement books' },
+  { value: 'work_items', label: 'Items' },
+  { value: 'payment_matrices', label: 'Payment matrix' },
+  { value: 'pac_certificates', label: 'PAC certificates' },
 ] as const;
 
 function humaniseAction(action: string): string {

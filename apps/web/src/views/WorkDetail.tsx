@@ -13,7 +13,7 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr } from '../format.js';
+import { formatInr, formatRate } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { Installations } from './Installations.js';
@@ -28,6 +28,7 @@ interface WorkDetailProps {
   readonly canModify: boolean;
   readonly canRecordEvidence: boolean;
   readonly canIssue: boolean;
+  readonly canCancel: boolean;
   readonly isOwner: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
@@ -108,6 +109,7 @@ export function WorkDetail({
   canModify,
   canRecordEvidence,
   canIssue,
+  canCancel,
   isOwner,
   onNewChallan,
   onOpenChallan,
@@ -1107,7 +1109,7 @@ export function WorkDetail({
                     <th scope="row">{line.itemNumber}</th>
                     <td>{line.unitCode}</td>
                     <td className="cell--numeric">{line.quantity}</td>
-                    <td className="cell--numeric">{formatInr(line.rate)}</td>
+                    <td className="cell--numeric">{formatRate(line.rate)}</td>
                     <td className="cell--numeric">{formatInr(line.amount)}</td>
                   </tr>
                 ))}
@@ -1175,6 +1177,7 @@ export function WorkDetail({
         workId={workId}
         canModify={canModify}
         canIssue={canIssue}
+        canCancel={canCancel}
         onBillPrepared={() => {
           void api.listBills(organisationId, workId).then(setBills);
         }}

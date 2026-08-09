@@ -24,9 +24,13 @@ interface MeasurementBooksProps {
    * owner/office. */
   readonly canModify: boolean;
   /** Finalize and bill preparation are financial acts under the issue
-   * authority; cancel runs under the cancel authority — the server is
-   * the arbiter, this only decides what to offer. */
+   * authority — the server is the arbiter, this only decides what to
+   * offer. */
   readonly canIssue: boolean;
+  /** Cancelling a finalized MB runs under the cancel authority
+   * (membership.canCancelDocuments), matching the challan detail
+   * screens. */
+  readonly canCancel: boolean;
   /** Lets the Work page refresh its Bills section once a bill is
    * prepared from a finalized MB. */
   readonly onBillPrepared: () => void;
@@ -73,6 +77,7 @@ export function MeasurementBooks({
   workId,
   canModify,
   canIssue,
+  canCancel,
   onBillPrepared,
 }: MeasurementBooksProps) {
   const [books, setBooks] = useState<readonly MeasurementBook[] | null>(null);
@@ -697,7 +702,7 @@ export function MeasurementBooks({
             </div>
           )}
 
-          {book.status === 'finalized' && canIssue && book.billId === null && (
+          {book.status === 'finalized' && canCancel && book.billId === null && (
             <form
               onSubmit={(event) => {
                 event.preventDefault();
