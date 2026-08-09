@@ -13,7 +13,7 @@ import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
 import { UploadLoa } from './UploadLoa.js';
-import { WorkDetail } from './WorkDetail.js';
+import { WorkDetail, type WorkTab } from './WorkDetail.js';
 import { Works } from './Works.js';
 
 interface WorkspaceProps {
@@ -184,6 +184,10 @@ export function Workspace({
 }: WorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  // Held here, not in WorkDetail: opening a challan unmounts the Work page,
+  // and an operator who came from Deliveries should land back on Deliveries.
+  const [workTab, setWorkTab] = useState<WorkTab>('overview');
+  const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const membership = me.memberships.find(
@@ -409,6 +413,13 @@ export function Workspace({
               }}
               onBack={() => {
                 setView({ name: 'works' });
+              }}
+              tab={view.workId === tabbedWorkId ? workTab : 'overview'}
+              onTabChange={(next) => {
+                // A different Work starts on its own Overview rather than
+                // inheriting wherever the last one was left.
+                setTabbedWorkId(view.workId);
+                setWorkTab(next);
               }}
             />
           )}

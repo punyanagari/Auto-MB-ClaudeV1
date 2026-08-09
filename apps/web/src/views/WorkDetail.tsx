@@ -40,6 +40,10 @@ interface WorkDetailProps {
   readonly onNewIssueChallan: (workId: string) => void;
   readonly onOpenIssueChallan: (challanId: string) => void;
   readonly onBack: () => void;
+  /** Lifted so the tab survives a trip into a challan and back. Omitted, the
+   * page keeps its own tab — which is what the component tests rely on. */
+  readonly tab?: WorkTab;
+  readonly onTabChange?: (tab: WorkTab) => void;
 }
 
 const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
@@ -63,7 +67,7 @@ const WORK_TABS = [
   'timeline',
 ] as const;
 
-type WorkTab = (typeof WORK_TABS)[number];
+export type WorkTab = (typeof WORK_TABS)[number];
 
 const WORK_TAB_LABELS: Record<WorkTab, string> = {
   overview: 'Overview',
@@ -215,6 +219,8 @@ export function WorkDetail({
   onNewIssueChallan,
   onOpenIssueChallan,
   onBack,
+  tab: controlledTab,
+  onTabChange,
 }: WorkDetailProps) {
   const [detail, setDetail] = useState<WorkDetailResponse | null>(null);
   const [challans, setChallans] = useState<readonly Challan[] | null>(null);
@@ -235,7 +241,9 @@ export function WorkDetail({
   const [pending, setPending] = useState(false);
   const [unfinished, setUnfinished] = useState<readonly UnfinishedWorkItem[]>([]);
   const [blockers, setBlockers] = useState<readonly WorkCompletionBlocker[]>([]);
-  const [tab, setTab] = useState<WorkTab>('overview');
+  const [ownTab, setOwnTab] = useState<WorkTab>('overview');
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
 
   useEffect(() => {
     let cancelled = false;

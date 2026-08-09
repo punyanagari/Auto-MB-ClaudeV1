@@ -734,8 +734,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expectNoSeriousViolations(page, 'challan detail with evidence');
 
   await page.getByRole('button', { name: 'Back to Work' }).click();
-  // Returning from a challan remounts the Work page on Overview, so the
-  // delivery surface has to be reopened.
+  // The tab is lifted into Workspace so it can survive this round trip, but
+  // this path does not yet demonstrate it — the delivery surface is still
+  // reopened explicitly here rather than asserted as retained.
   await openTab('Deliveries');
   await page.getByRole('button', { name: 'New Delivery Challan' }).click();
   await expect(
