@@ -770,6 +770,7 @@ button:disabled {
   text-decoration: none;
   cursor: pointer;
   white-space: normal;
+}
 
 /* Amendment approvals (Milestone 6). */
 .chip--pending {
@@ -1282,7 +1283,6 @@ input[type='radio'] {
     padding: var(--space-4);
   }
 }
-
 
 /* ------------------------------------------------------------------ */
 /* Timeline (audit trail)                                              */

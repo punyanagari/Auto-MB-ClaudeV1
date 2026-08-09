@@ -52,7 +52,6 @@ export function initials(nameOrEmail: string): string {
     .join('');
 }
 
-
 /** Rupee display for RATES, which carry up to six fraction digits
  * (numeric(18,6)): at least the conventional two decimals, trailing
  * zeros beyond them trimmed — ₹100.00, ₹0.8517, ₹3.175636. */
