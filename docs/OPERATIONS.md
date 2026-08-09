@@ -22,6 +22,12 @@ No production secret, database dump, or customer document belongs in local devel
 - edge/WAF and TLS termination;
 - central logs, metrics, traces, and alerting.
 
+The API's login/upload rate limits and the account-scoped login lockout
+keep their counters in process memory: they protect a SINGLE API
+instance only. Running more than one API instance divides (and for the
+lockout, weakens) these thresholds — before scaling out, move that state
+into PostgreSQL or a shared store (docs/SECURITY.md).
+
 ## 3. Deployment rules
 
 1. Build immutable artifacts from a reviewed commit.

@@ -1,4 +1,5 @@
 import type { Sql } from '@auto-mb/db';
+import { jsonb } from '@auto-mb/db';
 
 export type IdentityAction = 'sign_up' | 'sign_in' | 'sign_out';
 
@@ -33,5 +34,31 @@ export async function recordIdentityEvent(
   await sql`
     insert into identity_audit_events (user_id, action, request_id)
     values (${event.userId}, ${event.action}, ${event.requestId})
+  `;
+}
+
+/**
+ * Appends the audit row for an account-scoped login lockout (migration
+ * 0020). No authenticated user exists at that moment — the account may
+ * not even exist, and saying so would be an existence oracle — so the row
+ * is keyed by the SHA-256 hash of the normalised submitted email, the
+ * same key the in-process lockout uses. Neither the raw email nor any
+ * password material may ever reach this table.
+ */
+export async function recordLoginLockout(
+  sql: Sql,
+  event: {
+    readonly emailHash: string;
+    readonly requestId: string;
+  },
+): Promise<void> {
+  await sql`
+    insert into identity_audit_events (user_id, action, request_id, details)
+    values (
+      ${'email-sha256:' + event.emailHash},
+      'login_locked',
+      ${event.requestId},
+      ${jsonb(sql, { emailSha256: event.emailHash })}
+    )
   `;
 }

@@ -31,7 +31,16 @@ Primary risks:
 - secure, HTTP-only, SameSite cookies;
 - server-side membership and permission checks;
 - session revocation;
-- rate limiting on login and expensive extraction;
+- rate limiting on login and expensive extraction, in two dimensions:
+  a per-address sliding window, plus an account-scoped lockout on
+  repeated failed sign-ins keyed by a SHA-256 hash of the normalised
+  submitted email (never the raw address), which decays over its window,
+  clears on successful login, and answers with the same 429 envelope for
+  existing and non-existing accounts (no account-existence oracle).
+  Lockouts are audited by email hash only. Both limiters hold in-process
+  state, so this protection is single-instance only — the current
+  single-host topology; scaling to multiple API instances requires
+  moving this state into PostgreSQL or a shared store first;
 - MFA before general availability for owners/admins;
 - sensitive issue/cancel actions require explicit authority;
 - support access is time-limited and fully audited.
