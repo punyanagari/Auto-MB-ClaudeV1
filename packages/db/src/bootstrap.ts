@@ -71,6 +71,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
+  // Cutover provenance is a ledger: append-only for the application role;
+  // the importer itself runs as the administrator role (0025).
+  import_batches: 'SELECT, INSERT',
+  import_records: 'SELECT, INSERT',
   // Better Auth owns these shapes (0004).
   auth_users: 'SELECT, INSERT, UPDATE, DELETE',
   auth_sessions: 'SELECT, INSERT, UPDATE, DELETE',

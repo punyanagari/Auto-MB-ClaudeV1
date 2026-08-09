@@ -1,0 +1,16 @@
+{
+  "$comment": "Production tenant mapping for the Auto-MB v1 cutover. Every v1 company-name spelling is either mapped to a target organisation or excluded explicitly; the importer refuses to guess. 'SP Enterprises' exists in v1's companies master but owns no works and no challans — excluded. Challans must agree with their Work's organisation; a mismatch is a reconciliation exception, never a guess.",
+  "organisations": [
+    { "slug": "partronics-eboards", "name": "Partronics eBoards Pvt. Ltd." },
+    { "slug": "par-electronics", "name": "Par Electronics" }
+  ],
+  "companyToOrganisation": {
+    "M/s PARTRONICS EBOARDS PRIVATE": "partronics-eboards",
+    "M/s PARTRONICS EBOARDS PRIVATE LIMITED-": "partronics-eboards",
+    "M/s PARTRONICS EBOARDS PRIVATE LIMITED-PUNE": "partronics-eboards",
+    "Partronics eBoards Pvt. Ltd.": "partronics-eboards",
+    "M/s ParElectronics": "par-electronics",
+    "Par Electronics": "par-electronics"
+  },
+  "excludeCompanies": ["SP Enterprises"]
+}

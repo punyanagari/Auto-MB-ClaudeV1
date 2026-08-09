@@ -59,6 +59,8 @@ const TENANT_TABLES = [
   'payment_matrices',
   'pac_certificates',
   'pac_certificate_items',
+  'import_batches',
+  'import_records',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -67,7 +69,13 @@ type TenantTable = (typeof TENANT_TABLES)[number];
  * UPDATE/DELETE privilege at all, so generic zero-row mutation assertions
  * (which expect privilege to exist but RLS to hide rows) do not apply. */
 const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
-  (table) => table !== 'audit_events' && table !== 'work_assignments',
+  (table) =>
+    table !== 'audit_events' &&
+    table !== 'work_assignments' &&
+    // Cutover provenance is append-only for the application role (0025):
+    // UPDATE raises 42501 instead of matching zero rows.
+    table !== 'import_batches' &&
+    table !== 'import_records',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -102,6 +110,9 @@ const DELETE_REVOKED_TABLES = [
   // PAC certificates cancel with a note; their lines are frozen (0022).
   'pac_certificates',
   'pac_certificate_items',
+  // Cutover provenance is an append-only ledger (0025).
+  'import_batches',
+  'import_records',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -486,6 +497,25 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${pacCertificate.id}, ${work.id},
               ${workItem.id}, '1.000')
+    `;
+
+    // Wave 5 cutover provenance tables: one batch with one record.
+    const [importBatch] = await tx<{ id: string }[]>`
+      insert into import_batches (
+        organisation_id, source_system, importer_version, input_digest, dry_run
+      )
+      values (${organisationId}, 'auto-mb-v1', 'integration-test',
+              ${shaFill.repeat(64)}, false)
+      returning id
+    `;
+    if (!importBatch) throw new Error('seed import batch insert returned no row');
+    await tx`
+      insert into import_records (
+        organisation_id, entity_type, source_system, source_id, target_id,
+        batch_id, payload_fingerprint
+      )
+      values (${organisationId}, 'work', 'auto-mb-v1', ${`w-${workCode}`},
+              ${work.id}, ${importBatch.id}, ${shaFill.repeat(64)})
     `;
 
     return {
