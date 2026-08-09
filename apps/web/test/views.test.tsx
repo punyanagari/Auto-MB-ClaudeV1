@@ -127,6 +127,22 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue({ installations: [], itemSummaries: [] }),
     recordWorkInstallation: vi.fn(),
     cancelWorkInstallation: vi.fn(),
+    challanCorrectionEligibility: vi.fn().mockResolvedValue({
+      challanId: '44444444-4444-4444-8444-444444444444',
+      status: 'issued',
+      evidence: { receipts: 0, serials: 0, measurements: 0 },
+      path: 'cancel_replace',
+      pendingRequestId: null,
+    }),
+    proposeChallanCancelReplace: vi.fn(),
+    proposeIssueChallanCancelReplace: vi.fn(),
+    proposeChallanCorrectionNotice: vi.fn(),
+    listWorkCorrectionNotices: vi.fn().mockResolvedValue([]),
+    listChallanCorrectionNotices: vi.fn().mockResolvedValue([]),
+    getCorrectionNotice: vi.fn(),
+    renderCorrectionNotice: vi.fn(),
+    cancelCorrectionNotice: vi.fn(),
+    downloadCorrectionNoticePdf: vi.fn(),
     ...overrides,
   };
 }
@@ -1906,6 +1922,7 @@ describe('Approvals queue', () => {
     workId: WORK_ID,
     workCode: 'DCW-1',
     itemNumber: 'A/1',
+    documentNumber: null,
     proposed: {
       kind: 'change_item',
       workItemId: ITEM_A,
@@ -3054,5 +3071,198 @@ describe('Installations', () => {
     expect(screen.getByText('SN-003')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel record' })).toBeNull();
+  });
+});
+
+describe('Correction flow (issued Delivery Challan)', () => {
+  const issued = () =>
+    challanDetail({
+      status: 'issued',
+      challanNumber: 'DC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-08-08T10:00:00.000Z',
+    });
+
+  function renderDetail(api: ApiClient, canModify = true) {
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={canModify}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('offers cancel-and-replace for an evidence-free challan and files the proposal', async () => {
+    const proposeChallanCancelReplace = vi.fn().mockResolvedValue({});
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      proposeChallanCancelReplace,
+    });
+    renderDetail(api);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Request correction' }),
+    ).toBeTruthy();
+    // The lawful path and why it applies are stated.
+    expect(
+      screen.getByText(/no recorded receipt, serials, or measurements/),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Quantity — Main switchboard'), {
+      target: { value: '3.000' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason for correction'), {
+      target: { value: 'Wrong quantity on the issued copy.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request cancel & replace' }));
+
+    await waitFor(() => {
+      expect(proposeChallanCancelReplace).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        reason: 'Wrong quantity on the issued copy.',
+        replacement: {
+          challanDate: '2026-08-08',
+          prefix: 'DC',
+          consignee: { name: 'Sr. DEE (G)', address: 'Delhi Division' },
+          items: [{ workItemId: ITEM_A, quantity: '3.000' }],
+        },
+      });
+    });
+  });
+
+  it('offers a correction notice when evidence blocks cancellation, stating why', async () => {
+    const proposeChallanCorrectionNotice = vi.fn().mockResolvedValue({});
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 1, serials: 2, measurements: 0 },
+        path: 'correction_notice',
+        pendingRequestId: null,
+      }),
+      proposeChallanCorrectionNotice,
+    });
+    renderDetail(api);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Request correction' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/can no\s+longer be cancelled/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Correction statement'), {
+      target: { value: 'The consignee designation reads Sr. DEE (G), not (W).' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason for correction'), {
+      target: { value: 'Typo carried from the LOA.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request correction notice' }));
+
+    await waitFor(() => {
+      expect(proposeChallanCorrectionNotice).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        reason: 'Typo carried from the LOA.',
+        statement: 'The consignee designation reads Sr. DEE (G), not (W).',
+      });
+    });
+  });
+
+  it('shows the already-pending note instead of a second form', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 0, serials: 0, measurements: 0 },
+        path: 'cancel_replace',
+        pendingRequestId: '99999999-9999-4999-8999-999999999999',
+      }),
+    });
+    renderDetail(api);
+
+    expect(await screen.findByText(/already awaiting a decision/)).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+  });
+
+  it('hides the correction section without modify rights', async () => {
+    const api = stubApi({ getChallan: vi.fn().mockResolvedValue(issued()) });
+    renderDetail(api, false);
+
+    await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
+    await waitFor(() => {
+      expect(api.challanCorrectionEligibility).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('heading', { name: 'Request correction' })).toBeNull();
+  });
+
+  it('lists correction notices against the challan with their PDF action', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      listChallanCorrectionNotices: vi.fn().mockResolvedValue([
+        {
+          id: 'bbbb4444-4444-4444-8444-444444444444',
+          workId: WORK_ID,
+          deliveryChallanId: CHALLAN_ID,
+          approvalRequestId: '99999999-9999-4999-8999-999999999999',
+          noticeNumber: 'DCW-1-CN-01',
+          sequenceNumber: 1,
+          status: 'issued',
+          templateVersion: 'correction-notice-v1',
+          renderedAvailable: true,
+          cancellationNote: null,
+          createdAt: '2026-08-09T00:00:00.000Z',
+          cancelledAt: null,
+        },
+      ]),
+    });
+    renderDetail(api);
+
+    expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+  });
+
+  it('renders a correction request in the approvals queue with its type and document', async () => {
+    const listApprovals = vi.fn().mockResolvedValue([
+      {
+        id: '99999999-9999-4999-8999-999999999999',
+        entityType: 'challan_cancel_replace' as const,
+        entityId: CHALLAN_ID,
+        workId: WORK_ID,
+        workCode: 'DCW-1',
+        itemNumber: null,
+        documentNumber: 'DC/1',
+        proposed: { kind: 'cancel_replace_challan' },
+        diff: [{ field: 'items', before: 'A/1 ×2.000', after: 'A/1 ×3.000' }],
+        reason: 'Wrong quantity on the issued copy.',
+        status: 'pending' as const,
+        requestedByUserId: 'user-b',
+        decidedByUserId: null,
+        decidedAt: null,
+        decisionNote: null,
+        createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    ]);
+    const api = stubApi({ listApprovals });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Challan cancel & replace')).toBeTruthy();
+    expect(screen.getByText('· DC/1')).toBeTruthy();
+    expect(screen.getByText('A/1 ×3.000')).toBeTruthy();
   });
 });

@@ -11,6 +11,16 @@ export const ApprovalStatusSchema = Type.Union([
 ]);
 export type ApprovalStatus = Static<typeof ApprovalStatusSchema>;
 
+/** Everything the engine can decide: work-item amendments (Milestone 6)
+ * plus the Milestone 7 correction paths for issued documents. */
+export const ApprovalEntityTypeSchema = Type.Union([
+  Type.Literal('work_item_amendment'),
+  Type.Literal('challan_cancel_replace'),
+  Type.Literal('issue_challan_cancel_replace'),
+  Type.Literal('challan_correction_notice'),
+]);
+export type ApprovalEntityType = Static<typeof ApprovalEntityTypeSchema>;
+
 /** Fields a change amendment may touch. quantity '0' omits the item; the
  * floor (already-delivered issued quantity) is enforced at apply time. */
 export const AmendmentChangesSchema = Type.Object(
@@ -64,12 +74,16 @@ export type AmendmentDiffEntry = Static<typeof AmendmentDiffEntrySchema>;
 export const ApprovalRequestSchema = Type.Object(
   {
     id: UuidSchema,
-    entityType: Type.Literal('work_item_amendment'),
-    /** Target work item; null while an add-item proposal is undecided. */
+    entityType: ApprovalEntityTypeSchema,
+    /** The target record (work item or challan); null while an add-item
+     * proposal is undecided. */
     entityId: Type.Union([UuidSchema, Type.Null()]),
     workId: UuidSchema,
     workCode: Type.String(),
     itemNumber: Type.Union([Type.String(), Type.Null()]),
+    /** The targeted document's number for correction requests (challan
+     * number); null for work-item amendments. */
+    documentNumber: Type.Union([Type.String(), Type.Null()]),
     /** The immutable proposal snapshot, verbatim. */
     proposed: Type.Unknown(),
     diff: Type.Array(AmendmentDiffEntrySchema),

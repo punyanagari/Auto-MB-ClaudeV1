@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 
 interface IssueChallanDetailProps {
   readonly api: ApiClient;
@@ -360,6 +360,134 @@ export function IssueChallanDetail({
           <div className="actions">
             <button type="submit" disabled={pending}>
               Upload signed copy
+            </button>
+          </div>
+        </form>
+      )}
+
+      {issueChallan.status === 'issued' && canModify && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const role = formValue(data, 'ic-correction-role').trim();
+            const location = formValue(data, 'ic-correction-location').trim();
+            const remarks = formValue(data, 'ic-correction-remarks').trim();
+            void act(async () => {
+              await api.proposeIssueChallanCancelReplace(
+                organisationId,
+                issueChallan.id,
+                {
+                  reason: formValue(data, 'ic-correction-reason'),
+                  replacement: {
+                    challanDate: formValue(data, 'ic-correction-date'),
+                    movementType: issueChallan.movementType,
+                    issuedToName: formValue(data, 'ic-correction-name'),
+                    ...(role.length > 0 ? { issuedToRole: role } : {}),
+                    ...(location.length > 0 ? { location } : {}),
+                    ...(remarks.length > 0 ? { remarks } : {}),
+                    lines: lines.map((line) =>
+                      line.workItemId !== null
+                        ? {
+                            workItemId: line.workItemId,
+                            quantity: formValue(data, `ic-correction-qty-${line.id}`),
+                          }
+                        : {
+                            description: line.description,
+                            unit: line.unit,
+                            quantity: formValue(data, `ic-correction-qty-${line.id}`),
+                          },
+                    ),
+                  },
+                },
+              );
+              reload();
+              return null;
+            }, 'Correction requested: on approval this Issue Challan is cancelled and a corrected draft is created.');
+          }}
+        >
+          <h2>Request correction</h2>
+          <p className="muted">
+            Issue Challans carry no downstream evidence, so the lawful correction path
+            is <strong>cancel and replace</strong>: on approval the issued challan is
+            cancelled (its number stays in the series) and a corrected draft is created
+            for re-issue.
+          </p>
+          <div className="field">
+            <label htmlFor="ic-correction-date">Corrected challan date</label>
+            <input
+              id="ic-correction-date"
+              name="ic-correction-date"
+              type="date"
+              defaultValue={issueChallan.challanDate}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ic-correction-name">Issued to</label>
+            <input
+              id="ic-correction-name"
+              name="ic-correction-name"
+              defaultValue={issueChallan.issuedToName}
+              required
+              minLength={2}
+              maxLength={200}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ic-correction-role">Issued-to role (optional)</label>
+            <input
+              id="ic-correction-role"
+              name="ic-correction-role"
+              defaultValue={issueChallan.issuedToRole ?? ''}
+              maxLength={200}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ic-correction-location">Location (optional)</label>
+            <input
+              id="ic-correction-location"
+              name="ic-correction-location"
+              defaultValue={issueChallan.location ?? ''}
+              maxLength={200}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ic-correction-remarks">Remarks (optional)</label>
+            <input
+              id="ic-correction-remarks"
+              name="ic-correction-remarks"
+              defaultValue={issueChallan.remarks ?? ''}
+              maxLength={1000}
+            />
+          </div>
+          {lines.map((line) => (
+            <div className="field" key={line.id}>
+              <label htmlFor={`ic-correction-qty-${line.id}`}>
+                Quantity — {line.description}
+              </label>
+              <input
+                id={`ic-correction-qty-${line.id}`}
+                name={`ic-correction-qty-${line.id}`}
+                defaultValue={line.quantity}
+                required
+                inputMode="decimal"
+              />
+            </div>
+          ))}
+          <div className="field">
+            <label htmlFor="ic-correction-reason">Reason for correction</label>
+            <input
+              id="ic-correction-reason"
+              name="ic-correction-reason"
+              required
+              minLength={3}
+              maxLength={2000}
+            />
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={pending}>
+              Request cancel &amp; replace
             </button>
           </div>
         </form>

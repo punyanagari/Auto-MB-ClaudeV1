@@ -3,6 +3,12 @@ import type {
   ApiError,
   ApprovalRequest,
   ApprovalStatus,
+  CorrectionEligibilityResponse,
+  CorrectionNotice,
+  CorrectionNoticeDetailResponse,
+  ProposeChallanCancelReplaceRequest,
+  ProposeCorrectionNoticeRequest,
+  ProposeIssueChallanCancelReplaceRequest,
   Bill,
   CancelChallanRequest,
   ChallanDetailResponse,
@@ -475,6 +481,51 @@ export interface ApiClient {
     installationId: string,
     note: string,
   ) => Promise<Installation>;
+  /** Correction flow for issued documents (Milestone 7). */
+  readonly challanCorrectionEligibility: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<CorrectionEligibilityResponse>;
+  readonly proposeChallanCancelReplace: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeChallanCancelReplaceRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeIssueChallanCancelReplace: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeIssueChallanCancelReplaceRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly proposeChallanCorrectionNotice: (
+    organisationId: string,
+    challanId: string,
+    body: ProposeCorrectionNoticeRequest,
+  ) => Promise<ApprovalRequest>;
+  readonly listWorkCorrectionNotices: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly CorrectionNotice[]>;
+  readonly listChallanCorrectionNotices: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<readonly CorrectionNotice[]>;
+  readonly getCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly renderCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly cancelCorrectionNotice: (
+    organisationId: string,
+    noticeId: string,
+    note: string,
+  ) => Promise<CorrectionNoticeDetailResponse>;
+  readonly downloadCorrectionNoticePdf: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<Blob>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1209,12 +1260,77 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
+    async challanCorrectionEligibility(organisationId, challanId) {
+      return request<CorrectionEligibilityResponse>(
+        `/api/challans/${challanId}/correction-eligibility`,
+        { organisationId },
+      );
+    },
+    async proposeChallanCancelReplace(organisationId, challanId, body) {
+      return request<ApprovalRequest>(
+        `/api/challans/${challanId}/corrections/cancel-replace`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async proposeIssueChallanCancelReplace(organisationId, challanId, body) {
+      return request<ApprovalRequest>(
+        `/api/issue-challans/${challanId}/corrections/cancel-replace`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async proposeChallanCorrectionNotice(organisationId, challanId, body) {
+      return request<ApprovalRequest>(`/api/challans/${challanId}/corrections/notice`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
     async cancelWorkInstallation(organisationId, installationId, note) {
       return request<Installation>(`/api/installations/${installationId}/cancel`, {
         method: 'POST',
         body: { note },
         organisationId,
       });
+    },
+    async listWorkCorrectionNotices(organisationId, workId) {
+      const payload = await request<{ notices: CorrectionNotice[] }>(
+        `/api/works/${workId}/correction-notices`,
+        { organisationId },
+      );
+      return payload.notices;
+    },
+    async listChallanCorrectionNotices(organisationId, challanId) {
+      const payload = await request<{ notices: CorrectionNotice[] }>(
+        `/api/challans/${challanId}/correction-notices`,
+        { organisationId },
+      );
+      return payload.notices;
+    },
+    async getCorrectionNotice(organisationId, noticeId) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}`,
+        { organisationId },
+      );
+    },
+    async renderCorrectionNotice(organisationId, noticeId) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelCorrectionNotice(organisationId, noticeId, note) {
+      return request<CorrectionNoticeDetailResponse>(
+        `/api/correction-notices/${noticeId}/cancel`,
+        { method: 'POST', body: { note }, organisationId },
+      );
+    },
+    async downloadCorrectionNoticePdf(organisationId, noticeId) {
+      const response = await fetchImpl(`/api/correction-notices/${noticeId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
   };
 }

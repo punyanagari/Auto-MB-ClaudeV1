@@ -56,6 +56,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // release, never delete (0017).
   installations: 'SELECT, INSERT, UPDATE',
   installation_serials: 'SELECT, INSERT, UPDATE',
+  // Correction notices are numbered legal records that cancel, never
+  // disappear; the counter is numbering state (0019).
+  correction_notices: 'SELECT, INSERT, UPDATE',
+  correction_notice_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

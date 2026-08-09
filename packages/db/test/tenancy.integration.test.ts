@@ -54,6 +54,8 @@ const TENANT_TABLES = [
   'approval_requests',
   'installations',
   'installation_serials',
+  'correction_notices',
+  'correction_notice_counters',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -90,6 +92,10 @@ const DELETE_REVOKED_TABLES = [
   // Installation records cancel with a note; attachments release (0017).
   'installations',
   'installation_serials',
+  // Correction notices are numbered legal records: cancel, never delete;
+  // the counter is numbering state (0019).
+  'correction_notices',
+  'correction_notice_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -336,7 +342,7 @@ async function seedTenantGraph(
       values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
               '2026-02-03', ${userId})
     `;
-    await tx`
+    const [approvalRequest] = await tx<{ id: string }[]>`
       insert into approval_requests (
         organisation_id, entity_type, entity_id, work_id, proposed, diff,
         reason, requested_by_user_id
@@ -346,6 +352,26 @@ async function seedTenantGraph(
         '{"kind":"change_item"}'::jsonb, '[]'::jsonb,
         'Integration seed amendment', ${userId}
       )
+      returning id
+    `;
+    if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // Milestone 7 correction-flow tables: one row each.
+    await tx`
+      insert into correction_notices (
+        organisation_id, work_id, delivery_challan_id, approval_request_id,
+        notice_number, sequence_number, snapshot, template_version,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${challan.id}, ${approvalRequest.id},
+        ${`${workCode}-CN-01`}, 1, '{}'::jsonb, 'correction-notice-v1',
+        ${userId}
+      )
+    `;
+    await tx`
+      insert into correction_notice_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
     `;
 
     // Milestone 7 masters tables: one row each.

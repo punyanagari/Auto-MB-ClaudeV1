@@ -17,6 +17,24 @@ const FIELD_LABELS: Record<string, string> = {
   description: 'Description',
   unit: 'Unit',
   item: 'Item number',
+  challanDate: 'Challan date',
+  prefix: 'Number prefix',
+  consignee: 'Consignee',
+  items: 'Lines',
+  lines: 'Lines',
+  movementType: 'Movement type',
+  issuedToName: 'Issued to',
+  issuedToRole: 'Issued-to role',
+  location: 'Location',
+  remarks: 'Remarks',
+  statement: 'Correction statement',
+};
+
+const TYPE_LABELS: Record<ApprovalRequest['entityType'], string> = {
+  work_item_amendment: 'Item amendment',
+  challan_cancel_replace: 'Challan cancel & replace',
+  issue_challan_cancel_replace: 'Issue Challan cancel & replace',
+  challan_correction_notice: 'Correction notice',
 };
 
 /** One pending request: diff rendering plus the decision controls. */
@@ -40,13 +58,20 @@ function ApprovalCard({
   const [note, setNote] = useState('');
   const isRequester = approval.requestedByUserId === currentUserId;
   return (
-    <article className="card" aria-label={`Amendment for ${approval.workCode}`}>
+    <article
+      className="card"
+      aria-label={`${TYPE_LABELS[approval.entityType]} for ${approval.workCode}`}
+    >
       <h2>
         {approval.workCode}
         {approval.itemNumber !== null && (
           <span className="muted"> · item {approval.itemNumber}</span>
         )}
+        {approval.documentNumber != null && approval.documentNumber.length > 0 && (
+          <span className="muted"> · {approval.documentNumber}</span>
+        )}
       </h2>
+      <p className="muted">{TYPE_LABELS[approval.entityType]}</p>
       <p>{approval.reason}</p>
       <p className="muted">
         Requested by {isRequester ? 'you' : approval.requestedByUserId}
@@ -199,8 +224,8 @@ export function Approvals({
         Approvals
       </h1>
       <p className="muted">
-        Pending amendment requests. Approving applies the change immediately; original
-        awarded values are never overwritten.
+        Pending amendment and correction requests. Approving applies the change
+        immediately; original awarded values and issued snapshots are never overwritten.
       </p>
 
       {loadError !== null && (

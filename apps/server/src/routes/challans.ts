@@ -170,8 +170,9 @@ async function readDetail(
 /** Product contract: a document date is never in the future and never
  * before the Work's LOA letter date. "Today" is the organisation's own
  * timezone (default Asia/Kolkata), not the server clock — an evening
- * entry in India must not be rejected as tomorrow's date. */
-async function assertChallanDate(
+ * entry in India must not be rejected as tomorrow's date. (Exported for
+ * the correction flow, which validates replacement drafts.) */
+export async function assertChallanDate(
   tx: TransactionSql,
   workId: string,
   challanDate: string,
@@ -225,8 +226,9 @@ function requireStatus(row: ChallanRow, status: Challan['status']): void {
 
 /** Replaces the challan's lines from the request, snapshotting
  * description/unit/rate from the live work items and computing the line
- * amount in exact SQL numeric arithmetic. */
-async function writeLines(
+ * amount in exact SQL numeric arithmetic. (Exported for the correction
+ * flow, which writes replacement drafts through the same path.) */
+export async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   challanId: string,

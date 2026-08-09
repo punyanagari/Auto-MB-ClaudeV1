@@ -193,6 +193,10 @@ export function registerTimelineRoutes(
                 select id from bills where work_id = ${workId}))
               or (ae.entity_type = 'installations' and ae.entity_id in (
                 select id from installations where work_id = ${workId}))
+              or (ae.entity_type = 'approval_requests' and ae.entity_id in (
+                select id from approval_requests where work_id = ${workId}))
+              or (ae.entity_type = 'correction_notices' and ae.entity_id in (
+                select id from correction_notices where work_id = ${workId}))
             )
             and (${cursor === null} or (ae.occurred_at, ae.id) <
               (${cursor?.occurredAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))

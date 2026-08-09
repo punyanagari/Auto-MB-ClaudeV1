@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChallanDetailResponse, Receipt, Serial } from '@auto-mb/contracts';
+import type {
+  ChallanDetailResponse,
+  CorrectionEligibilityResponse,
+  CorrectionNotice,
+  Receipt,
+  Serial,
+} from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
@@ -41,6 +47,10 @@ export function ChallanDetail({
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [serials, setSerials] = useState<readonly Serial[] | null>(null);
+  const [eligibility, setEligibility] = useState<CorrectionEligibilityResponse | null>(
+    null,
+  );
+  const [notices, setNotices] = useState<readonly CorrectionNotice[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,15 +64,27 @@ export function ChallanDetail({
       .then(async (loaded) => {
         // Delivery evidence only exists once the challan is issued.
         if (loaded.challan.status === 'issued') {
-          const [loadedReceipt, workSerials] = await Promise.all([
-            api.getReceipt(organisationId, challanId),
-            api.listWorkSerials(organisationId, loaded.challan.workId),
-          ]);
+          const [loadedReceipt, workSerials, loadedEligibility, loadedNotices] =
+            await Promise.all([
+              api.getReceipt(organisationId, challanId),
+              api.listWorkSerials(organisationId, loaded.challan.workId),
+              api.challanCorrectionEligibility(organisationId, challanId),
+              api.listChallanCorrectionNotices(organisationId, challanId),
+            ]);
           setReceipt(loadedReceipt);
           setSerials(workSerials.filter((s) => s.deliveryChallanId === challanId));
+          setEligibility(loadedEligibility);
+          setNotices(loadedNotices);
+        } else if (loaded.challan.status === 'cancelled') {
+          setReceipt(null);
+          setSerials(null);
+          setEligibility(null);
+          setNotices(await api.listChallanCorrectionNotices(organisationId, challanId));
         } else {
           setReceipt(null);
           setSerials(null);
+          setEligibility(null);
+          setNotices([]);
         }
         setDetail(loaded);
       })
@@ -565,6 +587,259 @@ export function ChallanDetail({
             </button>
           </div>
         </form>
+      )}
+
+      {notices.length > 0 && (
+        <>
+          <h2>Correction notices</h2>
+          <table className="data-table">
+            <caption className="visually-hidden">
+              Correction notices issued against this challan
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Notice</th>
+                <th scope="col">Status</th>
+                <th scope="col">Issued</th>
+                <th scope="col">PDF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notices.map((notice) => (
+                <tr key={notice.id}>
+                  <th scope="row">{notice.noticeNumber}</th>
+                  <td>
+                    <span className={`chip chip--${notice.status}`}>
+                      {notice.status}
+                    </span>
+                  </td>
+                  <td>{notice.createdAt.slice(0, 10)}</td>
+                  <td>
+                    {notice.renderedAvailable ? (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        disabled={pending}
+                        onClick={() =>
+                          void act(async () => {
+                            openPdf(
+                              await api.downloadCorrectionNoticePdf(
+                                organisationId,
+                                notice.id,
+                              ),
+                            );
+                            return null;
+                          }, 'Correction notice PDF opened in a new tab.')
+                        }
+                      >
+                        Open PDF
+                      </button>
+                    ) : canModify ? (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        disabled={pending}
+                        onClick={() =>
+                          void act(async () => {
+                            await api.renderCorrectionNotice(organisationId, notice.id);
+                            reload();
+                            return null;
+                          }, 'Correction notice PDF generated.')
+                        }
+                      >
+                        Generate PDF
+                      </button>
+                    ) : (
+                      <span className="muted">not rendered</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {challan.status === 'issued' && canModify && eligibility !== null && (
+        <>
+          <h2>Request correction</h2>
+          {eligibility.pendingRequestId !== null ? (
+            <p className="muted" role="note">
+              A correction request for this challan is already awaiting a decision in
+              the approvals queue.
+            </p>
+          ) : eligibility.path === 'cancel_replace' ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const reason = formValue(data, 'correction-reason');
+                const phone = formValue(data, 'correction-consignee-phone').trim();
+                void act(async () => {
+                  await api.proposeChallanCancelReplace(organisationId, challan.id, {
+                    reason,
+                    replacement: {
+                      challanDate: formValue(data, 'correction-date'),
+                      prefix: challan.prefix,
+                      consignee: {
+                        name: formValue(data, 'correction-consignee-name'),
+                        address: formValue(data, 'correction-consignee-address'),
+                        ...(phone.length > 0 ? { phone } : {}),
+                      },
+                      items: items.map((item) => ({
+                        workItemId: item.workItemId,
+                        quantity: formValue(data, `correction-qty-${item.workItemId}`),
+                      })),
+                    },
+                  });
+                  reload();
+                  return null;
+                }, 'Correction requested: on approval this challan is cancelled and a corrected draft is created.');
+              }}
+            >
+              <p className="muted">
+                This challan has no recorded receipt, serials, or measurements, so the
+                lawful correction path is <strong>cancel and replace</strong>: on
+                approval the issued challan is cancelled (its number stays in the
+                series) and a corrected draft is created for re-issue.
+              </p>
+              <div className="field">
+                <label htmlFor="correction-date">Corrected challan date</label>
+                <input
+                  id="correction-date"
+                  name="correction-date"
+                  type="date"
+                  defaultValue={challan.challanDate}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="correction-consignee-name">Consignee name</label>
+                <input
+                  id="correction-consignee-name"
+                  name="correction-consignee-name"
+                  defaultValue={challan.consignee.name}
+                  required
+                  minLength={2}
+                  maxLength={200}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="correction-consignee-address">Consignee address</label>
+                <input
+                  id="correction-consignee-address"
+                  name="correction-consignee-address"
+                  defaultValue={challan.consignee.address}
+                  required
+                  minLength={3}
+                  maxLength={1000}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="correction-consignee-phone">
+                  Consignee phone (optional)
+                </label>
+                <input
+                  id="correction-consignee-phone"
+                  name="correction-consignee-phone"
+                  defaultValue={challan.consignee.phone ?? ''}
+                  maxLength={30}
+                />
+              </div>
+              {items.map((item) => (
+                <div className="field" key={item.workItemId}>
+                  <label htmlFor={`correction-qty-${item.workItemId}`}>
+                    Quantity — {item.description}
+                  </label>
+                  <input
+                    id={`correction-qty-${item.workItemId}`}
+                    name={`correction-qty-${item.workItemId}`}
+                    defaultValue={item.quantity}
+                    required
+                    inputMode="decimal"
+                  />
+                </div>
+              ))}
+              <div className="field">
+                <label htmlFor="correction-reason">Reason for correction</label>
+                <input
+                  id="correction-reason"
+                  name="correction-reason"
+                  required
+                  minLength={3}
+                  maxLength={2000}
+                />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Request cancel &amp; replace
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const reason = formValue(data, 'notice-reason');
+                const statement = formValue(data, 'notice-statement').trim();
+                const field = formValue(data, 'notice-field').trim();
+                const corrected = formValue(data, 'notice-corrected').trim();
+                void act(async () => {
+                  await api.proposeChallanCorrectionNotice(organisationId, challan.id, {
+                    reason,
+                    ...(statement.length > 0 ? { statement } : {}),
+                    ...(field.length > 0 && corrected.length > 0
+                      ? { corrections: [{ field, corrected }] }
+                      : {}),
+                  });
+                  reload();
+                  return null;
+                }, 'Correction notice requested; on approval it is issued with the next notice number.');
+              }}
+            >
+              <p className="muted">
+                This challan has recorded evidence ({eligibility.evidence.receipts}{' '}
+                receipt(s), {eligibility.evidence.serials} serial(s),{' '}
+                {eligibility.evidence.measurements} measurement(s)), so it can no longer
+                be cancelled. The lawful correction path is a numbered{' '}
+                <strong>correction notice</strong> that preserves the original document.
+              </p>
+              <div className="field">
+                <label htmlFor="notice-statement">Correction statement</label>
+                <textarea
+                  id="notice-statement"
+                  name="notice-statement"
+                  rows={3}
+                  maxLength={4000}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="notice-field">Corrected field (optional)</label>
+                <input id="notice-field" name="notice-field" maxLength={100} />
+              </div>
+              <div className="field">
+                <label htmlFor="notice-corrected">Corrected reading (optional)</label>
+                <input id="notice-corrected" name="notice-corrected" maxLength={1000} />
+              </div>
+              <div className="field">
+                <label htmlFor="notice-reason">Reason for correction</label>
+                <input
+                  id="notice-reason"
+                  name="notice-reason"
+                  required
+                  minLength={3}
+                  maxLength={2000}
+                />
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={pending}>
+                  Request correction notice
+                </button>
+              </div>
+            </form>
+          )}
+        </>
       )}
 
       <Timeline
