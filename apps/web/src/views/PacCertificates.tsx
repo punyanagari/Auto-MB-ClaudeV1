@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
-  ConsigneeMaster,
+  Contact,
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   WorkItem,
@@ -42,7 +42,8 @@ export function PacCertificates({
   workItems,
 }: PacCertificatesProps) {
   const [data, setData] = useState<PacCertificateListResponse | null>(null);
-  const [consignees, setConsignees] = useState<readonly ConsigneeMaster[]>([]);
+  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,12 +55,16 @@ export function PacCertificates({
     setLoadError(null);
     Promise.all([
       api.listWorkPacCertificates(organisationId, workId),
-      api.listConsigneeMasters(organisationId).catch(() => []),
+      api.listContacts(organisationId, { role: 'consignee' }).catch(() => []),
+      // R16: the Work's linked consignees are offered first; any active
+      // consignee stays selectable below them.
+      api.listWorkConsignees(organisationId, workId).catch(() => []),
     ])
-      .then(([loaded, loadedConsignees]) => {
+      .then(([loaded, loadedConsignees, loadedWorkConsignees]) => {
         if (cancelled) return;
         setData(loaded);
         setConsignees(loadedConsignees);
+        setWorkConsignees(loadedWorkConsignees);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -364,13 +369,29 @@ export function PacCertificates({
           <div className="field">
             <label htmlFor="pac-consignee">Issuing consignee</label>
             <select id="pac-consignee" name="pac-consignee" required>
-              {consignees.map((consignee) => (
-                <option key={consignee.id} value={consignee.id}>
-                  {consignee.designation}
-                  {consignee.address !== null ? ` — ${consignee.address}` : ''}
-                </option>
-              ))}
+              {workConsignees.length > 0 && (
+                <optgroup label="Linked to this Work">
+                  {workConsignees.map((consignee) => (
+                    <option key={consignee.id} value={consignee.id}>
+                      {consignee.designation}
+                      {consignee.address !== null ? ` — ${consignee.address}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="All consignees">
+                {consignees.map((consignee) => (
+                  <option key={`all-${consignee.id}`} value={consignee.id}>
+                    {consignee.designation}
+                    {consignee.address !== null ? ` — ${consignee.address}` : ''}
+                  </option>
+                ))}
+              </optgroup>
             </select>
+            <p className="hint">
+              Consignees linked to this Work are listed first; any active consignee can
+              be picked. The certificate snapshots the designation.
+            </p>
           </div>
           <fieldset>
             <legend>

@@ -13,12 +13,21 @@ import { escapeHtml, type ChallanBranding } from './challan-html.js';
 
 export const EXTENSION_TEMPLATE_VERSION = 'extension-v1';
 
+/** Manual back-fill records (paper letters transcribed into the register,
+ * migration 0029) carry this template version. They are never rendered —
+ * the paper letter is the record — the version only marks the snapshot as
+ * a transcription. */
+export const MANUAL_TEMPLATE_VERSION = 'extension-manual-v1';
+
 export type ExtensionBranding = ChallanBranding;
 
 export interface ExtensionSnapshot {
   readonly templateVersion: string;
   readonly organisationName: string;
   readonly requestNumber: string;
+  /** Present only on manual back-fill snapshots: the paper letter's own
+   * reference, preserved verbatim. */
+  readonly manualReference?: string;
   readonly letterDate: string;
   readonly addressee: string;
   readonly reason: string;
@@ -34,9 +43,17 @@ export interface ExtensionSnapshot {
   readonly finalisedAt: string;
 }
 
+export interface ExtensionRenderOptions {
+  /** Overlay the diagonal DRAFT watermark (legacy §5.5: the draft PDF is
+   * watermarked DRAFT; only finalisation assigns a number). The preview
+   * is streamed, never stored — drafts carry no render state (0011). */
+  readonly draftWatermark?: boolean;
+}
+
 export function renderExtensionHtml(
   snapshot: ExtensionSnapshot,
   branding: ExtensionBranding = {},
+  options: ExtensionRenderOptions = {},
 ): string {
   const reasonParagraphs = snapshot.reason
     .split(/\n+/)
@@ -66,9 +83,11 @@ export function renderExtensionHtml(
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
   .addressee { white-space: pre-line; margin: 1rem 0; }
   .body-copy p { margin: 0.5rem 0; }
+  .watermark { position: fixed; top: 45%; left: 8%; right: 8%; text-align: center; transform: rotate(-30deg); font-size: 96px; font-weight: bold; color: rgba(23, 34, 29, 0.12); letter-spacing: 0.2em; pointer-events: none; z-index: 10; }
 </style>
 </head>
 <body>
+${options.draftWatermark === true ? '<div class="watermark">DRAFT</div>' : ''}
 <header>
   <div class="brand">
     ${branding.logoDataUri !== undefined ? `<img src="${branding.logoDataUri}" alt="" />` : ''}
@@ -116,7 +135,11 @@ ${reasonParagraphs}
   <div>Authorised signatory</div>
 </section>
 <footer>
-  <p class="label">Template ${escapeHtml(snapshot.templateVersion)} · Finalised at ${escapeHtml(snapshot.finalisedAt)}</p>
+  <p class="label">${
+    options.draftWatermark === true
+      ? `Template ${escapeHtml(snapshot.templateVersion)} · DRAFT — not a numbered letter`
+      : `Template ${escapeHtml(snapshot.templateVersion)} · Finalised at ${escapeHtml(snapshot.finalisedAt)}`
+  }</p>
 </footer>
 </body>
 </html>

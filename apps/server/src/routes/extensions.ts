@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
   ApiErrorSchema,
+  BackfillExtensionRequestSchema,
+  BackfillExtensionResponseSchema,
   ExtensionRequestDetailResponseSchema,
   RespondExtensionRequestSchema,
   SaveExtensionRequestSchema,
   SetCompletionDateRequestSchema,
   WorkCompletionResponseSchema,
+  type BackfillExtensionRequest,
   type ExtensionRequest,
   type ExtensionRequestDetailResponse,
   type RespondExtensionRequest,
@@ -19,9 +22,11 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { isApprover } from './amendments.js';
 import { draftConflictError } from '../draft-conflict.js';
 import {
   EXTENSION_TEMPLATE_VERSION,
+  MANUAL_TEMPLATE_VERSION,
   renderExtensionHtml,
   type ExtensionSnapshot,
 } from '../extension-html.js';
@@ -67,12 +72,14 @@ interface ExtensionRow {
   id: string;
   work_id: string;
   status: ExtensionRequest['status'];
+  source: ExtensionRequest['source'];
   proposed_completion_date: string;
   reason: string;
   addressee: string;
   letter_date: string | null;
   sequence_number: number | null;
   request_number: string | null;
+  manual_reference: string | null;
   template_version: string | null;
   rendered_object_key: string | null;
   response_object_key: string | null;
@@ -84,10 +91,11 @@ interface ExtensionRow {
 }
 
 const EXTENSION_COLUMNS = `
-  id, work_id, status,
+  id, work_id, status, source,
   proposed_completion_date::text as proposed_completion_date,
   reason, addressee, letter_date::text as letter_date, sequence_number,
-  request_number, template_version, rendered_object_key, response_object_key,
+  request_number, manual_reference, template_version, rendered_object_key,
+  response_object_key,
   response_outcome, granted_completion_date::text as granted_completion_date,
   created_at, finalised_at, responded_at
 `;
@@ -97,12 +105,14 @@ function toExtensionRequest(row: ExtensionRow): ExtensionRequest {
     id: row.id,
     workId: row.work_id,
     status: row.status,
+    source: row.source,
     proposedCompletionDate: row.proposed_completion_date,
     reason: row.reason,
     addressee: row.addressee,
     letterDate: row.letter_date,
     sequenceNumber: row.sequence_number,
     requestNumber: row.request_number,
+    manualReference: row.manual_reference,
     templateVersion: row.template_version,
     renderedAvailable: row.rendered_object_key !== null,
     responseDocumentAvailable: row.response_object_key !== null,
@@ -459,6 +469,157 @@ export function registerExtensionRoutes(
     },
   );
 
+  // Manual back-fill (§5.5): a paper letter issued before the software
+  // was adopted enters the register as a FINALISED record on arrival — it
+  // takes the paper reference and letter date, transcribes the letter's
+  // content, and occupies the NEXT sequence slot under the same counter
+  // row lock as a software finalisation, so numbering stays gapless and
+  // serialised. It never touches the one-draft slot: a draft for the NEXT
+  // letter may exist alongside. Back-fill letters in paper order — each
+  // proposed date must extend the then-current completion date, exactly
+  // as it did on paper.
+  app.post(
+    '/api/works/:id/extension-requests/backfill',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: BackfillExtensionRequestSchema,
+        response: { 201: BackfillExtensionResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as BackfillExtensionRequest;
+      const result = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          // Consuming a number slot is the same act of authority as
+          // finalising — the issue authority gates both.
+          await requireAuthority(tx, user.id, 'issue');
+          await assertWorkAccess(tx, user.id, workId);
+          const work = await lockWork(tx, workId);
+          if (work.status !== 'active') {
+            throw httpError(
+              409,
+              'WORK_NOT_ACTIVE',
+              'Extension letters can only be back-filled for active Works.',
+            );
+          }
+          assertProposedExtends(work, body.proposedCompletionDate);
+          await assertLetterDate(tx, workId, body.letterDate);
+          if (work.original_completion_date === null) {
+            throw new Error('completion dates disappeared under the work row lock');
+          }
+
+          // §5.5: warn — without blocking — when the paper letter is
+          // dated after the first software-generated letter (a letter
+          // from the software era should itself have been generated).
+          const warnings: string[] = [];
+          const [firstSoftware] = await tx<{ letter_date: string }[]>`
+            select min(letter_date)::text as letter_date
+            from extension_requests
+            where work_id = ${workId} and source = 'software'
+              and status <> 'draft' and letter_date is not null
+            having min(letter_date) is not null
+          `;
+          if (
+            firstSoftware !== undefined &&
+            body.letterDate > firstSoftware.letter_date
+          ) {
+            warnings.push(
+              `This letter is dated ${body.letterDate}, after the first software-generated letter (${firstSoftware.letter_date}); check that it really was issued on paper.`,
+            );
+          }
+
+          const [counter] = await tx<{ next_value: number }[]>`
+            insert into extension_request_counters (organisation_id, work_id)
+            values (${organisationId}, ${workId})
+            on conflict (organisation_id, work_id)
+            do update set next_value = extension_request_counters.next_value + 1,
+                          updated_at = now()
+            returning next_value
+          `;
+          if (!counter) throw new Error('extension counter upsert returned no row');
+          const sequence = counter.next_value;
+          const requestNumber = `${work.work_code}-Extension-${String(sequence).padStart(2, '0')}`;
+
+          const [organisation] = await tx<{ name: string }[]>`
+            select name from organisations
+          `;
+          const finalisedAt = new Date().toISOString();
+          // The snapshot preserves what was transcribed; the PAPER letter
+          // remains the legal document (manual records are never
+          // rendered), so the template version marks the record as a
+          // transcription, not a generated letter.
+          const snapshot: ExtensionSnapshot = {
+            templateVersion: MANUAL_TEMPLATE_VERSION,
+            organisationName: organisation?.name ?? '',
+            requestNumber,
+            manualReference: body.reference,
+            letterDate: body.letterDate,
+            addressee: body.addressee,
+            reason: body.reason,
+            work: {
+              workCode: work.work_code,
+              title: work.title,
+              letterNumber: work.letter_number,
+              letterDate: work.letter_date,
+            },
+            originalCompletionDate: work.original_completion_date,
+            currentCompletionDate: work.current_completion_date ?? '',
+            proposedCompletionDate: body.proposedCompletionDate,
+            finalisedAt,
+          };
+
+          const [created] = await tx<{ id: string }[]>`
+            insert into extension_requests (
+              organisation_id, work_id, status, source, manual_reference,
+              proposed_completion_date, reason, addressee, letter_date,
+              sequence_number, request_number, finalised_snapshot,
+              template_version, created_by_user_id, finalised_by_user_id,
+              finalised_at
+            )
+            values (
+              ${organisationId}, ${workId}, 'finalised', 'manual',
+              ${body.reference}, ${body.proposedCompletionDate}, ${body.reason},
+              ${body.addressee}, ${body.letterDate}, ${sequence},
+              ${requestNumber}, ${jsonb(tx, snapshot)},
+              ${MANUAL_TEMPLATE_VERSION}, ${user.id}, ${user.id}, ${finalisedAt}
+            )
+            returning id
+          `;
+          if (!created) throw new Error('extension back-fill insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'extension.manual_backfilled',
+            'extension_requests',
+            created.id,
+            {
+              workId,
+              requestNumber,
+              sequence,
+              manualReference: body.reference,
+              letterDate: body.letterDate,
+              proposedCompletionDate: body.proposedCompletionDate,
+              warnings,
+            },
+          );
+          const detail = await readDetail(tx, created.id);
+          return { ...detail, warnings };
+        },
+      );
+      return reply.status(201).send(result);
+    },
+  );
+
   app.get(
     '/api/extension-requests/:id',
     {
@@ -551,6 +712,59 @@ export function registerExtensionRoutes(
         await requireWriterRole(tx, user.id);
         const extension = await lockExtension(tx, id);
         await assertWorkAccess(tx, user.id, extension.work_id);
+        if (extension.source === 'manual' && extension.status !== 'draft') {
+          // §5.5: a manual back-fill is deletable, but only by an
+          // amendment-approval holder, only while it is the TOP of the
+          // sequence (numbers never gain gaps — the 0029 trigger both
+          // enforces this under the counter row lock and rolls the
+          // counter back so the slot is reused), and only before a
+          // response is recorded (a responded record anchors the
+          // completion-date ledger). Software-generated finalised letters
+          // have no delete path at all.
+          if (!(await isApprover(tx, user.id))) {
+            throw httpError(
+              403,
+              'AUTHORITY_REQUIRED',
+              'Deleting a manual back-fill requires the amendment-approval authority.',
+            );
+          }
+          if (extension.status !== 'finalised') {
+            throw httpError(
+              409,
+              'EXTENSION_STATUS_CONFLICT',
+              'A responded manual back-fill anchors the completion-date record and cannot be deleted.',
+            );
+          }
+          const [top] = await tx<{ id: string }[]>`
+            select id from extension_requests
+            where work_id = ${extension.work_id} and sequence_number is not null
+            order by sequence_number desc
+            limit 1
+          `;
+          if (top?.id !== id) {
+            throw httpError(
+              409,
+              'EXTENSION_NOT_TOP_OF_SEQUENCE',
+              'Only the newest extension letter may be deleted — the sequence never gains gaps.',
+            );
+          }
+          await tx`delete from extension_requests where id = ${id}`;
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'extension.manual_backfill_deleted',
+            'extension_requests',
+            id,
+            {
+              workId: extension.work_id,
+              requestNumber: extension.request_number,
+              sequence: extension.sequence_number,
+              manualReference: extension.manual_reference,
+            },
+          );
+          return;
+        }
         requireStatus(extension, ['draft']);
         await tx`delete from extension_requests where id = ${id}`;
         await audit(
@@ -703,6 +917,15 @@ export function registerExtensionRoutes(
           const extension = await lockExtension(tx, id);
           await assertWorkAccess(tx, user.id, extension.work_id);
           requireStatus(extension, ['finalised', 'responded']);
+          if (extension.source === 'manual') {
+            // The PAPER letter is the legal record of a back-fill; a
+            // generated look-alike could be mistaken for the original.
+            throw httpError(
+              409,
+              'EXTENSION_MANUAL_NOT_RENDERABLE',
+              'Manual back-fill records are transcriptions of paper letters and are never rendered; the paper letter is the record.',
+            );
+          }
           const [row] = await tx<{ finalised_snapshot: unknown }[]>`
             select finalised_snapshot from extension_requests where id = ${id}
           `;
@@ -794,6 +1017,142 @@ export function registerExtensionRoutes(
         );
         return readDetail(tx, id);
       });
+    },
+  );
+
+  // Draft preview (§5.5: "Draft PDF watermarked DRAFT"). The preview
+  // renders the LIVE draft with a diagonal DRAFT watermark and no number
+  // — numbers exist only from finalisation — and is streamed straight
+  // back, never stored: the 0011 checks rightly forbid render state on a
+  // draft, and a draft has no immutable snapshot to store evidence
+  // against. Any member with access to the Work may preview (the same
+  // audience the stored-PDF GET serves).
+  app.get(
+    '/api/extension-requests/:id/draft-preview',
+    {
+      schema: { params: IdParamsSchema },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const { snapshot, branding } = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [extension] = await tx<ExtensionRow[]>`
+            select ${tx.unsafe(EXTENSION_COLUMNS)}
+            from extension_requests where id = ${id}
+          `;
+          if (!extension) {
+            throw httpError(404, 'EXTENSION_NOT_FOUND', 'No such extension request.');
+          }
+          await assertWorkAccess(tx, user.id, extension.work_id);
+          requireStatus(extension, ['draft']);
+          const [work] = await tx<
+            {
+              work_code: string;
+              title: string;
+              letter_number: string;
+              letter_date: string;
+              original_completion_date: string | null;
+              current_completion_date: string | null;
+            }[]
+          >`
+            select work_code, title, letter_number,
+                   letter_date::text as letter_date,
+                   original_completion_date::text as original_completion_date,
+                   current_completion_date::text as current_completion_date
+            from works where id = ${extension.work_id} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          const [organisation] = await tx<
+            {
+              name: string;
+              address: string | null;
+              gstin: string | null;
+              contact_phone: string | null;
+              contact_email: string | null;
+              logo_object_key: string | null;
+              logo_media_type: string | null;
+            }[]
+          >`
+            select name, address, gstin, contact_phone, contact_email,
+                   logo_object_key, logo_media_type
+            from organisations
+          `;
+          const preview: ExtensionSnapshot = {
+            templateVersion: EXTENSION_TEMPLATE_VERSION,
+            organisationName: organisation?.name ?? '',
+            // No number exists before finalisation; the preview says so.
+            requestNumber: 'DRAFT',
+            letterDate: extension.letter_date ?? '(letter date not set)',
+            addressee: extension.addressee,
+            reason: extension.reason,
+            work: {
+              workCode: work.work_code,
+              title: work.title,
+              letterNumber: work.letter_number,
+              letterDate: work.letter_date,
+            },
+            originalCompletionDate: work.original_completion_date ?? '—',
+            currentCompletionDate: work.current_completion_date ?? '—',
+            proposedCompletionDate: extension.proposed_completion_date,
+            finalisedAt: '',
+          };
+          return { snapshot: preview, branding: organisation ?? null };
+        },
+      );
+
+      let logoDataUri: string | undefined;
+      if (branding?.logo_object_key && branding.logo_media_type) {
+        try {
+          const logo = await storage.get(branding.logo_object_key);
+          logoDataUri = `data:${branding.logo_media_type};base64,${logo.toString('base64')}`;
+        } catch (error) {
+          request.log.warn({ err: error }, 'extension draft preview: logo unavailable');
+        }
+      }
+      const html = renderExtensionHtml(
+        snapshot,
+        {
+          ...(logoDataUri !== undefined ? { logoDataUri } : {}),
+          address: branding?.address ?? null,
+          gstin: branding?.gstin ?? null,
+          contactPhone: branding?.contact_phone ?? null,
+          contactEmail: branding?.contact_email ?? null,
+        },
+        { draftWatermark: true },
+      );
+      const form = new FormData();
+      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
+      let pdf: Buffer;
+      try {
+        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
+          method: 'POST',
+          body: form,
+        });
+        if (!response.ok) {
+          throw new Error(`Gotenberg answered ${String(response.status)}`);
+        }
+        pdf = Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        request.log.error({ err: error }, 'extension draft preview failed');
+        throw httpError(
+          502,
+          'RENDER_FAILED',
+          'The PDF service is unavailable; the draft is unaffected — retry later.',
+        );
+      }
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename="extension-${id}-draft-preview.pdf"`,
+      );
+      return reply.send(pdf);
     },
   );
 

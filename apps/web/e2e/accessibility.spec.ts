@@ -505,10 +505,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
-  await page.route('**/api/masters/consignees', (route) =>
+  await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(
       json({
-        consignees: [
+        contacts: [
           {
             id: 'bbbbbbbb-6666-4666-8666-bbbbbbbbbbbb',
             designation: 'Sr. DEE (G) CR',
@@ -516,12 +516,21 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             contactPerson: null,
             phone: null,
             email: null,
+            gstin: null,
+            pincode: null,
+            stateCode: null,
+            isConsignee: true,
+            isVendor: false,
+            isClient: false,
             active: true,
             createdAt: '2026-01-01T00:00:00.000Z',
           },
         ],
       }),
     ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/consignees`, (route) =>
+    route.fulfill(json({ consignees: [] })),
   );
   await page.route(`**/api/challans/${CHALLAN_ID}`, (route) =>
     route.fulfill(

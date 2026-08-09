@@ -16,6 +16,7 @@ import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
+import { WorkConsignees } from './WorkConsignees.js';
 import { Installations } from './Installations.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
 import { PacCertificates } from './PacCertificates.js';
@@ -28,6 +29,8 @@ interface WorkDetailProps {
   readonly canModify: boolean;
   readonly canRecordEvidence: boolean;
   readonly canIssue: boolean;
+  /** Holds can_approve_amendments — gates manual back-fill deletion. */
+  readonly canApprove: boolean;
   readonly isOwner: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
@@ -108,6 +111,7 @@ export function WorkDetail({
   canModify,
   canRecordEvidence,
   canIssue,
+  canApprove,
   isOwner,
   onNewChallan,
   onOpenChallan,
@@ -774,6 +778,14 @@ export function WorkDetail({
         workId={workId}
         canModify={canModify}
         canIssue={canIssue}
+        canApprove={canApprove}
+      />
+
+      <WorkConsignees
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
       />
 
       <h2>Contract instruments</h2>

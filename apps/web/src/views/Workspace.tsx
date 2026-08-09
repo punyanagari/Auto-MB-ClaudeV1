@@ -387,6 +387,7 @@ export function Workspace({
               canModify={canModify}
               canRecordEvidence={canRecordEvidence}
               canIssue={canIssue}
+              canApprove={canApprove}
               isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });

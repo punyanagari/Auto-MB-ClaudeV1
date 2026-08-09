@@ -45,7 +45,11 @@ const TENANT_TABLES = [
   'bills',
   'mb_entries',
   'work_assignments',
-  'consignee_masters',
+  // The unified Contacts master and the Work<->consignee association
+  // (0028). consignee_masters is a VIEW over contacts since 0028 — views
+  // are compatibility surfaces, not tenant tables; RLS lives on contacts.
+  'contacts',
+  'work_consignees',
   'location_masters',
   'unit_masters',
   'organisation_signatories',
@@ -76,6 +80,9 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
   (table) =>
     table !== 'audit_events' &&
     table !== 'work_assignments' &&
+    // The Work<->consignee association is create/delete only, like
+    // work_assignments: no UPDATE privilege exists (0028).
+    table !== 'work_consignees' &&
     // Cutover provenance is append-only for the application role (0025):
     // UPDATE raises 42501 instead of matching zero rows.
     table !== 'import_batches' &&
@@ -97,8 +104,9 @@ const DELETE_REVOKED_TABLES = [
   'bill_counters',
   'bills',
   'mb_entries',
-  // Masters retire via the active flag; the app role holds no DELETE (0013).
-  'consignee_masters',
+  // Masters retire via the active flag; the app role holds no DELETE
+  // (0013; contacts follows in 0028).
+  'contacts',
   'location_masters',
   'unit_masters',
   'organisation_signatories',
@@ -134,6 +142,9 @@ const DELETE_ALLOWED_TABLES = [
   'issue_challan_lines',
   'challan_item_serials',
   'work_assignments',
+  // Unlinking a Work<->consignee association deletes only the preference;
+  // documents keep their snapshots (0028).
+  'work_consignees',
   'extension_requests',
   // Payment matrix rows are per-Work configuration, not issued
   // documents; finalised MBs snapshot their percentages (0021).
@@ -406,16 +417,24 @@ async function seedTenantGraph(
       values (${organisationId}, ${work.id})
     `;
 
-    // Milestone 7 masters tables: one row each.
-    const [consigneeMaster] = await tx<{ id: string }[]>`
-      insert into consignee_masters (
-        organisation_id, designation, address, created_by_user_id
+    // Milestone 7 masters tables (contacts since 0028): one row each,
+    // plus the Work<->consignee association.
+    const [consigneeContact] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, address, is_consignee,
+        created_by_user_id
       )
       values (${organisationId}, ${`Sr. DEE ${workCode}`},
-              'Integration division office', ${userId})
+              'Integration division office', true, ${userId})
       returning id
     `;
-    if (!consigneeMaster) throw new Error('seed consignee insert returned no row');
+    if (!consigneeContact) throw new Error('seed contact insert returned no row');
+    await tx`
+      insert into work_consignees (
+        organisation_id, work_id, contact_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id}, ${userId})
+    `;
     const [locationMaster] = await tx<{ id: string }[]>`
       insert into location_masters (organisation_id, name, kind, created_by_user_id)
       values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
@@ -489,7 +508,7 @@ async function seedTenantGraph(
 
     // Milestone 8 phase 1 PAC tables: one recorded certificate with one
     // certified line, the consignee designation snapshotted from the
-    // master.
+    // contact (consignee_master_id references contacts since 0028).
     const [pacCertificate] = await tx<{ id: string }[]>`
       insert into pac_certificates (
         organisation_id, work_id, reference, issue_date, consignee_master_id,
@@ -497,7 +516,7 @@ async function seedTenantGraph(
       )
       values (
         ${organisationId}, ${work.id}, ${`PAC-${workCode}`}, '2026-02-04',
-        ${consigneeMaster.id}, ${`Sr. DEE ${workCode}`}, ${userId}
+        ${consigneeContact.id}, ${`Sr. DEE ${workCode}`}, ${userId}
       )
       returning id
     `;
@@ -709,14 +728,55 @@ describe('application role security posture', () => {
   it('covers every organisation-scoped table in the database with this suite', async () => {
     // If a new table with an organisation_id column lands without being
     // added to TENANT_TABLES, this fails instead of silently narrowing the
-    // proofs below.
+    // proofs below. Restricted to BASE TABLES: the consignee_masters
+    // compatibility VIEW (0028) also exposes organisation_id, but a view
+    // has no RLS of its own — with security_invoker the base table's
+    // policy applies, and that base table (contacts) is in the list.
     const rows = await admin<{ table_name: string }[]>`
-      select table_name from information_schema.columns
-      where table_schema = 'public' and column_name = 'organisation_id'
-      order by table_name
+      select c.table_name
+      from information_schema.columns c
+      join information_schema.tables t
+        on t.table_schema = c.table_schema and t.table_name = c.table_name
+      where c.table_schema = 'public' and c.column_name = 'organisation_id'
+        and t.table_type = 'BASE TABLE'
+      order by c.table_name
     `;
     const expected = TENANT_TABLES.filter((table) => table !== 'organisations');
     expect(rows.map((row) => row.table_name).sort()).toEqual([...expected].sort());
+  });
+
+  it('keeps the consignee_masters compatibility view invoker-scoped over contacts', async () => {
+    // The 0028 view must stay security_invoker (the caller's own RLS and
+    // grants apply underneath) — a definer view would read contacts with
+    // the view owner's privileges and could leak across tenants.
+    const [view] = await admin<{ options: string[] | null }[]>`
+      select reloptions as options from pg_class
+      where relname = 'consignee_masters' and relkind = 'v'
+    `;
+    expect(view).toBeDefined();
+    expect(view?.options ?? []).toContain('security_invoker=true');
+
+    // Behavioural proof: the view answers nothing without a bound tenant
+    // and only the caller's rows with one — the contacts policy applied
+    // through the view.
+    const bare = (await app.unsafe(
+      `select count(*)::int as count from consignee_masters`,
+    )) as unknown as { count: number }[];
+    expect(bare[0]?.count).toBe(0);
+
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const rows = await tx<{ organisation_id: string }[]>`
+          select organisation_id from consignee_masters
+        `;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const row of rows) {
+          expect(row.organisation_id).toBe(organisationA.id);
+        }
+      },
+    );
   });
 });
 
