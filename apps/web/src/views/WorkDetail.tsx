@@ -391,6 +391,42 @@ export function WorkDetail({
   const canCreateDocuments = canModify && workActive;
   const canRecordSiteEvidence = canRecordEvidence && workActive;
   const canIssueDocuments = canIssue && workActive;
+  const summaryLines: Partial<
+    Record<WorkTab, readonly { readonly label: string; readonly value: string }[]>
+  > = {
+    schedules: [
+      { label: 'Schedules', value: String(schedules.length) },
+      { label: 'Serial-tracked', value: String(serials.length) },
+    ],
+    deliveries: [
+      { label: 'Issued', value: String(issuedChallans.length) },
+      {
+        label: 'Draft',
+        value: String((challans ?? []).filter((c) => c.status === 'draft').length),
+      },
+      { label: 'Correction notices', value: String(correctionNotices.length) },
+    ],
+    issues: [
+      {
+        label: 'Draft',
+        value: String((issueChallans ?? []).filter((c) => c.status === 'draft').length),
+      },
+    ],
+    measurement: [{ label: 'Entries recorded', value: String(mbEntries.length) }],
+    bills: [{ label: 'Prepared', value: String(bills.length) }],
+    instruments: [
+      {
+        label: 'Active',
+        value: String(instruments.filter((i) => i.status === 'active').length),
+      },
+    ],
+    amendments: [
+      {
+        label: 'Awaiting decision',
+        value: String(amendments.filter((a) => a.status === 'pending').length),
+      },
+    ],
+  };
   const tabCounts: Record<WorkTab, number | null> = {
     overview: null,
     schedules: workItems.length,
@@ -515,6 +551,42 @@ export function WorkDetail({
         })}
       </nav>
 
+      {tab === 'overview' && (
+        <>
+          {/* The whole state of a Work, before anything is opened. Each cell
+              carries the count its tab shows, so the summary and the tab strip
+              can never disagree — both read the same derivation. */}
+          <div className="work-summary">
+            {WORK_TABS.filter(
+              (candidate) => candidate !== 'overview' && candidate !== 'timeline',
+            ).map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                className="work-summary__cell"
+                onClick={() => {
+                  setTab(candidate);
+                }}
+              >
+                <span className="work-summary__head">
+                  <span className="work-summary__name">
+                    {WORK_TAB_LABELS[candidate]}
+                  </span>
+                  <span className="work-summary__n">{tabCounts[candidate] ?? 0}</span>
+                </span>
+                <span className="work-summary__lines">
+                  {(summaryLines[candidate] ?? []).map((line) => (
+                    <span className="work-summary__line" key={line.label}>
+                      {line.label}
+                      <span className="work-summary__value">{line.value}</span>
+                    </span>
+                  ))}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {tab === 'overview' && (
         <>
           <section aria-labelledby="work-completion-heading">

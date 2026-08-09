@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   IssueChallanDetailResponse,
@@ -615,10 +622,11 @@ describe('IssueChallanDetail', () => {
  * area opens it first — exactly as an operator does. The tab's accessible
  * name carries its count, so match on the label prefix. */
 async function openWorkTab(label: string) {
-  // A name matcher rather than a constructed RegExp: the tab's accessible
-  // name carries its count, so match on the label prefix.
+  // Scoped to the tab strip: the Overview summary offers a button per area
+  // too, and both carry the same label.
+  const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
   fireEvent.click(
-    await screen.findByRole('button', {
+    within(tabs).getByRole('button', {
       name: (accessibleName: string) => accessibleName.startsWith(label),
     }),
   );

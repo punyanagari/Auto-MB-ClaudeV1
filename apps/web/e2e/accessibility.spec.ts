@@ -670,9 +670,14 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // The Work page splits its areas across tabs, so each one is opened and
   // scanned in turn rather than asserted on a single scroll.
   const openTab = async (label: string) => {
-    // The tab's accessible name carries its count, so match loosely on the
-    // label rather than building a RegExp from a variable.
-    await page.getByRole('button', { name: label, exact: false }).first().click();
+    // Scoped to the tab strip: the Overview summary offers a button per area
+    // too, and both carry the same label. The name carries the count, so the
+    // match is loose rather than a RegExp built from a variable.
+    await page
+      .locator('.work-tabs')
+      .getByRole('button', { name: label, exact: false })
+      .first()
+      .click();
   };
 
   await openTab('Overview');
@@ -734,10 +739,11 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expectNoSeriousViolations(page, 'challan detail with evidence');
 
   await page.getByRole('button', { name: 'Back to Work' }).click();
-  // The tab is lifted into Workspace so it can survive this round trip, but
-  // this path does not yet demonstrate it — the delivery surface is still
-  // reopened explicitly here rather than asserted as retained.
-  await openTab('Deliveries');
+  // The active tab survives the trip into a challan and back: the operator
+  // came from Deliveries, so the delivery surface is the one still on screen.
+  await expect(page.locator('.work-tabs__tab[aria-current="page"]')).toHaveText(
+    /^Deliveries/,
+  );
   await page.getByRole('button', { name: 'New Delivery Challan' }).click();
   await expect(
     page.getByRole('heading', { name: 'New Delivery Challan' }),

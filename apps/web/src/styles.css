@@ -1471,3 +1471,78 @@ input[type='radio'] {
   background: var(--primary);
   color: var(--primary-foreground);
 }
+
+/* The Overview summary: one divided surface, not a rack of floating cards.
+ * Every cell carries the count its tab shows and opens that tab, so the two
+ * navigations agree instead of competing. */
+.work-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.work-summary__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: stretch;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.work-summary__cell:hover {
+  background: var(--muted);
+}
+
+.work-summary__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.work-summary__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.work-summary__n {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.work-summary__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.work-summary__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.work-summary__value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary-foreground);
+}

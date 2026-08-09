@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChallanDetailResponse,
@@ -1351,10 +1358,11 @@ describe('ChallanDetail', () => {
  * area opens it first — exactly as an operator does. The tab's accessible
  * name carries its count, so match on the label prefix. */
 async function openWorkTab(label: string) {
-  // A name matcher rather than a constructed RegExp: the tab's accessible
-  // name carries its count, so match on the label prefix.
+  // Scoped to the tab strip: the Overview summary offers a button per area
+  // too, and both carry the same label.
+  const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
   fireEvent.click(
-    await screen.findByRole('button', {
+    within(tabs).getByRole('button', {
       name: (accessibleName: string) => accessibleName.startsWith(label),
     }),
   );
@@ -1637,6 +1645,32 @@ describe('WorkDetail retention', () => {
       });
     });
     expect(await screen.findByText('released')).toBeTruthy();
+  });
+
+  it('opens an area from the Overview summary, and the two navigations agree', async () => {
+    const api = retentionApi();
+    renderWorkDetail(api);
+
+    // The summary is the Overview tab's content, so it is on screen already.
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    const summaryCell = screen
+      .getAllByRole('button', {
+        name: (name: string) => name.startsWith('Measurement'),
+      })
+      .find((candidate) => !tabs.contains(candidate));
+    expect(summaryCell).toBeTruthy();
+
+    fireEvent.click(summaryCell as HTMLElement);
+
+    // Clicking the card selects the matching tab rather than opening a
+    // separate surface — one architecture, not two.
+    await screen.findByRole('heading', {
+      name: (accessibleName: string) => accessibleName === 'Measurement Book',
+    });
+    const active = within(tabs)
+      .getAllByRole('button')
+      .find((candidate) => candidate.getAttribute('aria-current') === 'page');
+    expect(active?.textContent).toMatch(/^Measurement/);
   });
 
   it('hides retention forms and billing actions from read-only members', async () => {
