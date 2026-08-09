@@ -800,6 +800,19 @@ export function registerIssueChallanRoutes(
         const challan = await lockIssueChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
+        // R8: a completed Work's operational record is frozen in both
+        // directions — cancelling an issued document is as much a change
+        // to it as raising a new one. Lock order is the creation paths' —
+        // document row first, then works — so cancel and completion
+        // serialise; the 0032 issue-challan update guard is the database
+        // backstop.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${challan.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling an issue challan');
         await tx`
           update issue_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},

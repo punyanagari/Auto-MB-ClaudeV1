@@ -668,6 +668,18 @@ export function registerPacRoutes(
             'This PAC certificate is already cancelled.',
           );
         }
+        // R8: a completed Work's acceptance evidence is frozen — the
+        // certificate is part of what admitted the completion, so it
+        // cannot be withdrawn behind it. Lock order is the recording
+        // path's — own row first, then works — so cancel and completion
+        // serialise; the 0032 PAC update guard is the database backstop.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${existing.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling a PAC certificate');
         // R19: a PAC certificate billed in a live Measurement Book
         // cannot be cancelled — the MB must be cancelled first (the
         // 0024 database guard backstops this against every writer).

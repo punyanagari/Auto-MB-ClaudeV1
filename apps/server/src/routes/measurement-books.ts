@@ -1465,12 +1465,18 @@ export function registerMeasurementBookRoutes(
         // checks below always run against committed finalize state.
         // The 0027 guard_measurement_book_update backstops both checks
         // in the database against every writer.
-        const [workRow] = await tx<{ id: string }[]>`
-          select id from works
+        const [workRow] = await tx<{ id: string; status: string }[]>`
+          select id, status from works
           where id = ${book.work_id} and deleted_at is null
           for update
         `;
         if (!workRow) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // R8: a completed Work's measurement record is frozen — releasing
+        // this book's sources would reopen quantities the completion was
+        // measured against. The works lock above serialises this against
+        // completion, and the 0032 Measurement Book update guard backstops
+        // the refusal in the database.
+        assertWorkOperable(workRow.status, 'cancelling a Measurement Book');
         // Only the newest live MB may be cancelled (deltas must stay
         // coherent, spec §5.9).
         const [newer] = await tx<{ id: string; mb_number: string | null }[]>`
