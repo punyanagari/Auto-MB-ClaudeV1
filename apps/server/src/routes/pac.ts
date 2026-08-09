@@ -31,6 +31,7 @@ import { assertSourceNotBilled } from './measurement-books.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 import { assertNotMalware } from '../upload-guards.js';
 
 /**
@@ -408,8 +409,10 @@ export function registerPacRoutes(
           // (the 0027 insert guard backstops it in the database). Lock
           // order works -> work_items matches every other writer taking
           // both.
-          const [work] = await tx<{ letter_date: string; today: string }[]>`
-            select w.letter_date::text as letter_date,
+          const [work] = await tx<
+            { letter_date: string; today: string; status: string }[]
+          >`
+            select w.letter_date::text as letter_date, w.status,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
@@ -417,6 +420,11 @@ export function registerPacRoutes(
             for update of w
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above serialises this against completion, and
+          // the 0031 insert guard backstops it in the database.
+          assertWorkOperable(work.status, 'recording a PAC certificate');
 
           // A live final Measurement Book closes the Work's payment
           // cycle (spec §5.9): a PAC certificate recorded after it

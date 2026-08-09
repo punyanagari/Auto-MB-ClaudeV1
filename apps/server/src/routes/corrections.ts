@@ -44,6 +44,7 @@ import { normaliseHeader } from './issue-challans.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -152,17 +153,15 @@ async function lockDeliveryChallan(
 }
 
 async function requireActiveWork(tx: TransactionSql, workId: string): Promise<void> {
+  // The works row lock pairs with the one POST /api/works/:id/complete
+  // holds, so a correction proposal can never be stranded behind a
+  // completed Work; the 0031 approval-request insert guard backstops it.
   const [work] = await tx<{ status: string }[]>`
     select status from works where id = ${workId} and deleted_at is null
+    for update
   `;
   if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-  if (work.status !== 'active') {
-    throw httpError(
-      409,
-      'WORK_NOT_ACTIVE',
-      'Corrections apply to documents of active Works only.',
-    );
-  }
+  assertWorkOperable(work.status, 'proposing a correction');
 }
 
 async function audit(

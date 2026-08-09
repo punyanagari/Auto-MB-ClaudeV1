@@ -30,6 +30,7 @@ import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -429,18 +430,17 @@ export function registerIssueChallanRoutes(
         async (tx): Promise<IssueChallanDetailResponse> => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds, so a draft can never appear
+          // behind a completed Work's refusals (the 0031 insert guard
+          // backstops it in the database).
           const [work] = await tx<{ status: string; work_code: string }[]>`
             select status, work_code from works
             where id = ${workId} and deleted_at is null
+            for update
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Issue Challans can only be drafted for active Works.',
-            );
-          }
+          assertWorkOperable(work.status, 'drafting an issue challan');
           await assertIssueChallanDate(tx, workId, body.challanDate);
 
           // One open draft per Work (also enforced by the partial unique
@@ -656,19 +656,28 @@ export function registerIssueChallanRoutes(
           await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'draft');
 
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds, so an issue and a completion
+          // on the same Work serialise; the 0031 issue-challan update
+          // guard backstops the refusal in the database.
           const [work] = await tx<
             {
               work_code: string;
               title: string;
               letter_number: string;
               letter_date: string;
+              status: string;
             }[]
           >`
             select work_code, title, letter_number,
-                   letter_date::text as letter_date
+                   letter_date::text as letter_date, status
             from works where id = ${challan.work_id}
+            for update
           `;
           if (!work) throw new Error('issue challan without a Work');
+
+          // R8: a completed Work accepts no new operational documents.
+          assertWorkOperable(work.status, 'issuing an issue challan');
 
           // Deliberately NO quantity ceiling here: Issue Challan
           // quantities may exceed the awarded (and delivered) quantities

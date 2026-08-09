@@ -38,6 +38,7 @@ import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books.js';
+import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
 
 export interface BuildAppOptions {
@@ -452,6 +453,7 @@ export async function buildApp(
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
+    registerWorkCompletionRoutes(app, authInstance, database);
   }
 
   return app;

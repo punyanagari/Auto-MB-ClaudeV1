@@ -100,6 +100,7 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 11. **Rounding:** round each line to two decimals, then sum lines.
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
+14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
 
 ## 6. Data conventions
 

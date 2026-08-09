@@ -121,6 +121,9 @@ interface WorkRow {
   pbg_extension_days: number | null;
   pbg_penal_interest_percent: string | null;
   status: Work['status'];
+  completed_at: Date | null;
+  completed_by_user_id: string | null;
+  completion_note: string | null;
   created_at: Date;
 }
 
@@ -141,6 +144,10 @@ function toWork(row: WorkRow): Work {
     pbgExtensionDays: row.pbg_extension_days,
     pbgPenalInterestPercent: row.pbg_penal_interest_percent,
     status: row.status,
+    // R8 completion state (migration 0031); all null while active.
+    completedAt: row.completed_at === null ? null : row.completed_at.toISOString(),
+    completedByUserId: row.completed_by_user_id,
+    completionNote: row.completion_note,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -590,7 +597,8 @@ export function registerLoaRoutes(
                       pbg_required_amount::text as pbg_required_amount,
                       pbg_submission_days, pbg_extension_days,
                       pbg_penal_interest_percent::text as pbg_penal_interest_percent,
-                      status, created_at
+                      status, completed_at, completed_by_user_id,
+                      completion_note, created_at
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               throw httpError(
@@ -790,7 +798,8 @@ export function registerLoaRoutes(
                    pbg_required_amount::text as pbg_required_amount,
                    pbg_submission_days, pbg_extension_days,
                    pbg_penal_interest_percent::text as pbg_penal_interest_percent,
-                   status, created_at
+                   status, completed_at, completed_by_user_id, completion_note,
+                   created_at
             from works w
             where deleted_at is null
               and (${full} or exists (
@@ -828,7 +837,8 @@ export function registerLoaRoutes(
                  pbg_required_amount::text as pbg_required_amount,
                  pbg_submission_days, pbg_extension_days,
                  pbg_penal_interest_percent::text as pbg_penal_interest_percent,
-                 status, created_at, allow_excess_delivery
+                 status, completed_at, completed_by_user_id, completion_note,
+                 created_at, allow_excess_delivery
           from works
           where id = ${id} and deleted_at is null
         `;

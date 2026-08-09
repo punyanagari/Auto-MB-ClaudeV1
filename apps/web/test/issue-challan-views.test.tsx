@@ -157,6 +157,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderMeasurementBook: vi.fn(),
     downloadMeasurementBookPdf: vi.fn(),
     downloadMeasurementBookDraftPreview: vi.fn(),
+    completeWork: vi.fn(),
+    reopenWork: vi.fn(),
     ...overrides,
   };
 }
