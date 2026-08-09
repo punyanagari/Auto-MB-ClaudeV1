@@ -89,6 +89,9 @@ export function MeasurementBooks({
   );
   const [existingDraftId, setExistingDraftId] = useState<string | null>(null);
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelNote, setCancelNote] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -187,6 +190,9 @@ export function MeasurementBooks({
       const loaded = await api.getMeasurementBook(organisationId, measurementBookId);
       setDetail(loaded);
       setConfirmingFinalize(false);
+      setConfirmingDelete(false);
+      setConfirmingCancel(false);
+      setCancelNote('');
       setSelection(
         new Set(
           loaded.sources
@@ -232,6 +238,9 @@ export function MeasurementBooks({
   const hasDraft = books.some((book) => book.status === 'draft');
   const liveFinal = books.some((book) => book.isFinal && book.status !== 'cancelled');
   const book = detail?.book ?? null;
+  /** A finalized MB always carries its number; the fallback exists only
+   * because the shared contract type keeps it nullable for drafts. */
+  const mbNumberLabel = book?.mbNumber ?? 'this Measurement Book';
 
   return (
     <>
@@ -393,7 +402,6 @@ export function MeasurementBooks({
                     sourceType: candidate.sourceType,
                     sourceId: candidate.sourceId,
                   }));
-                setClaimedElsewhere(new Map());
                 tryAct(async () => {
                   try {
                     const updated = await api.setMeasurementBookSources(
@@ -406,16 +414,29 @@ export function MeasurementBooks({
                     if (cause instanceof RequestFailedError && cause.status === 409) {
                       const conflict = cause.details as SourceConflictDetails | null;
                       if (conflict?.sourceType && conflict.sourceId) {
-                        setClaimedElsewhere(
-                          new Map([
-                            [
-                              sourceKey(conflict.sourceType, conflict.sourceId),
-                              conflict.holdingMbNumber ??
-                                conflict.holdingMeasurementBookId ??
-                                'another Measurement Book',
-                            ],
-                          ]),
+                        const claimed = sourceKey(
+                          conflict.sourceType,
+                          conflict.sourceId,
                         );
+                        // The server reports one clash per attempt, so the
+                        // markers have to accumulate: replacing the map would
+                        // unmark the row an earlier attempt already flagged.
+                        setClaimedElsewhere((previous) =>
+                          new Map(previous).set(
+                            claimed,
+                            conflict.holdingMbNumber ??
+                              conflict.holdingMeasurementBookId ??
+                              'another Measurement Book',
+                          ),
+                        );
+                        // A claimed source can never join this MB and its box
+                        // is now disabled, so drop it from the selection —
+                        // otherwise every later save re-sends the same clash.
+                        setSelection((previous) => {
+                          const next = new Set(previous);
+                          next.delete(claimed);
+                          return next;
+                        });
                       }
                     }
                     throw cause;
@@ -448,12 +469,22 @@ export function MeasurementBooks({
                             candidate.sourceId,
                           );
                           const holder = claimedElsewhere.get(key);
+                          const claimId = `mb-claim-${candidate.sourceType}-${candidate.sourceId}`;
                           return (
                             <div className="field" key={key}>
+                              {/* The chip stays outside the label so it
+                                  describes the box rather than becoming part
+                                  of its name, and the box is disabled because
+                                  the server would only refuse the claim with a
+                                  409 after the operator saved. */}
                               <label>
                                 <input
                                   type="checkbox"
                                   checked={selection.has(key)}
+                                  disabled={holder !== undefined}
+                                  aria-describedby={
+                                    holder !== undefined ? claimId : undefined
+                                  }
                                   onChange={(event) => {
                                     const next = new Set(selection);
                                     if (event.currentTarget.checked) next.add(key);
@@ -462,12 +493,12 @@ export function MeasurementBooks({
                                   }}
                                 />{' '}
                                 {candidate.label}
-                                {holder !== undefined && (
-                                  <span className="chip chip--cancelled">
-                                    claimed by {holder}
-                                  </span>
-                                )}
                               </label>
+                              {holder !== undefined && (
+                                <span className="chip chip--cancelled" id={claimId}>
+                                  claimed by {holder}
+                                </span>
+                              )}
                             </div>
                           );
                         })
@@ -486,8 +517,11 @@ export function MeasurementBooks({
             </form>
           )}
 
+          {/* A status region, not an alert: these warnings are part of the
+              view as it opens rather than a response to something the
+              operator just did. */}
           {detail.warnings.length > 0 && (
-            <div role="alert">
+            <div role="status">
               <p className="form-error">
                 The payment matrix cannot price every selected item — finalizing will be
                 refused until the missing category rows exist:
@@ -544,6 +578,13 @@ export function MeasurementBooks({
                     <td className="cell--wrap">{line.remark}</td>
                   </tr>
                 ))}
+              </tbody>
+              {/* The total belongs in the foot so it is announced as the
+                  table's summary rather than as one more data row. This
+                  screen is not what gets printed — the MB PDF is rendered
+                  server-side from its own template — and the server stays
+                  authoritative for the figure itself. */}
+              <tfoot>
                 <tr>
                   <th scope="row" colSpan={6}>
                     Total payable this MB
@@ -557,7 +598,7 @@ export function MeasurementBooks({
                   </td>
                   <td></td>
                 </tr>
-              </tbody>
+              </tfoot>
             </table>
           ) : (
             <p className="muted">
@@ -590,26 +631,24 @@ export function MeasurementBooks({
                 type="button"
                 disabled={pending}
                 onClick={() => {
+                  setConfirmingDelete(false);
                   setConfirmingFinalize(true);
                 }}
               >
                 Finalize…
               </button>
             )}
-            {book.status === 'draft' && canModify && (
+            {book.status === 'draft' && canModify && !confirmingDelete && (
               <button
                 type="button"
                 className="button--ghost"
                 disabled={pending}
                 onClick={() => {
-                  tryAct(async () => {
-                    await api.deleteMeasurementBook(organisationId, book.id);
-                    setDetail(null);
-                    await refreshList();
-                  }, 'Draft deleted; its source claims are released.');
+                  setConfirmingFinalize(false);
+                  setConfirmingDelete(true);
                 }}
               >
-                Delete draft
+                Delete draft…
               </button>
             )}
             {book.status === 'finalized' && canIssue && book.billId === null && (
@@ -702,41 +741,123 @@ export function MeasurementBooks({
             </div>
           )}
 
-          {book.status === 'finalized' && canCancel && book.billId === null && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const note = formValue(
-                  new FormData(event.currentTarget),
-                  'mb-cancel-note',
-                ).trim();
-                tryAct(async () => {
-                  const cancelled = await api.cancelMeasurementBook(
-                    organisationId,
-                    book.id,
-                    note,
-                  );
-                  setDetail(cancelled);
-                  await refreshList();
-                }, 'Measurement Book cancelled; its number is retained and its sources are released.');
-              }}
-            >
-              <div className="field">
-                <label htmlFor="mb-cancel-note">
-                  Cancellation note (only the newest live MB can cancel)
-                </label>
-                <input
-                  id="mb-cancel-note"
-                  name="mb-cancel-note"
-                  required
-                  minLength={3}
-                  maxLength={1000}
-                />
+          {/* Deleting is the one unrecoverable draft action, so it gets the
+              same two-step treatment as the recoverable finalize above. */}
+          {book.status === 'draft' && canModify && confirmingDelete && (
+            <div className="detail-block">
+              <h4>Confirm delete</h4>
+              <p>
+                Deleting discards this draft and its lines for good, and releases every
+                source it claimed — those challans, installations and PACs become
+                billable by another Measurement Book again. Continue?
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    tryAct(async () => {
+                      await api.deleteMeasurementBook(organisationId, book.id);
+                      setDetail(null);
+                      setConfirmingDelete(false);
+                      await refreshList();
+                    }, 'Draft deleted; its source claims are released.');
+                  }}
+                >
+                  Delete draft now
+                </button>
+                <button
+                  type="button"
+                  className="button--ghost"
+                  disabled={pending}
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                  }}
+                >
+                  Keep drafting
+                </button>
               </div>
-              <button type="submit" className="button--ghost" disabled={pending}>
-                Cancel Measurement Book
-              </button>
-            </form>
+            </div>
+          )}
+
+          {book.status === 'finalized' && canCancel && book.billId === null && (
+            <>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  // Submitting only opens the confirm step below; the browser
+                  // has enforced the note by now, and the irreversible act is
+                  // authorised there against the MB number.
+                  setConfirmingCancel(true);
+                }}
+              >
+                <div className="field">
+                  <label htmlFor="mb-cancel-note">
+                    Cancellation note (only the newest live MB can cancel)
+                  </label>
+                  <input
+                    id="mb-cancel-note"
+                    name="mb-cancel-note"
+                    value={cancelNote}
+                    onChange={(event) => {
+                      // Rewording the note withdraws the confirmation: what is
+                      // confirmed must be the wording that gets stored.
+                      setCancelNote(event.target.value);
+                      setConfirmingCancel(false);
+                    }}
+                    required
+                    minLength={3}
+                    maxLength={1000}
+                  />
+                </div>
+                {!confirmingCancel && (
+                  <button type="submit" className="button--ghost" disabled={pending}>
+                    Cancel Measurement Book…
+                  </button>
+                )}
+              </form>
+              {confirmingCancel && (
+                <div className="detail-block">
+                  <h4>Confirm cancellation</h4>
+                  <p>
+                    Measurement Book {mbNumberLabel} will be cancelled. This cannot be
+                    undone: the number {mbNumberLabel} is retained forever and can never
+                    be reused, the sources it billed are released for a later MB, and
+                    the note above is stored on the record.
+                  </p>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        tryAct(async () => {
+                          const cancelled = await api.cancelMeasurementBook(
+                            organisationId,
+                            book.id,
+                            cancelNote.trim(),
+                          );
+                          setDetail(cancelled);
+                          setConfirmingCancel(false);
+                          await refreshList();
+                        }, 'Measurement Book cancelled; its number is retained and its sources are released.');
+                      }}
+                    >
+                      Cancel {mbNumberLabel} now
+                    </button>
+                    <button
+                      type="button"
+                      className="button--ghost"
+                      disabled={pending}
+                      onClick={() => {
+                        setConfirmingCancel(false);
+                      }}
+                    >
+                      Keep this Measurement Book
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
           {book.status === 'finalized' && book.billId !== null && (
             <p className="muted">

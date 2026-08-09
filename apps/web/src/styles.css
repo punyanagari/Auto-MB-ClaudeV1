@@ -376,6 +376,10 @@ h3 {
 }
 
 .content {
+  /* The sticky table heading owns the top of the scrollport, so anything the
+   * browser scrolls into view from above — Shift+Tab back up a rate column,
+   * or a focus() call after a failed save — would land underneath it. */
+  scroll-padding-top: 3rem;
   width: 100%;
   max-width: 100rem;
   margin: 0 auto;
@@ -577,14 +581,43 @@ h3 {
   border-spacing: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  overflow: hidden;
   background: var(--card);
   font-size: 0.875rem;
   margin: var(--space-3) 0;
 }
 
+/* The corner cells clip the card themselves rather than the table carrying
+ * overflow: hidden. Overflow would make the table its own scrollport, and a
+ * sticky heading inside a scrollport that never scrolls never moves. The
+ * radius is inset by the table's 1px border so the curves sit flush. The
+ * last row group is tbody, or tfoot on the tables that carry a total. */
+.data-table thead tr:first-child th:first-child {
+  border-top-left-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table thead tr:first-child th:last-child {
+  border-top-right-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: calc(var(--radius-xl) - 1px);
+}
+
+/* The largest work in the corpus carries 129 items, so the headings have to
+ * survive the scroll — otherwise Awarded, Delivered, Remaining and This
+ * challan are four unlabelled numeric columns by the time you reach row 60.
+ * The background is the opaque equivalent of the old 40% tint over the card,
+ * so scrolled rows cannot read through it, and border-collapse: separate
+ * keeps the bottom rule on the cell where it travels with the heading. */
 .data-table thead th {
-  background: oklch(0.965 0.005 250 / 40%);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: oklch(0.986 0.002 250);
   text-align: left;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -596,7 +629,8 @@ h3 {
 }
 
 .data-table td,
-.data-table tbody th {
+.data-table tbody th,
+.data-table tfoot th {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
@@ -604,12 +638,13 @@ h3 {
   font-weight: 400;
 }
 
-.data-table tbody th {
+.data-table tbody th,
+.data-table tfoot th {
   font-weight: 500;
 }
 
-.data-table tbody tr:last-child td,
-.data-table tbody tr:last-child th {
+.data-table > :last-child > tr:last-child > td,
+.data-table > :last-child > tr:last-child > th {
   border-bottom: 0;
 }
 
@@ -792,17 +827,6 @@ button:disabled {
   border-color: transparent;
 }
 
-/* Editors keep their primary actions visible while the form scrolls —
- * the Zoho bottom action bar. */
-.action-bar {
-  position: sticky;
-  bottom: 0;
-  background: var(--color-card);
-  border-top: 1px solid var(--color-line);
-  padding: var(--space-3) 0;
-  margin-top: var(--space-6);
-}
-
 .button--link:hover {
   background: transparent;
   text-decoration: underline;
@@ -900,6 +924,9 @@ input[type='radio'] {
   margin: var(--space-4) 0 0;
 }
 
+/* Editors keep their primary actions visible while the form scrolls — the
+ * bottom action bar. The negative margins bleed it to the card's edges, so
+ * it picks up the card's bottom corners. */
 .action-bar {
   position: sticky;
   bottom: 0;
@@ -1069,21 +1096,25 @@ input[type='radio'] {
   gap: var(--space-3);
   background: var(--card);
   border: 1px solid var(--border);
-  border-left-width: 3px;
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
 }
 
+/* Severity used to ride a 3px stripe down the left edge. It still tints the
+ * row, but around the whole hairline border at the same weight as every
+ * other card, so the list reads as one stack rather than a tab rack. The
+ * severity itself is named in words by the chip — this is the scanning aid,
+ * not the announcement. Alphas match the flag panel's semantic border. */
 .alert--danger {
-  border-left-color: var(--destructive);
+  border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
 }
 
 .alert--warning {
-  border-left-color: oklch(0.75 0.15 70);
+  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
 }
 
 .alert--notice {
-  border-left-color: var(--info);
+  border-color: color-mix(in oklab, var(--info) 40%, transparent);
 }
 
 .alert__chip--danger {

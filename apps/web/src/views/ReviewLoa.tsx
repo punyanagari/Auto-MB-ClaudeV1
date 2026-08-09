@@ -45,6 +45,13 @@ interface ItemDraft {
   paymentCategory: WorkItemPaymentCategory | '';
 }
 
+/** The wire shapes these fields must satisfy. Mirrored from
+ * DecimalStringSchema and DateOnlySchema so the form never accepts a value
+ * the server will refuse — and never refuses one it would take. */
+const WORK_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_/-]{0,19}$/;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DECIMAL_PATTERN = /^(?:0|[1-9]\d*)$|^(?:0|[1-9]\d*)\.\d{1,3}$/;
+
 interface HeaderDraft {
   workCode: string;
   letterNumber: string;
@@ -148,8 +155,10 @@ export function ReviewLoa({
   const [addSchedule, setAddSchedule] = useState('A');
   const [removeCandidate, setRemoveCandidate] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const manualSequence = useRef(1);
+  const fieldRefs = useRef(new Map<string, HTMLElement>());
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +167,7 @@ export function ReviewLoa({
     setItems(null);
     setPbg(null);
     setLoadError(null);
+    setFieldErrors({});
     api
       .getLoaDocument(organisationId, documentId)
       .then((loaded) => {
@@ -209,14 +219,50 @@ export function ReviewLoa({
   );
   const totalsDifference = useMemo(() => {
     if (rowsTotal === null || header === null) return null;
-    const totalMinor = parseDecimalMinorUnits(rowsTotal, 5);
-    const contractMinor = parseDecimalMinorUnits(header.contractValue, 5);
+    // Both sides are read at the row total's own scale — quantity (3 dp) ×
+    // rate (6 dp) lands on 9. Parsing narrower silently dropped the whole
+    // comparison whenever a rate carried more than a paisa of decimals.
+    const totalMinor = parseDecimalMinorUnits(rowsTotal, 9);
+    const contractMinor = parseDecimalMinorUnits(header.contractValue, 9);
     if (totalMinor === null || contractMinor === null) return null;
     const diff = totalMinor - contractMinor;
     const negative = diff < 0n;
     const magnitude = negative ? -diff : diff;
-    return `${negative ? '-' : ''}₹${formatMinorUnits(magnitude, 5)}`;
+    return `${negative ? '-' : ''}₹${formatMinorUnits(magnitude, 9)}`;
   }, [rowsTotal, header]);
+
+  // The same exact-integer path, one schedule at a time: reconciling a
+  // letter is done schedule by schedule, so each table carries its own
+  // subtotal in its foot. A schedule holding a half-typed or malformed
+  // cell reports nothing rather than a wrong figure, and the server stays
+  // authoritative for every stored amount.
+  const scheduleSubtotals = useMemo(() => {
+    const subtotals = new Map<string, string>();
+    if (items === null) return subtotals;
+    for (const scheduleId of scheduleIds) {
+      const subtotal = exactRowsTotal(
+        items.filter((item) => item.scheduleId === scheduleId),
+      );
+      if (subtotal !== null) subtotals.set(scheduleId, `₹${subtotal}`);
+    }
+    return subtotals;
+  }, [items, scheduleIds]);
+
+  function registerField(field: string, node: HTMLElement | null) {
+    if (node === null) {
+      fieldRefs.current.delete(field);
+      return;
+    }
+    fieldRefs.current.set(field, node);
+  }
+
+  /** Moves focus onto the control that has to change. The form-level
+   * role="alert" announces what went wrong; it says nothing about where a
+   * keyboard user has to go to fix it, and on a letter with a hundred
+   * editable rows the offending box is usually off screen. */
+  function focusField(field: string) {
+    fieldRefs.current.get(field)?.focus();
+  }
 
   function updateHeader<K extends keyof HeaderDraft>(key: K, value: HeaderDraft[K]) {
     setHeader((current) => (current === null ? null : { ...current, [key]: value }));
@@ -275,17 +321,71 @@ export function ReviewLoa({
     event.preventDefault();
     if (header === null || items === null || pbg === null) return;
     const withPercentage = header.pricingShape === 'letter_percentage';
-    if (withPercentage && header.letterPercentageDirection === '') {
-      setConfirmError('Select the percentage direction printed on the letter.');
-      return;
+    // Every rule is checked in one pass. Answering one failure at a time
+    // costs the reviewer a whole resubmission to learn that the PBG window
+    // was wrong too, and this form is long enough that a second trip is a
+    // second scroll through a hundred rows.
+    const nextFieldErrors: Record<string, string> = {};
+    const failures: string[] = [];
+    const focusTargets: string[] = [];
+    function flag(field: string, message: string) {
+      nextFieldErrors[field] = message;
+      failures.push(message);
+      focusTargets.push(field);
     }
-    if (items.length === 0) {
-      setConfirmError('Add at least one item row before confirming.');
-      return;
+    if (!WORK_CODE_PATTERN.test(header.workCode.trim())) {
+      flag(
+        'work-code',
+        'Enter a work code of letters, digits, and / _ - only, up to 20 characters.',
+      );
+    }
+    if (header.letterNumber.trim().length === 0) {
+      flag('letter-number', 'Enter the letter number printed on the LOA.');
+    }
+    if (!DATE_ONLY_PATTERN.test(header.letterDate)) {
+      flag('letter-date', 'Enter the date printed on the letter.');
+    }
+    if (header.title.trim().length < 3) {
+      flag('work-title', 'Describe the work in at least 3 characters.');
+    }
+    if (!DECIMAL_PATTERN.test(header.advertisedValue.trim())) {
+      flag(
+        'advertised-value',
+        'Enter the advertised value in rupees, with up to three decimals.',
+      );
+    }
+    if (!DECIMAL_PATTERN.test(header.contractValue.trim())) {
+      flag(
+        'contract-value',
+        'Enter the accepted value in rupees, with up to three decimals.',
+      );
+    }
+    if (withPercentage && !DECIMAL_PATTERN.test(header.letterPercentage.trim())) {
+      flag('letter-percentage', 'Enter the percentage printed on the letter.');
+    }
+    if (withPercentage && header.letterPercentageDirection === '') {
+      flag(
+        'percentage-direction',
+        'Select the percentage direction printed on the letter.',
+      );
     }
     const submissionDays = Number.parseInt(pbg.submissionDays, 10);
     if (pbg.required && (!Number.isInteger(submissionDays) || submissionDays < 1)) {
-      setConfirmError('Enter the PBG submission window in days (1–180).');
+      flag('pbg-submission-days', 'Enter the PBG submission window in days (1–180).');
+    }
+    if (items.length === 0) {
+      // No row survives to be marked wrong, so the summary carries this one
+      // alone and focus goes to the control that can satisfy the rule.
+      failures.push('Add at least one item row before confirming.');
+      focusTargets.push('add-row-schedule');
+    }
+    setFieldErrors(nextFieldErrors);
+    // Fields are flagged in reading order, so the first one is the first
+    // offender on screen.
+    const firstInvalidField = focusTargets[0];
+    if (firstInvalidField !== undefined) {
+      setConfirmError(failures.join(' '));
+      focusField(firstInvalidField);
       return;
     }
     const request: ConfirmWorkRequest = {
@@ -427,13 +527,18 @@ export function ReviewLoa({
         </div>
       )}
 
-      <form onSubmit={(event) => void confirm(event)}>
+      {/* noValidate: the checks in confirm() replace the native ones so that
+          every failure names its field, binds a message, and moves focus. */}
+      <form noValidate onSubmit={(event) => void confirm(event)}>
         <h2>Letter details</h2>
         <div className="field-row">
           <div className="field">
             <label htmlFor="work-code">Work code (your reference)</label>
             <input
               id="work-code"
+              ref={(node) => {
+                registerField('work-code', node);
+              }}
               value={header.workCode}
               onChange={(event) => {
                 updateHeader('workCode', event.target.value.toUpperCase());
@@ -441,36 +546,76 @@ export function ReviewLoa({
               required
               pattern="[A-Z0-9][A-Z0-9_/-]{0,19}"
               autoComplete="off"
+              aria-invalid={fieldErrors['work-code'] !== undefined}
+              aria-describedby={
+                fieldErrors['work-code'] !== undefined ? 'work-code-error' : undefined
+              }
             />
+            {fieldErrors['work-code'] !== undefined && (
+              <p className="form-error" id="work-code-error">
+                {fieldErrors['work-code']}
+              </p>
+            )}
           </div>
           <div className="field">
             <label htmlFor="letter-number">Letter number</label>
             <input
               id="letter-number"
+              ref={(node) => {
+                registerField('letter-number', node);
+              }}
               value={header.letterNumber}
               onChange={(event) => {
                 updateHeader('letterNumber', event.target.value);
               }}
               required
+              aria-invalid={fieldErrors['letter-number'] !== undefined}
+              aria-describedby={
+                fieldErrors['letter-number'] !== undefined
+                  ? 'letter-number-error'
+                  : undefined
+              }
             />
+            {fieldErrors['letter-number'] !== undefined && (
+              <p className="form-error" id="letter-number-error">
+                {fieldErrors['letter-number']}
+              </p>
+            )}
           </div>
           <div className="field">
             <label htmlFor="letter-date">Letter date</label>
             <input
               id="letter-date"
+              ref={(node) => {
+                registerField('letter-date', node);
+              }}
               type="date"
               value={header.letterDate}
               onChange={(event) => {
                 updateHeader('letterDate', event.target.value);
               }}
               required
+              aria-invalid={fieldErrors['letter-date'] !== undefined}
+              aria-describedby={
+                fieldErrors['letter-date'] !== undefined
+                  ? 'letter-date-error'
+                  : undefined
+              }
             />
+            {fieldErrors['letter-date'] !== undefined && (
+              <p className="form-error" id="letter-date-error">
+                {fieldErrors['letter-date']}
+              </p>
+            )}
           </div>
         </div>
         <div className="field">
           <label htmlFor="work-title">Work description</label>
           <textarea
             id="work-title"
+            ref={(node) => {
+              registerField('work-title', node);
+            }}
             value={header.title}
             onChange={(event) => {
               updateHeader('title', event.target.value);
@@ -478,32 +623,69 @@ export function ReviewLoa({
             required
             minLength={3}
             rows={2}
+            aria-invalid={fieldErrors['work-title'] !== undefined}
+            aria-describedby={
+              fieldErrors['work-title'] !== undefined ? 'work-title-error' : undefined
+            }
           />
+          {fieldErrors['work-title'] !== undefined && (
+            <p className="form-error" id="work-title-error">
+              {fieldErrors['work-title']}
+            </p>
+          )}
         </div>
         <div className="field-row">
           <div className="field">
             <label htmlFor="advertised-value">Advertised value (₹)</label>
             <input
               id="advertised-value"
+              ref={(node) => {
+                registerField('advertised-value', node);
+              }}
               value={header.advertisedValue}
               onChange={(event) => {
                 updateHeader('advertisedValue', event.target.value);
               }}
               required
               inputMode="decimal"
+              aria-invalid={fieldErrors['advertised-value'] !== undefined}
+              aria-describedby={
+                fieldErrors['advertised-value'] !== undefined
+                  ? 'advertised-value-error'
+                  : undefined
+              }
             />
+            {fieldErrors['advertised-value'] !== undefined && (
+              <p className="form-error" id="advertised-value-error">
+                {fieldErrors['advertised-value']}
+              </p>
+            )}
           </div>
           <div className="field">
             <label htmlFor="contract-value">Contract value (₹)</label>
             <input
               id="contract-value"
+              ref={(node) => {
+                registerField('contract-value', node);
+              }}
               value={header.contractValue}
               onChange={(event) => {
                 updateHeader('contractValue', event.target.value);
               }}
               required
               inputMode="decimal"
+              aria-invalid={fieldErrors['contract-value'] !== undefined}
+              aria-describedby={
+                fieldErrors['contract-value'] !== undefined
+                  ? 'contract-value-error'
+                  : undefined
+              }
             />
+            {fieldErrors['contract-value'] !== undefined && (
+              <p className="form-error" id="contract-value-error">
+                {fieldErrors['contract-value']}
+              </p>
+            )}
           </div>
           <div className="field">
             <label htmlFor="pricing-shape">Pricing shape</label>
@@ -528,18 +710,35 @@ export function ReviewLoa({
               <label htmlFor="letter-percentage">Percentage</label>
               <input
                 id="letter-percentage"
+                ref={(node) => {
+                  registerField('letter-percentage', node);
+                }}
                 value={header.letterPercentage}
                 onChange={(event) => {
                   updateHeader('letterPercentage', event.target.value);
                 }}
                 required
                 inputMode="decimal"
+                aria-invalid={fieldErrors['letter-percentage'] !== undefined}
+                aria-describedby={
+                  fieldErrors['letter-percentage'] !== undefined
+                    ? 'letter-percentage-error'
+                    : undefined
+                }
               />
+              {fieldErrors['letter-percentage'] !== undefined && (
+                <p className="form-error" id="letter-percentage-error">
+                  {fieldErrors['letter-percentage']}
+                </p>
+              )}
             </div>
             <div className="field">
               <label htmlFor="percentage-direction">Direction</label>
               <select
                 id="percentage-direction"
+                ref={(node) => {
+                  registerField('percentage-direction', node);
+                }}
                 value={header.letterPercentageDirection}
                 onChange={(event) => {
                   updateHeader(
@@ -548,12 +747,23 @@ export function ReviewLoa({
                   );
                 }}
                 required
+                aria-invalid={fieldErrors['percentage-direction'] !== undefined}
+                aria-describedby={
+                  fieldErrors['percentage-direction'] !== undefined
+                    ? 'percentage-direction-error'
+                    : undefined
+                }
               >
                 <option value="">Choose…</option>
                 <option value="below">Below</option>
                 <option value="at_par">At par</option>
                 <option value="above">Above</option>
               </select>
+              {fieldErrors['percentage-direction'] !== undefined && (
+                <p className="form-error" id="percentage-direction-error">
+                  {fieldErrors['percentage-direction']}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -603,12 +813,26 @@ export function ReviewLoa({
                 type="number"
                 min={1}
                 max={180}
+                ref={(node) => {
+                  registerField('pbg-submission-days', node);
+                }}
                 value={pbg.submissionDays}
                 onChange={(event) => {
                   updatePbg('submissionDays', event.target.value);
                 }}
                 required
+                aria-invalid={fieldErrors['pbg-submission-days'] !== undefined}
+                aria-describedby={
+                  fieldErrors['pbg-submission-days'] !== undefined
+                    ? 'pbg-submission-days-error'
+                    : undefined
+                }
               />
+              {fieldErrors['pbg-submission-days'] !== undefined && (
+                <p className="form-error" id="pbg-submission-days-error">
+                  {fieldErrors['pbg-submission-days']}
+                </p>
+              )}
             </div>
             <div className="field">
               <label htmlFor="pbg-extension-days">Extension window (days)</label>
@@ -799,6 +1023,21 @@ export function ReviewLoa({
                     </tr>
                   ))}
               </tbody>
+              {/* The subtotal belongs in the foot, where a table's summary
+                  is announced. It is a reconciliation aid for the reviewer's
+                  eye only — the server recomputes and stores every amount. */}
+              <tfoot>
+                <tr>
+                  <th scope="row" colSpan={4}>
+                    Schedule {scheduleId} subtotal
+                  </th>
+                  <td colSpan={3} data-testid={`schedule-subtotal-${scheduleId}`}>
+                    <strong>
+                      {scheduleSubtotals.get(scheduleId) ?? 'Not yet available'}
+                    </strong>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         ))}
@@ -815,6 +1054,9 @@ export function ReviewLoa({
             <label htmlFor="add-row-schedule">Schedule for the new row</label>
             <input
               id="add-row-schedule"
+              ref={(node) => {
+                registerField('add-row-schedule', node);
+              }}
               value={addSchedule}
               onChange={(event) => {
                 setAddSchedule(event.target.value);

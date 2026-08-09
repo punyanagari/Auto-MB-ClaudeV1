@@ -316,6 +316,168 @@ describe('IssueChallanEditor', () => {
     expect(api.createIssueChallan).not.toHaveBeenCalled();
   });
 
+  it('keeps the surviving manual lines intact when an earlier line is removed', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    const descriptions = ['Cable ties', 'Gland kits', 'Ferrules'];
+    for (const [index, description] of descriptions.entries()) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add manual line' }));
+      fireEvent.change(
+        screen.getByLabelText(`Description for manual line ${String(index + 1)}`),
+        { target: { value: description } },
+      );
+    }
+    const third = screen.getByLabelText<HTMLInputElement>(
+      'Description for manual line 3',
+    );
+    third.focus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove manual line 1' }));
+
+    // Removing a line removes THAT line: the rows below keep their values
+    // and, because they keep their DOM identity, the box being typed in
+    // keeps focus even though its visible ordinal moved up.
+    expect(screen.queryByLabelText('Description for manual line 3')).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Description for manual line 1').value,
+    ).toBe('Gland kits');
+    const survivor = screen.getByLabelText<HTMLInputElement>(
+      'Description for manual line 2',
+    );
+    expect(survivor.value).toBe('Ferrules');
+    expect(document.activeElement).toBe(survivor);
+    expect(survivor).toBe(third);
+  });
+
+  it('binds an incomplete manual line to its own fields and focuses the first', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createIssueChallan: vi.fn().mockResolvedValue(issueChallanDetail()),
+    });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    // A quantity with no description and no unit is what the server rejects.
+    fireEvent.click(screen.getByRole('button', { name: 'Add manual line' }));
+    fireEvent.change(screen.getByLabelText('Quantity for manual line 1'), {
+      target: { value: '12' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+    const description = screen.getByLabelText('Description for manual line 1');
+    const unit = screen.getByLabelText('Unit for manual line 1');
+    expect(description.getAttribute('aria-invalid')).toBe('true');
+    expect(unit.getAttribute('aria-invalid')).toBe('true');
+    const descriptionMessage = screen.getByText(
+      'Describe the material in at least 3 characters.',
+    );
+    expect(description.getAttribute('aria-describedby')).toBe(descriptionMessage.id);
+    // Per-field messages stay silent; the summary carries the announcement.
+    expect(descriptionMessage.getAttribute('role')).toBeNull();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'at least 3 characters',
+    );
+    expect(document.activeElement).toBe(description);
+
+    // Completing the line clears the block on the next attempt.
+    fireEvent.change(description, { target: { value: 'Cable ties' } });
+    fireEvent.change(unit, { target: { value: 'Pkt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(api.createIssueChallan).toHaveBeenCalled();
+    });
+    expect(
+      screen.queryByText('Describe the material in at least 3 characters.'),
+    ).toBeNull();
+  });
+
+  it('focuses the first quantity box when nothing has been entered', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'at least one item',
+    );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText('Quantity of A/1 on this Issue Challan'),
+    );
+  });
+
+  it('confirms before discarding an edited draft and leaves a pristine one at once', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    const onCancel = vi.fn();
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+
+    // Nothing typed yet: Cancel leaves without asking.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    const discard = screen.getByRole('button', { name: 'Discard and leave' });
+    expect(document.activeElement).toBe(discard);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('button', { name: 'Discard and leave' })).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this Issue Challan')
+        .value,
+    ).toBe('2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
   it('routes to the existing draft on a DRAFT_EXISTS conflict', async () => {
     const existingId = 'bbbb4444-4444-4444-8444-444444444444';
     const api = stubApi({

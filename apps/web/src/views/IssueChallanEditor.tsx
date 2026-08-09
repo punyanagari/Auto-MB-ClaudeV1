@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
   IssueChallanLineInput,
   IssueChallanMovementType,
@@ -18,6 +18,12 @@ interface IssueChallanEditorProps {
 }
 
 interface ManualLine {
+  /** Row identity, stable across edits and removals. Keying the rendered
+   * rows by array index makes React reuse a removed row's DOM, so values,
+   * focus, and labels slide into the wrong line — ReviewLoa keys its item
+   * drafts the same way. Lines loaded from a draft reuse the stored line
+   * id; lines added here take a per-editor sequence. */
+  readonly key: string;
   description: string;
   unit: string;
   quantity: string;
@@ -34,7 +40,42 @@ interface EditorState {
   manualLines: ManualLine[];
 }
 
-const EMPTY_MANUAL_LINE: ManualLine = { description: '', unit: '', quantity: '' };
+/** Quantities stay decimal strings the whole way to the server, which
+ * stores numeric(18,3) and rejects anything not greater than zero. Both
+ * tests read the string: once the shape is fixed, "greater than zero" is
+ * exactly "carries a non-zero digit", so no quantity is ever parsed into a
+ * float. The shape is spelled as two branches rather than an optional
+ * fraction group to keep it free of nested quantifiers. */
+const QUANTITY_PATTERN = /^(?:0|[1-9]\d*)$|^(?:0|[1-9]\d*)\.\d{1,3}$/;
+const NONZERO_DIGIT = /[1-9]/;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function emptyManualLine(key: string): ManualLine {
+  return { key, description: '', unit: '', quantity: '' };
+}
+
+/** What a save would send, flattened, so Cancel can tell an edited form
+ * from a pristine one. An emptied box and stray whitespace are not edits
+ * worth interrupting anyone over. */
+function comparableContent(state: EditorState): string {
+  return JSON.stringify({
+    challanDate: state.challanDate,
+    movementType: state.movementType,
+    issuedToName: state.issuedToName.trim(),
+    issuedToRole: state.issuedToRole.trim(),
+    location: state.location.trim(),
+    remarks: state.remarks.trim(),
+    quantities: Object.entries(state.quantities)
+      .filter(([, quantity]) => quantity.trim().length > 0)
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([workItemId, quantity]) => [workItemId, quantity.trim()]),
+    manualLines: state.manualLines
+      // save() discards a line the operator never typed into, so an empty
+      // row added and left alone is not an edit either.
+      .map((line) => [line.description.trim(), line.unit.trim(), line.quantity.trim()])
+      .filter((line) => line.some((value) => value.length > 0)),
+  });
+}
 
 export function IssueChallanEditor({
   api,
@@ -46,14 +87,23 @@ export function IssueChallanEditor({
 }: IssueChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
+  /** The draft exactly as it loaded; Cancel compares against it. */
+  const [loadedState, setLoadedState] = useState<EditorState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
+  const manualSequence = useRef(0);
+  const fieldRefs = useRef(new Map<string, HTMLElement>());
+  const discardRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     setBalance(null);
     setState(null);
+    setLoadedState(null);
     setLoadError(null);
     Promise.all([
       api.workBalance(organisationId, workId),
@@ -71,13 +121,14 @@ export function IssueChallanEditor({
             quantities[line.workItemId] = line.quantity;
           } else {
             manualLines.push({
+              key: line.id,
               description: line.description,
               unit: line.unit,
               quantity: line.quantity,
             });
           }
         }
-        setState({
+        const loaded: EditorState = {
           challanDate:
             existing?.issueChallan.challanDate ?? new Date().toISOString().slice(0, 10),
           movementType: existing?.issueChallan.movementType ?? 'issue',
@@ -87,7 +138,9 @@ export function IssueChallanEditor({
           remarks: existing?.issueChallan.remarks ?? '',
           quantities,
           manualLines,
-        });
+        };
+        setState(loaded);
+        setLoadedState(loaded);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -102,27 +155,138 @@ export function IssueChallanEditor({
     };
   }, [api, organisationId, workId, challanId]);
 
+  // The confirmation takes over the decision the Cancel button was about to
+  // make, so focus moves into it rather than leaving a keyboard user parked
+  // on a button whose meaning just changed.
+  useEffect(() => {
+    if (!confirmingDiscard) {
+      // Declining unmounts the button that held focus, so hand it back to
+      // Cancel rather than dropping the operator at the top of the document.
+      cancelRef.current?.focus();
+      return;
+    }
+    discardRef.current?.focus();
+  }, [confirmingDiscard]);
+
+  function registerField(field: string, node: HTMLElement | null) {
+    if (node === null) {
+      fieldRefs.current.delete(field);
+      return;
+    }
+    fieldRefs.current.set(field, node);
+  }
+
+  /** Moves focus onto the control that has to change. The form-level
+   * role="alert" announces what went wrong; it says nothing about where a
+   * keyboard user has to go to fix it. */
+  function focusField(field: string) {
+    fieldRefs.current.get(field)?.focus();
+  }
+
+  function updateManualLine(key: string, patch: Partial<ManualLine>) {
+    setState((current) =>
+      current === null
+        ? null
+        : {
+            ...current,
+            manualLines: current.manualLines.map((line) =>
+              line.key === key ? { ...line, ...patch } : line,
+            ),
+          },
+    );
+  }
+
+  function removeManualLine(key: string) {
+    setState((current) =>
+      current === null
+        ? null
+        : {
+            ...current,
+            manualLines: current.manualLines.filter((line) => line.key !== key),
+          },
+    );
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (state === null) return;
+    if (state === null || balance === null) return;
     const itemLines: IssueChallanLineInput[] = Object.entries(state.quantities)
       .filter(([, quantity]) => quantity.trim().length > 0)
       .map(([workItemId, quantity]) => ({ workItemId, quantity: quantity.trim() }));
-    const manualLines: IssueChallanLineInput[] = state.manualLines
-      .filter(
-        (line) =>
-          line.description.trim().length > 0 ||
-          line.unit.trim().length > 0 ||
-          line.quantity.trim().length > 0,
-      )
-      .map((line) => ({
-        description: line.description.trim(),
-        unit: line.unit.trim(),
-        quantity: line.quantity.trim(),
-      }));
+    const startedLines = state.manualLines.filter(
+      (line) =>
+        line.description.trim().length > 0 ||
+        line.unit.trim().length > 0 ||
+        line.quantity.trim().length > 0,
+    );
+    // A manual line the user has started must be complete before it leaves:
+    // the server rejects a short description, a missing unit, and a quantity
+    // that is not greater than zero, and a whole-form rejection never says
+    // which box to correct.
+    const nextFieldErrors: Record<string, string> = {};
+    const invalidFields: string[] = [];
+    function flag(field: string, message: string) {
+      nextFieldErrors[field] = message;
+      invalidFields.push(field);
+    }
+    // The date and the recipient were gated by native validation until this
+    // form took the checks over; without them noValidate would let an empty
+    // form reach the server.
+    if (!DATE_ONLY_PATTERN.test(state.challanDate)) {
+      flag('issue-challan-date', 'Enter the challan date.');
+    }
+    if (state.issuedToName.trim().length < 2) {
+      flag(
+        'issued-to-name',
+        'Enter who the material goes to, in at least 2 characters.',
+      );
+    }
+    for (const line of startedLines) {
+      if (line.description.trim().length < 3) {
+        flag(
+          `manual-description-${line.key}`,
+          'Describe the material in at least 3 characters.',
+        );
+      }
+      if (line.unit.trim().length === 0) {
+        flag(`manual-unit-${line.key}`, 'Enter the unit, for example Nos or Pkt.');
+      }
+      const quantity = line.quantity.trim();
+      if (!QUANTITY_PATTERN.test(quantity) || !NONZERO_DIGIT.test(quantity)) {
+        flag(
+          `manual-quantity-${line.key}`,
+          'Enter a quantity greater than zero, with up to three decimals.',
+        );
+      }
+    }
+    setFieldErrors(nextFieldErrors);
+    // Fields are flagged in reading order, so the first one is the first
+    // offender on screen.
+    const firstInvalidField = invalidFields[0];
+    if (firstInvalidField !== undefined) {
+      setSaveError(
+        'Every manual line needs a description of at least 3 characters, a unit, ' +
+          'and a quantity greater than zero.',
+      );
+      focusField(firstInvalidField);
+      return;
+    }
+    const manualLines: IssueChallanLineInput[] = startedLines.map((line) => ({
+      description: line.description.trim(),
+      unit: line.unit.trim(),
+      quantity: line.quantity.trim(),
+    }));
     const lines = [...itemLines, ...manualLines];
     if (lines.length === 0) {
       setSaveError('Enter a quantity for at least one item or add a manual line.');
+      // No single box is wrong here, so focus goes to the first one that can
+      // satisfy the rule.
+      const firstItem = balance.items[0];
+      focusField(
+        firstItem === undefined
+          ? 'add-manual-line'
+          : `quantity-${firstItem.workItemId}`,
+      );
       return;
     }
     const body: SaveIssueChallanRequest = {
@@ -187,6 +351,12 @@ export function IssueChallanEditor({
     );
   }
 
+  // Nothing typed here is stored anywhere until the draft is saved, so
+  // Cancel asks before throwing an edited form away and leaves a pristine
+  // one alone.
+  const edited =
+    loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
+
   return (
     <section className="card card--wide" aria-labelledby="issue-challan-editor-title">
       <h1 id="issue-challan-editor-title" tabIndex={-1}>
@@ -197,7 +367,9 @@ export function IssueChallanEditor({
         Lines may reference awarded items or be entered manually, and quantities are not
         capped by the awarded quantity.
       </p>
-      <form onSubmit={(event) => void save(event)}>
+      {/* noValidate: save() owns every rule, so each failure can name its
+          field, bind a message, and move focus. */}
+      <form noValidate onSubmit={(event) => void save(event)}>
         <div className="field-row">
           <div className="field">
             <label htmlFor="issue-challan-date">Challan date</label>
@@ -302,6 +474,9 @@ export function IssueChallanEditor({
                   <input
                     aria-label={`Quantity of ${item.itemNumber} on this Issue Challan`}
                     inputMode="decimal"
+                    ref={(node) => {
+                      registerField(`quantity-${item.workItemId}`, node);
+                    }}
                     value={state.quantities[item.workItemId] ?? ''}
                     onChange={(event) => {
                       setState({
@@ -324,78 +499,122 @@ export function IssueChallanEditor({
           Manual lines cover material outside the LOA (consumables, tools, loaned
           equipment).
         </p>
-        {state.manualLines.map((line, index) => (
-          <div className="field-row" key={index}>
-            <div className="field">
-              <label htmlFor={`manual-description-${String(index)}`}>
-                Description for manual line {index + 1}
-              </label>
-              <input
-                id={`manual-description-${String(index)}`}
-                value={line.description}
-                minLength={3}
-                onChange={(event) => {
-                  const manualLines = [...state.manualLines];
-                  manualLines[index] = { ...line, description: event.target.value };
-                  setState({ ...state, manualLines });
-                }}
-              />
+        {state.manualLines.map((line, index) => {
+          const descriptionField = `manual-description-${line.key}`;
+          const unitField = `manual-unit-${line.key}`;
+          const quantityField = `manual-quantity-${line.key}`;
+          // The visible ordinal stays positional — it is how a person counts
+          // the rows on screen — while React keys on the line's own identity.
+          const position = index + 1;
+          return (
+            <div className="field-row" key={line.key}>
+              <div className="field">
+                <label htmlFor={descriptionField}>
+                  Description for manual line {position}
+                </label>
+                <input
+                  id={descriptionField}
+                  ref={(node) => {
+                    registerField(descriptionField, node);
+                  }}
+                  value={line.description}
+                  minLength={3}
+                  aria-invalid={fieldErrors[descriptionField] !== undefined}
+                  aria-describedby={
+                    fieldErrors[descriptionField] !== undefined
+                      ? `${descriptionField}-error`
+                      : undefined
+                  }
+                  onChange={(event) => {
+                    updateManualLine(line.key, { description: event.target.value });
+                  }}
+                />
+                {fieldErrors[descriptionField] !== undefined && (
+                  <p className="form-error" id={`${descriptionField}-error`}>
+                    {fieldErrors[descriptionField]}
+                  </p>
+                )}
+              </div>
+              <div className="field">
+                <label htmlFor={unitField}>Unit for manual line {position}</label>
+                <input
+                  id={unitField}
+                  ref={(node) => {
+                    registerField(unitField, node);
+                  }}
+                  value={line.unit}
+                  aria-invalid={fieldErrors[unitField] !== undefined}
+                  aria-describedby={
+                    fieldErrors[unitField] !== undefined
+                      ? `${unitField}-error`
+                      : undefined
+                  }
+                  onChange={(event) => {
+                    updateManualLine(line.key, { unit: event.target.value });
+                  }}
+                />
+                {fieldErrors[unitField] !== undefined && (
+                  <p className="form-error" id={`${unitField}-error`}>
+                    {fieldErrors[unitField]}
+                  </p>
+                )}
+              </div>
+              <div className="field">
+                <label htmlFor={quantityField}>
+                  Quantity for manual line {position}
+                </label>
+                <input
+                  id={quantityField}
+                  ref={(node) => {
+                    registerField(quantityField, node);
+                  }}
+                  inputMode="decimal"
+                  value={line.quantity}
+                  aria-invalid={fieldErrors[quantityField] !== undefined}
+                  aria-describedby={
+                    fieldErrors[quantityField] !== undefined
+                      ? `${quantityField}-error`
+                      : undefined
+                  }
+                  onChange={(event) => {
+                    updateManualLine(line.key, { quantity: event.target.value });
+                  }}
+                />
+                {fieldErrors[quantityField] !== undefined && (
+                  <p className="form-error" id={`${quantityField}-error`}>
+                    {fieldErrors[quantityField]}
+                  </p>
+                )}
+              </div>
+              <div className="field">
+                <button
+                  type="button"
+                  className="button--ghost"
+                  onClick={() => {
+                    removeManualLine(line.key);
+                  }}
+                >
+                  Remove manual line {position}
+                </button>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor={`manual-unit-${String(index)}`}>
-                Unit for manual line {index + 1}
-              </label>
-              <input
-                id={`manual-unit-${String(index)}`}
-                value={line.unit}
-                onChange={(event) => {
-                  const manualLines = [...state.manualLines];
-                  manualLines[index] = { ...line, unit: event.target.value };
-                  setState({ ...state, manualLines });
-                }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor={`manual-quantity-${String(index)}`}>
-                Quantity for manual line {index + 1}
-              </label>
-              <input
-                id={`manual-quantity-${String(index)}`}
-                inputMode="decimal"
-                value={line.quantity}
-                onChange={(event) => {
-                  const manualLines = [...state.manualLines];
-                  manualLines[index] = { ...line, quantity: event.target.value };
-                  setState({ ...state, manualLines });
-                }}
-              />
-            </div>
-            <div className="field">
-              <button
-                type="button"
-                className="button--ghost"
-                onClick={() => {
-                  setState({
-                    ...state,
-                    manualLines: state.manualLines.filter(
-                      (_, candidate) => candidate !== index,
-                    ),
-                  });
-                }}
-              >
-                Remove manual line {index + 1}
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <div className="actions">
           <button
             type="button"
             className="button--ghost"
+            ref={(node) => {
+              registerField('add-manual-line', node);
+            }}
             onClick={() => {
+              manualSequence.current += 1;
               setState({
                 ...state,
-                manualLines: [...state.manualLines, { ...EMPTY_MANUAL_LINE }],
+                manualLines: [
+                  ...state.manualLines,
+                  emptyManualLine(`new-${String(manualSequence.current)}`),
+                ],
               });
             }}
           >
@@ -413,10 +632,45 @@ export function IssueChallanEditor({
           <button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Save draft'}
           </button>
-          <button type="button" className="button--ghost" onClick={onCancel}>
+          <button
+            type="button"
+            className="button--ghost"
+            ref={cancelRef}
+            onClick={() => {
+              if (edited) {
+                setConfirmingDiscard(true);
+                return;
+              }
+              onCancel();
+            }}
+          >
             Cancel
           </button>
         </div>
+
+        {confirmingDiscard && (
+          <div className="flag-panel">
+            <h2>Discard your changes?</h2>
+            <p>
+              Nothing entered here has been saved yet. Leaving now throws away the
+              quantities and manual lines you typed.
+            </p>
+            <div className="actions">
+              <button type="button" ref={discardRef} onClick={onCancel}>
+                Discard and leave
+              </button>
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => {
+                  setConfirmingDiscard(false);
+                }}
+              >
+                Keep editing
+              </button>
+            </div>
+          </div>
+        )}
       </form>
     </section>
   );
