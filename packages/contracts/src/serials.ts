@@ -50,6 +50,11 @@ export const SerialSearchMatchSchema = Type.Object(
     challanStatus: ChallanStatusSchema,
     receiptRecorded: Type.Boolean(),
     installedOn: Type.Union([DateOnlySchema, Type.Null()]),
+    /** Live quantity-level installation record covering this serial
+     * (Milestone 7): id and snapshot location name, null when the serial
+     * is uninstalled or only carries a legacy per-serial date. */
+    installationId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    installationLocation: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
   { additionalProperties: false },
 );

@@ -59,6 +59,20 @@ export const SerialSchema = Type.Object(
     serialNumber: Type.String(),
     installedOn: Type.Union([DateOnlySchema, Type.Null()]),
     installationRemarks: Type.Union([Type.String(), Type.Null()]),
+    /** The delivered-but-uninstalled pool and quantity-level installation
+     * links (Milestone 7). Optional so older fixtures stay valid. */
+    workItemId: Type.Optional(UuidSchema),
+    challanStatus: Type.Optional(
+      Type.Union([
+        Type.Literal('draft'),
+        Type.Literal('issued'),
+        Type.Literal('cancelled'),
+      ]),
+    ),
+    /** Set when a live quantity-level installation record covers this
+     * serial; cancellation clears it along with installedOn. */
+    installationId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    installationLocation: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
   { additionalProperties: false },
 );

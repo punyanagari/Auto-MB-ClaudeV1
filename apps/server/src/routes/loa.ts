@@ -803,6 +803,7 @@ export function registerLoaRoutes(
             effective_unit: string | null;
             amendment_added: boolean;
             requires_serials: boolean;
+            installed_quantity: string;
           }[]
         >`
           select id, schedule_id, item_number, description, unit_code,
@@ -810,7 +811,13 @@ export function registerLoaRoutes(
                  effective_quantity::text as effective_quantity,
                  effective_unit_rate::text as effective_unit_rate,
                  effective_description, effective_unit, amendment_added,
-                 requires_serials
+                 requires_serials,
+                 -- Milestone 7: the authoritative installed quantity —
+                 -- SUM over non-cancelled installation records.
+                 coalesce((
+                   select sum(i.quantity) from installations i
+                   where i.work_item_id = work_items.id and i.status = 'recorded'
+                 ), 0)::text as installed_quantity
           from work_items
           where work_id = ${id} and deleted_at is null
           order by item_number
@@ -838,6 +845,7 @@ export function registerLoaRoutes(
               effectiveUnit: item.effective_unit,
               amendmentAdded: item.amendment_added,
               requiresSerials: item.requires_serials,
+              installedQuantity: item.installed_quantity,
             })),
         }));
         return {

@@ -220,6 +220,8 @@ export function registerSerialRoutes(
             challan_date: string;
             challan_status: SerialSearchMatch['challanStatus'];
             receipt_recorded: boolean;
+            installation_id: string | null;
+            installation_location: string | null;
           }[]
         >`
           select s.id, s.serial_number, s.installed_on::text as installed_on,
@@ -231,11 +233,18 @@ export function registerSerialRoutes(
                  exists (
                    select 1 from challan_receipts r
                    where r.delivery_challan_id = dc.id
-                 ) as receipt_recorded
+                 ) as receipt_recorded,
+                 inst.id as installation_id,
+                 inst.location_name as installation_location
           from challan_item_serials s
           join works w on w.id = s.work_id
           join delivery_challans dc on dc.id = s.delivery_challan_id
           join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+          -- Milestone 7: surface the live quantity-level installation
+          -- record (id + snapshot location) in the tenant-wide trace.
+          left join installation_serials att
+            on att.challan_item_serial_id = s.id and att.released_at is null
+          left join installations inst on inst.id = att.installation_id
           where s.serial_number ilike ${pattern}
             and (${full} or exists (
               select 1 from work_assignments wa
@@ -259,6 +268,8 @@ export function registerSerialRoutes(
             challanStatus: row.challan_status,
             receiptRecorded: row.receipt_recorded,
             installedOn: row.installed_on,
+            installationId: row.installation_id,
+            installationLocation: row.installation_location,
           })),
           truncated,
         };
