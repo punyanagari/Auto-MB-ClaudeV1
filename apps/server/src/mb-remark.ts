@@ -101,6 +101,7 @@ interface ScaledDecimal {
   readonly scale: number;
 }
 
+// eslint-disable-next-line security/detect-unsafe-regex -- fully anchored, two adjacent digit runs with no nested quantifier; linear on all inputs
 const DECIMAL_RE = /^(-?)(\d+)(?:\.(\d+))?$/;
 
 /**
