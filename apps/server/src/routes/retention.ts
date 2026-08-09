@@ -144,6 +144,7 @@ interface BillRow {
   status: Bill['status'];
   lines_snapshot: unknown;
   total_amount: string;
+  mb_id: string | null;
   created_at: Date;
   submitted_at: Date | null;
   paid_at: Date | null;
@@ -160,6 +161,7 @@ function toBill(row: BillRow): Bill {
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
     paidAt: row.paid_at?.toISOString() ?? null,
+    mbId: row.mb_id,
   };
 }
 
@@ -901,8 +903,8 @@ export function registerRetentionRoutes(
           await assertWorkAccess(tx, user.id, workId);
           return tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
-                 total_amount::text as total_amount, created_at, submitted_at,
-                 paid_at
+                 total_amount::text as total_amount, mb_id, created_at,
+                 submitted_at, paid_at
           from bills where work_id = ${workId}
           order by bill_number desc
         `;
@@ -912,125 +914,13 @@ export function registerRetentionRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/bills',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 201: BillSchema, ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const bill = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Preparing a bill is a financial act: issue authority required.
-          await requireAuthority(tx, user.id, 'issue');
-          await assertWorkAccess(tx, user.id, workId);
-
-          // The counter row lock serialises concurrent bill preparation for
-          // the Work (numbering AND the unbilled-set selection).
-          const [counter] = await tx<{ next_value: number }[]>`
-            insert into bill_counters (organisation_id, work_id)
-            values (${organisationId}, ${workId})
-            on conflict (organisation_id, work_id)
-            do update set next_value = bill_counters.next_value + 1,
-                          updated_at = now()
-            returning next_value
-          `;
-          if (!counter) throw new Error('bill counter upsert returned no row');
-
-          const unbilled = await tx<
-            {
-              id: string;
-              work_item_id: string;
-              item_number: string;
-              unit_code: string;
-              effective_rate: string;
-              measured: string;
-            }[]
-          >`
-            select mb.id, mb.work_item_id, wi.item_number, wi.unit_code,
-                   wi.effective_rate::text as effective_rate,
-                   mb.measured_quantity::text as measured
-            from mb_entries mb
-            join work_items wi on wi.id = mb.work_item_id
-            where mb.work_id = ${workId} and mb.bill_id is null
-            for update of mb
-          `;
-          if (unbilled.length === 0) {
-            throw httpError(
-              409,
-              'NO_UNBILLED_MEASUREMENTS',
-              'Every Measurement Book entry for this Work is already billed.',
-            );
-          }
-
-          // Aggregate over the EXACT locked ID set — never a fresh
-          // bill_id-is-null scan. A measurement committed after the lock
-          // stays unbilled and lands on the next bill; it must not be
-          // stamped into a snapshot that never counted it.
-          const lockedIds = unbilled.map((entry) => entry.id);
-          const [totals] = await tx<{ lines: unknown; total: string }[]>`
-            select jsonb_agg(line order by item_number) as lines,
-                   sum(amount)::numeric(18,2)::text as total
-            from (
-              select wi.item_number,
-                     jsonb_build_object(
-                       'workItemId', wi.id,
-                       'itemNumber', wi.item_number,
-                       'unitCode', wi.unit_code,
-                       'quantity', sum(mb.measured_quantity)::text,
-                       'rate', wi.effective_rate::text,
-                       'amount', (sum(mb.measured_quantity) * wi.effective_rate)::numeric(18,2)::text
-                     ) as line,
-                     (sum(mb.measured_quantity) * wi.effective_rate)::numeric(18,2) as amount
-              from mb_entries mb
-              join work_items wi on wi.id = mb.work_item_id
-              where mb.id = any(${lockedIds}::uuid[])
-              group by wi.id
-            ) grouped
-          `;
-          if (!totals) throw new Error('bill aggregation returned no row');
-
-          const [row] = await tx<BillRow[]>`
-            insert into bills (
-              organisation_id, work_id, bill_number, lines_snapshot,
-              total_amount, prepared_by_user_id
-            )
-            values (
-              ${organisationId}, ${workId}, ${counter.next_value},
-              ${jsonb(tx, parseJsonbColumn(totals.lines))}, ${totals.total},
-              ${user.id}
-            )
-            returning id, work_id, bill_number, status, lines_snapshot,
-                      total_amount::text as total_amount, created_at,
-                      submitted_at, paid_at
-          `;
-          if (!row) throw new Error('bill insert returned no row');
-
-          await tx`
-            update mb_entries set bill_id = ${row.id}
-            where id = any(${lockedIds}::uuid[])
-          `;
-          await audit(tx, organisationId, user.id, 'bill.prepared', 'bills', row.id, {
-            billNumber: row.bill_number,
-            totalAmount: totals.total,
-            entryCount: unbilled.length,
-          });
-          return toBill(row);
-        },
-      );
-      return reply.status(201).send(bill);
-    },
-  );
+  // The Milestone 5 sweep endpoint (POST /api/works/:id/bills — every
+  // unbilled mb_entry at 100% of measured value) is REMOVED (ADR-0006
+  // decision 4): bills are now prepared from a finalized Measurement
+  // Book (POST /api/measurement-books/:id/bill in
+  // measurement-books.ts), whose snapshot prices each stage through the
+  // payment matrix. mb_entries stay recordable site measurement
+  // evidence; they are no longer a billing input.
 
   app.post(
     '/api/bills/:id/status',
@@ -1072,7 +962,7 @@ export function registerRetentionRoutes(
               paid_at = case when ${body.status} = 'paid' then now() else paid_at end
           where id = ${id}
           returning id, work_id, bill_number, status, lines_snapshot,
-                    total_amount::text as total_amount, created_at,
+                    total_amount::text as total_amount, mb_id, created_at,
                     submitted_at, paid_at
         `;
         if (!row) throw new Error('bill status update returned no row');

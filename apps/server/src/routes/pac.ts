@@ -27,6 +27,7 @@ import {
   resolvePaymentPercentages,
   type PaymentMatrixRowData,
 } from '../payment-matrix.js';
+import { assertSourceNotBilled } from './measurement-books.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -635,10 +636,10 @@ export function registerPacRoutes(
             'This PAC certificate is already cancelled.',
           );
         }
-        // R19-SEAM (Milestone 8 phase 2): once the stage-wise Measurement
-        // Book exists, a PAC billed in a live MB must refuse cancellation
-        // here (billed sources cannot be cancelled while their MB lives).
-        // Phase 1 has no MB sources yet, so nothing blocks.
+        // R19: a PAC certificate billed in a live Measurement Book
+        // cannot be cancelled — the MB must be cancelled first (the
+        // 0024 database guard backstops this against every writer).
+        await assertSourceNotBilled(tx, 'pac_certificate', id);
         await tx`
           update pac_certificates
           set status = 'cancelled', cancellation_note = ${body.note},

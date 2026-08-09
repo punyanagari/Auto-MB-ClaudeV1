@@ -234,9 +234,14 @@ afterAll(async () => {
           'audit_events',
           'challan_item_serials',
           'challan_receipts',
+          'mb_sources',
+          'measurement_book_lines',
+          'measurement_book_counters',
           'mb_entries',
           'bills',
+          'measurement_books',
           'bill_counters',
+          'payment_matrices',
           'work_instruments',
           'delivery_challan_items',
           'delivery_challan_counters',
@@ -463,10 +468,63 @@ describe('Measurement Book and the first partial-billing cycle', () => {
     expect(second.statusCode, second.body).toBe(201);
   });
 
-  it('prepares a bill from unbilled entries under issue authority, gaplessly numbered', async () => {
-    const denied = await authed(clerk, {
+  it('prepares a bill from a finalized Measurement Book under issue authority', async () => {
+    // The old Milestone 5 sweep (POST /api/works/:id/bills) is gone.
+    const sweepGone = await authed(owner, {
       method: 'POST',
       url: `/api/works/${workId}/bills`,
+      organisationId,
+    });
+    expect(sweepGone.statusCode).toBe(404);
+
+    // Stage percentages resolve through the Work's payment matrix;
+    // seeded directly — matrix rows are configuration, not documents.
+    await admin`
+      insert into payment_matrices (
+        organisation_id, work_id, category, pct_supply, pct_installation,
+        pct_pac, pct_final_bill, created_by_user_id
+      )
+      values (${organisationId}, ${workId}, 'UNCATEGORISED', 80.00, 10.00,
+              0.00, 10.00, ${ownerUserId})
+    `;
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const mbId = created.json<{ book: { id: string } }>().book.id;
+
+    const withSources = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${mbId}/sources`,
+      organisationId,
+      payload: {
+        sources: [{ sourceType: 'delivery_challan', sourceId: challanId }],
+      },
+    });
+    expect(withSources.statusCode, withSources.body).toBe(200);
+    // Preview: A 3 x 100.00 x 80% = 240.00; B 1.5 x 250.50 x 80% =
+    // 300.60 — line-rounded then summed (R13).
+    expect(withSources.json<{ previewTotal: string }>().previewTotal).toBe('540.60');
+
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mbId}/finalize`,
+      organisationId,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const finalizedBook = finalized.json<{
+      book: { mbNumber: string | null; totalAmount: string | null };
+    }>().book;
+    expect(finalizedBook.mbNumber).toBe(`RTW-${runId.toUpperCase()}-MB-01`);
+    expect(finalizedBook.totalAmount).toBe('540.60');
+
+    // Preparing the bill is a financial act: issue authority required.
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: `/api/measurement-books/${mbId}/bill`,
       organisationId,
     });
     expect(denied.statusCode).toBe(403);
@@ -474,52 +532,47 @@ describe('Measurement Book and the first partial-billing cycle', () => {
 
     const prepared = await authed(owner, {
       method: 'POST',
-      url: `/api/works/${workId}/bills`,
+      url: `/api/measurement-books/${mbId}/bill`,
       organisationId,
     });
     expect(prepared.statusCode, prepared.body).toBe(201);
     const bill = prepared.json<Bill>();
     expect(bill.billNumber).toBe(1);
     expect(bill.status).toBe('prepared');
-    expect(bill.totalAmount).toBe('300.00');
+    expect(bill.totalAmount).toBe('540.60');
+    expect(bill.mbId).toBe(mbId);
     const lines = bill.linesSnapshot as {
       itemNumber: string;
-      quantity: string;
-      amount: string;
+      lineTotal: string;
+      remark: string;
     }[];
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ itemNumber: 'A/1', amount: '300.00' });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ itemNumber: 'A/1', lineTotal: '240.00' });
+    expect(lines[1]).toMatchObject({ itemNumber: 'A/2', lineTotal: '300.60' });
 
+    // 1:1 — a second bill from the same MB is refused.
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mbId}/bill`,
+      organisationId,
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toMatchObject({ code: 'MB_ALREADY_BILLED' });
+
+    // Site measurement evidence stays independent: mb_entries are no
+    // longer stamped into bills (ADR-0006 decision 4).
     const entries = await authed(owner, {
       method: 'GET',
       url: `/api/works/${workId}/mb-entries`,
       organisationId,
     });
-    const allBilled = entries
+    const allUnstamped = entries
       .json<{ entries: MbEntry[] }>()
-      .entries.every((entry) => entry.billId === bill.id);
-    expect(allBilled).toBe(true);
-
-    const empty = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/bills`,
-      organisationId,
-    });
-    expect(empty.statusCode).toBe(409);
-    expect(empty.json()).toMatchObject({ code: 'NO_UNBILLED_MEASUREMENTS' });
+      .entries.every((entry) => entry.billId === null);
+    expect(allUnstamped).toBe(true);
   });
 
-  it('freezes billed entries and moves bill status forward only', async () => {
-    const [entry] = await admin<{ id: string }[]>`
-      select id from mb_entries
-      where organisation_id = ${organisationId} and bill_id is not null
-      limit 1
-    `;
-    expect(entry).toBeDefined();
-    await expect(
-      admin`update mb_entries set measured_quantity = 99 where id = ${entry?.id ?? ''}`,
-    ).rejects.toThrowError(/billed Measurement Book entries are immutable/);
-
+  it('moves bill status forward only', async () => {
     const [bill] = await admin<{ id: string }[]>`
       select id from bills where organisation_id = ${organisationId} limit 1
     `;
@@ -559,6 +612,9 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       'instrument.created',
       'instrument.updated',
       'mb.recorded',
+      'measurement_book.created',
+      'measurement_book.sources_updated',
+      'measurement_book.finalized',
       'bill.prepared',
       'bill.submitted',
       'bill.paid',

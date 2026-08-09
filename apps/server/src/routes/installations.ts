@@ -16,6 +16,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireEvidenceRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { assertSourceNotBilled } from './measurement-books.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
@@ -558,6 +559,10 @@ export function registerInstallationRoutes(
             'This installation record is already cancelled.',
           );
         }
+        // R19: an installation billed in a live Measurement Book cannot
+        // be cancelled — the MB must be cancelled first (the 0024
+        // database guard backstops this against every writer).
+        await assertSourceNotBilled(tx, 'installation', id);
         await tx`
           update installations
           set status = 'cancelled', cancellation_note = ${body.note},

@@ -59,6 +59,10 @@ const TENANT_TABLES = [
   'payment_matrices',
   'pac_certificates',
   'pac_certificate_items',
+  'measurement_books',
+  'measurement_book_lines',
+  'mb_sources',
+  'measurement_book_counters',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -102,6 +106,10 @@ const DELETE_REVOKED_TABLES = [
   // PAC certificates cancel with a note; their lines are frozen (0022).
   'pac_certificates',
   'pac_certificate_items',
+  // Measurement Book snapshots are immutable legal records; the counter
+  // is numbering state (0024).
+  'measurement_book_lines',
+  'measurement_book_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -119,6 +127,10 @@ const DELETE_ALLOWED_TABLES = [
   // Payment matrix rows are per-Work configuration, not issued
   // documents; finalised MBs snapshot their percentages (0021).
   'payment_matrices',
+  // Measurement Book drafts (and their source claims) delete, guarded
+  // by trigger (0024).
+  'measurement_books',
+  'mb_sources',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -486,6 +498,55 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${pacCertificate.id}, ${work.id},
               ${workItem.id}, '1.000')
+    `;
+
+    // Milestone 8 phase 2 Measurement Book tables: a draft claiming the
+    // recorded installation, one snapshot line written while draft (the
+    // line guard requires it), then the finalize-shaped update.
+    const [measurementBook] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2026-02-05', ${userId})
+      returning id
+    `;
+    if (!measurementBook)
+      throw new Error('seed measurement book insert returned no row');
+    await tx`
+      insert into mb_sources (
+        organisation_id, measurement_book_id, work_id, source_type, source_id
+      )
+      values (${organisationId}, ${measurementBook.id}, ${work.id},
+              'installation', ${installation.id})
+    `;
+    await tx`
+      insert into measurement_book_lines (
+        organisation_id, measurement_book_id, work_id, work_item_id,
+        item_number, description, unit_code, payment_category,
+        resolved_category, pct_supply, pct_installation, pct_pac,
+        pct_final_bill, effective_rate, delta_installed, prior_supplied,
+        amount_supply, amount_installation, amount_pac, amount_final_bill,
+        line_total, remark
+      )
+      values (
+        ${organisationId}, ${measurementBook.id}, ${work.id}, ${workItem.id},
+        '1', 'Integration test item', 'Nos', 'SUPPLY', 'SUPPLY',
+        80.00, 10.00, 0.00, 10.00, '100.00', '1.000', '1.000',
+        '0.00', '10.00', '0.00', '0.00', '10.00',
+        'Prepaid 80% for 1 Nos. Now to pay 10% for 1 Nos.'
+      )
+    `;
+    await tx`
+      update measurement_books
+      set status = 'finalized', mb_number = ${`${workCode}-MB-01`},
+          sequence_number = 1, total_amount = '10.00',
+          remark_template_version = 'mb-remark-v1',
+          finalized_by_user_id = ${userId}, finalized_at = now()
+      where id = ${measurementBook.id}
+    `;
+    await tx`
+      insert into measurement_book_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 1)
     `;
 
     return {

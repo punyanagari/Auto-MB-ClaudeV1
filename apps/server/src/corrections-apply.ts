@@ -22,6 +22,7 @@ import type { ChallanSnapshot } from './challan-html.js';
 import { draftConflictError } from './draft-conflict.js';
 import { httpError } from './http.js';
 import { parseJsonbColumn } from './jsonb-column.js';
+import { assertSourceNotBilled } from './routes/measurement-books.js';
 import {
   assertChallanDate,
   writeLines as writeChallanLines,
@@ -149,6 +150,11 @@ export async function applyChallanCancelReplace(
       'A receipt, serials, or measurements were recorded against this challan after the correction was filed; it can no longer be cancelled — use a correction notice.',
     );
   }
+  // R19 (app half): a challan billed in a live Measurement Book cannot
+  // be cancel-and-replaced — the MB must be cancelled first. The 0024
+  // database guard backstops this; the request stays pending exactly
+  // like the evidence conflict above.
+  await assertSourceNotBilled(tx, 'delivery_challan', challan.id);
   // One draft per Work: the replacement becomes THE draft. A conflict
   // releases the claim back to pending, naming the occupying draft so
   // the client can open it.

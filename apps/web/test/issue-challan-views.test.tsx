@@ -69,7 +69,6 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listMbEntries: vi.fn().mockResolvedValue([]),
     recordMbEntry: vi.fn(),
     listBills: vi.fn().mockResolvedValue([]),
-    prepareBill: vi.fn(),
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
@@ -141,6 +140,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelPacCertificate: vi.fn(),
     uploadPacCertificateDocument: vi.fn(),
     downloadPacCertificateDocument: vi.fn(),
+    listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [] }),
+    createWorkMeasurementBook: vi.fn(),
+    getMeasurementBook: vi.fn(),
+    setMeasurementBookSources: vi.fn(),
+    finalizeMeasurementBook: vi.fn(),
+    cancelMeasurementBook: vi.fn(),
+    deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),
+    prepareBillFromMeasurementBook: vi.fn(),
     ...overrides,
   };
 }

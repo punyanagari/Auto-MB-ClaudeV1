@@ -263,9 +263,14 @@ afterAll(async () => {
         for (const table of [
           'audit_events',
           'work_assignments',
+          'mb_sources',
+          'measurement_book_lines',
+          'measurement_book_counters',
           'mb_entries',
           'bills',
+          'measurement_books',
           'bill_counters',
+          'payment_matrices',
           'challan_item_serials',
           'challan_receipts',
           'work_instruments',
@@ -485,9 +490,43 @@ describe('per-Work timeline read API', () => {
     });
     expect(measured.statusCode, measured.body).toBe(201);
 
+    // Stage-wise billing (Milestone 8 phase 2): matrix row seeded
+    // directly (no audit event), then draft MB → claim the issued
+    // challan → finalize → prepare the bill FROM the finalized MB.
+    await admin`
+      insert into payment_matrices (
+        organisation_id, work_id, category, pct_supply, pct_installation,
+        pct_pac, pct_final_bill, created_by_user_id
+      )
+      values (${organisationId}, ${workAId}, 'UNCATEGORISED', 80.00, 10.00,
+              0.00, 10.00, ${ownerUserId})
+    `;
+    const mbCreated = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workAId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-05' },
+    });
+    expect(mbCreated.statusCode, mbCreated.body).toBe(201);
+    const mbId = mbCreated.json<{ book: { id: string } }>().book.id;
+    const sourcesSet = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${mbId}/sources`,
+      organisationId,
+      payload: {
+        sources: [{ sourceType: 'delivery_challan', sourceId: challanId }],
+      },
+    });
+    expect(sourcesSet.statusCode, sourcesSet.body).toBe(200);
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mbId}/finalize`,
+      organisationId,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
     const bill = await authed(owner, {
       method: 'POST',
-      url: `/api/works/${workAId}/bills`,
+      url: `/api/measurement-books/${mbId}/bill`,
       organisationId,
     });
     expect(bill.statusCode, bill.body).toBe(201);
@@ -521,6 +560,9 @@ describe('per-Work timeline read API', () => {
     expect(allActions).toEqual([
       'bill.submitted',
       'bill.prepared',
+      'measurement_book.finalized',
+      'measurement_book.sources_updated',
+      'measurement_book.created',
       'mb.recorded',
       'serials.recorded',
       'challan.received',

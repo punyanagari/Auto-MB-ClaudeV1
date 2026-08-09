@@ -30,6 +30,7 @@ import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
+import { assertSourceNotBilled } from './measurement-books.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -954,6 +955,10 @@ export function registerChallanRoutes(
             'This challan has a recorded receipt, serials, or measurements and can no longer be cancelled.',
           );
         }
+        // R19: a challan billed in a live Measurement Book cannot be
+        // cancelled — the MB must be cancelled first (the 0024 database
+        // guard backstops this against every writer).
+        await assertSourceNotBilled(tx, 'delivery_challan', id);
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},
