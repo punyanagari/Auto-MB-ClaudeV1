@@ -30,6 +30,51 @@ export function parseChallanNumber(challanNo: string): ParsedChallanNumber | nul
   return { rawPrefix, prefix, sequence };
 }
 
+export interface ParsedSuffixedChallanNumber {
+  /** Series prefix exactly as printed, minus the separator+core+suffix. */
+  readonly rawPrefix: string;
+  /** Uppercased prefix for the target `prefix` column (R1 charset). */
+  readonly prefix: string;
+  /** The numeric CORE the printed number carries ('...DC-15A' -> 15).
+   * NOT a series position by itself: the importer assigns the real
+   * sequence (the core when free, else above the series head). */
+  readonly numericCore: number;
+  /** The non-numeric tail after the core, exactly as printed ('A', '-T'). */
+  readonly suffix: string;
+}
+
+// Greedy prefix so the LAST integer run is the core ('PL-236-BB-DC-15A'
+// splits at 15, never at 236).
+const SUFFIXED_INTEGER = /^(.*)[-/ ]0*(\d+)(-?[A-Za-z][A-Za-z0-9-]*)\s*$/;
+
+/** Parses challan numbers whose trailing integer carries a non-numeric
+ * tail — 'PL-236-BB-DC-15A', 'PL-242-BB-DC-36-T', 'PL-PL-243-SUR-DC-38A'
+ * (approved change: such challans import with the printed number
+ * preserved verbatim and an importer-assigned sequence). Returns null
+ * when the number has no integer+tail shape or the derived prefix
+ * cannot satisfy the target prefix CHECK. Numbers ending in a plain
+ * integer belong to parseChallanNumber, which callers try first. */
+export function parseSuffixedChallanNumber(
+  challanNo: string,
+): ParsedSuffixedChallanNumber | null {
+  const trimmed = challanNo.trim();
+  // A number ending in a plain integer is NOT suffixed — without this
+  // guard the greedy split would backtrack 'PL-221-BSL-DC-46' into
+  // prefix 'PL', core 221, tail '-BSL-DC-46'.
+  if (TRAILING_INTEGER.test(trimmed)) return null;
+  const match = SUFFIXED_INTEGER.exec(trimmed);
+  if (!match) return null;
+  const rawPrefix = match[1] ?? '';
+  const prefix = rawPrefix.toUpperCase();
+  const numericCore = Number(match[2]);
+  const suffix = match[3] ?? '';
+  if (!Number.isSafeInteger(numericCore) || numericCore < 1) return null;
+  if (prefix.length < 1 || prefix.length > 25 || !PREFIX_SHAPE.test(prefix)) {
+    return null;
+  }
+  return { rawPrefix, prefix, numericCore, suffix };
+}
+
 const WORK_CODE_SHAPE = /^[A-Z0-9][A-Z0-9_/-]*$/;
 
 /** R1: the work code's canonical form is uppercase; 'Pl-244' -> 'PL-244'.

@@ -31,18 +31,39 @@ export interface QuantizationDrift {
   readonly relativeDelta: number;
 }
 
+export interface SuffixedSequenceAssignment {
+  /** The printed number, preserved verbatim on the imported challan. */
+  readonly challanNo: string;
+  /** The sequence_number the importer assigned. */
+  readonly assignedSequence: number;
+  /** Why that sequence: the parsed numeric core when it was free in the
+   * Work's series, else the next integer above the series head. */
+  readonly reason: string;
+}
+
 export interface ChallanSeriesReport {
   readonly workCode: string;
   readonly prefixes: readonly string[];
   readonly highestSequence: number;
-  /** Value stored in delivery_challan_counters.next_value. The live issue
-   * route increments-then-uses, so the next issued challan takes
-   * nextIssueSequence = highestSequence + 1. */
+  /** Value stored in delivery_challan_counters.next_value: the highest
+   * burned number — imported sequences (suffixed assignments included)
+   * and duplicated historical sequences, which are burned even though
+   * neither duplicate row imported. The live issue route
+   * increments-then-uses, so the next issued challan takes
+   * nextIssueSequence = counterValue + 1. */
   readonly counterValue: number;
   readonly nextIssueSequence: number;
+  /** The EXACT number the live issue route will mint next
+   * (`<prefix>/<sequence>` — note the '/' separator, whatever separator
+   * the historical numbers used), from the series-head challan's
+   * prefix; null when nothing imported. */
+  readonly nextIssueNumber: string | null;
   readonly gapCount: number;
   readonly gaps: readonly number[];
   readonly duplicateSequences: readonly number[];
+  /** Challans whose printed number carries a non-numeric tail
+   * ('PL-236-BB-DC-15A') and imported under an assigned sequence. */
+  readonly suffixedAssignments: readonly SuffixedSequenceAssignment[];
 }
 
 export interface VariationRateDivergence {
@@ -137,11 +158,24 @@ export function renderRunReport(report: RunReport): string {
         series.duplicateSequences.length === 0
           ? ''
           : `  DUPLICATE sequences: ${series.duplicateSequences.join(', ')}`;
+      // The exact next number makes the separator change visible before
+      // apply: the live route formats `<prefix>/<sequence>` while
+      // historical numbers keep their printed separators (mostly '-').
+      const nextMint =
+        series.nextIssueNumber === null
+          ? ''
+          : `  next-mint ${series.nextIssueNumber} (live '/' separator)`;
       lines.push(
         `  series ${series.workCode.padEnd(10)} [${series.prefixes.join(', ')}] ` +
           `high ${series.highestSequence} counter ${series.counterValue} ` +
-          `next-issue ${series.nextIssueSequence}  ${gaps}${duplicates}`,
+          `next-issue ${series.nextIssueSequence}  ${gaps}${duplicates}${nextMint}`,
       );
+      for (const assignment of series.suffixedAssignments) {
+        lines.push(
+          `    suffixed number ${JSON.stringify(assignment.challanNo)} imported as ` +
+            `sequence ${String(assignment.assignedSequence)} — ${assignment.reason}`,
+        );
+      }
     }
     const quantizationSummary = Object.entries(org.quantization)
       .map(([fieldClass, stats]) => `${fieldClass} ${stats.changed}/${stats.quantized}`)
