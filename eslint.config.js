@@ -11,6 +11,10 @@ export default tseslint.config(
       '**/node_modules/**',
       'docs/reference/**',
       'packages/loa-parser/fixtures/**',
+      // Harness-managed agent worktrees live inside the repo checkout;
+      // linting them double-lints foreign checkouts and fails on files
+      // outside the project service.
+      '.claude/**',
     ],
   },
   eslint.configs.recommended,

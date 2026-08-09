@@ -380,8 +380,9 @@ describe('recording PAC certificates (§5.5)', () => {
         workItemId: itemAId,
         itemNumber: 'A/1',
         certifiedQuantity: '1.000',
-        // Display-only released value: null until the payment-matrix
-        // resolver is wired — never a stored or fabricated number.
+        // Display-only released value: null while the Work has no matrix
+        // row for the item's category — never a stored or fabricated
+        // number (the priced path is proven at the end of this suite).
         releasedValue: null,
       },
     ]);
@@ -934,5 +935,55 @@ describe('coexistence and database guards', () => {
     await expect(
       admin`delete from pac_certificate_items where pac_certificate_id = ${certificate.id}`,
     ).rejects.toThrow(/never deleted/);
+  });
+});
+
+describe('released value resolves through the active payment matrix', () => {
+  it('prices lines and totals once the matrix resolves, and returns to null when it cannot', async () => {
+    const upsert = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/UNCATEGORISED`,
+      organisationId,
+      payload: {
+        pctSupply: '70.00',
+        pctInstallation: '20.00',
+        pctPac: '5.00',
+        pctFinalBill: '5.00',
+      },
+    });
+    expect(upsert.statusCode, upsert.body).toBe(200);
+
+    // PAC-1 certified 1.000 of item A (uncategorised, rate 250.00):
+    // round2(1.000 x 250.00 x 5 / 100) = 12.50 per line (R13), summed.
+    const priced = await listCertificates();
+    const first = priced.certificates.find(
+      (certificate) => certificate.reference === 'PAC-1',
+    );
+    if (!first) throw new Error('PAC-1 missing from list');
+    expect(first.items[0]?.releasedValue).toBe('12.50');
+    expect(first.releasedValue).toBe('12.50');
+
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/pac-certificates/${first.id}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    expect(detail.json<PacCertificate>().releasedValue).toBe('12.50');
+
+    // Remove the row: values honestly return to null. Display-only —
+    // nothing on the stored certificate changed either way.
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/works/${workId}/payment-matrix/UNCATEGORISED`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+    const unpriced = await listCertificates();
+    const again = unpriced.certificates.find(
+      (certificate) => certificate.reference === 'PAC-1',
+    );
+    expect(again?.releasedValue).toBeNull();
+    expect(again?.items[0]?.releasedValue).toBeNull();
   });
 });

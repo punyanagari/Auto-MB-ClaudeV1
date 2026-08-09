@@ -10,6 +10,7 @@ import {
   type PacCertificate,
   type PacItemSummary,
   type RecordPacCertificateRequest,
+  type WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
@@ -20,6 +21,12 @@ import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { addDecimalStrings, computeStageAmounts } from '../mb-remark.js';
+import {
+  loadPaymentMatrix,
+  resolvePaymentPercentages,
+  type PaymentMatrixRowData,
+} from '../payment-matrix.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -99,7 +106,72 @@ interface ItemLine {
   certifiedQuantity: string;
 }
 
-function toCertificate(row: CertificateRow): PacCertificate {
+/** Everything needed to price certified quantities at read time: the
+ * Work's payment matrix plus each item's effective rate and category. */
+interface ReleasedValueContext {
+  readonly matrix: readonly PaymentMatrixRowData[];
+  readonly items: ReadonlyMap<
+    string,
+    { effectiveRate: string; paymentCategory: WorkItemPaymentCategory | null }
+  >;
+}
+
+async function loadReleasedValueContext(
+  tx: TransactionSql,
+  workId: string,
+): Promise<ReleasedValueContext> {
+  const matrix = await loadPaymentMatrix(tx, workId);
+  const rows = await tx<
+    { id: string; effective_rate: string; payment_category: string | null }[]
+  >`
+    select id,
+           coalesce(effective_unit_rate, effective_rate)::text as effective_rate,
+           payment_category
+    from work_items
+    where work_id = ${workId}
+  `;
+  return {
+    matrix,
+    items: new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          effectiveRate: row.effective_rate,
+          paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
+        },
+      ]),
+    ),
+  };
+}
+
+/** round2(certified × effective rate × PAC% / 100) via the exact-decimal
+ * stage arithmetic (R13: line-rounded, then summed by the caller); null
+ * when the item's category has no matrix row to resolve through. */
+function lineReleasedValue(
+  context: ReleasedValueContext,
+  line: ItemLine,
+): string | null {
+  const item = context.items.get(line.workItemId);
+  if (!item) return null;
+  const resolution = resolvePaymentPercentages(context.matrix, item.paymentCategory);
+  if (!resolution.resolved) return null;
+  const { perStage } = computeStageAmounts({
+    effectiveRate: item.effectiveRate,
+    stages: [
+      {
+        stage: 'pac',
+        percent: resolution.percentages.pctPac,
+        deltaQuantity: line.certifiedQuantity,
+      },
+    ],
+  });
+  return perStage[0]?.amount ?? null;
+}
+
+function toCertificate(
+  row: CertificateRow,
+  releasedValues: ReleasedValueContext,
+): PacCertificate {
   const raw = parseJsonbColumn(row.items);
   const lines: ItemLine[] = Array.isArray(raw)
     ? raw.filter(
@@ -110,6 +182,10 @@ function toCertificate(row: CertificateRow): PacCertificate {
           typeof (entry as ItemLine).certifiedQuantity === 'string',
       )
     : [];
+  const priced = lines.map((line) => ({
+    ...line,
+    releasedValue: lineReleasedValue(releasedValues, line),
+  }));
   return {
     id: row.id,
     workId: row.work_id,
@@ -123,13 +199,17 @@ function toCertificate(row: CertificateRow): PacCertificate {
     // Released value is DISPLAY-ONLY and never stored (adopted Milestone 8
     // decision): certified qty x item effective rate x PAC stage percent
     // / 100, round2 per line then summed (R13), resolved at read time
-    // from the ACTIVE payment matrix.
-    // TODO-SEAM(payment-matrix): the per-Work payment matrix lands with
-    // the sibling Milestone 8 track; the integrator wires these nulls to
-    // its resolver. Until then every released value answers null, which
-    // the contract and the web UI already accommodate.
-    items: lines.map((line) => ({ ...line, releasedValue: null })),
-    releasedValue: null,
+    // from the ACTIVE payment matrix. A line whose category has no
+    // matrix row answers null; the certificate total sums only when
+    // every line resolves (a partial sum would misstate the release).
+    items: priced,
+    releasedValue:
+      priced.length > 0 && priced.every((line) => line.releasedValue !== null)
+        ? priced.reduce(
+            (sum, line) => addDecimalStrings(sum, line.releasedValue as string),
+            '0.00',
+          )
+        : null,
     createdAt: row.created_at.toISOString(),
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
   };
@@ -251,8 +331,9 @@ export function registerPacRoutes(
            order by pc.issue_date desc, pc.created_at desc, pc.id`,
           [workId],
         )) as unknown as CertificateRow[];
+        const releasedValues = await loadReleasedValueContext(tx, workId);
         return {
-          certificates: rows.map(toCertificate),
+          certificates: rows.map((row) => toCertificate(row, releasedValues)),
           itemSummaries: await readItemSummaries(tx, workId),
         };
       });
@@ -279,7 +360,7 @@ export function registerPacRoutes(
           throw httpError(404, 'PAC_CERTIFICATE_NOT_FOUND', 'No such PAC certificate.');
         }
         await assertWorkAccess(tx, user.id, row.work_id);
-        return toCertificate(row);
+        return toCertificate(row, await loadReleasedValueContext(tx, row.work_id));
       });
     },
   );
@@ -509,7 +590,7 @@ export function registerPacRoutes(
               certifiedQuantity: item.certifiedQuantity,
             })),
           });
-          return toCertificate(full);
+          return toCertificate(full, await loadReleasedValueContext(tx, workId));
         },
       );
       return reply.status(201).send(certificate);
@@ -575,7 +656,7 @@ export function registerPacRoutes(
           reference: existing.reference,
           note: body.note,
         });
-        return toCertificate(full);
+        return toCertificate(full, await loadReleasedValueContext(tx, full.work_id));
       });
     },
   );
@@ -653,7 +734,7 @@ export function registerPacRoutes(
         );
         const full = await readCertificate(tx, id);
         if (!full) throw new Error('PAC certificate read-back returned no row');
-        return toCertificate(full);
+        return toCertificate(full, await loadReleasedValueContext(tx, full.work_id));
       });
     },
   );
