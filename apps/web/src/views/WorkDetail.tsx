@@ -5,7 +5,6 @@ import type {
   Challan,
   CorrectionNotice,
   Instrument,
-  InstrumentStatus,
   IssueChallan,
   MbEntry,
   Serial,
@@ -15,14 +14,16 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatRate } from '../format.js';
+import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { WorkConsignees } from './WorkConsignees.js';
 import { Installations } from './Installations.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
-import { PacCertificates } from './PacCertificates.js';
 import { MeasurementBooks } from './MeasurementBooks.js';
+import { WorkInstruments } from './WorkInstruments.js';
+import { WorkBills } from './WorkBills.js';
+import { WorkIssueChallans } from './WorkIssueChallans.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -46,11 +47,6 @@ interface WorkDetailProps {
   readonly onTabChange?: (tab: WorkTab) => void;
 }
 
-const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
-  issue: 'Issue',
-  loan: 'Loan',
-  return: 'Return',
-};
 /** Renders "original → effective" when an approved amendment changed the
  * value, and the original alone otherwise. */
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
@@ -175,34 +171,9 @@ const DIRECTION_LABELS = {
   above: 'above advertised',
 } as const;
 
-const INSTRUMENT_LABELS: Record<Instrument['kind'], string> = {
-  pbg: 'PBG',
-  pac: 'PAC',
-  doc: 'DOC',
-};
-
-interface BillLine {
-  readonly itemNumber: string;
-  readonly unitCode: string;
-  readonly quantity: string;
-  readonly rate: string;
-  readonly amount: string;
-}
-
 /** The snapshot is stored as jsonb and typed unknown in the contract;
  * anything that does not match the expected line shape is dropped rather
  * than rendered as "[object Object]". */
-function billLines(snapshot: unknown): readonly BillLine[] {
-  if (!Array.isArray(snapshot)) return [];
-  return snapshot.filter(
-    (line): line is BillLine =>
-      typeof line === 'object' &&
-      line !== null &&
-      typeof (line as BillLine).itemNumber === 'string' &&
-      typeof (line as BillLine).quantity === 'string' &&
-      typeof (line as BillLine).amount === 'string',
-  );
-}
 
 export function WorkDetail({
   api,
@@ -1139,80 +1110,13 @@ export function WorkDetail({
       )}
 
       {tab === 'issues' && (
-        <>
-          <div className="card__header">
-            <h2>Issue Challans</h2>
-            {canCreateDocuments &&
-              (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const draft = issueChallans.find(
-                      (challan) => challan.status === 'draft',
-                    );
-                    if (draft) onOpenIssueChallan(draft.id);
-                  }}
-                >
-                  Open draft Issue Challan
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNewIssueChallan(workId);
-                  }}
-                >
-                  New Issue Challan
-                </button>
-              ))}
-          </div>
-          {issueChallans !== null && issueChallans.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Issue Challans for this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Number</th>
-                  <th scope="col">Movement</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Issued to</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {issueChallans.map((challan) => (
-                  <tr key={challan.id}>
-                    <th scope="row">
-                      <button
-                        type="button"
-                        className="button--link"
-                        onClick={() => {
-                          onOpenIssueChallan(challan.id);
-                        }}
-                      >
-                        {challan.challanNumber ?? 'Draft'}
-                      </button>
-                    </th>
-                    <td>{MOVEMENT_LABELS[challan.movementType]}</td>
-                    <td>{challan.challanDate}</td>
-                    <td className="cell--wrap">{challan.issuedToName}</td>
-                    <td>
-                      <span className={`chip chip--${challan.status}`}>
-                        {challan.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">
-              No Issue Challans yet. Issue Challans record material sent out to site,
-              job work, loans, and returns.
-            </p>
-          )}
-        </>
+        <WorkIssueChallans
+          workId={workId}
+          issueChallans={issueChallans}
+          canCreateDocuments={canCreateDocuments}
+          onNewIssueChallan={onNewIssueChallan}
+          onOpenIssueChallan={onOpenIssueChallan}
+        />
       )}
 
       {notice !== null && (
@@ -1247,181 +1151,19 @@ export function WorkDetail({
       )}
 
       {tab === 'instruments' && (
-        <>
-          <h2>Contract instruments</h2>
-          {typeof work.pbgRequiredAmount === 'string' ? (
-            <dl className="fact-list" aria-label="PBG requirement from the letter">
-              <div>
-                <dt>PBG required by the letter</dt>
-                <dd>{formatInr(work.pbgRequiredAmount)}</dd>
-              </div>
-              <div>
-                <dt>Submission window</dt>
-                <dd>
-                  {work.pbgSubmissionDays !== null
-                    ? `${String(work.pbgSubmissionDays)} days from the letter date`
-                    : '—'}
-                  {work.pbgExtensionDays !== null &&
-                    ` (+${String(work.pbgExtensionDays)} days extension)`}
-                </dd>
-              </div>
-              <div>
-                <dt>Penal interest</dt>
-                <dd>
-                  {work.pbgPenalInterestPercent !== null
-                    ? `${work.pbgPenalInterestPercent}% p.a.`
-                    : '—'}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="muted">
-              The letter records no Performance Bank Guarantee requirement.
-            </p>
-          )}
-          {instruments.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Bank guarantees and certificates held for this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Reference</th>
-                  <th scope="col" className="cell--numeric">
-                    Amount
-                  </th>
-                  <th scope="col">Issued</th>
-                  <th scope="col">Expires</th>
-                  <th scope="col">Status</th>
-                  {canModify && <th scope="col">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {instruments.map((instrument) => (
-                  <tr key={instrument.id}>
-                    <td>{INSTRUMENT_LABELS[instrument.kind]}</td>
-                    <th scope="row">{instrument.reference}</th>
-                    <td className="cell--numeric">
-                      {instrument.amount !== null ? formatInr(instrument.amount) : '—'}
-                    </td>
-                    <td>{instrument.issuedOn}</td>
-                    <td>{instrument.expiresOn ?? '—'}</td>
-                    <td>
-                      <span className={`chip chip--${instrument.status}`}>
-                        {instrument.status}
-                      </span>
-                    </td>
-                    {canModify && (
-                      <td>
-                        {instrument.status === 'active' ? (
-                          <InstrumentStatusEditor
-                            instrument={instrument}
-                            pending={pending}
-                            onApply={(status) =>
-                              void act(async () => {
-                                const updated = await api.updateInstrument(
-                                  organisationId,
-                                  instrument.id,
-                                  { status },
-                                );
-                                setInstruments((current) =>
-                                  current.map((candidate) =>
-                                    candidate.id === updated.id ? updated : candidate,
-                                  ),
-                                );
-                              }, `${instrument.reference} marked ${status}.`)
-                            }
-                          />
-                        ) : (
-                          <span className="muted">final</span>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">No PBG, PAC, or document instruments recorded yet.</p>
-          )}
-          {canModify && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                const kind = formValue(data, 'instrument-kind') || 'pbg';
-                const reference = formValue(data, 'instrument-reference');
-                const amount = formValue(data, 'instrument-amount').trim();
-                const issuedOn = formValue(data, 'instrument-issued');
-                const expiresOn = formValue(data, 'instrument-expires');
-                const notes = formValue(data, 'instrument-notes').trim();
-                void act(async () => {
-                  const created = await api.createInstrument(organisationId, workId, {
-                    kind: kind as Instrument['kind'],
-                    reference,
-                    issuedOn,
-                    ...(amount.length > 0 ? { amount } : {}),
-                    ...(expiresOn.length > 0 ? { expiresOn } : {}),
-                    ...(notes.length > 0 ? { notes } : {}),
-                  });
-                  setInstruments((current) => [...current, created]);
-                  form.reset();
-                }, `${reference} recorded.`);
-              }}
-            >
-              <h3>Add instrument</h3>
-              <div className="field">
-                <label htmlFor="instrument-kind">Kind</label>
-                <select id="instrument-kind" name="instrument-kind" required>
-                  <option value="pbg">PBG — Performance Bank Guarantee</option>
-                  <option value="pac">PAC — Provisional Acceptance Certificate</option>
-                  <option value="doc">DOC — other contract document</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="instrument-reference">Reference</label>
-                <input
-                  id="instrument-reference"
-                  name="instrument-reference"
-                  required
-                  maxLength={200}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="instrument-amount">Amount (₹, optional)</label>
-                <input
-                  id="instrument-amount"
-                  name="instrument-amount"
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="instrument-issued">Issued on</label>
-                <input
-                  id="instrument-issued"
-                  name="instrument-issued"
-                  type="date"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="instrument-expires">Expires on (optional)</label>
-                <input id="instrument-expires" name="instrument-expires" type="date" />
-              </div>
-              <div className="field">
-                <label htmlFor="instrument-notes">Notes (optional)</label>
-                <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
-                  Add instrument
-                </button>
-              </div>
-            </form>
-          )}
-        </>
+        <WorkInstruments
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          work={work}
+          workItems={workItems}
+          instruments={instruments}
+          setInstruments={setInstruments}
+          canModify={canModify}
+          canCreateDocuments={canCreateDocuments}
+          pending={pending}
+          act={act}
+        />
       )}
 
       {tab === 'measurement' && (
@@ -1550,96 +1292,15 @@ export function WorkDetail({
       )}
 
       {tab === 'bills' && (
-        <>
-          <div className="card__header">
-            <h2>Bills</h2>
-          </div>
-          {canIssue && (
-            <p className="muted">
-              Bills are prepared from a finalized stage-wise Measurement Book — use the
-              Measurement Books section below.
-            </p>
-          )}
-          {bills.length > 0 ? (
-            bills.map((bill) => (
-              <div key={bill.id}>
-                <h3>
-                  Bill #{bill.billNumber}{' '}
-                  <span className={`chip chip--${bill.status}`}>{bill.status}</span>
-                </h3>
-                <table className="data-table">
-                  <caption className="visually-hidden">
-                    Lines of bill {bill.billNumber}
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Item</th>
-                      <th scope="col">Unit</th>
-                      <th scope="col" className="cell--numeric">
-                        Quantity
-                      </th>
-                      <th scope="col" className="cell--numeric">
-                        Rate
-                      </th>
-                      <th scope="col" className="cell--numeric">
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {billLines(bill.linesSnapshot).map((line) => (
-                      <tr key={`${bill.id}-${line.itemNumber}`}>
-                        <th scope="row">{line.itemNumber}</th>
-                        <td>{line.unitCode}</td>
-                        <td className="cell--numeric">{line.quantity}</td>
-                        <td className="cell--numeric">{formatRate(line.rate)}</td>
-                        <td className="cell--numeric">{formatInr(line.amount)}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <th scope="row" colSpan={4}>
-                        Total
-                      </th>
-                      <td className="cell--numeric">
-                        <strong>{formatInr(bill.totalAmount)}</strong>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                {canIssue && bill.status !== 'paid' && (
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="button--ghost"
-                      disabled={pending}
-                      onClick={() => {
-                        const next = bill.status === 'prepared' ? 'submitted' : 'paid';
-                        void act(async () => {
-                          const updated = await api.setBillStatus(
-                            organisationId,
-                            bill.id,
-                            {
-                              status: next,
-                            },
-                          );
-                          setBills((current) =>
-                            current.map((candidate) =>
-                              candidate.id === updated.id ? updated : candidate,
-                            ),
-                          );
-                        }, `Bill #${bill.billNumber} marked ${next}.`);
-                      }}
-                    >
-                      {bill.status === 'prepared' ? 'Mark submitted' : 'Mark paid'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="muted">No bills prepared yet.</p>
-          )}
-        </>
+        <WorkBills
+          api={api}
+          organisationId={organisationId}
+          bills={bills}
+          setBills={setBills}
+          canIssue={canIssue}
+          pending={pending}
+          act={act}
+        />
       )}
 
       {tab === 'deliveries' && (
@@ -1652,18 +1313,6 @@ export function WorkDetail({
             workItems={workItems}
             serials={serials}
             onSerialsChanged={setSerials}
-          />
-        </>
-      )}
-
-      {tab === 'instruments' && (
-        <>
-          <PacCertificates
-            api={api}
-            organisationId={organisationId}
-            workId={workId}
-            canModify={canCreateDocuments}
-            workItems={workItems}
           />
         </>
       )}
@@ -1952,46 +1601,5 @@ function AmendmentForm({
   );
 }
 
-interface InstrumentStatusEditorProps {
-  readonly instrument: Instrument;
-  readonly pending: boolean;
-  readonly onApply: (status: Exclude<InstrumentStatus, 'active'>) => void;
-}
-
 /** Forward-only transitions out of 'active'; terminal statuses show no
  * controls (the server refuses them with INSTRUMENT_STATUS_TERMINAL). */
-function InstrumentStatusEditor({
-  instrument,
-  pending,
-  onApply,
-}: InstrumentStatusEditorProps) {
-  const [status, setStatus] = useState<Exclude<InstrumentStatus, 'active'>>('released');
-  return (
-    <span className="actions">
-      <label className="visually-hidden" htmlFor={`instrument-status-${instrument.id}`}>
-        New status for {instrument.reference}
-      </label>
-      <select
-        id={`instrument-status-${instrument.id}`}
-        value={status}
-        onChange={(event) => {
-          setStatus(event.target.value as Exclude<InstrumentStatus, 'active'>);
-        }}
-      >
-        <option value="released">released</option>
-        <option value="expired">expired</option>
-        <option value="closed">closed</option>
-      </select>
-      <button
-        type="button"
-        className="button--ghost"
-        disabled={pending}
-        onClick={() => {
-          onApply(status);
-        }}
-      >
-        Apply
-      </button>
-    </span>
-  );
-}
