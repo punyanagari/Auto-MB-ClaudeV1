@@ -1,0 +1,107 @@
+{
+  "fixtureVersion": "mb-remark-workbook-v1",
+  "source": "Agency workbook MBremarklogic_1.xlsx, sheet 'Sheet1', 'Example case number - 1'; supplied by the product owner 2026-08-09. Authoritative wording rules: docs/reference/legacy-product-spec.md §'The MB remark algorithm (contractual wording)'.",
+  "corrections": [
+    {
+      "row": "MB 4",
+      "field": "expectedRemark",
+      "workbookValue": "Prepaid 80% for 5000 mtr and 10% for 1000 mtr. Now to pay nill.",
+      "correctedValue": "Prepaid 80% for 6000 mtr and 10% for 3000 mtr. Now to pay nill.",
+      "authority": "Spec: 'Cumulative means true cumulative — the sum over all prior non-cancelled MBs (the workbook's MB4 row was a confirmed copy-paste error; the corrected wording is authoritative).' The workbook's own MB 5 row already shows the true cumulative 6000/3000, confirming the correction."
+    },
+    {
+      "row": "MB 1-3 and Final MB",
+      "field": "expectedRemark",
+      "note": "Trailing full stops normalised: the workbook ends some now-to-pay clauses without a stop. Spec: 'Punctuation is normalised to a full stop after each clause (the workbook was inconsistent; normalisation confirmed 13/07/2026).' Every expectedRemark below carries the normalised punctuation."
+    }
+  ],
+  "case": {
+    "item": {
+      "description": "Power cable",
+      "unit": "mtr",
+      "paymentCategory": null,
+      "workbookItemType": "Supply item",
+      "note": "Uncategorised item whose description does not mention installation -> the final-bill stage applies to 100% of DELIVERED quantity irrespective of installation (spec final-bill stage base; workbook special note 1)."
+    },
+    "matrix": {
+      "supplyPercent": "80",
+      "installationPercent": "10",
+      "pacPercent": "0",
+      "finalBillPercent": "10"
+    },
+    "measurementBooks": [
+      {
+        "mb": 1,
+        "suppliedDelta": "5000",
+        "installedDelta": "0",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Now to pay 80% for 5000 mtr."
+      },
+      {
+        "mb": 2,
+        "suppliedDelta": "0",
+        "installedDelta": "1000",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 5000 mtr. Now to pay 10% for 1000 mtr."
+      },
+      {
+        "mb": 3,
+        "suppliedDelta": "1000",
+        "installedDelta": "2000",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 5000 mtr and 10% for 1000 mtr. Now to pay 80% for 1000 mtr and 10% for 2000 mtr."
+      },
+      {
+        "mb": 4,
+        "suppliedDelta": "0",
+        "installedDelta": "0",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 6000 mtr and 10% for 3000 mtr. Now to pay nill."
+      },
+      {
+        "mb": 5,
+        "suppliedDelta": "0",
+        "installedDelta": "2000",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 6000 mtr and 10% for 3000 mtr. Now to pay 10% for 2000 mtr."
+      },
+      {
+        "mb": 6,
+        "suppliedDelta": "0",
+        "installedDelta": "0",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 6000 mtr and 10% for 5000 mtr. Now to pay nill."
+      },
+      {
+        "mb": 7,
+        "suppliedDelta": "0",
+        "installedDelta": "0",
+        "pacDelta": "0",
+        "isFinal": false,
+        "expectedRemark": "Prepaid 80% for 6000 mtr and 10% for 5000 mtr. Now to pay nill."
+      },
+      {
+        "mb": 8,
+        "workbookLabel": "Final MB",
+        "suppliedDelta": "0",
+        "installedDelta": "1000",
+        "pacDelta": "0",
+        "isFinal": true,
+        "finalBillBaseQuantity": "6000",
+        "finalBillBaseNote": "Supply-branch item: final % applies to 100% of cumulative DELIVERED quantity (6000), not installed. The final-bill clause renders LAST.",
+        "expectedRemark": "Prepaid 80% for 6000 mtr and 10% for 5000 mtr. Now to pay 10% for 1000 mtr and 10% for 6000 mtr."
+      }
+    ]
+  },
+  "workbookSpecialNotes": [
+    "For supply items without installation word in the item description, the payment during the final bill will be made 100% of the delivered qty irrescpective of it is installed or not.",
+    "For items with supply and installation wording the payment for supply portion only will be done for suplpied but not installed item.",
+    "For installation item payment will only be done for installed qty."
+  ]
+}
