@@ -1,55 +1,28 @@
-/* Design tokens — an exact port of the auto-mb-vercel design study:
- * Geist Sans/Geist Mono, the cool neutral workspace, "signal blue"
- * primary, deep ink-navy sidebar, soft semantic badges, and mono/tabular
- * numerals for anything countable. Sizes are the study's computed
- * Tailwind values (16px rem base, 14px interface text). Values are
- * oklch; change them here, not inline. Legacy token names are kept as
- * aliases so every existing rule and view keeps resolving. */
+/* The legacy layer. The palette itself now lives in globals.css — see the
+ * "Signal" block there — and this file keeps only what that layer needs and
+ * globals does not declare: soft fills, geometry, spacing, and the aliases
+ * older rules still resolve through. IBM Plex Sans carries Devanagari in the
+ * same family, so bilingual station names set in one voice. */
 :root {
-  --background: oklch(0.976 0.004 250);
-  --foreground: oklch(0.21 0.03 262);
-  --card: oklch(1 0 0);
+  /* The semantic palette lives in globals.css, unlayered, so it wins over
+   * this legacy layer. Only the tokens that layer needs and globals does not
+   * declare are defined here: the soft fills, the hover step, and the
+   * geometry. Values are hex to match globals; alpha fills use color-mix so a
+   * palette edit still moves them. */
+  --primary-hover: #262c36;
+  --primary-soft: color-mix(in oklab, var(--primary) 8%, transparent);
+  --destructive-soft: #f3dcd9;
+  --success-soft: #d7e8de;
+  --warning-soft: #f7e6c2;
+  --info-soft: color-mix(in oklab, var(--info) 10%, transparent);
 
-  --primary: oklch(0.52 0.16 258);
-  --primary-hover: oklch(0.46 0.16 258);
-  --primary-foreground: oklch(0.99 0.005 250);
-  --primary-soft: oklch(0.52 0.16 258 / 10%);
-
-  --secondary: oklch(0.955 0.007 250);
-  --muted: oklch(0.965 0.005 250);
-  --muted-foreground: oklch(0.53 0.02 258);
-  --accent: oklch(0.945 0.02 258);
-  --accent-foreground: oklch(0.4 0.1 258);
-
-  --destructive: oklch(0.51 0.19 25);
-  --destructive-soft: oklch(0.585 0.2 25 / 10%);
-  --success: oklch(0.47 0.13 155);
-  --success-soft: oklch(0.62 0.14 155 / 12%);
-  --warning-foreground: oklch(0.4 0.09 70);
-  --warning-soft: oklch(0.75 0.15 70 / 18%);
-  --info: oklch(0.49 0.12 240);
-  --info-soft: oklch(0.62 0.13 240 / 12%);
-
-  --border: oklch(0.915 0.008 255);
-  --input: oklch(0.915 0.008 255);
-  --ring: oklch(0.52 0.16 258);
-
-  --radius: 0.55rem;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
 
-  /* Deep ink navy sidebar */
-  --sidebar: oklch(0.24 0.035 265);
-  --sidebar-foreground: oklch(0.82 0.02 260);
-  --sidebar-strong: oklch(0.98 0.005 250);
-  /* Solid (not alpha) so the small uppercase labels keep ≥4.5:1 on the
-   * navy — the axe gate holds this. */
-  --sidebar-faint: oklch(0.75 0.02 260);
-  --sidebar-accent: oklch(0.31 0.04 265);
-  --sidebar-border: oklch(0.34 0.03 265);
-  --sidebar-width: 16rem;
+  --sidebar-strong: #ffffff;
+  --sidebar-width: 15rem;
 
   /* Legacy aliases (older rules and inline references) */
   --color-ink: var(--foreground);
@@ -57,7 +30,7 @@
   --color-surface: var(--background);
   --color-card: var(--card);
   --color-line: var(--border);
-  --color-line-strong: oklch(0.86 0.01 255);
+  --color-line-strong: #cbc9c0;
   --color-accent: var(--primary);
   --color-accent-ink: var(--primary-foreground);
   --color-accent-hover: var(--primary-hover);
@@ -83,12 +56,13 @@
 
   /* Tailwind shadow-sm / raised dialog shadow */
   --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 5%);
-  --shadow-raised: 0 8px 24px oklch(0.21 0.03 262 / 14%);
+  --shadow-raised: 0 8px 24px color-mix(in oklab, var(--foreground) 14%, transparent);
 
   --font-sans:
-    'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    'IBM Plex Sans Variable', 'IBM Plex Sans Devanagari', ui-sans-serif, system-ui,
+    -apple-system, 'Segoe UI', sans-serif;
   --font-mono:
-    'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
   font-family: var(--font-sans);
   /* 16px rem base — the study's Tailwind scale maps 1:1. */
@@ -376,6 +350,10 @@ h3 {
 }
 
 .content {
+  /* The sticky table heading owns the top of the scrollport, so anything the
+   * browser scrolls into view from above — Shift+Tab back up a rate column,
+   * or a focus() call after a failed save — would land underneath it. */
+  scroll-padding-top: 3rem;
   width: 100%;
   max-width: 100rem;
   margin: 0 auto;
@@ -577,14 +555,43 @@ h3 {
   border-spacing: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  overflow: hidden;
   background: var(--card);
   font-size: 0.875rem;
   margin: var(--space-3) 0;
 }
 
+/* The corner cells clip the card themselves rather than the table carrying
+ * overflow: hidden. Overflow would make the table its own scrollport, and a
+ * sticky heading inside a scrollport that never scrolls never moves. The
+ * radius is inset by the table's 1px border so the curves sit flush. The
+ * last row group is tbody, or tfoot on the tables that carry a total. */
+.data-table thead tr:first-child th:first-child {
+  border-top-left-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table thead tr:first-child th:last-child {
+  border-top-right-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table > :last-child > tr:last-child > :first-child {
+  border-bottom-left-radius: calc(var(--radius-xl) - 1px);
+}
+
+.data-table > :last-child > tr:last-child > :last-child {
+  border-bottom-right-radius: calc(var(--radius-xl) - 1px);
+}
+
+/* The largest work in the corpus carries 129 items, so the headings have to
+ * survive the scroll — otherwise Awarded, Delivered, Remaining and This
+ * challan are four unlabelled numeric columns by the time you reach row 60.
+ * The background is the opaque equivalent of the old 40% tint over the card,
+ * so scrolled rows cannot read through it, and border-collapse: separate
+ * keeps the bottom rule on the cell where it travels with the heading. */
 .data-table thead th {
-  background: oklch(0.965 0.005 250 / 40%);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: oklch(0.986 0.002 250);
   text-align: left;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -596,7 +603,8 @@ h3 {
 }
 
 .data-table td,
-.data-table tbody th {
+.data-table tbody th,
+.data-table tfoot th {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
@@ -604,12 +612,13 @@ h3 {
   font-weight: 400;
 }
 
-.data-table tbody th {
+.data-table tbody th,
+.data-table tfoot th {
   font-weight: 500;
 }
 
-.data-table tbody tr:last-child td,
-.data-table tbody tr:last-child th {
+.data-table > :last-child > tr:last-child > td,
+.data-table > :last-child > tr:last-child > th {
   border-bottom: 0;
 }
 
@@ -792,17 +801,6 @@ button:disabled {
   border-color: transparent;
 }
 
-/* Editors keep their primary actions visible while the form scrolls —
- * the Zoho bottom action bar. */
-.action-bar {
-  position: sticky;
-  bottom: 0;
-  background: var(--color-card);
-  border-top: 1px solid var(--color-line);
-  padding: var(--space-3) 0;
-  margin-top: var(--space-6);
-}
-
 .button--link:hover {
   background: transparent;
   text-decoration: underline;
@@ -900,6 +898,9 @@ input[type='radio'] {
   margin: var(--space-4) 0 0;
 }
 
+/* Editors keep their primary actions visible while the form scrolls — the
+ * bottom action bar. The negative margins bleed it to the card's edges, so
+ * it picks up the card's bottom corners. */
 .action-bar {
   position: sticky;
   bottom: 0;
@@ -1069,21 +1070,25 @@ input[type='radio'] {
   gap: var(--space-3);
   background: var(--card);
   border: 1px solid var(--border);
-  border-left-width: 3px;
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
 }
 
+/* Severity used to ride a 3px stripe down the left edge. It still tints the
+ * row, but around the whole hairline border at the same weight as every
+ * other card, so the list reads as one stack rather than a tab rack. The
+ * severity itself is named in words by the chip — this is the scanning aid,
+ * not the announcement. Alphas match the flag panel's semantic border. */
 .alert--danger {
-  border-left-color: var(--destructive);
+  border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
 }
 
 .alert--warning {
-  border-left-color: oklch(0.75 0.15 70);
+  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
 }
 
 .alert--notice {
-  border-left-color: var(--info);
+  border-color: color-mix(in oklab, var(--info) 40%, transparent);
 }
 
 .alert__chip--danger {
@@ -1408,4 +1413,136 @@ input[type='radio'] {
     box-shadow: none;
     padding: 0;
   }
+}
+
+/* The Work page's tab strip. The counts are the point: they say what is
+ * inside an area before it is opened, which the old single scroll could
+ * only answer by scrolling to it. */
+.work-tabs {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  margin: var(--space-4) 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.work-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.work-tabs__tab:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.work-tabs__tab[aria-current='page'] {
+  color: var(--foreground);
+  font-weight: 600;
+  border-bottom-color: var(--primary);
+}
+
+.work-tabs__count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.work-tabs__tab[aria-current='page'] .work-tabs__count {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* The Overview summary: one divided surface, not a rack of floating cards.
+ * Every cell carries the count its tab shows and opens that tab, so the two
+ * navigations agree instead of competing. */
+.work-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.work-summary__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: stretch;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.work-summary__cell:hover {
+  background: var(--muted);
+}
+
+.work-summary__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.work-summary__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.work-summary__n {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.work-summary__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.work-summary__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.work-summary__value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary-foreground);
 }

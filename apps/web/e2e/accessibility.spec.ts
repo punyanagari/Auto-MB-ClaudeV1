@@ -667,14 +667,34 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
   ).toBeVisible();
-  // The retention sections load with the Work.
-  await expect(
-    page.getByRole('heading', { name: 'Contract instruments' }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Measurement Book', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
+  // The Work page splits its areas across tabs, so each one is opened and
+  // scanned in turn rather than asserted on a single scroll.
+  const openTab = async (label: string) => {
+    // Scoped to the tab strip: the Overview summary offers a button per area
+    // too, and both carry the same label. The name carries the count, so the
+    // match is loose rather than a RegExp built from a variable.
+    await page
+      .locator('.work-tabs')
+      .getByRole('button', { name: label, exact: false })
+      .first()
+      .click();
+  };
+
+  await openTab('Overview');
+  await expect(page.getByRole('heading', { name: 'Completion status' })).toBeVisible();
+  await expect(page.getByLabel('Why this Work is being completed')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete Work' })).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — overview');
+
+  await openTab('Schedules');
+  await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
+  await expect(page.getByLabel('Supply % for Supply', { exact: true })).toHaveValue(
+    '80.00',
+  );
+  await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — schedules');
+
+  await openTab('Deliveries');
   await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
   ).toBeVisible();
@@ -682,23 +702,29 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     page.getByRole('heading', { name: 'Record installation' }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
-  // Milestone 8: the payment matrix editor with its R10 note.
-  await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
-  await expect(page.getByLabel('Supply % for Supply', { exact: true })).toHaveValue(
-    '80.00',
-  );
-  await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
-  // Milestone 8 phase 3: the Measurement Book workspace with its list.
+  await expectNoSeriousViolations(page, 'work detail — deliveries');
+
+  await openTab('Measurement');
+  await expect(
+    page.getByRole('heading', { name: 'Measurement Book', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
   await expect(page.getByText('FINAL BILL', { exact: true })).toBeVisible();
-  // R8 completion panel: the labelled note field is the only control that
-  // can close the contract, and it rides the same axe scan.
-  await expect(page.getByRole('heading', { name: 'Completion status' })).toBeVisible();
-  await expect(page.getByLabel('Why this Work is being completed')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Complete Work' })).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — measurement');
+
+  await openTab('Bills');
+  await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
+  await expectNoSeriousViolations(page, 'work detail — bills');
+
+  await openTab('Instruments');
+  await expect(
+    page.getByRole('heading', { name: 'Contract instruments' }),
+  ).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail');
 
+  // The challan list lives under Deliveries.
+  await openTab('Deliveries');
   await page.getByRole('button', { name: 'DC/1' }).click();
   await expect(
     page.getByRole('heading', { name: 'Delivery Challan DC/1' }),
@@ -713,6 +739,11 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expectNoSeriousViolations(page, 'challan detail with evidence');
 
   await page.getByRole('button', { name: 'Back to Work' }).click();
+  // The active tab survives the trip into a challan and back: the operator
+  // came from Deliveries, so the delivery surface is the one still on screen.
+  await expect(page.locator('.work-tabs__tab[aria-current="page"]')).toHaveText(
+    /^Deliveries/,
+  );
   await page.getByRole('button', { name: 'New Delivery Challan' }).click();
   await expect(
     page.getByRole('heading', { name: 'New Delivery Challan' }),

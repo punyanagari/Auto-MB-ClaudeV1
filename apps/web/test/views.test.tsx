@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChallanDetailResponse,
@@ -658,7 +665,55 @@ function challanDetail(
   };
 }
 
+/** The two consignee fields the server requires beside the items; a save
+ * test has to satisfy them before it can reach the rule under test. */
+function fillConsignee() {
+  fireEvent.change(screen.getByLabelText('Consignee name'), {
+    target: { value: 'Sr. DEE (G)' },
+  });
+  fireEvent.change(screen.getByLabelText('Consignee address'), {
+    target: { value: 'Delhi Division' },
+  });
+}
+
 describe('ChallanEditor', () => {
+  it('reaches its own checks for fields the browser used to gate, and focuses the first in reading order', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createChallan,
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    // Consignee name and address carry `required`, so before the form took
+    // validation over the browser aborted the submit and save() never ran —
+    // these two branches were unreachable in every browser and in jsdom.
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(createChallan).not.toHaveBeenCalled();
+    const name = screen.getByLabelText('Consignee name');
+    const address = screen.getByLabelText('Consignee address');
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(address.getAttribute('aria-invalid')).toBe('true');
+    const nameMessage = screen.getByText(/Enter the consignee/);
+    expect(name.getAttribute('aria-describedby')).toBe(nameMessage.id);
+    // Name precedes address on screen, so focus lands on name.
+    expect(document.activeElement).toBe(name);
+  });
+
   it('shows remaining balances and saves a draft with the entered quantities', async () => {
     const createChallan = vi.fn().mockResolvedValue(challanDetail());
     const api = stubApi({
@@ -764,6 +819,229 @@ describe('ChallanEditor', () => {
     await waitFor(() => {
       expect(onSaved).toHaveBeenCalledWith(existingId);
     });
+  });
+
+  it('binds each rejected field to its own message and focuses the first', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createChallan: vi.fn().mockResolvedValue(challanDetail()),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    fillConsignee();
+    // Both are shapes the server rejects: a two-character phone and a
+    // quantity that is not a decimal at all.
+    fireEvent.change(screen.getByLabelText('Consignee phone (optional)'), {
+      target: { value: '12' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: 'two' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(api.createChallan).not.toHaveBeenCalled();
+    const phone = screen.getByLabelText('Consignee phone (optional)');
+    expect(phone.getAttribute('aria-invalid')).toBe('true');
+    const phoneMessage = screen.getByText(/A phone number needs 3 to 30 characters/);
+    expect(phone.getAttribute('aria-describedby')).toBe(phoneMessage.id);
+    // Per-field messages stay silent; the summary carries the announcement.
+    expect(phoneMessage.getAttribute('role')).toBeNull();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Correct the highlighted fields',
+    );
+    // The phone box is flagged first, so that is where a keyboard user lands.
+    expect(document.activeElement).toBe(phone);
+
+    fireEvent.change(phone, { target: { value: '011-23385678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
+    expect(quantity.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(quantity);
+
+    fireEvent.change(quantity, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(api.createChallan).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(/A phone number needs 3 to 30 characters/)).toBeNull();
+  });
+
+  it('flags an over-delivery on blur only, and still saves the draft', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createChallan,
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    fillConsignee();
+    const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
+
+    // Exactly the remaining balance is not an over-delivery: the comparison
+    // is exact integer thousandths, so 2.000 against 2.000 is equal.
+    fireEvent.change(quantity, { target: { value: '2.000' } });
+    fireEvent.blur(quantity);
+    expect(screen.queryByText(/over the/)).toBeNull();
+
+    // A thousandth more is, but not while it is still being typed.
+    fireEvent.change(quantity, { target: { value: '2.001' } });
+    expect(screen.queryByText(/over the/)).toBeNull();
+    fireEvent.blur(quantity);
+    const warning = screen.getByText(/over the 2\.000 remaining/);
+    expect(quantity.getAttribute('aria-describedby')).toBe(warning.id);
+    // Guidance, not a rejection: the row is not marked invalid.
+    expect(quantity.getAttribute('aria-invalid')).toBe('false');
+
+    // And the draft still saves — the server checks the balance at issue.
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(createChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveChallanRequest,
+    ];
+    expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '2.001' }]);
+  });
+
+  it('leaves the over-delivery flag off when the Work allows excess delivery', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue({ ...BALANCE, allowExcessDelivery: true }),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
+    fireEvent.change(quantity, { target: { value: '9' } });
+    fireEvent.blur(quantity);
+    expect(screen.queryByText(/over the/)).toBeNull();
+    expect(quantity.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('confirms before discarding an edited challan and leaves a pristine one alone', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    const onCancel = vi.fn();
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    await screen.findByText('2.000');
+
+    // Nothing typed yet: Cancel leaves without asking.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    const discard = screen.getByRole('button', { name: 'Discard and leave' });
+    expect(document.activeElement).toBe(discard);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('button', { name: 'Discard and leave' })).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers autofill hints and a dialling keypad on the consignee fields', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText('Consignee name').getAttribute('autocomplete')).toBe(
+      'organization',
+    );
+    expect(
+      screen.getByLabelText('Consignee address').getAttribute('autocomplete'),
+    ).toBe('street-address');
+    const phone = screen.getByLabelText('Consignee phone (optional)');
+    expect(phone.getAttribute('autocomplete')).toBe('tel');
+    // A site engineer on a tablet gets digits, not letters.
+    expect(phone.getAttribute('type')).toBe('tel');
+    expect(phone.getAttribute('inputmode')).toBe('tel');
+  });
+
+  it('states the prefix rule beside the field and in the browser message', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    const prefix = screen.getByLabelText<HTMLInputElement>('Number prefix');
+    const hint = screen.getByText(/Start with a letter or digit/);
+    expect(prefix.getAttribute('aria-describedby')).toContain(hint.id);
+    expect(prefix.validationMessage).toBe('');
+
+    // A leading separator is the common rejection; the browser's own words
+    // for it would be "Please match the requested format".
+    fireEvent.change(prefix, { target: { value: '-dc' } });
+    expect(prefix.value).toBe('-DC');
+    expect(prefix.validationMessage).toContain('Start with a letter or digit');
+
+    fireEvent.change(prefix, { target: { value: 'dc/2026' } });
+    expect(prefix.value).toBe('DC/2026');
+    expect(prefix.validationMessage).toBe('');
   });
 });
 
@@ -1076,6 +1354,20 @@ describe('ChallanDetail', () => {
   });
 });
 
+/** The Work page splits its areas across tabs, so a test that asserts on one
+ * area opens it first — exactly as an operator does. The tab's accessible
+ * name carries its count, so match on the label prefix. */
+async function openWorkTab(label: string) {
+  // Scoped to the tab strip: the Overview summary offers a button per area
+  // too, and both carry the same label.
+  const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+  fireEvent.click(
+    within(tabs).getByRole('button', {
+      name: (accessibleName: string) => accessibleName.startsWith(label),
+    }),
+  );
+}
+
 describe('WorkDetail retention', () => {
   const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
   const WORK_DETAIL = {
@@ -1237,6 +1529,7 @@ describe('WorkDetail retention', () => {
       .mockResolvedValue([{ ...notice, renderedAvailable: true }]);
     const api = retentionApi({ renderCorrectionNotice, listWorkCorrectionNotices });
     renderWorkDetail(api);
+    await openWorkTab('Deliveries');
 
     // A fresh notice is born unrendered: the Work page offers the render
     // action rather than a dead-end "not rendered".
@@ -1267,6 +1560,7 @@ describe('WorkDetail retention', () => {
       ]),
     });
     renderWorkDetail(api, { canModify: false });
+    await openWorkTab('Deliveries');
     expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Generate PDF' })).toBeNull();
     expect(screen.getByText('not rendered')).toBeTruthy();
@@ -1282,6 +1576,7 @@ describe('WorkDetail retention', () => {
     });
     const api = retentionApi({ recordMbEntry });
     renderWorkDetail(api);
+    await openWorkTab('Measurement');
 
     fireEvent.change(await screen.findByLabelText('Measured quantity'), {
       target: { value: '1.000' },
@@ -1315,6 +1610,7 @@ describe('WorkDetail retention', () => {
     const listBills = vi.fn().mockResolvedValue([BILL]);
     const api = retentionApi({ setBillStatus, listBills });
     renderWorkDetail(api);
+    await openWorkTab('Bills');
 
     expect(await screen.findByRole('heading', { name: /Bill #1/ })).toBeTruthy();
     // Bill preparation now runs from a finalized Measurement Book
@@ -1336,6 +1632,7 @@ describe('WorkDetail retention', () => {
       .mockResolvedValue({ ...INSTRUMENT, status: 'released' });
     const api = retentionApi({ updateInstrument });
     renderWorkDetail(api);
+    await openWorkTab('Instruments');
 
     fireEvent.change(await screen.findByLabelText('New status for BG/22'), {
       target: { value: 'released' },
@@ -1350,6 +1647,32 @@ describe('WorkDetail retention', () => {
     expect(await screen.findByText('released')).toBeTruthy();
   });
 
+  it('opens an area from the Overview summary, and the two navigations agree', async () => {
+    const api = retentionApi();
+    renderWorkDetail(api);
+
+    // The summary is the Overview tab's content, so it is on screen already.
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    const summaryCell = screen
+      .getAllByRole('button', {
+        name: (name: string) => name.startsWith('Measurement'),
+      })
+      .find((candidate) => !tabs.contains(candidate));
+    expect(summaryCell).toBeTruthy();
+
+    fireEvent.click(summaryCell as HTMLElement);
+
+    // Clicking the card selects the matching tab rather than opening a
+    // separate surface — one architecture, not two.
+    await screen.findByRole('heading', {
+      name: (accessibleName: string) => accessibleName === 'Measurement Book',
+    });
+    const active = within(tabs)
+      .getAllByRole('button')
+      .find((candidate) => candidate.getAttribute('aria-current') === 'page');
+    expect(active?.textContent).toMatch(/^Measurement/);
+  });
+
   it('hides retention forms and billing actions from read-only members', async () => {
     const api = retentionApi();
     renderWorkDetail(api, {
@@ -1357,9 +1680,11 @@ describe('WorkDetail retention', () => {
       canRecordEvidence: false,
       canIssue: false,
     });
+    await openWorkTab('Instruments');
 
     await screen.findByRole('heading', { name: 'Contract instruments' });
     expect(screen.getByText('BG/22')).toBeTruthy();
+    await openWorkTab('Measurement');
     expect(screen.getByText('MB-12/34')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add instrument' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record measurement' })).toBeNull();
@@ -1567,6 +1892,7 @@ describe('WorkDetail R8 completion panel', () => {
       reopenWork,
     });
     renderDetail(api);
+    await openWorkTab('Overview');
 
     await screen.findByRole('heading', { name: 'Completion status' });
     fireEvent.change(screen.getByLabelText('Why this Work is being reopened'), {
@@ -1580,7 +1906,9 @@ describe('WorkDetail R8 completion panel', () => {
       });
     });
     expect(
-      await screen.findByRole('button', { name: 'New Delivery Challan' }),
+      await openWorkTab('Deliveries').then(() =>
+        screen.findByRole('button', { name: 'New Delivery Challan' }),
+      ),
     ).toBeTruthy();
   });
 
@@ -2870,8 +3198,8 @@ describe('WorkDetail amendments', () => {
 
   it('shows original and effective values side by side when they differ', async () => {
     renderAmended(amendedApi());
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     // Quantity 5.000 → 8.000: the original stays visible, struck through.
     // Other sections (serials, balances) may repeat the bare numbers, so
     // assert the struck-through original exists among the matches.
@@ -2919,8 +3247,8 @@ describe('WorkDetail amendments', () => {
         listWorkAmendments: vi.fn().mockResolvedValue([REMOVAL_APPROVAL]),
       }),
     );
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     expect(screen.getByText('omission pending')).toBeTruthy();
   });
 
@@ -2944,8 +3272,8 @@ describe('WorkDetail amendments', () => {
           .mockResolvedValue([{ ...REMOVAL_APPROVAL, status: 'approved' as const }]),
       }),
     );
+    await openWorkTab('Schedules & items');
 
-    await screen.findByRole('heading', { name: 'Amendments' });
     expect(screen.queryByText('omission pending')).toBeNull();
     expect(screen.queryByText('Main switchboard')).toBeNull();
   });
@@ -2957,6 +3285,7 @@ describe('WorkDetail amendments', () => {
     });
     const proposeAmendment = vi.fn();
     renderAmended(amendedApi({ proposeItemRemoval, proposeAmendment }));
+    await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
     fireEvent.change(screen.getByLabelText('Amendment'), {
@@ -2985,6 +3314,7 @@ describe('WorkDetail amendments', () => {
       status: 'pending',
     });
     renderAmended(amendedApi({ proposeAmendment }));
+    await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
     fireEvent.change(screen.getByLabelText('Item to amend'), {
@@ -3012,6 +3342,7 @@ describe('WorkDetail amendments', () => {
       .fn()
       .mockResolvedValue({ id: WORK_ID, allowExcessDelivery: true });
     renderAmended(amendedApi({ setWorkSettings }), { isOwner: true });
+    await screen.findByRole('button', { name: /^Overview/ });
 
     const toggle = await screen.findByLabelText(
       'Allow issuing beyond sanctioned quantities',
@@ -3023,11 +3354,12 @@ describe('WorkDetail amendments', () => {
 
     cleanup();
     renderAmended(amendedApi());
-    await screen.findByRole('heading', { name: 'Amendments' });
+    // The second render has to finish loading before the read-only variant
+    // of the switch exists to assert on.
+    expect(await screen.findByText('Not allowed')).toBeTruthy();
     expect(
       screen.queryByLabelText('Allow issuing beyond sanctioned quantities'),
     ).toBeNull();
-    expect(screen.getByText('Not allowed')).toBeTruthy();
   });
 });
 
@@ -3133,6 +3465,7 @@ describe('WorkDetail serial tracking toggle', () => {
       updateWorkItemSerials,
     });
     renderDetail(api, true);
+    await openWorkTab('Schedules & items');
 
     const toggle = await screen.findByRole('switch', {
       name: 'Serial tracking for A/1',
@@ -3165,6 +3498,7 @@ describe('WorkDetail serial tracking toggle', () => {
       updateWorkItemSerials,
     });
     renderDetail(api, true);
+    await openWorkTab('Schedules & items');
 
     fireEvent.click(
       await screen.findByRole('switch', { name: 'Serial tracking for A/1' }),
@@ -3178,6 +3512,7 @@ describe('WorkDetail serial tracking toggle', () => {
   it('shows read-only members the flag without a control', async () => {
     const api = stubApi({ getWork: vi.fn().mockResolvedValue(detailWith(true)) });
     renderDetail(api, false);
+    await openWorkTab('Schedules & items');
 
     await screen.findByRole('heading', { name: /DCW-1/ });
     expect(screen.queryByRole('switch')).toBeNull();
@@ -3508,6 +3843,120 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
     expect(screen.getByLabelText('Rate for row 2 in schedule A')).toBeTruthy();
   });
+
+  // Submitting through the form rather than the button: the controls under
+  // test are `required`, and a click would be stopped by the browser's own
+  // validation before the view's checks ever run.
+  // Click the real button. Dispatching submit on the <form> would prove
+  // nothing: it is exactly the step native constraint validation used to
+  // abort, which is why these checks were unreachable before the form
+  // took validation over.
+  function submitReview() {
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+  }
+
+  it('binds each rejected field to its own message, reports them together, and focuses the first', async () => {
+    const confirmLoa = renderReview();
+
+    const direction = await screen.findByLabelText('Direction');
+    fireEvent.change(direction, { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Submit within (days)'), {
+      target: { value: '0' },
+    });
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    submitReview();
+
+    expect(confirmLoa).not.toHaveBeenCalled();
+    expect(direction.getAttribute('aria-invalid')).toBe('true');
+    const directionMessage = screen.getByText(
+      'Select the percentage direction printed on the letter.',
+    );
+    expect(direction.getAttribute('aria-describedby')).toBe(directionMessage.id);
+    // Per-field messages stay silent; the summary carries the announcement.
+    expect(directionMessage.getAttribute('role')).toBeNull();
+    const days = screen.getByLabelText('Submit within (days)');
+    expect(days.getAttribute('aria-invalid')).toBe('true');
+    // Both failures arrive on one pass, not one resubmission apart.
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(
+      'Select the percentage direction printed on the letter.',
+    );
+    expect(alert.textContent).toContain(
+      'Enter the PBG submission window in days (1–180).',
+    );
+    // The direction is flagged first, so that is where a keyboard user lands
+    // instead of hunting a form a hundred rows long.
+    expect(document.activeElement).toBe(direction);
+
+    fireEvent.change(direction, { target: { value: 'below' } });
+    fireEvent.change(days, { target: { value: '21' } });
+    submitReview();
+    await waitFor(() => {
+      expect(confirmLoa).toHaveBeenCalledOnce();
+    });
+    expect(
+      screen.queryByText('Select the percentage direction printed on the letter.'),
+    ).toBeNull();
+  });
+
+  it('asks for at least one item row and moves focus to the control that adds one', async () => {
+    const confirmLoa = renderReview();
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    for (const itemSno of ['1', '2']) {
+      fireEvent.click(
+        screen.getByRole('button', { name: `Remove row ${itemSno} in schedule A` }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    }
+    fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
+      target: { value: 'PL273-JHS' },
+    });
+    submitReview();
+
+    expect(confirmLoa).not.toHaveBeenCalled();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Add at least one item row before confirming.',
+    );
+    // No box is wrong when the table is empty, so focus goes to the one that
+    // can satisfy the rule.
+    expect(document.activeElement).toBe(
+      screen.getByLabelText('Schedule for the new row'),
+    );
+  });
+
+  it('subtotals each schedule exactly and withholds the figure when a cell is unusable', async () => {
+    renderReview();
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe('₹1000.00');
+
+    // Mid-edit and malformed cells report nothing rather than a total that
+    // silently omits a row.
+    fireEvent.change(screen.getByLabelText('Rate for row 2 in schedule A'), {
+      target: { value: '' },
+    });
+    expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe(
+      'Not yet available',
+    );
+  });
+
+  it('keeps the contract-value difference exact for six-decimal rates', async () => {
+    renderReview();
+
+    fireEvent.change(await screen.findByLabelText('Rate for row 1 in schedule A'), {
+      target: { value: '450.000001' },
+    });
+    // 2 × 450.000001 plus 1 × 100 against a contract value of 900.00: the
+    // comparison survives at the row total's own nine-digit scale.
+    expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe('₹1000.000002');
+    expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
+      'Entered rows total ₹1000.000002 across 2 rows — contract value ₹900.00 ' +
+        '(difference ₹100.000002)',
+    );
+  });
 });
 
 describe('WorkDetail PBG requirement', () => {
@@ -3574,6 +4023,7 @@ describe('WorkDetail PBG requirement', () => {
         pbgPenalInterestPercent: '12.000',
       }),
     );
+    await openWorkTab('Instruments');
 
     await screen.findByText('PBG required by the letter');
     expect(screen.getByText(/45,000/)).toBeTruthy();
@@ -3597,6 +4047,7 @@ describe('WorkDetail PBG requirement', () => {
         pbgPenalInterestPercent: null,
       }),
     );
+    await openWorkTab('Instruments');
 
     await screen.findByText(
       'The letter records no Performance Bank Guarantee requirement.',
@@ -4857,7 +5308,9 @@ describe('MeasurementBooks workspace', () => {
     // The live preview mirrors the PDF columns including the remark.
     expect(screen.getByText('Supplied Δ')).toBeTruthy();
     expect(screen.getByText('Now to pay 80% for 5000 mtr.')).toBeTruthy();
-    expect(screen.getByText('Total payable this MB')).toBeTruthy();
+    // The total is a table summary, not a body row: this table is printed to
+    // PDF, where only a foot repeats across pages.
+    expect(screen.getByText('Total payable this MB').closest('tfoot')).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText(/DC\/1 · 2026-08-01/));
     fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
@@ -4868,21 +5321,24 @@ describe('MeasurementBooks workspace', () => {
     });
   });
 
+  function sourceConflict(
+    sourceType: string,
+    sourceId: string,
+    holdingMbNumber: string,
+  ) {
+    return new RequestFailedError(
+      409,
+      'MB_SOURCE_ALREADY_BILLED',
+      'A source can be billed by at most one live Measurement Book.',
+      { sourceType, sourceId, holdingMeasurementBookId: MB_FINAL_ID, holdingMbNumber },
+    );
+  }
+
   it('marks a source claimed by another live MB from the structured 409', async () => {
     const api = mbApi({
-      setMeasurementBookSources: vi.fn().mockRejectedValue(
-        new RequestFailedError(
-          409,
-          'MB_SOURCE_ALREADY_BILLED',
-          'A source can be billed by at most one live Measurement Book.',
-          {
-            sourceType: 'delivery_challan',
-            sourceId: DC_ID,
-            holdingMeasurementBookId: MB_FINAL_ID,
-            holdingMbNumber: 'DCW-1-MB-02',
-          },
-        ),
-      ),
+      setMeasurementBookSources: vi
+        .fn()
+        .mockRejectedValue(sourceConflict('delivery_challan', DC_ID, 'DCW-1-MB-02')),
     });
     renderMb(api);
 
@@ -4890,10 +5346,41 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.click(await screen.findByLabelText(/DC\/1 · 2026-08-01/));
     fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
 
-    await screen.findByText('claimed by DCW-1-MB-02');
+    const chip = await screen.findByText('claimed by DCW-1-MB-02');
     expect(screen.getByRole('alert').textContent).toContain(
       'at most one live Measurement Book',
     );
+
+    // The claim is enforced in the UI rather than left to fail server-side on
+    // the next save, and the chip describes the box instead of being read as
+    // part of its name.
+    const box = screen.getByLabelText<HTMLInputElement>(/DC\/1 · 2026-08-01/);
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(box.getAttribute('aria-describedby')).toBe(chip.id);
+    expect(chip.closest('label')).toBeNull();
+  });
+
+  it('keeps every source conflict marked, not only the newest', async () => {
+    const api = mbApi({
+      setMeasurementBookSources: vi
+        .fn()
+        .mockRejectedValueOnce(sourceConflict('delivery_challan', DC_ID, 'DCW-1-MB-02'))
+        .mockRejectedValueOnce(sourceConflict('installation', INST_ID, 'DCW-1-MB-01')),
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
+    await screen.findByText('claimed by DCW-1-MB-02');
+
+    fireEvent.click(screen.getByLabelText(/A\/1 × 1000\.000/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
+    await screen.findByText('claimed by DCW-1-MB-01');
+
+    // The second clash must not unmark the row the first one flagged.
+    expect(screen.getByText('claimed by DCW-1-MB-02')).toBeTruthy();
   });
 
   it('links unresolved-category warnings to the payment matrix', async () => {
@@ -4914,6 +5401,17 @@ describe('MeasurementBooks workspace', () => {
     const link = screen.getByRole('link', { name: 'payment matrix' });
     expect(link.getAttribute('href')).toBe('#payment-matrix');
     expect(screen.getByText(/A\/1:/)).toBeTruthy();
+
+    // The warnings are part of the view as it opens, so they are a status
+    // region; alert is reserved for what the operator just caused.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((region) =>
+          (region.textContent ?? '').includes('cannot price every selected item'),
+        ),
+    ).toBe(true);
   });
 
   it('finalizes through a confirm step naming the next number', async () => {
@@ -4930,6 +5428,29 @@ describe('MeasurementBooks workspace', () => {
 
     await waitFor(() => {
       expect(finalizeMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID);
+    });
+  });
+
+  it('deletes a draft only through a confirm step that names the released claims', async () => {
+    const deleteMeasurementBook = vi.fn().mockResolvedValue(undefined);
+    const api = mbApi({ deleteMeasurementBook });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete draft…' }));
+
+    // Deleting is unrecoverable, so the first click must destroy nothing.
+    expect(deleteMeasurementBook).not.toHaveBeenCalled();
+    await screen.findByText(/releases every source it claimed/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep drafting' }));
+    expect(screen.queryByRole('button', { name: 'Delete draft now' })).toBeNull();
+    expect(deleteMeasurementBook).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete draft…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete draft now' }));
+    await waitFor(() => {
+      expect(deleteMeasurementBook).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID);
     });
   });
 
@@ -5022,7 +5543,14 @@ describe('MeasurementBooks workspace', () => {
       fireEvent.change(screen.getByLabelText(/Cancellation note/), {
         target: { value: 'Wrong measurement basis.' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+
+      // Cancelling a numbered record is irreversible, so the confirm echoes
+      // the number before anything is sent.
+      await screen.findByText(/Measurement Book DCW-1-MB-02 will be cancelled/);
+      expect(cancelMeasurementBook).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel DCW-1-MB-02 now' }));
       await waitFor(() => {
         expect(cancelMeasurementBook).toHaveBeenCalledWith(
           ORG_ID,
@@ -5033,6 +5561,27 @@ describe('MeasurementBooks workspace', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('withdraws the cancel confirmation when the note is reworded', async () => {
+    const cancelMeasurementBook = vi.fn();
+    const api = mbApi({
+      getMeasurementBook: vi.fn().mockResolvedValue(FINAL_DETAIL),
+      cancelMeasurementBook,
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+    const note = await screen.findByLabelText(/Cancellation note/);
+    fireEvent.change(note, { target: { value: 'Wrong measurement basis.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+    await screen.findByRole('button', { name: 'Cancel DCW-1-MB-02 now' });
+
+    // What was confirmed must be the wording that gets stored, so rewording
+    // the note sends the operator back through the confirm step.
+    fireEvent.change(note, { target: { value: 'Wrong quantities recorded.' } });
+    expect(screen.queryByRole('button', { name: 'Cancel DCW-1-MB-02 now' })).toBeNull();
+    expect(cancelMeasurementBook).not.toHaveBeenCalled();
   });
 
   it('hides drafting and financial actions from members without the rights', async () => {
@@ -5049,7 +5598,7 @@ describe('MeasurementBooks workspace', () => {
     expect(screen.queryByRole('button', { name: 'Render PDF' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Finalize/ })).toBeNull();
     expect(
-      screen.queryByRole('button', { name: 'Cancel Measurement Book' }),
+      screen.queryByRole('button', { name: 'Cancel Measurement Book…' }),
     ).toBeNull();
   });
 
@@ -5064,7 +5613,7 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
     await screen.findByRole('button', { name: 'Prepare bill' });
     expect(
-      screen.queryByRole('button', { name: 'Cancel Measurement Book' }),
+      screen.queryByRole('button', { name: 'Cancel Measurement Book…' }),
     ).toBeNull();
     cleanup();
 
@@ -5072,7 +5621,7 @@ describe('MeasurementBooks workspace', () => {
     // offered, the financial actions are not.
     renderMb(api, { canIssue: false, canCancel: true });
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
-    await screen.findByRole('button', { name: 'Cancel Measurement Book' });
+    await screen.findByRole('button', { name: 'Cancel Measurement Book…' });
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
   });
 });
