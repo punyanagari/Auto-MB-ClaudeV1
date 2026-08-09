@@ -219,6 +219,21 @@ amendment → every completion extension → current effective baseline with
 no historical record overwritten, and every change shows who proposed it
 and who applied it.
 
+Retrofit, first half (2026-08-09, migration 0029): extension-letter
+completeness against the legacy §5.5 list — manual back-fill of paper
+letters occupying the next sequence slot as final (top-of-sequence
+deletion only, by an approvals holder, counter rolled back under the
+lock so the slot is reused), DRAFT-watermarked draft previews streamed
+without stored render state, and exit tests pinning every
+already-held invariant (uniform draft-conflict shape, date ordering,
+response-preserves-request, permanent undeletability of software
+letters, alerts on the current effective completion date). Remaining
+retrofit (second half, scheduled): the full R7 amendment floors
+including the PAC certified floor and omission rules, work
+completion/reopen/short-closure (R8) with per-category executed value,
+approval-concurrency exit tests, and installation/Issue-Challan
+invariant exit suites.
+
 ## Milestone 7 — site material movement and document control
 
 Scope:
@@ -255,12 +270,34 @@ Scope:
   issue. Multiline batch capture already shipped in Milestone 5; range
   expansion and spreadsheet import stay evidence-gated in Milestone 9.
 
+Delivered (2026-08-09, migrations 0017–0019 plus the review-hardening
+pass in 0023): quantity-level installation records with inline-creatable
+location snapshots, serial attachment against the delivered pool, and
+exact-arithmetic caps under row locks; the warranty/guarantee
+certificate as page 2 of the Delivery Challan, frozen into the issued
+snapshot with template version and content hash; the correction flow
+through the Milestone 6 approval engine — evidence-free issued
+documents get approval-gated cancel-and-replace with provenance,
+evidence-locked ones get gapless numbered correction notices, and
+deciders revalidate the document authorities at apply time; issue
+challans joined the timeline and export; the amendment floor includes
+installed quantities. The Contacts unification (2026-08-09, migration 0028) upgraded the consignee master into the role-flagged Contacts
+model — consignee role active, vendor/client dormant until procurement
+— with GSTIN validation (deductor `…D` accepted), R16 authority
+refusal, and per-Work consignee associations.
+
 Exit: a material unit can be traced awarded → delivered → received →
 issued to site → installed, including its documents, custody, serial
 identity, and location, and a wrong issued document has a lawful
-correction path that preserves the original.
+correction path that preserves the original — met
+(`apps/server/test/installations.integration.test.ts`,
+`corrections.integration.test.ts`, `challans.integration.test.ts`).
 
-## Milestone 8 — stage-wise payment eligibility
+## Milestone 8 — stage-wise Measurement Book lifecycle and payment eligibility
+
+(Renamed from "stage-wise payment eligibility" after the second auditor
+review: the legacy spec defines a Measurement Book lifecycle, not just a
+bill formula. ADR-0006 records the settled design.)
 
 Scope:
 
@@ -287,9 +324,48 @@ staged contract would be a permanently wrong financial record. The
 richer maths already deferred (security deposit deductions, price
 variation) still wait for a partner's real bill format.
 
+Delivered (2026-08-09, migrations 0021–0027): item payment categories
+with the per-Work matrix (four categories plus an optional UNCATEGORISED
+row; finalization names every unresolved item; R10 honoured — no
+per-item percentages); PAC certificates with the R18
+installed-minus-covered cap under row locks, consignee snapshots, and
+display-only released values; the Measurement Book lifecycle per
+ADR-0006 — database-enforced one-live-MB-per-source, draft recompute,
+gapless `<work_code>-MB-NN` finalisation snapshotting categories,
+percentages, rates, per-stage deltas and true-cumulative priors,
+newest-live-only cancel (works-row serialised with DB backstops),
+final-MB sweep enforcement with a post-final source freeze, and R19
+coherence guards both directions at API and database level; bills
+prepared 1:1 from finalized MBs (the Milestone 5 measured-quantity
+sweep is retired); the contractual MB remark algorithm proven
+character-for-character against the agency workbook fixture; the MB
+document with DRAFT watermark, FINAL BILL banner, and Indian-system
+amount in words; rates at six-decimal precision end to end (amounts
+stay two-decimal per R13).
+
 Exit: the first stage-based bill is computed entirely from recorded
 contract terms and operational evidence, with no payment percentages
-calculated in an external spreadsheet.
+calculated in an external spreadsheet — met
+(`apps/server/test/measurement-books.integration.test.ts`,
+`mb-remark.test.ts` against
+`apps/server/test/fixtures/mb-remark-workbook.v1.json`).
+
+## Legacy v1 cutover
+
+The live v1 system (SQLite) holds real production data — 34 works,
+650 delivery challans with serials across two legal entities — and
+stops at launch. Delivered (2026-08-09, migration 0025): the idempotent
+cutover importer (`scripts/import-v1.ts`) with append-only import
+provenance, exact preservation of printed challan numbers (including
+suffixed ones), historical timestamps, counter continuity after the
+highest historical number, serial parsing with named exceptions
+(never silent dedup, ranges never fabricated), deterministic
+quantization with honest drift accounting, per-organisation
+reconciliation reports, and dry-run rollback. The cutover runbook is
+in docs/OPERATIONS.md: dry-run now, freeze v1 at launch, final backup,
+apply, reconcile, invite users. Data-quality exceptions found in the
+real backup were delivered to the operator for correction in v1 before
+the final run.
 
 ## Milestone 9 — operational depth, evidence-gated
 
