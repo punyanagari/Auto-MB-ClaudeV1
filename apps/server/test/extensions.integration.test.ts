@@ -900,7 +900,6 @@ describe('dashboard completion alerts', () => {
   });
 });
 
-<<<<<<< HEAD
 describe('export manifest covers the extension document objects', () => {
   it('lists the rendered letter and the railway response with their hashes', async () => {
     const response = await authed(owner, {
@@ -918,7 +917,10 @@ describe('export manifest covers the extension document objects', () => {
     for (const kind of ['extension-rendered-pdf', 'extension-response-document']) {
       const entry = exported.objectManifest.find((item) => item.kind === kind);
       expect(entry?.sha256, kind).toMatch(/^[0-9a-f]{64}$/);
-=======
+    }
+  });
+});
+
 // --- M6/7 retrofit exit tests ------------------------------------------------
 // Each block pins one §5.5 completeness item: (c) required content,
 // (d) DRAFT watermark preview / number only at finalisation, (e) manual
@@ -939,13 +941,9 @@ describe('drafting requires addressee and content (§5.5 item c)', () => {
         payload,
       });
       expect(response.statusCode, JSON.stringify(payload)).toBe(400);
->>>>>>> worktree-agent-a36a89099550d5f1d
     }
   });
 });
-
-<<<<<<< HEAD
-=======
 describe('draft preview (§5.5 item d: DRAFT watermark, number only at finalisation)', () => {
   let draftId: string;
 
@@ -1497,7 +1495,6 @@ describe('completion alerts follow the CURRENT effective date (item h)', () => {
   });
 });
 
->>>>>>> worktree-agent-a36a89099550d5f1d
 describe('cross-tenant denial', () => {
   let foreignExtensionId: string;
 
