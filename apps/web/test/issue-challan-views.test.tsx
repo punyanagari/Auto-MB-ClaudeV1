@@ -134,6 +134,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     upsertPaymentMatrixRow: vi.fn(),
     deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
     setWorkItemPaymentCategory: vi.fn(),
+    listWorkPacCertificates: vi
+      .fn()
+      .mockResolvedValue({ certificates: [], itemSummaries: [] }),
+    recordWorkPacCertificate: vi.fn(),
+    cancelPacCertificate: vi.fn(),
+    uploadPacCertificateDocument: vi.fn(),
+    downloadPacCertificateDocument: vi.fn(),
     ...overrides,
   };
 }

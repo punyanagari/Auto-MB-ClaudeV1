@@ -16,6 +16,7 @@ import { Installations } from '../src/views/Installations.js';
 import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { PaymentMatrix } from '../src/views/PaymentMatrix.js';
+import { PacCertificates } from '../src/views/PacCertificates.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SerialLookup } from '../src/views/SerialLookup.js';
 import { SignIn } from '../src/views/SignIn.js';
@@ -148,6 +149,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     upsertPaymentMatrixRow: vi.fn(),
     deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
     setWorkItemPaymentCategory: vi.fn(),
+    listWorkPacCertificates: vi
+      .fn()
+      .mockResolvedValue({ certificates: [], itemSummaries: [] }),
+    recordWorkPacCertificate: vi.fn(),
+    cancelPacCertificate: vi.fn(),
+    uploadPacCertificateDocument: vi.fn(),
+    downloadPacCertificateDocument: vi.fn(),
     ...overrides,
   };
 }
@@ -3610,5 +3618,264 @@ describe('ReviewLoa payment categories', () => {
       ConfirmWorkRequest,
     ];
     expect('paymentCategory' in (requestArg.schedules[0]?.items[0] ?? {})).toBe(false);
+  });
+});
+
+describe('PAC certificates', () => {
+  const ITEM_ONE = '44444444-4444-4444-8444-444444444444';
+  const ITEM_TWO = '55555555-5555-4555-8555-555555555555';
+  const CONSIGNEE_ID = '66666666-6666-4666-8666-666666666666';
+  const CERTIFICATE_ID = '99999999-9999-4999-8999-999999999999';
+
+  const PAC_WORK_ITEMS = [
+    {
+      id: ITEM_ONE,
+      scheduleId: '77777777-7777-4777-8777-777777777777',
+      itemNumber: 'A/1',
+      description: 'Cable set',
+      unitCode: 'Set',
+      awardedQuantity: '10.000',
+      effectiveRate: '250.00',
+      requiresSerials: false,
+    },
+    {
+      id: ITEM_TWO,
+      scheduleId: '77777777-7777-4777-8777-777777777777',
+      itemNumber: 'A/2',
+      description: 'Main switchboard',
+      unitCode: 'Nos',
+      awardedQuantity: '5.000',
+      effectiveRate: '100.00',
+      requiresSerials: true,
+    },
+  ];
+
+  const CONSIGNEE = {
+    id: CONSIGNEE_ID,
+    designation: 'Sr. DEE (G) CR',
+    address: 'Bhusawal Division',
+    contactPerson: null,
+    phone: null,
+    email: null,
+    active: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  const RECORDED_PAC = {
+    id: CERTIFICATE_ID,
+    workId: WORK_ID,
+    reference: 'PAC/2026/01',
+    issueDate: '2026-08-01',
+    consigneeMasterId: CONSIGNEE_ID,
+    consigneeDesignation: 'Sr. DEE (G) CR',
+    status: 'recorded' as const,
+    cancellationNote: null,
+    documentAvailable: false,
+    items: [
+      {
+        workItemId: ITEM_TWO,
+        itemNumber: 'A/2',
+        certifiedQuantity: '2.000',
+        releasedValue: null,
+      },
+    ],
+    releasedValue: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    cancelledAt: null,
+  };
+
+  const PAC_LIST = {
+    certificates: [RECORDED_PAC],
+    itemSummaries: [
+      {
+        workItemId: ITEM_ONE,
+        itemNumber: 'A/1',
+        installedQuantity: '0.000',
+        pacCertifiedQuantity: '0.000',
+        availableQuantity: '0.000',
+      },
+      {
+        workItemId: ITEM_TWO,
+        itemNumber: 'A/2',
+        installedQuantity: '3.000',
+        pacCertifiedQuantity: '2.000',
+        availableQuantity: '1.000',
+      },
+    ],
+  };
+
+  function pacApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      listWorkPacCertificates: vi.fn().mockResolvedValue(PAC_LIST),
+      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+      ...overrides,
+    });
+  }
+
+  function renderPac(api: ApiClient, options: Partial<{ canModify: boolean }> = {}) {
+    return render(
+      <PacCertificates
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={options.canModify ?? true}
+        workItems={PAC_WORK_ITEMS}
+      />,
+    );
+  }
+
+  it('shows the per-item certified summary and a null released value as a dash', async () => {
+    renderPac(pacApi());
+
+    await screen.findByRole('heading', { name: 'Record PAC certificate' });
+    // Summary: installed / certified / available per item.
+    expect(screen.getByText('3.000')).toBeTruthy();
+    expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
+    expect(screen.getByText('1.000')).toBeTruthy();
+    // The certificate block with its consignee snapshot and status.
+    expect(
+      screen.getByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Issued by Sr\. DEE \(G\) CR/)).toBeTruthy();
+    expect(screen.getByText('recorded')).toBeTruthy();
+    // Released value is display-only and unresolved in phase 1: an em
+    // dash, never a fabricated number.
+    expect(screen.getByText('—')).toBeTruthy();
+  });
+
+  it('records a certificate with reference, date, consignee and per-item quantities', async () => {
+    const recordWorkPacCertificate = vi.fn().mockResolvedValue({
+      ...RECORDED_PAC,
+      id: 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
+      reference: 'PAC/2026/02',
+    });
+    const api = pacApi({ recordWorkPacCertificate });
+    renderPac(api);
+
+    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+      target: { value: 'PAC/2026/02' },
+    });
+    fireEvent.change(screen.getByLabelText('Issue date'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Issuing consignee'), {
+      target: { value: CONSIGNEE_ID },
+    });
+    // The per-item rows announce installed / certified / available.
+    fireEvent.change(
+      screen.getByLabelText(
+        /A\/2 — Main switchboard \(installed 3\.000, certified 2\.000, available 1\.000\)/,
+      ),
+      { target: { value: '1.000' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+
+    await waitFor(() => {
+      expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        reference: 'PAC/2026/02',
+        issueDate: '2026-08-05',
+        consigneeMasterId: CONSIGNEE_ID,
+        items: [{ workItemId: ITEM_TWO, certifiedQuantity: '1.000' }],
+      });
+    });
+  });
+
+  it('announces the R18 cap conflict in an alert region', async () => {
+    const recordWorkPacCertificate = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'PAC_EXCEEDS_INSTALLED',
+          'The certified quantity exceeds what installation records support — A/2: installed 3.000, already certified 2.000, available 1.000.',
+        ),
+      );
+    const api = pacApi({ recordWorkPacCertificate });
+    renderPac(api);
+
+    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+      target: { value: 'PAC/2026/03' },
+    });
+    fireEvent.change(screen.getByLabelText('Issue date'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText(/A\/2 — Main switchboard/), {
+      target: { value: '5.000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(
+      'installed 3.000, already certified 2.000, available 1.000',
+    );
+  });
+
+  it('cancels a certificate with a mandatory note', async () => {
+    const cancelPacCertificate = vi.fn().mockResolvedValue({
+      ...RECORDED_PAC,
+      status: 'cancelled',
+      cancellationNote: 'Superseded by the railway',
+      cancelledAt: '2026-08-06T00:00:00.000Z',
+    });
+    const api = pacApi({ cancelPacCertificate });
+    renderPac(api);
+
+    fireEvent.change(
+      await screen.findByLabelText('Cancellation note for PAC PAC/2026/01'),
+      { target: { value: 'Superseded by the railway' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel certificate' }));
+
+    await waitFor(() => {
+      expect(cancelPacCertificate).toHaveBeenCalledWith(
+        ORG_ID,
+        CERTIFICATE_ID,
+        'Superseded by the railway',
+      );
+    });
+  });
+
+  it('offers the scanned-certificate download when a document exists', async () => {
+    const downloadPacCertificateDocument = vi.fn().mockResolvedValue(new Blob());
+    const api = pacApi({
+      listWorkPacCertificates: vi.fn().mockResolvedValue({
+        ...PAC_LIST,
+        certificates: [{ ...RECORDED_PAC, documentAvailable: true }],
+      }),
+      downloadPacCertificateDocument,
+    });
+    const openSpy = vi.fn();
+    vi.stubGlobal('open', openSpy);
+    const createObjectURL = vi.fn().mockReturnValue('blob:pac');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    try {
+      renderPac(api);
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Open scanned certificate' }),
+      );
+      await waitFor(() => {
+        expect(downloadPacCertificateDocument).toHaveBeenCalledWith(
+          ORG_ID,
+          CERTIFICATE_ID,
+        );
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('hides recording, cancellation and upload from read-only members', async () => {
+    renderPac(pacApi(), { canModify: false });
+
+    await screen.findByRole('heading', { name: 'PAC certificates' });
+    expect(
+      screen.getByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record PAC certificate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel certificate' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Upload scanned certificate' }),
+    ).toBeNull();
   });
 });

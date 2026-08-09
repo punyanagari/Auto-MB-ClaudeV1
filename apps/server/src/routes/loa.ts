@@ -863,6 +863,7 @@ export function registerLoaRoutes(
               | 'SPARE_SUPPLY'
               | null;
             installed_quantity: string;
+            pac_certified_quantity: string;
           }[]
         >`
           select id, schedule_id, item_number, description, unit_code,
@@ -876,7 +877,17 @@ export function registerLoaRoutes(
                  coalesce((
                    select sum(i.quantity) from installations i
                    where i.work_item_id = work_items.id and i.status = 'recorded'
-                 ), 0)::text as installed_quantity
+                 ), 0)::text as installed_quantity,
+                 -- Milestone 8 phase 1: THE pac_qty the Measurement Book
+                 -- engine consumes — SUM of certified quantities over
+                 -- non-cancelled PAC certificates (legacy §8).
+                 coalesce((
+                   select sum(pci.certified_quantity)
+                   from pac_certificate_items pci
+                   join pac_certificates pc on pc.id = pci.pac_certificate_id
+                   where pci.work_item_id = work_items.id
+                     and pc.status = 'recorded'
+                 ), 0)::numeric(18,3)::text as pac_certified_quantity
           from work_items
           where work_id = ${id} and deleted_at is null
           order by item_number
@@ -908,6 +919,7 @@ export function registerLoaRoutes(
               // Milestone 8: null = uncategorised (resolves through the
               // Work's UNCATEGORISED matrix row).
               paymentCategory: item.payment_category,
+              pacCertifiedQuantity: item.pac_certified_quantity,
             })),
         }));
         return {

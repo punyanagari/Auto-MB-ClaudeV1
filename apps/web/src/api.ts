@@ -70,6 +70,9 @@ import type {
   UpsertPaymentMatrixRowRequest,
   WorkItemPaymentCategory,
   WorkItemPaymentCategoryResponse,
+  PacCertificate,
+  PacCertificateListResponse,
+  RecordPacCertificateRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -564,6 +567,30 @@ export interface ApiClient {
     workItemId: string,
     paymentCategory: WorkItemPaymentCategory | null,
   ) => Promise<WorkItemPaymentCategoryResponse>;
+  /** PAC certificates (Milestone 8 phase 1). */
+  readonly listWorkPacCertificates: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<PacCertificateListResponse>;
+  readonly recordWorkPacCertificate: (
+    organisationId: string,
+    workId: string,
+    body: RecordPacCertificateRequest,
+  ) => Promise<PacCertificate>;
+  readonly cancelPacCertificate: (
+    organisationId: string,
+    certificateId: string,
+    note: string,
+  ) => Promise<PacCertificate>;
+  readonly uploadPacCertificateDocument: (
+    organisationId: string,
+    certificateId: string,
+    file: Blob,
+  ) => Promise<PacCertificate>;
+  readonly downloadPacCertificateDocument: (
+    organisationId: string,
+    certificateId: string,
+  ) => Promise<Blob>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1394,6 +1421,53 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/work-items/${workItemId}/payment-category`,
         { method: 'PATCH', body: { paymentCategory }, organisationId },
       );
+    },
+    async listWorkPacCertificates(organisationId, workId) {
+      return request<PacCertificateListResponse>(
+        `/api/works/${workId}/pac-certificates`,
+        { organisationId },
+      );
+    },
+    async recordWorkPacCertificate(organisationId, workId, body) {
+      return request<PacCertificate>(`/api/works/${workId}/pac-certificates`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelPacCertificate(organisationId, certificateId, note) {
+      return request<PacCertificate>(`/api/pac-certificates/${certificateId}/cancel`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async uploadPacCertificateDocument(organisationId, certificateId, file) {
+      const response = await fetchImpl(
+        `/api/pac-certificates/${certificateId}/document`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as PacCertificate;
+    },
+    async downloadPacCertificateDocument(organisationId, certificateId) {
+      const response = await fetchImpl(
+        `/api/pac-certificates/${certificateId}/document`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
   };
 }

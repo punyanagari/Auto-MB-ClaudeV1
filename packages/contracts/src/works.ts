@@ -161,6 +161,10 @@ export const WorkItemSchema = Type.Object(
     paymentCategory: Type.Optional(
       Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
     ),
+    /** Present on the Work detail response: SUM of certified quantities
+     * over non-cancelled PAC certificates for the item (Milestone 8
+     * phase 1) — THE pac_qty the Measurement Book engine consumes. */
+    pacCertifiedQuantity: Type.Optional(DecimalStringSchema),
   },
   { additionalProperties: false },
 );

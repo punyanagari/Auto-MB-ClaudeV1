@@ -64,6 +64,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   // documents: finalised MBs snapshot their percentages, so deleting a
   // row for an unused category is legitimate (0021).
   payment_matrices: 'SELECT, INSERT, UPDATE, DELETE',
+  // PAC certificates cancel with a note, never delete; their certified
+  // lines are frozen by trigger (0022).
+  pac_certificates: 'SELECT, INSERT, UPDATE',
+  pac_certificate_items: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

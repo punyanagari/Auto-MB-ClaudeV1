@@ -201,6 +201,8 @@ export function registerTimelineRoutes(
                 select id from work_items where work_id = ${workId}))
               or (ae.entity_type = 'payment_matrices' and ae.entity_id in (
                 select id from payment_matrices where work_id = ${workId}))
+              or (ae.entity_type = 'pac_certificates' and ae.entity_id in (
+                select id from pac_certificates where work_id = ${workId}))
             )
             and (${cursor === null} or (ae.occurred_at, ae.id) <
               (${cursor?.occurredAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
