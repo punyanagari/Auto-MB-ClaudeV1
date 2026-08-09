@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
+  BackfillExtensionResponse,
   DashboardResponse,
   ExtensionRequestDetailResponse,
   WorkCompletionResponse,
@@ -899,6 +900,7 @@ describe('dashboard completion alerts', () => {
   });
 });
 
+<<<<<<< HEAD
 describe('export manifest covers the extension document objects', () => {
   it('lists the rendered letter and the railway response with their hashes', async () => {
     const response = await authed(owner, {
@@ -916,10 +918,586 @@ describe('export manifest covers the extension document objects', () => {
     for (const kind of ['extension-rendered-pdf', 'extension-response-document']) {
       const entry = exported.objectManifest.find((item) => item.kind === kind);
       expect(entry?.sha256, kind).toMatch(/^[0-9a-f]{64}$/);
+=======
+// --- M6/7 retrofit exit tests ------------------------------------------------
+// Each block pins one §5.5 completeness item: (c) required content,
+// (d) DRAFT watermark preview / number only at finalisation, (e) manual
+// back-fill, (f) the response never replaces the request, (g) permanent
+// undeletability of software letters, (h) alerts follow the CURRENT date.
+
+describe('drafting requires addressee and content (§5.5 item c)', () => {
+  it('rejects creation without an addressee, without a reason, and with a blank reason', async () => {
+    for (const payload of [
+      { proposedCompletionDate: '2027-12-31', reason: 'Valid reason text.' },
+      { proposedCompletionDate: '2027-12-31', addressee: 'Sr. DEE (G) NR' },
+      { proposedCompletionDate: '2027-12-31', reason: '', addressee: 'Sr. DEE (G) NR' },
+    ]) {
+      const response = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workId}/extension-requests`,
+        organisationId,
+        payload,
+      });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+>>>>>>> worktree-agent-a36a89099550d5f1d
     }
   });
 });
 
+<<<<<<< HEAD
+=======
+describe('draft preview (§5.5 item d: DRAFT watermark, number only at finalisation)', () => {
+  let draftId: string;
+
+  it('streams a PDF preview of a draft without storing any render state', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: '2027-12-31',
+        reason: 'Preview fixture draft.',
+        addressee: 'Sr. DEE (G) NR',
+        letterDate: daysFromToday(-1),
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    draftId = created.json<ExtensionRequestDetailResponse>().extensionRequest.id;
+
+    const preview = await authed(viewer, {
+      method: 'GET',
+      url: `/api/extension-requests/${draftId}/draft-preview`,
+      organisationId,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.headers['content-type']).toContain('application/pdf');
+    expect(preview.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+
+    // Nothing persisted: the draft still carries no render, no number
+    // (the 0011 checks would reject stored render state on a draft).
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/extension-requests/${draftId}`,
+      organisationId,
+    });
+    const request = detail.json<ExtensionRequestDetailResponse>().extensionRequest;
+    expect(request.renderedAvailable).toBe(false);
+    expect(request.requestNumber).toBeNull();
+    expect(request.sequenceNumber).toBeNull();
+  });
+
+  it('refuses the preview for finalised letters and the render for drafts', async () => {
+    const [finalised] = await admin<{ id: string }[]>`
+      select id from extension_requests
+      where organisation_id = ${organisationId} and status <> 'draft'
+      limit 1
+    `;
+    if (!finalised) throw new Error('expected a finalised extension fixture');
+    const preview = await authed(owner, {
+      method: 'GET',
+      url: `/api/extension-requests/${finalised.id}/draft-preview`,
+      organisationId,
+    });
+    expect(preview.statusCode).toBe(409);
+    expect(preview.json()).toMatchObject({ code: 'EXTENSION_STATUS_CONFLICT' });
+
+    // The stored-render path stays finalise-only: a draft cannot acquire
+    // an unwatermarked letter.
+    const render = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${draftId}/render`,
+      organisationId,
+    });
+    expect(render.statusCode).toBe(409);
+
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${draftId}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(204);
+  });
+});
+
+describe('response evidence attaches without replacing the request (§5.5 item f)', () => {
+  it('keeps the rendered letter and the railway response retrievable side by side', async () => {
+    // firstId (from the lifecycle suite) is responded: it was rendered,
+    // then received the response document, then the outcome. Both
+    // documents must remain retrievable and the row must hold both keys.
+    const [row] = await admin<
+      {
+        id: string;
+        rendered_object_key: string | null;
+        response_object_key: string | null;
+        finalised_snapshot: unknown;
+      }[]
+    >`
+      select id, rendered_object_key, response_object_key, finalised_snapshot
+      from extension_requests
+      where organisation_id = ${organisationId} and status = 'responded'
+        and rendered_object_key is not null
+      limit 1
+    `;
+    if (!row) throw new Error('expected a rendered+responded extension fixture');
+    expect(row.rendered_object_key).not.toBeNull();
+    expect(row.response_object_key).not.toBeNull();
+    expect(row.finalised_snapshot).not.toBeNull();
+
+    for (const kind of ['rendered', 'response'] as const) {
+      const pdf = await authed(viewer, {
+        method: 'GET',
+        url: `/api/extension-requests/${row.id}/pdf?kind=${kind}`,
+        organisationId,
+      });
+      expect(pdf.statusCode, kind).toBe(200);
+      expect(pdf.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+    }
+  });
+});
+
+describe('finalised software letters are permanently undeletable (§5.5 item g)', () => {
+  it('refuses deletion at the API and at the database, for every writer', async () => {
+    const [finalised] = await admin<{ id: string }[]>`
+      select id from extension_requests
+      where organisation_id = ${organisationId} and status <> 'draft'
+        and source = 'software'
+      limit 1
+    `;
+    if (!finalised) throw new Error('expected a finalised software extension');
+
+    const api = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${finalised.id}`,
+      organisationId,
+    });
+    expect(api.statusCode).toBe(409);
+
+    // Even a superuser session cannot delete it — the 0029 guard names
+    // the rule.
+    await expect(
+      admin`delete from extension_requests where id = ${finalised.id}`,
+    ).rejects.toThrowError(/never be deleted/);
+  });
+});
+
+describe('manual back-fill of paper letters (§5.5 item e)', () => {
+  let backfillWorkId: string;
+  let backfillWorkCode: string;
+  let manualOneId: string;
+  let manualTopId: string;
+  let softwareId: string;
+
+  beforeAll(async () => {
+    backfillWorkCode = `EXTM-${runId.toUpperCase()}`;
+    backfillWorkId = await seedWork(backfillWorkCode);
+    const set = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${backfillWorkId}/completion-dates`,
+      organisationId,
+      payload: { completionDate: '2026-06-30' },
+    });
+    expect(set.statusCode, set.body).toBe(200);
+  });
+
+  it('requires the issue authority (consuming a number slot is an act of authority)', async () => {
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/1',
+        letterDate: '2025-08-01',
+        proposedCompletionDate: '2026-09-30',
+        reason: 'Paper letter one.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+  });
+
+  it('validates the paper letter date and the proposed date', async () => {
+    const future = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/1',
+        letterDate: daysFromToday(2),
+        proposedCompletionDate: '2026-09-30',
+        reason: 'Future-dated paper letter.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(future.statusCode).toBe(400);
+    expect(future.json()).toMatchObject({ code: 'LETTER_DATE_INVALID' });
+
+    const notExtending = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/1',
+        letterDate: '2025-08-01',
+        proposedCompletionDate: '2026-06-30',
+        reason: 'Does not extend anything.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(notExtending.statusCode).toBe(400);
+    expect(notExtending.json()).toMatchObject({ code: 'EXTENSION_DATE_INVALID' });
+  });
+
+  it('records the paper letter as finalised-on-arrival in the next sequence slot', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/1',
+        letterDate: '2025-08-01',
+        proposedCompletionDate: '2026-09-30',
+        reason: 'Paper letter one: monsoon damage.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const body = created.json<BackfillExtensionResponse>();
+    manualOneId = body.extensionRequest.id;
+    expect(body.extensionRequest).toMatchObject({
+      status: 'finalised',
+      source: 'manual',
+      manualReference: 'MW/EXT/1',
+      sequenceNumber: 1,
+      requestNumber: `${backfillWorkCode}-Extension-01`,
+      letterDate: '2025-08-01',
+      templateVersion: 'extension-manual-v1',
+    });
+    // No software letter exists yet: nothing to warn about.
+    expect(body.warnings).toEqual([]);
+    const snapshot = body.finalisedSnapshot as {
+      templateVersion: string;
+      manualReference: string;
+    };
+    expect(snapshot.templateVersion).toBe('extension-manual-v1');
+    expect(snapshot.manualReference).toBe('MW/EXT/1');
+  });
+
+  it('never renders a manual record — the paper letter is the record', async () => {
+    const render = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${manualOneId}/render`,
+      organisationId,
+    });
+    expect(render.statusCode).toBe(409);
+    expect(render.json()).toMatchObject({ code: 'EXTENSION_MANUAL_NOT_RENDERABLE' });
+  });
+
+  it('lets a manual record take the railway response and move the completion date', async () => {
+    const uploaded = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${manualOneId}/response-document`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: Buffer.from(`%PDF-1.4 paper acceptance ${runId}`),
+    });
+    expect(uploaded.statusCode, uploaded.body).toBe(200);
+    const responded = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${manualOneId}/respond`,
+      organisationId,
+      payload: { outcome: 'accepted' },
+    });
+    expect(responded.statusCode, responded.body).toBe(200);
+
+    const completion = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${backfillWorkId}/completion`,
+      organisationId,
+    });
+    expect(completion.json<WorkCompletionResponse>().completion).toEqual({
+      originalCompletionDate: '2026-06-30',
+      currentCompletionDate: '2026-09-30',
+    });
+  });
+
+  it('warns without blocking when a back-fill is dated after the first software letter', async () => {
+    // A software letter enters the register…
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: '2027-03-31',
+        reason: 'Software letter for the warning fixture.',
+        addressee: 'Sr. DEE (G) NR',
+        letterDate: daysFromToday(-3),
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    softwareId = drafted.json<ExtensionRequestDetailResponse>().extensionRequest.id;
+    const finalised = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${softwareId}/finalise`,
+      organisationId,
+    });
+    expect(finalised.statusCode, finalised.body).toBe(201);
+    expect(
+      finalised.json<ExtensionRequestDetailResponse>().extensionRequest.requestNumber,
+    ).toBe(`${backfillWorkCode}-Extension-02`);
+
+    // …a draft may coexist with back-filling (the one-draft slot belongs
+    // to drafts only)…
+    const coexisting = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: '2028-01-31',
+        reason: 'Draft that coexists with a back-fill.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(coexisting.statusCode, coexisting.body).toBe(201);
+    const coexistingId =
+      coexisting.json<ExtensionRequestDetailResponse>().extensionRequest.id;
+
+    // …and a paper letter dated AFTER that software letter warns without
+    // blocking.
+    const suspicious = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/3',
+        letterDate: daysFromToday(-1),
+        proposedCompletionDate: '2027-06-30',
+        reason: 'Paper letter dated inside the software era.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(suspicious.statusCode, suspicious.body).toBe(201);
+    const body = suspicious.json<BackfillExtensionResponse>();
+    manualTopId = body.extensionRequest.id;
+    expect(body.extensionRequest.sequenceNumber).toBe(3);
+    expect(body.warnings).toHaveLength(1);
+    expect(body.warnings[0]).toContain('software-generated letter');
+
+    const removedDraft = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${coexistingId}`,
+      organisationId,
+    });
+    expect(removedDraft.statusCode).toBe(204);
+  });
+
+  it('gates manual deletion on the amendment-approval authority', async () => {
+    // The owner holds issue/cancel but NOT approve yet; the clerk holds
+    // neither.
+    for (const jar of [owner, clerk]) {
+      const denied = await authed(jar, {
+        method: 'DELETE',
+        url: `/api/extension-requests/${manualTopId}`,
+        organisationId,
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+    }
+    await admin`
+      update organisation_memberships set can_approve_amendments = true
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+  });
+
+  it('refuses deleting responded manual records and software finals, even for approvers', async () => {
+    const respondedManual = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${manualOneId}`,
+      organisationId,
+    });
+    expect(respondedManual.statusCode).toBe(409);
+    expect(respondedManual.json()).toMatchObject({
+      code: 'EXTENSION_STATUS_CONFLICT',
+    });
+
+    const software = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${softwareId}`,
+      organisationId,
+    });
+    expect(software.statusCode).toBe(409);
+  });
+
+  it('deletes only from the top of the sequence, rolling the counter back (no gaps ever)', async () => {
+    // Two more paper letters: sequence 4 and 5.
+    const four = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/4',
+        letterDate: '2025-10-01',
+        proposedCompletionDate: '2027-09-30',
+        reason: 'Paper letter four.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(four.statusCode, four.body).toBe(201);
+    const fourId = four.json<BackfillExtensionResponse>().extensionRequest.id;
+    expect(four.json<BackfillExtensionResponse>().extensionRequest.sequenceNumber).toBe(
+      4,
+    );
+    const five = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'MW/EXT/5',
+        letterDate: '2025-11-01',
+        proposedCompletionDate: '2027-12-31',
+        reason: 'Paper letter five.',
+        addressee: 'Sr. DEE (G) NR',
+      },
+    });
+    expect(five.statusCode, five.body).toBe(201);
+    const fiveId = five.json<BackfillExtensionResponse>().extensionRequest.id;
+
+    // Not the top: refused at the API and at the database.
+    const notTop = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/extension-requests/${fourId}`,
+      organisationId,
+    });
+    expect(notTop.statusCode).toBe(409);
+    expect(notTop.json()).toMatchObject({ code: 'EXTENSION_NOT_TOP_OF_SEQUENCE' });
+    await expect(
+      admin`delete from extension_requests where id = ${fourId}`,
+    ).rejects.toThrowError(/top-of-sequence/);
+
+    // Top-of-sequence deletes walk the sequence back one slot at a time.
+    for (const id of [fiveId, fourId, manualTopId]) {
+      const removed = await authed(owner, {
+        method: 'DELETE',
+        url: `/api/extension-requests/${id}`,
+        organisationId,
+      });
+      expect(removed.statusCode, id).toBe(204);
+    }
+
+    // The counter rolled back with them: the next finalisation reuses
+    // slot 3 — the register never gains a gap.
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${backfillWorkId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: '2027-05-31',
+        reason: 'Software letter reusing the freed slot.',
+        addressee: 'Sr. DEE (G) NR',
+        letterDate: daysFromToday(-2),
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const draftId = drafted.json<ExtensionRequestDetailResponse>().extensionRequest.id;
+    const finalised = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${draftId}/finalise`,
+      organisationId,
+    });
+    expect(finalised.statusCode, finalised.body).toBe(201);
+    expect(
+      finalised.json<ExtensionRequestDetailResponse>().extensionRequest.requestNumber,
+    ).toBe(`${backfillWorkCode}-Extension-03`);
+  });
+
+  it('audits back-fills and their deletions', async () => {
+    const backfills = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'extension.manual_backfilled'
+    `;
+    expect(Number(backfills[0]?.count)).toBe(4);
+    const deletions = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'extension.manual_backfill_deleted'
+    `;
+    expect(Number(deletions[0]?.count)).toBe(3);
+  });
+});
+
+describe('completion alerts follow the CURRENT effective date (item h)', () => {
+  it('drops the alert once an extension moves the current date beyond the window', async () => {
+    // dueSoonWorkId sits 10 days from completion and alerted above. Run
+    // the full extension flow to push the CURRENT date past the 30-day
+    // window; the original date stays inside it.
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${dueSoonWorkId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: daysFromToday(200),
+        reason: 'Extension to prove the alert reads the current date.',
+        addressee: 'Sr. DEE (G) NR',
+        letterDate: daysFromToday(-1),
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const extensionId =
+      drafted.json<ExtensionRequestDetailResponse>().extensionRequest.id;
+    const finalised = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/finalise`,
+      organisationId,
+    });
+    expect(finalised.statusCode, finalised.body).toBe(201);
+    const uploaded = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/response-document`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: Buffer.from(`%PDF-1.4 alert window response ${runId}`),
+    });
+    expect(uploaded.statusCode, uploaded.body).toBe(200);
+    const responded = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/respond`,
+      organisationId,
+      payload: { outcome: 'accepted' },
+    });
+    expect(responded.statusCode, responded.body).toBe(200);
+
+    // The original date is still within the warning window…
+    const [work] = await admin<
+      { original_completion_date: string; current_completion_date: string }[]
+    >`
+      select original_completion_date::text as original_completion_date,
+             current_completion_date::text as current_completion_date
+      from works where id = ${dueSoonWorkId}
+    `;
+    expect(work?.original_completion_date).toBe(daysFromToday(10));
+    expect(work?.current_completion_date).toBe(daysFromToday(200));
+
+    // …but the dashboard reads the CURRENT date: no alert remains.
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(
+      response
+        .json<DashboardResponse>()
+        .alerts.some(
+          (alert) =>
+            alert.workId === dueSoonWorkId &&
+            (alert.kind === 'completion_due' || alert.kind === 'completion_overdue'),
+        ),
+    ).toBe(false);
+  });
+});
+
+>>>>>>> worktree-agent-a36a89099550d5f1d
 describe('cross-tenant denial', () => {
   let foreignExtensionId: string;
 
@@ -945,6 +1523,17 @@ describe('cross-tenant denial', () => {
         'POST',
         `/api/works/${workId}/extension-requests`,
         {
+          proposedCompletionDate: '2028-01-01',
+          reason: 'Cross-tenant probe.',
+          addressee: 'Nobody',
+        },
+      ],
+      [
+        'POST',
+        `/api/works/${workId}/extension-requests/backfill`,
+        {
+          reference: 'X/1',
+          letterDate: '2026-01-01',
           proposedCompletionDate: '2028-01-01',
           reason: 'Cross-tenant probe.',
           addressee: 'Nobody',

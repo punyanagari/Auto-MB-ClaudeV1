@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type {
-  ConsigneeMaster,
+  Contact,
   LocationKind,
   LocationMaster,
   Signatory,
@@ -15,10 +15,10 @@ interface MastersProps {
   readonly canModify: boolean;
 }
 
-type MastersTab = 'consignees' | 'locations' | 'units' | 'signatories';
+type MastersTab = 'contacts' | 'locations' | 'units' | 'signatories';
 
 const TABS: readonly { key: MastersTab; label: string }[] = [
-  { key: 'consignees', label: 'Consignees' },
+  { key: 'contacts', label: 'Contacts' },
   { key: 'locations', label: 'Locations' },
   { key: 'units', label: 'Units' },
   { key: 'signatories', label: 'Signatories' },
@@ -91,15 +91,15 @@ function RetiredFilter({
   );
 }
 
-function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
+function ContactsTab({ api, organisationId, canModify }: MastersProps) {
   const [includeRetired, setIncludeRetired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [editing, setEditing] = useState<ConsigneeMaster | null>(null);
+  const [editing, setEditing] = useState<Contact | null>(null);
 
   const load = useCallback(
-    (retired: boolean) => api.listConsigneeMasters(organisationId, retired),
+    (retired: boolean) => api.listContacts(organisationId, { includeRetired: retired }),
     [api, organisationId],
   );
   const { rows, reload } = useMasterList(load, includeRetired, setError);
@@ -116,38 +116,44 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
     const contactPerson = optional('contactPerson');
     const phone = optional('phone');
     const email = optional('email');
+    const gstin = optional('gstin');
+    const pincode = optional('pincode');
+    const stateCode = optional('stateCode');
     setPending(true);
     setError(null);
     setNotice(null);
     try {
-      await api.saveConsigneeMaster(organisationId, editing?.id ?? null, {
+      await api.saveContact(organisationId, editing?.id ?? null, {
         designation: formValue(data, 'designation').trim(),
         ...(address !== undefined ? { address } : {}),
         ...(contactPerson !== undefined ? { contactPerson } : {}),
         ...(phone !== undefined ? { phone } : {}),
         ...(email !== undefined ? { email } : {}),
+        ...(gstin !== undefined ? { gstin } : {}),
+        ...(pincode !== undefined ? { pincode } : {}),
+        ...(stateCode !== undefined ? { stateCode } : {}),
       });
-      setNotice(editing === null ? 'Consignee added.' : 'Consignee updated.');
+      setNotice(editing === null ? 'Contact added.' : 'Contact updated.');
       setEditing(null);
       form.reset();
       reload();
     } catch (cause) {
-      setError(errorMessage(cause, 'The consignee could not be saved.'));
+      setError(errorMessage(cause, 'The contact could not be saved.'));
     } finally {
       setPending(false);
     }
   }
 
-  async function setActive(row: ConsigneeMaster, active: boolean) {
+  async function setActive(row: Contact, active: boolean) {
     setPending(true);
     setError(null);
     setNotice(null);
     try {
-      await api.setConsigneeMasterActive(organisationId, row.id, active);
+      await api.setContactActive(organisationId, row.id, active);
       setNotice(
         active
           ? `${row.designation} reactivated.`
-          : `${row.designation} retired — existing challans keep their snapshot.`,
+          : `${row.designation} retired — existing documents keep their snapshot.`,
       );
       reload();
     } catch (cause) {
@@ -160,30 +166,33 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
   return (
     <>
       <p className="muted">
-        Consignees prefill new Delivery Challans; the challan always keeps its own copy,
-        so editing or retiring a consignee never changes issued documents.
+        One master for consignees, vendors, and clients (role flags on each record).
+        Contacts prefill documents; the document always keeps its own copy, so editing
+        or retiring a contact never changes issued records.
       </p>
       <RetiredFilter
-        id="consignees-retired"
+        id="contacts-retired"
         includeRetired={includeRetired}
         onChange={setIncludeRetired}
       />
       {rows === null ? (
         <p className="muted" role="status">
-          Loading consignees…
+          Loading contacts…
         </p>
       ) : rows.length === 0 ? (
-        <p className="muted">No consignees yet.</p>
+        <p className="muted">No contacts yet.</p>
       ) : (
         <table className="data-table">
           <caption className="visually-hidden">
-            Consignee masters with designation, address, and contact details
+            Contacts with designation, address, GSTIN, roles, and contact details
           </caption>
           <thead>
             <tr>
               <th scope="col">Designation</th>
               <th scope="col">Address</th>
+              <th scope="col">GSTIN</th>
               <th scope="col">Contact</th>
+              <th scope="col">Roles</th>
               <th scope="col">Status</th>
               {canModify && <th scope="col">Actions</th>}
             </tr>
@@ -192,11 +201,29 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
             {rows.map((row) => (
               <tr key={row.id}>
                 <th scope="row">{row.designation}</th>
-                <td className="cell--wrap">{row.address ?? '—'}</td>
+                <td className="cell--wrap">
+                  {[
+                    row.address,
+                    row.pincode,
+                    row.stateCode ? `State ${row.stateCode}` : null,
+                  ]
+                    .filter((part) => part !== null && part !== undefined)
+                    .join(' · ') || '—'}
+                </td>
+                <td>{row.gstin ?? '—'}</td>
                 <td className="cell--wrap">
                   {[row.contactPerson, row.phone, row.email]
                     .filter((part) => part !== null)
                     .join(' · ') || '—'}
+                </td>
+                <td>
+                  {[
+                    row.isConsignee ? 'consignee' : null,
+                    row.isVendor ? 'vendor' : null,
+                    row.isClient ? 'client' : null,
+                  ]
+                    .filter((role) => role !== null)
+                    .join(', ') || '—'}
                 </td>
                 <td>
                   <StatusChip active={row.active} />
@@ -231,15 +258,13 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
 
       {canModify && (
         <>
-          <h2>
-            {editing === null ? 'Add a consignee' : `Edit ${editing.designation}`}
-          </h2>
+          <h2>{editing === null ? 'Add a contact' : `Edit ${editing.designation}`}</h2>
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
             <div className="field-row">
               <div className="field">
-                <label htmlFor="consignee-designation">Designation / name</label>
+                <label htmlFor="contact-designation">Designation / name</label>
                 <input
-                  id="consignee-designation"
+                  id="contact-designation"
                   name="designation"
                   required
                   minLength={2}
@@ -248,9 +273,9 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
                 />
               </div>
               <div className="field">
-                <label htmlFor="consignee-contact">Contact person (optional)</label>
+                <label htmlFor="contact-person">Contact person (optional)</label>
                 <input
-                  id="consignee-contact"
+                  id="contact-person"
                   name="contactPerson"
                   maxLength={200}
                   defaultValue={editing?.contactPerson ?? ''}
@@ -258,9 +283,9 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
               </div>
             </div>
             <div className="field">
-              <label htmlFor="consignee-master-address">Address (optional)</label>
+              <label htmlFor="contact-address">Address (optional)</label>
               <textarea
-                id="consignee-master-address"
+                id="contact-address"
                 name="address"
                 rows={2}
                 maxLength={1000}
@@ -269,18 +294,54 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
             </div>
             <div className="field-row">
               <div className="field">
-                <label htmlFor="consignee-master-phone">Phone (optional)</label>
+                <label htmlFor="contact-gstin">GSTIN (optional)</label>
                 <input
-                  id="consignee-master-phone"
+                  id="contact-gstin"
+                  name="gstin"
+                  minLength={15}
+                  maxLength={15}
+                  defaultValue={editing?.gstin ?? ''}
+                  aria-describedby="contact-gstin-hint"
+                />
+                <p className="muted" id="contact-gstin-hint">
+                  Railway units are TDS deductors — GSTINs ending in D are accepted.
+                </p>
+              </div>
+              <div className="field">
+                <label htmlFor="contact-pincode">Pincode (optional)</label>
+                <input
+                  id="contact-pincode"
+                  name="pincode"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  defaultValue={editing?.pincode ?? ''}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="contact-state-code">State code (optional)</label>
+                <input
+                  id="contact-state-code"
+                  name="stateCode"
+                  pattern="[0-9]{2}"
+                  maxLength={2}
+                  defaultValue={editing?.stateCode ?? ''}
+                />
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="contact-phone">Phone (optional)</label>
+                <input
+                  id="contact-phone"
                   name="phone"
                   maxLength={30}
                   defaultValue={editing?.phone ?? ''}
                 />
               </div>
               <div className="field">
-                <label htmlFor="consignee-master-email">Email (optional)</label>
+                <label htmlFor="contact-email">Email (optional)</label>
                 <input
-                  id="consignee-master-email"
+                  id="contact-email"
                   name="email"
                   type="email"
                   maxLength={200}
@@ -288,9 +349,32 @@ function ConsigneesTab({ api, organisationId, canModify }: MastersProps) {
                 />
               </div>
             </div>
+            <fieldset className="field">
+              <legend>Roles</legend>
+              <label htmlFor="contact-role-consignee">
+                <input
+                  id="contact-role-consignee"
+                  type="checkbox"
+                  checked
+                  disabled
+                  readOnly
+                />{' '}
+                Consignee
+              </label>{' '}
+              <label htmlFor="contact-role-vendor">
+                <input id="contact-role-vendor" type="checkbox" disabled /> Vendor
+              </label>{' '}
+              <label htmlFor="contact-role-client">
+                <input id="contact-role-client" type="checkbox" disabled /> Client
+              </label>
+              <p className="muted">
+                Every contact is a consignee for now; vendor and client roles unlock
+                with the procurement wave (PO/BQ).
+              </p>
+            </fieldset>
             <div className="actions">
               <button type="submit" disabled={pending}>
-                {editing === null ? 'Add consignee' : 'Save changes'}
+                {editing === null ? 'Add contact' : 'Save changes'}
               </button>
               {editing !== null && (
                 <button
@@ -843,7 +927,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
  * here is a picker only — documents snapshot what was chosen, so master
  * edits never rewrite history; rows retire instead of being deleted. */
 export function Masters({ api, organisationId, canModify }: MastersProps) {
-  const [tab, setTab] = useState<MastersTab>('consignees');
+  const [tab, setTab] = useState<MastersTab>('contacts');
 
   return (
     <section className="card card--wide" aria-labelledby="masters-title">
@@ -866,12 +950,8 @@ export function Masters({ api, organisationId, canModify }: MastersProps) {
           </button>
         ))}
       </div>
-      {tab === 'consignees' && (
-        <ConsigneesTab
-          api={api}
-          organisationId={organisationId}
-          canModify={canModify}
-        />
+      {tab === 'contacts' && (
+        <ContactsTab api={api} organisationId={organisationId} canModify={canModify} />
       )}
       {tab === 'locations' && (
         <LocationsTab api={api} organisationId={organisationId} canModify={canModify} />

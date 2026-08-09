@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type {
-  ConsigneeMaster,
+  Contact,
   SaveChallanRequest,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
@@ -37,7 +37,8 @@ export function ChallanEditor({
 }: ChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
-  const [consignees, setConsignees] = useState<readonly ConsigneeMaster[]>([]);
+  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -54,12 +55,16 @@ export function ChallanEditor({
         : api.getChallan(organisationId, challanId),
       // The picker is a convenience: an unavailable master list must not
       // block manual consignee entry.
-      api.listConsigneeMasters(organisationId).catch(() => []),
+      api.listContacts(organisationId, { role: 'consignee' }).catch(() => []),
+      // R16: the Work's linked consignees are offered first; any active
+      // consignee stays selectable below them.
+      api.listWorkConsignees(organisationId, workId).catch(() => []),
     ])
-      .then(([loadedBalance, existing, loadedConsignees]) => {
+      .then(([loadedBalance, existing, loadedConsignees, loadedWorkConsignees]) => {
         if (cancelled) return;
         setBalance(loadedBalance);
         setConsignees(loadedConsignees);
+        setWorkConsignees(loadedWorkConsignees);
         const quantities: Record<string, string> = {};
         for (const item of existing?.items ?? []) {
           quantities[item.workItemId] = item.quantity;
@@ -196,7 +201,7 @@ export function ChallanEditor({
         </div>
         {consignees.length > 0 && (
           <div className="field">
-            <label htmlFor="consignee-picker">Prefill consignee from masters</label>
+            <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
             <select
               id="consignee-picker"
               defaultValue=""
@@ -204,7 +209,7 @@ export function ChallanEditor({
                 // The picker only PREFILLS the snapshot fields below —
                 // the challan keeps its own free-text copy, and every
                 // field stays editable after picking.
-                const chosen = consignees.find(
+                const chosen = [...workConsignees, ...consignees].find(
                   (candidate) => candidate.id === event.target.value,
                 );
                 if (chosen === undefined) return;
@@ -217,16 +222,29 @@ export function ChallanEditor({
               }}
             >
               <option value="">Manual entry</option>
-              {consignees.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.designation}
-                  {candidate.address !== null ? ` — ${candidate.address}` : ''}
-                </option>
-              ))}
+              {workConsignees.length > 0 && (
+                <optgroup label="Linked to this Work">
+                  {workConsignees.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.designation}
+                      {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="All consignees">
+                {consignees.map((candidate) => (
+                  <option key={`all-${candidate.id}`} value={candidate.id}>
+                    {candidate.designation}
+                    {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <p className="hint">
-              Picking copies the details into this challan; edits here never change the
-              master.
+              Consignees linked to this Work are listed first; any active consignee can
+              be picked. Picking copies the details into this challan; edits here never
+              change the contact.
             </p>
           </div>
         )}

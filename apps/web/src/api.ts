@@ -14,7 +14,7 @@ import type {
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
-  ConsigneeMaster,
+  Contact,
   CreateOrganisationRequest,
   DashboardResponse,
   ExtensionRequestDetailResponse,
@@ -39,8 +39,10 @@ import type {
   RecordReceiptRequest,
   RecordSerialsRequest,
   RespondExtensionRequest,
+  BackfillExtensionRequest,
+  BackfillExtensionResponse,
   SaveChallanRequest,
-  SaveConsigneeMasterRequest,
+  SaveContactRequest,
   SaveExtensionRequest,
   SaveInstrumentRequest,
   SaveLocationMasterRequest,
@@ -350,20 +352,34 @@ export interface ApiClient {
   ) => Promise<TimelineResponse>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
-  readonly listConsigneeMasters: (
+  readonly listContacts: (
     organisationId: string,
-    includeRetired?: boolean,
-  ) => Promise<readonly ConsigneeMaster[]>;
-  readonly saveConsigneeMaster: (
+    options?: { includeRetired?: boolean; role?: 'consignee' },
+  ) => Promise<readonly Contact[]>;
+  readonly saveContact: (
     organisationId: string,
     id: string | null,
-    body: SaveConsigneeMasterRequest,
-  ) => Promise<ConsigneeMaster>;
-  readonly setConsigneeMasterActive: (
+    body: SaveContactRequest,
+  ) => Promise<Contact>;
+  readonly setContactActive: (
     organisationId: string,
     id: string,
     active: boolean,
-  ) => Promise<ConsigneeMaster>;
+  ) => Promise<Contact>;
+  readonly listWorkConsignees: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly Contact[]>;
+  readonly linkWorkConsignee: (
+    organisationId: string,
+    workId: string,
+    contactId: string,
+  ) => Promise<Contact>;
+  readonly unlinkWorkConsignee: (
+    organisationId: string,
+    workId: string,
+    contactId: string,
+  ) => Promise<void>;
   readonly listLocationMasters: (
     organisationId: string,
     includeRetired?: boolean,
@@ -452,6 +468,19 @@ export interface ApiClient {
     extensionId: string,
     kind: 'rendered' | 'response',
   ) => Promise<Blob>;
+  /** Streams the DRAFT-watermarked preview of a draft letter (§5.5);
+   * nothing is stored server-side. */
+  readonly downloadExtensionDraftPreview: (
+    organisationId: string,
+    extensionId: string,
+  ) => Promise<Blob>;
+  /** Back-fills a paper letter as a finalised record occupying the next
+   * sequence slot; the response carries non-blocking warnings. */
+  readonly backfillExtensionRequest: (
+    organisationId: string,
+    workId: string,
+    body: BackfillExtensionRequest,
+  ) => Promise<BackfillExtensionResponse>;
   readonly listApprovals: (
     organisationId: string,
     status?: ApprovalStatus,
@@ -1155,24 +1184,48 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
     },
-    async listConsigneeMasters(organisationId, includeRetired = false) {
-      const payload = await request<{ consignees: ConsigneeMaster[] }>(
-        `/api/masters/consignees${includeRetired ? '?includeRetired=true' : ''}`,
+    async listContacts(organisationId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.includeRetired === true) query.set('includeRetired', 'true');
+      if (options.role !== undefined) query.set('role', options.role);
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      const payload = await request<{ contacts: Contact[] }>(
+        `/api/masters/contacts${suffix}`,
+        { organisationId },
+      );
+      return payload.contacts;
+    },
+    async saveContact(organisationId, id, body) {
+      return request<Contact>(
+        id === null ? '/api/masters/contacts' : `/api/masters/contacts/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setContactActive(organisationId, id, active) {
+      return request<Contact>(
+        `/api/masters/contacts/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listWorkConsignees(organisationId, workId) {
+      const payload = await request<{ consignees: Contact[] }>(
+        `/api/works/${workId}/consignees`,
         { organisationId },
       );
       return payload.consignees;
     },
-    async saveConsigneeMaster(organisationId, id, body) {
-      return request<ConsigneeMaster>(
-        id === null ? '/api/masters/consignees' : `/api/masters/consignees/${id}`,
-        { method: id === null ? 'POST' : 'PUT', body, organisationId },
-      );
+    async linkWorkConsignee(organisationId, workId, contactId) {
+      return request<Contact>(`/api/works/${workId}/consignees`, {
+        method: 'POST',
+        body: { contactId },
+        organisationId,
+      });
     },
-    async setConsigneeMasterActive(organisationId, id, active) {
-      return request<ConsigneeMaster>(
-        `/api/masters/consignees/${id}/${active ? 'reactivate' : 'retire'}`,
-        { method: 'POST', organisationId },
-      );
+    async unlinkWorkConsignee(organisationId, workId, contactId) {
+      await request(`/api/works/${workId}/consignees/${contactId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
     },
     async listLocationMasters(organisationId, includeRetired = false) {
       const payload = await request<{ locations: LocationMaster[] }>(
@@ -1327,6 +1380,23 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return response.blob();
+    },
+    async downloadExtensionDraftPreview(organisationId, extensionId) {
+      const response = await fetchImpl(
+        `/api/extension-requests/${extensionId}/draft-preview`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async backfillExtensionRequest(organisationId, workId, body) {
+      return request<BackfillExtensionResponse>(
+        `/api/works/${workId}/extension-requests/backfill`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async proposeAddItem(organisationId, workId, body) {
       return request<ApprovalRequest>(`/api/works/${workId}/amendments/items`, {

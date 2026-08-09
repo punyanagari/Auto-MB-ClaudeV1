@@ -475,6 +475,10 @@ describe('export completeness', () => {
     expect(Array.isArray(exported.measurementBooks)).toBe(true);
     expect(Array.isArray(exported.measurementBookLines)).toBe(true);
     expect(Array.isArray(exported.mbSources)).toBe(true);
+    // M6/7 retrofit (migration 0028): the unified Contacts master and the
+    // Work<->consignee association — additive sections, still export-v5.
+    expect(Array.isArray(exported.contacts)).toBe(true);
+    expect(Array.isArray(exported.workConsignees)).toBe(true);
   });
 });
 

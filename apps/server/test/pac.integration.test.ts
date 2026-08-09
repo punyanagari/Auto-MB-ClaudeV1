@@ -290,18 +290,20 @@ beforeAll(async () => {
 
   const consignee = await authed(owner, {
     method: 'POST',
-    url: '/api/masters/consignees',
+    url: '/api/masters/contacts',
     organisationId,
     payload: { designation: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
   });
   expect(consignee.statusCode, consignee.body).toBe(201);
   consigneeId = consignee.json<{ id: string }>().id;
 
+  // Plain DSTE posts are legitimate consignees; only the Sr.DSTE
+  // awarding authority is refused by R16 (see masters.integration).
   const secondConsignee = await authed(owner, {
     method: 'POST',
-    url: '/api/masters/consignees',
+    url: '/api/masters/contacts',
     organisationId,
-    payload: { designation: 'Sr. DSTE CR', address: 'Mumbai Division' },
+    payload: { designation: 'DSTE (East) CR', address: 'Mumbai Division' },
   });
   expect(secondConsignee.statusCode, secondConsignee.body).toBe(201);
   secondConsigneeId = secondConsignee.json<{ id: string }>().id;
@@ -321,7 +323,8 @@ afterAll(async () => {
           'installations',
           'work_instruments',
           'location_masters',
-          'consignee_masters',
+          'work_consignees',
+          'contacts',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -645,7 +648,7 @@ describe('consignee snapshot-on-use', () => {
 
     const renamed = await authed(owner, {
       method: 'PUT',
-      url: `/api/masters/consignees/${consigneeId}`,
+      url: `/api/masters/contacts/${consigneeId}`,
       organisationId,
       payload: { designation: 'Sr. DEE (G) WR', address: 'Bhusawal Division' },
     });
@@ -663,7 +666,7 @@ describe('consignee snapshot-on-use', () => {
   it('refuses a retired consignee and an unknown one', async () => {
     const retired = await authed(owner, {
       method: 'POST',
-      url: `/api/masters/consignees/${secondConsigneeId}/retire`,
+      url: `/api/masters/contacts/${secondConsigneeId}/retire`,
       organisationId,
     });
     expect(retired.statusCode, retired.body).toBe(200);

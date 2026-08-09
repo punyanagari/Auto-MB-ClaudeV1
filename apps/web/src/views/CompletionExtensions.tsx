@@ -17,6 +17,17 @@ interface CompletionExtensionsProps {
   readonly workId: string;
   readonly canModify: boolean;
   readonly canIssue: boolean;
+  /** Holds can_approve_amendments — gates manual back-fill deletion. */
+  readonly canApprove: boolean;
+}
+
+function openPdf(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+  // Give the new tab time to load the blob before the URL is revoked.
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 60_000);
 }
 
 /**
@@ -32,6 +43,7 @@ export function CompletionExtensions({
   workId,
   canModify,
   canIssue,
+  canApprove,
 }: CompletionExtensionsProps) {
   const [completion, setCompletion] = useState<WorkCompletionResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -184,6 +196,7 @@ export function CompletionExtensions({
           <thead>
             <tr>
               <th scope="col">Number</th>
+              <th scope="col">Source</th>
               <th scope="col">Status</th>
               <th scope="col">Proposed date</th>
               <th scope="col">Letter date</th>
@@ -195,6 +208,11 @@ export function CompletionExtensions({
             {extensions.map((extension) => (
               <tr key={extension.id}>
                 <th scope="row">{extension.requestNumber ?? 'Draft'}</th>
+                <td>
+                  {extension.source === 'manual'
+                    ? `paper — ${extension.manualReference ?? ''}`
+                    : 'software'}
+                </td>
                 <td>
                   <span className={`chip chip--${extension.status}`}>
                     {extension.status}
@@ -214,6 +232,20 @@ export function CompletionExtensions({
 
       {draft !== undefined && (
         <div className="actions">
+          <button
+            type="button"
+            className="button--ghost"
+            disabled={pending}
+            onClick={() =>
+              void act(async () => {
+                openPdf(
+                  await api.downloadExtensionDraftPreview(organisationId, draft.id),
+                );
+              }, 'Draft preview opened — watermarked DRAFT, no number until finalised.')
+            }
+          >
+            Preview draft (DRAFT watermark)
+          </button>
           {canIssue && (
             <button
               type="button"
@@ -315,6 +347,99 @@ export function CompletionExtensions({
         </form>
       )}
 
+      {canIssue && dates.currentCompletionDate !== null && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            void act(async () => {
+              const result = await api.backfillExtensionRequest(
+                organisationId,
+                workId,
+                {
+                  reference: formValue(data, 'backfill-reference').trim(),
+                  letterDate: formValue(data, 'backfill-letter-date'),
+                  proposedCompletionDate: formValue(data, 'backfill-proposed'),
+                  reason: formValue(data, 'backfill-reason'),
+                  addressee: formValue(data, 'backfill-addressee'),
+                },
+              );
+              await reload();
+              form.reset();
+              if (result.warnings.length > 0) {
+                setActionError(result.warnings.join(' '));
+              }
+            }, `Paper letter recorded as final — it took the next number in the sequence.`);
+          }}
+        >
+          <h3>Back-fill a paper extension letter</h3>
+          <p className="muted">
+            For letters issued on paper before this register was adopted. The record is
+            final on arrival, takes the next number in the sequence, and is never
+            rendered — the paper letter stays the record. Back-fill letters in the order
+            they were issued.
+          </p>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="backfill-reference">Paper letter reference</label>
+              <input
+                id="backfill-reference"
+                name="backfill-reference"
+                required
+                minLength={1}
+                maxLength={100}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="backfill-letter-date">Paper letter date</label>
+              <input
+                id="backfill-letter-date"
+                name="backfill-letter-date"
+                type="date"
+                required
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="backfill-proposed">
+                Completion date the letter asked for
+              </label>
+              <input
+                id="backfill-proposed"
+                name="backfill-proposed"
+                type="date"
+                required
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="backfill-addressee">Addressee of the letter</label>
+            <input
+              id="backfill-addressee"
+              name="backfill-addressee"
+              required
+              maxLength={200}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="backfill-reason">Grounds stated in the letter</label>
+            <textarea
+              id="backfill-reason"
+              name="backfill-reason"
+              required
+              minLength={3}
+              maxLength={5000}
+              rows={3}
+            />
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={pending}>
+              Record paper letter as final
+            </button>
+          </div>
+        </form>
+      )}
+
       {extensions
         .filter((extension) => extension.status === 'finalised')
         .map((extension) => (
@@ -324,6 +449,7 @@ export function CompletionExtensions({
             organisationId={organisationId}
             extension={extension}
             canModify={canModify}
+            canApprove={canApprove}
             pending={pending}
             act={act}
             reload={reload}
@@ -338,6 +464,7 @@ interface FinalisedExtensionActionsProps {
   readonly organisationId: string;
   readonly extension: ExtensionRequest;
   readonly canModify: boolean;
+  readonly canApprove: boolean;
   readonly pending: boolean;
   readonly act: (work: () => Promise<void>, done: string) => Promise<void>;
   readonly reload: () => Promise<void>;
@@ -345,12 +472,15 @@ interface FinalisedExtensionActionsProps {
 
 /** Response handling for one finalised request: upload the railway's
  * answer, then record the outcome — accepted applies the proposed date,
- * modified applies the granted date, rejected changes nothing. */
+ * modified applies the granted date, rejected changes nothing. Manual
+ * back-fills additionally offer approval-gated deletion while they hold
+ * the top of the sequence. */
 function FinalisedExtensionActions({
   api,
   organisationId,
   extension,
   canModify,
+  canApprove,
   pending,
   act,
   reload,
@@ -360,6 +490,23 @@ function FinalisedExtensionActions({
   return (
     <div>
       <h3>Railway response — {extension.requestNumber}</h3>
+      {extension.source === 'manual' && canApprove && (
+        <div className="actions">
+          <button
+            type="button"
+            className="button--ghost"
+            disabled={pending}
+            onClick={() =>
+              void act(async () => {
+                await api.deleteExtensionRequest(organisationId, extension.id);
+                await reload();
+              }, 'Manual back-fill deleted; its number returns to the sequence.')
+            }
+          >
+            Delete manual back-fill (top of sequence only)
+          </button>
+        </div>
+      )}
       {!extension.responseDocumentAvailable && (
         <form
           onSubmit={(event) => {

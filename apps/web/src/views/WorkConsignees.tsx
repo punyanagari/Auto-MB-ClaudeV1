@@ -1,0 +1,181 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { Contact } from '@auto-mb/contracts';
+import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+
+interface WorkConsigneesProps {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly workId: string;
+  readonly canModify: boolean;
+}
+
+/**
+ * The Work's consignee list (legacy rule R16: "a work may have many
+ * consignees; the challan picks one"). Linked consignees are offered
+ * first in the challan and PAC pickers; any active consignee contact
+ * remains selectable — linking is organisational convenience, never a
+ * restriction. Unlinking removes only the preference: every issued
+ * document keeps its own snapshot.
+ */
+export function WorkConsignees({
+  api,
+  organisationId,
+  workId,
+  canModify,
+}: WorkConsigneesProps) {
+  const [linked, setLinked] = useState<readonly Contact[] | null>(null);
+  const [contacts, setContacts] = useState<readonly Contact[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const reload = useCallback(async () => {
+    const [loadedLinked, loadedContacts] = await Promise.all([
+      api.listWorkConsignees(organisationId, workId),
+      canModify
+        ? api.listContacts(organisationId, { role: 'consignee' }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+    setLinked(loadedLinked);
+    setContacts(loadedContacts);
+  }, [api, organisationId, workId, canModify]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLinked(null);
+    setError(null);
+    reload().catch((cause: unknown) => {
+      if (cancelled) return;
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The Work consignees could not be loaded.',
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reload]);
+
+  const act = useCallback(
+    async (work: () => Promise<void>, done: string) => {
+      setPending(true);
+      setError(null);
+      setNotice(null);
+      try {
+        await work();
+        await reload();
+        setNotice(done);
+      } catch (cause) {
+        setError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The change could not be saved.',
+        );
+      } finally {
+        setPending(false);
+      }
+    },
+    [reload],
+  );
+
+  const linkable = contacts.filter(
+    (contact) => !(linked ?? []).some((entry) => entry.id === contact.id),
+  );
+
+  return (
+    <>
+      <h2>Consignees for this Work</h2>
+      {notice !== null && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {error !== null && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {linked === null ? (
+        <p className="muted" role="status">
+          Loading consignees…
+        </p>
+      ) : linked.length === 0 ? (
+        <p className="muted">
+          No consignees linked yet — linked consignees appear first in the challan and
+          PAC pickers.
+        </p>
+      ) : (
+        <table className="data-table">
+          <caption className="visually-hidden">Consignees linked to this Work</caption>
+          <thead>
+            <tr>
+              <th scope="col">Designation</th>
+              <th scope="col">Address</th>
+              {canModify && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {linked.map((contact) => (
+              <tr key={contact.id}>
+                <th scope="row">{contact.designation}</th>
+                <td className="cell--wrap">{contact.address ?? '—'}</td>
+                {canModify && (
+                  <td>
+                    <button
+                      type="button"
+                      className="button--ghost"
+                      disabled={pending}
+                      onClick={() =>
+                        void act(async () => {
+                          await api.unlinkWorkConsignee(
+                            organisationId,
+                            workId,
+                            contact.id,
+                          );
+                        }, `${contact.designation} unlinked — documents keep their snapshots.`)
+                      }
+                    >
+                      Unlink
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {canModify && linkable.length > 0 && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const contactId = formValue(new FormData(form), 'work-consignee-pick');
+            if (contactId.length === 0) return;
+            void act(async () => {
+              await api.linkWorkConsignee(organisationId, workId, contactId);
+              form.reset();
+            }, 'Consignee linked to this Work.');
+          }}
+        >
+          <div className="field">
+            <label htmlFor="work-consignee-pick">Link a consignee contact</label>
+            <select id="work-consignee-pick" name="work-consignee-pick" required>
+              {linkable.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.designation}
+                  {contact.address !== null ? ` — ${contact.address}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={pending}>
+              Link consignee
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}

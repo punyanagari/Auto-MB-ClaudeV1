@@ -41,10 +41,19 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   bill_counters: 'SELECT, INSERT, UPDATE',
   mb_entries: 'SELECT, INSERT, UPDATE',
   // Master data retires via the active flag; no DELETE exists (0013).
-  consignee_masters: 'SELECT, INSERT, UPDATE',
   location_masters: 'SELECT, INSERT, UPDATE',
   unit_masters: 'SELECT, INSERT, UPDATE',
   organisation_signatories: 'SELECT, INSERT, UPDATE',
+  // The unified Contacts master (0028): retire-not-delete like every
+  // master. consignee_masters is a compatibility VIEW over contacts since
+  // 0028 (security_invoker, so base grants and RLS are re-checked for the
+  // caller); its own ACL stays narrow — read for pickers, insert for the
+  // importer's master upsert.
+  contacts: 'SELECT, INSERT, UPDATE',
+  consignee_masters: 'SELECT, INSERT',
+  // Work<->consignee association (0028): a preference list, not a
+  // document — unlinking deletes nothing but the preference.
+  work_consignees: 'SELECT, INSERT, DELETE',
   // Extension requests (0011): drafts deletable, counters keep no DELETE.
   extension_requests: 'SELECT, INSERT, UPDATE, DELETE',
   extension_request_counters: 'SELECT, INSERT, UPDATE',

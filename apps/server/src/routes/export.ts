@@ -170,6 +170,16 @@ export function registerExportRoutes(
         const mbSources = await tx<Record<string, unknown>[]>`
           select * from mb_sources order by created_at, id
         `;
+        // M6/7 retrofit (migration 0028): the unified Contacts master and
+        // the Work<->consignee association. consignee_masters was never a
+        // section of this export; contacts supersedes it, so the format
+        // stays 'export-v5' with two purely additive sections.
+        const contacts = await tx<Record<string, unknown>[]>`
+          select * from contacts order by created_at, id
+        `;
+        const workConsignees = await tx<Record<string, unknown>[]>`
+          select * from work_consignees order by created_at, id
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -334,6 +344,10 @@ export function registerExportRoutes(
           measurementBooks,
           measurementBookLines,
           mbSources,
+          // M6/7 retrofit (migration 0028): additive sections completing
+          // the export-v5 record with the unified Contacts master.
+          contacts,
+          workConsignees,
           objectManifest,
           auditEvents,
         };

@@ -72,9 +72,12 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
-    listConsigneeMasters: vi.fn().mockResolvedValue([]),
-    saveConsigneeMaster: vi.fn(),
-    setConsigneeMasterActive: vi.fn(),
+    listContacts: vi.fn().mockResolvedValue([]),
+    saveContact: vi.fn(),
+    setContactActive: vi.fn(),
+    listWorkConsignees: vi.fn().mockResolvedValue([]),
+    linkWorkConsignee: vi.fn(),
+    unlinkWorkConsignee: vi.fn(),
     listLocationMasters: vi.fn().mockResolvedValue([]),
     saveLocationMaster: vi.fn(),
     setLocationMasterActive: vi.fn(),
@@ -97,6 +100,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadExtensionResponse: vi.fn(),
     respondExtensionRequest: vi.fn(),
     downloadExtensionPdf: vi.fn(),
+    downloadExtensionDraftPreview: vi.fn(),
+    backfillExtensionRequest: vi.fn(),
     listApprovals: vi.fn().mockResolvedValue([]),
     listWorkAmendments: vi.fn().mockResolvedValue([]),
     proposeAmendment: vi.fn(),
@@ -494,6 +499,7 @@ describe('WorkDetail Issue Challans section', () => {
         canRecordEvidence
         canIssue
         canCancel
+        canApprove={false}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

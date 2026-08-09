@@ -59,17 +59,30 @@ export const RespondExtensionRequestSchema = Type.Object(
 );
 export type RespondExtensionRequest = Static<typeof RespondExtensionRequestSchema>;
 
+/** 'software' letters are drafted and finalised in the product; 'manual'
+ * records back-fill paper letters issued before adoption (§5.5) — they
+ * are finalised on arrival, occupy the next sequence slot, and carry the
+ * paper letter's own reference. */
+export const ExtensionSourceSchema = Type.Union([
+  Type.Literal('software'),
+  Type.Literal('manual'),
+]);
+export type ExtensionSource = Static<typeof ExtensionSourceSchema>;
+
 export const ExtensionRequestSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
     status: ExtensionRequestStatusSchema,
+    source: ExtensionSourceSchema,
     proposedCompletionDate: DateOnlySchema,
     reason: Type.String(),
     addressee: Type.String(),
     letterDate: Type.Union([DateOnlySchema, Type.Null()]),
     sequenceNumber: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     requestNumber: Type.Union([Type.String(), Type.Null()]),
+    /** The paper letter's own reference; null for software letters. */
+    manualReference: Type.Union([Type.String(), Type.Null()]),
     templateVersion: Type.Union([Type.String(), Type.Null()]),
     renderedAvailable: Type.Boolean(),
     responseDocumentAvailable: Type.Boolean(),
@@ -82,6 +95,23 @@ export const ExtensionRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ExtensionRequest = Static<typeof ExtensionRequestSchema>;
+
+/** Manual back-fill of a paper letter (§5.5): the paper reference and
+ * letter date plus the transcribed content the register needs. The record
+ * is finalised on arrival and consumes the next sequence slot. */
+export const BackfillExtensionRequestSchema = Type.Object(
+  {
+    /** The paper letter's own reference, preserved verbatim. */
+    reference: Type.String({ minLength: 1, maxLength: 100 }),
+    /** The paper letter's date — never in the future. */
+    letterDate: DateOnlySchema,
+    proposedCompletionDate: DateOnlySchema,
+    reason: Type.String({ minLength: 3, maxLength: 5000 }),
+    addressee: Type.String({ minLength: 2, maxLength: 200 }),
+  },
+  { additionalProperties: false },
+);
+export type BackfillExtensionRequest = Static<typeof BackfillExtensionRequestSchema>;
 
 export const ExtensionRequestListResponseSchema = Type.Object(
   { extensionRequests: Type.Array(ExtensionRequestSchema) },
@@ -102,6 +132,19 @@ export const ExtensionRequestDetailResponseSchema = Type.Object(
 export type ExtensionRequestDetailResponse = Static<
   typeof ExtensionRequestDetailResponseSchema
 >;
+
+/** The back-fill answer: the created record plus non-blocking warnings —
+ * §5.5 warns (without blocking) when a manual record is dated after the
+ * first software-generated letter. */
+export const BackfillExtensionResponseSchema = Type.Object(
+  {
+    extensionRequest: ExtensionRequestSchema,
+    finalisedSnapshot: Type.Unknown(),
+    warnings: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
+export type BackfillExtensionResponse = Static<typeof BackfillExtensionResponseSchema>;
 
 export const WorkCompletionResponseSchema = Type.Object(
   {

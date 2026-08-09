@@ -91,9 +91,12 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
-    listConsigneeMasters: vi.fn().mockResolvedValue([]),
-    saveConsigneeMaster: vi.fn(),
-    setConsigneeMasterActive: vi.fn(),
+    listContacts: vi.fn().mockResolvedValue([]),
+    saveContact: vi.fn(),
+    setContactActive: vi.fn(),
+    listWorkConsignees: vi.fn().mockResolvedValue([]),
+    linkWorkConsignee: vi.fn(),
+    unlinkWorkConsignee: vi.fn(),
     listLocationMasters: vi.fn().mockResolvedValue([]),
     saveLocationMaster: vi.fn(),
     setLocationMasterActive: vi.fn(),
@@ -116,6 +119,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadExtensionResponse: vi.fn(),
     respondExtensionRequest: vi.fn(),
     downloadExtensionPdf: vi.fn(),
+    downloadExtensionDraftPreview: vi.fn(),
+    backfillExtensionRequest: vi.fn(),
     listApprovals: vi.fn().mockResolvedValue([]),
     listWorkAmendments: vi.fn().mockResolvedValue([]),
     proposeAmendment: vi.fn(),
@@ -1170,6 +1175,7 @@ describe('WorkDetail retention', () => {
       canRecordEvidence: boolean;
       canIssue: boolean;
       canCancel: boolean;
+      canApprove: boolean;
       isOwner: boolean;
     }> = {},
   ) {
@@ -1182,6 +1188,7 @@ describe('WorkDetail retention', () => {
         canRecordEvidence={flags.canRecordEvidence ?? true}
         canIssue={flags.canIssue ?? true}
         canCancel={flags.canCancel ?? true}
+        canApprove={flags.canApprove ?? false}
         isOwner={flags.isOwner ?? false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
@@ -1371,6 +1378,8 @@ describe('CompletionExtensions', () => {
     id: EXTENSION_ID,
     workId: WORK_ID,
     status: 'draft' as const,
+    source: 'software' as const,
+    manualReference: null,
     proposedCompletionDate: '2027-03-31',
     reason: 'Site not handed over in time.',
     addressee: 'Sr. DEE (G) NR',
@@ -1398,7 +1407,11 @@ describe('CompletionExtensions', () => {
 
   function renderCompletion(
     api: ApiClient,
-    flags: Partial<{ canModify: boolean; canIssue: boolean }> = {},
+    flags: Partial<{
+      canModify: boolean;
+      canIssue: boolean;
+      canApprove: boolean;
+    }> = {},
   ) {
     return render(
       <CompletionExtensions
@@ -1407,6 +1420,7 @@ describe('CompletionExtensions', () => {
         workId={WORK_ID}
         canModify={flags.canModify ?? true}
         canIssue={flags.canIssue ?? true}
+        canApprove={flags.canApprove ?? false}
       />,
     );
   }
@@ -1601,6 +1615,135 @@ describe('CompletionExtensions', () => {
       screen.queryByRole('button', { name: 'Finalise extension request' }),
     ).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record response' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Record paper letter as final' }),
+    ).toBeNull();
+  });
+
+  it('opens the DRAFT-watermarked preview for a draft letter', async () => {
+    const downloadExtensionDraftPreview = vi
+      .fn()
+      .mockResolvedValue(new Blob(['%PDF-1.4 preview']));
+    const getWorkCompletion = vi.fn().mockResolvedValue({
+      ...COMPLETION_SET,
+      extensionRequests: [DRAFT_EXTENSION],
+    });
+    const api = stubApi({ getWorkCompletion, downloadExtensionDraftPreview });
+    vi.stubGlobal('open', vi.fn());
+    try {
+      renderCompletion(api);
+
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Preview draft (DRAFT watermark)' }),
+      );
+      await waitFor(() => {
+        expect(downloadExtensionDraftPreview).toHaveBeenCalledWith(
+          ORG_ID,
+          EXTENSION_ID,
+        );
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('back-fills a paper letter and surfaces the non-blocking warning', async () => {
+    const MANUAL_EXTENSION = {
+      ...FINALISED_EXTENSION,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      source: 'manual' as const,
+      manualReference: 'REF/EXT/7',
+      requestNumber: 'DCW-1-Extension-02',
+      sequenceNumber: 2,
+      templateVersion: 'extension-manual-v1',
+      responseDocumentAvailable: false,
+    };
+    const backfillExtensionRequest = vi.fn().mockResolvedValue({
+      extensionRequest: MANUAL_EXTENSION,
+      finalisedSnapshot: {},
+      warnings: ['This letter is dated after the first software-generated letter.'],
+    });
+    const getWorkCompletion = vi
+      .fn()
+      .mockResolvedValueOnce(COMPLETION_SET)
+      .mockResolvedValue({
+        ...COMPLETION_SET,
+        extensionRequests: [MANUAL_EXTENSION],
+      });
+    const api = stubApi({ backfillExtensionRequest, getWorkCompletion });
+    renderCompletion(api);
+
+    fireEvent.change(await screen.findByLabelText('Paper letter reference'), {
+      target: { value: 'REF/EXT/7' },
+    });
+    fireEvent.change(screen.getByLabelText('Paper letter date'), {
+      target: { value: '2026-01-15' },
+    });
+    fireEvent.change(screen.getByLabelText('Completion date the letter asked for'), {
+      target: { value: '2027-03-31' },
+    });
+    fireEvent.change(screen.getByLabelText('Addressee of the letter'), {
+      target: { value: 'Sr. DEE (G) NR' },
+    });
+    fireEvent.change(screen.getByLabelText('Grounds stated in the letter'), {
+      target: { value: 'Monsoon damage to the access road.' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Record paper letter as final' }),
+    );
+
+    await waitFor(() => {
+      expect(backfillExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        reference: 'REF/EXT/7',
+        letterDate: '2026-01-15',
+        proposedCompletionDate: '2027-03-31',
+        reason: 'Monsoon damage to the access road.',
+        addressee: 'Sr. DEE (G) NR',
+      });
+    });
+    // The paper record shows with its source and reference, and the
+    // warning is surfaced without having blocked the creation.
+    expect(await screen.findByText('paper — REF/EXT/7')).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('first software-generated letter');
+  });
+
+  it('offers manual back-fill deletion only to amendment approvers', async () => {
+    const MANUAL_EXTENSION = {
+      ...FINALISED_EXTENSION,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      source: 'manual' as const,
+      manualReference: 'REF/EXT/7',
+      responseDocumentAvailable: false,
+    };
+    const getWorkCompletion = vi.fn().mockResolvedValue({
+      ...COMPLETION_SET,
+      extensionRequests: [MANUAL_EXTENSION],
+    });
+
+    const withoutAuthority = renderCompletion(stubApi({ getWorkCompletion }), {
+      canApprove: false,
+    });
+    expect(await screen.findByText('paper — REF/EXT/7')).toBeTruthy();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Delete manual back-fill (top of sequence only)',
+      }),
+    ).toBeNull();
+    withoutAuthority.unmount();
+
+    const deleteExtensionRequest = vi.fn().mockResolvedValue(undefined);
+    renderCompletion(stubApi({ getWorkCompletion, deleteExtensionRequest }), {
+      canApprove: true,
+    });
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Delete manual back-fill (top of sequence only)',
+      }),
+    );
+    await waitFor(() => {
+      expect(deleteExtensionRequest).toHaveBeenCalledWith(ORG_ID, MANUAL_EXTENSION.id);
+    });
   });
 });
 
@@ -1785,15 +1928,21 @@ describe('Masters', () => {
     contactPerson: null,
     phone: '011-23385678',
     email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: true,
+    isVendor: false,
+    isClient: false,
     active: true,
     createdAt: '2026-08-08T00:00:00.000Z',
   };
 
-  it('lists consignees and adds one through the form', async () => {
-    const saveConsigneeMaster = vi.fn().mockResolvedValue(CONSIGNEE);
+  it('lists contacts and adds one through the form', async () => {
+    const saveContact = vi.fn().mockResolvedValue(CONSIGNEE);
     const api = stubApi({
-      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
-      saveConsigneeMaster,
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE]),
+      saveContact,
     });
     const { Masters } = await import('../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
@@ -1805,10 +1954,10 @@ describe('Masters', () => {
     fireEvent.change(screen.getByLabelText('Address (optional)'), {
       target: { value: 'Signal Workshop, Ghaziabad' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add consignee' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
 
     await waitFor(() => {
-      expect(saveConsigneeMaster).toHaveBeenCalledWith(ORG_ID, null, {
+      expect(saveContact).toHaveBeenCalledWith(ORG_ID, null, {
         designation: 'SSE (Signal) GZB',
         address: 'Signal Workshop, Ghaziabad',
       });
@@ -1816,54 +1965,62 @@ describe('Masters', () => {
     expect(await screen.findByRole('status')).toBeTruthy();
   });
 
-  it('retires a consignee and surfaces duplicate conflicts as alerts', async () => {
-    const setConsigneeMasterActive = vi
-      .fn()
-      .mockResolvedValue({ ...CONSIGNEE, active: false });
-    const saveConsigneeMaster = vi
+  it('shows the dormant vendor/client role flags disabled with the procurement note', async () => {
+    const api = stubApi({ listContacts: vi.fn().mockResolvedValue([CONSIGNEE]) });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    const consigneeRole = screen.getByLabelText<HTMLInputElement>('Consignee');
+    expect(consigneeRole.checked).toBe(true);
+    expect(consigneeRole.disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Vendor').disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Client').disabled).toBe(true);
+    expect(screen.getByText(/procurement wave/)).toBeTruthy();
+  });
+
+  it('retires a contact and surfaces duplicate conflicts as alerts', async () => {
+    const setContactActive = vi.fn().mockResolvedValue({ ...CONSIGNEE, active: false });
+    const saveContact = vi
       .fn()
       .mockRejectedValue(
         new RequestFailedError(
           409,
-          'CONSIGNEE_MASTER_EXISTS',
-          'A consignee with this designation and address already exists.',
+          'CONTACT_EXISTS',
+          'An active contact with this designation and address already exists.',
         ),
       );
     const api = stubApi({
-      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
-      setConsigneeMasterActive,
-      saveConsigneeMaster,
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE]),
+      setContactActive,
+      saveContact,
     });
     const { Masters } = await import('../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Retire' }));
     await waitFor(() => {
-      expect(setConsigneeMasterActive).toHaveBeenCalledWith(
-        ORG_ID,
-        CONSIGNEE.id,
-        false,
-      );
+      expect(setContactActive).toHaveBeenCalledWith(ORG_ID, CONSIGNEE.id, false);
     });
 
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'Sr. DEE (G) NR' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add consignee' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('already exists');
   });
 
   it('hides mutations from read-only members', async () => {
     const api = stubApi({
-      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE]),
     });
     const { Masters } = await import('../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify={false} />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retire' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add consignee' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add contact' })).toBeNull();
   });
 
   it('switches to the units tab and shows the seeded canon', async () => {
@@ -1889,7 +2046,7 @@ describe('ChallanEditor consignee picker', () => {
   it('prefills the snapshot fields from a chosen master and keeps them editable', async () => {
     const api = stubApi({
       workBalance: vi.fn().mockResolvedValue(BALANCE),
-      listConsigneeMasters: vi.fn().mockResolvedValue([
+      listContacts: vi.fn().mockResolvedValue([
         {
           id: '44444444-4444-4444-8444-444444444444',
           designation: 'Sr. DEE (G) NR',
@@ -1897,10 +2054,17 @@ describe('ChallanEditor consignee picker', () => {
           contactPerson: null,
           phone: '011-23385678',
           email: null,
+          gstin: null,
+          pincode: null,
+          stateCode: null,
+          isConsignee: true,
+          isVendor: false,
+          isClient: false,
           active: true,
           createdAt: '2026-08-08T00:00:00.000Z',
         },
       ]),
+      listWorkConsignees: vi.fn().mockResolvedValue([]),
     });
     render(
       <ChallanEditor
@@ -1915,7 +2079,7 @@ describe('ChallanEditor consignee picker', () => {
     );
 
     await screen.findByText('2.000');
-    fireEvent.change(screen.getByLabelText('Prefill consignee from masters'), {
+    fireEvent.change(screen.getByLabelText('Prefill consignee from contacts'), {
       target: { value: '44444444-4444-4444-8444-444444444444' },
     });
 
@@ -1937,6 +2101,149 @@ describe('ChallanEditor consignee picker', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
       'Sr. DEE (G) NR, Attn: TI',
     );
+  });
+
+  it("offers the Work's linked consignees first while keeping every consignee pickable", async () => {
+    const linked = {
+      id: '55555555-5555-4555-8555-555555555555',
+      designation: 'SSE (Signal) GZB',
+      address: 'Signal Workshop, Ghaziabad',
+      contactPerson: null,
+      phone: null,
+      email: null,
+      gstin: null,
+      pincode: null,
+      stateCode: null,
+      isConsignee: true,
+      isVendor: false,
+      isClient: false,
+      active: true,
+      createdAt: '2026-08-08T00:00:00.000Z',
+    };
+    const other = {
+      ...linked,
+      id: '44444444-4444-4444-8444-444444444444',
+      designation: 'Sr. DEE (G) NR',
+      address: 'Delhi Division, New Delhi',
+    };
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listContacts: vi.fn().mockResolvedValue([other, linked]),
+      listWorkConsignees: vi.fn().mockResolvedValue([linked]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      'Prefill consignee from contacts',
+    );
+    const groups = Array.from(picker.querySelectorAll('optgroup')).map(
+      (group) => group.label,
+    );
+    // R16 preference: the linked group leads; the full list follows so
+    // any active consignee stays selectable.
+    expect(groups).toEqual(['Linked to this Work', 'All consignees']);
+    const linkedGroup = picker.querySelector('optgroup');
+    expect(linkedGroup?.querySelectorAll('option')).toHaveLength(1);
+    expect(linkedGroup?.textContent).toContain('SSE (Signal) GZB');
+
+    fireEvent.change(picker, { target: { value: other.id } });
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G) NR',
+    );
+  });
+});
+
+describe('WorkConsignees panel', () => {
+  const LINKED = {
+    id: '55555555-5555-4555-8555-555555555555',
+    designation: 'SSE (Signal) GZB',
+    address: 'Signal Workshop, Ghaziabad',
+    contactPerson: null,
+    phone: null,
+    email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: true,
+    isVendor: false,
+    isClient: false,
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+  const UNLINKED = {
+    ...LINKED,
+    id: '44444444-4444-4444-8444-444444444444',
+    designation: 'Sr. DEE (G) NR',
+    address: 'Delhi Division, New Delhi',
+  };
+
+  it('links a consignee contact to the Work', async () => {
+    const linkWorkConsignee = vi.fn().mockResolvedValue(UNLINKED);
+    const listWorkConsignees = vi
+      .fn()
+      .mockResolvedValueOnce([LINKED])
+      .mockResolvedValue([LINKED, UNLINKED]);
+    const api = stubApi({
+      listWorkConsignees,
+      linkWorkConsignee,
+      listContacts: vi.fn().mockResolvedValue([LINKED, UNLINKED]),
+    });
+    const { WorkConsignees } = await import('../src/views/WorkConsignees.js');
+    render(
+      <WorkConsignees api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />,
+    );
+
+    expect(await screen.findByText('SSE (Signal) GZB')).toBeTruthy();
+    // Only contacts not yet linked are offered.
+    const picker = screen.getByLabelText<HTMLSelectElement>('Link a consignee contact');
+    expect(Array.from(picker.options).map((option) => option.value)).toEqual([
+      UNLINKED.id,
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Link consignee' }));
+    await waitFor(() => {
+      expect(linkWorkConsignee).toHaveBeenCalledWith(ORG_ID, WORK_ID, UNLINKED.id);
+    });
+  });
+
+  it('unlinks without deleting the contact and hides mutations from viewers', async () => {
+    const unlinkWorkConsignee = vi.fn().mockResolvedValue(undefined);
+    const api = stubApi({
+      listWorkConsignees: vi.fn().mockResolvedValue([LINKED]),
+      listContacts: vi.fn().mockResolvedValue([LINKED]),
+      unlinkWorkConsignee,
+    });
+    const { WorkConsignees } = await import('../src/views/WorkConsignees.js');
+    const view = render(
+      <WorkConsignees api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Unlink' }));
+    await waitFor(() => {
+      expect(unlinkWorkConsignee).toHaveBeenCalledWith(ORG_ID, WORK_ID, LINKED.id);
+    });
+    view.unmount();
+
+    render(
+      <WorkConsignees
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={false}
+      />,
+    );
+    expect(await screen.findAllByText('SSE (Signal) GZB')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Link consignee' })).toBeNull();
   });
 });
 
@@ -2316,6 +2623,7 @@ describe('WorkDetail amendments', () => {
         canRecordEvidence={true}
         canIssue={true}
         canCancel={true}
+        canApprove={false}
         isOwner={flags.isOwner ?? false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -2479,6 +2787,7 @@ describe('WorkDetail serial tracking toggle', () => {
         canRecordEvidence={canModify}
         canIssue={canModify}
         canCancel={canModify}
+        canApprove={false}
         isOwner={false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -2921,6 +3230,7 @@ describe('WorkDetail PBG requirement', () => {
         canRecordEvidence={false}
         canIssue={false}
         canCancel={false}
+        canApprove={false}
         isOwner={false}
         onNewIssueChallan={vi.fn()}
         onOpenIssueChallan={vi.fn()}
@@ -3752,6 +4062,12 @@ describe('PAC certificates', () => {
     contactPerson: null,
     phone: null,
     email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: true,
+    isVendor: false,
+    isClient: false,
     active: true,
     createdAt: '2026-01-01T00:00:00.000Z',
   };
@@ -3802,7 +4118,8 @@ describe('PAC certificates', () => {
   function pacApi(overrides: Partial<ApiClient> = {}): ApiClient {
     return stubApi({
       listWorkPacCertificates: vi.fn().mockResolvedValue(PAC_LIST),
-      listConsigneeMasters: vi.fn().mockResolvedValue([CONSIGNEE]),
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE]),
+      listWorkConsignees: vi.fn().mockResolvedValue([]),
       ...overrides,
     });
   }

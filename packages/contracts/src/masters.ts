@@ -9,48 +9,91 @@ import { UuidSchema } from './primitives.js';
  * a hard delete does not exist.
  */
 
-// --- Consignee masters ------------------------------------------------------
+// --- Contacts (unified master, legacy §9) -----------------------------------
+//
+// One master for consignees / vendors / clients with role flags. Only the
+// CONSIGNEE role is active in this wave: isVendor/isClient are surfaced
+// read-only (always false) and no request sets them — they wake up with
+// the procurement wave (PO/BQ, legacy §5.8). GSTIN is uppercased and
+// format-validated server-side, accepting TDS-deductor GSTINs ending in
+// 'D' (railway units are deductors — spec §2/§5.7).
 
-export const ConsigneeMasterSchema = Type.Object(
+/** 15 uppercase alphanumerics; exact structure (standard vs deductor
+ * ending in 'D') is validated server-side so the error can explain it. */
+export const GstinSchema = Type.String({ minLength: 15, maxLength: 15 });
+
+export const ContactSchema = Type.Object(
   {
     id: UuidSchema,
     designation: Type.String({ minLength: 2, maxLength: 200 }),
-    address: Type.Union([Type.String({ minLength: 3, maxLength: 1000 }), Type.Null()]),
     contactPerson: Type.Union([
       Type.String({ minLength: 2, maxLength: 200 }),
       Type.Null(),
     ]),
+    address: Type.Union([Type.String({ minLength: 3, maxLength: 1000 }), Type.Null()]),
     phone: Type.Union([Type.String({ minLength: 3, maxLength: 30 }), Type.Null()]),
     email: Type.Union([Type.String({ minLength: 3, maxLength: 200 }), Type.Null()]),
+    gstin: Type.Union([GstinSchema, Type.Null()]),
+    pincode: Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    stateCode: Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
+    isConsignee: Type.Boolean(),
+    /** Dormant until the procurement wave — always false today. */
+    isVendor: Type.Boolean(),
+    /** Dormant until the procurement wave — always false today. */
+    isClient: Type.Boolean(),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
   },
   { additionalProperties: false },
 );
-export type ConsigneeMaster = Static<typeof ConsigneeMasterSchema>;
+export type Contact = Static<typeof ContactSchema>;
 
-/** Create and full update share this shape; omitted optionals store NULL. */
-export const SaveConsigneeMasterRequestSchema = Type.Object(
+/** Create and full update share this shape; omitted optionals store NULL.
+ * There are deliberately NO role fields: every contact created in this
+ * wave is a consignee (the only active role); vendor/client selection
+ * arrives with procurement. */
+export const SaveContactRequestSchema = Type.Object(
   {
     designation: Type.String({ minLength: 2, maxLength: 200 }),
-    address: Type.Optional(Type.String({ minLength: 3, maxLength: 1000 })),
     contactPerson: Type.Optional(Type.String({ minLength: 2, maxLength: 200 })),
+    address: Type.Optional(Type.String({ minLength: 3, maxLength: 1000 })),
     phone: Type.Optional(Type.String({ minLength: 3, maxLength: 30 })),
     email: Type.Optional(Type.String({ minLength: 3, maxLength: 200 })),
+    /** Accepted in any case; stored uppercase. */
+    gstin: Type.Optional(GstinSchema),
+    pincode: Type.Optional(Type.String({ pattern: '^[0-9]{6}$' })),
+    stateCode: Type.Optional(Type.String({ pattern: '^[0-9]{2}$' })),
   },
   { additionalProperties: false },
 );
-export type SaveConsigneeMasterRequest = Static<
-  typeof SaveConsigneeMasterRequestSchema
->;
+export type SaveContactRequest = Static<typeof SaveContactRequestSchema>;
 
-export const ConsigneeMasterListResponseSchema = Type.Object(
-  { consignees: Type.Array(ConsigneeMasterSchema) },
+export const ContactListResponseSchema = Type.Object(
+  { contacts: Type.Array(ContactSchema) },
   { additionalProperties: false },
 );
-export type ConsigneeMasterListResponse = Static<
-  typeof ConsigneeMasterListResponseSchema
->;
+export type ContactListResponse = Static<typeof ContactListResponseSchema>;
+
+// --- Work <-> consignee association (legacy R16) ----------------------------
+//
+// "A work may have many consignees; the challan picks one." The
+// association is an organisational preference list feeding the pickers —
+// linked consignees are OFFERED FIRST for the Work's challans and PAC
+// certificates, but any active consignee contact stays selectable
+// (legacy behaviour; the association is convenience, not a restriction).
+// Documents keep snapshotting whatever was picked.
+
+export const WorkConsigneeListResponseSchema = Type.Object(
+  { consignees: Type.Array(ContactSchema) },
+  { additionalProperties: false },
+);
+export type WorkConsigneeListResponse = Static<typeof WorkConsigneeListResponseSchema>;
+
+export const LinkWorkConsigneeRequestSchema = Type.Object(
+  { contactId: UuidSchema },
+  { additionalProperties: false },
+);
+export type LinkWorkConsigneeRequest = Static<typeof LinkWorkConsigneeRequestSchema>;
 
 // --- Location masters -------------------------------------------------------
 
