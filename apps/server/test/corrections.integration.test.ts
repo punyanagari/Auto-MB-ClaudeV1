@@ -568,7 +568,12 @@ describe('Path A — cancel and replace for an issued Delivery Challan', () => {
       payload: {},
     });
     expect(conflicted.statusCode).toBe(409);
-    expect(conflicted.json<{ code: string }>().code).toBe('DRAFT_EXISTS');
+    // The apply-time 409 names the occupying draft so the operator can
+    // open it directly.
+    expect(conflicted.json()).toMatchObject({
+      code: 'DRAFT_EXISTS',
+      details: { existingRecordId: draftId },
+    });
 
     // The claim was released: the request is still pending, the challan
     // still issued.

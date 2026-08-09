@@ -5,7 +5,7 @@ import type {
   SaveIssueChallanRequest,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 
 interface IssueChallanEditorProps {
   readonly api: ApiClient;
@@ -35,16 +35,6 @@ interface EditorState {
 }
 
 const EMPTY_MANUAL_LINE: ManualLine = { description: '', unit: '', quantity: '' };
-
-/** DRAFT_EXISTS conflicts answer with the open draft's id so the editor
- * can route straight to it instead of dead-ending on an error. */
-function existingDraftIdOf(error: unknown): string | null {
-  if (!(error instanceof RequestFailedError) || error.code !== 'DRAFT_EXISTS') {
-    return null;
-  }
-  const details = error.details as { existingDraftId?: unknown } | null;
-  return typeof details?.existingDraftId === 'string' ? details.existingDraftId : null;
-}
 
 export function IssueChallanEditor({
   api,
@@ -155,7 +145,9 @@ export function IssueChallanEditor({
           : await api.updateIssueChallan(organisationId, challanId, body);
       onSaved(detail.issueChallan.id);
     } catch (cause) {
-      const existingId = existingDraftIdOf(cause);
+      // DRAFT_EXISTS conflicts answer with the open draft's id so the
+      // editor routes straight to it instead of dead-ending on an error.
+      const existingId = existingRecordIdOf(cause);
       if (existingId !== null) {
         onSaved(existingId);
         return;

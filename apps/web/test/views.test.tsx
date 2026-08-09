@@ -695,6 +695,44 @@ describe('ChallanEditor', () => {
     expect(alert.textContent).toContain('at least one item');
     expect(api.createChallan).not.toHaveBeenCalled();
   });
+
+  it('routes to the existing draft on a DRAFT_EXISTS conflict', async () => {
+    const existingId = 'cccc5555-5555-4555-8555-555555555555';
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createChallan: vi.fn().mockRejectedValue(
+        new RequestFailedError(409, 'DRAFT_EXISTS', 'A draft already exists.', {
+          existingRecordId: existingId,
+        }),
+      ),
+    });
+    const onSaved = vi.fn();
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={onSaved}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    fireEvent.change(screen.getByLabelText('Consignee name'), {
+      target: { value: 'Sr. DEE (G)' },
+    });
+    fireEvent.change(screen.getByLabelText('Consignee address'), {
+      target: { value: 'Delhi Division' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(existingId);
+    });
+  });
 });
 
 describe('ChallanDetail', () => {
@@ -1355,6 +1393,53 @@ describe('CompletionExtensions', () => {
         letterDate: '2026-08-01',
       });
     });
+    expect(
+      await screen.findByRole('button', { name: 'Finalise extension request' }),
+    ).toBeTruthy();
+  });
+
+  it('switches to the existing draft on an EXTENSION_DRAFT_EXISTS conflict', async () => {
+    const createExtensionRequest = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'EXTENSION_DRAFT_EXISTS',
+          'This Work already has a draft extension request; finalise or delete it first.',
+          { existingRecordId: EXTENSION_ID },
+        ),
+      );
+    // The first load is stale (no draft); the conflict-triggered reload
+    // finds the draft another session already opened.
+    const getWorkCompletion = vi
+      .fn()
+      .mockResolvedValueOnce(COMPLETION_SET)
+      .mockResolvedValue({
+        ...COMPLETION_SET,
+        extensionRequests: [DRAFT_EXTENSION],
+      });
+    const api = stubApi({ createExtensionRequest, getWorkCompletion });
+    renderCompletion(api);
+
+    fireEvent.change(await screen.findByLabelText('Proposed completion date'), {
+      target: { value: '2027-03-31' },
+    });
+    fireEvent.change(screen.getByLabelText('Addressee'), {
+      target: { value: 'Sr. DEE (G) NR' },
+    });
+    fireEvent.change(screen.getByLabelText('Letter date'), {
+      target: { value: '2026-08-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
+      target: { value: 'Site not handed over in time.' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save draft extension request' }),
+    );
+
+    // The conflict message shows AND the view lands on the existing draft.
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('already has a draft extension request');
     expect(
       await screen.findByRole('button', { name: 'Finalise extension request' }),
     ).toBeTruthy();

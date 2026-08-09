@@ -293,7 +293,7 @@ describe('IssueChallanEditor', () => {
       workBalance: vi.fn().mockResolvedValue(BALANCE),
       createIssueChallan: vi.fn().mockRejectedValue(
         new RequestFailedError(409, 'DRAFT_EXISTS', 'A draft already exists.', {
-          existingDraftId: existingId,
+          existingRecordId: existingId,
         }),
       ),
     });

@@ -19,6 +19,7 @@ import {
   type CorrectionNoticeSnapshot,
 } from './correction-notice-html.js';
 import type { ChallanSnapshot } from './challan-html.js';
+import { draftConflictError } from './draft-conflict.js';
 import { httpError } from './http.js';
 import { parseJsonbColumn } from './jsonb-column.js';
 import {
@@ -135,16 +136,17 @@ export async function applyChallanCancelReplace(
     );
   }
   // One draft per Work: the replacement becomes THE draft. A conflict
-  // releases the claim back to pending.
+  // releases the claim back to pending, naming the occupying draft so
+  // the client can open it.
   const [existingDraft] = await tx<{ id: string }[]>`
     select id from delivery_challans
     where work_id = ${challan.work_id} and status = 'draft'
   `;
   if (existingDraft) {
-    throw httpError(
-      409,
+    throw draftConflictError(
       'DRAFT_EXISTS',
       'This Work already has a draft challan; issue or delete it before the replacement can be created.',
+      existingDraft.id,
     );
   }
   await assertChallanDate(tx, challan.work_id, proposed.replacement.challanDate);
@@ -188,6 +190,10 @@ export async function applyChallanCancelReplace(
     returning id
   `.catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === '23505') {
+      // A draft raced in between the pre-check above and this insert;
+      // the deciding transaction is aborted, so the winner's id cannot
+      // be read here — the operator's retry lands on the pre-check,
+      // whose 409 names it.
       throw httpError(
         409,
         'DRAFT_EXISTS',
@@ -257,16 +263,17 @@ export async function applyIssueChallanCancelReplace(
     );
   }
   // Issue Challans have no downstream evidence tables — cancellation is
-  // always lawful (legacy spec §5.3); only the one-draft rule can block.
+  // always lawful (legacy spec §5.3); only the one-draft rule can block,
+  // and its 409 names the occupying draft so the client can open it.
   const [existingDraft] = await tx<{ id: string }[]>`
     select id from issue_challans
     where work_id = ${challan.work_id} and status = 'draft'
   `;
   if (existingDraft) {
-    throw httpError(
-      409,
+    throw draftConflictError(
       'DRAFT_EXISTS',
       'This Work already has a draft Issue Challan; issue or delete it before the replacement can be created.',
+      existingDraft.id,
     );
   }
   await assertChallanDate(tx, challan.work_id, proposed.replacement.challanDate);
@@ -311,6 +318,10 @@ export async function applyIssueChallanCancelReplace(
     returning id
   `.catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === '23505') {
+      // A draft raced in between the pre-check above and this insert;
+      // the deciding transaction is aborted, so the winner's id cannot
+      // be read here — the operator's retry lands on the pre-check,
+      // whose 409 names it.
       throw httpError(
         409,
         'DRAFT_EXISTS',

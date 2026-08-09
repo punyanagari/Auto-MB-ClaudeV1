@@ -4,7 +4,12 @@ import type {
   ExtensionResponseOutcome,
   WorkCompletionResponse,
 } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import {
+  existingRecordIdOf,
+  formValue,
+  RequestFailedError,
+  type ApiClient,
+} from '../api.js';
 
 interface CompletionExtensionsProps {
   readonly api: ApiClient;
@@ -56,27 +61,36 @@ export function CompletionExtensions({
     };
   }, [api, organisationId, workId]);
 
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
-
   const reload = useCallback(async () => {
     setCompletion(await api.getWorkCompletion(organisationId, workId));
   }, [api, organisationId, workId]);
+
+  const act = useCallback(
+    async (work: () => Promise<void>, done: string) => {
+      setPending(true);
+      setActionError(null);
+      setNotice(null);
+      try {
+        await work();
+        setNotice(done);
+      } catch (cause) {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The action failed; nothing was changed.',
+        );
+        // A one-draft 409 names the draft that already occupies the slot
+        // (created in another tab or by a colleague): reload so the view
+        // switches to that existing draft instead of a dead-ended form.
+        if (existingRecordIdOf(cause) !== null) {
+          await reload().catch(() => undefined);
+        }
+      } finally {
+        setPending(false);
+      }
+    },
+    [reload],
+  );
 
   if (loadError !== null) {
     return (
