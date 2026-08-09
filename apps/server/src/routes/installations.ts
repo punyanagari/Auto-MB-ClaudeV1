@@ -599,6 +599,19 @@ export function registerInstallationRoutes(
             'This installation record is already cancelled.',
           );
         }
+        // R8: cancelling this record would drop the installed quantity
+        // the completion predicate was measured against, leaving a Work
+        // that says 'completed' below 100% executed. Lock order is the
+        // recording path's — own row first, then works, then work_items —
+        // so cancel and completion serialise; the 0032 installation
+        // update guard backstops the refusal in the database.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${existing.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling an installation record');
         // R19: an installation billed in a live Measurement Book cannot
         // be cancelled — the MB must be cancelled first (the 0024
         // database guard backstops this against every writer).

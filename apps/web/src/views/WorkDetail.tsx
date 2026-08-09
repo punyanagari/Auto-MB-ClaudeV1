@@ -66,10 +66,35 @@ function Amended({
   );
 }
 
-function itemFlags(item: WorkItem) {
-  const omitted =
-    item.effectiveQuantity !== null && Number(item.effectiveQuantity) === 0;
-  return { omitted, added: item.amendmentAdded === true };
+/** The work items carrying an undecided omission proposal (R7). The
+ * approved omission soft-deletes the item, so it leaves the detail
+ * response entirely — the only omission state worth a chip is the
+ * pending one. The pre-R7 reading, "effective quantity 0 means omitted",
+ * is retired deliberately: R12 makes a zero effective quantity invalid,
+ * so the reading can no longer be true of any live item. */
+function pendingRemovalItemIds(
+  amendments: readonly ApprovalRequest[],
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const amendment of amendments) {
+    if (
+      amendment.status !== 'pending' ||
+      amendment.entityType !== 'work_item_amendment' ||
+      amendment.entityId === null
+    ) {
+      continue;
+    }
+    const proposed = amendment.proposed as { kind?: unknown } | null;
+    if (proposed?.kind === 'remove_item') ids.add(amendment.entityId);
+  }
+  return ids;
+}
+
+function itemFlags(item: WorkItem, pendingRemovals: ReadonlySet<string>) {
+  return {
+    removalPending: pendingRemovals.has(item.id),
+    added: item.amendmentAdded === true,
+  };
 }
 
 /** The two R8 completion 409s carry the operator's worklist in
@@ -102,6 +127,14 @@ const REQUIREMENT_LABELS: Record<UnfinishedWorkItem['requirement'], string> = {
   delivery: 'full delivery',
   installation: 'full installation',
   delivery_and_installation: 'full delivery and installation',
+};
+
+/** The remedy is opposite for the two directions, so the worklist says
+ * which one each row needs rather than leaving the operator to compare
+ * the numbers. */
+const DIRECTION_REMEDIES: Record<UnfinishedWorkItem['direction'], string> = {
+  short: 'short — amend the quantity down',
+  excess: 'over-delivered — amend the quantity up',
 };
 
 const DIRECTION_LABELS = {
@@ -306,6 +339,7 @@ export function WorkDetail({
 
   const { work, schedules } = detail;
   const workItems = schedules.flatMap((schedule) => schedule.items);
+  const pendingRemovals = pendingRemovalItemIds(amendments);
   const issuedChallans = (challans ?? []).filter(
     (challan) => challan.status === 'issued',
   );
@@ -525,12 +559,13 @@ export function WorkDetail({
 
         {unfinished.length > 0 && (
           <table className="data-table">
-            <caption>Items still short of 100% executed value</caption>
+            <caption>Items not yet at 100% executed value</caption>
             <thead>
               <tr>
                 <th scope="col">Item number</th>
                 <th scope="col">Payment category</th>
                 <th scope="col">Requires</th>
+                <th scope="col">Remedy</th>
                 <th scope="col">Required</th>
                 <th scope="col">Delivered</th>
                 <th scope="col">Installed</th>
@@ -542,6 +577,7 @@ export function WorkDetail({
                   <th scope="row">{item.itemNumber}</th>
                   <td>{item.category ?? 'uncategorised'}</td>
                   <td>{REQUIREMENT_LABELS[item.requirement]}</td>
+                  <td>{DIRECTION_REMEDIES[item.direction]}</td>
                   <td className="cell--numeric">{item.requiredQuantity}</td>
                   <td className="cell--numeric">{item.deliveredQuantity}</td>
                   <td className="cell--numeric">{item.installedQuantity}</td>
@@ -575,14 +611,14 @@ export function WorkDetail({
             </thead>
             <tbody>
               {schedule.items.map((item) => {
-                const flags = itemFlags(item);
+                const flags = itemFlags(item, pendingRemovals);
                 return (
                   <tr key={item.id}>
                     <th scope="row">
                       {item.itemNumber}
                       {flags.added && <span className="chip chip--issued">added</span>}
-                      {flags.omitted && (
-                        <span className="chip chip--cancelled">omitted</span>
+                      {flags.removalPending && (
+                        <span className="chip chip--pending">omission pending</span>
                       )}
                     </th>
                     <td className="cell--wrap">
@@ -772,6 +808,17 @@ export function WorkDetail({
               setDetail(freshDetail);
               setAmendments(freshAmendments);
             }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+          }}
+          onProposeRemove={(body) => {
+            void act(async () => {
+              await api.proposeItemRemoval(organisationId, workId, body);
+              const [freshDetail, freshAmendments] = await Promise.all([
+                api.getWork(organisationId, workId),
+                api.listWorkAmendments(organisationId, workId),
+              ]);
+              setDetail(freshDetail);
+              setAmendments(freshAmendments);
+            }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
           }}
         />
       )}
@@ -1501,17 +1548,25 @@ interface AmendmentFormProps {
     quantity: string;
     rate: string;
   }) => void;
+  readonly onProposeRemove: (body: { workItemId: string; reason: string }) => void;
 }
 
-/** Proposes an amendment: change an item's values, omit it (quantity 0),
- * or add a new item to a schedule. Every proposal needs a reason; approval
- * authority decides whether it applies immediately or waits in the queue. */
+/** Proposes an amendment: change an item's values, omit it, or add a new
+ * item to a schedule. Every proposal needs a reason; approval authority
+ * decides whether it applies immediately or waits in the queue.
+ *
+ * Omission files through the R7 removal path, not through a change to
+ * quantity 0: the removal soft-deletes the item, keeps its number
+ * reserved for the life of the Work, and refuses while any delivery,
+ * installation, PAC or billing evidence names it. A quantity-0 change
+ * would leave the item live, and R12 refuses zero quantities anyway. */
 function AmendmentForm({
   items,
   schedules,
   pending,
   onProposeChange,
   onProposeAdd,
+  onProposeRemove,
 }: AmendmentFormProps) {
   const [kind, setKind] = useState<'change' | 'omit' | 'add'>('change');
 
@@ -1535,7 +1590,7 @@ function AmendmentForm({
         }
         const workItemId = formValue(data, 'amendment-item');
         if (kind === 'omit') {
-          onProposeChange({ workItemId, reason, changes: { quantity: '0' } });
+          onProposeRemove({ workItemId, reason });
           return;
         }
         const quantity = formValue(data, 'amendment-quantity').trim();

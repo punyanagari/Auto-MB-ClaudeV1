@@ -77,6 +77,10 @@ let uncatSupplyItemId: string; // uncategorised, description does not
 let deletedItemId: string; // soft-deleted, must be invisible to the predicate
 let amendedItemId: string; // effective_quantity overlay 3 over awarded 8
 let completionDate: string;
+// Issued documents on the fixture Work, the targets the completed-Work
+// correction and cancellation refusals need.
+let issuedChallanId: string;
+let issuedIssueChallanId: string;
 
 interface CookieJar {
   cookie: string;
@@ -385,6 +389,7 @@ afterAll(async () => {
         await admin`delete from delivery_challan_items where organisation_id = ${orgId}`;
         await admin`delete from delivery_challans where organisation_id = ${orgId}`;
         await admin`delete from delivery_challan_counters where organisation_id = ${orgId}`;
+        await admin`delete from payment_matrices where organisation_id = ${orgId}`;
         await admin`delete from work_items where organisation_id = ${orgId}`;
         await admin`delete from work_schedules where organisation_id = ${orgId}`;
         await admin`delete from work_assignments where organisation_id = ${orgId}`;
@@ -413,10 +418,12 @@ describe('the R8 completion predicate', () => {
     const refused = await complete();
     expect(refused.statusCode, refused.body).toBe(409);
     expect(refused.json()).toMatchObject({ code: 'WORK_NOT_FULLY_EXECUTED' });
-    // The message carries the short-closure instruction.
+    // Every item here is under-executed, so the message carries only the
+    // short-closure instruction — no over-delivery sentence at all.
     expect(refused.json<{ message: string }>().message).toContain(
       'amend those quantities down',
     );
+    expect(refused.json<{ message: string }>().message).not.toContain('over-delivered');
 
     const items = unfinishedBy(refused);
     // The soft-deleted item owes nothing and must not appear.
@@ -432,6 +439,7 @@ describe('the R8 completion predicate', () => {
     expect(items.get('A/1')).toMatchObject({
       category: 'SUPPLY',
       requirement: 'delivery',
+      direction: 'short',
       requiredQuantity: '10.000',
       deliveredQuantity: '0.000',
       installedQuantity: '0.000',
@@ -502,6 +510,7 @@ describe('the R8 completion predicate', () => {
       organisationId,
     });
     expect(issued.statusCode, issued.body).toBe(201);
+    issuedChallanId = challanId;
   });
 
   it('leaves only the installation-owing items short once delivery is complete', async () => {
@@ -538,6 +547,95 @@ describe('the R8 completion predicate', () => {
     const rest = await recordInstallation(uncatInstallItemId, '0.001');
     expect(rest.statusCode, rest.body).toBe(201);
   });
+
+  it('splits the worklist by direction — over-delivery amends UP, not down', async () => {
+    // The predicate is exact equality, so with the R4 excess-delivery
+    // toggle on, an over-delivered item is as unfinished as a short one.
+    // The remedies are opposite: the R7 floor refuses amending below what
+    // was delivered, so "amend those quantities down" is impossible for
+    // the over-delivered row and the message must not say it.
+    const excessWorkId = randomUUID();
+    const excessScheduleId = randomUUID();
+    const overItemId = randomUUID();
+    const shortItemId = randomUUID();
+    const excessCode = `WCE1${runId.slice(0, 4).toUpperCase()}`;
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id,
+        allow_excess_delivery
+      )
+      values (
+        ${excessWorkId}, ${organisationId}, ${excessCode}, ${`wc-excess-${runId}`},
+        '2025-06-01', 'Excess delivery fixture work', 200.00, 180.00,
+        'per_schedule', ${ownerUserId}, true
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${excessScheduleId}, ${organisationId}, ${excessWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values
+        (${overItemId}, ${organisationId}, ${excessWorkId}, ${excessScheduleId},
+         'E/1', 'Signalling cable, 6 core', 'Mtr', 5.000, 100.00, 'SUPPLY'),
+        (${shortItemId}, ${organisationId}, ${excessWorkId}, ${excessScheduleId},
+         'E/2', 'Spare relay set', 'Nos', 4.000, 200.00, 'SUPPLY')
+    `;
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${excessWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-04',
+        prefix: `${excessCode}-DC`,
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        // 7 against a sanctioned 5: only the excess toggle permits it.
+        items: [{ workItemId: overItemId, quantity: '7' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draft.json<ChallanDetailResponse>().challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    const refused = await complete(
+      owner,
+      'Attempting closure with one over-delivered and one undelivered item.',
+      excessWorkId,
+    );
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'WORK_NOT_FULLY_EXECUTED' });
+
+    const items = unfinishedBy(refused);
+    expect(items.get('E/1')).toMatchObject({
+      direction: 'excess',
+      requiredQuantity: '5.000',
+      deliveredQuantity: '7.000',
+    });
+    expect(items.get('E/2')).toMatchObject({
+      direction: 'short',
+      requiredQuantity: '4.000',
+      deliveredQuantity: '0.000',
+    });
+
+    const message = refused.json<{ message: string }>().message;
+    expect(message).toContain('1 item(s) are short: E/2');
+    expect(message).toContain('amend those quantities down');
+    expect(message).toContain('1 item(s) are over-delivered: E/1');
+    expect(message).toContain('amend the sanctioned quantity up to match the delivery');
+    // The short instruction must not be attached to the over-delivered
+    // item: the two sentences name disjoint item lists.
+    expect(message).not.toMatch(/are short:[^.]*E\/1/);
+  });
 });
 
 describe('clean-state refusals, each named', () => {
@@ -563,12 +661,16 @@ describe('clean-state refusals, each named', () => {
       'draft_issue_challan',
     ]);
 
-    const deleted = await authed(owner, {
-      method: 'DELETE',
-      url: `/api/issue-challans/${draftId}`,
+    // Issued rather than deleted: only the DRAFT blocks completion, and
+    // the issued challan then stands as the completed Work's issue-challan
+    // correction and cancellation target below.
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${draftId}/issue`,
       organisationId,
     });
-    expect(deleted.statusCode, deleted.body).toBe(204);
+    expect(issued.statusCode, issued.body).toBe(201);
+    issuedIssueChallanId = draftId;
   });
 
   it('refuses while a draft extension request exists', async () => {
@@ -872,6 +974,64 @@ describe('a completed Work accepts no new operational document', () => {
           },
         }),
       },
+      {
+        name: 'item-removal amendment proposal',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/works/${workId}/amendments/removals`,
+          organisationId,
+          payload: {
+            workItemId: supplyItemId,
+            reason: 'Should never be accepted on a completed Work.',
+          },
+        }),
+      },
+      {
+        name: 'delivery challan cancel-replace correction',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/challans/${issuedChallanId}/corrections/cancel-replace`,
+          organisationId,
+          payload: {
+            reason: 'Should never be accepted on a completed Work.',
+            replacement: {
+              challanDate: '2026-08-07',
+              prefix: `${workCode}-DC`,
+              consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+              items: [{ workItemId: supplyItemId, quantity: '10.000' }],
+            },
+          },
+        }),
+      },
+      {
+        name: 'issue challan cancel-replace correction',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/issue-challans/${issuedIssueChallanId}/corrections/cancel-replace`,
+          organisationId,
+          payload: {
+            reason: 'Should never be accepted on a completed Work.',
+            replacement: {
+              challanDate: '2026-08-07',
+              movementType: 'issue',
+              issuedToName: 'SSE/Signal/Bhusawal',
+              lines: [{ workItemId: supplyItemId, quantity: '1.000' }],
+            },
+          },
+        }),
+      },
+      {
+        name: 'delivery challan correction notice',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/challans/${issuedChallanId}/corrections/notice`,
+          organisationId,
+          payload: {
+            reason: 'Should never be accepted on a completed Work.',
+            statement: 'The consignee designation was mis-typed.',
+          },
+        }),
+      },
     ];
     for (const attempt of attempts) {
       expect(
@@ -1037,6 +1197,400 @@ describe('a completed Work accepts no new operational document', () => {
   });
 });
 
+/**
+ * The other half of the freeze (migration 0032). 0031 closed every path
+ * that ADDS a document to a completed Work; nothing stopped the evidence
+ * the 100%-executed predicate was measured against being cancelled out
+ * from under it afterwards. The adopted rule is REFUSE, not auto-reopen:
+ * the operator says why the closure was wrong (the reopen note R8 already
+ * requires and audits), then cancels.
+ *
+ * A dedicated Work carries one of each cancellable document so the five
+ * refusals are proven independently of the main fixture's state.
+ */
+describe('a completed Work refuses cancelling the evidence it was closed on', () => {
+  let cancelWorkId: string;
+  let cancelSupplyItemId: string;
+  let cancelIssueItemId: string;
+  let cancelInstallItemId: string;
+  let cancelBilledItemId: string;
+  let cancelChallanId: string;
+  let cancelIssueChallanId: string;
+  let cancelInstallationId: string;
+  let cancelPacId: string;
+  let cancelBookId: string;
+
+  async function issueChallanFor(
+    prefix: string,
+    challanDate: string,
+    items: { workItemId: string; quantity: string }[],
+  ): Promise<string> {
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${cancelWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate,
+        prefix,
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items,
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const id = draft.json<ChallanDetailResponse>().challan.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    return id;
+  }
+
+  async function cancelAttempts(): Promise<
+    { name: string; response: Awaited<ReturnType<typeof authed>> }[]
+  > {
+    return [
+      {
+        name: 'delivery challan cancel',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/challans/${cancelChallanId}/cancel`,
+          organisationId,
+          payload: { note: 'The consignment was never dispatched.' },
+        }),
+      },
+      {
+        name: 'issue challan cancel',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/issue-challans/${cancelIssueChallanId}/cancel`,
+          organisationId,
+          payload: { note: 'Material was returned to store unissued.' },
+        }),
+      },
+      {
+        name: 'installation cancel',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/installations/${cancelInstallationId}/cancel`,
+          organisationId,
+          payload: { note: 'The mast was dismantled for re-siting.' },
+        }),
+      },
+      {
+        name: 'PAC certificate cancel',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/pac-certificates/${cancelPacId}/cancel`,
+          organisationId,
+          payload: { note: 'The certificate was issued against the wrong item.' },
+        }),
+      },
+      {
+        name: 'Measurement Book cancel',
+        response: await authed(owner, {
+          method: 'POST',
+          url: `/api/measurement-books/${cancelBookId}/cancel`,
+          organisationId,
+          payload: { note: 'The measurements need re-taking.' },
+        }),
+      },
+    ];
+  }
+
+  it('completes a Work carrying one of every cancellable document', async () => {
+    cancelWorkId = randomUUID();
+    const cancelScheduleId = randomUUID();
+    cancelSupplyItemId = randomUUID();
+    cancelIssueItemId = randomUUID();
+    cancelInstallItemId = randomUUID();
+    cancelBilledItemId = randomUUID();
+    const cancelCode = `WCC1${runId.slice(0, 4).toUpperCase()}`;
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${cancelWorkId}, ${organisationId}, ${cancelCode}, ${`wc-cancel-${runId}`},
+        '2025-06-01', 'Cancellation guard fixture work', 900.00, 800.00,
+        'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${cancelScheduleId}, ${organisationId}, ${cancelWorkId}, 'A', 'Schedule A', 1)
+    `;
+    // Four items so no two documents contend for the same evidence: the
+    // billed challan is the only Measurement Book source, so the other
+    // four cancels are never blocked by R19 instead of by R8.
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values
+        (${cancelSupplyItemId}, ${organisationId}, ${cancelWorkId}, ${cancelScheduleId},
+         'C/1', 'Signalling cable, 6 core', 'Mtr', 2.000, 100.00, 'SUPPLY'),
+        (${cancelIssueItemId}, ${organisationId}, ${cancelWorkId}, ${cancelScheduleId},
+         'C/2', 'Spare relay set', 'Nos', 3.000, 100.00, 'SUPPLY'),
+        (${cancelInstallItemId}, ${organisationId}, ${cancelWorkId}, ${cancelScheduleId},
+         'C/3', 'Laying and testing of cable', 'Mtr', 1.000, 50.00,
+         'PURE_INSTALLATION'),
+        (${cancelBilledItemId}, ${organisationId}, ${cancelWorkId}, ${cancelScheduleId},
+         'C/4', 'Trough, RCC', 'Mtr', 1.000, 100.00, 'SUPPLY')
+    `;
+
+    cancelChallanId = await issueChallanFor(`${cancelCode}-DC`, '2026-08-01', [
+      { workItemId: cancelSupplyItemId, quantity: '2' },
+    ]);
+    await issueChallanFor(`${cancelCode}-DC`, '2026-08-02', [
+      { workItemId: cancelIssueItemId, quantity: '3' },
+    ]);
+    const billedChallanId = await issueChallanFor(`${cancelCode}-DC`, '2026-08-03', [
+      { workItemId: cancelBilledItemId, quantity: '1' },
+    ]);
+
+    const issueDraft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${cancelWorkId}/issue-challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-03',
+        movementType: 'issue',
+        issuedToName: 'SSE/Signal/Bhusawal',
+        lines: [{ workItemId: cancelIssueItemId, quantity: '1' }],
+      },
+    });
+    expect(issueDraft.statusCode, issueDraft.body).toBe(201);
+    cancelIssueChallanId =
+      issueDraft.json<IssueChallanDetailResponse>().issueChallan.id;
+    const issueIssued = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${cancelIssueChallanId}/issue`,
+      organisationId,
+    });
+    expect(issueIssued.statusCode, issueIssued.body).toBe(201);
+
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${cancelWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: cancelInstallItemId,
+        quantity: '1',
+        installedOn: '2026-08-04',
+        newLocation: { name: `Cancel site ${runId}`, kind: 'installation_point' },
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+    cancelInstallationId = installed.json<{ id: string }>().id;
+
+    const certificate = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${cancelWorkId}/pac-certificates`,
+      organisationId,
+      payload: {
+        reference: `PAC-CANCEL-${runId}`,
+        issueDate: '2026-08-04',
+        consigneeMasterId: consigneeId,
+        items: [{ workItemId: cancelInstallItemId, certifiedQuantity: '1.000' }],
+      },
+    });
+    expect(certificate.statusCode, certificate.body).toBe(201);
+    cancelPacId = certificate.json<{ id: string }>().id;
+
+    // The Measurement Book prices its lines through the payment matrix,
+    // so the SUPPLY row has to exist before the book can be finalised.
+    const matrix = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${cancelWorkId}/payment-matrix/SUPPLY`,
+      organisationId,
+      payload: {
+        pctSupply: '80.00',
+        pctInstallation: '10.00',
+        pctPac: '0.00',
+        pctFinalBill: '10.00',
+      },
+    });
+    expect(matrix.statusCode, matrix.body).toBe(200);
+
+    const book = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${cancelWorkId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-05' },
+    });
+    expect(book.statusCode, book.body).toBe(201);
+    cancelBookId = book.json<MeasurementBookDetailResponse>().book.id;
+    const sourced = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${cancelBookId}/sources`,
+      organisationId,
+      payload: {
+        sources: [{ sourceType: 'delivery_challan', sourceId: billedChallanId }],
+      },
+    });
+    expect(sourced.statusCode, sourced.body).toBe(200);
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${cancelBookId}/finalize`,
+      organisationId,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+
+    const completed = await complete(
+      owner,
+      'Every sanctioned quantity is executed, measured and accepted.',
+      cancelWorkId,
+    );
+    expect(completed.statusCode, completed.body).toBe(200);
+    expect(await workStatus(cancelWorkId)).toBe('completed');
+  });
+
+  it('refuses all five cancel routes, each naming the reopen', async () => {
+    for (const attempt of await cancelAttempts()) {
+      expect(
+        attempt.response.statusCode,
+        `${attempt.name}: ${attempt.response.body}`,
+      ).toBe(409);
+      expect(attempt.response.json(), attempt.name).toMatchObject({
+        code: 'WORK_COMPLETED',
+      });
+      expect(
+        attempt.response.json<{ message: string }>().message,
+        attempt.name,
+      ).toContain('reopen it before cancelling');
+    }
+  });
+
+  it('backstops every cancel in the database, not only the route', async () => {
+    await expect(
+      admin`
+        update delivery_challans
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now(), cancellation_note = 'Raw SQL attempt.'
+        where id = ${cancelChallanId}
+      `,
+    ).rejects.toThrowError(/this Work is completed/);
+
+    await expect(
+      admin`
+        update issue_challans
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now(), cancellation_note = 'Raw SQL attempt.'
+        where id = ${cancelIssueChallanId}
+      `,
+    ).rejects.toThrowError(/this Work is completed/);
+
+    await expect(
+      admin`
+        update installations
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now(), cancellation_note = 'Raw SQL attempt.'
+        where id = ${cancelInstallationId}
+      `,
+    ).rejects.toThrowError(/this Work is completed/);
+
+    await expect(
+      admin`
+        update pac_certificates
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now(), cancellation_note = 'Raw SQL attempt.'
+        where id = ${cancelPacId}
+      `,
+    ).rejects.toThrowError(/this Work is completed/);
+
+    await expect(
+      admin`
+        update measurement_books
+        set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+            cancelled_at = now(), cancellation_note = 'Raw SQL attempt.'
+        where id = ${cancelBookId}
+      `,
+    ).rejects.toThrowError(/this Work is completed/);
+
+    // Nothing moved: the refusals are the whole behaviour.
+    const [live] = await admin<{ challans: string; installations: string }[]>`
+      select
+        (select count(*)::text from delivery_challans
+          where work_id = ${cancelWorkId} and status = 'issued') as challans,
+        (select count(*)::text from installations
+          where work_id = ${cancelWorkId} and status = 'recorded') as installations
+    `;
+    expect(live).toMatchObject({ challans: '3', installations: '1' });
+  });
+
+  it('restores every cancel path once the Work is reopened', async () => {
+    const reopened = await reopen(
+      owner,
+      'The consignee rejected the material after closure; the record must be corrected.',
+      cancelWorkId,
+    );
+    expect(reopened.statusCode, reopened.body).toBe(200);
+
+    // Ordered so each cancel meets only the R8 question: the Measurement
+    // Book releases its sources first, and the PAC certificate clears
+    // before the installation it covers (R18).
+    const order: { name: string; url: string; note: string }[] = [
+      {
+        name: 'Measurement Book',
+        url: `/api/measurement-books/${cancelBookId}/cancel`,
+        note: 'The measurements need re-taking.',
+      },
+      {
+        name: 'issue challan',
+        url: `/api/issue-challans/${cancelIssueChallanId}/cancel`,
+        note: 'Material was returned to store unissued.',
+      },
+      {
+        name: 'PAC certificate',
+        url: `/api/pac-certificates/${cancelPacId}/cancel`,
+        note: 'The certificate was issued against the wrong item.',
+      },
+      {
+        name: 'installation',
+        url: `/api/installations/${cancelInstallationId}/cancel`,
+        note: 'The mast was dismantled for re-siting.',
+      },
+      {
+        name: 'delivery challan',
+        url: `/api/challans/${cancelChallanId}/cancel`,
+        note: 'The consignment was never dispatched.',
+      },
+    ];
+    for (const step of order) {
+      const cancelled = await authed(owner, {
+        method: 'POST',
+        url: step.url,
+        organisationId,
+        payload: { note: step.note },
+      });
+      expect(cancelled.statusCode, `${step.name}: ${cancelled.body}`).toBe(200);
+    }
+
+    // And the Work is now genuinely short — the state R8 refused to let
+    // the completion columns outlive.
+    const refused = await complete(
+      owner,
+      'Completion must not be available while the record is short again.',
+      cancelWorkId,
+    );
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'WORK_NOT_FULLY_EXECUTED' });
+    const items = unfinishedBy(refused);
+    expect(items.get('C/1')).toMatchObject({
+      direction: 'short',
+      deliveredQuantity: '0.000',
+    });
+    expect(items.get('C/3')).toMatchObject({
+      direction: 'short',
+      installedQuantity: '0.000',
+    });
+  });
+});
+
 describe('the works status transition guard', () => {
   it('refuses a completion without a note, a cancellation, and drifting state', async () => {
     await expect(
@@ -1175,24 +1729,100 @@ describe('reopen', () => {
     });
     expect(certificate.statusCode, certificate.body).toBe(201);
 
-    const proposal = await authed(office, {
+    // Every proposal path, filed by a member without the approval
+    // authority so each one lands pending and is then withdrawn.
+    const proposals: { name: string; response: Awaited<ReturnType<typeof authed>> }[] =
+      [
+        {
+          name: 'amendment proposal',
+          response: await authed(office, {
+            method: 'POST',
+            url: `/api/works/${workId}/amendments`,
+            organisationId,
+            payload: {
+              workItemId: supplyItemId,
+              reason: 'Variation order 12, resubmitted after the reopen.',
+              changes: { quantity: '12' },
+            },
+          }),
+        },
+        {
+          name: 'item-removal amendment proposal',
+          response: await authed(office, {
+            method: 'POST',
+            url: `/api/works/${workId}/amendments/removals`,
+            organisationId,
+            payload: {
+              workItemId: spareItemId,
+              reason: 'The spare relay set was dropped from the variation.',
+            },
+          }),
+        },
+        {
+          name: 'delivery challan cancel-replace correction',
+          response: await authed(office, {
+            method: 'POST',
+            url: `/api/challans/${issuedChallanId}/corrections/cancel-replace`,
+            organisationId,
+            payload: {
+              reason: 'The consignee designation was wrong on the issued copy.',
+              replacement: {
+                challanDate: '2026-08-08',
+                prefix: `${workCode}-DC`,
+                consignee: { name: 'Sr. DEE (W) CR', address: 'Bhusawal Division' },
+                items: [{ workItemId: supplyItemId, quantity: '10.000' }],
+              },
+            },
+          }),
+        },
+        {
+          name: 'issue challan cancel-replace correction',
+          response: await authed(office, {
+            method: 'POST',
+            url: `/api/issue-challans/${issuedIssueChallanId}/corrections/cancel-replace`,
+            organisationId,
+            payload: {
+              reason: 'Issued to the wrong section engineer.',
+              replacement: {
+                challanDate: '2026-08-08',
+                movementType: 'issue',
+                issuedToName: 'SSE/Works/Bhusawal',
+                lines: [{ workItemId: supplyItemId, quantity: '1.000' }],
+              },
+            },
+          }),
+        },
+      ];
+    for (const proposal of proposals) {
+      expect(
+        proposal.response.statusCode,
+        `${proposal.name}: ${proposal.response.body}`,
+      ).toBe(201);
+      const rejected = await authed(owner, {
+        method: 'POST',
+        url: `/api/approvals/${proposal.response.json<{ id: string }>().id}/reject`,
+        organisationId,
+        payload: { note: 'Cleaning up the fixture.' },
+      });
+      expect(rejected.statusCode, `${proposal.name}: ${rejected.body}`).toBe(200);
+    }
+  });
+
+  it('restores the correction-notice path — it now refuses on its own terms', async () => {
+    // Path B needs downstream evidence to exist and this challan has
+    // none, so the honest proof of restoration is that the route reaches
+    // its OWN refusal instead of answering WORK_COMPLETED.
+    const notice = await authed(office, {
       method: 'POST',
-      url: `/api/works/${workId}/amendments`,
+      url: `/api/challans/${issuedChallanId}/corrections/notice`,
       organisationId,
       payload: {
-        workItemId: supplyItemId,
-        reason: 'Variation order 12, resubmitted after the reopen.',
-        changes: { quantity: '12' },
+        reason: 'The consignee designation was mis-typed.',
+        statement: 'Read the consignee as Sr. DEE (W) CR.',
       },
     });
-    expect(proposal.statusCode, proposal.body).toBe(201);
-    const rejected = await authed(owner, {
-      method: 'POST',
-      url: `/api/approvals/${proposal.json<{ id: string }>().id}/reject`,
-      organisationId,
-      payload: { note: 'Cleaning up the fixture.' },
-    });
-    expect(rejected.statusCode, rejected.body).toBe(200);
+    expect(notice.statusCode, notice.body).toBe(409);
+    expect(notice.json()).toMatchObject({ code: 'CORRECTION_USE_CANCEL_REPLACE' });
   });
 });
 
@@ -1281,6 +1911,95 @@ describe('the works row lock serialises completion against in-flight writers', (
       `;
       expect(drafts?.count).toBe('0');
     }
+  });
+
+  it('a concurrent completion and delivery-challan ISSUE cannot both win', async () => {
+    // The issue paths are where the works lock was newly added, and the
+    // draft is the completion's only blocker — so exactly one side wins:
+    // either the issue commits first and the completion then finds a
+    // clean, fully delivered Work, or the completion commits first and
+    // the issue is refused behind it. A completed Work with that draft
+    // still sitting there is the state neither ordering may produce.
+    const raceWorkId = randomUUID();
+    const raceScheduleId = randomUUID();
+    const raceItemId = randomUUID();
+    const raceCode = `WCR3${runId.slice(0, 4).toUpperCase()}`;
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${raceWorkId}, ${organisationId}, ${raceCode}, ${`wc-race3-${runId}`},
+        '2025-06-01', 'Race fixture work 3', 100.00, 90.00, 'per_schedule',
+        ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${raceScheduleId}, ${organisationId}, ${raceWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values (
+        ${raceItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId}, 'R/1',
+        'Signalling cable, 6 core', 'Mtr', 1.000, 10.00, 'SUPPLY'
+      )
+    `;
+    // The draft covers the whole sanctioned quantity: issuing it makes
+    // the Work fully executed, and it is also the one clean-state blocker.
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${raceWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-07',
+        prefix: `${raceCode}-DC`,
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items: [{ workItemId: raceItemId, quantity: '1' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const draftId = draft.json<ChallanDetailResponse>().challan.id;
+
+    const [completed, issued] = await Promise.all([
+      complete(owner, 'Nothing further is owed on this Work.', raceWorkId),
+      authed(owner, {
+        method: 'POST',
+        url: `/api/challans/${draftId}/issue`,
+        organisationId,
+      }),
+    ]);
+
+    if (issued.statusCode === 201) {
+      // The issue won the works lock. The completion either ran entirely
+      // before it (refused: the draft was still a blocker) or entirely
+      // after it (accepted: clean and fully delivered).
+      if (completed.statusCode === 409) {
+        expect(completed.json()).toMatchObject({ code: 'WORK_NOT_CLEAN' });
+        expect(blockersOf(completed).map((blocker) => blocker.kind)).toEqual([
+          'draft_delivery_challan',
+        ]);
+      } else {
+        expect(completed.statusCode, completed.body).toBe(200);
+      }
+    } else {
+      // The completion won: the issue is refused with the shared code.
+      expect(completed.statusCode, completed.body).toBe(200);
+      expect(issued.statusCode, issued.body).toBe(409);
+      expect(issued.json()).toMatchObject({ code: 'WORK_COMPLETED' });
+    }
+
+    const [rows] = await admin<{ drafts: string; status: string }[]>`
+      select
+        (select count(*)::text from delivery_challans
+          where work_id = ${raceWorkId} and status = 'draft') as drafts,
+        (select status from works where id = ${raceWorkId}) as status
+    `;
+    if (rows?.status === 'completed') expect(rows.drafts).toBe('0');
   });
 
   it('a concurrent completion and PAC recording serialise coherently', async () => {

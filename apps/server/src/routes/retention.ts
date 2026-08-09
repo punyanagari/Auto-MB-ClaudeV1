@@ -945,6 +945,15 @@ export function registerRetentionRoutes(
         `;
         if (!current) throw httpError(404, 'BILL_NOT_FOUND', 'No such bill.');
         await assertWorkAccess(tx, user.id, current.work_id);
+        // Deliberately NO completed-Work refusal here (R8). The freeze on
+        // a completed Work covers its OPERATIONAL record — the quantities
+        // the 100%-executed predicate was measured against, and the
+        // documents that carry them. A bill moving prepared -> submitted
+        // -> paid records what the payer did with a bill already prepared;
+        // it moves no quantity and creates no document. Payment legitimately
+        // continues for months after execution finishes, so refusing it
+        // would force an operator to reopen a finished Work merely to
+        // record that the railway paid.
         const allowed =
           (current.status === 'prepared' && body.status === 'submitted') ||
           (current.status === 'submitted' && body.status === 'paid');

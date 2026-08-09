@@ -152,6 +152,7 @@ interface UnfinishedRow {
   item_number: string;
   payment_category: UnfinishedWorkItem['category'];
   requirement: UnfinishedWorkItem['requirement'];
+  direction: UnfinishedWorkItem['direction'];
   required_quantity: string;
   delivered_quantity: string;
   installed_quantity: string;
@@ -174,6 +175,14 @@ interface UnfinishedRow {
  *                                  'installation' (case-insensitive)
  *                                  -> fully installed, else fully
  *                                  delivered.
+ *
+ * Each row also carries the DIRECTION of its own remedy, because the two
+ * are opposite. An item is 'excess' when a measured dimension the
+ * requirement covers stands ABOVE the baseline — the delivery dimension,
+ * and the installation dimension likewise where the requirement includes
+ * it. While any covered dimension is over, the R7 floor refuses every
+ * reduction, so the only legal move is to amend the sanctioned quantity
+ * UP to match; everything else is 'short' and amends down.
  */
 async function unfinishedItems(
   tx: TransactionSql,
@@ -192,6 +201,16 @@ async function unfinishedItems(
   const rows = await tx<UnfinishedRow[]>`
     select measured.id, measured.item_number, measured.payment_category,
            measured.requirement,
+           case
+             when (
+               measured.requirement in ('delivery', 'delivery_and_installation')
+               and measured.delivered_quantity > measured.required_quantity
+             ) or (
+               measured.requirement in ('installation', 'delivery_and_installation')
+               and measured.installed_quantity > measured.required_quantity
+             ) then 'excess'
+             else 'short'
+           end as direction,
            measured.required_quantity::text as required_quantity,
            measured.delivered_quantity::text as delivered_quantity,
            measured.installed_quantity::text as installed_quantity
@@ -239,10 +258,38 @@ async function unfinishedItems(
     itemNumber: row.item_number,
     category: row.payment_category,
     requirement: row.requirement,
+    direction: row.direction,
     requiredQuantity: row.required_quantity,
     deliveredQuantity: row.delivered_quantity,
     installedQuantity: row.installed_quantity,
   }));
+}
+
+/** The 409's prose, split on the direction of the remedy. Telling the
+ * operator to "amend those quantities down" for an over-delivered item
+ * sends them at an instruction the R7 floor refuses; the sanctioned
+ * quantity has to go UP to meet the delivery instead. */
+function notFullyExecutedMessage(unfinished: readonly UnfinishedWorkItem[]): string {
+  const numbers = (direction: UnfinishedWorkItem['direction']) =>
+    unfinished
+      .filter((item) => item.direction === direction)
+      .map((item) => item.itemNumber);
+  const short = numbers('short');
+  const excess = numbers('excess');
+  const parts = [
+    `A Work completes only at 100% executed value; ${String(unfinished.length)} item(s) are not fully executed.`,
+  ];
+  if (short.length > 0) {
+    parts.push(
+      `${String(short.length)} item(s) are short: ${short.join(', ')}. For a short closure, amend those quantities down through the approval path first, then complete.`,
+    );
+  }
+  if (excess.length > 0) {
+    parts.push(
+      `${String(excess.length)} item(s) are over-delivered: ${excess.join(', ')}. For those, amend the sanctioned quantity up to match the delivery through the approval path, then complete.`,
+    );
+  }
+  return parts.join(' ');
 }
 
 interface BlockerRow {
@@ -376,11 +423,7 @@ export function registerWorkCompletionRoutes(
           throw httpError(
             409,
             'WORK_NOT_FULLY_EXECUTED',
-            `A Work completes only at 100% executed value; ${String(unfinished.length)} item(s) are short: ${unfinished
-              .map((item) => item.itemNumber)
-              .join(
-                ', ',
-              )}. For a short closure, amend those quantities down through the approval path first, then complete.`,
+            notFullyExecutedMessage(unfinished),
             details,
           );
         }

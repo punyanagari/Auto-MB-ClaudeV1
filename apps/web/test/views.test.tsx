@@ -1447,7 +1447,7 @@ describe('WorkDetail R8 completion panel', () => {
       new RequestFailedError(
         409,
         'WORK_NOT_FULLY_EXECUTED',
-        'A Work completes only at 100% executed value; 2 item(s) are short: A/1, A/2.',
+        'A Work completes only at 100% executed value; 2 item(s) are not fully executed.',
         {
           unfinishedItems: [
             {
@@ -1455,6 +1455,7 @@ describe('WorkDetail R8 completion panel', () => {
               itemNumber: 'A/1',
               category: 'SUPPLY_AND_INSTALLATION',
               requirement: 'delivery_and_installation',
+              direction: 'short',
               requiredQuantity: '5.000',
               deliveredQuantity: '5.000',
               installedQuantity: '2.000',
@@ -1463,9 +1464,10 @@ describe('WorkDetail R8 completion panel', () => {
               workItemId: '55555555-5555-4555-8555-555555555556',
               itemNumber: 'A/2',
               category: null,
-              requirement: 'installation',
+              requirement: 'delivery',
+              direction: 'excess',
               requiredQuantity: '3.000',
-              deliveredQuantity: '0.000',
+              deliveredQuantity: '4.000',
               installedQuantity: '0.000',
             },
           ],
@@ -1489,14 +1491,17 @@ describe('WorkDetail R8 completion panel', () => {
         note: 'Closing the contract.',
       });
     });
-    // The worklist is the point of the refusal: every short item, with
-    // what it owes and what it has.
+    // The worklist is the point of the refusal: every unfinished item,
+    // with what it owes, what it has, and which way its remedy runs —
+    // the over-delivered row must not be told to amend down.
     expect(
-      await screen.findByText('Items still short of 100% executed value'),
+      await screen.findByText('Items not yet at 100% executed value'),
     ).toBeTruthy();
     expect(screen.getByText('full delivery and installation')).toBeTruthy();
     expect(screen.getByText('uncategorised')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
+    expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
+    expect(screen.getByText('over-delivered — amend the quantity up')).toBeTruthy();
   });
 
   it('names every clean-state blocker from the 409 details', async () => {
@@ -2821,7 +2826,10 @@ describe('WorkDetail amendments', () => {
             unitCode: 'Nos',
             awardedQuantity: '4.000',
             effectiveRate: '50.00',
-            effectiveQuantity: '0.000',
+            // No zero-quantity overlay anywhere: R12 makes a zero
+            // effective quantity invalid, so the pre-R7 "quantity 0 means
+            // omitted" reading has no live case left to describe.
+            effectiveQuantity: null,
             effectiveUnitRate: null,
             effectiveDescription: null,
             effectiveUnit: null,
@@ -2876,9 +2884,99 @@ describe('WorkDetail amendments', () => {
       true,
     );
     expect(screen.getAllByText('110.00').length).toBeGreaterThan(0);
-    // Amendment-added and omitted items are flagged.
+    // Amendment-added items are flagged; omission is no longer inferred
+    // from the numbers at all.
     expect(screen.getByText('added')).toBeTruthy();
-    expect(screen.getByText('omitted')).toBeTruthy();
+    expect(screen.queryByText('omitted')).toBeNull();
+    expect(screen.queryByText('omission pending')).toBeNull();
+  });
+
+  const REMOVAL_APPROVAL = {
+    id: '31111111-2222-4333-8444-555555555555',
+    entityType: 'work_item_amendment' as const,
+    entityId: ITEM_A,
+    workId: WORK_ID,
+    workCode: 'DCW-1',
+    itemNumber: 'A/1',
+    documentNumber: null,
+    proposed: { kind: 'remove_item', workItemId: ITEM_A, itemNumber: 'A/1' },
+    diff: [
+      { field: 'item', before: 'A/1', after: null },
+      { field: 'quantity', before: '8.000', after: null },
+    ],
+    reason: 'The switchboard was dropped from the sanction.',
+    status: 'pending' as const,
+    requestedByUserId: 'user-b',
+    decidedByUserId: null,
+    decidedAt: null,
+    decisionNote: null,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  it('flags an item carrying an undecided omission proposal', async () => {
+    renderAmended(
+      amendedApi({
+        listWorkAmendments: vi.fn().mockResolvedValue([REMOVAL_APPROVAL]),
+      }),
+    );
+
+    await screen.findByRole('heading', { name: 'Amendments' });
+    expect(screen.getByText('omission pending')).toBeTruthy();
+  });
+
+  it('drops the flag once the omission is decided and the item is gone', async () => {
+    // Approving an omission soft-deletes the item, so the approved
+    // proposal comes back with the item already absent from the detail.
+    const withoutItemA = {
+      ...AMENDED_WORK_DETAIL,
+      schedules: [
+        {
+          ...AMENDED_WORK_DETAIL.schedules[0],
+          items: AMENDED_WORK_DETAIL.schedules[0]?.items.slice(1) ?? [],
+        },
+      ],
+    };
+    renderAmended(
+      stubApi({
+        getWork: vi.fn().mockResolvedValue(withoutItemA),
+        listWorkAmendments: vi
+          .fn()
+          .mockResolvedValue([{ ...REMOVAL_APPROVAL, status: 'approved' as const }]),
+      }),
+    );
+
+    await screen.findByRole('heading', { name: 'Amendments' });
+    expect(screen.queryByText('omission pending')).toBeNull();
+    expect(screen.queryByText('Main switchboard')).toBeNull();
+  });
+
+  it('files an omission through the R7 removal path, not a quantity-0 change', async () => {
+    const proposeItemRemoval = vi.fn().mockResolvedValue({
+      ...REMOVAL_APPROVAL,
+      status: 'pending',
+    });
+    const proposeAmendment = vi.fn();
+    renderAmended(amendedApi({ proposeItemRemoval, proposeAmendment }));
+
+    await screen.findByRole('heading', { name: 'Amendments' });
+    fireEvent.change(screen.getByLabelText('Amendment'), {
+      target: { value: 'omit' },
+    });
+    fireEvent.change(screen.getByLabelText('Item to amend'), {
+      target: { value: ITEM_A },
+    });
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'The switchboard was dropped from the sanction.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+
+    await waitFor(() => {
+      expect(proposeItemRemoval).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        workItemId: ITEM_A,
+        reason: 'The switchboard was dropped from the sanction.',
+      });
+    });
+    expect(proposeAmendment).not.toHaveBeenCalled();
   });
 
   it('proposes a quantity change with a reason', async () => {

@@ -881,17 +881,17 @@ export function registerAmendmentRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds: a proposal filed here and a
+          // completion on the same Work serialise, so a pending proposal
+          // can never be stranded behind a completed Work (the 0031
+          // approval-request insert guard is the database backstop).
           const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
+            for update
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          if (work.status !== 'active') {
-            throw httpError(
-              409,
-              'WORK_NOT_ACTIVE',
-              'Amendments apply to active Works only.',
-            );
-          }
+          assertWorkOperable(work.status, 'proposing an amendment');
           // Lock the item so the before-values recorded in the diff match
           // whatever a concurrent apply leaves behind.
           const [item] = await tx<

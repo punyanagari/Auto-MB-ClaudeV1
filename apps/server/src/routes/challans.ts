@@ -962,6 +962,19 @@ export function registerChallanRoutes(
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
+        // R8: cancelling this challan would drop the delivered quantity
+        // the completion predicate was measured against, leaving a Work
+        // that says 'completed' below 100% executed. Lock order is the
+        // creation paths' — document row first, then works — so cancel
+        // and completion serialise instead of deadlocking, and the 0032
+        // challan-update guard backstops the refusal in the database.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${challan.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling a delivery challan');
         // Received goods cannot be un-delivered: once a receipt, serial,
         // or Measurement Book entry references this challan, cancellation
         // is forbidden (policy 2026-08-08; the DB trigger backs this up).

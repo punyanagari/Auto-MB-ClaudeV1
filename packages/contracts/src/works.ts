@@ -246,6 +246,20 @@ export const WorkCompletionRequirementSchema = Type.Union([
 ]);
 export type WorkCompletionRequirement = Static<typeof WorkCompletionRequirementSchema>;
 
+/** Which way an item misses 100%. The predicate is exact equality, so an
+ * over-delivered item (reachable only with the Work's excess-delivery
+ * toggle, R4) is as unfinished as a short one — but the remedies are
+ * opposite. 'short' amends the sanctioned quantity DOWN; 'excess' amends
+ * it UP to match what was delivered, which is exactly what the R7 floor
+ * permits and what amending down would be refused for. An item over on
+ * either measured dimension is 'excess': while any dimension exceeds the
+ * baseline, the floor refuses every reduction, so up is the only move. */
+export const WorkCompletionDirectionSchema = Type.Union([
+  Type.Literal('short'),
+  Type.Literal('excess'),
+]);
+export type WorkCompletionDirection = Static<typeof WorkCompletionDirectionSchema>;
+
 export const UnfinishedWorkItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
@@ -254,6 +268,7 @@ export const UnfinishedWorkItemSchema = Type.Object(
      * description, which the client shows verbatim. */
     category: Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
     requirement: WorkCompletionRequirementSchema,
+    direction: WorkCompletionDirectionSchema,
     /** coalesce(effective_quantity, awarded_quantity) — the effective
      * baseline the aggregates must equal exactly. */
     requiredQuantity: DecimalStringSchema,
@@ -265,8 +280,9 @@ export const UnfinishedWorkItemSchema = Type.Object(
 export type UnfinishedWorkItem = Static<typeof UnfinishedWorkItemSchema>;
 
 /** `details` of the 409 WORK_NOT_FULLY_EXECUTED — the operator's
- * worklist. Short closure: amend the quantities down through the
- * approval path first, then complete. */
+ * worklist, each row carrying the direction of its own remedy: short
+ * items amend down through the approval path, over-delivered items amend
+ * the sanctioned quantity up to match the delivery. */
 export const WorkNotFullyExecutedDetailsSchema = Type.Object(
   { unfinishedItems: Type.Array(UnfinishedWorkItemSchema) },
   { additionalProperties: false },

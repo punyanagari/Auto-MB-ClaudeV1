@@ -276,10 +276,37 @@ reopen (same authority, mandatory note, no predicate) restores every
 path. Both transitions take a note the database enforces in both
 directions, are audited with before/after, and ride the Work timeline;
 completed Works stop raising the dashboard completion alerts. R15's
-third status, `cancelled`, stays deliberately unreachable: the removal
-path this product implements is the soft delete, and the transition
-guard refuses any move into or out of `cancelled` rather than leaving an
-unimplemented state reachable through SQL.
+third status, `cancelled`, stays deliberately unreachable: the
+transition guard refuses any move into or out of `cancelled` rather
+than leaving an unimplemented state reachable through SQL. A Work has
+no removal path at all today — `works.deleted_at` exists from migration
+0001 and every read honours it, but nothing writes it — so `cancelled`
+stays refused until work removal is built with its own rules and
+evidence refusals.
+
+Retrofit, closing hardening (2026-08-09, migration 0032): the freeze on
+a completed Work now runs in both directions. 0031 closed every path
+that ADDS a document; nothing stopped the evidence the predicate was
+measured against being cancelled out from under it afterwards, so a
+Work could sit at `completed` while its delivered and installed sums
+had fallen below the quantities that admitted it. Cancelling a delivery
+challan, an issue challan, an installation record, a PAC certificate or
+a Measurement Book on a completed Work is now refused at the route
+(under the works row lock, taken after the document row so cancel and
+completion serialise) and at the database, each naming the reopen; the
+decision is refuse, not auto-reopen, so the operator states why the
+closure was wrong in the note R8 already audits. Bill status transitions
+(prepared → submitted → paid) stay open by design: payment continues
+long after execution finishes and moves no quantity. The R7 item-removal
+proposal route, which the two retrofit tracks merged past without
+converting, now takes the same works lock and the same shared refusal as
+its sibling proposal routes. The unfinished-item worklist carries the
+DIRECTION of each item's remedy — a Work with the excess-delivery toggle
+on can be over-delivered, and the R7 floor refuses amending down, so
+those rows are told to amend the sanctioned quantity UP to match the
+delivery instead. In the web client, "Omit an item" files through the R7
+removal path rather than a quantity-0 change, and an item carrying an
+undecided omission shows it.
 
 ## Milestone 7 — site material movement and document control
 
