@@ -611,15 +611,48 @@ describe('draft-time serial recording and issue enforcement', () => {
     });
     expect(allowed.statusCode, allowed.body).toBe(200);
 
-    // Turning OFF is always allowed.
+    // R7, last sentence: the flag is ONE-WAY once serials exist. A/2
+    // already carries U-SN-1 and U-SN-2, so switching it off is refused
+    // — turning it off would orphan those serials and silently drop the
+    // R6 traceability guarantee.
     const off = await authed(owner, {
       method: 'PATCH',
       url: `/api/work-items/${itemUId}/requires-serials`,
       organisationId,
       payload: { requiresSerials: false },
     });
+    expect(off.statusCode, off.body).toBe(409);
+    expect(off.json()).toMatchObject({ code: 'SERIALS_EXIST_FOR_FLAG' });
+    expect(off.json<{ message: string }>().message).toContain('2 serial(s)');
+
+    // The 0030 trigger holds the same direction against a direct
+    // superuser update — the route is not the only guard.
+    await expect(
+      admin`update work_items set requires_serials = false where id = ${itemUId}`,
+    ).rejects.toThrow(/serial tracking cannot be switched off/i);
+  });
+
+  it('still lets the flag go off on an item with no serials at all', async () => {
+    // D/1 is serial-flagged but nothing has been captured against it, so
+    // the toggle is genuinely two-way: nothing would be orphaned. (Turned
+    // back on afterwards — the delete-race suite below relies on it.)
+    const off = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${itemD1Id}/requires-serials`,
+      organisationId,
+      payload: { requiresSerials: false },
+    });
     expect(off.statusCode, off.body).toBe(200);
     expect(off.json()).toMatchObject({ requiresSerials: false });
+
+    const on = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${itemD1Id}/requires-serials`,
+      organisationId,
+      payload: { requiresSerials: true },
+    });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(on.json()).toMatchObject({ requiresSerials: true });
   });
 });
 

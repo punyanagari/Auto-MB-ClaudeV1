@@ -125,6 +125,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWorkAmendments: vi.fn().mockResolvedValue([]),
     proposeAmendment: vi.fn(),
     proposeAddItem: vi.fn(),
+    proposeItemRemoval: vi.fn(),
     approveAmendment: vi.fn(),
     rejectAmendment: vi.fn(),
     withdrawAmendment: vi.fn(),
