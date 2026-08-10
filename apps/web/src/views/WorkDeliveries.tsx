@@ -7,6 +7,10 @@ import type {
 } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { CardHeader } from '../ui/card.js';
+import { DataTable, wrapCell } from '../ui/table.js';
 import { Installations } from './Installations.js';
 
 interface WorkDeliveriesProps {
@@ -54,33 +58,31 @@ export function WorkDeliveries({
 }: WorkDeliveriesProps) {
   return (
     <>
-      <div className="card__header">
+      <CardHeader>
         <h2>Delivery Challans</h2>
         {canCreateDocuments &&
           (challans?.some((challan) => challan.status === 'draft') === true ? (
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 const draft = challans.find((challan) => challan.status === 'draft');
                 if (draft) onOpenChallan(draft.id);
               }}
             >
               Open draft challan
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 onNewChallan(workId, work.workCode);
               }}
             >
               New Delivery Challan
-            </button>
+            </Button>
           ))}
-      </div>
+      </CardHeader>
       {challans !== null && challans.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">Delivery Challans for this Work</caption>
+        <DataTable>
+          <caption className="sr-only">Delivery Challans for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Number</th>
@@ -92,35 +94,34 @@ export function WorkDeliveries({
             {challans.map((challan) => (
               <tr key={challan.id}>
                 <th scope="row">
-                  <button
-                    type="button"
-                    className="button--link"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    className="font-medium"
                     onClick={() => {
                       onOpenChallan(challan.id);
                     }}
                   >
                     {challan.challanNumber ?? 'Draft'}
-                  </button>
+                  </Button>
                 </th>
                 <td>{challan.challanDate}</td>
                 <td>
-                  <span className={`chip chip--${challan.status}`}>
-                    {challan.status}
-                  </span>
+                  <StatusChip status={challan.status} />
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No Delivery Challans yet.</p>
+        <p className="text-muted-foreground">No Delivery Challans yet.</p>
       )}
 
       {correctionNotices.length > 0 && (
         <>
           <h2>Correction notices</h2>
-          <table className="data-table">
-            <caption className="visually-hidden">
+          <DataTable>
+            <caption className="sr-only">
               Correction notices issued for this Work
             </caption>
             <thead>
@@ -136,16 +137,14 @@ export function WorkDeliveries({
                 <tr key={correctionNotice.id}>
                   <th scope="row">{correctionNotice.noticeNumber}</th>
                   <td>
-                    <span className={`chip chip--${correctionNotice.status}`}>
-                      {correctionNotice.status}
-                    </span>
+                    <StatusChip status={correctionNotice.status} />
                   </td>
                   <td>{correctionNotice.createdAt.slice(0, 10)}</td>
                   <td>
                     {correctionNotice.renderedAvailable ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -162,11 +161,11 @@ export function WorkDeliveries({
                         }
                       >
                         Open PDF
-                      </button>
+                      </Button>
                     ) : canCreateDocuments && correctionNotice.status === 'issued' ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -184,15 +183,15 @@ export function WorkDeliveries({
                         }
                       >
                         Generate PDF
-                      </button>
+                      </Button>
                     ) : (
-                      <span className="muted">not rendered</span>
+                      <span className="text-muted-foreground">not rendered</span>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </>
       )}
 
@@ -208,8 +207,8 @@ export function WorkDeliveries({
 
       <h2>Serial trace</h2>
       {serials.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
+        <DataTable>
+          <caption className="sr-only">
             Every serial number delivered under this Work
           </caption>
           <thead>
@@ -224,26 +223,26 @@ export function WorkDeliveries({
             {serials.map((serial) => (
               <tr key={serial.id}>
                 <th scope="row">{serial.serialNumber}</th>
-                <td className="cell--wrap">{serial.itemDescription}</td>
+                <td className={wrapCell}>{serial.itemDescription}</td>
                 <td>{serial.challanNumber ?? '—'}</td>
                 <td>
                   {serial.installedOn !== null ? (
-                    <span className="chip chip--installed">
+                    <StatusChip status="installed">
                       installed {serial.installedOn}
                       {typeof serial.installationLocation === 'string'
                         ? ` at ${serial.installationLocation}`
                         : ''}
-                    </span>
+                    </StatusChip>
                   ) : (
-                    <span className="muted">not installed</span>
+                    <span className="text-muted-foreground">not installed</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">
+        <p className="text-muted-foreground">
           No serial numbers recorded yet. Serials are recorded on each issued challan.
         </p>
       )}
