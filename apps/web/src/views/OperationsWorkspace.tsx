@@ -463,7 +463,10 @@ export function OperationsWorkspace({
                 Switch organisation
               </span>
             </span>
-            <ArrowLeftRight className="size-4 text-muted-foreground" aria-hidden="true" />
+            <ArrowLeftRight
+              className="size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
           </button>
         </div>
       </aside>
@@ -542,7 +545,10 @@ export function OperationsWorkspace({
                     setView({ name: 'works' });
                   }}
                 >
-                  <BriefcaseBusiness className="size-4 text-primary" aria-hidden="true" />
+                  <BriefcaseBusiness
+                    className="size-4 text-primary"
+                    aria-hidden="true"
+                  />
                   <span>
                     <strong className="block text-xs">Open Works</strong>
                     <span className="text-[11px] text-muted-foreground">
@@ -598,7 +604,12 @@ export function OperationsWorkspace({
             <span className="max-w-48 truncate text-xs text-muted-foreground">
               {me.user.email}
             </span>
-            <Button variant="ghost" size="icon" aria-label="Sign out" onClick={onSignOut}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Sign out"
+              onClick={onSignOut}
+            >
               <LogOut aria-hidden="true" />
             </Button>
           </div>
@@ -920,7 +931,11 @@ export function OperationsWorkspace({
               {renderNavigation(true)}
             </nav>
             <div className="border-t border-border p-3">
-              <Button variant="outline" className="w-full" onClick={onSwitchOrganisation}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={onSwitchOrganisation}
+              >
                 <ArrowLeftRight aria-hidden="true" />
                 Switch organisation
               </Button>
@@ -989,27 +1004,29 @@ export function OperationsWorkspace({
 
       {mobileMoreOpen && (
         <div className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden">
-          {NAVIGATION.slice(1).flatMap((group) => group.items).map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                onClick={() => {
-                  openModule(item.key);
-                }}
-              >
-                <Icon className="size-4 text-primary" aria-hidden="true" />
-                {item.label}
-                {item.key === 'approvals' && pendingApprovals > 0 && (
-                  <Badge className="ml-auto" variant="destructive">
-                    {pendingApprovals}
-                  </Badge>
-                )}
-              </button>
-            );
-          })}
+          {NAVIGATION.slice(1)
+            .flatMap((group) => group.items)
+            .map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                  onClick={() => {
+                    openModule(item.key);
+                  }}
+                >
+                  <Icon className="size-4 text-primary" aria-hidden="true" />
+                  {item.label}
+                  {item.key === 'approvals' && pendingApprovals > 0 && (
+                    <Badge className="ml-auto" variant="destructive">
+                      {pendingApprovals}
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
           <button
             type="button"
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/5"

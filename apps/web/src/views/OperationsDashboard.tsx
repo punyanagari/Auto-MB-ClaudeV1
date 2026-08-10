@@ -84,7 +84,9 @@ export function OperationsDashboard({
       .catch((cause: unknown) => {
         if (!cancelled) {
           setError(
-            cause instanceof Error ? cause.message : 'The dashboard could not be loaded.',
+            cause instanceof Error
+              ? cause.message
+              : 'The dashboard could not be loaded.',
           );
         }
       });
@@ -143,10 +145,17 @@ export function OperationsDashboard({
     data.totals.deliveredValue,
     data.totals.contractValue,
   );
-  const billedPercent = progressPercent(data.totals.billedValue, data.totals.contractValue);
+  const billedPercent = progressPercent(
+    data.totals.billedValue,
+    data.totals.contractValue,
+  );
   const activeWorks = data.works.filter((work) => work.status === 'active').length;
-  const completedWorks = data.works.filter((work) => work.status === 'completed').length;
-  const urgentAlerts = data.alerts.filter((alert) => alert.severity === 'danger').length;
+  const completedWorks = data.works.filter(
+    (work) => work.status === 'completed',
+  ).length;
+  const urgentAlerts = data.alerts.filter(
+    (alert) => alert.severity === 'danger',
+  ).length;
 
   const metrics = [
     {
@@ -180,7 +189,8 @@ export function OperationsDashboard({
     {
       label: 'LOAs to review',
       value: String(data.totals.loaAwaitingReview),
-      helper: urgentAlerts > 0 ? `${String(urgentAlerts)} urgent alerts` : 'No urgent alerts',
+      helper:
+        urgentAlerts > 0 ? `${String(urgentAlerts)} urgent alerts` : 'No urgent alerts',
       icon: FileSearch,
       tone: 'bg-destructive/10 text-destructive',
     },
@@ -399,9 +409,15 @@ export function OperationsDashboard({
               </thead>
               <tbody className="divide-y divide-border">
                 {sortedWorks.slice(0, 8).map((work) => {
-                  const percent = progressPercent(work.deliveredValue, work.contractValue);
+                  const percent = progressPercent(
+                    work.deliveredValue,
+                    work.contractValue,
+                  );
                   return (
-                    <tr key={work.workId} className="transition-colors hover:bg-muted/35">
+                    <tr
+                      key={work.workId}
+                      className="transition-colors hover:bg-muted/35"
+                    >
                       <th scope="row" className="px-5 py-4 text-left font-normal">
                         <button
                           type="button"
