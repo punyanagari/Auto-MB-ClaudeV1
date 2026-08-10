@@ -249,8 +249,12 @@ export function Workspace({
         aria-label="Modules"
       >
         <span className="flex h-16 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-4 text-base">
+          {/* The rail is graphite and so is --primary, which left this mark
+              painting itself the same colour as the wall behind it. Amber is
+              what the rail uses to mark a destination, and the sidebar token
+              pair already carries it: lamp fill, graphite ink. */}
           <span
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground"
             aria-hidden="true"
           >
             MB

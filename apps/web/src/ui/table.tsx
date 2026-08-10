@@ -41,9 +41,22 @@ const CELLS = [
 ].join(' ');
 
 /** The registry table: a bordered card with a quiet uppercase heading that
- * survives the scroll, hairline row rules, and hover. */
-export function DataTable({ className, ...props }: React.ComponentProps<'table'>) {
-  return (
+ * survives the scroll, hairline row rules, and hover.
+ *
+ * `scroll` is for the tables whose columns cannot be made to fit — the two
+ * editable grids, where every cell holds a control with a floor on its width.
+ * Without it they simply grow past the card and take the page's width with
+ * them. The pair is `overflow-x: auto` with `overflow-y: clip` rather than
+ * the usual `auto`: `clip` does not make the wrapper a scroll container, so
+ * the nearest scrollport for the heading is still the page and it goes on
+ * sticking. Plain `overflow-x: auto` would coerce the other axis to `auto`,
+ * and a sticky heading inside a scrollport that never scrolls never moves. */
+export function DataTable({
+  className,
+  scroll = false,
+  ...props
+}: React.ComponentProps<'table'> & { readonly scroll?: boolean }) {
+  const table = (
     <table
       className={cn(
         'my-3 w-full border-separate border-spacing-0 rounded-xl border border-border bg-card text-sm',
@@ -54,6 +67,11 @@ export function DataTable({ className, ...props }: React.ComponentProps<'table'>
       )}
       {...props}
     />
+  );
+  return scroll ? (
+    <div className="overflow-x-auto overflow-y-clip">{table}</div>
+  ) : (
+    table
   );
 }
 

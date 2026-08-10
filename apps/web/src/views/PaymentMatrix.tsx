@@ -195,7 +195,7 @@ export function PaymentMatrix({
         R10); finalised Measurement Books snapshot the percentages they billed with, so
         later matrix edits never change a raised MB.
       </p>
-      <DataTable>
+      <DataTable scroll>
         <caption className="sr-only">
           Payment matrix rows: four stage percentages per item category
         </caption>

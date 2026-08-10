@@ -883,7 +883,7 @@ export function ReviewLoa({
         {scheduleIds.map((scheduleId) => (
           <div key={scheduleId}>
             <h2>Schedule {scheduleId}</h2>
-            <DataTable className="[&_input]:w-28">
+            <DataTable scroll className="[&_input]:w-28">
               <caption className="sr-only">
                 Awarded items in schedule {scheduleId}; every field is editable
               </caption>
