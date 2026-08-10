@@ -6,6 +6,17 @@ import type {
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  Field,
+  FieldRow,
+  Actions,
+  ActionBar,
+  FormError,
+  FieldError,
+} from '../ui/form.js';
 
 interface IssueChallanEditorProps {
   readonly api: ApiClient;
@@ -327,27 +338,25 @@ export function IssueChallanEditor({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="issue-challan-editor-title">
+      <Card aria-labelledby="issue-challan-editor-title">
         <h1 id="issue-challan-editor-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (balance === null || state === null) {
     return (
-      <section className="card" aria-labelledby="issue-challan-editor-title">
+      <Card aria-labelledby="issue-challan-editor-title">
         <h1 id="issue-challan-editor-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading items…
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -358,11 +367,11 @@ export function IssueChallanEditor({
     loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
 
   return (
-    <section className="card card--wide" aria-labelledby="issue-challan-editor-title">
+    <Card className="w-full" aria-labelledby="issue-challan-editor-title">
       <h1 id="issue-challan-editor-title" tabIndex={-1}>
         {challanId === null ? 'New Issue Challan' : 'Edit draft Issue Challan'}
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Issue Challans record material issued out (to site, job work, loan, or return).
         Lines may reference awarded items or be entered manually, and quantities are not
         capped by the awarded quantity.
@@ -370,8 +379,8 @@ export function IssueChallanEditor({
       {/* noValidate: save() owns every rule, so each failure can name its
           field, bind a message, and move focus. */}
       <form noValidate onSubmit={(event) => void save(event)}>
-        <div className="field-row">
-          <div className="field">
+        <FieldRow>
+          <Field>
             <label htmlFor="issue-challan-date">Challan date</label>
             <input
               id="issue-challan-date"
@@ -382,8 +391,8 @@ export function IssueChallanEditor({
               }}
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="issue-challan-movement">Movement</label>
             <select
               id="issue-challan-movement"
@@ -399,10 +408,10 @@ export function IssueChallanEditor({
               <option value="loan">Loan (returnable)</option>
               <option value="return">Return</option>
             </select>
-          </div>
-        </div>
-        <div className="field-row">
-          <div className="field">
+          </Field>
+        </FieldRow>
+        <FieldRow>
+          <Field>
             <label htmlFor="issued-to-name">Issued to (name)</label>
             <input
               id="issued-to-name"
@@ -413,8 +422,8 @@ export function IssueChallanEditor({
               required
               minLength={2}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="issued-to-role">Role (optional)</label>
             <input
               id="issued-to-role"
@@ -423,10 +432,10 @@ export function IssueChallanEditor({
                 setState({ ...state, issuedToRole: event.target.value });
               }}
             />
-          </div>
-        </div>
-        <div className="field-row">
-          <div className="field">
+          </Field>
+        </FieldRow>
+        <FieldRow>
+          <Field>
             <label htmlFor="issue-challan-location">Location (optional)</label>
             <input
               id="issue-challan-location"
@@ -435,8 +444,8 @@ export function IssueChallanEditor({
                 setState({ ...state, location: event.target.value });
               }}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="issue-challan-remarks">Remarks (optional)</label>
             <input
               id="issue-challan-remarks"
@@ -445,12 +454,12 @@ export function IssueChallanEditor({
                 setState({ ...state, remarks: event.target.value });
               }}
             />
-          </div>
-        </div>
+          </Field>
+        </FieldRow>
 
         <h2>Awarded items</h2>
-        <table className="data-table data-table--editable">
-          <caption className="visually-hidden">
+        <DataTable className="[&_input]:w-28">
+          <caption className="sr-only">
             Work items with awarded, delivered, and remaining quantities; enter a
             quantity to include an item on this Issue Challan
           </caption>
@@ -467,9 +476,9 @@ export function IssueChallanEditor({
             {balance.items.map((item) => (
               <tr key={item.workItemId}>
                 <th scope="row">{item.itemNumber}</th>
-                <td className="cell--wrap">{item.description}</td>
+                <td className={wrapCell}>{item.description}</td>
                 <td>{item.unitCode}</td>
-                <td className="cell--numeric">{item.awardedQuantity}</td>
+                <td className={numericCell}>{item.awardedQuantity}</td>
                 <td>
                   <input
                     aria-label={`Quantity of ${item.itemNumber} on this Issue Challan`}
@@ -492,10 +501,10 @@ export function IssueChallanEditor({
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
 
         <h2>Manual lines</h2>
-        <p className="muted">
+        <p className="text-muted-foreground">
           Manual lines cover material outside the LOA (consumables, tools, loaned
           equipment).
         </p>
@@ -507,8 +516,8 @@ export function IssueChallanEditor({
           // the rows on screen — while React keys on the line's own identity.
           const position = index + 1;
           return (
-            <div className="field-row" key={line.key}>
-              <div className="field">
+            <FieldRow key={line.key}>
+              <Field>
                 <label htmlFor={descriptionField}>
                   Description for manual line {position}
                 </label>
@@ -530,12 +539,12 @@ export function IssueChallanEditor({
                   }}
                 />
                 {fieldErrors[descriptionField] !== undefined && (
-                  <p className="form-error" id={`${descriptionField}-error`}>
+                  <FieldError id={`${descriptionField}-error`}>
                     {fieldErrors[descriptionField]}
-                  </p>
+                  </FieldError>
                 )}
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor={unitField}>Unit for manual line {position}</label>
                 <input
                   id={unitField}
@@ -554,12 +563,12 @@ export function IssueChallanEditor({
                   }}
                 />
                 {fieldErrors[unitField] !== undefined && (
-                  <p className="form-error" id={`${unitField}-error`}>
+                  <FieldError id={`${unitField}-error`}>
                     {fieldErrors[unitField]}
-                  </p>
+                  </FieldError>
                 )}
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor={quantityField}>
                   Quantity for manual line {position}
                 </label>
@@ -581,29 +590,27 @@ export function IssueChallanEditor({
                   }}
                 />
                 {fieldErrors[quantityField] !== undefined && (
-                  <p className="form-error" id={`${quantityField}-error`}>
+                  <FieldError id={`${quantityField}-error`}>
                     {fieldErrors[quantityField]}
-                  </p>
+                  </FieldError>
                 )}
-              </div>
-              <div className="field">
-                <button
-                  type="button"
-                  className="button--ghost"
+              </Field>
+              <Field>
+                <Button
+                  variant="outline"
                   onClick={() => {
                     removeManualLine(line.key);
                   }}
                 >
                   Remove manual line {position}
-                </button>
-              </div>
-            </div>
+                </Button>
+              </Field>
+            </FieldRow>
           );
         })}
-        <div className="actions">
-          <button
-            type="button"
-            className="button--ghost"
+        <Actions>
+          <Button
+            variant="outline"
             ref={(node) => {
               registerField('add-manual-line', node);
             }}
@@ -619,22 +626,17 @@ export function IssueChallanEditor({
             }}
           >
             Add manual line
-          </button>
-        </div>
+          </Button>
+        </Actions>
 
-        {saveError !== null && (
-          <p className="form-error" role="alert">
-            {saveError}
-          </p>
-        )}
+        {saveError !== null && <FormError>{saveError}</FormError>}
 
-        <div className="actions action-bar">
-          <button type="submit" disabled={pending}>
+        <ActionBar className="flex-wrap">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Save draft'}
-          </button>
-          <button
-            type="button"
-            className="button--ghost"
+          </Button>
+          <Button
+            variant="outline"
             ref={cancelRef}
             onClick={() => {
               if (edited) {
@@ -645,33 +647,32 @@ export function IssueChallanEditor({
             }}
           >
             Cancel
-          </button>
-        </div>
+          </Button>
+        </ActionBar>
 
         {confirmingDiscard && (
-          <div className="flag-panel">
+          <div className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3">
             <h2>Discard your changes?</h2>
             <p>
               Nothing entered here has been saved yet. Leaving now throws away the
               quantities and manual lines you typed.
             </p>
-            <div className="actions">
-              <button type="button" ref={discardRef} onClick={onCancel}>
+            <Actions>
+              <Button ref={discardRef} onClick={onCancel}>
                 Discard and leave
-              </button>
-              <button
-                type="button"
-                className="button--ghost"
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   setConfirmingDiscard(false);
                 }}
               >
                 Keep editing
-              </button>
-            </div>
+              </Button>
+            </Actions>
           </div>
         )}
       </form>
-    </section>
+    </Card>
   );
 }

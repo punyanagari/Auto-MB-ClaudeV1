@@ -8,6 +8,10 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useState } from 'react';
 import { formValue, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { Actions, Field } from '../ui/form.js';
 import { PacCertificates } from './PacCertificates.js';
 
 interface WorkInstrumentsProps {
@@ -45,7 +49,10 @@ export function WorkInstruments({
     <>
       <h2>Contract instruments</h2>
       {typeof work.pbgRequiredAmount === 'string' ? (
-        <dl className="fact-list" aria-label="PBG requirement from the letter">
+        <dl
+          className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium"
+          aria-label="PBG requirement from the letter"
+        >
           <div>
             <dt>PBG required by the letter</dt>
             <dd>{formatInr(work.pbgRequiredAmount)}</dd>
@@ -70,20 +77,20 @@ export function WorkInstruments({
           </div>
         </dl>
       ) : (
-        <p className="muted">
+        <p className="text-muted-foreground">
           The letter records no Performance Bank Guarantee requirement.
         </p>
       )}
       {instruments.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
+        <DataTable>
+          <caption className="sr-only">
             Bank guarantees and certificates held for this Work
           </caption>
           <thead>
             <tr>
               <th scope="col">Kind</th>
               <th scope="col">Reference</th>
-              <th scope="col" className="cell--numeric">
+              <th scope="col" className={numericCell}>
                 Amount
               </th>
               <th scope="col">Issued</th>
@@ -97,15 +104,13 @@ export function WorkInstruments({
               <tr key={instrument.id}>
                 <td>{INSTRUMENT_LABELS[instrument.kind]}</td>
                 <th scope="row">{instrument.reference}</th>
-                <td className="cell--numeric">
+                <td className={numericCell}>
                   {instrument.amount !== null ? formatInr(instrument.amount) : '—'}
                 </td>
                 <td>{instrument.issuedOn}</td>
                 <td>{instrument.expiresOn ?? '—'}</td>
                 <td>
-                  <span className={`chip chip--${instrument.status}`}>
-                    {instrument.status}
-                  </span>
+                  <StatusChip status={instrument.status} />
                 </td>
                 {canModify && (
                   <td>
@@ -129,16 +134,18 @@ export function WorkInstruments({
                         }
                       />
                     ) : (
-                      <span className="muted">final</span>
+                      <span className="text-muted-foreground">final</span>
                     )}
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No PBG, PAC, or document instruments recorded yet.</p>
+        <p className="text-muted-foreground">
+          No PBG, PAC, or document instruments recorded yet.
+        </p>
       )}
       {canModify && (
         <form
@@ -167,15 +174,15 @@ export function WorkInstruments({
           }}
         >
           <h3>Add instrument</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="instrument-kind">Kind</label>
             <select id="instrument-kind" name="instrument-kind" required>
               <option value="pbg">PBG — Performance Bank Guarantee</option>
               <option value="pac">PAC — Provisional Acceptance Certificate</option>
               <option value="doc">DOC — other contract document</option>
             </select>
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="instrument-reference">Reference</label>
             <input
               id="instrument-reference"
@@ -183,16 +190,16 @@ export function WorkInstruments({
               required
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="instrument-amount">Amount (₹, optional)</label>
             <input
               id="instrument-amount"
               name="instrument-amount"
               inputMode="decimal"
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="instrument-issued">Issued on</label>
             <input
               id="instrument-issued"
@@ -200,20 +207,20 @@ export function WorkInstruments({
               type="date"
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="instrument-expires">Expires on (optional)</label>
             <input id="instrument-expires" name="instrument-expires" type="date" />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="instrument-notes">Notes (optional)</label>
             <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Add instrument
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
       <PacCertificates
@@ -246,8 +253,8 @@ function InstrumentStatusEditor({
 }: InstrumentStatusEditorProps) {
   const [status, setStatus] = useState<Exclude<InstrumentStatus, 'active'>>('released');
   return (
-    <span className="actions">
-      <label className="visually-hidden" htmlFor={`instrument-status-${instrument.id}`}>
+    <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
+      <label className="sr-only" htmlFor={`instrument-status-${instrument.id}`}>
         New status for {instrument.reference}
       </label>
       <select
@@ -261,16 +268,15 @@ function InstrumentStatusEditor({
         <option value="expired">expired</option>
         <option value="closed">closed</option>
       </select>
-      <button
-        type="button"
-        className="button--ghost"
+      <Button
+        variant="outline"
         disabled={pending}
         onClick={() => {
           onApply(status);
         }}
       >
         Apply
-      </button>
+      </Button>
     </span>
   );
 }

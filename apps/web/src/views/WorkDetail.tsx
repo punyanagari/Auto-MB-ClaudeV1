@@ -14,6 +14,11 @@ import type {
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
+import { Button } from '../ui/button.js';
+import { Badge } from '../ui/badge.js';
+import { Card } from '../ui/card.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { WorkConsignees } from './WorkConsignees.js';
@@ -291,27 +296,25 @@ export function WorkDetail({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="work-title">
+      <Card aria-labelledby="work-title">
         <h1 id="work-title" tabIndex={-1}>
           Work
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (detail === null) {
     return (
-      <section className="card" aria-labelledby="work-title">
+      <Card aria-labelledby="work-title">
         <h1 id="work-title" tabIndex={-1}>
           Work
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading Work…
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -380,11 +383,11 @@ export function WorkDetail({
     timeline: null,
   };
   return (
-    <section className="card card--wide" aria-labelledby="work-title">
+    <Card className="w-full" aria-labelledby="work-title">
       <h1 id="work-title" tabIndex={-1}>
         {work.workCode} — {work.title}
       </h1>
-      <dl className="fact-list">
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Letter</dt>
           <dd>
@@ -412,15 +415,9 @@ export function WorkDetail({
         <div>
           <dt>Status</dt>
           <dd>
-            <span
-              className={
-                work.status === 'completed'
-                  ? 'chip chip--completed'
-                  : 'chip chip--active'
-              }
-            >
+            <Badge variant={work.status === 'completed' ? 'success' : 'info'}>
               {work.status}
-            </span>
+            </Badge>
           </dd>
         </div>
         <div>
@@ -541,11 +538,13 @@ export function WorkDetail({
                   reopened.
                 </p>
                 {work.completionNote !== null && (
-                  <p className="muted">Completion note: {work.completionNote}</p>
+                  <p className="text-muted-foreground">
+                    Completion note: {work.completionNote}
+                  </p>
                 )}
               </>
             ) : (
-              <p className="muted">
+              <p className="text-muted-foreground">
                 A Work completes only at 100% executed value (every item fully delivered
                 and/or installed per its payment category). For a short closure, amend
                 the quantities down through the approval path first.
@@ -554,7 +553,6 @@ export function WorkDetail({
 
             {canModify && workActive && (
               <form
-                className="stacked-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   const data = new FormData(event.currentTarget);
@@ -567,7 +565,7 @@ export function WorkDetail({
                   }, 'Work marked completed.');
                 }}
               >
-                <div className="field">
+                <Field>
                   <label htmlFor="work-completion-note">
                     Why this Work is being completed
                   </label>
@@ -579,18 +577,17 @@ export function WorkDetail({
                     maxLength={2000}
                     rows={2}
                   />
-                </div>
-                <div className="actions">
-                  <button type="submit" disabled={pending}>
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
                     Complete Work
-                  </button>
-                </div>
+                  </Button>
+                </Actions>
               </form>
             )}
 
             {canModify && !workActive && (
               <form
-                className="stacked-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   const data = new FormData(event.currentTarget);
@@ -603,7 +600,7 @@ export function WorkDetail({
                   }, 'Work reopened.');
                 }}
               >
-                <div className="field">
+                <Field>
                   <label htmlFor="work-reopen-note">
                     Why this Work is being reopened
                   </label>
@@ -615,17 +612,17 @@ export function WorkDetail({
                     maxLength={2000}
                     rows={2}
                   />
-                </div>
-                <div className="actions">
-                  <button type="submit" disabled={pending}>
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
                     Reopen Work
-                  </button>
-                </div>
+                  </Button>
+                </Actions>
               </form>
             )}
 
             {blockers.length > 0 && (
-              <table className="data-table">
+              <DataTable>
                 <caption>
                   Finish or discard these records before completing the Work
                 </caption>
@@ -641,11 +638,11 @@ export function WorkDetail({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             )}
 
             {unfinished.length > 0 && (
-              <table className="data-table">
+              <DataTable>
                 <caption>Items not yet at 100% executed value</caption>
                 <thead>
                   <tr>
@@ -665,13 +662,13 @@ export function WorkDetail({
                       <td>{item.category ?? 'uncategorised'}</td>
                       <td>{REQUIREMENT_LABELS[item.requirement]}</td>
                       <td>{DIRECTION_REMEDIES[item.direction]}</td>
-                      <td className="cell--numeric">{item.requiredQuantity}</td>
-                      <td className="cell--numeric">{item.deliveredQuantity}</td>
-                      <td className="cell--numeric">{item.installedQuantity}</td>
+                      <td className={numericCell}>{item.requiredQuantity}</td>
+                      <td className={numericCell}>{item.deliveredQuantity}</td>
+                      <td className={numericCell}>{item.installedQuantity}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             )}
           </section>
 
@@ -811,22 +808,14 @@ export function WorkDetail({
         />
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
 
-      <div className="actions">
-        <button type="button" className="button--ghost" onClick={onBack}>
+      <Actions>
+        <Button variant="outline" onClick={onBack}>
           Back to Works
-        </button>
-      </div>
-    </section>
+        </Button>
+      </Actions>
+    </Card>
   );
 }

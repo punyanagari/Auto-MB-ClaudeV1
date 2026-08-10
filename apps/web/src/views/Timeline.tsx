@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TimelineEvent, TimelineResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { CardHeader } from '../ui/card.js';
+import { Actions, FormError } from '../ui/form.js';
 
 /** Where the event stream comes from: a whole Work's trail (work detail
  * screen) or one record's history (challan detail reuses this). */
@@ -241,12 +244,12 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
   }
 
   return (
-    <div className="timeline-section">
-      <div className="card__header">
+    <div className="mt-6">
+      <CardHeader>
         <h2>Timeline</h2>
         {scope.kind === 'work' && (
-          <span className="actions">
-            <label className="visually-hidden" htmlFor="timeline-filter">
+          <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
+            <label className="sr-only" htmlFor="timeline-filter">
               Filter timeline by record type
             </label>
             <select
@@ -264,53 +267,59 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
             </select>
           </span>
         )}
-      </div>
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      </CardHeader>
+      {error !== null && <FormError>{error}</FormError>}
       {events === null && error === null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading timeline…
         </p>
       )}
       {events !== null && events.length === 0 && (
-        <p className="muted">No activity recorded yet.</p>
+        <p className="text-muted-foreground">No activity recorded yet.</p>
       )}
       {events !== null && events.length > 0 && (
-        <ol className="timeline">
+        <ol className="m-0 list-none border-l-2 border-[#cbc9c0] p-0">
           {events.map((event) => {
             const rows = diffRows(event.details);
             const facts = contextFacts(event.details);
             return (
-              <li key={event.id} className="timeline__event">
-                <p className="timeline__headline">
-                  <span className="timeline__action">
-                    {humaniseAction(event.action)}
-                  </span>
-                  <span className="muted">
+              <li
+                key={event.id}
+                className="relative pb-4 pl-4 before:absolute before:top-[0.4rem] before:-left-[calc(0.25rem+3px)] before:size-[0.55rem] before:rounded-full before:bg-primary before:content-['']"
+              >
+                <p className="m-0">
+                  <span className="font-semibold">{humaniseAction(event.action)}</span>
+                  <span className="text-muted-foreground">
                     {' '}
                     · {occurredOn(event.occurredAt)}
                     {event.actorName !== null ? ` · ${event.actorName}` : ''}
                   </span>
                 </p>
                 {facts.length > 0 && (
-                  <p className="muted timeline__facts">{facts.join(' · ')}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {facts.join(' · ')}
+                  </p>
                 )}
                 {rows.length > 0 && (
-                  <dl className="timeline__diff">
+                  <dl className="mt-2 rounded-[var(--radius)] bg-primary/8 px-3 py-2 text-sm">
                     {rows.map((row) => (
-                      <div key={row.field} className="timeline__diff-row">
+                      <div
+                        key={row.field}
+                        className="flex flex-wrap gap-2 [&_dt]:min-w-32 [&_dt]:font-semibold [&_dd]:m-0"
+                      >
                         <dt>{row.label}</dt>
                         <dd>
-                          <span className="timeline__before">{row.before}</span>
-                          <span aria-hidden="true" className="timeline__arrow">
+                          <span className="text-muted-foreground line-through">
+                            {row.before}
+                          </span>
+                          <span aria-hidden="true" className="text-muted-foreground">
                             {' '}
                             →{' '}
                           </span>
-                          <span className="visually-hidden"> changed to </span>
-                          <span className="timeline__after">{row.after}</span>
+                          <span className="sr-only"> changed to </span>
+                          <span className="font-semibold text-foreground">
+                            {row.after}
+                          </span>
                         </dd>
                       </div>
                     ))}
@@ -322,16 +331,11 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
         </ol>
       )}
       {nextCursor !== null && (
-        <div className="actions">
-          <button
-            type="button"
-            className="button--ghost"
-            disabled={pending}
-            onClick={() => void loadMore()}
-          >
+        <Actions>
+          <Button variant="outline" disabled={pending} onClick={() => void loadMore()}>
             Show earlier events
-          </button>
-        </div>
+          </Button>
+        </Actions>
       )}
     </div>
   );

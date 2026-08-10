@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Membership, MembershipRole, Work } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, wrapCell } from '../ui/table.js';
+import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
 
 interface MembersProps {
   readonly api: ApiClient;
@@ -70,16 +75,16 @@ function AssignmentsEditor({
 
   if (assigned === null) {
     return (
-      <p className="muted" role="status">
+      <p className="text-muted-foreground" role="status">
         Loading assignments…
       </p>
     );
   }
   if (works.length === 0) {
-    return <p className="muted">No Works exist yet.</p>;
+    return <p className="text-muted-foreground">No Works exist yet.</p>;
   }
   return (
-    <ul className="assignment-list">
+    <ul className="my-2 flex list-none flex-col gap-1 p-0 [&_label]:flex [&_label]:items-center [&_label]:gap-2 [&_label]:text-sm">
       {works.map((work) => (
         <li key={work.id}>
           <label>
@@ -91,7 +96,7 @@ function AssignmentsEditor({
                 void toggle(work.id, event.currentTarget.checked);
               }}
             />{' '}
-            {work.workCode} <span className="muted">{work.title}</span>
+            {work.workCode} <span className="text-muted-foreground">{work.title}</span>
           </label>
         </li>
       ))}
@@ -186,30 +191,28 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="members-title">
+      <Card aria-labelledby="members-title">
         <h1 id="members-title" tabIndex={-1}>
           Members
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   return (
-    <section className="card" aria-labelledby="members-title">
+    <Card aria-labelledby="members-title">
       <h1 id="members-title" tabIndex={-1}>
         Members
       </h1>
 
       {members === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading members…
         </p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">
+        <DataTable>
+          <caption className="sr-only">
             Organisation members with role, work scope, and document authority
           </caption>
           <thead>
@@ -241,9 +244,9 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
               }
               return (
                 <tr key={member.userId}>
-                  <th scope="row" className="cell--wrap">
+                  <th scope="row" className={wrapCell}>
                     {label}
-                    <details className="member-manage">
+                    <details className="flex flex-wrap items-center gap-2">
                       <summary>Assignments</summary>
                       <AssignmentsEditor
                         api={api}
@@ -338,14 +341,13 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                     />
                   </td>
                   <td>
-                    <span
-                      className={`chip chip--${member.status === 'active' ? 'active' : 'failed'}`}
+                    <StatusChip
+                      status={member.status === 'active' ? 'active' : 'failed'}
                     >
                       {member.status}
-                    </span>{' '}
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </StatusChip>{' '}
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         void change(
@@ -360,37 +362,29 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                       }}
                     >
                       {member.status === 'active' ? 'Disable' : 'Enable'}
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               );
             })}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {formError !== null && (
-        <p className="form-error" role="alert">
-          {formError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {formError !== null && <FormError>{formError}</FormError>}
 
       {isOwner && (
         <>
           <h2>Add a member</h2>
-          <p className="muted">
+          <p className="text-muted-foreground">
             The person must already have an Auto-MB account; add them by their account
             email. Site members record delivery evidence; set their scope to Assigned
             and pick their Works under Assignments.
           </p>
           <form onSubmit={(event) => void addMember(event)}>
-            <div className="field-row">
-              <div className="field">
+            <FieldRow>
+              <Field>
                 <label htmlFor="member-email">Account email</label>
                 <input
                   id="member-email"
@@ -399,8 +393,8 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                   required
                   autoComplete="off"
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="member-role">Role</label>
                 <select id="member-role" name="role" defaultValue="viewer">
                   <option value="owner">Owner</option>
@@ -408,17 +402,17 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                   <option value="site">Site</option>
                   <option value="viewer">Viewer</option>
                 </select>
-              </div>
-            </div>
+              </Field>
+            </FieldRow>
 
-            <div className="actions">
-              <button type="submit" disabled={pending}>
+            <Actions>
+              <Button type="submit" disabled={pending}>
                 {pending ? 'Adding…' : 'Add member'}
-              </button>
-            </div>
+              </Button>
+            </Actions>
           </form>
         </>
       )}
-    </section>
+    </Card>
   );
 }
