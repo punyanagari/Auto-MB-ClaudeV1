@@ -1,6 +1,10 @@
 import type { Bill, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { Field, Actions } from '../ui/form.js';
 import { MeasurementBooks } from './MeasurementBooks.js';
 
 interface WorkMeasurementProps {
@@ -48,14 +52,12 @@ export function WorkMeasurement({
     <>
       <h2>Measurement Book</h2>
       {mbEntries.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Measurement Book entries for this Work
-          </caption>
+        <DataTable>
+          <caption className="sr-only">Measurement Book entries for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Item</th>
-              <th scope="col" className="cell--numeric">
+              <th scope="col" className={numericCell}>
                 Quantity
               </th>
               <th scope="col">Measured on</th>
@@ -68,7 +70,7 @@ export function WorkMeasurement({
             {mbEntries.map((entry) => (
               <tr key={entry.id}>
                 <th scope="row">{entry.itemNumber}</th>
-                <td className="cell--numeric">{entry.measuredQuantity}</td>
+                <td className={numericCell}>{entry.measuredQuantity}</td>
                 <td>{entry.measuredOn}</td>
                 <td>
                   {entry.deliveryChallanId !== null
@@ -78,17 +80,17 @@ export function WorkMeasurement({
                 <td>{entry.mbBookRef ?? '—'}</td>
                 <td>
                   {entry.billId !== null ? (
-                    <span className="chip chip--confirmed">billed</span>
+                    <StatusChip status="confirmed">billed</StatusChip>
                   ) : (
-                    <span className="muted">unbilled</span>
+                    <span className="text-muted-foreground">unbilled</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No measurements recorded yet.</p>
+        <p className="text-muted-foreground">No measurements recorded yet.</p>
       )}
       {canRecordSiteEvidence && workItems.length > 0 && (
         <form
@@ -117,7 +119,7 @@ export function WorkMeasurement({
           }}
         >
           <h3>Record measurement</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="mb-item">Work item</label>
             <select id="mb-item" name="mb-item" required>
               {workItems.map((item) => (
@@ -126,16 +128,16 @@ export function WorkMeasurement({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="mb-quantity">Measured quantity</label>
             <input id="mb-quantity" name="mb-quantity" inputMode="decimal" required />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="mb-date">Measured on</label>
             <input id="mb-date" name="mb-date" type="date" required />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="mb-challan">Source challan (optional)</label>
             <select id="mb-challan" name="mb-challan">
               <option value="">Not tied to a challan</option>
@@ -145,20 +147,20 @@ export function WorkMeasurement({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="mb-book">MB book reference (optional)</label>
             <input id="mb-book" name="mb-book" maxLength={100} />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="mb-remarks">Remarks (optional)</label>
             <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Record measurement
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 

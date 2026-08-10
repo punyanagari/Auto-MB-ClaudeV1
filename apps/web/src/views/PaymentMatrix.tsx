@@ -7,6 +7,9 @@ import type {
 } from '@auto-mb/contracts';
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { FormError } from '../ui/form.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix editor and item
@@ -167,9 +170,7 @@ export function PaymentMatrix({
     return (
       <>
         <h2 id="payment-matrix">Payment matrix</h2>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
+        <FormError>{loadError}</FormError>
       </>
     );
   }
@@ -177,7 +178,7 @@ export function PaymentMatrix({
     return (
       <>
         <h2 id="payment-matrix">Payment matrix</h2>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading payment matrix…
         </p>
       </>
@@ -187,15 +188,15 @@ export function PaymentMatrix({
   return (
     <>
       <h2 id="payment-matrix">Payment matrix</h2>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Stage percentages per item category — supply, installation, PAC, and final bill
         must sum to exactly 100. Uncategorised items pay per the Uncategorised row.
         Percentages are deliberately per category, never per item (settled decision
         R10); finalised Measurement Books snapshot the percentages they billed with, so
         later matrix edits never change a raised MB.
       </p>
-      <table className="data-table">
-        <caption className="visually-hidden">
+      <DataTable>
+        <caption className="sr-only">
           Payment matrix rows: four stage percentages per item category
         </caption>
         <thead>
@@ -223,12 +224,14 @@ export function PaymentMatrix({
                 <tr key={category}>
                   <th scope="row">{CATEGORY_LABELS[category]}</th>
                   {STAGE_FIELDS.map(([field]) => (
-                    <td key={field} className="cell--numeric">
+                    <td key={field} className={numericCell}>
                       {saved?.[field] ?? '—'}
                     </td>
                   ))}
                   <td>
-                    <span className="muted">{saved ? 'Configured' : 'Not set'}</span>
+                    <span className="text-muted-foreground">
+                      {saved ? 'Configured' : 'Not set'}
+                    </span>
                   </td>
                 </tr>
               );
@@ -249,9 +252,8 @@ export function PaymentMatrix({
                   </td>
                 ))}
                 <td>
-                  <span className="actions">
-                    <button
-                      type="button"
+                  <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
+                    <Button
                       disabled={pending || problem !== null}
                       onClick={() =>
                         void act(async () => {
@@ -280,11 +282,10 @@ export function PaymentMatrix({
                       }
                     >
                       Save
-                    </button>
+                    </Button>
                     {saved && (
-                      <button
-                        type="button"
-                        className="button--ghost"
+                      <Button
+                        variant="outline"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -306,10 +307,13 @@ export function PaymentMatrix({
                         }
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                     {touched && problem !== null && (
-                      <span className="form-error" role="alert">
+                      <span
+                        className="my-2 text-[13px] font-medium text-destructive"
+                        role="alert"
+                      >
                         {problem}
                       </span>
                     )}
@@ -319,20 +323,20 @@ export function PaymentMatrix({
             );
           })}
         </tbody>
-      </table>
+      </DataTable>
 
       <h3>Item categories</h3>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Each item resolves its stage percentages through its category's matrix row;
         items left uncategorised resolve through the Uncategorised row. Category is
         payment configuration — Measurement Book finalisation refuses items whose
         category has no matrix row, naming them precisely.
       </p>
       {workItems.length === 0 ? (
-        <p className="muted">This Work has no items.</p>
+        <p className="text-muted-foreground">This Work has no items.</p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">Payment category per Work item</caption>
+        <DataTable>
+          <caption className="sr-only">Payment category per Work item</caption>
           <thead>
             <tr>
               <th scope="col">Item number</th>
@@ -344,7 +348,7 @@ export function PaymentMatrix({
             {workItems.map((item) => (
               <tr key={item.id}>
                 <th scope="row">{item.itemNumber}</th>
-                <td className="cell--wrap">{item.description}</td>
+                <td className={wrapCell}>{item.description}</td>
                 <td>
                   {canModify ? (
                     <select
@@ -375,7 +379,11 @@ export function PaymentMatrix({
                       <option value="SPARE_SUPPLY">Spare supply</option>
                     </select>
                   ) : (
-                    <span className={item.paymentCategory === null ? 'muted' : ''}>
+                    <span
+                      className={
+                        item.paymentCategory === null ? 'text-muted-foreground' : ''
+                      }
+                    >
                       {item.paymentCategory === null ||
                       item.paymentCategory === undefined
                         ? 'Uncategorised'
@@ -386,15 +394,11 @@ export function PaymentMatrix({
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           {notice}
         </p>
       )}

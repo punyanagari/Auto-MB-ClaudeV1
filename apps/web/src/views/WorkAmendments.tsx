@@ -2,6 +2,10 @@ import type { ApprovalRequest, WorkDetailResponse, WorkItem } from '@auto-mb/con
 import type { Dispatch, SetStateAction } from 'react';
 import { useState } from 'react';
 import { formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, wrapCell } from '../ui/table.js';
+import { Field, Actions } from '../ui/form.js';
 
 interface WorkAmendmentsProps {
   readonly api: ApiClient;
@@ -49,16 +53,14 @@ export function WorkAmendments({
   return (
     <>
       <h2>Amendments</h2>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Sanctioned changes to quantities, rates, descriptions, and items. The awarded
         LOA values are never overwritten; approved amendments apply as effective values
         shown beside the originals above.
       </p>
       {amendments.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Amendment requests for this Work
-          </caption>
+        <DataTable>
+          <caption className="sr-only">Amendment requests for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Item</th>
@@ -71,7 +73,7 @@ export function WorkAmendments({
             {amendments.map((amendment) => (
               <tr key={amendment.id}>
                 <th scope="row">{amendment.itemNumber ?? '—'}</th>
-                <td className="cell--wrap">
+                <td className={wrapCell}>
                   {amendment.diff
                     .map(
                       (entry) =>
@@ -79,18 +81,16 @@ export function WorkAmendments({
                     )
                     .join('; ')}
                 </td>
-                <td className="cell--wrap">{amendment.reason}</td>
+                <td className={wrapCell}>{amendment.reason}</td>
                 <td>
-                  <span className={`chip chip--${amendment.status}`}>
-                    {amendment.status}
-                  </span>
+                  <StatusChip status={amendment.status} />
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No amendments proposed yet.</p>
+        <p className="text-muted-foreground">No amendments proposed yet.</p>
       )}
       {canCreateDocuments && (
         <AmendmentForm
@@ -206,7 +206,7 @@ function AmendmentForm({
       }}
     >
       <h3>Propose an amendment</h3>
-      <div className="field">
+      <Field>
         <label htmlFor="amendment-kind">Amendment</label>
         <select
           id="amendment-kind"
@@ -220,9 +220,9 @@ function AmendmentForm({
           <option value="omit">Omit an item</option>
           <option value="add">Add a new item</option>
         </select>
-      </div>
+      </Field>
       {kind !== 'add' && (
-        <div className="field">
+        <Field>
           <label htmlFor="amendment-item">Item to amend</label>
           <select id="amendment-item" name="amendment-item" required>
             {items.map((item) => (
@@ -231,11 +231,11 @@ function AmendmentForm({
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       )}
       {kind === 'add' && (
         <>
-          <div className="field">
+          <Field>
             <label htmlFor="amendment-schedule">Schedule</label>
             <select id="amendment-schedule" name="amendment-schedule" required>
               {schedules.map((schedule) => (
@@ -244,8 +244,8 @@ function AmendmentForm({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="amendment-item-number">Item number</label>
             <input
               id="amendment-item-number"
@@ -253,12 +253,12 @@ function AmendmentForm({
               required
               maxLength={100}
             />
-          </div>
+          </Field>
         </>
       )}
       {kind !== 'omit' && (
         <>
-          <div className="field">
+          <Field>
             <label htmlFor="amendment-quantity">
               {kind === 'add' ? 'Quantity' : 'New quantity (optional)'}
             </label>
@@ -268,8 +268,8 @@ function AmendmentForm({
               inputMode="decimal"
               required={kind === 'add'}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="amendment-rate">
               {kind === 'add' ? 'Rate (₹)' : 'New rate (₹, optional)'}
             </label>
@@ -279,8 +279,8 @@ function AmendmentForm({
               inputMode="decimal"
               required={kind === 'add'}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="amendment-description">
               {kind === 'add' ? 'Description' : 'New description (optional)'}
             </label>
@@ -290,8 +290,8 @@ function AmendmentForm({
               required={kind === 'add'}
               maxLength={4000}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="amendment-unit">
               {kind === 'add' ? 'Unit' : 'New unit (optional)'}
             </label>
@@ -301,10 +301,10 @@ function AmendmentForm({
               required={kind === 'add'}
               maxLength={20}
             />
-          </div>
+          </Field>
         </>
       )}
-      <div className="field">
+      <Field>
         <label htmlFor="amendment-reason">Reason</label>
         <input
           id="amendment-reason"
@@ -313,12 +313,12 @@ function AmendmentForm({
           minLength={3}
           maxLength={2000}
         />
-      </div>
-      <div className="actions">
-        <button type="submit" disabled={pending}>
+      </Field>
+      <Actions>
+        <Button type="submit" disabled={pending}>
           Submit amendment
-        </button>
-      </div>
+        </Button>
+      </Actions>
     </form>
   );
 }

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ApprovalRequest } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { DataTable } from '../ui/table.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 
 interface ApprovalsProps {
   readonly api: ApiClient;
@@ -59,25 +63,25 @@ function ApprovalCard({
   const isRequester = approval.requestedByUserId === currentUserId;
   return (
     <article
-      className="card"
+      className="rounded-xl border border-border bg-card p-5 shadow-sm print:border-0 print:p-0 print:shadow-none"
       aria-label={`${TYPE_LABELS[approval.entityType]} for ${approval.workCode}`}
     >
       <h2>
         {approval.workCode}
         {approval.itemNumber !== null && (
-          <span className="muted"> · item {approval.itemNumber}</span>
+          <span className="text-muted-foreground"> · item {approval.itemNumber}</span>
         )}
         {approval.documentNumber != null && approval.documentNumber.length > 0 && (
-          <span className="muted"> · {approval.documentNumber}</span>
+          <span className="text-muted-foreground"> · {approval.documentNumber}</span>
         )}
       </h2>
-      <p className="muted">{TYPE_LABELS[approval.entityType]}</p>
+      <p className="text-muted-foreground">{TYPE_LABELS[approval.entityType]}</p>
       <p>{approval.reason}</p>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Requested by {isRequester ? 'you' : approval.requestedByUserId}
       </p>
-      <table className="data-table">
-        <caption className="visually-hidden">
+      <DataTable>
+        <caption className="sr-only">
           Proposed changes for {approval.workCode}
           {approval.itemNumber !== null ? ` item ${approval.itemNumber}` : ''}
         </caption>
@@ -99,9 +103,9 @@ function ApprovalCard({
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
       {canApprove && (
-        <div className="field">
+        <Field>
           <label htmlFor={`decision-note-${approval.id}`}>
             Decision note (required to reject)
           </label>
@@ -113,43 +117,36 @@ function ApprovalCard({
               setNote(event.target.value);
             }}
           />
-        </div>
+        </Field>
       )}
-      <div className="actions">
+      <Actions>
         {canApprove && (
           <>
-            <button
-              type="button"
+            <Button
               disabled={pending}
               onClick={() => {
                 onApprove(note.trim());
               }}
             >
               Approve and apply
-            </button>
-            <button
-              type="button"
-              className="button--ghost"
+            </Button>
+            <Button
+              variant="outline"
               disabled={pending || note.trim().length < 3}
               onClick={() => {
                 onReject(note.trim());
               }}
             >
               Reject
-            </button>
+            </Button>
           </>
         )}
         {isRequester && (
-          <button
-            type="button"
-            className="button--ghost"
-            disabled={pending}
-            onClick={onWithdraw}
-          >
+          <Button variant="outline" disabled={pending} onClick={onWithdraw}>
             Withdraw
-          </button>
+          </Button>
         )}
-      </div>
+      </Actions>
     </article>
   );
 }
@@ -219,38 +216,26 @@ export function Approvals({
   }
 
   return (
-    <section className="card card--wide" aria-labelledby="approvals-title">
+    <Card className="w-full" aria-labelledby="approvals-title">
       <h1 id="approvals-title" tabIndex={-1}>
         Approvals
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Pending amendment and correction requests. Approving applies the change
         immediately; original awarded values and issued snapshots are never overwritten.
       </p>
 
-      {loadError !== null && (
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      )}
+      {loadError !== null && <FormError>{loadError}</FormError>}
       {approvals === null && loadError === null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading approvals…
         </p>
       )}
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
 
       {approvals !== null && approvals.length === 0 && (
-        <p className="muted">Nothing is waiting for a decision.</p>
+        <p className="text-muted-foreground">Nothing is waiting for a decision.</p>
       )}
       {approvals !== null &&
         approvals.map((approval) => (
@@ -281,6 +266,6 @@ export function Approvals({
             }}
           />
         ))}
-    </section>
+    </Card>
   );
 }

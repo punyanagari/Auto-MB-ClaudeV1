@@ -1,13 +1,12 @@
 /* Tailwind entrypoint — the design system is the auto-mb-vercel study's
  * own globals, adapted for Vite: same @theme mapping, IBM Plex self-hosted
- * via Fontsource. The pre-Tailwind stylesheet is imported
- * into a `legacy` layer BELOW components/utilities, so unmigrated
- * screens keep their exact rendering while migrated markup written in
- * Tailwind utilities always wins. */
-@layer theme, base, legacy, components, utilities;
+ * via Fontsource. Every screen is written in Tailwind utilities and the
+ * ui/ primitives now, so the `legacy` layer that carried the pre-Tailwind
+ * stylesheet is gone; what that file said about elements rather than
+ * classes lives in @layer base below. */
+@layer theme, base, components, utilities;
 
 @import 'tailwindcss';
-@import './styles.css' layer(legacy);
 
 @theme inline {
   --font-sans:
@@ -129,8 +128,81 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* 16px rem base — the study's Tailwind scale maps 1:1. */
+  :root {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
   body {
     @apply bg-background text-foreground;
+    /* The interface reads at text-sm, exactly like the study. */
+    min-width: 320px;
+    min-height: 100vh;
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Preflight strips heading typography, and the product sets a heading's
+   * level from what it means in the document, never from how large it should
+   * look. So the scale belongs to the element: a view that wants a different
+   * size says so in utilities, which win over this layer. */
+  h1 {
+    @apply mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance;
+  }
+
+  h1:focus {
+    outline: none;
+  }
+
+  h2 {
+    @apply mt-6 mb-2 text-sm font-semibold;
+  }
+
+  h3 {
+    @apply mt-4 mb-2 text-[13px] font-semibold;
+  }
+
+  /* Form controls. Preflight resets them to unstyled, and there are far too
+   * many inputs across the product to dress each one at its call site. */
+  input,
+  select,
+  textarea {
+    @apply min-h-9 rounded-md border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-sm;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  /* A file input is a drop target, not a text box. */
+  input[type='file'] {
+    @apply border-dashed p-2 shadow-none;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply size-4 min-h-0 shadow-none;
+    accent-color: var(--primary);
   }
 }
 

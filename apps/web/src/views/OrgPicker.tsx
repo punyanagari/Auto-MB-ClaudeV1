@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { Field, Actions, FormError, Hint } from '../ui/form.js';
 
 interface OrgPickerProps {
   readonly api: ApiClient;
@@ -53,34 +56,34 @@ export function OrgPicker({ api, onSelect, onCreated }: OrgPickerProps) {
   }
 
   return (
-    <section className="card card--narrow" aria-labelledby="orgs-title">
+    <Card className="mx-auto mt-[10vh] mb-8 max-w-[26rem]" aria-labelledby="orgs-title">
       <h1 id="orgs-title" tabIndex={-1}>
         Select an organisation
       </h1>
 
       {organisations === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading organisations…
         </p>
       ) : organisations.length > 0 ? (
-        <ul className="org-list">
+        <ul className="my-3 flex list-none flex-col gap-2 p-0">
           {organisations.map((organisation) => (
             <li key={organisation.id}>
-              <button
-                type="button"
-                className="org-list__item"
+              <Button
+                variant="outline"
+                className="w-full justify-start px-4 py-3"
                 onClick={() => {
                   onSelect(organisation);
                 }}
               >
-                <span className="org-list__name">{organisation.name}</span>
-                <span className="muted">{organisation.slug}</span>
-              </button>
+                <span className="font-semibold">{organisation.name}</span>
+                <span className="text-muted-foreground">{organisation.slug}</span>
+              </Button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="muted">
+        <p className="text-muted-foreground">
           You are not a member of any organisation yet. Create one, or ask an owner to
           add you by your account email.
         </p>
@@ -88,7 +91,7 @@ export function OrgPicker({ api, onSelect, onCreated }: OrgPickerProps) {
 
       <h2>Create an organisation</h2>
       <form onSubmit={(event) => void create(event)}>
-        <div className="field">
+        <Field>
           <label htmlFor="org-name">Organisation name</label>
           <input
             id="org-name"
@@ -98,8 +101,8 @@ export function OrgPicker({ api, onSelect, onCreated }: OrgPickerProps) {
             minLength={2}
             maxLength={200}
           />
-        </div>
-        <div className="field">
+        </Field>
+        <Field>
           <label htmlFor="org-slug">Short identifier</label>
           <input
             id="org-slug"
@@ -109,23 +112,19 @@ export function OrgPicker({ api, onSelect, onCreated }: OrgPickerProps) {
             pattern="[a-z0-9][a-z0-9-]{1,62}"
             aria-describedby="org-slug-hint"
           />
-          <p id="org-slug-hint" className="hint">
+          <Hint id="org-slug-hint">
             Lowercase letters, digits, and hyphens; for example “sharma-constructions”.
-          </p>
-        </div>
+          </Hint>
+        </Field>
 
-        {error !== null && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error !== null && <FormError>{error}</FormError>}
 
-        <div className="actions">
-          <button type="submit" disabled={pending}>
+        <Actions>
+          <Button type="submit" disabled={pending}>
             {pending ? 'Creating…' : 'Create organisation'}
-          </button>
-        </div>
+          </Button>
+        </Actions>
       </form>
-    </section>
+    </Card>
   );
 }

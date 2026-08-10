@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { Field, Actions, FormError } from '../ui/form.js';
 
 interface SignInProps {
   readonly api: ApiClient;
@@ -41,18 +44,21 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
   }
 
   return (
-    <section className="card card--narrow" aria-labelledby="signin-title">
+    <Card
+      className="mx-auto mt-[10vh] mb-8 max-w-[26rem]"
+      aria-labelledby="signin-title"
+    >
       <h1 id="signin-title" tabIndex={-1}>
         {mode === 'sign-in' ? 'Sign in' : 'Create your account'}
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Post-award works execution: LOA to Delivery Challan with an honest quantity
         ledger.
       </p>
 
       <form onSubmit={(event) => void submit(event)}>
         {mode === 'sign-up' && (
-          <div className="field">
+          <Field>
             <label htmlFor="signin-name">Full name</label>
             <input
               id="signin-name"
@@ -62,9 +68,9 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
               required
               minLength={2}
             />
-          </div>
+          </Field>
         )}
-        <div className="field">
+        <Field>
           <label htmlFor="signin-email">Email</label>
           <input
             id="signin-email"
@@ -73,8 +79,8 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
             autoComplete="email"
             required
           />
-        </div>
-        <div className="field">
+        </Field>
+        <Field>
           <label htmlFor="signin-password">Password</label>
           <input
             id="signin-password"
@@ -84,21 +90,16 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
             required
             minLength={8}
           />
-        </div>
+        </Field>
 
-        {error !== null && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error !== null && <FormError>{error}</FormError>}
 
-        <div className="actions">
-          <button type="submit" disabled={pending}>
+        <Actions>
+          <Button type="submit" disabled={pending}>
             {pending ? 'Working…' : mode === 'sign-in' ? 'Sign in' : 'Create account'}
-          </button>
-          <button
-            type="button"
-            className="button--ghost"
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => {
               setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in');
               setError(null);
@@ -107,9 +108,9 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
             {mode === 'sign-in'
               ? 'New here? Create an account'
               : 'Have an account? Sign in'}
-          </button>
-        </div>
+          </Button>
+        </Actions>
       </form>
-    </section>
+    </Card>
   );
 }

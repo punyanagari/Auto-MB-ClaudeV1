@@ -15,6 +15,8 @@ import { SerialLookup } from './SerialLookup.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail, type WorkTab } from './WorkDetail.js';
 import { Works } from './Works.js';
+import { Badge } from '../ui/badge.js';
+import { Button } from '../ui/button.js';
 
 interface WorkspaceProps {
   readonly api: ApiClient;
@@ -241,20 +243,26 @@ export function Workspace({
       : 'works';
 
   return (
-    <div className="app-frame">
-      <nav className="sidebar" aria-label="Modules">
-        <span className="sidebar__brand">
-          <span className="sidebar__brand-mark" aria-hidden="true">
+    <div className="flex min-h-screen max-[800px]:flex-col">
+      <nav
+        className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground max-[800px]:static max-[800px]:h-auto max-[800px]:w-full print:hidden"
+        aria-label="Modules"
+      >
+        <span className="flex h-16 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-4 text-base">
+          <span
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
+            aria-hidden="true"
+          >
             MB
           </span>
           Auto-MB
         </span>
-        <div className="sidebar__nav">
+        <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-4 [scrollbar-color:var(--sidebar-border)_transparent] [scrollbar-width:thin] max-[800px]:flex-row max-[800px]:flex-wrap max-[800px]:items-center">
           {MODULES.map((module) => (
             <button
               key={module.key}
               type="button"
-              className="sidebar__item"
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-[oklch(0.82_0.02_260_/_80%)] transition-colors [&_svg]:shrink-0 hover:bg-[oklch(0.31_0.04_265_/_60%)] hover:text-white aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-white"
               aria-current={activeModule === module.key ? 'page' : undefined}
               onClick={() => {
                 const key = module.key;
@@ -278,40 +286,41 @@ export function Workspace({
               {module.icon}
               {module.label}
               {module.key === 'approvals' && pendingApprovals > 0 && (
-                <span
-                  className="chip chip--draft"
+                <Badge
+                  variant="neutral"
                   aria-label={`${String(pendingApprovals)} pending approvals`}
                 >
                   {pendingApprovals}
-                </span>
+                </Badge>
               )}
             </button>
           ))}
         </div>
-        <span className="sidebar__foot">{organisation.name}</span>
+        <span className="flex flex-col gap-0.5 border-t border-sidebar-border p-3">
+          {organisation.name}
+        </span>
       </nav>
 
-      <div className="app-main">
-        <header className="topbar">
-          <div className="topbar__session">
-            <span className="topbar__org">{organisation.name}</span>
-            <button
-              type="button"
-              className="button--ghost"
-              onClick={onSwitchOrganisation}
-            >
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-3 print:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="font-semibold">{organisation.name}</span>
+            <Button variant="outline" onClick={onSwitchOrganisation}>
               Switch organisation
-            </button>
+            </Button>
           </div>
-          <div className="topbar__session">
-            <span className="muted">{me.user.email}</span>
-            <button type="button" className="button--ghost" onClick={onSignOut}>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="text-muted-foreground">{me.user.email}</span>
+            <Button variant="outline" onClick={onSignOut}>
               Sign out
-            </button>
+            </Button>
           </div>
         </header>
 
-        <main className="content" ref={containerRef}>
+        <main
+          className="mx-auto flex w-full max-w-[100rem] flex-col gap-4 px-8 py-6 [scroll-padding-top:3rem] max-[800px]:p-4"
+          ref={containerRef}
+        >
           {view.name === 'dashboard' && (
             <Dashboard
               api={api}

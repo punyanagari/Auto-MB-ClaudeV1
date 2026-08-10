@@ -14,6 +14,7 @@ import type {
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
+import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
@@ -469,21 +470,42 @@ export function WorkDetail({
 
       {/* Eleven sections used to stack on one scroll. Each area now answers
           for itself, and the counts show what is inside before it is opened. */}
-      <nav className="work-tabs" aria-label="Work sections">
+      <nav
+        className="mt-4 mb-2 flex items-center gap-0.5 overflow-x-auto border-b border-border"
+        aria-label="Work sections"
+      >
         {WORK_TABS.map((candidate) => {
           const count = tabCounts[candidate];
+          const current = tab === candidate;
           return (
             <button
               key={candidate}
               type="button"
-              className="work-tabs__tab"
-              aria-current={tab === candidate ? 'page' : undefined}
+              className={cn(
+                '-mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2',
+                'text-sm whitespace-nowrap transition-colors',
+                current
+                  ? 'border-primary font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              aria-current={current ? 'page' : undefined}
               onClick={() => {
                 setTab(candidate);
               }}
             >
               {WORK_TAB_LABELS[candidate]}
-              {count !== null && <span className="work-tabs__count">{count}</span>}
+              {count !== null && (
+                <span
+                  className={cn(
+                    'rounded-sm px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
+                    current
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
@@ -494,29 +516,33 @@ export function WorkDetail({
           {/* The whole state of a Work, before anything is opened. Each cell
               carries the count its tab shows, so the summary and the tab strip
               can never disagree — both read the same derivation. */}
-          <div className="work-summary">
+          <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] overflow-hidden rounded-xl border border-border bg-card">
             {WORK_TABS.filter(
               (candidate) => candidate !== 'overview' && candidate !== 'timeline',
             ).map((candidate) => (
               <button
                 key={candidate}
                 type="button"
-                className="work-summary__cell"
+                className="flex cursor-pointer flex-col items-stretch gap-2 border-t border-l border-border px-4 py-3 text-left transition-colors hover:bg-muted"
                 onClick={() => {
                   setTab(candidate);
                 }}
               >
-                <span className="work-summary__head">
-                  <span className="work-summary__name">
+                <span className="flex items-baseline gap-2">
+                  <span className="text-sm font-semibold">
                     {WORK_TAB_LABELS[candidate]}
                   </span>
-                  <span className="work-summary__n">{tabCounts[candidate] ?? 0}</span>
+                  <span className="ml-auto font-mono text-lg font-semibold tracking-tight tabular-nums">
+                    {tabCounts[candidate] ?? 0}
+                  </span>
                 </span>
-                <span className="work-summary__lines">
+                <span className="flex flex-col gap-1 text-[11px] text-muted-foreground">
                   {(summaryLines[candidate] ?? []).map((line) => (
-                    <span className="work-summary__line" key={line.label}>
+                    <span className="flex items-baseline gap-2" key={line.label}>
                       {line.label}
-                      <span className="work-summary__value">{line.value}</span>
+                      <span className="ml-auto font-mono text-secondary-foreground tabular-nums">
+                        {line.value}
+                      </span>
                     </span>
                   ))}
                 </span>

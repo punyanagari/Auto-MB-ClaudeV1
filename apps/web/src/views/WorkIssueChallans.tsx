@@ -1,4 +1,8 @@
 import type { IssueChallan } from '@auto-mb/contracts';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { CardHeader } from '../ui/card.js';
+import { DataTable, wrapCell } from '../ui/table.js';
 
 const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
   issue: 'Issue',
@@ -25,12 +29,11 @@ export function WorkIssueChallans({
 }: WorkIssueChallansProps) {
   return (
     <>
-      <div className="card__header">
+      <CardHeader>
         <h2>Issue Challans</h2>
         {canCreateDocuments &&
           (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 const draft = issueChallans.find(
                   (challan) => challan.status === 'draft',
@@ -39,21 +42,20 @@ export function WorkIssueChallans({
               }}
             >
               Open draft Issue Challan
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 onNewIssueChallan(workId);
               }}
             >
               New Issue Challan
-            </button>
+            </Button>
           ))}
-      </div>
+      </CardHeader>
       {issueChallans !== null && issueChallans.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">Issue Challans for this Work</caption>
+        <DataTable>
+          <caption className="sr-only">Issue Challans for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Number</th>
@@ -67,30 +69,29 @@ export function WorkIssueChallans({
             {issueChallans.map((challan) => (
               <tr key={challan.id}>
                 <th scope="row">
-                  <button
-                    type="button"
-                    className="button--link"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    className="font-medium"
                     onClick={() => {
                       onOpenIssueChallan(challan.id);
                     }}
                   >
                     {challan.challanNumber ?? 'Draft'}
-                  </button>
+                  </Button>
                 </th>
                 <td>{MOVEMENT_LABELS[challan.movementType]}</td>
                 <td>{challan.challanDate}</td>
-                <td className="cell--wrap">{challan.issuedToName}</td>
+                <td className={wrapCell}>{challan.issuedToName}</td>
                 <td>
-                  <span className={`chip chip--${challan.status}`}>
-                    {challan.status}
-                  </span>
+                  <StatusChip status={challan.status} />
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">
+        <p className="text-muted-foreground">
           No Issue Challans yet. Issue Challans record material sent out to site, job
           work, loans, and returns.
         </p>

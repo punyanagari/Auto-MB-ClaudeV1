@@ -1,6 +1,9 @@
 import type { WorkDetailResponse, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
 
 /** Renders "original → effective" when an approved amendment changed the
@@ -17,7 +20,7 @@ function Amended({
   }
   return (
     <>
-      <s className="muted">{original}</s> → <strong>{effective}</strong>
+      <s className="text-muted-foreground">{original}</s> → <strong>{effective}</strong>
     </>
   );
 }
@@ -86,10 +89,13 @@ export function WorkSchedules({
         <div key={schedule.id}>
           <h2>
             Schedule {schedule.scheduleCode}
-            <span className="muted"> · {schedule.items.length} items</span>
+            <span className="text-muted-foreground">
+              {' '}
+              · {schedule.items.length} items
+            </span>
           </h2>
-          <table className="data-table">
-            <caption className="visually-hidden">
+          <DataTable>
+            <caption className="sr-only">
               Awarded items in schedule {schedule.scheduleCode}; amended values show the
               original beside the sanctioned change
             </caption>
@@ -110,12 +116,12 @@ export function WorkSchedules({
                   <tr key={item.id}>
                     <th scope="row">
                       {item.itemNumber}
-                      {flags.added && <span className="chip chip--issued">added</span>}
+                      {flags.added && <StatusChip status="issued">added</StatusChip>}
                       {flags.removalPending && (
-                        <span className="chip chip--pending">omission pending</span>
+                        <StatusChip status="pending">omission pending</StatusChip>
                       )}
                     </th>
-                    <td className="cell--wrap">
+                    <td className={wrapCell}>
                       <Amended
                         original={item.description}
                         effective={item.effectiveDescription}
@@ -127,13 +133,13 @@ export function WorkSchedules({
                         effective={item.effectiveUnit}
                       />
                     </td>
-                    <td className="cell--numeric">
+                    <td className={numericCell}>
                       <Amended
                         original={item.awardedQuantity}
                         effective={item.effectiveQuantity}
                       />
                     </td>
-                    <td className="cell--numeric">
+                    <td className={numericCell}>
                       <Amended
                         original={item.effectiveRate}
                         effective={item.effectiveUnitRate}
@@ -141,9 +147,8 @@ export function WorkSchedules({
                     </td>
                     <td>
                       {canModify ? (
-                        <button
-                          type="button"
-                          className="button--ghost"
+                        <Button
+                          variant="outline"
                           role="switch"
                           aria-checked={item.requiresSerials === true}
                           aria-label={`Serial tracking for ${item.itemNumber}`}
@@ -167,9 +172,13 @@ export function WorkSchedules({
                           }
                         >
                           {item.requiresSerials ? 'Required' : 'Off'}
-                        </button>
+                        </Button>
                       ) : (
-                        <span className={item.requiresSerials ? '' : 'muted'}>
+                        <span
+                          className={
+                            item.requiresSerials ? '' : 'text-muted-foreground'
+                          }
+                        >
                           {item.requiresSerials ? 'Required' : 'Off'}
                         </span>
                       )}
@@ -178,7 +187,7 @@ export function WorkSchedules({
                 );
               })}
             </tbody>
-          </table>
+          </DataTable>
         </div>
       ))}
 

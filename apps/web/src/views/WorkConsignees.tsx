@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Contact } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { DataTable, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 
 interface WorkConsigneesProps {
   readonly api: ApiClient;
@@ -86,28 +89,20 @@ export function WorkConsignees({
   return (
     <>
       <h2>Consignees for this Work</h2>
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
       {linked === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading consignees…
         </p>
       ) : linked.length === 0 ? (
-        <p className="muted">
+        <p className="text-muted-foreground">
           No consignees linked yet — linked consignees appear first in the challan and
           PAC pickers.
         </p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">Consignees linked to this Work</caption>
+        <DataTable>
+          <caption className="sr-only">Consignees linked to this Work</caption>
           <thead>
             <tr>
               <th scope="col">Designation</th>
@@ -119,12 +114,11 @@ export function WorkConsignees({
             {linked.map((contact) => (
               <tr key={contact.id}>
                 <th scope="row">{contact.designation}</th>
-                <td className="cell--wrap">{contact.address ?? '—'}</td>
+                <td className={wrapCell}>{contact.address ?? '—'}</td>
                 {canModify && (
                   <td>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() =>
                         void act(async () => {
@@ -137,13 +131,13 @@ export function WorkConsignees({
                       }
                     >
                       Unlink
-                    </button>
+                    </Button>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
       {canModify && linkable.length > 0 && (
         <form
@@ -158,7 +152,7 @@ export function WorkConsignees({
             }, 'Consignee linked to this Work.');
           }}
         >
-          <div className="field">
+          <Field>
             <label htmlFor="work-consignee-pick">Link a consignee contact</label>
             <select id="work-consignee-pick" name="work-consignee-pick" required>
               {linkable.map((contact) => (
@@ -168,12 +162,12 @@ export function WorkConsignees({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Link consignee
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
     </>
