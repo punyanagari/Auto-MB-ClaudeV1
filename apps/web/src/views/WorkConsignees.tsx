@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 
 interface WorkConsigneesProps {
   readonly api: ApiClient;
@@ -162,35 +163,37 @@ export function WorkConsignees({
         </p>
       )}
       {canModify && linkable.length > 0 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const contactId = formValue(new FormData(form), 'work-consignee-pick');
-            if (contactId.length === 0) return;
-            void act(async () => {
-              await api.linkWorkConsignee(organisationId, workId, contactId);
-              form.reset();
-            }, 'Consignee linked to this Work.');
-          }}
-        >
-          <Field>
-            <label htmlFor="work-consignee-pick">Link a consignee contact</label>
-            <select id="work-consignee-pick" name="work-consignee-pick" required>
-              {linkable.map((contact) => (
-                <option key={contact.id} value={contact.id}>
-                  {contact.designation}
-                  {contact.address !== null ? ` — ${contact.address}` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Link consignee
-            </Button>
-          </Actions>
-        </form>
+        <Disclosure label="Link consignee" startOpen={(linked ?? []).length === 0}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const contactId = formValue(new FormData(form), 'work-consignee-pick');
+              if (contactId.length === 0) return;
+              void act(async () => {
+                await api.linkWorkConsignee(organisationId, workId, contactId);
+                form.reset();
+              }, 'Consignee linked to this Work.');
+            }}
+          >
+            <Field>
+              <label htmlFor="work-consignee-pick">Link a consignee contact</label>
+              <select id="work-consignee-pick" name="work-consignee-pick" required>
+                {linkable.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.designation}
+                    {contact.address !== null ? ` — ${contact.address}` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Link consignee
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
     </>
   );

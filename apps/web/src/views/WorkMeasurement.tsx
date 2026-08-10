@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 import { MeasurementBooks } from './MeasurementBooks.js';
 
 interface WorkMeasurementProps {
@@ -93,75 +94,76 @@ export function WorkMeasurement({
         <p className="text-muted-foreground">No measurements recorded yet.</p>
       )}
       {canRecordSiteEvidence && workItems.length > 0 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const data = new FormData(form);
-            const workItemId = formValue(data, 'mb-item');
-            const measuredQuantity = formValue(data, 'mb-quantity');
-            const measuredOn = formValue(data, 'mb-date');
-            const deliveryChallanId = formValue(data, 'mb-challan');
-            const mbBookRef = formValue(data, 'mb-book').trim();
-            const remarks = formValue(data, 'mb-remarks').trim();
-            void act(async () => {
-              const entry = await api.recordMbEntry(organisationId, workId, {
-                workItemId,
-                measuredQuantity,
-                measuredOn,
-                ...(deliveryChallanId.length > 0 ? { deliveryChallanId } : {}),
-                ...(mbBookRef.length > 0 ? { mbBookRef } : {}),
-                ...(remarks.length > 0 ? { remarks } : {}),
-              });
-              setMbEntries((current) => [...current, entry]);
-              form.reset();
-            }, 'Measurement recorded.');
-          }}
-        >
-          <h3>Record measurement</h3>
-          <Field>
-            <label htmlFor="mb-item">Work item</label>
-            <select id="mb-item" name="mb-item" required>
-              {workItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.itemNumber} — {item.description}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field>
-            <label htmlFor="mb-quantity">Measured quantity</label>
-            <input id="mb-quantity" name="mb-quantity" inputMode="decimal" required />
-          </Field>
-          <Field>
-            <label htmlFor="mb-date">Measured on</label>
-            <input id="mb-date" name="mb-date" type="date" required />
-          </Field>
-          <Field>
-            <label htmlFor="mb-challan">Source challan (optional)</label>
-            <select id="mb-challan" name="mb-challan">
-              <option value="">Not tied to a challan</option>
-              {issuedChallans.map((challan) => (
-                <option key={challan.id} value={challan.id}>
-                  {challan.challanNumber ?? challan.id}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field>
-            <label htmlFor="mb-book">MB book reference (optional)</label>
-            <input id="mb-book" name="mb-book" maxLength={100} />
-          </Field>
-          <Field>
-            <label htmlFor="mb-remarks">Remarks (optional)</label>
-            <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Record measurement
-            </Button>
-          </Actions>
-        </form>
+        <Disclosure label="Record measurement" startOpen={mbEntries.length === 0}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              const workItemId = formValue(data, 'mb-item');
+              const measuredQuantity = formValue(data, 'mb-quantity');
+              const measuredOn = formValue(data, 'mb-date');
+              const deliveryChallanId = formValue(data, 'mb-challan');
+              const mbBookRef = formValue(data, 'mb-book').trim();
+              const remarks = formValue(data, 'mb-remarks').trim();
+              void act(async () => {
+                const entry = await api.recordMbEntry(organisationId, workId, {
+                  workItemId,
+                  measuredQuantity,
+                  measuredOn,
+                  ...(deliveryChallanId.length > 0 ? { deliveryChallanId } : {}),
+                  ...(mbBookRef.length > 0 ? { mbBookRef } : {}),
+                  ...(remarks.length > 0 ? { remarks } : {}),
+                });
+                setMbEntries((current) => [...current, entry]);
+                form.reset();
+              }, 'Measurement recorded.');
+            }}
+          >
+            <Field>
+              <label htmlFor="mb-item">Work item</label>
+              <select id="mb-item" name="mb-item" required>
+                {workItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.itemNumber} — {item.description}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="mb-quantity">Measured quantity</label>
+              <input id="mb-quantity" name="mb-quantity" inputMode="decimal" required />
+            </Field>
+            <Field>
+              <label htmlFor="mb-date">Measured on</label>
+              <input id="mb-date" name="mb-date" type="date" required />
+            </Field>
+            <Field>
+              <label htmlFor="mb-challan">Source challan (optional)</label>
+              <select id="mb-challan" name="mb-challan">
+                <option value="">Not tied to a challan</option>
+                {issuedChallans.map((challan) => (
+                  <option key={challan.id} value={challan.id}>
+                    {challan.challanNumber ?? challan.id}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="mb-book">MB book reference (optional)</label>
+              <input id="mb-book" name="mb-book" maxLength={100} />
+            </Field>
+            <Field>
+              <label htmlFor="mb-remarks">Remarks (optional)</label>
+              <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Record measurement
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
 
       <MeasurementBooks

@@ -12,6 +12,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 import { PacCertificates } from './PacCertificates.js';
 
 interface WorkInstrumentsProps {
@@ -148,80 +149,81 @@ export function WorkInstruments({
         </p>
       )}
       {canModify && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const data = new FormData(form);
-            const kind = formValue(data, 'instrument-kind') || 'pbg';
-            const reference = formValue(data, 'instrument-reference');
-            const amount = formValue(data, 'instrument-amount').trim();
-            const issuedOn = formValue(data, 'instrument-issued');
-            const expiresOn = formValue(data, 'instrument-expires');
-            const notes = formValue(data, 'instrument-notes').trim();
-            void act(async () => {
-              const created = await api.createInstrument(organisationId, workId, {
-                kind: kind as Instrument['kind'],
-                reference,
-                issuedOn,
-                ...(amount.length > 0 ? { amount } : {}),
-                ...(expiresOn.length > 0 ? { expiresOn } : {}),
-                ...(notes.length > 0 ? { notes } : {}),
-              });
-              setInstruments((current) => [...current, created]);
-              form.reset();
-            }, `${reference} recorded.`);
-          }}
-        >
-          <h3>Add instrument</h3>
-          <Field>
-            <label htmlFor="instrument-kind">Kind</label>
-            <select id="instrument-kind" name="instrument-kind" required>
-              <option value="pbg">PBG — Performance Bank Guarantee</option>
-              <option value="pac">PAC — Provisional Acceptance Certificate</option>
-              <option value="doc">DOC — other contract document</option>
-            </select>
-          </Field>
-          <Field>
-            <label htmlFor="instrument-reference">Reference</label>
-            <input
-              id="instrument-reference"
-              name="instrument-reference"
-              required
-              maxLength={200}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="instrument-amount">Amount (₹, optional)</label>
-            <input
-              id="instrument-amount"
-              name="instrument-amount"
-              inputMode="decimal"
-            />
-          </Field>
-          <Field>
-            <label htmlFor="instrument-issued">Issued on</label>
-            <input
-              id="instrument-issued"
-              name="instrument-issued"
-              type="date"
-              required
-            />
-          </Field>
-          <Field>
-            <label htmlFor="instrument-expires">Expires on (optional)</label>
-            <input id="instrument-expires" name="instrument-expires" type="date" />
-          </Field>
-          <Field>
-            <label htmlFor="instrument-notes">Notes (optional)</label>
-            <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Add instrument
-            </Button>
-          </Actions>
-        </form>
+        <Disclosure label="Add instrument" startOpen={instruments.length === 0}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              const kind = formValue(data, 'instrument-kind') || 'pbg';
+              const reference = formValue(data, 'instrument-reference');
+              const amount = formValue(data, 'instrument-amount').trim();
+              const issuedOn = formValue(data, 'instrument-issued');
+              const expiresOn = formValue(data, 'instrument-expires');
+              const notes = formValue(data, 'instrument-notes').trim();
+              void act(async () => {
+                const created = await api.createInstrument(organisationId, workId, {
+                  kind: kind as Instrument['kind'],
+                  reference,
+                  issuedOn,
+                  ...(amount.length > 0 ? { amount } : {}),
+                  ...(expiresOn.length > 0 ? { expiresOn } : {}),
+                  ...(notes.length > 0 ? { notes } : {}),
+                });
+                setInstruments((current) => [...current, created]);
+                form.reset();
+              }, `${reference} recorded.`);
+            }}
+          >
+            <Field>
+              <label htmlFor="instrument-kind">Kind</label>
+              <select id="instrument-kind" name="instrument-kind" required>
+                <option value="pbg">PBG — Performance Bank Guarantee</option>
+                <option value="pac">PAC — Provisional Acceptance Certificate</option>
+                <option value="doc">DOC — other contract document</option>
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="instrument-reference">Reference</label>
+              <input
+                id="instrument-reference"
+                name="instrument-reference"
+                required
+                maxLength={200}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="instrument-amount">Amount (₹, optional)</label>
+              <input
+                id="instrument-amount"
+                name="instrument-amount"
+                inputMode="decimal"
+              />
+            </Field>
+            <Field>
+              <label htmlFor="instrument-issued">Issued on</label>
+              <input
+                id="instrument-issued"
+                name="instrument-issued"
+                type="date"
+                required
+              />
+            </Field>
+            <Field>
+              <label htmlFor="instrument-expires">Expires on (optional)</label>
+              <input id="instrument-expires" name="instrument-expires" type="date" />
+            </Field>
+            <Field>
+              <label htmlFor="instrument-notes">Notes (optional)</label>
+              <input id="instrument-notes" name="instrument-notes" maxLength={2000} />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Add instrument
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
       <PacCertificates
         api={api}

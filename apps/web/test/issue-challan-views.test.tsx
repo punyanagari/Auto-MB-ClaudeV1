@@ -19,6 +19,24 @@ import { WorkDetail } from '../src/views/WorkDetail.js';
 
 afterEach(cleanup);
 
+/** A create-and-record form sits behind a Disclosure labelled with the
+ * verb on its own submit button, so a detail page reads as records first
+ * and asks a question only when the operator asks. Open the panel before
+ * touching the fields — they are unmounted until then. */
+async function openForm(label: string) {
+  fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
+}
+
+/** With the panel open, two buttons carry the same name: the disclosure,
+ * which has aria-expanded, and the form's submit button, which does not. */
+function submitButton(label: string): HTMLElement {
+  const [button] = screen
+    .getAllByRole('button', { name: label })
+    .filter((candidate) => !candidate.hasAttribute('aria-expanded'));
+  if (button === undefined) throw new Error(`No submit button named "${label}".`);
+  return button;
+}
+
 function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     me: vi.fn().mockResolvedValue(null),
@@ -608,10 +626,11 @@ describe('IssueChallanDetail', () => {
     // Read-only member without modify rights sees no signed-copy upload.
     expect(screen.queryByRole('button', { name: 'Upload signed copy' })).toBeNull();
 
+    await openForm('Cancel challan');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong site.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    fireEvent.click(submitButton('Cancel challan'));
     await waitFor(() => {
       expect(cancelIssueChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong site.',
@@ -769,13 +788,14 @@ describe('Issue Challan correction flow', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
+    await openForm('Request cancel & replace');
     fireEvent.change(screen.getByLabelText('Issued to'), {
       target: { value: 'SSE/Works/Delhi' },
     });
     fireEvent.change(screen.getByLabelText('Reason for correction'), {
       target: { value: 'Issued to the wrong site engineer.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request cancel & replace' }));
+    fireEvent.click(submitButton('Request cancel & replace'));
 
     await waitFor(() => {
       expect(proposeIssueChallanCancelReplace).toHaveBeenCalled();

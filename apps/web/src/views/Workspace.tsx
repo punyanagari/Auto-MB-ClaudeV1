@@ -7,7 +7,7 @@ import { ChallanEditor } from './ChallanEditor.js';
 import { IssueChallanDetail } from './IssueChallanDetail.js';
 import { IssueChallanEditor } from './IssueChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
-import { Masters } from './Masters.js';
+import { Masters, type MastersTab } from './Masters.js';
 import { Members } from './Members.js';
 import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
@@ -177,6 +177,39 @@ const MODULES = [
   },
 ];
 
+const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
+  { key: 'contacts', label: 'Contacts' },
+  { key: 'locations', label: 'Locations' },
+  { key: 'units', label: 'Units' },
+  { key: 'signatories', label: 'Signatories' },
+];
+
+const ITEM =
+  'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-[oklch(0.82_0.02_260_/_80%)] transition-colors [&_svg]:shrink-0 hover:bg-[oklch(0.31_0.04_265_/_60%)] hover:text-white aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-white';
+
+const SUB_ITEM =
+  'flex w-full cursor-pointer items-center rounded-md px-2.5 py-1.5 text-left text-[13px] text-[oklch(0.82_0.02_260_/_65%)] transition-colors hover:text-white aria-[current=page]:font-semibold aria-[current=page]:text-sidebar-primary';
+
+/** Where a module lands when its own row is clicked. */
+function defaultViewOf(key: (typeof MODULES)[number]['key']): WorkspaceView {
+  switch (key) {
+    case 'dashboard':
+      return { name: 'dashboard' };
+    case 'works':
+      return { name: 'works' };
+    case 'masters':
+      return { name: 'masters' };
+    case 'approvals':
+      return { name: 'approvals' };
+    case 'serials':
+      return { name: 'serials' };
+    case 'members':
+      return { name: 'members' };
+    default:
+      return { name: 'settings' };
+  }
+}
+
 export function Workspace({
   api,
   me,
@@ -190,6 +223,9 @@ export function Workspace({
   // and an operator who came from Deliveries should land back on Deliveries.
   const [workTab, setWorkTab] = useState<WorkTab>('overview');
   const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(null);
+  // Lifted for the same reason the Work tab is: the sidebar opens a Masters
+  // category directly, so the category cannot live inside the page.
+  const [mastersTab, setMastersTab] = useState<MastersTab>('contacts');
   // R8: the challan detail views close their cancel and correction forms
   // on a completed Work, the way every create surface on the Work page
   // does. Neither view loads the Work — they are reachable from the Work
@@ -269,6 +305,52 @@ export function Workspace({
     containerRef.current?.querySelector('h1')?.focus();
   }, [view]);
 
+  /** The parts of a module worth naming in the rail. Only two modules have
+   * any: Masters is four separate registers behind one word, and Works hides
+   * the LOA upload that starts everything. The other five are one screen
+   * each, and inventing children for them would make the rail longer without
+   * making it clearer. */
+  const SUB_ITEMS: Partial<
+    Record<
+      (typeof MODULES)[number]['key'],
+      readonly {
+        readonly label: string;
+        readonly open: () => void;
+        readonly isCurrent: (current: WorkspaceView) => boolean;
+      }[]
+    >
+  > = {
+    works: [
+      {
+        label: 'All Works',
+        open: () => {
+          setView({ name: 'works' });
+        },
+        isCurrent: (current) => current.name === 'works',
+      },
+      ...(canModify
+        ? [
+            {
+              label: 'Upload LOA',
+              open: () => {
+                setView({ name: 'upload' });
+              },
+              isCurrent: (current: WorkspaceView) => current.name === 'upload',
+            },
+          ]
+        : []),
+    ],
+    masters: MASTERS_CATEGORIES.map((category) => ({
+      label: category.label,
+      open: () => {
+        setMastersTab(category.key);
+        setView({ name: 'masters' });
+      },
+      isCurrent: (current: WorkspaceView) =>
+        current.name === 'masters' && mastersTab === category.key,
+    })),
+  };
+
   const activeModule =
     view.name === 'dashboard' ||
     view.name === 'masters' ||
@@ -299,43 +381,57 @@ export function Workspace({
           Auto-MB
         </span>
         <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-4 [scrollbar-color:var(--sidebar-border)_transparent] [scrollbar-width:thin] max-[800px]:flex-row max-[800px]:flex-wrap max-[800px]:items-center">
-          {MODULES.map((module) => (
-            <button
-              key={module.key}
-              type="button"
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-[oklch(0.82_0.02_260_/_80%)] transition-colors [&_svg]:shrink-0 hover:bg-[oklch(0.31_0.04_265_/_60%)] hover:text-white aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-white"
-              aria-current={activeModule === module.key ? 'page' : undefined}
-              onClick={() => {
-                const key = module.key;
-                setView(
-                  key === 'dashboard'
-                    ? { name: 'dashboard' }
-                    : key === 'works'
-                      ? { name: 'works' }
-                      : key === 'masters'
-                        ? { name: 'masters' }
-                        : key === 'approvals'
-                          ? { name: 'approvals' }
-                          : key === 'serials'
-                            ? { name: 'serials' }
-                            : key === 'members'
-                              ? { name: 'members' }
-                              : { name: 'settings' },
-                );
-              }}
-            >
-              {module.icon}
-              {module.label}
-              {module.key === 'approvals' && pendingApprovals > 0 && (
-                <Badge
-                  variant="neutral"
-                  aria-label={`${String(pendingApprovals)} pending approvals`}
+          {MODULES.map((module) => {
+            const children = SUB_ITEMS[module.key] ?? [];
+            const current = activeModule === module.key;
+            return (
+              <div key={module.key} className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  className={ITEM}
+                  aria-current={current ? 'page' : undefined}
+                  aria-expanded={children.length > 0 ? current : undefined}
+                  onClick={() => {
+                    setView(defaultViewOf(module.key));
+                  }}
                 >
-                  {pendingApprovals}
-                </Badge>
-              )}
-            </button>
-          ))}
+                  {module.icon}
+                  {module.label}
+                  {module.key === 'approvals' && pendingApprovals > 0 && (
+                    <Badge
+                      variant="neutral"
+                      aria-label={`${String(pendingApprovals)} pending approvals`}
+                    >
+                      {pendingApprovals}
+                    </Badge>
+                  )}
+                </button>
+                {/* Only where a module genuinely has parts. A twisty on every
+                    row, five of them empty, would say the sidebar is deeper
+                    than it is. Open only while the module is the one on
+                    screen, so the rail never shows two module's insides at
+                    once. */}
+                {current && children.length > 0 && (
+                  <ul className="m-0 flex list-none flex-col gap-0.5 border-l border-sidebar-border py-0.5 pr-0 pl-3 ml-4">
+                    {children.map((child) => (
+                      <li key={child.label}>
+                        <button
+                          type="button"
+                          className={SUB_ITEM}
+                          aria-current={child.isCurrent(view) ? 'page' : undefined}
+                          onClick={() => {
+                            child.open();
+                          }}
+                        >
+                          {child.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </div>
         <span className="flex flex-col gap-0.5 border-t border-sidebar-border p-3">
           {organisation.name}
@@ -520,7 +616,13 @@ export function Workspace({
             />
           )}
           {view.name === 'masters' && (
-            <Masters api={api} organisationId={organisation.id} canModify={canModify} />
+            <Masters
+              api={api}
+              organisationId={organisation.id}
+              canModify={canModify}
+              tab={mastersTab}
+              onTabChange={setMastersTab}
+            />
           )}
           {(view.name === 'issue-challan-new' ||
             view.name === 'issue-challan-edit') && (

@@ -38,6 +38,24 @@ import { Works } from '../src/views/Works.js';
 
 afterEach(cleanup);
 
+/** A create-and-record form sits behind a Disclosure labelled with the
+ * verb on its own submit button, so a detail page reads as records first
+ * and asks a question only when the operator asks. Open the panel before
+ * touching the fields — they are unmounted until then. */
+async function openForm(label: string) {
+  fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
+}
+
+/** With the panel open, two buttons carry the same name: the disclosure,
+ * which has aria-expanded, and the form's submit button, which does not. */
+function submitButton(label: string): HTMLElement {
+  const [button] = screen
+    .getAllByRole('button', { name: label })
+    .filter((candidate) => !candidate.hasAttribute('aria-expanded'));
+  if (button === undefined) throw new Error(`No submit button named "${label}".`);
+  return button;
+}
+
 function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     me: vi.fn().mockResolvedValue(null),
@@ -405,6 +423,7 @@ describe('Members', () => {
 
     expect(await screen.findByRole('table')).toBeTruthy();
     expect(screen.getByText('You')).toBeTruthy();
+    await openForm('Add member');
     expect(screen.getByLabelText('Account email')).toBeTruthy();
   });
 
@@ -434,10 +453,11 @@ describe('Members', () => {
     });
     render(<Members api={api} organisationId={ORG_ID} currentUserId="user-a" />);
 
-    fireEvent.change(await screen.findByLabelText('Account email'), {
+    await openForm('Add member');
+    fireEvent.change(screen.getByLabelText('Account email'), {
       target: { value: 'viewer@example.test' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add member' }));
+    fireEvent.click(submitButton('Add member'));
 
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('viewer@example.test');
@@ -1175,10 +1195,11 @@ describe('ChallanDetail', () => {
     await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
     expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
 
+    await openForm('Cancel challan');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong consignee.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    fireEvent.click(submitButton('Cancel challan'));
     await waitFor(() => {
       expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong consignee.',
@@ -1278,10 +1299,12 @@ describe('ChallanDetail', () => {
       />,
     );
 
+    // Nothing is recorded yet, so the serials section already leads with
+    // its form; the installation form opens on request.
     fireEvent.change(await screen.findByLabelText('Serial numbers (one per line)'), {
       target: { value: 'SN-001\n\n' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record serials' }));
+    fireEvent.click(submitButton('Record serials'));
 
     await waitFor(() => {
       expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -1292,10 +1315,11 @@ describe('ChallanDetail', () => {
     // The serial shows in the table and in the installation picker.
     expect((await screen.findAllByText('SN-001')).length).toBeGreaterThan(0);
 
+    await openForm('Record installation');
     fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-06' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
     await waitFor(() => {
       expect(recordInstallation).toHaveBeenCalledWith(ORG_ID, SERIAL.id, {
         installedOn: '2026-08-06',
@@ -1631,7 +1655,8 @@ describe('WorkDetail retention', () => {
     renderWorkDetail(api);
     await openWorkTab('Measurement');
 
-    fireEvent.change(await screen.findByLabelText('Measured quantity'), {
+    await openForm('Record measurement');
+    fireEvent.change(screen.getByLabelText('Measured quantity'), {
       target: { value: '1.000' },
     });
     fireEvent.change(screen.getByLabelText('Measured on'), {
@@ -1640,7 +1665,7 @@ describe('WorkDetail retention', () => {
     fireEvent.change(screen.getByLabelText('Source challan (optional)'), {
       target: { value: CHALLAN_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record measurement' }));
+    fireEvent.click(submitButton('Record measurement'));
 
     await waitFor(() => {
       expect(recordMbEntry).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -1932,8 +1957,8 @@ describe('WorkDetail R8 completion panel', () => {
     // Every document-creating surface is closed until the reopen.
     expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'New Issue Challan' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Record installation' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Propose an amendment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit amendment' })).toBeNull();
     expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
     expect(screen.getByRole('button', { name: 'Reopen Work' })).toBeTruthy();
   });
@@ -2085,9 +2110,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
       target: { value: 'Site not handed over in time.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Save draft extension request' }),
-    );
+    fireEvent.click(submitButton('Save draft extension request'));
 
     await waitFor(() => {
       expect(createExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -2137,9 +2160,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
       target: { value: 'Site not handed over in time.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Save draft extension request' }),
-    );
+    fireEvent.click(submitButton('Save draft extension request'));
 
     // The conflict message shows AND the view lands on the existing draft.
     const alert = await screen.findByRole('alert');
@@ -2194,13 +2215,14 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ respondExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    fireEvent.change(await screen.findByLabelText('Outcome'), {
+    await openForm('Record response');
+    fireEvent.change(screen.getByLabelText('Outcome'), {
       target: { value: 'modified' },
     });
     fireEvent.change(screen.getByLabelText('Granted completion date'), {
       target: { value: '2027-02-28' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record response' }));
+    fireEvent.click(submitButton('Record response'));
 
     await waitFor(() => {
       expect(respondExtensionRequest).toHaveBeenCalledWith(ORG_ID, EXTENSION_ID, {
@@ -2285,7 +2307,8 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ backfillExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    fireEvent.change(await screen.findByLabelText('Paper letter reference'), {
+    await openForm('Record paper letter as final');
+    fireEvent.change(screen.getByLabelText('Paper letter reference'), {
       target: { value: 'REF/EXT/7' },
     });
     fireEvent.change(screen.getByLabelText('Paper letter date'), {
@@ -2300,9 +2323,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds stated in the letter'), {
       target: { value: 'Monsoon damage to the access road.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Record paper letter as final' }),
-    );
+    fireEvent.click(submitButton('Record paper letter as final'));
 
     await waitFor(() => {
       expect(backfillExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -2560,13 +2581,14 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    await openForm('Add contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'SSE (Signal) GZB' },
     });
     fireEvent.change(screen.getByLabelText('Address (optional)'), {
       target: { value: 'Signal Workshop, Ghaziabad' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
+    fireEvent.click(submitButton('Add contact'));
 
     await waitFor(() => {
       expect(saveContact).toHaveBeenCalledWith(ORG_ID, null, {
@@ -2583,6 +2605,7 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    await openForm('Add contact');
     const consigneeRole = screen.getByLabelText<HTMLInputElement>('Consignee');
     expect(consigneeRole.checked).toBe(true);
     expect(consigneeRole.disabled).toBe(true);
@@ -2615,10 +2638,11 @@ describe('Masters', () => {
       expect(setContactActive).toHaveBeenCalledWith(ORG_ID, CONSIGNEE.id, false);
     });
 
+    await openForm('Add contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'Sr. DEE (G) NR' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
+    fireEvent.click(submitButton('Add contact'));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('already exists');
   });
@@ -2817,12 +2841,13 @@ describe('WorkConsignees panel', () => {
     );
 
     expect(await screen.findByText('SSE (Signal) GZB')).toBeTruthy();
+    await openForm('Link consignee');
     // Only contacts not yet linked are offered.
     const picker = screen.getByLabelText<HTMLSelectElement>('Link a consignee contact');
     expect(Array.from(picker.options).map((option) => option.value)).toEqual([
       UNLINKED.id,
     ]);
-    fireEvent.click(screen.getByRole('button', { name: 'Link consignee' }));
+    fireEvent.click(submitButton('Link consignee'));
     await waitFor(() => {
       expect(linkWorkConsignee).toHaveBeenCalledWith(ORG_ID, WORK_ID, UNLINKED.id);
     });
@@ -3431,6 +3456,7 @@ describe('WorkDetail amendments', () => {
     await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
+    // Nothing is proposed yet, so the section already leads with its form.
     fireEvent.change(screen.getByLabelText('Amendment'), {
       target: { value: 'omit' },
     });
@@ -3440,7 +3466,7 @@ describe('WorkDetail amendments', () => {
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'The switchboard was dropped from the sanction.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+    fireEvent.click(submitButton('Submit amendment'));
 
     await waitFor(() => {
       expect(proposeItemRemoval).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -3469,7 +3495,7 @@ describe('WorkDetail amendments', () => {
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Variation order 15.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+    fireEvent.click(submitButton('Submit amendment'));
 
     await waitFor(() => {
       expect(proposeAmendment).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4345,7 +4371,7 @@ describe('Installations', () => {
   it('shows the per-item installed summary and the records', async () => {
     renderInstallations(installationsApi());
 
-    await screen.findByRole('heading', { name: 'Record installation' });
+    await screen.findByRole('button', { name: 'Record installation' });
     // Summary rows: the authoritative installed quantity per item.
     expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
     expect(screen.getByText('0.000')).toBeTruthy();
@@ -4368,7 +4394,8 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Work item'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_PLAIN },
     });
     fireEvent.change(screen.getByLabelText('Quantity installed'), {
@@ -4380,7 +4407,7 @@ describe('Installations', () => {
     fireEvent.change(screen.getByLabelText('Location'), {
       target: { value: LOCATION_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
       expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4397,7 +4424,8 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Work item'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_SERIAL },
     });
     // The pool offers only delivered-but-uninstalled serials of the item.
@@ -4422,7 +4450,7 @@ describe('Installations', () => {
     });
     fireEvent.click(screen.getByLabelText(/SN-001/));
     fireEvent.click(screen.getByLabelText(/SN-002/));
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
       expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4473,13 +4501,14 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Quantity installed'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
       target: { value: '99' },
     });
     fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('exceed the sanctioned LOA quantity');
@@ -4532,6 +4561,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
+    await openForm('Request cancel & replace');
     // The lawful path and why it applies are stated.
     expect(
       screen.getByText(/no recorded receipt, serials, or measurements/),
@@ -4543,7 +4573,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     fireEvent.change(screen.getByLabelText('Reason for correction'), {
       target: { value: 'Wrong quantity on the issued copy.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request cancel & replace' }));
+    fireEvent.click(submitButton('Request cancel & replace'));
 
     await waitFor(() => {
       expect(proposeChallanCancelReplace).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -4576,6 +4606,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
+    await openForm('Request correction notice');
     expect(screen.getByText(/can no\s+longer be cancelled/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Correction statement'), {
@@ -4584,7 +4615,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     fireEvent.change(screen.getByLabelText('Reason for correction'), {
       target: { value: 'Typo carried from the LOA.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request correction notice' }));
+    fireEvent.click(submitButton('Request correction notice'));
 
     await waitFor(() => {
       expect(proposeChallanCorrectionNotice).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -5057,7 +5088,7 @@ describe('PAC certificates', () => {
   it('shows the per-item certified summary and a null released value as a dash', async () => {
     renderPac(pacApi());
 
-    await screen.findByRole('heading', { name: 'Record PAC certificate' });
+    await screen.findByRole('button', { name: 'Record PAC certificate' });
     // Summary: installed / certified / available per item.
     expect(screen.getByText('3.000')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
@@ -5082,7 +5113,8 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+    await openForm('Record PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/02' },
     });
     fireEvent.change(screen.getByLabelText('Issue date'), {
@@ -5098,7 +5130,7 @@ describe('PAC certificates', () => {
       ),
       { target: { value: '1.000' } },
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+    fireEvent.click(submitButton('Record PAC certificate'));
 
     await waitFor(() => {
       expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -5123,7 +5155,8 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+    await openForm('Record PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/03' },
     });
     fireEvent.change(screen.getByLabelText('Issue date'), {
@@ -5132,7 +5165,7 @@ describe('PAC certificates', () => {
     fireEvent.change(screen.getByLabelText(/A\/2 — Main switchboard/), {
       target: { value: '5.000' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+    fireEvent.click(submitButton('Record PAC certificate'));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain(
@@ -5150,11 +5183,11 @@ describe('PAC certificates', () => {
     const api = pacApi({ cancelPacCertificate });
     renderPac(api);
 
-    fireEvent.change(
-      await screen.findByLabelText('Cancellation note for PAC PAC/2026/01'),
-      { target: { value: 'Superseded by the railway' } },
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel certificate' }));
+    await openForm('Cancel certificate');
+    fireEvent.change(screen.getByLabelText('Cancellation note for PAC PAC/2026/01'), {
+      target: { value: 'Superseded by the railway' },
+    });
+    fireEvent.click(submitButton('Cancel certificate'));
 
     await waitFor(() => {
       expect(cancelPacCertificate).toHaveBeenCalledWith(
@@ -5386,12 +5419,14 @@ describe('MeasurementBooks workspace', () => {
     });
     renderMb(api);
 
+    // No Measurement Book has been raised yet, so the section leads with its
+    // form rather than hiding the only thing there is to do.
     fireEvent.change(await screen.findByLabelText('MB date'), {
       target: { value: '2026-08-05' },
     });
     expect(screen.getByText(/must sweep every remaining open source/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Final Measurement Book/));
-    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    fireEvent.click(submitButton('Create draft'));
 
     await waitFor(() => {
       expect(createWorkMeasurementBook).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -5422,7 +5457,7 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.change(await screen.findByLabelText('MB date'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    fireEvent.click(submitButton('Create draft'));
 
     const open = await screen.findByRole('button', { name: 'Open existing draft' });
     fireEvent.click(open);
@@ -5683,10 +5718,11 @@ describe('MeasurementBooks workspace', () => {
         expect(downloadMeasurementBookPdf).toHaveBeenCalledWith(ORG_ID, MB_FINAL_ID);
       });
 
+      await openForm('Cancel Measurement Book…');
       fireEvent.change(screen.getByLabelText(/Cancellation note/), {
         target: { value: 'Wrong measurement basis.' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+      fireEvent.click(submitButton('Cancel Measurement Book…'));
 
       // Cancelling a numbered record is irreversible, so the confirm echoes
       // the number before anything is sent.
@@ -5715,9 +5751,10 @@ describe('MeasurementBooks workspace', () => {
     renderMb(api);
 
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
-    const note = await screen.findByLabelText(/Cancellation note/);
+    await openForm('Cancel Measurement Book…');
+    const note = screen.getByLabelText(/Cancellation note/);
     fireEvent.change(note, { target: { value: 'Wrong measurement basis.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+    fireEvent.click(submitButton('Cancel Measurement Book…'));
     await screen.findByRole('button', { name: 'Cancel DCW-1-MB-02 now' });
 
     // What was confirmed must be the wording that gets stored, so rewording
@@ -5865,10 +5902,11 @@ describe('ChallanDetail cancel surface', () => {
     });
     renderIssued(api);
 
-    fireEvent.change(await screen.findByLabelText('Cancellation note'), {
+    await openForm('Cancel challan');
+    fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong consignee.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    fireEvent.click(submitButton('Cancel challan'));
     await waitFor(() => {
       expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong consignee.',
@@ -5958,10 +5996,11 @@ describe('Draft challan serial recording', () => {
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Issue challan' })).toBeTruthy();
 
+    // The draft has no serial recorded, so its form leads the section.
     fireEvent.change(screen.getByLabelText('Serial numbers (one per line)'), {
       target: { value: 'SN-001\nSN-002\n' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record serials' }));
+    fireEvent.click(submitButton('Record serials'));
 
     await waitFor(() => {
       expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -6082,7 +6121,8 @@ describe('IssueChallanDetail on a completed Work', () => {
   it('leaves both forms open while the Work is active', async () => {
     renderIc(true);
 
-    expect(await screen.findByLabelText('Cancellation note')).toBeTruthy();
+    await openForm('Cancel challan');
+    expect(screen.getByLabelText('Cancellation note')).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Request cancel & replace' }),
     ).toBeTruthy();

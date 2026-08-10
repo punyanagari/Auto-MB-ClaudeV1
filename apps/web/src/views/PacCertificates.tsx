@@ -10,6 +10,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 
 interface PacCertificatesProps {
   readonly api: ApiClient;
@@ -246,79 +247,83 @@ export function PacCertificates({
             </Actions>
             {canModify && certificate.status === 'recorded' && (
               <>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const input =
-                      event.currentTarget.elements.namedItem('pac-document');
-                    const file =
-                      input instanceof HTMLInputElement
-                        ? (input.files?.[0] ?? null)
-                        : null;
-                    if (file === null) {
-                      setActionError('Choose the scanned certificate first.');
-                      return;
-                    }
-                    void act(async () => {
-                      await api.uploadPacCertificateDocument(
-                        organisationId,
-                        certificate.id,
-                        file,
-                      );
-                      await refresh();
-                    }, 'Scanned certificate uploaded.');
-                  }}
-                >
-                  <Field>
-                    <label htmlFor={`pac-document-${certificate.id}`}>
-                      Scanned certificate (PDF) for {certificate.reference}
-                    </label>
-                    <input
-                      id={`pac-document-${certificate.id}`}
-                      name="pac-document"
-                      type="file"
-                      accept="application/pdf"
-                    />
-                  </Field>
-                  <Actions>
+                <Disclosure label="Upload scanned certificate">
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const input =
+                        event.currentTarget.elements.namedItem('pac-document');
+                      const file =
+                        input instanceof HTMLInputElement
+                          ? (input.files?.[0] ?? null)
+                          : null;
+                      if (file === null) {
+                        setActionError('Choose the scanned certificate first.');
+                        return;
+                      }
+                      void act(async () => {
+                        await api.uploadPacCertificateDocument(
+                          organisationId,
+                          certificate.id,
+                          file,
+                        );
+                        await refresh();
+                      }, 'Scanned certificate uploaded.');
+                    }}
+                  >
+                    <Field>
+                      <label htmlFor={`pac-document-${certificate.id}`}>
+                        Scanned certificate (PDF) for {certificate.reference}
+                      </label>
+                      <input
+                        id={`pac-document-${certificate.id}`}
+                        name="pac-document"
+                        type="file"
+                        accept="application/pdf"
+                      />
+                    </Field>
+                    <Actions>
+                      <Button type="submit" variant="outline" disabled={pending}>
+                        Upload scanned certificate
+                      </Button>
+                    </Actions>
+                  </form>
+                </Disclosure>
+                <Disclosure label="Cancel certificate">
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const note = formValue(
+                        new FormData(event.currentTarget),
+                        `pac-cancel-note-${certificate.id}`,
+                      ).trim();
+                      void act(async () => {
+                        await api.cancelPacCertificate(
+                          organisationId,
+                          certificate.id,
+                          note,
+                        );
+                        await refresh();
+                      }, 'PAC certificate cancelled; its certified quantities are released.');
+                    }}
+                  >
+                    <Field>
+                      <label htmlFor={`pac-cancel-note-${certificate.id}`}>
+                        Cancellation note for PAC {certificate.reference}
+                      </label>
+                      <input
+                        id={`pac-cancel-note-${certificate.id}`}
+                        name={`pac-cancel-note-${certificate.id}`}
+                        required
+                        minLength={3}
+                        maxLength={1000}
+                      />
+                    </Field>
                     <Button type="submit" variant="outline" disabled={pending}>
-                      Upload scanned certificate
+                      Cancel certificate
                     </Button>
-                  </Actions>
-                </form>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const note = formValue(
-                      new FormData(event.currentTarget),
-                      `pac-cancel-note-${certificate.id}`,
-                    ).trim();
-                    void act(async () => {
-                      await api.cancelPacCertificate(
-                        organisationId,
-                        certificate.id,
-                        note,
-                      );
-                      await refresh();
-                    }, 'PAC certificate cancelled; its certified quantities are released.');
-                  }}
-                >
-                  <Field>
-                    <label htmlFor={`pac-cancel-note-${certificate.id}`}>
-                      Cancellation note for PAC {certificate.reference}
-                    </label>
-                    <input
-                      id={`pac-cancel-note-${certificate.id}`}
-                      name={`pac-cancel-note-${certificate.id}`}
-                      required
-                      minLength={3}
-                      maxLength={1000}
-                    />
-                  </Field>
-                  <Button type="submit" variant="outline" disabled={pending}>
-                    Cancel certificate
-                  </Button>
-                </form>
+                  </form>
+                </Disclosure>
               </>
             )}
           </div>
@@ -328,106 +333,111 @@ export function PacCertificates({
       )}
 
       {canModify && workItems.length > 0 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const formData = new FormData(form);
-            const items = workItems
-              .map((item) => ({
-                workItemId: item.id,
-                certifiedQuantity: formValue(formData, `pac-qty-${item.id}`).trim(),
-              }))
-              .filter((line) => line.certifiedQuantity.length > 0);
-            if (items.length === 0) {
-              setActionError('Enter a certified quantity for at least one item.');
-              return;
-            }
-            const body: RecordPacCertificateRequest = {
-              reference: formValue(formData, 'pac-reference').trim(),
-              issueDate: formValue(formData, 'pac-date'),
-              consigneeMasterId: formValue(formData, 'pac-consignee'),
-              items,
-            };
-            void act(async () => {
-              await api.recordWorkPacCertificate(organisationId, workId, body);
-              await refresh();
-              form.reset();
-            }, 'PAC certificate recorded.');
-          }}
+        <Disclosure
+          label="Record PAC certificate"
+          startOpen={data.certificates.length === 0}
         >
-          <h3>Record PAC certificate</h3>
-          <Field>
-            <label htmlFor="pac-reference">Certificate reference</label>
-            <input
-              id="pac-reference"
-              name="pac-reference"
-              required
-              minLength={1}
-              maxLength={100}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="pac-date">Issue date</label>
-            <input id="pac-date" name="pac-date" type="date" required />
-          </Field>
-          <Field>
-            <label htmlFor="pac-consignee">Issuing consignee</label>
-            <select id="pac-consignee" name="pac-consignee" required>
-              {linkedConsignees.length > 0 && (
-                <optgroup label="Linked to this Work">
-                  {linkedConsignees.map((consignee) => (
-                    <option key={consignee.id} value={consignee.id}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const formData = new FormData(form);
+              const items = workItems
+                .map((item) => ({
+                  workItemId: item.id,
+                  certifiedQuantity: formValue(formData, `pac-qty-${item.id}`).trim(),
+                }))
+                .filter((line) => line.certifiedQuantity.length > 0);
+              if (items.length === 0) {
+                setActionError('Enter a certified quantity for at least one item.');
+                return;
+              }
+              const body: RecordPacCertificateRequest = {
+                reference: formValue(formData, 'pac-reference').trim(),
+                issueDate: formValue(formData, 'pac-date'),
+                consigneeMasterId: formValue(formData, 'pac-consignee'),
+                items,
+              };
+              void act(async () => {
+                await api.recordWorkPacCertificate(organisationId, workId, body);
+                await refresh();
+                form.reset();
+              }, 'PAC certificate recorded.');
+            }}
+          >
+            <Field>
+              <label htmlFor="pac-reference">Certificate reference</label>
+              <input
+                id="pac-reference"
+                name="pac-reference"
+                required
+                minLength={1}
+                maxLength={100}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="pac-date">Issue date</label>
+              <input id="pac-date" name="pac-date" type="date" required />
+            </Field>
+            <Field>
+              <label htmlFor="pac-consignee">Issuing consignee</label>
+              <select id="pac-consignee" name="pac-consignee" required>
+                {linkedConsignees.length > 0 && (
+                  <optgroup label="Linked to this Work">
+                    {linkedConsignees.map((consignee) => (
+                      <option key={consignee.id} value={consignee.id}>
+                        {consignee.designation}
+                        {consignee.address !== null ? ` — ${consignee.address}` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="All consignees">
+                  {consignees.map((consignee) => (
+                    <option key={`all-${consignee.id}`} value={consignee.id}>
                       {consignee.designation}
                       {consignee.address !== null ? ` — ${consignee.address}` : ''}
                     </option>
                   ))}
                 </optgroup>
-              )}
-              <optgroup label="All consignees">
-                {consignees.map((consignee) => (
-                  <option key={`all-${consignee.id}`} value={consignee.id}>
-                    {consignee.designation}
-                    {consignee.address !== null ? ` — ${consignee.address}` : ''}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <Hint>
-              Consignees linked to this Work are listed first; any active consignee can
-              be picked. The certificate snapshots the designation.
-            </Hint>
-          </Field>
-          <fieldset>
-            <legend>
-              Certified quantities — leave an item blank to omit it; each entry is
-              capped at installed minus already certified
-            </legend>
-            {workItems.map((item) => {
-              const summary = summaryByItem.get(item.id);
-              return (
-                <Field key={item.id}>
-                  <label htmlFor={`pac-qty-${item.id}`}>
-                    {item.itemNumber} — {item.effectiveDescription ?? item.description}
-                    {summary !== undefined
-                      ? ` (installed ${summary.installedQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
-                      : ''}
-                  </label>
-                  <input
-                    id={`pac-qty-${item.id}`}
-                    name={`pac-qty-${item.id}`}
-                    inputMode="decimal"
-                  />
-                </Field>
-              );
-            })}
-          </fieldset>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Record PAC certificate
-            </Button>
-          </Actions>
-        </form>
+              </select>
+              <Hint>
+                Consignees linked to this Work are listed first; any active consignee
+                can be picked. The certificate snapshots the designation.
+              </Hint>
+            </Field>
+            <fieldset>
+              <legend>
+                Certified quantities — leave an item blank to omit it; each entry is
+                capped at installed minus already certified
+              </legend>
+              {workItems.map((item) => {
+                const summary = summaryByItem.get(item.id);
+                return (
+                  <Field key={item.id}>
+                    <label htmlFor={`pac-qty-${item.id}`}>
+                      {item.itemNumber} —{' '}
+                      {item.effectiveDescription ?? item.description}
+                      {summary !== undefined
+                        ? ` (installed ${summary.installedQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
+                        : ''}
+                    </label>
+                    <input
+                      id={`pac-qty-${item.id}`}
+                      name={`pac-qty-${item.id}`}
+                      inputMode="decimal"
+                    />
+                  </Field>
+                );
+              })}
+            </fieldset>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Record PAC certificate
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
     </>
   );

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import type {
   Contact,
   LocationKind,
@@ -10,6 +16,7 @@ import { RequestFailedError, formValue, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip as Chip } from '../ui/chip.js';
+import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 
@@ -18,7 +25,13 @@ interface MastersProps {
   readonly organisationId: string;
   /** Owner/office may add, edit, retire, and reactivate; others read. */
   readonly canModify: boolean;
+  /** Lifted so the sidebar can open a category directly. Omitted, the page
+   * keeps its own tab — which is what the component tests rely on. */
+  readonly tab?: MastersTab;
+  readonly onTabChange?: (tab: MastersTab) => void;
 }
+
+export type { MastersTab };
 
 type MastersTab = 'contacts' | 'locations' | 'units' | 'signatories';
 
@@ -91,6 +104,37 @@ function RetiredFilter({
       />{' '}
       Show retired
     </label>
+  );
+}
+
+/** Where a tab's one form sits. Adding is secondary to the list that fills
+ * the tab, so it waits behind the verb from its own submit button. Editing
+ * is not: the row's Edit button has already asked for the form, and while a
+ * row is being edited the form is the whole point of the tab, so it renders
+ * open under the name of what is being changed. */
+function MasterForm({
+  label,
+  editingTitle,
+  startOpen,
+  children,
+}: {
+  readonly label: string;
+  readonly editingTitle: string | null;
+  readonly startOpen: boolean;
+  readonly children: ReactNode;
+}) {
+  if (editingTitle !== null) {
+    return (
+      <>
+        <h2 className="mt-6 mb-2 text-sm font-semibold">{editingTitle}</h2>
+        {children}
+      </>
+    );
+  }
+  return (
+    <Disclosure label={label} startOpen={startOpen}>
+      {children}
+    </Disclosure>
   );
 }
 
@@ -257,11 +301,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         </DataTable>
       )}
 
-      {canModify && (
-        <>
-          <h2 className="mt-6 mb-2 text-sm font-semibold">
-            {editing === null ? 'Add a contact' : `Edit ${editing.designation}`}
-          </h2>
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add contact"
+          editingTitle={editing === null ? null : `Edit ${editing.designation}`}
+          startOpen={rows.length === 0}
+        >
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
             <FieldRow>
               <Field>
@@ -391,7 +436,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
               )}
             </Actions>
           </form>
-        </>
+        </MasterForm>
       )}
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
@@ -513,11 +558,12 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
         </DataTable>
       )}
 
-      {canModify && (
-        <>
-          <h2 className="mt-6 mb-2 text-sm font-semibold">
-            {editing === null ? 'Add a location' : `Edit ${editing.name}`}
-          </h2>
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add location"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
             <FieldRow>
               <Field>
@@ -561,7 +607,7 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
               )}
             </Actions>
           </form>
-        </>
+        </MasterForm>
       )}
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
@@ -680,11 +726,12 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
         </DataTable>
       )}
 
-      {canModify && (
-        <>
-          <h2 className="mt-6 mb-2 text-sm font-semibold">
-            {editing === null ? 'Add a unit' : `Edit ${editing.name}`}
-          </h2>
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add unit"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
             <Field>
               <label htmlFor="unit-name">Unit name</label>
@@ -713,7 +760,7 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
               )}
             </Actions>
           </form>
-        </>
+        </MasterForm>
       )}
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
@@ -835,11 +882,12 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
         </DataTable>
       )}
 
-      {canModify && (
-        <>
-          <h2 className="mt-6 mb-2 text-sm font-semibold">
-            {editing === null ? 'Add a signatory' : `Edit ${editing.name}`}
-          </h2>
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add signatory"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
             <FieldRow>
               <Field>
@@ -881,7 +929,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
               )}
             </Actions>
           </form>
-        </>
+        </MasterForm>
       )}
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
@@ -893,8 +941,16 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
 /** Master data: the reusable pick-lists behind document forms. Everything
  * here is a picker only — documents snapshot what was chosen, so master
  * edits never rewrite history; rows retire instead of being deleted. */
-export function Masters({ api, organisationId, canModify }: MastersProps) {
-  const [tab, setTab] = useState<MastersTab>('contacts');
+export function Masters({
+  api,
+  organisationId,
+  canModify,
+  tab: controlledTab,
+  onTabChange,
+}: MastersProps) {
+  const [ownTab, setOwnTab] = useState<MastersTab>('contacts');
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
 
   return (
     <Card className="w-full" aria-labelledby="masters-title">

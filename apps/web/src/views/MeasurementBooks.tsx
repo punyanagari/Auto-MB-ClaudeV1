@@ -19,6 +19,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -309,53 +310,54 @@ export function MeasurementBooks({
       )}
 
       {canModify && !hasDraft && !liveFinal && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const data = new FormData(form);
-            const mbDate = formValue(data, 'mb-draft-date');
-            const isFinal = data.get('mb-draft-final') === 'on';
-            setExistingDraftId(null);
-            tryAct(async () => {
-              try {
-                const created = await api.createWorkMeasurementBook(
-                  organisationId,
-                  workId,
-                  { mbDate, ...(isFinal ? { isFinal } : {}) },
-                );
-                await refreshList();
-                await openBook(created.book.id);
-                form.reset();
-              } catch (cause) {
-                const existing = existingRecordIdOf(cause);
-                if (existing !== null) setExistingDraftId(existing);
-                throw cause;
-              }
-            }, 'Draft Measurement Book created — select its sources below.');
-          }}
-        >
-          <h3>New Measurement Book draft</h3>
-          <Field>
-            <label htmlFor="mb-draft-date">MB date</label>
-            <input id="mb-draft-date" name="mb-draft-date" type="date" required />
-          </Field>
-          <Field>
-            <label>
-              <input type="checkbox" name="mb-draft-final" /> Final Measurement Book
-            </label>
-            <p className="text-muted-foreground">
-              The final MB bills the final-bill stage and must sweep every remaining
-              open source of the Work; once it is finalized, no further Measurement
-              Books can be raised.
-            </p>
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Create draft
-            </Button>
-          </Actions>
-        </form>
+        <Disclosure label="Create draft" startOpen={books.length === 0}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              const mbDate = formValue(data, 'mb-draft-date');
+              const isFinal = data.get('mb-draft-final') === 'on';
+              setExistingDraftId(null);
+              tryAct(async () => {
+                try {
+                  const created = await api.createWorkMeasurementBook(
+                    organisationId,
+                    workId,
+                    { mbDate, ...(isFinal ? { isFinal } : {}) },
+                  );
+                  await refreshList();
+                  await openBook(created.book.id);
+                  form.reset();
+                } catch (cause) {
+                  const existing = existingRecordIdOf(cause);
+                  if (existing !== null) setExistingDraftId(existing);
+                  throw cause;
+                }
+              }, 'Draft Measurement Book created — select its sources below.');
+            }}
+          >
+            <Field>
+              <label htmlFor="mb-draft-date">MB date</label>
+              <input id="mb-draft-date" name="mb-draft-date" type="date" required />
+            </Field>
+            <Field>
+              <label>
+                <input type="checkbox" name="mb-draft-final" /> Final Measurement Book
+              </label>
+              <p className="text-muted-foreground">
+                The final MB bills the final-bill stage and must sweep every remaining
+                open source of the Work; once it is finalized, no further Measurement
+                Books can be raised.
+              </p>
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Create draft
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
       {existingDraftId !== null && (
         <Actions>
@@ -386,6 +388,12 @@ export function MeasurementBooks({
             <p className="text-muted-foreground">Cancelled: {book.cancellationNote}</p>
           )}
 
+          {/* Deliberately not behind a Disclosure. This is the draft's
+              editor, not a form standing open beneath a record: the checked
+              boxes are the only display of which sources the draft claims,
+              the operator reached this panel by asking for the draft by
+              number, and the form disappears the moment the MB is finalized
+              into a record worth reading. */}
           {book.status === 'draft' && canModify && candidates !== null && (
             <form
               onSubmit={(event) => {
@@ -768,40 +776,46 @@ export function MeasurementBooks({
 
           {book.status === 'finalized' && canCancel && book.billId === null && (
             <>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  // Submitting only opens the confirm step below; the browser
-                  // has enforced the note by now, and the irreversible act is
-                  // authorised there against the MB number.
-                  setConfirmingCancel(true);
-                }}
-              >
-                <Field>
-                  <label htmlFor="mb-cancel-note">
-                    Cancellation note (only the newest live MB can cancel)
-                  </label>
-                  <input
-                    id="mb-cancel-note"
-                    name="mb-cancel-note"
-                    value={cancelNote}
-                    onChange={(event) => {
-                      // Rewording the note withdraws the confirmation: what is
-                      // confirmed must be the wording that gets stored.
-                      setCancelNote(event.target.value);
-                      setConfirmingCancel(false);
-                    }}
-                    required
-                    minLength={3}
-                    maxLength={1000}
-                  />
-                </Field>
-                {!confirmingCancel && (
-                  <Button type="submit" variant="outline" disabled={pending}>
-                    Cancel Measurement Book…
-                  </Button>
-                )}
-              </form>
+              {/* The note is a question, not a record: it stays behind its
+                  own verb so a finalized MB reads as what it is. The confirm
+                  step below stays outside the panel — it is the second half
+                  of the two-step, not part of the form. */}
+              <Disclosure label="Cancel Measurement Book…">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    // Submitting only opens the confirm step below; the browser
+                    // has enforced the note by now, and the irreversible act is
+                    // authorised there against the MB number.
+                    setConfirmingCancel(true);
+                  }}
+                >
+                  <Field>
+                    <label htmlFor="mb-cancel-note">
+                      Cancellation note (only the newest live MB can cancel)
+                    </label>
+                    <input
+                      id="mb-cancel-note"
+                      name="mb-cancel-note"
+                      value={cancelNote}
+                      onChange={(event) => {
+                        // Rewording the note withdraws the confirmation: what is
+                        // confirmed must be the wording that gets stored.
+                        setCancelNote(event.target.value);
+                        setConfirmingCancel(false);
+                      }}
+                      required
+                      minLength={3}
+                      maxLength={1000}
+                    />
+                  </Field>
+                  {!confirmingCancel && (
+                    <Button type="submit" variant="outline" disabled={pending}>
+                      Cancel Measurement Book…
+                    </Button>
+                  )}
+                </form>
+              </Disclosure>
               {confirmingCancel && (
                 <div className="my-3">
                   <h4>Confirm cancellation</h4>
