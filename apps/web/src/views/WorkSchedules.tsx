@@ -1,6 +1,7 @@
 import type { WorkDetailResponse, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
-import type { ApiClient } from '../api.js';
+import { useState } from 'react';
+import type { ApiClient, SetWorkItemTaxFactsRequest } from '../api.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -30,6 +31,101 @@ function itemFlags(item: WorkItem, pendingRemovals: ReadonlySet<string>) {
     removalPending: pendingRemovals.has(item.id),
     added: item.amendmentAdded === true,
   };
+}
+
+/** The item's GST facts in one quiet line — HSN is optional metadata the
+ * tax screens chase when an invoice needs it, so an empty set is a muted
+ * dash, not a warning. */
+function taxFactsSummary(item: WorkItem): string | null {
+  const parts = [
+    item.hsnCode ?? null,
+    typeof item.gstRate === 'string' ? `${item.gstRate}%` : null,
+    item.isService === true ? 'service' : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? null : parts.join(' · ');
+}
+
+/** Compact in-cell editor for one item's tax facts. All three fields
+ * travel on save: a blank code or rate is an explicit null (the PATCH
+ * clears it), matching what the boxes show. */
+function TaxFactsEditor({
+  item,
+  pending,
+  onSave,
+  onCancel,
+}: {
+  readonly item: WorkItem;
+  readonly pending: boolean;
+  readonly onSave: (facts: Required<SetWorkItemTaxFactsRequest>) => void;
+  readonly onCancel: () => void;
+}) {
+  const [hsnCode, setHsnCode] = useState(item.hsnCode ?? '');
+  const [gstRate, setGstRate] = useState(item.gstRate ?? '');
+  const [isService, setIsService] = useState(item.isService === true);
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <label className="sr-only" htmlFor={`tax-hsn-${item.id}`}>
+        HSN or SAC code for {item.itemNumber}
+      </label>
+      <input
+        id={`tax-hsn-${item.id}`}
+        className="w-28"
+        inputMode="numeric"
+        pattern="[0-9]{6,8}"
+        maxLength={8}
+        placeholder="HSN/SAC"
+        value={hsnCode}
+        onChange={(event) => {
+          setHsnCode(event.currentTarget.value);
+        }}
+      />
+      <label className="sr-only" htmlFor={`tax-rate-${item.id}`}>
+        GST rate percentage for {item.itemNumber}
+      </label>
+      <input
+        id={`tax-rate-${item.id}`}
+        className="w-20"
+        inputMode="decimal"
+        maxLength={6}
+        placeholder="GST %"
+        value={gstRate}
+        onChange={(event) => {
+          setGstRate(event.currentTarget.value);
+        }}
+      />
+      <label className="whitespace-nowrap" htmlFor={`tax-service-${item.id}`}>
+        <input
+          id={`tax-service-${item.id}`}
+          type="checkbox"
+          checked={isService}
+          onChange={(event) => {
+            setIsService(event.currentTarget.checked);
+          }}
+        />{' '}
+        Service
+      </label>
+      <Button
+        disabled={pending}
+        aria-label={`Save tax facts for ${item.itemNumber}`}
+        onClick={() => {
+          onSave({
+            hsnCode: hsnCode.trim() === '' ? null : hsnCode.trim(),
+            gstRate: gstRate.trim() === '' ? null : gstRate.trim(),
+            isService,
+          });
+        }}
+      >
+        Save
+      </Button>
+      <Button
+        variant="outline"
+        aria-label={`Cancel tax facts for ${item.itemNumber}`}
+        onClick={onCancel}
+      >
+        Cancel
+      </Button>
+    </span>
+  );
 }
 
 interface WorkSchedulesProps {
@@ -63,7 +159,10 @@ export function WorkSchedules({
   pending,
   act,
 }: WorkSchedulesProps) {
-  /** Both edits here change one field of one item in place; the loaded
+  /** The one row whose GST facts are being edited; the summary elsewhere. */
+  const [taxEditingItemId, setTaxEditingItemId] = useState<string | null>(null);
+
+  /** The edits here change fields of one item in place; the loaded
    * detail is otherwise left exactly as the server sent it. */
   const patchItem = (workItemId: string, patch: Partial<WorkItem>) => {
     setDetail((current) =>
@@ -97,7 +196,7 @@ export function WorkSchedules({
           <DataTable>
             <caption className="sr-only">
               Awarded items in schedule {schedule.scheduleCode}; amended values show the
-              original beside the sanctioned change
+              original beside the sanctioned change, and each item carries its GST facts
             </caption>
             <thead>
               <tr>
@@ -106,6 +205,7 @@ export function WorkSchedules({
                 <th scope="col">Unit</th>
                 <th scope="col">Awarded quantity</th>
                 <th scope="col">Rate (₹)</th>
+                <th scope="col">GST</th>
                 <th scope="col">Serial tracking</th>
               </tr>
             </thead>
@@ -144,6 +244,56 @@ export function WorkSchedules({
                         original={item.effectiveRate}
                         effective={item.effectiveUnitRate}
                       />
+                    </td>
+                    <td>
+                      {canModify && taxEditingItemId === item.id ? (
+                        <TaxFactsEditor
+                          item={item}
+                          pending={pending}
+                          onCancel={() => {
+                            setTaxEditingItemId(null);
+                          }}
+                          onSave={(facts) =>
+                            void act(async () => {
+                              const updated = await api.setWorkItemTaxFacts(
+                                organisationId,
+                                item.id,
+                                facts,
+                              );
+                              patchItem(item.id, {
+                                hsnCode: updated.hsnCode,
+                                gstRate: updated.gstRate,
+                                isService: updated.isService,
+                              });
+                              setTaxEditingItemId(null);
+                            }, `Tax facts saved for ${item.itemNumber}.`)
+                          }
+                        />
+                      ) : (
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={
+                              taxFactsSummary(item) === null
+                                ? 'text-muted-foreground'
+                                : ''
+                            }
+                          >
+                            {taxFactsSummary(item) ?? '—'}
+                          </span>
+                          {canModify && (
+                            <Button
+                              variant="outline"
+                              aria-label={`Tax facts for ${item.itemNumber}`}
+                              disabled={pending}
+                              onClick={() => {
+                                setTaxEditingItemId(item.id);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td>
                       {canModify ? (

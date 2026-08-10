@@ -9,6 +9,7 @@ import { IssueChallanEditor } from './IssueChallanEditor.js';
 import { Dashboard } from './Dashboard.js';
 import { Masters, type MastersTab } from './Masters.js';
 import { Members } from './Members.js';
+import { Quotations } from './Quotations.js';
 import { Settings } from './Settings.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
@@ -39,6 +40,7 @@ type WorkspaceView =
   | { name: 'issue-challan-new'; workId: string }
   | { name: 'issue-challan-edit'; workId: string; challanId: string }
   | { name: 'issue-challan'; workId: string; challanId: string }
+  | { name: 'quotations' }
   | { name: 'approvals' }
   | { name: 'serials' }
   | { name: 'members' }
@@ -80,6 +82,25 @@ const MODULES = [
         <rect x="9" y="2" width="5" height="5" rx="1" />
         <rect x="2" y="9" width="5" height="5" rx="1" />
         <rect x="9" y="9" width="5" height="5" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: 'quotations' as const,
+    label: 'Quotations',
+    icon: (
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path d="M4 1.8h5.2l3.3 3.3v9.1H4z" />
+        <path d="M9.2 1.8V5h3.3" />
+        <path d="M6.2 8.2h3.6M6.2 10.8h3.6" />
       </svg>
     ),
   },
@@ -199,6 +220,8 @@ function defaultViewOf(key: (typeof MODULES)[number]['key']): WorkspaceView {
       return { name: 'works' };
     case 'masters':
       return { name: 'masters' };
+    case 'quotations':
+      return { name: 'quotations' };
     case 'approvals':
       return { name: 'approvals' };
     case 'serials':
@@ -307,7 +330,7 @@ export function Workspace({
 
   /** The parts of a module worth naming in the rail. Only two modules have
    * any: Masters is four separate registers behind one word, and Works hides
-   * the LOA upload that starts everything. The other five are one screen
+   * the LOA upload that starts everything. The other six are one screen
    * each, and inventing children for them would make the rail longer without
    * making it clearer. */
   const SUB_ITEMS: Partial<
@@ -354,6 +377,7 @@ export function Workspace({
   const activeModule =
     view.name === 'dashboard' ||
     view.name === 'masters' ||
+    view.name === 'quotations' ||
     view.name === 'approvals' ||
     view.name === 'serials' ||
     view.name === 'members' ||
@@ -518,6 +542,15 @@ export function Workspace({
               onBack={() => {
                 setView({ name: 'works' });
               }}
+            />
+          )}
+          {view.name === 'quotations' && (
+            <Quotations
+              api={api}
+              organisationId={organisation.id}
+              canModify={canModify}
+              canIssue={canIssue}
+              canCancel={canCancel}
             />
           )}
           {view.name === 'approvals' && (

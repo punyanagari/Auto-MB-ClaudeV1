@@ -12,6 +12,8 @@ import type {
   ChallanDetailResponse,
   ConfirmWorkRequest,
   Membership,
+  PurchaseOrder,
+  PurchaseOrderDetailResponse,
   SaveChallanRequest,
   SaveIssueChallanRequest,
 } from '@auto-mb/contracts';
@@ -28,6 +30,7 @@ import { Members } from '../src/views/Members.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { PaymentMatrix } from '../src/views/PaymentMatrix.js';
 import { PacCertificates } from '../src/views/PacCertificates.js';
+import { Quotations } from '../src/views/Quotations.js';
 import { ReviewLoa } from '../src/views/ReviewLoa.js';
 import { SerialLookup } from '../src/views/SerialLookup.js';
 import { SignIn } from '../src/views/SignIn.js';
@@ -201,6 +204,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     renderMeasurementBook: vi.fn(),
     downloadMeasurementBookPdf: vi.fn(),
     downloadMeasurementBookDraftPreview: vi.fn(),
+    mergeWorkMeasurementBooks: vi.fn(),
+    unmergeMeasurementBook: vi.fn().mockResolvedValue(undefined),
     completeWork: vi.fn(),
     reopenWork: vi.fn(),
     // Ready by default, so a test that does not care about completion sees
@@ -208,6 +213,41 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     workCompletionReadiness: vi
       .fn()
       .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
+    listWorkPurchaseOrders: vi.fn().mockResolvedValue([]),
+    createWorkPurchaseOrder: vi.fn(),
+    getPurchaseOrder: vi.fn(),
+    updatePurchaseOrder: vi.fn(),
+    savePurchaseOrderLines: vi.fn(),
+    issuePurchaseOrder: vi.fn(),
+    cancelPurchaseOrder: vi.fn(),
+    closePurchaseOrder: vi.fn(),
+    deletePurchaseOrder: vi.fn().mockResolvedValue(undefined),
+    listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
+    createBudgetaryQuotation: vi.fn(),
+    getBudgetaryQuotation: vi.fn(),
+    updateBudgetaryQuotation: vi.fn(),
+    saveBudgetaryQuotationLines: vi.fn(),
+    issueBudgetaryQuotation: vi.fn(),
+    setBudgetaryQuotationOutcome: vi.fn(),
+    deleteBudgetaryQuotation: vi.fn().mockResolvedValue(undefined),
+    listWorkTaxInvoices: vi.fn().mockResolvedValue([]),
+    createWorkTaxInvoice: vi.fn(),
+    getTaxInvoice: vi.fn(),
+    updateTaxInvoice: vi.fn(),
+    submitTaxInvoice: vi.fn(),
+    cancelTaxInvoice: vi.fn(),
+    deleteTaxInvoice: vi.fn().mockResolvedValue(undefined),
+    taxInvoiceIrpPayload: vi.fn(),
+    recordTaxInvoiceIrpResponse: vi.fn(),
+    listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    createInvoiceEwayBill: vi.fn(),
+    getEwayBill: vi.fn(),
+    updateEwayBill: vi.fn(),
+    ewayBillNicPayload: vi.fn(),
+    recordEwayBillNicResponse: vi.fn(),
+    cancelEwayBill: vi.fn(),
+    deleteEwayBill: vi.fn().mockResolvedValue(undefined),
+    setWorkItemTaxFacts: vi.fn(),
     ...overrides,
   };
 }
@@ -2453,16 +2493,18 @@ describe('Settings', () => {
     slug: 'sharma',
     address: null,
     gstin: null,
+    stateCode: null,
     contactPhone: null,
     contactEmail: null,
     hasLogo: false,
   };
 
-  it('lets an owner edit company details', async () => {
+  it('lets an owner edit company details, GST state code included', async () => {
     const updateOrganisationProfile = vi.fn().mockResolvedValue({
       ...PROFILE,
       address: 'Plot 4, MIDC, Nashik',
       gstin: '27ABCDE1234F1Z5',
+      stateCode: '27',
     });
     const { Settings } = await import('../src/views/Settings.js');
     render(
@@ -2483,6 +2525,9 @@ describe('Settings', () => {
     fireEvent.change(screen.getByLabelText('GSTIN'), {
       target: { value: '27ABCDE1234F1Z5' },
     });
+    fireEvent.change(screen.getByLabelText('GST state code'), {
+      target: { value: '27' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));
 
     await waitFor(() => {
@@ -2490,12 +2535,47 @@ describe('Settings', () => {
         name: 'Sharma Constructions',
         address: 'Plot 4, MIDC, Nashik',
         gstin: '27ABCDE1234F1Z5',
+        stateCode: '27',
         contactPhone: null,
         contactEmail: null,
         warrantyTemplateText: null,
       });
     });
     expect(await screen.findByRole('status')).toBeTruthy();
+  });
+
+  it('pins the STATE_CODE_GSTIN_MISMATCH refusal to the state-code field', async () => {
+    const message =
+      'The GST state code 29 contradicts the GSTIN 27ABCDE1234F1Z5, which is registered in state 27. The state code decides CGST+SGST against IGST on every invoice, so correct whichever of the two is wrong.';
+    const updateOrganisationProfile = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(400, 'STATE_CODE_GSTIN_MISMATCH', message),
+      );
+    const { Settings } = await import('../src/views/Settings.js');
+    render(
+      <Settings
+        api={stubApi({
+          organisationProfile: vi
+            .fn()
+            .mockResolvedValue({ ...PROFILE, gstin: '27ABCDE1234F1Z5' }),
+          updateOrganisationProfile,
+        })}
+        organisationId={ORG_ID}
+        isOwner
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    const stateCode = screen.getByLabelText('GST state code');
+    fireEvent.change(stateCode, { target: { value: '29' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(message);
+    // Inline: the refusal is the field's own description, not a footer.
+    expect(stateCode.getAttribute('aria-invalid')).toBe('true');
+    expect(stateCode.getAttribute('aria-describedby')).toBe(alert.id);
   });
 
   it('shows read-only details to non-owners', async () => {
@@ -2599,19 +2679,89 @@ describe('Masters', () => {
     expect(await screen.findByRole('status')).toBeTruthy();
   });
 
-  it('shows the dormant vendor/client role flags disabled with the procurement note', async () => {
-    const api = stubApi({ listContacts: vi.fn().mockResolvedValue([CONSIGNEE]) });
+  const VENDOR_CLIENT = {
+    ...CONSIGNEE,
+    id: '66666666-6666-4666-8666-666666666666',
+    designation: 'M/s Kay Traders',
+    address: 'Industrial Area, Kanpur',
+    phone: null,
+    isConsignee: false,
+    isVendor: true,
+    isClient: true,
+  };
+
+  it('creates a vendor: checking the role unchecks the derived consignee box', async () => {
+    const saveContact = vi.fn().mockResolvedValue(VENDOR_CLIENT);
+    const api = stubApi({
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE]),
+      saveContact,
+    });
     const { Masters } = await import('../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
     await openForm('Add contact');
     const consigneeRole = screen.getByLabelText<HTMLInputElement>('Consignee');
+    // A create naming no role makes a consignee, so the box starts checked
+    // — and stays read-only, because isConsignee is a create-time fact.
     expect(consigneeRole.checked).toBe(true);
     expect(consigneeRole.disabled).toBe(true);
-    expect(screen.getByLabelText<HTMLInputElement>('Vendor').disabled).toBe(true);
-    expect(screen.getByLabelText<HTMLInputElement>('Client').disabled).toBe(true);
-    expect(screen.getByText(/procurement wave/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText<HTMLInputElement>('Vendor'));
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee').checked).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Designation / name'), {
+      target: { value: 'M/s Kay Traders' },
+    });
+    fireEvent.click(submitButton('Add contact'));
+
+    await waitFor(() => {
+      expect(saveContact).toHaveBeenCalledWith(ORG_ID, null, {
+        designation: 'M/s Kay Traders',
+        isVendor: true,
+      });
+    });
+  });
+
+  it('shows each contact role as a chip in the list', async () => {
+    const api = stubApi({
+      listContacts: vi.fn().mockResolvedValue([CONSIGNEE, VENDOR_CLIENT]),
+    });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    expect(await screen.findByText('M/s Kay Traders')).toBeTruthy();
+    expect(screen.getByText('consignee')).toBeTruthy();
+    expect(screen.getByText('vendor')).toBeTruthy();
+    expect(screen.getByText('client')).toBeTruthy();
+  });
+
+  it('sends only the changed role flag when editing, never isConsignee', async () => {
+    const saveContact = vi
+      .fn()
+      .mockResolvedValue({ ...VENDOR_CLIENT, isClient: false });
+    const api = stubApi({
+      listContacts: vi.fn().mockResolvedValue([VENDOR_CLIENT]),
+      saveContact,
+    });
+    const { Masters } = await import('../src/views/Masters.js');
+    render(<Masters api={api} organisationId={ORG_ID} canModify />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await screen.findByRole('heading', { name: 'Edit M/s Kay Traders' });
+    const clientRole = screen.getByLabelText<HTMLInputElement>('Client');
+    expect(clientRole.checked).toBe(true);
+    fireEvent.click(clientRole);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      // Vendor is untouched so it does not travel; the dropped client role
+      // travels as an explicit false. isConsignee is never a request field.
+      expect(saveContact).toHaveBeenCalledWith(ORG_ID, VENDOR_CLIENT.id, {
+        designation: 'M/s Kay Traders',
+        address: 'Industrial Area, Kanpur',
+        isClient: false,
+      });
+    });
   });
 
   it('retires a contact and surfaces duplicate conflicts as alerts', async () => {
@@ -3379,11 +3529,11 @@ describe('WorkDetail amendments', () => {
     expect(
       within(table).getAllByRole('switch', { name: 'Serial tracking for A/1' }),
     ).toHaveLength(1);
-    // Six headers, so six cells per row: the row header plus five.
-    expect(within(rows[0] as HTMLElement).getAllByRole('columnheader')).toHaveLength(6);
+    // Seven headers, so seven cells per row: the row header plus six.
+    expect(within(rows[0] as HTMLElement).getAllByRole('columnheader')).toHaveLength(7);
     for (const row of rows.slice(1)) {
       expect(within(row).getAllByRole('rowheader')).toHaveLength(1);
-      expect(within(row).getAllByRole('cell')).toHaveLength(5);
+      expect(within(row).getAllByRole('cell')).toHaveLength(6);
     }
   });
 
@@ -3686,6 +3836,162 @@ describe('WorkDetail serial tracking toggle', () => {
     await screen.findByRole('heading', { name: /DCW-1/ });
     expect(screen.queryByRole('switch')).toBeNull();
     expect(screen.getByText('Required')).toBeTruthy();
+  });
+});
+
+describe('WorkSchedules tax facts', () => {
+  const SCHEDULE_ID = '88888888-8888-4888-8888-888888888888';
+  const detailWithTax = (
+    facts: Partial<{
+      hsnCode: string | null;
+      gstRate: string | null;
+      isService: boolean;
+    }>,
+  ) => ({
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials: false,
+            hsnCode: null,
+            gstRate: null,
+            isService: false,
+            ...facts,
+          },
+        ],
+      },
+    ],
+  });
+
+  function renderDetail(api: ApiClient, canModify: boolean) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={canModify}
+        canRecordEvidence={canModify}
+        canIssue={canModify}
+        canCancel={canModify}
+        canApprove={false}
+        isOwner={false}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('records HSN, rate, and the service flag through the inline editor', async () => {
+    const setWorkItemTaxFacts = vi.fn().mockResolvedValue({
+      id: ITEM_A,
+      itemNumber: 'A/1',
+      hsnCode: '850710',
+      gstRate: '18',
+      isService: true,
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(detailWithTax({})),
+      setWorkItemTaxFacts,
+    });
+    renderDetail(api, true);
+    await openWorkTab('Schedules & items');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tax facts for A/1' }));
+    fireEvent.change(screen.getByLabelText('HSN or SAC code for A/1'), {
+      target: { value: '850710' },
+    });
+    fireEvent.change(screen.getByLabelText('GST rate percentage for A/1'), {
+      target: { value: '18' },
+    });
+    fireEvent.click(screen.getByLabelText('Service'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save tax facts for A/1' }));
+
+    await waitFor(() => {
+      expect(setWorkItemTaxFacts).toHaveBeenCalledWith(ORG_ID, ITEM_A, {
+        hsnCode: '850710',
+        gstRate: '18',
+        isService: true,
+      });
+    });
+    // The editor closes onto the quiet summary of what the server kept.
+    expect(await screen.findByText('850710 · 18% · service')).toBeTruthy();
+    expect(screen.queryByLabelText('HSN or SAC code for A/1')).toBeNull();
+  });
+
+  it('clears a fact by blanking its box — an explicit null, not an omission', async () => {
+    const setWorkItemTaxFacts = vi.fn().mockResolvedValue({
+      id: ITEM_A,
+      itemNumber: 'A/1',
+      hsnCode: null,
+      gstRate: '18',
+      isService: false,
+    });
+    const api = stubApi({
+      getWork: vi
+        .fn()
+        .mockResolvedValue(detailWithTax({ hsnCode: '850710', gstRate: '18' })),
+      setWorkItemTaxFacts,
+    });
+    renderDetail(api, true);
+    await openWorkTab('Schedules & items');
+
+    // The editor opens prefilled with the stored facts.
+    fireEvent.click(await screen.findByRole('button', { name: 'Tax facts for A/1' }));
+    const hsn = screen.getByLabelText<HTMLInputElement>('HSN or SAC code for A/1');
+    expect(hsn.value).toBe('850710');
+    fireEvent.change(hsn, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save tax facts for A/1' }));
+
+    await waitFor(() => {
+      expect(setWorkItemTaxFacts).toHaveBeenCalledWith(ORG_ID, ITEM_A, {
+        hsnCode: null,
+        gstRate: '18',
+        isService: false,
+      });
+    });
+  });
+
+  it('shows read-only members the summary without an editor', async () => {
+    const api = stubApi({
+      getWork: vi
+        .fn()
+        .mockResolvedValue(
+          detailWithTax({ hsnCode: '998719', gstRate: '18', isService: true }),
+        ),
+    });
+    renderDetail(api, false);
+    await openWorkTab('Schedules & items');
+
+    expect(await screen.findByText('998719 · 18% · service')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Tax facts for A/1' })).toBeNull();
   });
 });
 
@@ -5424,14 +5730,17 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.change(await screen.findByLabelText('MB date'), {
       target: { value: '2026-08-05' },
     });
+    // The sweep warning is the FINAL kind's alone — it would be a lie above
+    // the on-account default, which bills a stage and sweeps nothing.
+    expect(screen.queryByText(/must sweep every remaining open source/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'final' } });
     expect(screen.getByText(/must sweep every remaining open source/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/Final Measurement Book/));
     fireEvent.click(submitButton('Create draft'));
 
     await waitFor(() => {
       expect(createWorkMeasurementBook).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
         mbDate: '2026-08-05',
-        isFinal: true,
+        kind: 'final',
       });
     });
   });
@@ -6344,5 +6653,610 @@ describe('Retired consignees stop being offered', () => {
       screen.getByText(/no longer offered in the challan and PAC pickers/),
     ).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Unlink' })).toHaveLength(2);
+  });
+});
+
+describe('Quotations workspace', () => {
+  const BQ_DRAFT_ID = '99999999-1111-4111-8111-999999999991';
+  const BQ_ISSUED_ID = '99999999-2222-4222-8222-999999999992';
+  const CLIENT_ID = '99999999-3333-4333-8333-999999999993';
+  const LINE_ID = '99999999-4444-4444-8444-999999999994';
+
+  const BQ_DRAFT = {
+    id: BQ_DRAFT_ID,
+    customerContactId: null,
+    addressedTo: 'Sr DEE (G) Pune',
+    subject: 'Supply of LED fittings',
+    status: 'draft' as const,
+    bqNumber: null,
+    sequenceNumber: null,
+    bqDate: '2026-08-01',
+    validUntil: null,
+    notes: null,
+    totalAmount: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    issuedAt: null,
+  };
+
+  const BQ_ISSUED = {
+    ...BQ_DRAFT,
+    id: BQ_ISSUED_ID,
+    addressedTo: 'M/s Sunrise Infra',
+    subject: 'Cable supply offer',
+    status: 'issued' as const,
+    bqNumber: 'BQ-07',
+    sequenceNumber: 7,
+    validUntil: '2026-09-30',
+    totalAmount: '10000.00',
+    issuedAt: '2026-08-02T00:00:00.000Z',
+  };
+
+  const LINE = {
+    id: LINE_ID,
+    lineNumber: 1,
+    description: 'Power cable 4 sq mm',
+    hsnCode: '854449',
+    unitCode: 'mtr',
+    quantity: '100.000',
+    rate: '100.00',
+    gstRate: '18.00',
+    lineAmount: '10000.00',
+  };
+
+  const CLIENT = {
+    id: CLIENT_ID,
+    designation: 'M/s Sunrise Infra',
+    contactPerson: null,
+    address: null,
+    phone: null,
+    email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: false,
+    isVendor: false,
+    isClient: true,
+    active: true,
+    createdAt: '2026-07-01T00:00:00.000Z',
+  };
+
+  const DRAFT_DETAIL = {
+    budgetaryQuotation: BQ_DRAFT,
+    lines: [],
+    customerSnapshot: null,
+    previewTotal: '0.00',
+  };
+
+  const ISSUED_DETAIL = {
+    budgetaryQuotation: BQ_ISSUED,
+    lines: [LINE],
+    customerSnapshot: null,
+    previewTotal: '10000.00',
+  };
+
+  function bqApi(overrides: Partial<ApiClient> = {}): ApiClient {
+    return stubApi({
+      listBudgetaryQuotations: vi.fn().mockResolvedValue([BQ_ISSUED, BQ_DRAFT]),
+      getBudgetaryQuotation: vi.fn().mockResolvedValue(DRAFT_DETAIL),
+      listContacts: vi.fn().mockResolvedValue([CLIENT]),
+      ...overrides,
+    });
+  }
+
+  function renderQuotations(
+    api: ApiClient,
+    options: Partial<{
+      canModify: boolean;
+      canIssue: boolean;
+      canCancel: boolean;
+    }> = {},
+  ) {
+    return render(
+      <Quotations
+        api={api}
+        organisationId={ORG_ID}
+        canModify={options.canModify ?? true}
+        canIssue={options.canIssue ?? true}
+        canCancel={options.canCancel ?? true}
+      />,
+    );
+  }
+
+  it('lists quotations with status filter chips, totals, and status chips', async () => {
+    renderQuotations(bqApi());
+
+    await screen.findByRole('button', { name: 'BQ-07' });
+    expect(screen.getByRole('button', { name: 'Draft' })).toBeTruthy();
+    expect(screen.getByText('₹10,000.00')).toBeTruthy();
+    expect(screen.getByText('issued')).toBeTruthy();
+    expect(screen.getByText('draft')).toBeTruthy();
+
+    // The chips filter the table without a round-trip; each carries its count.
+    fireEvent.click(screen.getByRole('button', { name: /^Issued\s?1$/ }));
+    expect(screen.queryByRole('button', { name: 'Draft' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'BQ-07' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Draft\s?1$/ }));
+    expect(screen.queryByRole('button', { name: 'BQ-07' })).toBeNull();
+  });
+
+  it('creates a draft and round-trips its header and lines', async () => {
+    const createBudgetaryQuotation = vi.fn().mockResolvedValue(DRAFT_DETAIL);
+    const updateBudgetaryQuotation = vi.fn().mockResolvedValue({
+      ...DRAFT_DETAIL,
+      budgetaryQuotation: { ...BQ_DRAFT, validUntil: '2026-08-31' },
+    });
+    const saveBudgetaryQuotationLines = vi.fn().mockResolvedValue({
+      ...DRAFT_DETAIL,
+      lines: [LINE],
+      previewTotal: '10000.00',
+    });
+    const api = bqApi({
+      listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
+      createBudgetaryQuotation,
+      updateBudgetaryQuotation,
+      saveBudgetaryQuotationLines,
+    });
+    renderQuotations(api);
+
+    // Nothing quoted yet, so the create form leads rather than hiding the
+    // only thing there is to do. Picking a client links and prefills the
+    // addressee; the free text stays the record and stays editable.
+    fireEvent.change(await screen.findByLabelText('Client contact (optional)'), {
+      target: { value: CLIENT_ID },
+    });
+    expect(screen.getByLabelText<HTMLInputElement>('Addressed to').value).toBe(
+      'M/s Sunrise Infra',
+    );
+    fireEvent.change(screen.getByLabelText('Addressed to'), {
+      target: { value: 'Sr DEE (G) Pune' },
+    });
+    fireEvent.change(screen.getByLabelText('Subject'), {
+      target: { value: 'Supply of LED fittings' },
+    });
+    fireEvent.change(screen.getByLabelText('Quotation date'), {
+      target: { value: '2026-08-01' },
+    });
+    fireEvent.click(submitButton('Create quotation'));
+    await waitFor(() => {
+      expect(createBudgetaryQuotation).toHaveBeenCalledWith(ORG_ID, {
+        customerContactId: CLIENT_ID,
+        addressedTo: 'Sr DEE (G) Pune',
+        subject: 'Supply of LED fittings',
+        bqDate: '2026-08-01',
+      });
+    });
+
+    // The created draft opens below, loaded from the server: the header
+    // round-trips into the editor.
+    const details = await screen.findByRole('form', { name: 'Quotation details' });
+    expect(within(details).getByLabelText<HTMLInputElement>('Addressed to').value).toBe(
+      'Sr DEE (G) Pune',
+    );
+    fireEvent.change(within(details).getByLabelText('Valid until (optional)'), {
+      target: { value: '2026-08-31' },
+    });
+    fireEvent.click(within(details).getByRole('button', { name: 'Save details' }));
+    await waitFor(() => {
+      expect(updateBudgetaryQuotation).toHaveBeenCalledWith(ORG_ID, BQ_DRAFT_ID, {
+        addressedTo: 'Sr DEE (G) Pune',
+        subject: 'Supply of LED fittings',
+        bqDate: '2026-08-01',
+        validUntil: '2026-08-31',
+      });
+    });
+
+    // Lines save wholesale — HSN/SAC and GST optional but carried when
+    // given — and the server answers with the recomputed exact total.
+    const lines = screen.getByRole('form', { name: 'Quotation lines' });
+    fireEvent.change(within(lines).getByLabelText('Line 1 description'), {
+      target: { value: 'Power cable 4 sq mm' },
+    });
+    fireEvent.change(
+      within(lines).getByLabelText('Line 1 HSN or SAC code (optional)'),
+      { target: { value: '854449' } },
+    );
+    fireEvent.change(within(lines).getByLabelText('Line 1 unit'), {
+      target: { value: 'mtr' },
+    });
+    fireEvent.change(within(lines).getByLabelText('Line 1 quantity'), {
+      target: { value: '100' },
+    });
+    fireEvent.change(within(lines).getByLabelText('Line 1 rate'), {
+      target: { value: '100.00' },
+    });
+    fireEvent.change(within(lines).getByLabelText('Line 1 GST rate (optional)'), {
+      target: { value: '18' },
+    });
+    fireEvent.click(within(lines).getByRole('button', { name: 'Save lines' }));
+    await waitFor(() => {
+      expect(saveBudgetaryQuotationLines).toHaveBeenCalledWith(ORG_ID, BQ_DRAFT_ID, {
+        lines: [
+          {
+            description: 'Power cable 4 sq mm',
+            hsnCode: '854449',
+            unitCode: 'mtr',
+            quantity: '100',
+            rate: '100.00',
+            gstRate: '18',
+          },
+        ],
+      });
+    });
+    expect(await screen.findByText('₹10,000.00')).toBeTruthy();
+  });
+
+  it('issues a draft, freezing its number and total', async () => {
+    const issueBudgetaryQuotation = vi.fn().mockResolvedValue({
+      budgetaryQuotation: {
+        ...BQ_DRAFT,
+        status: 'issued' as const,
+        bqNumber: 'BQ-08',
+        sequenceNumber: 8,
+        totalAmount: '10000.00',
+        issuedAt: '2026-08-03T00:00:00.000Z',
+      },
+      lines: [LINE],
+      customerSnapshot: null,
+      previewTotal: '10000.00',
+    });
+    const api = bqApi({
+      getBudgetaryQuotation: vi.fn().mockResolvedValue({
+        ...DRAFT_DETAIL,
+        lines: [LINE],
+        previewTotal: '10000.00',
+      }),
+      issueBudgetaryQuotation,
+    });
+    renderQuotations(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Issue quotation' }));
+    await waitFor(() => {
+      expect(issueBudgetaryQuotation).toHaveBeenCalledWith(ORG_ID, BQ_DRAFT_ID);
+    });
+
+    // The editor gives way to the issued record: number in the heading,
+    // outcome controls below.
+    expect(await screen.findByText(/Quotation BQ-08/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mark converted' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save lines' })).toBeNull();
+  });
+
+  it('records the converted outcome on an issued quotation', async () => {
+    const setBudgetaryQuotationOutcome = vi.fn().mockResolvedValue({
+      ...ISSUED_DETAIL,
+      budgetaryQuotation: { ...BQ_ISSUED, status: 'converted' as const },
+    });
+    const api = bqApi({
+      getBudgetaryQuotation: vi.fn().mockResolvedValue(ISSUED_DETAIL),
+      setBudgetaryQuotationOutcome,
+    });
+    renderQuotations(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'BQ-07' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark converted' }));
+    await waitFor(() => {
+      expect(setBudgetaryQuotationOutcome).toHaveBeenCalledWith(ORG_ID, BQ_ISSUED_ID, {
+        outcome: 'converted',
+      });
+    });
+    // The state never moves again; the record says so.
+    expect(await screen.findByText(/This quotation is converted/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark converted' })).toBeNull();
+  });
+
+  it('withdraws an issued quotation behind its explanatory confirm', async () => {
+    const setBudgetaryQuotationOutcome = vi.fn().mockResolvedValue({
+      ...ISSUED_DETAIL,
+      budgetaryQuotation: { ...BQ_ISSUED, status: 'withdrawn' as const },
+    });
+    const api = bqApi({
+      getBudgetaryQuotation: vi.fn().mockResolvedValue(ISSUED_DETAIL),
+      setBudgetaryQuotationOutcome,
+    });
+    renderQuotations(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'BQ-07' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Withdraw quotation…' }));
+    // The note explains what withdrawing is before anything is sent.
+    expect(screen.getByText(/keeps its number forever/)).toBeTruthy();
+    expect(setBudgetaryQuotationOutcome).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw BQ-07 now' }));
+    await waitFor(() => {
+      expect(setBudgetaryQuotationOutcome).toHaveBeenCalledWith(ORG_ID, BQ_ISSUED_ID, {
+        outcome: 'withdrawn',
+      });
+    });
+    expect(await screen.findByText(/This quotation is withdrawn/)).toBeTruthy();
+  });
+
+  it('deletes a draft behind its confirm', async () => {
+    const deleteBudgetaryQuotation = vi.fn().mockResolvedValue(undefined);
+    const api = bqApi({ deleteBudgetaryQuotation });
+    renderQuotations(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete draft…' }));
+    expect(deleteBudgetaryQuotation).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete draft now' }));
+    await waitFor(() => {
+      expect(deleteBudgetaryQuotation).toHaveBeenCalledWith(ORG_ID, BQ_DRAFT_ID);
+    });
+    // The editor closes with the draft gone.
+    expect(screen.queryByRole('form', { name: 'Quotation details' })).toBeNull();
+  });
+});
+
+// --- Procurement: the Work's purchase orders --------------------------------
+
+const VENDOR_CONTACT_ID = 'dddd1111-1111-4111-8111-dddddddddd11';
+const PO_ID = 'dddd2222-2222-4222-8222-dddddddddd22';
+const PO_LINE_ID = 'dddd3333-3333-4333-8333-dddddddddd33';
+
+const VENDOR_CONTACT = {
+  id: VENDOR_CONTACT_ID,
+  designation: 'Sharma Electricals',
+  contactPerson: null,
+  address: 'Karol Bagh, Delhi',
+  phone: null,
+  email: null,
+  gstin: null,
+  pincode: null,
+  stateCode: null,
+  isConsignee: false,
+  isVendor: true,
+  isClient: false,
+  active: true,
+  createdAt: '2026-07-01T00:00:00.000Z',
+};
+
+function purchaseOrder(overrides: Partial<PurchaseOrder> = {}): PurchaseOrder {
+  return {
+    id: PO_ID,
+    workId: WORK_ID,
+    vendorContactId: VENDOR_CONTACT_ID,
+    vendorDesignation: 'Sharma Electricals',
+    status: 'issued',
+    poNumber: 'DCW-1-PO-01',
+    sequenceNumber: 1,
+    poDate: '2026-08-01',
+    expectedOn: null,
+    terms: null,
+    totalAmount: '400.00',
+    cancellationNote: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    issuedAt: '2026-08-01T10:00:00.000Z',
+    closedAt: null,
+    cancelledAt: null,
+    ...overrides,
+  };
+}
+
+/** The issued order's detail: one line against A/1, nothing received yet. */
+function purchaseOrderDetail(): PurchaseOrderDetailResponse {
+  return {
+    purchaseOrder: purchaseOrder(),
+    lines: [
+      {
+        id: PO_LINE_ID,
+        workItemId: ITEM_A,
+        lineNumber: 1,
+        description: 'Main switchboard',
+        hsnCode: null,
+        unitCode: 'Nos',
+        quantity: '4.000',
+        rate: '100.00',
+        gstRate: null,
+        lineAmount: '400.00',
+        receivedQuantity: '0.000',
+        pendingQuantity: '4.000',
+      },
+    ],
+    vendorSnapshot: null,
+    previewTotal: '400.00',
+  };
+}
+
+describe('WorkDetail procurement tab', () => {
+  function renderProcurementWork(api: ApiClient) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('lists the purchase orders with vendor, status, and total, and counts them in the strip', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkPurchaseOrders: vi.fn().mockResolvedValue([purchaseOrder()]),
+    });
+    renderProcurementWork(api);
+    await openWorkTab('Procurement');
+
+    expect(await screen.findByText('DCW-1-PO-01')).toBeTruthy();
+    expect(screen.getByText('Sharma Electricals')).toBeTruthy();
+    expect(screen.getByText('issued')).toBeTruthy();
+    expect(screen.getByText('₹400.00')).toBeTruthy();
+
+    // The tab strip carries the same count the list shows.
+    const tabs = screen.getByRole('navigation', { name: 'Work sections' });
+    const procurementTab = within(tabs).getByRole('button', {
+      name: (name: string) => name.startsWith('Procurement'),
+    });
+    expect(procurementTab.textContent).toContain('1');
+  });
+
+  it('drafts a purchase order, saves its lines, and issues it', async () => {
+    const draftOrder = purchaseOrder({
+      status: 'draft',
+      poNumber: null,
+      sequenceNumber: null,
+      totalAmount: null,
+      issuedAt: null,
+    });
+    const draftDetail: PurchaseOrderDetailResponse = {
+      purchaseOrder: draftOrder,
+      lines: [],
+      vendorSnapshot: null,
+      previewTotal: '0.00',
+    };
+    const savedDetail: PurchaseOrderDetailResponse = {
+      ...purchaseOrderDetail(),
+      purchaseOrder: draftOrder,
+    };
+    const createWorkPurchaseOrder = vi.fn().mockResolvedValue(draftDetail);
+    const savePurchaseOrderLines = vi.fn().mockResolvedValue(savedDetail);
+    const issuePurchaseOrder = vi.fn().mockResolvedValue(purchaseOrderDetail());
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listContacts: vi.fn().mockResolvedValue([VENDOR_CONTACT]),
+      createWorkPurchaseOrder,
+      savePurchaseOrderLines,
+      issuePurchaseOrder,
+    });
+    renderProcurementWork(api);
+    await openWorkTab('Procurement');
+
+    // No orders yet, so the create form starts open (Disclosure startOpen).
+    fireEvent.change(await screen.findByLabelText('Vendor'), {
+      target: { value: VENDOR_CONTACT_ID },
+    });
+    fireEvent.change(screen.getByLabelText('PO date'), {
+      target: { value: '2026-08-01' },
+    });
+    fireEvent.click(submitButton('Create purchase order'));
+    await waitFor(() => {
+      expect(createWorkPurchaseOrder).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        vendorContactId: VENDOR_CONTACT_ID,
+        poDate: '2026-08-01',
+      });
+    });
+
+    // The draft editor opened with one empty line; picking the Work item
+    // prefills its description and unit, both still editable.
+    fireEvent.change(await screen.findByLabelText('Line 1 item'), {
+      target: { value: ITEM_A },
+    });
+    expect(screen.getByLabelText<HTMLInputElement>('Line 1 description').value).toBe(
+      'Main switchboard',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Line 1 unit').value).toBe('Nos');
+    fireEvent.change(screen.getByLabelText('Line 1 quantity'), {
+      target: { value: '4' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 rate'), {
+      target: { value: '100' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save lines' }));
+    await waitFor(() => {
+      expect(savePurchaseOrderLines).toHaveBeenCalledWith(ORG_ID, PO_ID, {
+        lines: [
+          {
+            workItemId: ITEM_A,
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            quantity: '4',
+            rate: '100',
+          },
+        ],
+      });
+    });
+    // The draft total is the server's figure, never client arithmetic.
+    expect(await screen.findByText('₹400.00')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Issue purchase order' }));
+    await waitFor(() => {
+      expect(issuePurchaseOrder).toHaveBeenCalledWith(ORG_ID, PO_ID);
+    });
+    // Issued: the number reaches the heading and the editor gives way to
+    // the read-only lines with their ordered/received/pending balances.
+    expect(await screen.findByText(/Purchase order DCW-1-PO-01/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save lines' })).toBeNull();
+    expect(screen.getAllByText('4.000').length).toBeGreaterThan(1);
+  });
+});
+
+describe('ChallanEditor purchase-order receipt link', () => {
+  it('offers the open PO lines for an item and sends purchaseOrderLineId', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const listWorkPurchaseOrders = vi.fn().mockResolvedValue([purchaseOrder()]);
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listWorkPurchaseOrders,
+      getPurchaseOrder: vi.fn().mockResolvedValue(purchaseOrderDetail()),
+      createChallan,
+    });
+    const onSaved = vi.fn();
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={onSaved}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    // Only OPEN orders are asked for: issued, and still owed material.
+    expect(listWorkPurchaseOrders).toHaveBeenCalledWith(ORG_ID, WORK_ID, 'open');
+
+    fillConsignee();
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '2' },
+    });
+    const select = await screen.findByLabelText<HTMLSelectElement>(
+      'Purchase order line for A/1',
+    );
+    // The option names the order and what it is still owed.
+    expect(select.textContent).toContain('DCW-1-PO-01 · 4.000 pending');
+    fireEvent.change(select, { target: { value: PO_LINE_ID } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(CHALLAN_ID);
+    });
+    const [, , body] = createChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveChallanRequest,
+    ];
+    expect(body.items).toEqual([
+      { workItemId: ITEM_A, quantity: '2', purchaseOrderLineId: PO_LINE_ID },
+    ]);
+  });
+
+  it('changes nothing visually when the Work has no open purchase orders', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('2.000');
+    expect(screen.queryByText('Against PO')).toBeNull();
+    expect(screen.queryByLabelText('Purchase order line for A/1')).toBeNull();
   });
 });

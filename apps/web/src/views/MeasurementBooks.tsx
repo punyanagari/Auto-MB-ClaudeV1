@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
   Challan,
+  Contact,
   Installation,
   MbSourceRef,
   MbSourceType,
   MeasurementBook,
   MeasurementBookDetailResponse,
+  MeasurementBookKind,
   PacCertificate,
 } from '@auto-mb/contracts';
 import {
@@ -18,7 +20,7 @@ import { formatInr } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
-import { Field, Actions, FormError } from '../ui/form.js';
+import { Field, Actions, FormError, Hint } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface MeasurementBooksProps {
@@ -67,6 +69,12 @@ interface SourceCandidate {
   readonly label: string;
 }
 
+const KIND_LABELS: Record<MeasurementBookKind, string> = {
+  on_account: 'on-account',
+  record: 'record',
+  final: 'final',
+};
+
 /**
  * The stage-wise Measurement Book workspace (Milestone 8; ADR-0006,
  * spec §5.9): draft an MB against the Work's open sources (issued
@@ -92,9 +100,18 @@ export function MeasurementBooks({
   const [claimedElsewhere, setClaimedElsewhere] = useState<ReadonlyMap<string, string>>(
     new Map(),
   );
+  /** The Work's consignees: the pick list for a record MB's author, and
+   * the names the record-draft rows carry. */
+  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  /** Controlled so the consignee field can appear the moment 'record' is
+   * chosen, before anything is submitted. */
+  const [createKind, setCreateKind] = useState<MeasurementBookKind>('on_account');
+  /** Record draft ids checked for the next merge. */
+  const [mergeSelection, setMergeSelection] = useState<ReadonlySet<string>>(new Set());
   const [existingDraftId, setExistingDraftId] = useState<string | null>(null);
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingUnmerge, setConfirmingUnmerge] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -119,6 +136,16 @@ export function MeasurementBooks({
             ? cause.message
             : 'The Measurement Books could not be loaded.',
         );
+      });
+    // A convenience read: without it record MBs lose their names and the
+    // record kind is not offered, but the books themselves still load.
+    api
+      .listWorkConsignees(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setConsignees(loaded);
+      })
+      .catch(() => {
+        // The record option simply is not offered.
       });
     return () => {
       cancelled = true;
@@ -196,6 +223,7 @@ export function MeasurementBooks({
       setDetail(loaded);
       setConfirmingFinalize(false);
       setConfirmingDelete(false);
+      setConfirmingUnmerge(false);
       setConfirmingCancel(false);
       setCancelNote('');
       setSelection(
@@ -238,12 +266,32 @@ export function MeasurementBooks({
   const nextSequence =
     books.reduce((highest, book) => Math.max(highest, book.sequenceNumber ?? 0), 0) + 1;
   const nextNumber = String(nextSequence).padStart(2, '0');
-  const hasDraft = books.some((book) => book.status === 'draft');
   const liveFinal = books.some((book) => book.isFinal && book.status !== 'cancelled');
   const book = detail?.book ?? null;
   /** A finalized MB always carries its number; the fallback exists only
    * because the shared contract type keeps it nullable for drafts. */
   const mbNumberLabel = book?.mbNumber ?? 'this Measurement Book';
+  const consigneeNameById = new Map(
+    consignees.map((consignee) => [consignee.id, consignee.designation]),
+  );
+  const consigneeLabel = (contactId: string | null): string =>
+    contactId === null ? 'consignee' : (consigneeNameById.get(contactId) ?? contactId);
+  /** How a merged record names its absorber: by number once finalized,
+   * as "draft" while it is still one. */
+  const absorberLabel = (absorberId: string): string =>
+    books.find((candidate) => candidate.id === absorberId)?.mbNumber ?? 'draft';
+  const recordDrafts = books.filter(
+    (candidate) => candidate.kind === 'record' && candidate.status === 'draft',
+  );
+  /** The record MBs the OPEN draft absorbed: their existence is what makes
+   * it an absorbing draft — un-merge is its way apart, delete is refused. */
+  const absorbedRecords =
+    book === null
+      ? []
+      : books.filter(
+          (candidate) =>
+            candidate.status === 'merged' && candidate.mergedIntoId === book.id,
+        );
 
   return (
     <>
@@ -266,6 +314,7 @@ export function MeasurementBooks({
           <thead>
             <tr>
               <th scope="col">Number</th>
+              <th scope="col">Kind</th>
               <th scope="col">Date</th>
               <th scope="col">Status</th>
               <th scope="col" className={numericCell}>
@@ -274,42 +323,73 @@ export function MeasurementBooks({
             </tr>
           </thead>
           <tbody>
-            {books.map((row) => (
-              <tr key={row.id}>
-                <th scope="row">
-                  <Button
-                    variant="link"
-                    size="inline"
-                    className="font-medium"
-                    onClick={() => {
-                      tryAct(
-                        async () => {
-                          await openBook(row.id);
-                        },
-                        `Measurement Book ${row.mbNumber ?? 'draft'} opened below.`,
-                      );
-                    }}
-                  >
-                    {row.mbNumber ?? 'Draft'}
-                  </Button>{' '}
-                  {row.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
-                </th>
-                <td>{row.mbDate}</td>
-                <td>
-                  <StatusChip status={row.status} />
-                </td>
-                <td className={numericCell}>
-                  {row.totalAmount !== null ? formatInr(row.totalAmount) : '—'}
-                </td>
-              </tr>
-            ))}
+            {books.map((row) => {
+              const mergedInto = row.mergedIntoId;
+              return (
+                <tr key={row.id}>
+                  <th scope="row">
+                    <Button
+                      variant="link"
+                      size="inline"
+                      className="font-medium"
+                      onClick={() => {
+                        tryAct(
+                          async () => {
+                            await openBook(row.id);
+                          },
+                          `Measurement Book ${row.mbNumber ?? 'draft'} opened below.`,
+                        );
+                      }}
+                    >
+                      {row.mbNumber ?? 'Draft'}
+                    </Button>{' '}
+                    {row.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
+                  </th>
+                  <td>
+                    {KIND_LABELS[row.kind]}
+                    {row.kind === 'record' && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {consigneeLabel(row.consigneeContactId)}
+                      </span>
+                    )}
+                  </td>
+                  <td>{row.mbDate}</td>
+                  <td>
+                    {row.status === 'merged' && mergedInto !== null ? (
+                      /* The chip is the row's one live affordance: a merged
+                         record's story continues on the draft that absorbed
+                         it, so its status links there. */
+                      <Button
+                        variant="link"
+                        size="inline"
+                        onClick={() => {
+                          tryAct(async () => {
+                            await openBook(mergedInto);
+                          }, 'The absorbing Measurement Book is opened below.');
+                        }}
+                      >
+                        <StatusChip status="merged">
+                          merged into {absorberLabel(mergedInto)}
+                        </StatusChip>
+                      </Button>
+                    ) : (
+                      <StatusChip status={row.status} />
+                    )}
+                  </td>
+                  <td className={numericCell}>
+                    {row.totalAmount !== null ? formatInr(row.totalAmount) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </DataTable>
       ) : (
         <p className="text-muted-foreground">No Measurement Books raised yet.</p>
       )}
 
-      {canModify && !hasDraft && !liveFinal && (
+      {canModify && !liveFinal && (
         <Disclosure label="Create draft" startOpen={books.length === 0}>
           <form
             onSubmit={(event) => {
@@ -317,18 +397,24 @@ export function MeasurementBooks({
               const form = event.currentTarget;
               const data = new FormData(form);
               const mbDate = formValue(data, 'mb-draft-date');
-              const isFinal = data.get('mb-draft-final') === 'on';
+              const consigneeContactId = formValue(data, 'mb-draft-consignee');
+              const kind = createKind;
               setExistingDraftId(null);
               tryAct(async () => {
                 try {
                   const created = await api.createWorkMeasurementBook(
                     organisationId,
                     workId,
-                    { mbDate, ...(isFinal ? { isFinal } : {}) },
+                    {
+                      mbDate,
+                      kind,
+                      ...(kind === 'record' ? { consigneeContactId } : {}),
+                    },
                   );
                   await refreshList();
                   await openBook(created.book.id);
                   form.reset();
+                  setCreateKind('on_account');
                 } catch (cause) {
                   const existing = existingRecordIdOf(cause);
                   if (existing !== null) setExistingDraftId(existing);
@@ -342,15 +428,72 @@ export function MeasurementBooks({
               <input id="mb-draft-date" name="mb-draft-date" type="date" required />
             </Field>
             <Field>
-              <label>
-                <input type="checkbox" name="mb-draft-final" /> Final Measurement Book
-              </label>
-              <p className="text-muted-foreground">
-                The final MB bills the final-bill stage and must sweep every remaining
-                open source of the Work; once it is finalized, no further Measurement
-                Books can be raised.
-              </p>
+              <label htmlFor="mb-draft-kind">Kind</label>
+              <select
+                id="mb-draft-kind"
+                name="mb-draft-kind"
+                value={createKind}
+                onChange={(event) => {
+                  setCreateKind(event.target.value as MeasurementBookKind);
+                }}
+              >
+                <option value="on_account">
+                  On-account — the billable Measurement Book
+                </option>
+                {/* A record MB is a consignee's sheet, so the kind is only
+                    offered once the Work has consignees to name. */}
+                {consignees.length > 0 && (
+                  <option value="record">
+                    Record — one consignee&apos;s parallel measurement sheet
+                  </option>
+                )}
+                <option value="final">
+                  Final — the last Measurement Book of the Work
+                </option>
+              </select>
+              {createKind === 'on_account' && (
+                <Hint>
+                  Finalizes into the numbered snapshot that bills and tax invoices are
+                  prepared from.
+                </Hint>
+              )}
+              {createKind === 'record' && (
+                <Hint>
+                  Several consignees measure in parallel, one record draft each; a
+                  record MB never takes a number — it ends merged into an on-account
+                  draft, or deleted.
+                </Hint>
+              )}
+              {createKind === 'final' && (
+                <Hint>
+                  The final MB bills the final-bill stage and must sweep every remaining
+                  open source of the Work; once it is finalized, no further Measurement
+                  Books can be raised.
+                </Hint>
+              )}
             </Field>
+            {createKind === 'record' && (
+              <Field>
+                <label htmlFor="mb-draft-consignee">
+                  Consignee filling this record MB
+                </label>
+                <select
+                  id="mb-draft-consignee"
+                  name="mb-draft-consignee"
+                  required
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Pick a consignee of this Work
+                  </option>
+                  {consignees.map((consignee) => (
+                    <option key={consignee.id} value={consignee.id}>
+                      {consignee.designation}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Actions>
               <Button type="submit" disabled={pending}>
                 Create draft
@@ -377,15 +520,112 @@ export function MeasurementBooks({
         </Actions>
       )}
 
+      {recordDrafts.length > 0 && (
+        <div className="my-3">
+          <h3>Record drafts by consignee</h3>
+          <p className="text-muted-foreground">
+            Parallel measurement sheets, one open draft per consignee. Merging absorbs
+            the checked drafts into one new on-account draft that claims the union of
+            their sources; each record MB is then marked merged, pointing at it.
+          </p>
+          {canModify ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const data = new FormData(form);
+                const mbDate = formValue(data, 'mb-merge-date');
+                const recordMbIds = recordDrafts
+                  .filter((draft) => mergeSelection.has(draft.id))
+                  .map((draft) => draft.id);
+                tryAct(async () => {
+                  const created = await api.mergeWorkMeasurementBooks(
+                    organisationId,
+                    workId,
+                    { recordMbIds, mbDate },
+                  );
+                  setMergeSelection(new Set());
+                  await refreshList();
+                  await openBook(created.book.id);
+                  form.reset();
+                }, 'Record drafts merged into a new on-account draft — its combined sources and preview are below.');
+              }}
+            >
+              <fieldset>
+                <legend>Record drafts to merge</legend>
+                {recordDrafts.map((draft) => (
+                  <Field key={draft.id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={mergeSelection.has(draft.id)}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setMergeSelection((previous) => {
+                            const next = new Set(previous);
+                            if (checked) next.add(draft.id);
+                            else next.delete(draft.id);
+                            return next;
+                          });
+                        }}
+                      />{' '}
+                      {consigneeLabel(draft.consigneeContactId)} · {draft.mbDate}
+                    </label>
+                  </Field>
+                ))}
+              </fieldset>
+              <Field>
+                <label htmlFor="mb-merge-date">Merged MB date</label>
+                <input id="mb-merge-date" name="mb-merge-date" type="date" required />
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending || mergeSelection.size === 0}>
+                  Merge into on-account draft
+                </Button>
+              </Actions>
+            </form>
+          ) : (
+            <ul>
+              {recordDrafts.map((draft) => (
+                <li key={draft.id}>
+                  {consigneeLabel(draft.consigneeContactId)} · {draft.mbDate}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {detail !== null && book !== null && (
         <div className="my-3">
           <h3>
             Measurement Book {book.mbNumber ?? 'draft'} · {book.mbDate}{' '}
             <StatusChip status={book.status} />{' '}
+            {book.kind === 'record' && (
+              <StatusChip status="record">
+                record · {consigneeLabel(book.consigneeContactId)}
+              </StatusChip>
+            )}{' '}
             {book.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
           </h3>
           {book.status === 'cancelled' && book.cancellationNote !== null && (
             <p className="text-muted-foreground">Cancelled: {book.cancellationNote}</p>
+          )}
+          {book.status === 'merged' && book.mergedIntoId !== null && (
+            <p className="text-muted-foreground">
+              Merged into Measurement Book {absorberLabel(book.mergedIntoId)} — the
+              sources this sheet gathered are claimed there now.
+            </p>
+          )}
+          {absorbedRecords.length > 0 && (
+            <p className="text-muted-foreground">
+              This draft absorbed {String(absorbedRecords.length)} record Measurement
+              Book{absorbedRecords.length === 1 ? '' : 's'} (
+              {absorbedRecords
+                .map((record) => consigneeLabel(record.consigneeContactId))
+                .join(', ')}
+              ); un-merging is the only way to take it apart.
+            </p>
           )}
 
           {/* Deliberately not behind a Disclosure. This is the draft's
@@ -629,29 +869,57 @@ export function MeasurementBooks({
                 Preview PDF (draft)
               </Button>
             )}
-            {book.status === 'draft' && canIssue && !confirmingFinalize && (
-              <Button
-                disabled={pending}
-                onClick={() => {
-                  setConfirmingDelete(false);
-                  setConfirmingFinalize(true);
-                }}
-              >
-                Finalize…
-              </Button>
-            )}
-            {book.status === 'draft' && canModify && !confirmingDelete && (
-              <Button
-                variant="outline"
-                disabled={pending}
-                onClick={() => {
-                  setConfirmingFinalize(false);
-                  setConfirmingDelete(true);
-                }}
-              >
-                Delete draft…
-              </Button>
-            )}
+            {/* A record MB never finalizes — it merges or is deleted — so
+                the offer would only ever be a refusal. */}
+            {book.status === 'draft' &&
+              canIssue &&
+              book.kind !== 'record' &&
+              !confirmingFinalize && (
+                <Button
+                  disabled={pending}
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    setConfirmingUnmerge(false);
+                    setConfirmingFinalize(true);
+                  }}
+                >
+                  Finalize…
+                </Button>
+              )}
+            {/* An absorbing draft cannot be deleted (the server refuses with
+                MB_HAS_MERGED_RECORDS); un-merge is its way apart. */}
+            {book.status === 'draft' &&
+              canModify &&
+              absorbedRecords.length === 0 &&
+              !confirmingDelete && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setConfirmingFinalize(false);
+                    setConfirmingUnmerge(false);
+                    setConfirmingDelete(true);
+                  }}
+                >
+                  Delete draft…
+                </Button>
+              )}
+            {book.status === 'draft' &&
+              canModify &&
+              absorbedRecords.length > 0 &&
+              !confirmingUnmerge && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setConfirmingFinalize(false);
+                    setConfirmingDelete(false);
+                    setConfirmingUnmerge(true);
+                  }}
+                >
+                  Unmerge record drafts…
+                </Button>
+              )}
             {book.status === 'finalized' && canIssue && book.billId === null && (
               <Button
                 disabled={pending}
@@ -698,44 +966,47 @@ export function MeasurementBooks({
             )}
           </Actions>
 
-          {book.status === 'draft' && canIssue && confirmingFinalize && (
-            <div className="my-3">
-              <h4>Confirm finalize</h4>
-              <p>
-                Finalizing freezes this Measurement Book as an immutable numbered
-                snapshot — next number {nextNumber} — and claims its sources for good.
-                Continue?
-              </p>
-              <Actions>
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    tryAct(async () => {
-                      const finalized = await api.finalizeMeasurementBook(
-                        organisationId,
-                        book.id,
-                      );
-                      setDetail(finalized);
+          {book.status === 'draft' &&
+            canIssue &&
+            book.kind !== 'record' &&
+            confirmingFinalize && (
+              <div className="my-3">
+                <h4>Confirm finalize</h4>
+                <p>
+                  Finalizing freezes this Measurement Book as an immutable numbered
+                  snapshot — next number {nextNumber} — and claims its sources for good.
+                  Continue?
+                </p>
+                <Actions>
+                  <Button
+                    disabled={pending}
+                    onClick={() => {
+                      tryAct(async () => {
+                        const finalized = await api.finalizeMeasurementBook(
+                          organisationId,
+                          book.id,
+                        );
+                        setDetail(finalized);
+                        setConfirmingFinalize(false);
+                        setCandidates(null);
+                        await refreshList();
+                      }, 'Measurement Book finalized.');
+                    }}
+                  >
+                    Finalize now
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => {
                       setConfirmingFinalize(false);
-                      setCandidates(null);
-                      await refreshList();
-                    }, 'Measurement Book finalized.');
-                  }}
-                >
-                  Finalize now
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingFinalize(false);
-                  }}
-                >
-                  Keep drafting
-                </Button>
-              </Actions>
-            </div>
-          )}
+                    }}
+                  >
+                    Keep drafting
+                  </Button>
+                </Actions>
+              </div>
+            )}
 
           {/* Deleting is the one unrecoverable draft action, so it gets the
               same two-step treatment as the recoverable finalize above. */}
@@ -769,6 +1040,48 @@ export function MeasurementBooks({
                   }}
                 >
                   Keep drafting
+                </Button>
+              </Actions>
+            </div>
+          )}
+
+          {/* Un-merge undoes a merge exactly: it restores what the merge
+              took, releases what was added since, and the emptied draft
+              goes. Irreversible in the same way delete is, so it gets the
+              same two-step treatment. */}
+          {book.status === 'draft' && canModify && confirmingUnmerge && (
+            <div className="my-3">
+              <h4>Confirm unmerge</h4>
+              <p>
+                Un-merging takes this draft apart: each of the{' '}
+                {String(absorbedRecords.length)} absorbed record Measurement Book
+                {absorbedRecords.length === 1 ? '' : 's'} returns to draft holding
+                exactly the sources the merge took from it, sources selected on this
+                draft after the merge are released, and this emptied draft is deleted.
+                Continue?
+              </p>
+              <Actions>
+                <Button
+                  disabled={pending}
+                  onClick={() => {
+                    tryAct(async () => {
+                      await api.unmergeMeasurementBook(organisationId, book.id);
+                      setDetail(null);
+                      setConfirmingUnmerge(false);
+                      await refreshList();
+                    }, 'Unmerged: the record drafts are restored and the absorbing draft is deleted.');
+                  }}
+                >
+                  Unmerge now
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setConfirmingUnmerge(false);
+                  }}
+                >
+                  Keep the merged draft
                 </Button>
               </Actions>
             </div>

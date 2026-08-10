@@ -84,11 +84,54 @@ import type {
   MeasurementBookDetailResponse,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
+  MergeMeasurementBooksRequest,
+  PurchaseOrder,
+  PurchaseOrderStatus,
+  PurchaseOrderDetailResponse,
+  CreatePurchaseOrderRequest,
+  SavePurchaseOrderLinesRequest,
+  CancelPurchaseOrderRequest,
+  BudgetaryQuotation,
+  BudgetaryQuotationDetailResponse,
+  CreateBudgetaryQuotationRequest,
+  SaveBudgetaryQuotationLinesRequest,
+  SetBudgetaryQuotationOutcomeRequest,
+  TaxInvoice,
+  TaxInvoiceDetailResponse,
+  CreateTaxInvoiceRequest,
+  UpdateTaxInvoiceRequest,
+  CancelTaxInvoiceRequest,
+  RecordIrpResponseRequest,
+  EwayBill,
+  EwayBillDetailResponse,
+  SaveEwayBillRequest,
+  RecordEwayNicResponseRequest,
+  CancelEwayBillRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
   readonly user: { readonly id: string; readonly email: string };
   readonly memberships: readonly Membership[];
+}
+
+/** PATCH /api/work-items/:id/tax-facts body. The route owns these shapes
+ * (they are not in @auto-mb/contracts). PATCH semantics: an omitted
+ * field keeps its value, an explicit null clears it. `isService` takes
+ * no null — its column is NOT NULL DEFAULT false. */
+export interface SetWorkItemTaxFactsRequest {
+  readonly hsnCode?: string | null;
+  /** Total GST rate as a decimal string (e.g. '18', '0.25'). */
+  readonly gstRate?: string | null;
+  readonly isService?: boolean;
+}
+
+/** The item's tax facts read back after the PATCH. */
+export interface WorkItemTaxFactsResponse {
+  readonly id: string;
+  readonly itemNumber: string;
+  readonly hsnCode: string | null;
+  readonly gstRate: string | null;
+  readonly isService: boolean;
 }
 
 /** Error carrying the server's ApiError envelope for user-facing display.
@@ -645,6 +688,19 @@ export interface ApiClient {
     workId: string,
     body: CreateMeasurementBookRequest,
   ) => Promise<MeasurementBookDetailResponse>;
+  /** 0034 record-MB workflow: merge absorbs record drafts into ONE new
+   * on-account draft claiming the union of their sources; unmerge is
+   * the only way to take that draft apart again (answers 204, restoring
+   * each record MB to draft with the sources the merge took). */
+  readonly mergeWorkMeasurementBooks: (
+    organisationId: string,
+    workId: string,
+    body: MergeMeasurementBooksRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  readonly unmergeMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<void>;
   readonly getMeasurementBook: (
     organisationId: string,
     measurementBookId: string,
@@ -702,6 +758,198 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<WorkCompletionReadiness>;
+  /** Procurement (migration 0033). A purchase order buys IN against a
+   * Work: draft -> issued (numbered, total frozen) -> closed once fully
+   * received, or cancelled with a note. `status: 'open'` filters to
+   * issued orders with at least one line still owed material; a literal
+   * status filters literally; no filter lists everything. Line money is
+   * computed server-side — the client never sends amounts. */
+  readonly listWorkPurchaseOrders: (
+    organisationId: string,
+    workId: string,
+    status?: 'open' | PurchaseOrderStatus,
+  ) => Promise<readonly PurchaseOrder[]>;
+  readonly createWorkPurchaseOrder: (
+    organisationId: string,
+    workId: string,
+    body: CreatePurchaseOrderRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  readonly getPurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  readonly updatePurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+    body: CreatePurchaseOrderRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  /** REPLACES the draft's lines wholesale; `lineNumber` follows array
+   * order. */
+  readonly savePurchaseOrderLines: (
+    organisationId: string,
+    purchaseOrderId: string,
+    body: SavePurchaseOrderLinesRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  readonly issuePurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  readonly cancelPurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+    body: CancelPurchaseOrderRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  /** Refuses with PO_NOT_FULLY_RECEIVED (details.outstandingLines) while
+   * any line is still owed material. */
+  readonly closePurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+  ) => Promise<PurchaseOrderDetailResponse>;
+  readonly deletePurchaseOrder: (
+    organisationId: string,
+    purchaseOrderId: string,
+  ) => Promise<void>;
+  /** A budgetary quotation is a priced offer OUTWARD and carries no
+   * Work: draft -> issued (numbered) -> expired/converted/withdrawn via
+   * the one outcome transition. */
+  readonly listBudgetaryQuotations: (
+    organisationId: string,
+  ) => Promise<readonly BudgetaryQuotation[]>;
+  readonly createBudgetaryQuotation: (
+    organisationId: string,
+    body: CreateBudgetaryQuotationRequest,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  readonly getBudgetaryQuotation: (
+    organisationId: string,
+    quotationId: string,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  readonly updateBudgetaryQuotation: (
+    organisationId: string,
+    quotationId: string,
+    body: CreateBudgetaryQuotationRequest,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  /** REPLACES the draft's lines wholesale; `lineNumber` follows array
+   * order. */
+  readonly saveBudgetaryQuotationLines: (
+    organisationId: string,
+    quotationId: string,
+    body: SaveBudgetaryQuotationLinesRequest,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  readonly issueBudgetaryQuotation: (
+    organisationId: string,
+    quotationId: string,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  readonly setBudgetaryQuotationOutcome: (
+    organisationId: string,
+    quotationId: string,
+    body: SetBudgetaryQuotationOutcomeRequest,
+  ) => Promise<BudgetaryQuotationDetailResponse>;
+  readonly deleteBudgetaryQuotation: (
+    organisationId: string,
+    quotationId: string,
+  ) => Promise<void>;
+  /** GST tax documents (migration 0035). The tax invoice bills ONE
+   * finalized on-account/final Measurement Book cumulatively: draft ->
+   * submitted (numbered per financial year, buyer snapshotted, amounts
+   * frozen from the MB total — submitting closes the MB) -> cancelled
+   * (which releases the MB for a corrected invoice). */
+  readonly listWorkTaxInvoices: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<readonly TaxInvoice[]>;
+  readonly createWorkTaxInvoice: (
+    organisationId: string,
+    workId: string,
+    body: CreateTaxInvoiceRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly getTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly updateTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: UpdateTaxInvoiceRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly submitTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly cancelTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: CancelTaxInvoiceRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly deleteTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<void>;
+  /** The GSP-ready e-invoice JSON for a submitted invoice. The payload
+   * shape is the IRP's, not this product's contract, so it is `unknown`:
+   * views hand it on (download/copy), never read into it. */
+  readonly taxInvoiceIrpPayload: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<unknown>;
+  /** Records what the GSP brought back from the IRP (IRN, ack, signed
+   * QR) — once, on a submitted invoice, verbatim. */
+  readonly recordTaxInvoiceIrpResponse: (
+    organisationId: string,
+    invoiceId: string,
+    body: RecordIrpResponseRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  /** The e-way bill moves a submitted invoice: drafted here, carried to
+   * NIC by the GSP, and the 12-digit EWB number and validity window come
+   * BACK from NIC. Draft -> generated -> cancelled. */
+  readonly listInvoiceEwayBills: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<readonly EwayBill[]>;
+  readonly createInvoiceEwayBill: (
+    organisationId: string,
+    invoiceId: string,
+    body: SaveEwayBillRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly getEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly updateEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+    body: SaveEwayBillRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  /** The NIC-ready EWB JSON; `unknown` for the same reason as the IRP
+   * payload — NIC's shape, handed on rather than read into. */
+  readonly ewayBillNicPayload: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<unknown>;
+  /** Records what NIC handed back through the GSP: the EWB number and
+   * its validity window. */
+  readonly recordEwayBillNicResponse: (
+    organisationId: string,
+    ewayBillId: string,
+    body: RecordEwayNicResponseRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly cancelEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+    body: CancelEwayBillRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly deleteEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<void>;
+  /** Per-item GST facts (HSN/SAC code, total GST rate, service flag) —
+   * PATCH semantics: an omitted field keeps its value, an explicit null
+   * clears it. Correctable at any time; issued documents snapshot what
+   * they charged, so no history is rewritten. */
+  readonly setWorkItemTaxFacts: (
+    organisationId: string,
+    workItemId: string,
+    body: SetWorkItemTaxFactsRequest,
+  ) => Promise<WorkItemTaxFactsResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1634,6 +1882,18 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'POST', body, organisationId },
       );
     },
+    async mergeWorkMeasurementBooks(organisationId, workId, body) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/works/${workId}/measurement-books/merge`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async unmergeMeasurementBook(organisationId, measurementBookId) {
+      await request(`/api/measurement-books/${measurementBookId}/unmerge`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
     async getMeasurementBook(organisationId, measurementBookId) {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}`,
@@ -1717,6 +1977,222 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async listWorkPurchaseOrders(organisationId, workId, status) {
+      const query = status !== undefined ? `?status=${status}` : '';
+      const payload = await request<{ purchaseOrders: PurchaseOrder[] }>(
+        `/api/works/${workId}/purchase-orders${query}`,
+        { organisationId },
+      );
+      return payload.purchaseOrders;
+    },
+    async createWorkPurchaseOrder(organisationId, workId, body) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/works/${workId}/purchase-orders`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async getPurchaseOrder(organisationId, purchaseOrderId) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}`,
+        { organisationId },
+      );
+    },
+    async updatePurchaseOrder(organisationId, purchaseOrderId, body) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async savePurchaseOrderLines(organisationId, purchaseOrderId, body) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}/lines`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async issuePurchaseOrder(organisationId, purchaseOrderId) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}/issue`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelPurchaseOrder(organisationId, purchaseOrderId, body) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async closePurchaseOrder(organisationId, purchaseOrderId) {
+      return request<PurchaseOrderDetailResponse>(
+        `/api/purchase-orders/${purchaseOrderId}/close`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async deletePurchaseOrder(organisationId, purchaseOrderId) {
+      await request(`/api/purchase-orders/${purchaseOrderId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async listBudgetaryQuotations(organisationId) {
+      const payload = await request<{ budgetaryQuotations: BudgetaryQuotation[] }>(
+        '/api/budgetary-quotations',
+        { organisationId },
+      );
+      return payload.budgetaryQuotations;
+    },
+    async createBudgetaryQuotation(organisationId, body) {
+      return request<BudgetaryQuotationDetailResponse>('/api/budgetary-quotations', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async getBudgetaryQuotation(organisationId, quotationId) {
+      return request<BudgetaryQuotationDetailResponse>(
+        `/api/budgetary-quotations/${quotationId}`,
+        { organisationId },
+      );
+    },
+    async updateBudgetaryQuotation(organisationId, quotationId, body) {
+      return request<BudgetaryQuotationDetailResponse>(
+        `/api/budgetary-quotations/${quotationId}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async saveBudgetaryQuotationLines(organisationId, quotationId, body) {
+      return request<BudgetaryQuotationDetailResponse>(
+        `/api/budgetary-quotations/${quotationId}/lines`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async issueBudgetaryQuotation(organisationId, quotationId) {
+      return request<BudgetaryQuotationDetailResponse>(
+        `/api/budgetary-quotations/${quotationId}/issue`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async setBudgetaryQuotationOutcome(organisationId, quotationId, body) {
+      return request<BudgetaryQuotationDetailResponse>(
+        `/api/budgetary-quotations/${quotationId}/outcome`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async deleteBudgetaryQuotation(organisationId, quotationId) {
+      await request(`/api/budgetary-quotations/${quotationId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async listWorkTaxInvoices(organisationId, workId) {
+      const payload = await request<{ invoices: TaxInvoice[] }>(
+        `/api/works/${workId}/tax-invoices`,
+        { organisationId },
+      );
+      return payload.invoices;
+    },
+    async createWorkTaxInvoice(organisationId, workId, body) {
+      return request<TaxInvoiceDetailResponse>(`/api/works/${workId}/tax-invoices`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async getTaxInvoice(organisationId, invoiceId) {
+      return request<TaxInvoiceDetailResponse>(`/api/tax-invoices/${invoiceId}`, {
+        organisationId,
+      });
+    },
+    async updateTaxInvoice(organisationId, invoiceId, body) {
+      return request<TaxInvoiceDetailResponse>(`/api/tax-invoices/${invoiceId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async submitTaxInvoice(organisationId, invoiceId) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/submit`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelTaxInvoice(organisationId, invoiceId, body) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async deleteTaxInvoice(organisationId, invoiceId) {
+      await request(`/api/tax-invoices/${invoiceId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async taxInvoiceIrpPayload(organisationId, invoiceId) {
+      return request<unknown>(`/api/tax-invoices/${invoiceId}/irp-payload`, {
+        organisationId,
+      });
+    },
+    async recordTaxInvoiceIrpResponse(organisationId, invoiceId, body) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/irp-response`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async listInvoiceEwayBills(organisationId, invoiceId) {
+      const payload = await request<{ ewayBills: EwayBill[] }>(
+        `/api/tax-invoices/${invoiceId}/eway-bills`,
+        { organisationId },
+      );
+      return payload.ewayBills;
+    },
+    async createInvoiceEwayBill(organisationId, invoiceId, body) {
+      return request<EwayBillDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/eway-bills`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async getEwayBill(organisationId, ewayBillId) {
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}`, {
+        organisationId,
+      });
+    },
+    async updateEwayBill(organisationId, ewayBillId, body) {
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async ewayBillNicPayload(organisationId, ewayBillId) {
+      return request<unknown>(`/api/eway-bills/${ewayBillId}/nic-payload`, {
+        organisationId,
+      });
+    },
+    async recordEwayBillNicResponse(organisationId, ewayBillId, body) {
+      return request<EwayBillDetailResponse>(
+        `/api/eway-bills/${ewayBillId}/nic-response`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async cancelEwayBill(organisationId, ewayBillId, body) {
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async deleteEwayBill(organisationId, ewayBillId) {
+      await request(`/api/eway-bills/${ewayBillId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async setWorkItemTaxFacts(organisationId, workItemId, body) {
+      return request<WorkItemTaxFactsResponse>(
+        `/api/work-items/${workItemId}/tax-facts`,
+        { method: 'PATCH', body, organisationId },
+      );
     },
   };
 }
