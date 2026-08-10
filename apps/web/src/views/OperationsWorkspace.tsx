@@ -444,7 +444,7 @@ export function OperationsWorkspace({
                 }}
               >
                 <CheckCircle className="size-3.5 text-primary" aria-hidden="true" />
-                Review approvals
+                Open approval queue
               </button>
             </div>
           </div>

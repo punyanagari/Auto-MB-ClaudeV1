@@ -81,7 +81,7 @@
 
   --destructive: #d92d20;
   --destructive-foreground: #ffffff;
-  --success: #039855;
+  --success: #067647;
   --success-foreground: #ffffff;
   --warning: #f79009;
   --warning-foreground: #9a4b00;
@@ -97,7 +97,7 @@
    * visual theme. Active destinations use the same blue as primary actions. */
   --sidebar: #ffffff;
   --sidebar-foreground: #172033;
-  --sidebar-faint: #98a2b3;
+  --sidebar-faint: #475467;
   --sidebar-primary: #155eef;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #eef4ff;
