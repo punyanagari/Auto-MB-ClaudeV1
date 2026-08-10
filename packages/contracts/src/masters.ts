@@ -11,10 +11,10 @@ import { UuidSchema } from './primitives.js';
 
 // --- Contacts (unified master, legacy §9) -----------------------------------
 //
-// One master for consignees / vendors / clients with role flags. Only the
-// CONSIGNEE role is active in this wave: isVendor/isClient are surfaced
-// read-only (always false) and no request sets them — they wake up with
-// the procurement wave (PO/BQ, legacy §5.8). GSTIN is uppercased and
+// One master for consignees / vendors / clients with role flags. All
+// three roles are live: consignees receive railway deliveries, vendors
+// take purchase orders and clients buy under tax invoices (the
+// procurement wave, PO/BQ, legacy §5.8). GSTIN is uppercased and
 // format-validated server-side, accepting TDS-deductor GSTINs ending in
 // 'D' (railway units are deductors — spec §2/§5.7).
 
@@ -36,10 +36,14 @@ export const ContactSchema = Type.Object(
     gstin: Type.Union([GstinSchema, Type.Null()]),
     pincode: Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
     stateCode: Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
+    /** Railway division code as the railnet STD directory writes it.
+     * A number series may draw on it ({DIV} drops one trailing zero),
+     * which is why it is stored as the directory writes it. */
+    divisionCode: Type.Union([Type.String({ pattern: '^[0-9]{2,5}$' }), Type.Null()]),
     isConsignee: Type.Boolean(),
-    /** Dormant until the procurement wave — always false today. */
+    /** Purchase orders are placed on vendor contacts (legacy §5.8). */
     isVendor: Type.Boolean(),
-    /** Dormant until the procurement wave — always false today. */
+    /** Tax invoices name client contacts as the buyer (legacy §5.8). */
     isClient: Type.Boolean(),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
@@ -48,10 +52,19 @@ export const ContactSchema = Type.Object(
 );
 export type Contact = Static<typeof ContactSchema>;
 
-/** Create and full update share this shape; omitted optionals store NULL.
- * There are deliberately NO role fields: every contact created in this
- * wave is a consignee (the only active role); vendor/client selection
- * arrives with procurement. */
+/** Create and full update share this shape; omitted optionals store NULL
+ * — except the ROLE FLAGS, which are membership rather than profile text:
+ * an omitted flag leaves the stored value unchanged (false at creation).
+ *
+ * A create that names neither role makes a consignee, exactly as every
+ * create did before the procurement wave; a create carrying `isVendor`
+ * and/or `isClient` makes a vendor/client that is NOT a consignee (the
+ * roles feed disjoint pickers — railway document flows stay
+ * railway-only, §9). `isConsignee` itself is a create-time fact with no
+ * request field: it is true exactly when no other role was asked for,
+ * and an update never changes it. The R16 authority-designation refusal
+ * applies to consignee-role contacts ONLY — a vendor may carry any name
+ * its letterhead does. */
 export const SaveContactRequestSchema = Type.Object(
   {
     designation: Type.String({ minLength: 2, maxLength: 200 }),
@@ -63,6 +76,9 @@ export const SaveContactRequestSchema = Type.Object(
     gstin: Type.Optional(GstinSchema),
     pincode: Type.Optional(Type.String({ pattern: '^[0-9]{6}$' })),
     stateCode: Type.Optional(Type.String({ pattern: '^[0-9]{2}$' })),
+    divisionCode: Type.Optional(Type.String({ pattern: '^[0-9]{2,5}$' })),
+    isVendor: Type.Optional(Type.Boolean()),
+    isClient: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

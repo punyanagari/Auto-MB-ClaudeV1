@@ -69,6 +69,19 @@ const TENANT_TABLES = [
   'measurement_book_counters',
   'import_batches',
   'import_records',
+  // The procurement wave and the tax facts that ride with it (0033).
+  'purchase_orders',
+  'purchase_order_lines',
+  'purchase_order_counters',
+  'budgetary_quotations',
+  'budgetary_quotation_lines',
+  'budgetary_quotation_counters',
+  // The GST tax invoice and the e-way bill that moves it (0035).
+  'tax_invoices',
+  'tax_invoice_counters',
+  'eway_bills',
+  // Number formats the organisation defines for itself (0039).
+  'document_number_series',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -129,11 +142,30 @@ const DELETE_REVOKED_TABLES = [
   // Cutover provenance is an append-only ledger (0025).
   'import_batches',
   'import_records',
+  // Numbering state for the procurement documents (0033).
+  'purchase_order_counters',
+  'budgetary_quotation_counters',
+  // Invoice numbering is a GST rule-46 serial; the invoice itself
+  // cancels, never deletes, once submitted (0035).
+  'tax_invoice_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // Restoring a document's default number format DELETES the row that
+  // overrode it — configuration, cleared in place (0039).
+  'document_number_series',
+  // A draft invoice or e-way bill may be discarded; anything submitted or
+  // generated cancels instead (0035).
+  'tax_invoices',
+  'eway_bills',
+  // A draft order or quotation is not yet a document and may be discarded;
+  // once issued the status moves to cancelled or withdrawn instead (0033).
+  'purchase_orders',
+  'purchase_order_lines',
+  'budgetary_quotations',
+  'budgetary_quotation_lines',
   'organisation_memberships',
   'work_schedules',
   'delivery_challans',
@@ -596,6 +628,126 @@ async function seedTenantGraph(
       )
       values (${organisationId}, 'work', 'auto-mb-v1', ${`w-${workCode}`},
               ${work.id}, ${importBatch.id}, ${shaFill.repeat(64)})
+    `;
+
+    // Wave 6 procurement (0033): one issued purchase order with a line and
+    // its counter, and one issued budgetary quotation with a line and its
+    // counter. Issued rather than draft so the shape CHECKs are exercised
+    // and the one-draft-per-Work index cannot collide across the two
+    // organisations this seed runs for.
+    const [purchaseOrder] = await tx<{ id: string }[]>`
+      insert into purchase_orders (
+        organisation_id, work_id, vendor_contact_id, po_date,
+        created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id},
+              '2026-02-01', ${userId})
+      returning id
+    `;
+    if (!purchaseOrder) throw new Error('seed purchase order insert returned no row');
+    await tx`
+      insert into purchase_order_lines (
+        organisation_id, purchase_order_id, work_item_id, line_number,
+        description, unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${purchaseOrder.id}, ${workItem.id}, 1,
+              'Seeded purchase order line', 'Nos', '10.000', '100.000000',
+              '1000.00')
+    `;
+    // Lines first, then issue: the 0033 guard fixes an issued order's lines.
+    await tx`
+      update purchase_orders
+         set status = 'issued', po_number = ${`${workCode}-PO-01`},
+             sequence_number = 1,
+             vendor_snapshot = ${tx.json({ designation: 'Vendor' })},
+             total_amount = '1000.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${purchaseOrder.id}
+    `;
+    await tx`
+      insert into purchase_order_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+
+    const [quotation] = await tx<{ id: string }[]>`
+      insert into budgetary_quotations (
+        organisation_id, addressed_to, subject, bq_date, created_by_user_id
+      )
+      values (${organisationId}, 'Sr. DEE (G) CR', 'Budgetary quotation',
+              '2026-01-20', ${userId})
+      returning id
+    `;
+    if (!quotation) throw new Error('seed budgetary quotation insert returned no row');
+    await tx`
+      insert into budgetary_quotation_lines (
+        organisation_id, budgetary_quotation_id, line_number, description,
+        unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${quotation.id}, 1, 'Seeded quotation line',
+              'Nos', '5.000', '100.000000', '500.00')
+    `;
+    await tx`
+      update budgetary_quotations
+         set status = 'issued', bq_number = ${`BQ-${workCode}-01`},
+             sequence_number = 1, total_amount = '500.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${quotation.id}
+    `;
+    await tx`
+      insert into budgetary_quotation_counters (organisation_id, next_value)
+      values (${organisationId}, 2)
+    `;
+    await tx`
+      insert into document_number_series (organisation_id, document_type, template)
+      values (${organisationId}, 'tax_invoice', 'P{DIV}{FY2}{SEQ:3}')
+    `;
+
+    // Wave 6 tax documents (0035). The 0035 insert guards demand a
+    // finalized MB behind an invoice and a submitted invoice behind an
+    // e-way bill, so the seed writes exactly that chain.
+    const [finalizedMb] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, kind, status, mb_date, mb_number,
+        sequence_number, total_amount, remark_template_version,
+        finalized_at, finalized_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'on_account', 'finalized',
+              '2026-02-06', ${`${workCode}-MB-99`}, 99, '118.00', 'v1',
+              now(), ${userId}, ${userId})
+      returning id
+    `;
+    if (!finalizedMb) throw new Error('seed finalized MB insert returned no row');
+    const [taxInvoice] = await tx<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, work_id, measurement_book_id, status,
+        invoice_number, number_prefix, sequence_number, fy_label,
+        invoice_date, sac_code,
+        service_description, gst_rate, place_of_supply, buyer_snapshot,
+        taxable_value, cgst_amount, sgst_amount, igst_amount, round_off,
+        total_amount, issued_snapshot,
+        submitted_at, submitted_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${finalizedMb.id}, 'submitted',
+              ${`TI/2026-27/${workCode}`}, 'TI', 1, '2026-27', '2026-02-07',
+              '995461', 'Works contract services per MB', '18.00', '27',
+              ${tx.json({ name: 'Sr. DEE (G) CR', stateCode: '27' })},
+              '100.00', '9.00', '9.00', '0.00', '0.00', '118.00',
+              ${tx.json({ templateVersion: 'ti-v1' })}, now(), ${userId},
+              ${userId})
+      returning id
+    `;
+    if (!taxInvoice) throw new Error('seed tax invoice insert returned no row');
+    await tx`
+      insert into tax_invoice_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    await tx`
+      insert into eway_bills (
+        organisation_id, tax_invoice_id, distance_km, from_pincode,
+        to_pincode, created_by_user_id
+      )
+      values (${organisationId}, ${taxInvoice.id}, 120, '422010', '400001',
+              ${userId})
     `;
 
     return {

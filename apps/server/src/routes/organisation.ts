@@ -1,10 +1,19 @@
 import {
   ApiErrorSchema,
+  NUMBERED_DOCUMENT_TYPES,
+  NumberSeriesListResponseSchema,
+  NumberSeriesSchema,
+  NumberedDocumentTypeSchema,
   OrganisationProfileSchema,
+  SaveNumberSeriesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
+  type NumberSeries,
+  type NumberedDocumentType,
   type OrganisationProfile,
+  type SaveNumberSeriesRequest,
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -14,6 +23,12 @@ import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
+import {
+  ALLOWED_TOKENS,
+  DEFAULT_TEMPLATES,
+  NumberTemplateError,
+  assertValidTemplate,
+} from '../number-series.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
 
@@ -34,6 +49,29 @@ function detectImageType(bytes: Buffer): 'image/png' | 'image/jpeg' | null {
   if (bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return 'image/png';
   if (bytes.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)) return 'image/jpeg';
   return null;
+}
+
+/** One audit row. The profile routes below write their own inline (they
+ * carry before/after diffs); the number-series routes state a fact, so
+ * they share this. */
+async function audit(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  details: Record<string, unknown>,
+): Promise<void> {
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    values (
+      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
+      ${jsonb(tx, details)}
+    )
+  `;
 }
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
@@ -59,6 +97,12 @@ interface ProfileRow extends Record<string, unknown> {
   contact_email: string | null;
   logo_object_key: string | null;
   warranty_template_text: string | null;
+  state_code: string | null;
+  pincode: string | null;
+  trade_name: string | null;
+  msme_number: string | null;
+  invoice_number_prefix: string | null;
+  invoice_notes: string | null;
 }
 
 function toProfile(row: ProfileRow): OrganisationProfile {
@@ -71,6 +115,12 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     hasLogo: row.logo_object_key !== null,
+    stateCode: row.state_code,
+    pincode: row.pincode,
+    tradeName: row.trade_name,
+    msmeNumber: row.msme_number,
+    invoiceNumberPrefix: row.invoice_number_prefix,
+    invoiceNotes: row.invoice_notes,
     warrantyTemplateText: row.warranty_template_text,
   };
 }
@@ -78,11 +128,46 @@ function toProfile(row: ProfileRow): OrganisationProfile {
 async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
   const [row] = await tx<ProfileRow[]>`
     select id, name, slug, address, gstin, contact_phone,
-           contact_email, logo_object_key, warranty_template_text
+           contact_email, logo_object_key, warranty_template_text, state_code,
+           pincode, trade_name, msme_number, invoice_number_prefix,
+           invoice_notes
     from organisations
   `;
   if (!row) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
   return row;
+}
+
+/**
+ * The state code and the GSTIN must agree (migration 0033).
+ *
+ * A registered GSTIN begins with the two-digit state code of the
+ * registration, and the supplier's state is what decides CGST+SGST
+ * against IGST for a given place of supply. Storing a state code that
+ * contradicts the GSTIN would therefore split the tax the wrong way on
+ * every invoice raised afterwards — and the invoice carries both values,
+ * so the contradiction is visible to the officer reading it.
+ *
+ * The check runs against the values as they will STAND after this
+ * request, not against the ones it happens to name: editing the GSTIN
+ * alone can contradict a state code stored months ago, and that is the
+ * same defect arriving by the other door. It is a refusal rather than a
+ * silent derivation because the column is a fact in its own right — an
+ * unregistered organisation has no GSTIN to derive from and still has a
+ * place of business — so the operator says which of the two is wrong.
+ */
+function assertStateCodeMatchesGstin(
+  stateCode: string | null,
+  gstin: string | null,
+): void {
+  if (stateCode === null || gstin === null) return;
+  const registered = gstin.slice(0, 2);
+  if (stateCode !== registered) {
+    throw httpError(
+      400,
+      'STATE_CODE_GSTIN_MISMATCH',
+      `The GST state code ${stateCode} contradicts the GSTIN ${gstin}, which is registered in state ${registered}. The state code decides CGST+SGST against IGST on every invoice, so correct whichever of the two is wrong.`,
+    );
+  }
 }
 
 /**
@@ -164,11 +249,34 @@ export function registerOrganisationRoutes(
             body.contactPhone !== undefined ? body.contactPhone : current.contact_phone,
           contact_email:
             contactEmail !== undefined ? contactEmail : current.contact_email,
+          // Two digits by the contract schema and by the column's own
+          // CHECK; null clears it, which an organisation that entered the
+          // wrong state must be able to do.
+          state_code:
+            body.stateCode !== undefined ? body.stateCode : current.state_code,
+          // The tax invoice's masthead. The PIN is not decoration: the
+          // e-invoice payload needs the seller's PIN as a number in its
+          // own right, and an address line is not required to contain
+          // one — the sample invoice's does not.
+          pincode: body.pincode !== undefined ? body.pincode : current.pincode,
+          trade_name:
+            body.tradeName !== undefined ? body.tradeName : current.trade_name,
+          msme_number:
+            body.msmeNumber !== undefined ? body.msmeNumber : current.msme_number,
+          invoice_number_prefix:
+            body.invoiceNumberPrefix !== undefined
+              ? body.invoiceNumberPrefix
+              : current.invoice_number_prefix,
+          invoice_notes:
+            body.invoiceNotes !== undefined ? body.invoiceNotes : current.invoice_notes,
           warranty_template_text:
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText
               : current.warranty_template_text,
         };
+        // Against the values as they will stand, so neither field can be
+        // edited into contradicting the other.
+        assertStateCodeMatchesGstin(next.state_code, next.gstin);
         const [updated] = await tx<ProfileRow[]>`
           update organisations set
             name = ${next.name},
@@ -176,11 +284,19 @@ export function registerOrganisationRoutes(
             gstin = ${next.gstin},
             contact_phone = ${next.contact_phone},
             contact_email = ${next.contact_email},
+            state_code = ${next.state_code},
+            pincode = ${next.pincode},
+            trade_name = ${next.trade_name},
+            msme_number = ${next.msme_number},
+            invoice_number_prefix = ${next.invoice_number_prefix},
+            invoice_notes = ${next.invoice_notes},
             warranty_template_text = ${next.warranty_template_text},
             updated_at = now()
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
-                    contact_email, logo_object_key, warranty_template_text
+                    contact_email, logo_object_key, warranty_template_text,
+                    state_code, pincode, trade_name, msme_number,
+                    invoice_number_prefix, invoice_notes
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
         // Milestone 6: record each changed field's old and new value —
@@ -192,6 +308,12 @@ export function registerOrganisationRoutes(
             gstin: current.gstin,
             contactPhone: current.contact_phone,
             contactEmail: current.contact_email,
+            stateCode: current.state_code,
+            pincode: current.pincode,
+            tradeName: current.trade_name,
+            msmeNumber: current.msme_number,
+            invoiceNumberPrefix: current.invoice_number_prefix,
+            invoiceNotes: current.invoice_notes,
           },
           {
             name: next.name,
@@ -199,6 +321,12 @@ export function registerOrganisationRoutes(
             gstin: next.gstin,
             contactPhone: next.contact_phone,
             contactEmail: next.contact_email,
+            stateCode: next.state_code,
+            pincode: next.pincode,
+            tradeName: next.trade_name,
+            msmeNumber: next.msme_number,
+            invoiceNumberPrefix: next.invoice_number_prefix,
+            invoiceNotes: next.invoice_notes,
           },
         );
         await tx`
@@ -263,7 +391,8 @@ export function registerOrganisationRoutes(
               updated_at = now()
             where id = ${organisationId}
             returning id, name, slug, address, gstin, contact_phone,
-                      contact_email, logo_object_key, warranty_template_text
+                      contact_email, logo_object_key, warranty_template_text,
+                      state_code
           `;
           if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
           await tx`
@@ -347,6 +476,149 @@ export function registerOrganisationRoutes(
         `;
       });
       return reply.status(204).send();
+    },
+  );
+  // --- Number series (migration 0039) --------------------------------------
+  //
+  // Number formats belong to the organisation, not to us. Four documents
+  // are configurable; a type with no row here uses the product default,
+  // which is exactly the format it had before the table existed. Reads
+  // are member-wide (an operator should be able to see what their
+  // numbers will look like); writes are owner-only, like the rest of the
+  // profile.
+
+  app.get(
+    '/api/organisation/number-series',
+    {
+      schema: {
+        response: { 200: NumberSeriesListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const rows = await tx<
+          { document_type: NumberedDocumentType; template: string }[]
+        >`
+          select document_type, template from document_number_series
+        `;
+        const configured = new Map(
+          rows.map((row) => [row.document_type, row.template]),
+        );
+        const series: NumberSeries[] = NUMBERED_DOCUMENT_TYPES.map((documentType) => ({
+          documentType,
+          template: configured.get(documentType) ?? DEFAULT_TEMPLATES[documentType],
+          isDefault: !configured.has(documentType),
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        }));
+        return { series };
+      });
+    },
+  );
+
+  app.put<{
+    Params: { documentType: NumberedDocumentType };
+    Body: SaveNumberSeriesRequest;
+  }>(
+    '/api/organisation/number-series/:documentType',
+    {
+      schema: {
+        params: Type.Object(
+          { documentType: NumberedDocumentTypeSchema },
+          { additionalProperties: false },
+        ),
+        body: SaveNumberSeriesRequestSchema,
+        response: { 200: NumberSeriesSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { documentType } = request.params;
+      const template = request.body.template.trim();
+      // Proved BEFORE it is stored: a template that cannot be filled in
+      // must fail on this screen, not at the moment an operator has a
+      // finished document and nowhere to put its number.
+      try {
+        assertValidTemplate(template, ALLOWED_TOKENS[documentType]);
+      } catch (cause) {
+        if (cause instanceof NumberTemplateError) {
+          throw httpError(400, 'NUMBER_TEMPLATE_INVALID', cause.message);
+        }
+        throw cause;
+      }
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+        await tx`
+          insert into document_number_series (organisation_id, document_type, template)
+          values (${organisationId}, ${documentType}, ${template})
+          on conflict (organisation_id, document_type)
+          do update set template = excluded.template
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'organisation.number_series_set',
+          'document_number_series',
+          organisationId,
+          { documentType, template },
+        );
+        return {
+          documentType,
+          template,
+          isDefault: false,
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        };
+      });
+    },
+  );
+
+  app.delete<{ Params: { documentType: NumberedDocumentType } }>(
+    '/api/organisation/number-series/:documentType',
+    {
+      schema: {
+        params: Type.Object(
+          { documentType: NumberedDocumentTypeSchema },
+          { additionalProperties: false },
+        ),
+        response: { 200: NumberSeriesSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { documentType } = request.params;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+        await tx`
+          delete from document_number_series where document_type = ${documentType}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'organisation.number_series_cleared',
+          'document_number_series',
+          organisationId,
+          { documentType },
+        );
+        // Numbers already issued keep the strings they were issued with;
+        // only future ones follow the default again.
+        return {
+          documentType,
+          template: DEFAULT_TEMPLATES[documentType],
+          isDefault: true,
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        };
+      });
     },
   );
 }

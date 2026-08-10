@@ -6,11 +6,13 @@ import {
   CreateMeasurementBookRequestSchema,
   MeasurementBookDetailResponseSchema,
   MeasurementBookListResponseSchema,
+  MergeMeasurementBooksRequestSchema,
   SetMbSourcesRequestSchema,
   type Bill,
   type CancelMeasurementBookRequest,
   type CreateMeasurementBookRequest,
   type MbFinalSweepDetails,
+  type MbHasMergedRecordsDetails,
   type MbNotNewestDetails,
   type MbPercentagesUnresolvedDetails,
   type MbSourceConflictDetails,
@@ -18,8 +20,10 @@ import {
   type MbSourceType,
   type MeasurementBook,
   type MeasurementBookDetailResponse,
+  type MeasurementBookKind,
   type MeasurementBookLine,
   type MeasurementBookSource,
+  type MergeMeasurementBooksRequest,
   type SetMbSourcesRequest,
   type WorkCompletionBlocker,
   type WorkItemPaymentCategory,
@@ -66,6 +70,16 @@ import { assertWorkOperable } from '../work-status.js';
  * recomputes inside one transaction under the Work row lock and
  * snapshots lines whose remark text comes character-for-character from
  * computeMbRemark under MB_REMARK_TEMPLATE_VERSION.
+ *
+ * Migration 0034 adds the three kinds. RECORD drafts are per-consignee
+ * parallel measurement sheets: several run at once (one per consignee),
+ * they claim sources exactly like any draft, and they NEVER finalize —
+ * the merge endpoint folds them into a new on-account draft that claims
+ * the union of their sources and marks each record merged. The
+ * one-billing-draft rule (on-account/final) and the final-MB sweep are
+ * unchanged; record MBs are invisible to billing. Un-merge is the only
+ * way to take an absorbing draft apart: it restores the records and
+ * their claims from the merge audit payload, then deletes the draft.
  */
 
 const errorResponses = {
@@ -110,7 +124,10 @@ interface BookRow {
   id: string;
   work_id: string;
   status: MeasurementBook['status'];
+  kind: MeasurementBookKind;
   is_final: boolean;
+  consignee_contact_id: string | null;
+  merged_into_id: string | null;
   mb_date: string;
   mb_number: string | null;
   sequence_number: number | null;
@@ -130,7 +147,10 @@ function toBook(row: BookRow): MeasurementBook {
     id: row.id,
     workId: row.work_id,
     status: row.status,
+    kind: row.kind,
     isFinal: row.is_final,
+    consigneeContactId: row.consignee_contact_id,
+    mergedIntoId: row.merged_into_id,
     mbDate: row.mb_date,
     mbNumber: row.mb_number,
     sequenceNumber: row.sequence_number,
@@ -147,7 +167,8 @@ function toBook(row: BookRow): MeasurementBook {
 }
 
 const BOOK_COLUMNS = `
-  mb.id, mb.work_id, mb.status, mb.is_final, mb.mb_date::text as mb_date,
+  mb.id, mb.work_id, mb.status, mb.kind, mb.is_final,
+  mb.consignee_contact_id, mb.merged_into_id, mb.mb_date::text as mb_date,
   mb.mb_number, mb.sequence_number, mb.total_amount::text as total_amount,
   mb.remark_template_version, mb.template_version, mb.rendered_object_key,
   mb.cancellation_note,
@@ -794,6 +815,12 @@ function toSnapshot(
   totalAmount: string,
   remarkTemplateVersion: string,
 ): MeasurementBookSnapshot {
+  // Both callers gate on draft (preview) or finalized (render); a
+  // merged record MB never becomes a document, and the snapshot type
+  // says so.
+  if (book.status === 'merged') {
+    throw new Error('merged record Measurement Books render no document');
+  }
   return {
     templateVersion: MB_TEMPLATE_VERSION,
     organisationName,
@@ -961,6 +988,36 @@ export function registerMeasurementBookRoutes(
       );
       const { id: workId } = request.params as { id: string };
       const body = request.body as CreateMeasurementBookRequest;
+      // `kind` is the request truth (0034); `isFinal` stays accepted as
+      // the pre-0034 alias (true = final, false/absent = on_account). A
+      // body naming both must agree with itself.
+      if (
+        body.kind !== undefined &&
+        body.isFinal !== undefined &&
+        body.isFinal !== (body.kind === 'final')
+      ) {
+        throw httpError(
+          400,
+          'MB_KIND_CONFLICT',
+          `The request contradicts itself: kind '${body.kind}' with isFinal ${String(body.isFinal)}.`,
+        );
+      }
+      const kind: MeasurementBookKind =
+        body.kind ?? ((body.isFinal ?? false) ? 'final' : 'on_account');
+      if (kind === 'record' && body.consigneeContactId === undefined) {
+        throw httpError(
+          400,
+          'MB_CONSIGNEE_REQUIRED',
+          'A record Measurement Book names the consignee filling it — consigneeContactId is required.',
+        );
+      }
+      if (kind !== 'record' && body.consigneeContactId !== undefined) {
+        throw httpError(
+          400,
+          'MB_CONSIGNEE_NOT_ALLOWED',
+          'Only record Measurement Books name a consignee.',
+        );
+      }
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1010,11 +1067,237 @@ export function registerMeasurementBookRoutes(
           // had not yet been measured — and the finalized snapshot is
           // immutable, so it can never be corrected. Equal dates pass:
           // several MBs on one day is normal. Checked here only: one
-          // draft per Work (0024) means no MB can be finalized between
-          // this draft's creation and its own finalize, so the newest
-          // finalized date can only fall (by cancellation) meanwhile,
-          // never rise. One indexed read — measurement_books_work_idx
-          // already orders by (work_id, status, mb_date desc).
+          // BILLING draft per Work (0034) means no MB can be finalized
+          // between this draft's creation and its own finalize, so the
+          // newest finalized date can only fall (by cancellation)
+          // meanwhile, never rise. One indexed read —
+          // measurement_books_work_idx already orders by (work_id,
+          // status, mb_date desc). Record MBs are exempt: they never
+          // take a number, never print the prior-cumulative narration,
+          // and their sheet dates flow into nothing — the merged
+          // on-account draft carries its own register-checked date.
+          if (kind !== 'record') {
+            const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
+              select mb_date::text as mb_date, mb_number
+              from measurement_books
+              where work_id = ${workId} and status = 'finalized'
+              order by mb_date desc
+              limit 1
+            `;
+            if (newest && body.mbDate < newest.mb_date) {
+              throw httpError(
+                400,
+                'MB_DATE_BEFORE_PREVIOUS',
+                `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
+              );
+            }
+          }
+          // A record MB names an ACTIVE consignee-role contact (the
+          // 0034 FK holds existence; role and lifecycle are checked here
+          // like every other contact picker).
+          if (kind === 'record' && body.consigneeContactId !== undefined) {
+            const [contact] = await tx<
+              { id: string; is_consignee: boolean; active: boolean }[]
+            >`
+              select id, is_consignee, active from contacts
+              where id = ${body.consigneeContactId}
+            `;
+            if (!contact) {
+              throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+            }
+            if (!contact.is_consignee) {
+              throw httpError(
+                409,
+                'CONTACT_NOT_CONSIGNEE',
+                'A record Measurement Book is filled by a consignee contact; this contact does not carry the consignee role.',
+              );
+            }
+            if (!contact.active) {
+              throw httpError(
+                409,
+                'CONTACT_RETIRED',
+                'This consignee is retired — reactivate it or pick another.',
+              );
+            }
+          }
+          // No further MBs once a live final MB exists (friendly form;
+          // the 0024 insert guard holds it against every writer —
+          // record sheets included: nothing they gather could ever be
+          // billed past the final MB).
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${workId} and is_final and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
+            );
+          }
+          // The 0034 draft rules, friendly form (the two partial unique
+          // indexes decide races; the catches rebuild the same 409s):
+          // exactly one BILLING draft (on-account or final) per Work,
+          // and one record draft per consignee — record sheets run in
+          // parallel across consignees by design.
+          if (kind === 'record') {
+            const [existingRecord] = await tx<{ id: string }[]>`
+              select id from measurement_books
+              where work_id = ${workId} and status = 'draft' and kind = 'record'
+                and consignee_contact_id = ${body.consigneeContactId ?? null}
+            `;
+            if (existingRecord) {
+              throw draftConflictError(
+                'MB_RECORD_DRAFT_EXISTS',
+                'This consignee already has an open record Measurement Book on this Work; merge or delete it first.',
+                existingRecord.id,
+              );
+            }
+          } else {
+            const [existingDraft] = await tx<{ id: string }[]>`
+              select id from measurement_books
+              where work_id = ${workId} and status = 'draft' and kind <> 'record'
+            `;
+            if (existingDraft) {
+              throw draftConflictError(
+                'MB_DRAFT_EXISTS',
+                'This Work already has a draft Measurement Book; finalize or delete it first.',
+                existingDraft.id,
+              );
+            }
+          }
+          // 0034 made is_final a GENERATED column: the insert names
+          // `kind`, never is_final.
+          const [row] = await tx<{ id: string }[]>`
+            insert into measurement_books (
+              organisation_id, work_id, mb_date, kind, consignee_contact_id,
+              created_by_user_id
+            )
+            values (
+              ${organisationId}, ${workId}, ${body.mbDate}, ${kind},
+              ${body.consigneeContactId ?? null}, ${user.id}
+            )
+            returning id
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                kind === 'record' ? 'MB_RECORD_DRAFT_EXISTS' : 'MB_DRAFT_EXISTS',
+                kind === 'record'
+                  ? 'This consignee already has an open record Measurement Book on this Work; merge or delete it first.'
+                  : 'This Work already has a draft Measurement Book; finalize or delete it first.',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('measurement book insert returned no row');
+          await audit(tx, organisationId, user.id, 'measurement_book.created', row.id, {
+            workId,
+            mbDate: body.mbDate,
+            kind,
+            isFinal: kind === 'final',
+            ...(kind === 'record'
+              ? { consigneeContactId: body.consigneeContactId }
+              : {}),
+          });
+          return readDetail(tx, row.id);
+        },
+      ).catch(async (error: unknown) => {
+        const conflictCode =
+          kind === 'record' ? 'MB_RECORD_DRAFT_EXISTS' : 'MB_DRAFT_EXISTS';
+        throw await nameDraftConflict(error, conflictCode, async () => {
+          return withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [draft] =
+              kind === 'record'
+                ? await tx<{ id: string }[]>`
+                    select id from measurement_books
+                    where work_id = ${workId} and status = 'draft'
+                      and kind = 'record'
+                      and consignee_contact_id = ${body.consigneeContactId ?? null}
+                  `
+                : await tx<{ id: string }[]>`
+                    select id from measurement_books
+                    where work_id = ${workId} and status = 'draft'
+                      and kind <> 'record'
+                  `;
+            return draft?.id ?? null;
+          });
+        });
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
+  // Merge: record drafts -> ONE new on-account draft (0034). The design
+  // note, because the mechanics matter: mb_sources claims cannot be
+  // released outside a cancel (the 0024 release guard), so the merge
+  // does NOT move rows — it DELETES the records' claims (legal while
+  // they are still drafts) and INSERTS fresh claims on the new target
+  // in the same transaction. At every commit point each source has
+  // exactly one live claim (the partial unique index never lapses);
+  // provenance — which source came from which record — is written into
+  // the merge audit payload, which is what un-merge restores from.
+  app.post(
+    '/api/works/:id/measurement-books/merge',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: MergeMeasurementBooksRequestSchema,
+        response: { 201: MeasurementBookDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as MergeMeasurementBooksRequest;
+      if (new Set(body.recordMbIds).size !== body.recordMbIds.length) {
+        throw httpError(
+          400,
+          'MB_MERGE_DUPLICATED',
+          'The same record Measurement Book appears more than once.',
+        );
+      }
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          // The works lock serialises the merge against create, another
+          // merge, finalize, and completion — the create-route lock
+          // order (work first, then MB rows).
+          const [work] = await tx<
+            { status: string; letter_date: string; today: string }[]
+          >`
+            select w.status, w.letter_date::text as letter_date,
+                   (now() at time zone o.timezone)::date::text as today
+            from works w
+            join organisations o on o.id = w.organisation_id
+            where w.id = ${workId} and w.deleted_at is null
+            for update of w
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          assertWorkOperable(work.status, 'merging record Measurement Books');
+          // The created draft is a BILLING draft: the full register-date
+          // discipline of the create route applies to it.
+          if (body.mbDate > work.today) {
+            throw httpError(
+              400,
+              'MB_DATE_FUTURE',
+              `The MB date cannot be in the future (today is ${work.today}).`,
+            );
+          }
+          if (body.mbDate < work.letter_date) {
+            throw httpError(
+              400,
+              'MB_DATE_BEFORE_LOA',
+              `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
+            );
+          }
           const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
             select mb_date::text as mb_date, mb_number
             from measurement_books
@@ -1029,8 +1312,6 @@ export function registerMeasurementBookRoutes(
               `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
             );
           }
-          // No further MBs once a live final MB exists (friendly form;
-          // the 0024 insert guard holds it against every writer).
           const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
             where work_id = ${workId} and is_final and status <> 'cancelled'
@@ -1042,27 +1323,98 @@ export function registerMeasurementBookRoutes(
               `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
             );
           }
-          // One open draft per Work: friendly pre-check names the
-          // existing draft; the partial unique index decides races and
-          // the catch below rebuilds the same 409 shape.
+          // One billing draft per Work still applies to the draft the
+          // merge creates; the friendly check names the open one.
           const [existingDraft] = await tx<{ id: string }[]>`
             select id from measurement_books
-            where work_id = ${workId} and status = 'draft'
+            where work_id = ${workId} and status = 'draft' and kind <> 'record'
           `;
           if (existingDraft) {
             throw draftConflictError(
               'MB_DRAFT_EXISTS',
-              'This Work already has a draft Measurement Book; finalize or delete it first.',
+              'This Work already has a draft Measurement Book; finalize or delete it before merging.',
               existingDraft.id,
             );
           }
-          const [row] = await tx<{ id: string }[]>`
+          // Lock the named record MBs (id order — the un-merge locks
+          // them the same way) and hold every one to the rule: a record
+          // draft of THIS Work. Another Work's or tenant's MB answers
+          // exactly like an unknown id.
+          const records = await tx<
+            {
+              id: string;
+              work_id: string;
+              status: string;
+              kind: string;
+              consignee_contact_id: string | null;
+            }[]
+          >`
+            select id, work_id, status, kind, consignee_contact_id
+            from measurement_books
+            where id = any(${body.recordMbIds}::uuid[])
+            order by id
+            for update
+          `;
+          const byId = new Map(records.map((row) => [row.id, row]));
+          for (const recordId of body.recordMbIds) {
+            const row = byId.get(recordId);
+            if (!row || row.work_id !== workId) {
+              throw httpError(
+                404,
+                'MEASUREMENT_BOOK_NOT_FOUND',
+                'No such Measurement Book in this Work.',
+              );
+            }
+            if (row.kind !== 'record' || row.status !== 'draft') {
+              throw httpError(
+                409,
+                'MB_MERGE_NOT_RECORD_DRAFT',
+                `Only record Measurement Book drafts merge — ${recordId} is a ${row.status} ${row.kind.replace('_', '-')} Measurement Book.`,
+              );
+            }
+          }
+          // Everything the records gathered, with its provenance. A
+          // record draft's claims are always live (release needs a
+          // cancel, and records never cancel), but the filter states
+          // the invariant.
+          const claims = await tx<
+            {
+              measurement_book_id: string;
+              source_type: MbSourceType;
+              source_id: string;
+            }[]
+          >`
+            select measurement_book_id, source_type, source_id
+            from mb_sources
+            where measurement_book_id = any(${body.recordMbIds}::uuid[])
+              and released_at is null
+            order by measurement_book_id, source_type, source_id
+          `;
+          if (claims.length === 0) {
+            throw httpError(
+              409,
+              'MB_MERGE_EMPTY',
+              'There is nothing to merge — the record Measurement Books claim no sources.',
+            );
+          }
+          // Row-lock the sources and revalidate their billable state
+          // (the finalize discipline), serialising against the source
+          // cancel routes.
+          const refs = claims.map((claim) => ({
+            sourceType: claim.source_type,
+            sourceId: claim.source_id,
+          }));
+          await validateSources(tx, workId, refs, true);
+          // The new on-account draft. The partial unique index decides
+          // a billing-draft race; the insert guard backstops the final-
+          // MB freeze.
+          const [target] = await tx<{ id: string }[]>`
             insert into measurement_books (
-              organisation_id, work_id, mb_date, is_final, created_by_user_id
+              organisation_id, work_id, mb_date, kind, created_by_user_id
             )
             values (
-              ${organisationId}, ${workId}, ${body.mbDate},
-              ${body.isFinal ?? false}, ${user.id}
+              ${organisationId}, ${workId}, ${body.mbDate}, 'on_account',
+              ${user.id}
             )
             returning id
           `.catch((error: unknown) => {
@@ -1070,31 +1422,269 @@ export function registerMeasurementBookRoutes(
               throw httpError(
                 409,
                 'MB_DRAFT_EXISTS',
-                'This Work already has a draft Measurement Book; finalize or delete it first.',
+                'This Work already has a draft Measurement Book; finalize or delete it before merging.',
               );
             }
             throw error;
           });
-          if (!row) throw new Error('measurement book insert returned no row');
-          await audit(tx, organisationId, user.id, 'measurement_book.created', row.id, {
-            workId,
-            mbDate: body.mbDate,
-            isFinal: body.isFinal ?? false,
+          if (!target) throw new Error('merge target insert returned no row');
+          // The claim transfer: delete off the records (draft-time
+          // claims delete cleanly, 0024), then claim the union on the
+          // target. The union has no duplicates — the partial unique
+          // index guarantees one live claim per source.
+          await tx`
+            delete from mb_sources
+            where measurement_book_id = any(${body.recordMbIds}::uuid[])
+          `;
+          const types = claims.map((claim) => claim.source_type);
+          const ids = claims.map((claim) => claim.source_id);
+          await tx`
+            insert into mb_sources (
+              organisation_id, measurement_book_id, work_id, source_type, source_id
+            )
+            select ${organisationId}, ${target.id}, ${workId}, req.source_type,
+                   req.source_id
+            from unnest(${types as string[]}::text[], ${ids}::uuid[])
+              as req(source_type, source_id)
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'MB_SOURCE_ALREADY_BILLED',
+                'A source was claimed by another live Measurement Book while merging.',
+              );
+            }
+            throw error;
           });
-          return readDetail(tx, row.id);
+          // Mark the records merged, pointing at the draft that
+          // absorbed them.
+          await tx`
+            update measurement_books
+            set status = 'merged', merged_into_id = ${target.id}
+            where id = any(${body.recordMbIds}::uuid[])
+          `;
+          // The audit payload IS the un-merge provenance: which sources
+          // belonged to which record at merge time.
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'measurement_book.merged',
+            target.id,
+            {
+              workId,
+              mbDate: body.mbDate,
+              recordMbIds: records.map((row) => row.id),
+              records: records.map((row) => ({
+                recordMbId: row.id,
+                consigneeContactId: row.consignee_contact_id,
+                sources: claims
+                  .filter((claim) => claim.measurement_book_id === row.id)
+                  .map((claim) => ({
+                    sourceType: claim.source_type,
+                    sourceId: claim.source_id,
+                  })),
+              })),
+              sourceCount: claims.length,
+            },
+          );
+          return readDetail(tx, target.id);
         },
       ).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'MB_DRAFT_EXISTS', async () => {
           return withBoundTenant(database, organisationId, user.id, async (tx) => {
             const [draft] = await tx<{ id: string }[]>`
               select id from measurement_books
-              where work_id = ${workId} and status = 'draft'
+              where work_id = ${workId} and status = 'draft' and kind <> 'record'
             `;
             return draft?.id ?? null;
           });
         });
       });
       return reply.status(201).send(detail);
+    },
+  );
+
+  // Un-merge: the ONLY way to take apart an on-account draft that
+  // absorbed record MBs (DELETE answers MB_HAS_MERGED_RECORDS while any
+  // exist). Restores each record MB to draft and re-claims, on each
+  // record, exactly the sources the merge took from it — read back from
+  // the merge audit payload. Claims the operator added to the target
+  // AFTER the merge are simply released with the deleted draft, like
+  // any draft deletion. One live claim per source holds at every commit
+  // point: the target's claims are deleted and the records' re-inserted
+  // inside one transaction.
+  app.post(
+    '/api/measurement-books/:id/unmerge',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 204: Type.Null(), ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
+          select id, work_id, status from measurement_books
+          where id = ${id}
+          for update
+        `;
+        if (!book) {
+          throw httpError(
+            404,
+            'MEASUREMENT_BOOK_NOT_FOUND',
+            'No such Measurement Book.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, book.work_id);
+        if (book.status !== 'draft') {
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            `Only a draft Measurement Book can be un-merged (current status: ${book.status}); once finalized, the merged records are billed for good.`,
+          );
+        }
+        // The absorbed records, locked in id order (the merge's order).
+        const absorbed = await tx<
+          { id: string; consignee_contact_id: string | null }[]
+        >`
+          select id, consignee_contact_id from measurement_books
+          where merged_into_id = ${id} and status = 'merged'
+          order by id
+          for update
+        `;
+        if (absorbed.length === 0) {
+          throw httpError(
+            409,
+            'MB_NO_MERGED_RECORDS',
+            'This Measurement Book absorbed no record Measurement Books; delete it instead.',
+          );
+        }
+        // The merge audit payload is the provenance store: which
+        // sources the merge took from which record.
+        const [mergeEvent] = await tx<{ details: unknown }[]>`
+          select details from audit_events
+          where action = 'measurement_book.merged'
+            and entity_type = 'measurement_books' and entity_id = ${id}
+          order by occurred_at desc, id desc
+          limit 1
+        `;
+        const payload = parseJsonbColumn(mergeEvent?.details) as {
+          records?: {
+            recordMbId?: string;
+            sources?: { sourceType?: MbSourceType; sourceId?: string }[];
+          }[];
+        } | null;
+        const provenance = new Map<string, MbSourceRef[]>();
+        for (const entry of payload?.records ?? []) {
+          if (typeof entry.recordMbId !== 'string') continue;
+          provenance.set(
+            entry.recordMbId,
+            (entry.sources ?? []).flatMap((source) =>
+              source.sourceType !== undefined && source.sourceId !== undefined
+                ? [{ sourceType: source.sourceType, sourceId: source.sourceId }]
+                : [],
+            ),
+          );
+        }
+        for (const record of absorbed) {
+          if (!provenance.has(record.id)) {
+            // The merge writes its audit event in the same transaction
+            // that marks the records, so a hole here is corruption, not
+            // user error.
+            throw new Error(
+              `merge provenance for record Measurement Book ${record.id} is missing from the audit trail`,
+            );
+          }
+        }
+        // A record draft slot may have been re-occupied since the merge
+        // (same Work, same consignee): name it before the index does.
+        const [occupied] = await tx<
+          { id: string; consignee_contact_id: string | null }[]
+        >`
+          select id, consignee_contact_id from measurement_books
+          where work_id = ${book.work_id} and status = 'draft'
+            and kind = 'record'
+            and consignee_contact_id = any(${absorbed
+              .map((record) => record.consignee_contact_id)
+              .filter((value): value is string => value !== null)}::uuid[])
+          limit 1
+        `;
+        if (occupied) {
+          throw draftConflictError(
+            'MB_RECORD_DRAFT_EXISTS',
+            'A newer record Measurement Book draft exists for one of the merged consignees; merge or delete it first.',
+            occupied.id,
+          );
+        }
+        // Restore the records to draft. merged_into_id clears in the
+        // same statement (the 0034 merged-shape CHECK holds them
+        // together); the per-consignee index decides any remaining
+        // race.
+        await tx`
+          update measurement_books
+          set status = 'draft', merged_into_id = null
+          where merged_into_id = ${id} and status = 'merged'
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'MB_RECORD_DRAFT_EXISTS',
+              'A newer record Measurement Book draft exists for one of the merged consignees; merge or delete it first.',
+            );
+          }
+          throw error;
+        });
+        // Release everything the target claims by deleting its rows
+        // (draft-deletion semantics), then re-claim each transferred
+        // source on the record it came from. Row-locking the sources
+        // revalidates billable state and serialises against cancels —
+        // a source deselected from the target after the merge could
+        // have moved on, and answers a clean 409 here.
+        const restored: MbSourceRef[] = absorbed.flatMap(
+          (record) => provenance.get(record.id) ?? [],
+        );
+        await validateSources(tx, book.work_id, restored, true);
+        await tx`delete from mb_sources where measurement_book_id = ${id}`;
+        for (const record of absorbed) {
+          const sources = provenance.get(record.id) ?? [];
+          if (sources.length === 0) continue;
+          const types = sources.map((source) => source.sourceType);
+          const ids = sources.map((source) => source.sourceId);
+          await tx`
+            insert into mb_sources (
+              organisation_id, measurement_book_id, work_id, source_type, source_id
+            )
+            select ${organisationId}, ${record.id}, ${book.work_id},
+                   req.source_type, req.source_id
+            from unnest(${types as string[]}::text[], ${ids}::uuid[])
+              as req(source_type, source_id)
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'MB_SOURCE_ALREADY_BILLED',
+                'A transferred source is claimed by another live Measurement Book; resolve that claim first.',
+              );
+            }
+            throw error;
+          });
+        }
+        // The emptied target draft goes, like any deleted draft.
+        await tx`delete from measurement_books where id = ${id}`;
+        await audit(tx, organisationId, user.id, 'measurement_book.unmerged', id, {
+          workId: book.work_id,
+          recordMbIds: absorbed.map((record) => record.id),
+          restoredSourceCount: restored.length,
+        });
+      });
+      return reply.status(204).send();
     },
   );
 
@@ -1227,9 +1817,15 @@ export function registerMeasurementBookRoutes(
         // snapshot: issue authority required, like bill preparation.
         await requireAuthority(tx, user.id, 'issue');
         const [book] = await tx<
-          { id: string; work_id: string; status: string; is_final: boolean }[]
+          {
+            id: string;
+            work_id: string;
+            status: string;
+            kind: MeasurementBookKind;
+            is_final: boolean;
+          }[]
         >`
-          select id, work_id, status, is_final from measurement_books
+          select id, work_id, status, kind, is_final from measurement_books
           where id = ${id}
           for update
         `;
@@ -1241,6 +1837,17 @@ export function registerMeasurementBookRoutes(
           );
         }
         await assertWorkAccess(tx, user.id, book.work_id);
+        // A record MB is one consignee's parallel sheet — it never
+        // takes a number and never bills (the 0034 status coherence
+        // holds it in the database). Everything it gathers flows onward
+        // through the merge.
+        if (book.kind === 'record') {
+          throw httpError(
+            409,
+            'MB_RECORD_NOT_BILLABLE',
+            'Record Measurement Books are never finalized — merge them into an on-account Measurement Book and finalize that.',
+          );
+        }
         if (book.status !== 'draft') {
           throw httpError(
             409,
@@ -1526,6 +2133,16 @@ export function registerMeasurementBookRoutes(
             'Draft Measurement Books are deleted, not cancelled.',
           );
         }
+        // A merged record has no life of its own to cancel: its sources
+        // moved into the on-account draft that absorbed it (0034 status
+        // coherence — records only draft or merge).
+        if (book.status === 'merged') {
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            'Merged record Measurement Books are not cancelled — un-merge the Measurement Book that absorbed them instead.',
+          );
+        }
         if (book.status === 'cancelled') {
           throw httpError(
             409,
@@ -1648,7 +2265,29 @@ export function registerMeasurementBookRoutes(
           throw httpError(
             409,
             'MB_STATUS_CONFLICT',
-            'Only draft Measurement Books can be deleted; finalized ones cancel with a note.',
+            book.status === 'merged'
+              ? 'Merged record Measurement Books are not deleted — un-merge the Measurement Book that absorbed them instead.'
+              : 'Only draft Measurement Books can be deleted; finalized ones cancel with a note.',
+          );
+        }
+        // A draft that absorbed record MBs cannot simply vanish: the
+        // records point at it (0034 RESTRICT FK) and their sources live
+        // on it. The un-merge endpoint is the one honest way to take it
+        // apart — it puts the records back first.
+        const merged = await tx<{ id: string }[]>`
+          select id from measurement_books
+          where merged_into_id = ${id} and status = 'merged'
+          order by id
+        `;
+        if (merged.length > 0) {
+          const details: MbHasMergedRecordsDetails = {
+            recordMbIds: merged.map((row) => row.id),
+          };
+          throw httpError(
+            409,
+            'MB_HAS_MERGED_RECORDS',
+            'This Measurement Book absorbed record Measurement Books; un-merge it instead so the records and their sources are restored.',
+            details,
           );
         }
         // Deleting the draft removes its claims entirely — the sources

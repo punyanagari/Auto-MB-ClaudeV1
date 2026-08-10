@@ -604,6 +604,15 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route(`**/api/works/${WORK_ID}/amendments`, (route) =>
     route.fulfill(json({ approvals: [] })),
   );
+  // The Work page loads its purchase orders with everything else, so an
+  // unmocked procurement route blanks the whole page behind a 502 rather
+  // than emptying one tab.
+  await page.route(`**/api/works/${WORK_ID}/purchase-orders*`, (route) =>
+    route.fulfill(json({ purchaseOrders: [] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/tax-invoices`, (route) =>
+    route.fulfill(json({ invoices: [] })),
+  );
   await page.route(`**/api/works/${WORK_ID}/issue-challans`, (route) =>
     route.fulfill(json({ issueChallans: [] })),
   );

@@ -1,10 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import type { OrganisationProfile } from '@auto-mb/contracts';
+import type {
+  NumberSeries,
+  NumberedDocumentType,
+  OrganisationProfile,
+} from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
+import { DataTable } from '../ui/table.js';
+
+/** What each configurable document is called on screen. */
+const SERIES_LABELS: Record<NumberedDocumentType, string> = {
+  delivery_challan: 'Delivery Challan',
+  issue_challan: 'Issue Challan',
+  tax_invoice: 'Tax Invoice',
+  budgetary_quotation: 'Budgetary Quotation',
+};
 
 interface SettingsProps {
   readonly api: ApiClient;
@@ -18,9 +32,84 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
   const [profile, setProfile] = useState<OrganisationProfile | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The STATE_CODE_GSTIN_MISMATCH refusal, shown against the field that
+   * caused it rather than at the bottom of the form. */
+  const [stateCodeError, setStateCodeError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Null while loading — distinct from "none configured", which the
+   * server reports as four rows carrying the product defaults. */
+  const [series, setSeries] = useState<readonly NumberSeries[] | null>(null);
+  const [seriesType, setSeriesType] = useState<NumberedDocumentType>('tax_invoice');
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  async function saveSeries(documentType: NumberedDocumentType, template: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await api.setNumberSeries(organisationId, documentType, {
+        template,
+      });
+      setSeries((current) =>
+        (current ?? []).map((row) => (row.documentType === documentType ? saved : row)),
+      );
+      setNotice(
+        `${SERIES_LABELS[documentType]} numbers will now look like ${template}.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The format was not saved.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearSeries(documentType: NumberedDocumentType) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const restored = await api.clearNumberSeries(organisationId, documentType);
+      setSeries((current) =>
+        (current ?? []).map((row) =>
+          row.documentType === documentType ? restored : row,
+        ),
+      );
+      setNotice(
+        `${SERIES_LABELS[documentType]} numbers follow the default again. Nothing already issued is renumbered.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The default was not restored.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    // Read separately from the profile: a number series that fails to
+    // load must not blank the company details, which is the screen's
+    // main job.
+    api
+      .listNumberSeries(organisationId)
+      .then((loaded) => {
+        if (!cancelled) setSeries(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setSeries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,12 +143,14 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
     };
     setBusy(true);
     setError(null);
+    setStateCodeError(null);
     setNotice(null);
     try {
       const updated = await api.updateOrganisationProfile(organisationId, {
         name: formValue(data, 'name').trim(),
         address: optional('address'),
         gstin: optional('gstin'),
+        stateCode: optional('stateCode'),
         contactPhone: optional('contactPhone'),
         contactEmail: optional('contactEmail'),
         warrantyTemplateText: optional('warrantyTemplateText'),
@@ -67,11 +158,20 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       setProfile(updated);
       setNotice('Company details saved.');
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'Saving the company details failed.',
-      );
+      if (
+        cause instanceof RequestFailedError &&
+        cause.code === 'STATE_CODE_GSTIN_MISMATCH'
+      ) {
+        // The server names which two values contradict; put that answer on
+        // the state-code field itself so the operator corrects in place.
+        setStateCodeError(cause.message);
+      } else {
+        setError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'Saving the company details failed.',
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -231,6 +331,32 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               <Hint>15 characters, as printed on GST records.</Hint>
             </Field>
             <Field>
+              <label htmlFor="org-state-code">GST state code</label>
+              <input
+                id="org-state-code"
+                name="stateCode"
+                maxLength={2}
+                pattern="[0-9]{2}"
+                inputMode="numeric"
+                defaultValue={profile.stateCode ?? ''}
+                aria-invalid={stateCodeError !== null ? true : undefined}
+                aria-describedby={
+                  stateCodeError !== null
+                    ? 'org-state-code-error'
+                    : 'org-state-code-hint'
+                }
+              />
+              <Hint id="org-state-code-hint">
+                Two digits; must match the first two of the GSTIN. It decides CGST+SGST
+                against IGST on tax invoices.
+              </Hint>
+              {stateCodeError !== null && (
+                <FormError id="org-state-code-error">{stateCodeError}</FormError>
+              )}
+            </Field>
+          </FieldRow>
+          <FieldRow>
+            <Field>
               <label htmlFor="org-phone">Phone</label>
               <input
                 id="org-phone"
@@ -239,17 +365,17 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
                 defaultValue={profile.contactPhone ?? ''}
               />
             </Field>
+            <Field>
+              <label htmlFor="org-email">Email</label>
+              <input
+                id="org-email"
+                name="contactEmail"
+                type="email"
+                maxLength={200}
+                defaultValue={profile.contactEmail ?? ''}
+              />
+            </Field>
           </FieldRow>
-          <Field>
-            <label htmlFor="org-email">Email</label>
-            <input
-              id="org-email"
-              name="contactEmail"
-              type="email"
-              maxLength={200}
-              defaultValue={profile.contactEmail ?? ''}
-            />
-          </Field>
           <Field>
             <label htmlFor="org-warranty-template">Warranty agreement template</label>
             <textarea
@@ -285,6 +411,10 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             <dd>{profile.gstin ?? '—'}</dd>
           </div>
           <div>
+            <dt>GST state code</dt>
+            <dd>{profile.stateCode ?? '—'}</dd>
+          </div>
+          <div>
             <dt>Phone</dt>
             <dd>{profile.contactPhone ?? '—'}</dd>
           </div>
@@ -297,6 +427,115 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             <dd>{profile.warrantyTemplateText ?? '—'}</dd>
           </div>
         </dl>
+      )}
+
+      <h2>Number series</h2>
+      <p className="text-muted-foreground">
+        How each document numbers itself. A document you have not configured uses the
+        product default, shown here so you can see what your numbers will look like.
+        Changing a series never renumbers anything already issued.
+      </p>
+      {series === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading number series…
+        </p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Number formats for each document</caption>
+          <thead>
+            <tr>
+              <th scope="col">Document</th>
+              <th scope="col">Format</th>
+              <th scope="col">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {series.map((row) => (
+              <tr key={row.documentType}>
+                <th scope="row">{SERIES_LABELS[row.documentType]}</th>
+                <td>
+                  <code>{row.template}</code>
+                </td>
+                <td>{row.isDefault ? 'Default' : 'Yours'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {isOwner && series !== null && (
+        <Disclosure label="Change a number series">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const documentType = formValue(data, 'series-document') as
+                NumberedDocumentType | '';
+              if (documentType === '') return;
+              void saveSeries(documentType, formValue(data, 'series-template'));
+            }}
+          >
+            <FieldRow>
+              <Field>
+                <label htmlFor="series-document">Document</label>
+                <select
+                  id="series-document"
+                  name="series-document"
+                  value={seriesType}
+                  onChange={(event) => {
+                    setSeriesType(event.target.value as NumberedDocumentType);
+                  }}
+                >
+                  {series.map((row) => (
+                    <option key={row.documentType} value={row.documentType}>
+                      {SERIES_LABELS[row.documentType]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field>
+                <label htmlFor="series-template">Format</label>
+                <input
+                  id="series-template"
+                  name="series-template"
+                  required
+                  maxLength={120}
+                  defaultValue={
+                    series.find((row) => row.documentType === seriesType)?.template ??
+                    ''
+                  }
+                  key={seriesType}
+                />
+              </Field>
+            </FieldRow>
+            <Hint>
+              Anything outside braces prints as itself. Available here:{' '}
+              {(
+                series.find((row) => row.documentType === seriesType)
+                  ?.availableTokens ?? []
+              )
+                .map((token) => `{${token}}`)
+                .join(', ')}
+              . Use <code>{'{SEQ:3}'}</code> to pad the counter to three digits — every
+              format must use <code>{'{SEQ}'}</code>, or every document would take the
+              same number.
+            </Hint>
+            <Actions>
+              <Button type="submit" disabled={busy}>
+                Save format
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  void clearSeries(seriesType);
+                }}
+                disabled={busy}
+              >
+                Restore the default
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
 
       {error !== null && <FormError>{error}</FormError>}

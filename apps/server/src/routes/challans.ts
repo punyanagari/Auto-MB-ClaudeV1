@@ -10,6 +10,7 @@ import {
   type Challan,
   type ChallanDetailResponse,
   type ChallanItem,
+  type ChallanOverReceiptWarning,
   type Consignee,
   type SaveChallanRequest,
 } from '@auto-mb/contracts';
@@ -28,6 +29,11 @@ import {
 } from '../challan-html.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
+import {
+  NumberTemplateError,
+  loadNumberTemplate,
+  renderNumberTemplate,
+} from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
@@ -125,6 +131,7 @@ interface ChallanItemRow {
   rate_snapshot: string;
   line_amount: string;
   position: number;
+  purchase_order_line_id: string | null;
 }
 
 function toChallanItem(row: ChallanItemRow): ChallanItem {
@@ -137,6 +144,7 @@ function toChallanItem(row: ChallanItemRow): ChallanItem {
     rate: canonicalRateText(row.rate_snapshot),
     lineAmount: row.line_amount,
     position: row.position,
+    purchaseOrderLineId: row.purchase_order_line_id,
   };
 }
 
@@ -147,12 +155,71 @@ async function readItems(
   const rows = await tx<ChallanItemRow[]>`
     select id, work_item_id, description_snapshot, unit_snapshot,
            quantity::text as quantity, rate_snapshot::text as rate_snapshot,
-           line_amount::text as line_amount, position
+           line_amount::text as line_amount, position, purchase_order_line_id
     from delivery_challan_items
     where delivery_challan_id = ${challanId}
     order by position
   `;
   return rows.map(toChallanItem);
+}
+
+/**
+ * The over-receipt notices for this challan's purchase-order-linked
+ * lines, one per purchase-order line, in exact SQL numeric arithmetic
+ * (rule 5). `received` counts issued receipts on OTHER challans plus this
+ * challan's own lines — the projection while this challan is a draft and
+ * the actual total once it is issued (its own lines are then part of the
+ * issued sum, so the two readings agree). Over-receipt is deliberately a
+ * WARNING, never a refusal: vendors over-ship, and the delivery document
+ * must record what actually arrived (the purchase-order balance already
+ * floors its pending figure at zero, purchase-orders.ts readLines).
+ */
+async function readOverReceiptWarnings(
+  tx: TransactionSql,
+  challanId: string,
+): Promise<ChallanOverReceiptWarning[]> {
+  const rows = await tx<
+    {
+      purchase_order_line_id: string;
+      po_number: string;
+      line_number: number;
+      description: string;
+      ordered_quantity: string;
+      received_quantity: string;
+    }[]
+  >`
+    select pol.id as purchase_order_line_id, po.po_number, pol.line_number,
+           pol.description, pol.quantity::text as ordered_quantity,
+           (coalesce(elsewhere.received, 0) + own.quantity)
+             ::numeric(18,3)::text as received_quantity
+    from (
+      select dci.purchase_order_line_id as pol_id, sum(dci.quantity) as quantity
+      from delivery_challan_items dci
+      where dci.delivery_challan_id = ${challanId}
+        and dci.purchase_order_line_id is not null
+      group by dci.purchase_order_line_id
+    ) own
+    join purchase_order_lines pol on pol.id = own.pol_id
+    join purchase_orders po on po.id = pol.purchase_order_id
+    left join lateral (
+      select sum(q.quantity) as received
+      from delivery_challan_items q
+      join delivery_challans dc on dc.id = q.delivery_challan_id
+      where q.purchase_order_line_id = pol.id
+        and dc.status = 'issued'
+        and q.delivery_challan_id <> ${challanId}
+    ) elsewhere on true
+    where coalesce(elsewhere.received, 0) + own.quantity > pol.quantity
+    order by pol.line_number
+  `;
+  return rows.map((row) => ({
+    purchaseOrderLineId: row.purchase_order_line_id,
+    poNumber: row.po_number,
+    poLineNumber: row.line_number,
+    description: row.description,
+    orderedQuantity: row.ordered_quantity,
+    receivedQuantity: row.received_quantity,
+  }));
 }
 
 async function readDetail(
@@ -168,6 +235,11 @@ async function readDetail(
     challan: toChallan(row),
     items: await readItems(tx, challanId),
     issuedSnapshot: parseJsonbColumn(row.issued_snapshot),
+    // A cancelled challan released its receipts, so it can no longer
+    // over-receive anything; otherwise the notices are recomputed live so
+    // a receipt issued elsewhere shows up on the next read of this one.
+    warnings:
+      row.status === 'cancelled' ? [] : await readOverReceiptWarnings(tx, challanId),
   };
 }
 
@@ -329,11 +401,44 @@ export async function writeLines(
         `Line ${lineNumber}: the delivered quantity ${item.quantity} is too large to record — check for a mistyped digit.`,
       );
     }
+    // The receipt link (0033): a line may name the purchase-order line it
+    // fulfils. The named line must belong to an ISSUED order of THIS Work
+    // — a draft order has not been placed yet, a closed or cancelled one
+    // takes no further receipts, and another Work's procurement answers
+    // exactly like an unknown id (the same posture RLS gives another
+    // tenant's). What is deliberately NOT checked here is the quantity:
+    // over-receipt against the ordered amount is a warning on the read
+    // model (readOverReceiptWarnings), never a refusal — vendors
+    // over-ship, and the challan must record what actually arrived. The
+    // composite FK on (organisation_id, purchase_order_line_id) backstops
+    // the existence check in the database.
+    if (item.purchaseOrderLineId !== undefined) {
+      const [poLine] = await tx<{ status: string; work_id: string }[]>`
+        select po.status, po.work_id
+        from purchase_order_lines pol
+        join purchase_orders po on po.id = pol.purchase_order_id
+        where pol.id = ${item.purchaseOrderLineId}
+      `;
+      if (!poLine || poLine.work_id !== workId) {
+        throw httpError(
+          404,
+          'PO_LINE_NOT_FOUND',
+          `Line ${lineNumber}: the named purchase-order line does not belong to this Work.`,
+        );
+      }
+      if (poLine.status !== 'issued') {
+        throw httpError(
+          409,
+          'PO_NOT_ISSUED',
+          `Line ${lineNumber}: deliveries are received against an ISSUED purchase order (current status: ${poLine.status}).`,
+        );
+      }
+    }
     const [inserted] = await tx<{ id: string }[]>`
       insert into delivery_challan_items (
         organisation_id, delivery_challan_id, work_id, work_item_id,
         description_snapshot, unit_snapshot, quantity, rate_snapshot,
-        line_amount, position
+        line_amount, position, purchase_order_line_id
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
              coalesce(wi.effective_description, wi.description),
@@ -341,7 +446,7 @@ export async function writeLines(
              coalesce(wi.effective_unit_rate, wi.effective_rate),
              (${item.quantity}::numeric(18,3)
                * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
-             ${index + 1}
+             ${index + 1}, ${item.purchaseOrderLineId ?? null}
       from work_items wi
       where wi.id = ${item.workItemId} and wi.work_id = ${workId}
         and wi.deleted_at is null
@@ -366,20 +471,28 @@ export async function writeLines(
   }
 }
 
-/** The challan's lines in request-input shape ({workItemId, quantity})
- * for audit diffing; quantity text comes normalised from the numeric
- * column so before/after compare like for like. */
+/** The challan's lines in request-input shape ({workItemId, quantity,
+ * purchaseOrderLineId}) for audit diffing; quantity text comes normalised
+ * from the numeric column so before/after compare like for like. */
 async function readLineInputs(
   tx: TransactionSql,
   challanId: string,
-): Promise<{ workItemId: string; quantity: string }[]> {
-  const rows = await tx<{ work_item_id: string; quantity: string }[]>`
-    select work_item_id, quantity::text as quantity
+): Promise<
+  { workItemId: string; quantity: string; purchaseOrderLineId: string | null }[]
+> {
+  const rows = await tx<
+    { work_item_id: string; quantity: string; purchase_order_line_id: string | null }[]
+  >`
+    select work_item_id, quantity::text as quantity, purchase_order_line_id
     from delivery_challan_items
     where delivery_challan_id = ${challanId}
     order by position
   `;
-  return rows.map((row) => ({ workItemId: row.work_item_id, quantity: row.quantity }));
+  return rows.map((row) => ({
+    workItemId: row.work_item_id,
+    quantity: row.quantity,
+    purchaseOrderLineId: row.purchase_order_line_id,
+  }));
 }
 
 async function auditChallan(
@@ -973,7 +1086,29 @@ export function registerChallanRoutes(
           `;
           if (!counter) throw new Error('counter upsert returned no row');
           const sequence = counter.next_value;
-          const challanNumber = `${challan.prefix}/${String(sequence)}`;
+          // The organisation's own format; the default is the
+          // prefix/serial this route used to build by hand.
+          // The Work code is a template token, so it is read here rather
+          // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
+          // needs it, and the default never asks for it.
+          const [numberWork] = await tx<{ work_code: string }[]>`
+            select work_code from works where id = ${challan.work_id}
+          `;
+          const template = await loadNumberTemplate(tx, 'delivery_challan');
+          let challanNumber: string;
+          try {
+            challanNumber = renderNumberTemplate(template, {
+              prefix: challan.prefix,
+              work: numberWork?.work_code ?? null,
+              documentDate: challan.challan_date,
+              sequence,
+            });
+          } catch (cause) {
+            if (cause instanceof NumberTemplateError) {
+              throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
+            }
+            throw cause;
+          }
 
           const [organisation] = await tx<
             { name: string; warranty_template_text: string | null }[]

@@ -7,6 +7,7 @@ import type {
   Instrument,
   IssueChallan,
   MbEntry,
+  PurchaseOrder,
   Serial,
   UnfinishedWorkItem,
   WorkCompletionBlocker,
@@ -31,6 +32,8 @@ import { WorkAmendments } from './WorkAmendments.js';
 import { WorkSchedules } from './WorkSchedules.js';
 import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
+import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
+import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -60,6 +63,7 @@ const WORK_TABS = [
   'overview',
   'schedules',
   'deliveries',
+  'procurement',
   'issues',
   'measurement',
   'bills',
@@ -74,6 +78,7 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   overview: 'Overview',
   schedules: 'Schedules & items',
   deliveries: 'Deliveries',
+  procurement: 'Procurement',
   issues: 'Issues',
   measurement: 'Measurement',
   bills: 'Bills',
@@ -244,6 +249,9 @@ export function WorkDetail({
   const [issueChallans, setIssueChallans] = useState<readonly IssueChallan[] | null>(
     null,
   );
+  const [purchaseOrders, setPurchaseOrders] = useState<readonly PurchaseOrder[] | null>(
+    null,
+  );
   const [instruments, setInstruments] = useState<readonly Instrument[]>([]);
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
@@ -270,6 +278,7 @@ export function WorkDetail({
     setDetail(null);
     setChallans(null);
     setIssueChallans(null);
+    setPurchaseOrders(null);
     setLoadError(null);
     Promise.all([
       api.getWork(organisationId, workId),
@@ -281,6 +290,7 @@ export function WorkDetail({
       api.listIssueChallans(organisationId, workId),
       api.listWorkAmendments(organisationId, workId),
       api.listWorkCorrectionNotices(organisationId, workId),
+      api.listWorkPurchaseOrders(organisationId, workId),
     ])
       .then(
         ([
@@ -293,6 +303,7 @@ export function WorkDetail({
           loadedIssueChallans,
           loadedAmendments,
           loadedCorrectionNotices,
+          loadedPurchaseOrders,
         ]) => {
           if (cancelled) return;
           setDetail(loaded);
@@ -304,6 +315,7 @@ export function WorkDetail({
           setIssueChallans(loadedIssueChallans);
           setAmendments(loadedAmendments);
           setCorrectionNotices(loadedCorrectionNotices);
+          setPurchaseOrders(loadedPurchaseOrders);
         },
       )
       .catch((cause: unknown) => {
@@ -437,6 +449,20 @@ export function WorkDetail({
       },
       { label: 'Correction notices', value: String(correctionNotices.length) },
     ],
+    procurement: [
+      {
+        label: 'Issued',
+        value: String(
+          (purchaseOrders ?? []).filter((po) => po.status === 'issued').length,
+        ),
+      },
+      {
+        label: 'Draft',
+        value: String(
+          (purchaseOrders ?? []).filter((po) => po.status === 'draft').length,
+        ),
+      },
+    ],
     issues: [
       {
         label: 'Draft',
@@ -462,6 +488,7 @@ export function WorkDetail({
     overview: null,
     schedules: workItems.length,
     deliveries: challans?.length ?? 0,
+    procurement: purchaseOrders?.length ?? 0,
     issues: issueChallans?.length ?? 0,
     measurement: mbEntries.length,
     bills: bills.length,
@@ -805,6 +832,23 @@ export function WorkDetail({
         />
       )}
 
+      {tab === 'procurement' && (
+        <WorkPurchaseOrders
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          purchaseOrders={purchaseOrders}
+          setPurchaseOrders={setPurchaseOrders}
+          canModify={canModify}
+          canCreateDocuments={canCreateDocuments}
+          canIssue={canIssueDocuments}
+          canCancel={canCancel}
+          pending={pending}
+          act={act}
+        />
+      )}
+
       {tab === 'issues' && (
         <WorkIssueChallans
           workId={workId}
@@ -836,15 +880,31 @@ export function WorkDetail({
       )}
 
       {tab === 'bills' && (
-        <WorkBills
-          api={api}
-          organisationId={organisationId}
-          bills={bills}
-          setBills={setBills}
-          canIssue={canIssue}
-          pending={pending}
-          act={act}
-        />
+        <>
+          <WorkBills
+            api={api}
+            organisationId={organisationId}
+            bills={bills}
+            setBills={setBills}
+            canIssue={canIssue}
+            pending={pending}
+            act={act}
+          />
+          {/* The GST document sits with the money it bills: the bill is
+              what the contract owes, the tax invoice is what the law
+              requires for it. */}
+          <WorkTaxInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+            pending={pending}
+            act={act}
+          />
+        </>
       )}
 
       {tab === 'instruments' && (

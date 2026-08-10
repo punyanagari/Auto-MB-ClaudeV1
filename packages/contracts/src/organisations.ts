@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { UuidSchema } from './primitives.js';
+import { GstStateCodeSchema, UuidSchema } from './primitives.js';
 
 export const MembershipRoleSchema = Type.Union([
   Type.Literal('owner'),
@@ -82,6 +82,75 @@ export const MemberListResponseSchema = Type.Object(
 );
 export type MemberListResponse = Static<typeof MemberListResponseSchema>;
 
+/** The Udyam (MSME) registration number, exactly as the column's CHECK
+ * holds it: UDYAM-MH-26-0224294 — two state letters, a two-digit
+ * district, seven digits. */
+export const UdyamNumberSchema = Type.String({
+  pattern: '^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$',
+  description: 'Udyam (MSME) registration number.',
+});
+export type UdyamNumber = Static<typeof UdyamNumberSchema>;
+
+/** A tax invoice number's prefix: the owner's live series runs P10 / P14,
+ * so an initial letter and up to seven more uppercase alphanumerics. The
+ * serial behind it is one gapless per-financial-year sequence shared
+ * across every prefix. */
+export const InvoiceNumberPrefixSchema = Type.String({
+  pattern: '^[A-Z][A-Z0-9]{0,7}$',
+  description: 'Tax invoice number prefix, e.g. P10.',
+});
+export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
+
+/** The four documents whose number format an organisation may define.
+ * Every other numbered document keeps its fixed format. */
+export const NUMBERED_DOCUMENT_TYPES = [
+  'delivery_challan',
+  'issue_challan',
+  'tax_invoice',
+  'budgetary_quotation',
+] as const;
+export const NumberedDocumentTypeSchema = Type.Union(
+  NUMBERED_DOCUMENT_TYPES.map((value) => Type.Literal(value)),
+);
+export type NumberedDocumentType = Static<typeof NumberedDocumentTypeSchema>;
+
+/** One document type's number format.
+ *
+ * Tokens: {WORK} the Work code, {PREFIX} the document's own prefix, {DIV}
+ * the buyer's railway division code less one trailing zero, {FY}
+ * '2026-27', {FY2} '26', {YYYY}/{YY} the document date's year, and {SEQ}
+ * or {SEQ:n} the zero-padded counter. Everything outside a brace is a
+ * literal. A template must use {SEQ}, or every document would take the
+ * same number. */
+export const NumberSeriesSchema = Type.Object(
+  {
+    documentType: NumberedDocumentTypeSchema,
+    template: Type.String({ minLength: 1, maxLength: 120 }),
+    /** True while the organisation has configured nothing and the
+     * product default is in force — so the screen can say so rather
+     * than presenting a default as a choice already made. */
+    isDefault: Type.Boolean(),
+    /** The tokens THIS document can fill in; the rest would be blank
+     * every time and are refused when the template is saved. */
+    availableTokens: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
+export type NumberSeries = Static<typeof NumberSeriesSchema>;
+
+export const NumberSeriesListResponseSchema = Type.Object(
+  { series: Type.Array(NumberSeriesSchema) },
+  { additionalProperties: false },
+);
+export type NumberSeriesListResponse = Static<typeof NumberSeriesListResponseSchema>;
+
+/** PUT sets a template; DELETE restores the product default. */
+export const SaveNumberSeriesRequestSchema = Type.Object(
+  { template: Type.String({ minLength: 1, maxLength: 120 }) },
+  { additionalProperties: false },
+);
+export type SaveNumberSeriesRequest = Static<typeof SaveNumberSeriesRequestSchema>;
+
 /** The organisation's document-branding profile: company details and the
  * logo that appear on generated PDFs. Presentation-level — issued
  * snapshots keep the legal record. */
@@ -101,6 +170,37 @@ export const OrganisationProfileSchema = Type.Object(
       Type.Null(),
     ]),
     hasLogo: Type.Boolean(),
+    /** The place of business's two-digit GST state code (migration
+     * 0033). Not derived from the GSTIN above, though it is its first
+     * two characters: an unregistered organisation still has a place of
+     * business, and the invoice still has to name a state — it is what
+     * decides CGST+SGST against IGST for a given place of supply.
+     * Optional on the wire so a reader that predates the tax columns
+     * omits it rather than reporting a state it never selected. */
+    stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
+    /** The tax invoice's masthead facts (migration 0037). The PIN is
+     * load-bearing rather than decorative: the e-invoice payload needs
+     * the seller's PIN as a figure in its own right, and an address line
+     * is not required to contain one. Optional on the wire for the same
+     * reason stateCode is — a reader that predates them omits them. */
+    pincode: Type.Optional(
+      Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    ),
+    /** The name traded under, when it differs from the legal name. */
+    tradeName: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),
+    ),
+    /** Udyam registration, printed as 'Our MSME No.:-'. */
+    msmeNumber: Type.Optional(Type.Union([UdyamNumberSchema, Type.Null()])),
+    /** House defaults for tax invoices (migration 0038): the number
+     * prefix most invoices take, and the standing Notes line. An invoice
+     * that sets its own overrides either. */
+    invoiceNumberPrefix: Type.Optional(
+      Type.Union([InvoiceNumberPrefixSchema, Type.Null()]),
+    ),
+    invoiceNotes: Type.Optional(
+      Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
+    ),
     /** Warranty agreement template for a later document generator;
      * stored verbatim, never rendered here (Milestone 7: CRUD only). */
     warrantyTemplateText: Type.Union([
@@ -126,6 +226,22 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     ),
     contactEmail: Type.Optional(
       Type.Union([Type.String({ minLength: 3, maxLength: 200 }), Type.Null()]),
+    ),
+    /** Two digits, exactly as the column's CHECK holds; null clears it. */
+    stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
+    pincode: Type.Optional(
+      Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    ),
+    tradeName: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),
+    ),
+    msmeNumber: Type.Optional(Type.Union([UdyamNumberSchema, Type.Null()])),
+    /** House defaults an invoice inherits unless it sets its own. */
+    invoiceNumberPrefix: Type.Optional(
+      Type.Union([InvoiceNumberPrefixSchema, Type.Null()]),
+    ),
+    invoiceNotes: Type.Optional(
+      Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
     ),
     warrantyTemplateText: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),

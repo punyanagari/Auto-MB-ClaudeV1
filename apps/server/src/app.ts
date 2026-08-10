@@ -37,7 +37,11 @@ import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
+import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books.js';
+import { registerTaxInvoiceRoutes } from './routes/tax-invoices.js';
+import { registerEwayBillRoutes } from './routes/eway-bills.js';
+import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
 
@@ -409,6 +413,8 @@ export async function buildApp(
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
     registerMasterRoutes(app, authInstance, database);
     registerRetentionRoutes(app, authInstance, database);
+    registerQuotationRoutes(app, authInstance, database);
+    registerPurchaseOrderRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
@@ -453,6 +459,8 @@ export async function buildApp(
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
+    registerTaxInvoiceRoutes(app, authInstance, database);
+    registerEwayBillRoutes(app, authInstance, database);
     registerWorkCompletionRoutes(app, authInstance, database);
   }
 

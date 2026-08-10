@@ -20,3 +20,5 @@ export * from './corrections.js';
 export * from './payment.js';
 export * from './pac.js';
 export * from './measurement-books.js';
+export * from './procurement.js';
+export * from './tax-documents.js';

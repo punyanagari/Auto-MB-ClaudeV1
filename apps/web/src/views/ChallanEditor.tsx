@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
   Contact,
+  PurchaseOrderDetailResponse,
   SaveChallanRequest,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
@@ -37,6 +38,41 @@ interface EditorState {
   address: string;
   phone: string;
   quantities: Record<string, string>;
+  /** Work item id -> the purchase-order line this delivery receives
+   * against; '' when the material arrives without an order. */
+  poLines: Record<string, string>;
+}
+
+/** One open purchase-order line a challan row can receive against,
+ * labelled the way the operator knows it: the PO number and how much of
+ * the line is still owed. */
+interface PoLineChoice {
+  readonly id: string;
+  readonly poNumber: string;
+  readonly pendingQuantity: string;
+}
+
+/** The open PO lines grouped per Work item. Only lines that name a Work
+ * item are offered — a consumable line has no challan row to sit on. */
+function poLineChoicesOf(
+  openOrders: readonly PurchaseOrderDetailResponse[],
+): ReadonlyMap<string, readonly PoLineChoice[]> {
+  const choices = new Map<string, PoLineChoice[]>();
+  for (const detail of openOrders) {
+    const poNumber = detail.purchaseOrder.poNumber;
+    if (poNumber === null) continue;
+    for (const line of detail.lines) {
+      if (line.workItemId === null) continue;
+      const group = choices.get(line.workItemId) ?? [];
+      group.push({
+        id: line.id,
+        poNumber,
+        pendingQuantity: line.pendingQuantity ?? line.quantity,
+      });
+      choices.set(line.workItemId, group);
+    }
+  }
+  return choices;
 }
 
 /** The prefix shape the server accepts (contracts: SaveChallanRequest). It
@@ -99,6 +135,9 @@ function comparableContent(state: EditorState): string {
       .filter(([, quantity]) => quantity.trim().length > 0)
       .sort((left, right) => left[0].localeCompare(right[0]))
       .map(([workItemId, quantity]) => [workItemId, quantity.trim()]),
+    poLines: Object.entries(state.poLines)
+      .filter(([, lineId]) => lineId.length > 0)
+      .sort((left, right) => left[0].localeCompare(right[0])),
   });
 }
 
@@ -117,6 +156,9 @@ export function ChallanEditor({
   const [loadedState, setLoadedState] = useState<EditorState | null>(null);
   const [consignees, setConsignees] = useState<readonly Contact[]>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
+  const [poLineChoices, setPoLineChoices] = useState<
+    ReadonlyMap<string, readonly PoLineChoice[]>
+  >(new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -147,28 +189,53 @@ export function ChallanEditor({
       // R16: the Work's linked consignees are offered first; any active
       // consignee stays selectable below them.
       api.listWorkConsignees(organisationId, workId).catch(() => []),
+      // The receipt link is a convenience too: a Work without open
+      // purchase orders — or whose orders cannot be read — simply offers
+      // no select, and the challan saves exactly as before.
+      api
+        .listWorkPurchaseOrders(organisationId, workId, 'open')
+        .then((orders) =>
+          Promise.all(
+            orders.map((order) => api.getPurchaseOrder(organisationId, order.id)),
+          ),
+        )
+        .catch(() => [] as PurchaseOrderDetailResponse[]),
     ])
-      .then(([loadedBalance, existing, loadedConsignees, loadedWorkConsignees]) => {
-        if (cancelled) return;
-        setBalance(loadedBalance);
-        setConsignees(loadedConsignees);
-        setWorkConsignees(loadedWorkConsignees);
-        const quantities: Record<string, string> = {};
-        for (const item of existing?.items ?? []) {
-          quantities[item.workItemId] = item.quantity;
-        }
-        const loaded: EditorState = {
-          challanDate:
-            existing?.challan.challanDate ?? new Date().toISOString().slice(0, 10),
-          prefix: existing?.challan.prefix ?? workCode,
-          name: existing?.challan.consignee.name ?? '',
-          address: existing?.challan.consignee.address ?? '',
-          phone: existing?.challan.consignee.phone ?? '',
-          quantities,
-        };
-        setState(loaded);
-        setLoadedState(loaded);
-      })
+      .then(
+        ([
+          loadedBalance,
+          existing,
+          loadedConsignees,
+          loadedWorkConsignees,
+          openOrders,
+        ]) => {
+          if (cancelled) return;
+          setBalance(loadedBalance);
+          setConsignees(loadedConsignees);
+          setWorkConsignees(loadedWorkConsignees);
+          setPoLineChoices(poLineChoicesOf(openOrders));
+          const quantities: Record<string, string> = {};
+          const poLines: Record<string, string> = {};
+          for (const item of existing?.items ?? []) {
+            quantities[item.workItemId] = item.quantity;
+            if (typeof item.purchaseOrderLineId === 'string') {
+              poLines[item.workItemId] = item.purchaseOrderLineId;
+            }
+          }
+          const loaded: EditorState = {
+            challanDate:
+              existing?.challan.challanDate ?? new Date().toISOString().slice(0, 10),
+            prefix: existing?.challan.prefix ?? workCode,
+            name: existing?.challan.consignee.name ?? '',
+            address: existing?.challan.consignee.address ?? '',
+            phone: existing?.challan.consignee.phone ?? '',
+            quantities,
+            poLines,
+          };
+          setState(loaded);
+          setLoadedState(loaded);
+        },
+      )
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
@@ -290,10 +357,14 @@ export function ChallanEditor({
       focusField(firstInvalidField);
       return;
     }
-    const items = entries.map(([workItemId, quantity]) => ({
-      workItemId,
-      quantity: quantity.trim(),
-    }));
+    const items = entries.map(([workItemId, quantity]) => {
+      const purchaseOrderLineId = state.poLines[workItemId] ?? '';
+      return {
+        workItemId,
+        quantity: quantity.trim(),
+        ...(purchaseOrderLineId.length > 0 ? { purchaseOrderLineId } : {}),
+      };
+    });
     if (items.length === 0) {
       setSaveError('Enter a quantity for at least one item.');
       // No single box is wrong here, so focus goes to the first one that can
@@ -377,6 +448,11 @@ export function ChallanEditor({
   // "All consignees" group is already active-only, and linking a retired
   // contact is refused with 409 CONTACT_RETIRED.
   const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
+
+  // The column exists only while the Work has open purchase orders with
+  // lines to receive against; without them the table reads exactly as it
+  // always did.
+  const offersPoLines = poLineChoices.size > 0;
 
   return (
     <Card className="w-full" aria-labelledby="challan-editor-title">
@@ -600,6 +676,7 @@ export function ChallanEditor({
               <th scope="col">Delivered</th>
               <th scope="col">Remaining</th>
               <th scope="col">This challan</th>
+              {offersPoLines && <th scope="col">Against PO</th>}
             </tr>
           </thead>
           <tbody>
@@ -679,6 +756,34 @@ export function ChallanEditor({
                       </StatusChip>
                     )}
                   </td>
+                  {offersPoLines && (
+                    <td>
+                      {(poLineChoices.get(item.workItemId) ?? []).length > 0 ? (
+                        <select
+                          aria-label={`Purchase order line for ${item.itemNumber}`}
+                          value={state.poLines[item.workItemId] ?? ''}
+                          onChange={(event) => {
+                            setState({
+                              ...state,
+                              poLines: {
+                                ...state.poLines,
+                                [item.workItemId]: event.target.value,
+                              },
+                            });
+                          }}
+                        >
+                          <option value="">No purchase order</option>
+                          {(poLineChoices.get(item.workItemId) ?? []).map((choice) => (
+                            <option key={choice.id} value={choice.id}>
+                              {choice.poNumber} · {choice.pendingQuantity} pending
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}

@@ -13,11 +13,12 @@ import type {
   UnitMaster,
 } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip as Chip } from '../ui/chip.js';
 import { Disclosure } from '../ui/disclosure.js';
-import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
+import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 
 interface MastersProps {
@@ -144,6 +145,17 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
+  /** Controlled, so the derived consignee box can answer live: a NEW
+   * contact is a consignee exactly when neither procurement role is
+   * asked for (the create-time rule in masters.ts). */
+  const [roleVendor, setRoleVendor] = useState(false);
+  const [roleClient, setRoleClient] = useState(false);
+
+  const startEditing = (row: Contact | null) => {
+    setEditing(row);
+    setRoleVendor(row?.isVendor ?? false);
+    setRoleClient(row?.isClient ?? false);
+  };
 
   const load = useCallback(
     (retired: boolean) => api.listContacts(organisationId, { includeRetired: retired }),
@@ -166,6 +178,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     const gstin = optional('gstin');
     const pincode = optional('pincode');
     const stateCode = optional('stateCode');
+    const divisionCode = optional('divisionCode');
+    // Role flags are membership, not profile text: an omitted flag leaves
+    // the stored value unchanged, so only a CHANGED box travels — an
+    // untouched form still sends exactly what it always sent.
+    const wasVendor = editing?.isVendor ?? false;
+    const wasClient = editing?.isClient ?? false;
     setPending(true);
     setError(null);
     setNotice(null);
@@ -179,9 +197,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(gstin !== undefined ? { gstin } : {}),
         ...(pincode !== undefined ? { pincode } : {}),
         ...(stateCode !== undefined ? { stateCode } : {}),
+        ...(divisionCode !== undefined ? { divisionCode } : {}),
+        ...(roleVendor !== wasVendor ? { isVendor: roleVendor } : {}),
+        ...(roleClient !== wasClient ? { isClient: roleClient } : {}),
       });
       setNotice(editing === null ? 'Contact added.' : 'Contact updated.');
-      setEditing(null);
+      startEditing(null);
       form.reset();
       reload();
     } catch (cause) {
@@ -264,13 +285,15 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                     .join(' · ') || '—'}
                 </td>
                 <td>
-                  {[
-                    row.isConsignee ? 'consignee' : null,
-                    row.isVendor ? 'vendor' : null,
-                    row.isClient ? 'client' : null,
-                  ]
-                    .filter((role) => role !== null)
-                    .join(', ') || '—'}
+                  {row.isConsignee || row.isVendor || row.isClient ? (
+                    <span className="flex flex-wrap gap-1">
+                      {row.isConsignee && <Badge variant="neutral">consignee</Badge>}
+                      {row.isVendor && <Badge variant="info">vendor</Badge>}
+                      {row.isClient && <Badge variant="info">client</Badge>}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td>
                   <StatusChip active={row.active} />
@@ -281,7 +304,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                       variant="outline"
                       disabled={pending}
                       onClick={() => {
-                        setEditing(row);
+                        startEditing(row);
                       }}
                     >
                       Edit
@@ -366,6 +389,20 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 />
               </Field>
               <Field>
+                <label htmlFor="contact-division-code">Division code</label>
+                <input
+                  id="contact-division-code"
+                  name="divisionCode"
+                  inputMode="numeric"
+                  pattern="[0-9]{2,5}"
+                  maxLength={5}
+                  defaultValue={editing?.divisionCode ?? ''}
+                />
+                <Hint>
+                  As the railnet directory writes it. A number series can draw on it.
+                </Hint>
+              </Field>
+              <Field>
                 <label htmlFor="contact-state-code">State code (optional)</label>
                 <input
                   id="contact-state-code"
@@ -399,25 +436,48 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
             </FieldRow>
             <fieldset className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium">
               <legend>Roles</legend>
+              {/* Consignee is a create-time fact, never a request field: a
+               * new contact is one exactly when neither procurement role is
+               * asked for, and an edit cannot change it — so the box only
+               * reports, live against the two boxes that decide it. */}
               <label htmlFor="contact-role-consignee">
                 <input
                   id="contact-role-consignee"
                   type="checkbox"
-                  checked
+                  checked={
+                    editing === null ? !roleVendor && !roleClient : editing.isConsignee
+                  }
                   disabled
                   readOnly
                 />{' '}
                 Consignee
               </label>{' '}
               <label htmlFor="contact-role-vendor">
-                <input id="contact-role-vendor" type="checkbox" disabled /> Vendor
+                <input
+                  id="contact-role-vendor"
+                  type="checkbox"
+                  checked={roleVendor}
+                  onChange={(event) => {
+                    setRoleVendor(event.currentTarget.checked);
+                  }}
+                />{' '}
+                Vendor
               </label>{' '}
               <label htmlFor="contact-role-client">
-                <input id="contact-role-client" type="checkbox" disabled /> Client
+                <input
+                  id="contact-role-client"
+                  type="checkbox"
+                  checked={roleClient}
+                  onChange={(event) => {
+                    setRoleClient(event.currentTarget.checked);
+                  }}
+                />{' '}
+                Client
               </label>
               <p className="text-muted-foreground">
-                Every contact is a consignee for now; vendor and client roles unlock
-                with the procurement wave (PO/BQ).
+                Vendors take purchase orders; clients buy under tax invoices. A new
+                contact with neither role is a consignee for railway document flows —
+                fixed at creation.
               </p>
             </fieldset>
             <Actions>
@@ -428,7 +488,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setEditing(null);
+                    startEditing(null);
                   }}
                 >
                   Cancel edit

@@ -246,7 +246,7 @@ afterAll(async () => {
   if (storageDir) await rm(storageDir, { recursive: true, force: true });
 });
 
-describe('contacts master (consignee role active, vendor/client dormant)', () => {
+describe('contacts master (unified role flags; plain creates are consignees)', () => {
   let contactId: string;
   let secondId: string;
 
@@ -276,7 +276,8 @@ describe('contacts master (consignee role active, vendor/client dormant)', () =>
       pincode: '110001',
       stateCode: '07',
       isConsignee: true,
-      // Dormant roles: nothing sets them until the procurement wave.
+      // No role asked for: a plain create is a consignee-only contact,
+      // exactly as every create was before the procurement wave.
       isVendor: false,
       isClient: false,
       active: true,
@@ -801,6 +802,227 @@ describe('work consignees (R16: a work may have many consignees)', () => {
         values (${organisationId}, ${workId}, ${vendor.id}, ${ownerUserId})
       `,
     ).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+/**
+ * The procurement wave wakes the vendor/client role flags (legacy §9,
+ * §5.8): the contacts API now creates and edits them — what every suite
+ * previously had to do with admin SQL. A create naming a role is NOT a
+ * consignee (the roles feed disjoint pickers), the R16 authority refusal
+ * follows the consignee role only, and an update treats omitted flags as
+ * "unchanged" so the profile edit form cannot strip a role it never knew
+ * about.
+ */
+describe('contact role flags: vendors and clients through the API', () => {
+  let vendorId: string;
+  let clientId: string;
+
+  it('creates a vendor contact that joins no railway picker', async () => {
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'Bharat Cables Pvt Ltd',
+        contactPerson: 'R. Nair',
+        address: 'Plot 12, MIDC, Pune',
+        gstin: '27aabcb1429b1zb',
+        stateCode: '27',
+        isVendor: true,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const contact = created.json<Contact>();
+    vendorId = contact.id;
+    expect(contact).toMatchObject({
+      isVendor: true,
+      isClient: false,
+      isConsignee: false,
+      gstin: '27AABCB1429B1ZB',
+      active: true,
+    });
+
+    // The create audit names the roles the contact was born with.
+    const [event] = await admin<{ details: { roles?: string[] } }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${vendorId}
+        and action = 'contact.created'
+    `;
+    expect(event?.details.roles).toEqual(['vendor']);
+  });
+
+  it('creates a client contact the same way', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'Sunrise Infra Projects LLP',
+        address: '4th Floor, Baner Road, Pune',
+        isClient: true,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const contact = created.json<Contact>();
+    clientId = contact.id;
+    expect(contact).toMatchObject({
+      isClient: true,
+      isVendor: false,
+      isConsignee: false,
+    });
+  });
+
+  it('keeps the R16 authority refusal for consignees without extending it to vendors', async () => {
+    // A vendor may carry whatever name its letterhead does — even one
+    // that would be refused as a consignee designation.
+    const vendor = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'DFM Industrial Supplies',
+        address: 'Transport Nagar, Kanpur',
+        isVendor: true,
+      },
+    });
+    expect(vendor.statusCode, vendor.body).toBe(201);
+    const dfmVendorId = vendor.json<Contact>().id;
+
+    // The same designation as a plain (consignee) create stays refused.
+    const consignee = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'DFM Industrial Supplies',
+        address: 'Somewhere Else Entirely',
+      },
+    });
+    expect(consignee.statusCode).toBe(400);
+    expect(consignee.json()).toMatchObject({ code: 'CONSIGNEE_AUTHORITY_FORBIDDEN' });
+
+    // A rename of the vendor is judged as a vendor, not a consignee —
+    // and the omitted role flags survive the update untouched.
+    const renamed = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${dfmVendorId}`,
+      organisationId,
+      payload: {
+        designation: 'Sr. DFM Enterprises',
+        address: 'Transport Nagar, Kanpur',
+      },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(renamed.json<Contact>()).toMatchObject({
+      designation: 'Sr. DFM Enterprises',
+      isVendor: true,
+      isConsignee: false,
+    });
+  });
+
+  it('keeps stored role flags on update unless explicitly changed', async () => {
+    // The web profile form sends no role fields: nothing is stripped.
+    const untouched = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${clientId}`,
+      organisationId,
+      payload: {
+        designation: 'Sunrise Infra Projects LLP',
+        address: '4th Floor, Baner Road, Pune',
+        phone: '020-25501234',
+      },
+    });
+    expect(untouched.statusCode, untouched.body).toBe(200);
+    expect(untouched.json<Contact>()).toMatchObject({
+      isClient: true,
+      isVendor: false,
+      isConsignee: false,
+      phone: '020-25501234',
+    });
+
+    // Explicit flags change the membership — both directions.
+    const flipped = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${clientId}`,
+      organisationId,
+      payload: {
+        designation: 'Sunrise Infra Projects LLP',
+        address: '4th Floor, Baner Road, Pune',
+        isVendor: true,
+        isClient: false,
+      },
+    });
+    expect(flipped.statusCode, flipped.body).toBe(200);
+    expect(flipped.json<Contact>()).toMatchObject({
+      isVendor: true,
+      isClient: false,
+      isConsignee: false,
+    });
+
+    const restored = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${clientId}`,
+      organisationId,
+      payload: {
+        designation: 'Sunrise Infra Projects LLP',
+        address: '4th Floor, Baner Road, Pune',
+        isVendor: false,
+        isClient: true,
+      },
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json<Contact>()).toMatchObject({
+      isVendor: false,
+      isClient: true,
+    });
+  });
+
+  it('filters the picker lists by role', async () => {
+    const vendors = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/contacts?role=vendor',
+      organisationId,
+    });
+    expect(vendors.statusCode, vendors.body).toBe(200);
+    const vendorList = vendors.json<{ contacts: Contact[] }>().contacts;
+    expect(vendorList.map((c) => c.id)).toContain(vendorId);
+    expect(vendorList.map((c) => c.id)).not.toContain(clientId);
+    expect(vendorList.every((c) => c.isVendor)).toBe(true);
+
+    const clients = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/contacts?role=client',
+      organisationId,
+    });
+    const clientList = clients.json<{ contacts: Contact[] }>().contacts;
+    expect(clientList.map((c) => c.id)).toContain(clientId);
+    expect(clientList.map((c) => c.id)).not.toContain(vendorId);
+    expect(clientList.every((c) => c.isClient)).toBe(true);
+
+    // Railway document flows stay railway-only (§9): neither the vendor
+    // nor the client appears in the consignee picker.
+    const consignees = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/contacts?role=consignee',
+      organisationId,
+    });
+    const consigneeIds = consignees
+      .json<{ contacts: Contact[] }>()
+      .contacts.map((c) => c.id);
+    expect(consigneeIds).not.toContain(vendorId);
+    expect(consigneeIds).not.toContain(clientId);
+  });
+
+  it('refuses vendor-role contacts as Work consignees through the API (R16)', async () => {
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/consignees`,
+      organisationId,
+      payload: { contactId: vendorId },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'CONTACT_NOT_CONSIGNEE' });
   });
 });
 
