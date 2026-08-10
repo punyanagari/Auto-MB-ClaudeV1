@@ -1,9 +1,10 @@
-/* Tailwind entrypoint — the design system is the auto-mb-vercel study's
- * own globals, adapted for Vite: same @theme mapping, IBM Plex self-hosted
- * via Fontsource. Every screen is written in Tailwind utilities and the
- * ui/ primitives now, so the `legacy` layer that carried the pre-Tailwind
- * stylesheet is gone; what that file said about elements rather than
- * classes lives in @layer base below. */
+/* Auto-MB operations workspace design system.
+ *
+ * The product is information-dense by nature, so the visual system keeps
+ * the canvas quiet: cool white surfaces, one dependable blue action colour,
+ * restrained status tones, generous hierarchy, and tabular numerals. Existing
+ * views continue to use semantic tokens; changing the values here gives every
+ * workflow one coherent language without moving business logic into the UI. */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss';
@@ -50,78 +51,68 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
-  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-sm: calc(var(--radius) * 0.55);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-xl: calc(var(--radius) * 1.35);
+  --radius-2xl: calc(var(--radius) * 1.75);
 }
 
 :root {
   color-scheme: light;
 
-  /* "Signal" — warm paper canvas, graphite chrome, and one accent taken from
-   * the amber of an Indian Railways platform indicator. Semantic names are
-   * unchanged so every unmigrated view inherits the new language without
-   * touching its markup; only the values moved. Every text pairing below is
-   * measured at 4.5:1 or better on its own ground. */
-
-  /* Ground */
-  --background: #f1f0eb;
-  --foreground: #161a20;
+  /* Ground and surfaces */
+  --background: #f6f8fb;
+  --foreground: #172033;
   --card: #ffffff;
-  --card-foreground: #161a20;
+  --card-foreground: #172033;
   --popover: #ffffff;
-  --popover-foreground: #161a20;
+  --popover-foreground: #172033;
 
-  /* Primary actions are solid graphite. Amber never carries text on a light
-   * ground — it fails contrast there — so it stays a lamp and a chrome accent. */
-  --primary: #1a1e25;
-  --primary-foreground: #f2f1ec;
+  /* One action colour. Status colours communicate state, never decoration. */
+  --primary: #155eef;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #344054;
+  --muted: #f2f4f7;
+  --muted-foreground: #667085;
+  --accent: #eaf2ff;
+  --accent-foreground: #174ea6;
 
-  --secondary: #e9e8e2;
-  --secondary-foreground: #3d434c;
-  --muted: #e9e8e2;
-  --muted-foreground: #5a606a;
-  --accent: #f7e6c2;
-  --accent-foreground: #7d5a10;
-
-  /* Signal aspects: stop, caution, proceed. */
-  --destructive: #ae3327;
+  --destructive: #d92d20;
   --destructive-foreground: #ffffff;
-  --success: #186b41;
+  --success: #039855;
   --success-foreground: #ffffff;
-  --warning: #e9a21c;
-  --warning-foreground: #7d5a10;
-  /* The system has no fourth hue; a notice reads as neutral ink. */
-  --info: #3d434c;
+  --warning: #f79009;
+  --warning-foreground: #9a4b00;
+  --info: #175cd3;
   --info-foreground: #ffffff;
 
-  --border: #dedcd4;
-  --input: #cbc9c0;
-  --ring: #161a20;
+  --border: #e4e7ec;
+  --input: #d0d5dd;
+  --ring: #155eef;
+  --radius: 0.625rem;
 
-  --radius: 0.25rem;
+  /* The application rail is a quiet white surface rather than a second
+   * visual theme. Active destinations use the same blue as primary actions. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #172033;
+  --sidebar-faint: #98a2b3;
+  --sidebar-primary: #155eef;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef4ff;
+  --sidebar-accent-foreground: #174ea6;
+  --sidebar-border: #e4e7ec;
+  --sidebar-ring: #155eef;
 
-  /* Graphite rail. Amber marks the current destination. */
-  --sidebar: #1a1e25;
-  --sidebar-foreground: #f2f1ec;
-  --sidebar-faint: #9aa1ac;
-  --sidebar-primary: #e9a21c;
-  --sidebar-primary-foreground: #1a1e25;
-  --sidebar-accent: #252a33;
-  --sidebar-accent-foreground: #f2f1ec;
-  --sidebar-border: #333944;
-  --sidebar-ring: #e9a21c;
-
-  /* Signal additions the semantic names cannot express. */
-  --amber: #e9a21c;
-  --amber-ink: #7d5a10;
-  --amber-soft: #f7e6c2;
-  --green-soft: #d7e8de;
-  --red-soft: #f3dcd9;
-  --ink-faint: #5f656e;
-  --rule-strong: #cbc9c0;
+  /* Compatibility tokens still referenced by older views. */
+  --amber: #f79009;
+  --amber-ink: #9a4b00;
+  --amber-soft: #fff4e5;
+  --green-soft: #ecfdf3;
+  --red-soft: #fef3f2;
+  --ink-faint: #667085;
+  --rule-strong: #d0d5dd;
 }
 
 @layer base {
@@ -129,21 +120,30 @@
     @apply border-border outline-ring/50;
   }
 
-  /* 16px rem base — the study's Tailwind scale maps 1:1. */
   :root {
     font-family: var(--font-sans);
     font-size: 16px;
     font-synthesis: none;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  html {
+    background: var(--background);
+    scroll-behavior: smooth;
   }
 
   body {
     @apply bg-background text-foreground;
-    /* The interface reads at text-sm, exactly like the study. */
     min-width: 320px;
     min-height: 100vh;
     font-size: 0.875rem;
-    line-height: 1.45;
+    line-height: 1.5;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 18%, white);
+    color: var(--foreground);
   }
 
   :focus-visible {
@@ -151,10 +151,6 @@
     outline-offset: 2px;
   }
 
-  /* Preflight strips heading typography, and the product sets a heading's
-   * level from what it means in the document, never from how large it should
-   * look. So the scale belongs to the element: a view that wants a different
-   * size says so in utilities, which win over this layer. */
   h1 {
     @apply mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance;
   }
@@ -171,15 +167,24 @@
     @apply mt-4 mb-2 text-[13px] font-semibold;
   }
 
-  /* Form controls. Preflight resets them to unstyled, and there are far too
-   * many inputs across the product to dress each one at its call site. */
+  p {
+    text-wrap: pretty;
+  }
+
   input,
   select,
   textarea {
-    @apply min-h-9 rounded-md border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-sm;
+    @apply min-h-9 rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-sm;
     transition:
       border-color 120ms ease,
-      box-shadow 120ms ease;
+      box-shadow 120ms ease,
+      background-color 120ms ease;
+  }
+
+  input:hover,
+  select:hover,
+  textarea:hover {
+    border-color: color-mix(in srgb, var(--input) 65%, var(--foreground));
   }
 
   input:focus-visible,
@@ -187,14 +192,19 @@
   textarea:focus-visible {
     outline: none;
     border-color: var(--ring);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
+  }
+
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    @apply cursor-not-allowed bg-muted text-muted-foreground shadow-none;
   }
 
   textarea {
     resize: vertical;
   }
 
-  /* A file input is a drop target, not a text box. */
   input[type='file'] {
     @apply border-dashed p-2 shadow-none;
   }
@@ -204,21 +214,49 @@
     @apply size-4 min-h-0 shadow-none;
     accent-color: var(--primary);
   }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-/* Thin, technical scrollbars + tabular numerals, as in the study. */
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
+
   .tnum {
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
   }
+
+  .surface-elevated {
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 2px rgb(16 24 40 / 0.03),
+      0 10px 30px rgb(16 24 40 / 0.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media print {
+  :root {
+    --background: #ffffff;
+    --card: #ffffff;
+  }
+
   .no-print {
     display: none !important;
   }
