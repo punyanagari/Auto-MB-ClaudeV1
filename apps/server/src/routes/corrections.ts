@@ -39,7 +39,7 @@ import {
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { applyApproval, isApprover, readApproval } from './amendments.js';
-import { assertChallanDate } from './challans.js';
+import { assertChallanDate, cancellationNote, normaliseConsignee } from './challans.js';
 import { normaliseHeader } from './issue-challans.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -309,6 +309,10 @@ export function registerCorrectionRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as ProposeChallanCancelReplaceRequest;
+      // The replacement becomes a real draft challan on apply, so its
+      // consignee is held to what the challan routes hold theirs to: not
+      // blank once trimmed, and stored trimmed.
+      const replacementConsignee = normaliseConsignee(body.replacement.consignee);
 
       const approval = await withBoundTenant(
         database,
@@ -409,7 +413,7 @@ export function registerCorrectionRoutes(
             });
           }
           const consigneeBefore = summariseConsignee(currentConsignee);
-          const consigneeAfter = summariseConsignee(body.replacement.consignee);
+          const consigneeAfter = summariseConsignee(replacementConsignee);
           if (consigneeBefore !== consigneeAfter) {
             diff.push({
               field: 'consignee',
@@ -442,7 +446,7 @@ export function registerCorrectionRoutes(
             replacement: {
               challanDate: body.replacement.challanDate,
               prefix: body.replacement.prefix,
-              consignee: body.replacement.consignee,
+              consignee: replacementConsignee,
               items: replacementItems,
             },
           };
@@ -1122,6 +1126,7 @@ export function registerCorrectionRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as CancelCorrectionNoticeRequest;
+      const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const notice = await lockNotice(tx, id);
@@ -1136,7 +1141,7 @@ export function registerCorrectionRoutes(
         await tx`
           update correction_notices
           set status = 'cancelled', cancelled_by_user_id = ${user.id},
-              cancelled_at = now(), cancellation_note = ${body.note}
+              cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
         await audit(
@@ -1146,7 +1151,7 @@ export function registerCorrectionRoutes(
           'correction_notice.cancelled',
           'correction_notices',
           id,
-          { noticeNumber: notice.notice_number, note: body.note },
+          { noticeNumber: notice.notice_number, note },
         );
         return readNoticeDetail(tx, id);
       });

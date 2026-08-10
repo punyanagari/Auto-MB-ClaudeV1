@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Organisation } from '@auto-mb/contracts';
+import type { Organisation, Work } from '@auto-mb/contracts';
 import type { ApiClient, MeResponse } from '../api.js';
 import { Approvals } from './Approvals.js';
 import { ChallanDetail } from './ChallanDetail.js';
@@ -190,6 +190,15 @@ export function Workspace({
   // and an operator who came from Deliveries should land back on Deliveries.
   const [workTab, setWorkTab] = useState<WorkTab>('overview');
   const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(null);
+  // R8: the challan detail views close their cancel and correction forms
+  // on a completed Work, the way every create surface on the Work page
+  // does. Neither view loads the Work — they are reachable from the Work
+  // page and from Serial Lookup — so the workspace resolves the status
+  // once per opened document and hands it down.
+  const [challanWork, setChallanWork] = useState<{
+    readonly workId: string;
+    readonly status: Work['status'];
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const membership = me.memberships.find(
@@ -225,6 +234,34 @@ export function Workspace({
   useEffect(() => {
     refreshPendingApprovals();
   }, [refreshPendingApprovals, view.name]);
+
+  const openedChallanWorkId =
+    view.name === 'challan' || view.name === 'issue-challan' ? view.workId : null;
+  useEffect(() => {
+    if (openedChallanWorkId === null) return;
+    let cancelled = false;
+    api
+      .getWork(organisation.id, openedChallanWorkId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setChallanWork({ workId: openedChallanWorkId, status: loaded.work.status });
+      })
+      .catch(() => {
+        // A failed status read never blocks the document: the detail view
+        // reports its own load errors, and the server refuses a cancel or
+        // a correction on a completed Work regardless.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisation.id, openedChallanWorkId]);
+
+  // Unknown — still loading, or a failed read — stays permissive: a form
+  // must not vanish because a side request was slow.
+  const challanWorkActive =
+    challanWork === null ||
+    challanWork.workId !== openedChallanWorkId ||
+    challanWork.status === 'active';
 
   // Same convention as the app shell: view changes land keyboard and
   // screen-reader users on the new heading.
@@ -465,6 +502,7 @@ export function Workspace({
               canIssue={canIssue}
               canCancel={canCancel}
               canRecordEvidence={canRecordEvidence}
+              workActive={challanWorkActive}
               onEdit={(challanId) => {
                 setView({
                   name: 'challan-edit',
@@ -507,6 +545,7 @@ export function Workspace({
               canModify={canModify}
               canIssue={canIssue}
               canCancel={canCancel}
+              workActive={challanWorkActive}
               onEdit={(challanId) => {
                 setView({
                   name: 'issue-challan-edit',

@@ -29,12 +29,14 @@ import {
   ApiErrorSchema,
   CompleteWorkRequestSchema,
   ReopenWorkRequestSchema,
+  WorkCompletionReadinessSchema,
   WorkStatusResponseSchema,
   type CompleteWorkRequest,
   type ReopenWorkRequest,
   type UnfinishedWorkItem,
   type WorkCompletionBlocker,
   type WorkNotCleanDetails,
+  type WorkCompletionReadiness,
   type WorkNotFullyExecutedDetails,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
@@ -371,6 +373,52 @@ export function registerWorkCompletionRoutes(
   auth: Auth,
   database: Sql,
 ): void {
+  /** The same two refusals POST /complete raises, asked as a question.
+   * The Work page calls this so it can show the operator what is left
+   * instead of offering a completion form that cannot succeed — the
+   * shortfall is the answer to "why not", so it is worth more on the page
+   * than behind a rejected submission.
+   *
+   * Read-only, and deliberately reuses the writers' own functions: a
+   * second implementation of "is this Work finished" would drift, and the
+   * one that drifted would be the one the operator reads. */
+  app.get(
+    '/api/works/:id/completion-readiness',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: WorkCompletionReadinessSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const work = await readWork(tx, workId);
+        // The row locks unfinishedItems takes are the writers' concern;
+        // this answer is a snapshot either way, and the POST re-proves
+        // everything under its own locks before it transitions.
+        const [blockers, unfinished] = await Promise.all([
+          completionBlockers(tx, workId),
+          unfinishedItems(tx, workId),
+        ]);
+        const readiness: WorkCompletionReadiness = {
+          ready:
+            work.status === 'active' &&
+            blockers.length === 0 &&
+            unfinished.length === 0,
+          unfinished: [...unfinished],
+          blockers: [...blockers],
+        };
+        return readiness;
+      });
+    },
+  );
+
   app.post(
     '/api/works/:id/complete',
     {

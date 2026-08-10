@@ -1,5 +1,12 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, UuidSchema } from './primitives.js';
+import { DateOnlySchema, UuidSchema, nonBlankString } from './primitives.js';
+
+/** The reason and the addressee are stored in columns whose CHECKs
+ * measure them TRIMMED (0011), and neither input is trimmed before it is
+ * sent, so a reason of three spaces used to reach Postgres and come back
+ * as a bare 500. The schema now holds the same floor the CHECK does. */
+const ExtensionReasonSchema = nonBlankString({ minLength: 3, maxLength: 5000 });
+const ExtensionAddresseeSchema = nonBlankString({ minLength: 2, maxLength: 200 });
 
 // --- Work completion dates --------------------------------------------------
 
@@ -40,8 +47,8 @@ export type ExtensionResponseOutcome = Static<typeof ExtensionResponseOutcomeSch
 export const SaveExtensionRequestSchema = Type.Object(
   {
     proposedCompletionDate: DateOnlySchema,
-    reason: Type.String({ minLength: 3, maxLength: 5000 }),
-    addressee: Type.String({ minLength: 2, maxLength: 200 }),
+    reason: ExtensionReasonSchema,
+    addressee: ExtensionAddresseeSchema,
     letterDate: Type.Optional(DateOnlySchema),
   },
   { additionalProperties: false },
@@ -106,8 +113,8 @@ export const BackfillExtensionRequestSchema = Type.Object(
     /** The paper letter's date — never in the future. */
     letterDate: DateOnlySchema,
     proposedCompletionDate: DateOnlySchema,
-    reason: Type.String({ minLength: 3, maxLength: 5000 }),
-    addressee: Type.String({ minLength: 2, maxLength: 200 }),
+    reason: ExtensionReasonSchema,
+    addressee: ExtensionAddresseeSchema,
   },
   { additionalProperties: false },
 );

@@ -21,7 +21,9 @@ import {
   type MeasurementBookLine,
   type MeasurementBookSource,
   type SetMbSourcesRequest,
+  type WorkCompletionBlocker,
   type WorkItemPaymentCategory,
+  type WorkNotCleanDetails,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
@@ -1000,6 +1002,33 @@ export function registerMeasurementBookRoutes(
               `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
             );
           }
+          // §5.9 register order: the MB register's dates must not run
+          // backwards behind its gap-free, strictly increasing numbering.
+          // MB-02's per-line remarks narrate 'previously billed X, now Y'
+          // from the prior-cumulative memory, so an MB dated before its
+          // predecessor prints a prior cumulative that, by its own date,
+          // had not yet been measured — and the finalized snapshot is
+          // immutable, so it can never be corrected. Equal dates pass:
+          // several MBs on one day is normal. Checked here only: one
+          // draft per Work (0024) means no MB can be finalized between
+          // this draft's creation and its own finalize, so the newest
+          // finalized date can only fall (by cancellation) meanwhile,
+          // never rise. One indexed read — measurement_books_work_idx
+          // already orders by (work_id, status, mb_date desc).
+          const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
+            select mb_date::text as mb_date, mb_number
+            from measurement_books
+            where work_id = ${workId} and status = 'finalized'
+            order by mb_date desc
+            limit 1
+          `;
+          if (newest && body.mbDate < newest.mb_date) {
+            throw httpError(
+              400,
+              'MB_DATE_BEFORE_PREVIOUS',
+              `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
+            );
+          }
           // No further MBs once a live final MB exists (friendly form;
           // the 0024 insert guard holds it against every writer).
           const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
@@ -1250,6 +1279,53 @@ export function registerMeasurementBookRoutes(
         // of the Work (spec §5.9). Open = billable state and no live
         // claim by any MB; this draft's own claims are already live.
         if (book.is_final) {
+          // The adopted CLEAN-STATE rule, one layer over from Work
+          // completion (completionBlockers in work-completion.ts): a
+          // draft delivery or issue challan is invisible to the sweep
+          // below, which only sees sources already in their billable
+          // state. Finalizing over it strands it forever — the 0031
+          // guard refuses its issue for as long as a live final MB
+          // exists, so it can never become evidence, never reach the
+          // ledger, and nothing tells the operator why. So refuse, and
+          // name every one. Note the remedy: 'issue it instead' is NOT
+          // available while this book exists, because that same guard
+          // counts a DRAFT final MB as live — the drafts are deleted, or
+          // this book is deleted first and raised again after they are
+          // issued. The Work row lock above serialises the check against
+          // a concurrent issue attempt on the same draft.
+          const openDrafts = await tx<
+            { kind: WorkCompletionBlocker['kind']; record_id: string; label: string }[]
+          >`
+            select 'draft_delivery_challan' as kind, dc.id as record_id,
+                   'Draft delivery challan dated ' || dc.challan_date::text as label
+            from delivery_challans dc
+            where dc.work_id = ${book.work_id} and dc.status = 'draft'
+            union all
+            select 'draft_issue_challan', ic.id,
+                   'Draft issue challan dated ' || ic.challan_date::text
+            from issue_challans ic
+            where ic.work_id = ${book.work_id} and ic.status = 'draft'
+            order by 1, 3
+          `;
+          if (openDrafts.length > 0) {
+            // Same details shape the Work-completion 409 answers with,
+            // so a client renders one worklist for both refusals.
+            const details: WorkNotCleanDetails = {
+              blockers: openDrafts.map((row) => ({
+                kind: row.kind,
+                recordId: row.record_id,
+                label: row.label,
+              })),
+            };
+            const names = openDrafts.map((row) => row.label).join('; ');
+            throw httpError(
+              409,
+              'MB_FINAL_DRAFTS_OPEN',
+              `The final Measurement Book closes this Work's payment cycle, so nothing may still be open — ${names}. Delete each draft, or delete this Measurement Book, issue them, and raise the final Measurement Book again so the sweep picks them up.`,
+              details,
+            );
+          }
+
           const missed = await tx<
             { source_type: MbSourceType; source_id: string; label: string | null }[]
           >`

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Contact } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 
@@ -19,6 +20,11 @@ interface WorkConsigneesProps {
  * remains selectable — linking is organisational convenience, never a
  * restriction. Unlinking removes only the preference: every issued
  * document keeps its own snapshot.
+ *
+ * A RETIRED contact keeps its row here — the link is a preference, not
+ * history, and reactivating the contact restores it — but it is marked
+ * as retired and the challan and PAC pickers stop offering it. Retiring
+ * is a refusal to offer, not a refusal to show.
  */
 export function WorkConsignees({
   api,
@@ -107,6 +113,7 @@ export function WorkConsignees({
             <tr>
               <th scope="col">Designation</th>
               <th scope="col">Address</th>
+              <th scope="col">Offered</th>
               {canModify && <th scope="col">Actions</th>}
             </tr>
           </thead>
@@ -115,6 +122,13 @@ export function WorkConsignees({
               <tr key={contact.id}>
                 <th scope="row">{contact.designation}</th>
                 <td className={wrapCell}>{contact.address ?? '—'}</td>
+                <td>
+                  {contact.active ? (
+                    <span className="text-muted-foreground">in the pickers</span>
+                  ) : (
+                    <StatusChip status="cancelled">retired — not offered</StatusChip>
+                  )}
+                </td>
                 {canModify && (
                   <td>
                     <Button
@@ -138,6 +152,14 @@ export function WorkConsignees({
             ))}
           </tbody>
         </DataTable>
+      )}
+      {(linked ?? []).some((contact) => !contact.active) && (
+        <p className="text-muted-foreground">
+          A retired consignee keeps its link to this Work but is no longer offered in
+          the challan and PAC pickers. Reactivate the contact under Masters to offer it
+          again, or unlink it here — issued documents keep their own snapshots either
+          way.
+        </p>
       )}
       {canModify && linkable.length > 0 && (
         <form

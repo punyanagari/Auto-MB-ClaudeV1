@@ -64,6 +64,7 @@ import type {
   WorkCompletionResponse,
   CompleteWorkRequest,
   ReopenWorkRequest,
+  WorkCompletionReadiness,
   WorkStatusResponse,
   WorkDetailResponse,
   WorkSettingsResponse,
@@ -697,6 +698,10 @@ export interface ApiClient {
     workId: string,
     body: ReopenWorkRequest,
   ) => Promise<WorkStatusResponse>;
+  readonly workCompletionReadiness: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkCompletionReadiness>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -1699,6 +1704,12 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async workCompletionReadiness(organisationId, workId) {
+      return request<WorkCompletionReadiness>(
+        `/api/works/${workId}/completion-readiness`,
+        { organisationId },
+      );
     },
     async reopenWork(organisationId, workId, body) {
       return request<WorkStatusResponse>(`/api/works/${workId}/reopen`, {

@@ -32,6 +32,12 @@ interface IssueChallanDetailProps {
   readonly canModify: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** R8: false closes the two mutating surfaces (cancel, correction) on a
+   * completed Work, which the server refuses anyway — assertWorkOperable
+   * for the cancel, requireActiveWork for the correction. Omitted means
+   * the caller has not resolved the Work: the surfaces stay open exactly
+   * as they were before this gate, and the server stays authoritative. */
+  readonly workActive?: boolean;
   readonly onEdit: (challanId: string) => void;
   readonly onDeleted: () => void;
   readonly onBack: () => void;
@@ -59,6 +65,7 @@ export function IssueChallanDetail({
   canModify,
   canIssue,
   canCancel,
+  workActive = true,
   onEdit,
   onDeleted,
   onBack,
@@ -380,145 +387,177 @@ export function IssueChallanDetail({
         </form>
       )}
 
-      {issueChallan.status === 'issued' && canModify && hasPendingCorrection && (
+      {/* R8: a completed Work takes no correction (requireActiveWork), so
+          the replacement form closes rather than collecting a date, a
+          recipient, and a quantity per line only to fail on submit. The
+          record itself — lines, cancellation note, both PDFs — stays. */}
+      {issueChallan.status === 'issued' && canModify && !workActive && (
         <>
           <h2>Request correction</h2>
           <p className="text-muted-foreground" role="note">
-            A correction request for this Issue Challan is already awaiting a decision
-            in the approvals queue.
+            This Work is completed, so no correction can be filed against its documents.
+            Reopen the Work from its page first; this challan and its PDFs stay
+            available meanwhile.
           </p>
         </>
       )}
 
-      {issueChallan.status === 'issued' && canModify && !hasPendingCorrection && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const role = formValue(data, 'ic-correction-role').trim();
-            const location = formValue(data, 'ic-correction-location').trim();
-            const remarks = formValue(data, 'ic-correction-remarks').trim();
-            void act(async () => {
-              await api.proposeIssueChallanCancelReplace(
-                organisationId,
-                issueChallan.id,
-                {
-                  reason: formValue(data, 'ic-correction-reason'),
-                  replacement: {
-                    challanDate: formValue(data, 'ic-correction-date'),
-                    movementType: issueChallan.movementType,
-                    issuedToName: formValue(data, 'ic-correction-name'),
-                    ...(role.length > 0 ? { issuedToRole: role } : {}),
-                    ...(location.length > 0 ? { location } : {}),
-                    ...(remarks.length > 0 ? { remarks } : {}),
-                    lines: lines.map((line) =>
-                      line.workItemId !== null
-                        ? {
-                            workItemId: line.workItemId,
-                            quantity: formValue(data, `ic-correction-qty-${line.id}`),
-                          }
-                        : {
-                            description: line.description,
-                            unit: line.unit,
-                            quantity: formValue(data, `ic-correction-qty-${line.id}`),
-                          },
-                    ),
+      {issueChallan.status === 'issued' &&
+        canModify &&
+        workActive &&
+        hasPendingCorrection && (
+          <>
+            <h2>Request correction</h2>
+            <p className="text-muted-foreground" role="note">
+              A correction request for this Issue Challan is already awaiting a decision
+              in the approvals queue.
+            </p>
+          </>
+        )}
+
+      {issueChallan.status === 'issued' &&
+        canModify &&
+        workActive &&
+        !hasPendingCorrection && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const role = formValue(data, 'ic-correction-role').trim();
+              const location = formValue(data, 'ic-correction-location').trim();
+              const remarks = formValue(data, 'ic-correction-remarks').trim();
+              void act(async () => {
+                await api.proposeIssueChallanCancelReplace(
+                  organisationId,
+                  issueChallan.id,
+                  {
+                    reason: formValue(data, 'ic-correction-reason'),
+                    replacement: {
+                      challanDate: formValue(data, 'ic-correction-date'),
+                      movementType: issueChallan.movementType,
+                      issuedToName: formValue(data, 'ic-correction-name'),
+                      ...(role.length > 0 ? { issuedToRole: role } : {}),
+                      ...(location.length > 0 ? { location } : {}),
+                      ...(remarks.length > 0 ? { remarks } : {}),
+                      lines: lines.map((line) =>
+                        line.workItemId !== null
+                          ? {
+                              workItemId: line.workItemId,
+                              quantity: formValue(data, `ic-correction-qty-${line.id}`),
+                            }
+                          : {
+                              description: line.description,
+                              unit: line.unit,
+                              quantity: formValue(data, `ic-correction-qty-${line.id}`),
+                            },
+                      ),
+                    },
                   },
-                },
-              );
-              reload();
-              return null;
-            }, 'Correction requested: on approval this Issue Challan is cancelled and a corrected draft is created.');
-          }}
-        >
-          <h2>Request correction</h2>
-          <p className="text-muted-foreground">
-            Issue Challans carry no downstream evidence, so the lawful correction path
-            is <strong>cancel and replace</strong>: on approval the issued challan is
-            cancelled (its number stays in the series) and a corrected draft is created
-            for re-issue.
-          </p>
-          <Field>
-            <label htmlFor="ic-correction-date">Corrected challan date</label>
-            <input
-              id="ic-correction-date"
-              name="ic-correction-date"
-              type="date"
-              defaultValue={issueChallan.challanDate}
-              required
-            />
-          </Field>
-          <Field>
-            <label htmlFor="ic-correction-name">Issued to</label>
-            <input
-              id="ic-correction-name"
-              name="ic-correction-name"
-              defaultValue={issueChallan.issuedToName}
-              required
-              minLength={2}
-              maxLength={200}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="ic-correction-role">Issued-to role (optional)</label>
-            <input
-              id="ic-correction-role"
-              name="ic-correction-role"
-              defaultValue={issueChallan.issuedToRole ?? ''}
-              maxLength={200}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="ic-correction-location">Location (optional)</label>
-            <input
-              id="ic-correction-location"
-              name="ic-correction-location"
-              defaultValue={issueChallan.location ?? ''}
-              maxLength={200}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="ic-correction-remarks">Remarks (optional)</label>
-            <input
-              id="ic-correction-remarks"
-              name="ic-correction-remarks"
-              defaultValue={issueChallan.remarks ?? ''}
-              maxLength={1000}
-            />
-          </Field>
-          {lines.map((line) => (
-            <Field key={line.id}>
-              <label htmlFor={`ic-correction-qty-${line.id}`}>
-                Quantity — {line.description}
-              </label>
+                );
+                reload();
+                return null;
+              }, 'Correction requested: on approval this Issue Challan is cancelled and a corrected draft is created.');
+            }}
+          >
+            <h2>Request correction</h2>
+            <p className="text-muted-foreground">
+              Issue Challans carry no downstream evidence, so the lawful correction path
+              is <strong>cancel and replace</strong>: on approval the issued challan is
+              cancelled (its number stays in the series) and a corrected draft is
+              created for re-issue.
+            </p>
+            <Field>
+              <label htmlFor="ic-correction-date">Corrected challan date</label>
               <input
-                id={`ic-correction-qty-${line.id}`}
-                name={`ic-correction-qty-${line.id}`}
-                defaultValue={line.quantity}
+                id="ic-correction-date"
+                name="ic-correction-date"
+                type="date"
+                defaultValue={issueChallan.challanDate}
                 required
-                inputMode="decimal"
               />
             </Field>
-          ))}
-          <Field>
-            <label htmlFor="ic-correction-reason">Reason for correction</label>
-            <input
-              id="ic-correction-reason"
-              name="ic-correction-reason"
-              required
-              minLength={3}
-              maxLength={2000}
-            />
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Request cancel &amp; replace
-            </Button>
-          </Actions>
-        </form>
+            <Field>
+              <label htmlFor="ic-correction-name">Issued to</label>
+              <input
+                id="ic-correction-name"
+                name="ic-correction-name"
+                defaultValue={issueChallan.issuedToName}
+                required
+                minLength={2}
+                maxLength={200}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="ic-correction-role">Issued-to role (optional)</label>
+              <input
+                id="ic-correction-role"
+                name="ic-correction-role"
+                defaultValue={issueChallan.issuedToRole ?? ''}
+                maxLength={200}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="ic-correction-location">Location (optional)</label>
+              <input
+                id="ic-correction-location"
+                name="ic-correction-location"
+                defaultValue={issueChallan.location ?? ''}
+                maxLength={200}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="ic-correction-remarks">Remarks (optional)</label>
+              <input
+                id="ic-correction-remarks"
+                name="ic-correction-remarks"
+                defaultValue={issueChallan.remarks ?? ''}
+                maxLength={1000}
+              />
+            </Field>
+            {lines.map((line) => (
+              <Field key={line.id}>
+                <label htmlFor={`ic-correction-qty-${line.id}`}>
+                  Quantity — {line.description}
+                </label>
+                <input
+                  id={`ic-correction-qty-${line.id}`}
+                  name={`ic-correction-qty-${line.id}`}
+                  defaultValue={line.quantity}
+                  required
+                  inputMode="decimal"
+                />
+              </Field>
+            ))}
+            <Field>
+              <label htmlFor="ic-correction-reason">Reason for correction</label>
+              <input
+                id="ic-correction-reason"
+                name="ic-correction-reason"
+                required
+                minLength={3}
+                maxLength={2000}
+              />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Request cancel &amp; replace
+              </Button>
+            </Actions>
+          </form>
+        )}
+
+      {issueChallan.status === 'issued' && canCancel && !workActive && (
+        <>
+          <h2>Cancel this challan</h2>
+          <FormError role="note">
+            This Work is completed, so its issued documents are frozen. Reopen the Work
+            from its page to cancel this challan; the challan, its lines, and its PDFs
+            above stay readable and downloadable meanwhile.
+          </FormError>
+        </>
       )}
 
-      {issueChallan.status === 'issued' && canCancel && (
+      {issueChallan.status === 'issued' && canCancel && workActive && (
         <form
           onSubmit={(event) => {
             event.preventDefault();

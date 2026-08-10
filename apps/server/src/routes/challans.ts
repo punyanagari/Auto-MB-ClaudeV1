@@ -206,6 +206,63 @@ export async function assertChallanDate(
   }
 }
 
+/** True when a DecimalString denotes a value greater than zero, decided
+ * on the digits themselves — never binary floating-point arithmetic
+ * (engineering rule 5). The schema pattern guarantees the shape, so a
+ * leading '-' is the only sign and any non-zero digit means positive. */
+function isPositiveDecimal(value: string): boolean {
+  return !value.startsWith('-') && /[1-9]/.test(value);
+}
+
+/** Digits before the decimal point. `delivery_challan_items.quantity` is
+ * numeric(18,3), so sixteen of them is a numeric field overflow (22003)
+ * in Postgres — the same statusless error a failed CHECK raises. */
+function integerDigitCount(value: string): number {
+  const [whole = ''] = value.replace('-', '').split('.');
+  return whole.length;
+}
+
+/** The consignee block exactly as it will be printed. `ConsigneeSchema`
+ * counts RAW characters, so `{name: '  ', address: '   '}` satisfies its
+ * minimums, is frozen into the issued snapshot, and reaches the railway
+ * as a delivery document with a blank consignee — and `consignee_snapshot`
+ * is bare jsonb, so nothing below catches it either. Trim first, then
+ * prove the printed parts survived. A phone of only spaces is dropped
+ * rather than stored blank. (The web editor already trims; this closes
+ * the same hole for direct API callers.) */
+export function normaliseConsignee(consignee: Consignee): Consignee {
+  const name = consignee.name.trim();
+  const address = consignee.address.trim();
+  const phone = consignee.phone?.trim() ?? '';
+  if (name.length < 2 || address.length < 3) {
+    throw httpError(
+      400,
+      'CONSIGNEE_INVALID',
+      'The consignee needs a name and an address that are not blank — this challan is printed and handed to the consignee.',
+    );
+  }
+  return { name, address, ...(phone.length > 0 ? { phone } : {}) };
+}
+
+/** A cancellation note as the DATABASE judges it. Every cancellation
+ * CHECK in the schema reads `length(btrim(note)) >= 3` while the contract
+ * counts raw characters, so a note of three spaces passed validation,
+ * reached Postgres, and came back as a bare 500 'The request could not be
+ * completed.' The trimmed text is what gets stored, so the note on the
+ * record is the note the operator meant. (Exported: the correction-notice
+ * and PAC cancels answer to the same CHECK.) */
+export function cancellationNote(note: string): string {
+  const trimmed = note.trim();
+  if (trimmed.length < 3) {
+    throw httpError(
+      400,
+      'CANCELLATION_NOTE_REQUIRED',
+      'The cancellation note must say why the record is being cancelled — at least three characters that are not spaces.',
+    );
+  }
+  return trimmed;
+}
+
 /** Locks the challan row for the rest of the transaction and returns it.
  * Every state transition starts here so concurrent requests serialise. */
 async function lockChallan(tx: TransactionSql, challanId: string): Promise<ChallanRow> {
@@ -250,6 +307,28 @@ export async function writeLines(
     delete from delivery_challan_items where delivery_challan_id = ${challanId}
   `;
   for (const [index, item] of body.items.entries()) {
+    // The column reads `numeric(18,3) NOT NULL CHECK (quantity > 0)`,
+    // while the shared DecimalString shape admits '0', '-5' and a
+    // sixteen-digit typo. Each of those reaches Postgres as a 23514 or a
+    // 22003, neither of which carries an HTTP status, so the operator
+    // reads 'The request could not be completed.' and the logs record a
+    // false 5xx. Refused here instead, naming the line — the same answer
+    // the correction path already gives (corrections.ts QUANTITY_INVALID).
+    const lineNumber = String(index + 1);
+    if (!isPositiveDecimal(item.quantity)) {
+      throw httpError(
+        400,
+        'QUANTITY_INVALID',
+        `Line ${lineNumber}: the delivered quantity must be greater than zero (received ${item.quantity}).`,
+      );
+    }
+    if (integerDigitCount(item.quantity) > 15) {
+      throw httpError(
+        400,
+        'QUANTITY_INVALID',
+        `Line ${lineNumber}: the delivered quantity ${item.quantity} is too large to record — check for a mistyped digit.`,
+      );
+    }
     const [inserted] = await tx<{ id: string }[]>`
       insert into delivery_challan_items (
         organisation_id, delivery_challan_id, work_id, work_item_id,
@@ -450,6 +529,7 @@ export function registerChallanRoutes(
       );
       const { id: workId } = request.params as { id: string };
       const body = request.body as SaveChallanRequest;
+      const consignee = normaliseConsignee(body.consignee);
 
       const detail = await withBoundTenant(
         database,
@@ -493,7 +573,7 @@ export function registerChallanRoutes(
             )
             values (
               ${organisationId}, ${workId}, ${body.challanDate}, ${body.prefix},
-              ${jsonb(tx, body.consignee)}, ${user.id}
+              ${jsonb(tx, consignee)}, ${user.id}
             )
             returning id
           `.catch((error: unknown) => {
@@ -585,6 +665,7 @@ export function registerChallanRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as SaveChallanRequest;
+      const consignee = normaliseConsignee(body.consignee);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
@@ -595,7 +676,7 @@ export function registerChallanRoutes(
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
-              consignee_snapshot = ${jsonb(tx, body.consignee)}
+              consignee_snapshot = ${jsonb(tx, consignee)}
           where id = ${id}
         `;
         await writeLines(tx, organisationId, id, challan.work_id, body);
@@ -612,7 +693,7 @@ export function registerChallanRoutes(
           {
             challanDate: body.challanDate,
             prefix: body.prefix,
-            consignee: body.consignee,
+            consignee,
             items: await readLineInputs(tx, id),
           },
         );
@@ -788,6 +869,58 @@ export function registerChallanRoutes(
             order by wi.id
             for update of wi
           `;
+
+          // R7 / rule 7: issue freezes the line snapshots written at
+          // DRAFT-SAVE time (description, unit, rate) into the immutable
+          // snapshot and the PDF handed to the consignee. An amendment
+          // approved since then moved work_items.effective_* and never
+          // touched the open draft, so issuing now would carry the
+          // superseded reading forever — the quantity ledger and the
+          // bill maths stay right (both read the live item), the printed
+          // document does not. Silently re-snapshotting here would change
+          // amounts the operator reviewed on screen a moment ago, so the
+          // draft is sent back to be re-saved instead. This runs under
+          // the work_items row locks taken just above, which are the same
+          // locks amendment apply takes before writing effective_*, so an
+          // amendment either committed before this read or waits behind
+          // the issue.
+          const stale = await tx<{ item_number: string; fields: string[] }[]>`
+            select wi.item_number,
+                   array_remove(array[
+                     case when dci.description_snapshot
+                       is distinct from coalesce(wi.effective_description, wi.description)
+                       then 'description'::text end,
+                     case when dci.unit_snapshot
+                       is distinct from coalesce(wi.effective_unit, wi.unit_code)
+                       then 'unit'::text end,
+                     case when dci.rate_snapshot
+                       is distinct from coalesce(wi.effective_unit_rate, wi.effective_rate)
+                       then 'rate'::text end
+                   ], null) as fields
+            from delivery_challan_items dci
+            join work_items wi on wi.id = dci.work_item_id
+            where dci.delivery_challan_id = ${id}
+              and (
+                dci.description_snapshot
+                  is distinct from coalesce(wi.effective_description, wi.description)
+                or dci.unit_snapshot
+                  is distinct from coalesce(wi.effective_unit, wi.unit_code)
+                or dci.rate_snapshot
+                  is distinct from coalesce(wi.effective_unit_rate, wi.effective_rate)
+              )
+            order by wi.item_number
+          `;
+          if (stale.length > 0) {
+            const changed = stale
+              .map((line) => `${line.item_number} (${line.fields.join(', ')})`)
+              .join('; ');
+            throw httpError(
+              409,
+              'DRAFT_STALE',
+              `These items were amended after this draft was saved: ${changed}. Reopen the draft and save it to pick up the new values, then issue.`,
+            );
+          }
+
           const flaggedItemIds = challanWorkItems
             .filter((item) => item.requires_serials)
             .map((item) => item.id);
@@ -957,6 +1090,7 @@ export function registerChallanRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as CancelChallanRequest;
+      const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const challan = await lockChallan(tx, id);
@@ -1008,12 +1142,12 @@ export function registerChallanRoutes(
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},
-              cancelled_at = now(), cancellation_note = ${body.note}
+              cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
         await auditChallan(tx, organisationId, user.id, 'challan.cancelled', id, {
           challanNumber: challan.challan_number,
-          note: body.note,
+          note,
         });
         return readDetail(tx, id);
       });

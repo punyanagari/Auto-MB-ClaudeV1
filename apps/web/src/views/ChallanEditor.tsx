@@ -369,6 +369,15 @@ export function ChallanEditor({
   const edited =
     loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
 
+  // A retired contact stops being OFFERED, on this Work as everywhere
+  // else. The Work list returns every linked row, retired or not — the
+  // link is a preference and is never destroyed, so reactivating the
+  // contact brings it straight back — but a post that has been abolished
+  // must not keep appearing at the top of the challan picker. The general
+  // "All consignees" group is already active-only, and linking a retired
+  // contact is refused with 409 CONTACT_RETIRED.
+  const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
+
   return (
     <Card className="w-full" aria-labelledby="challan-editor-title">
       <h1 id="challan-editor-title" tabIndex={-1}>
@@ -449,7 +458,7 @@ export function ChallanEditor({
                 // The picker only PREFILLS the snapshot fields below —
                 // the challan keeps its own free-text copy, and every
                 // field stays editable after picking.
-                const chosen = [...workConsignees, ...consignees].find(
+                const chosen = [...linkedConsignees, ...consignees].find(
                   (candidate) => candidate.id === event.target.value,
                 );
                 if (chosen === undefined) return;
@@ -462,9 +471,9 @@ export function ChallanEditor({
               }}
             >
               <option value="">Manual entry</option>
-              {workConsignees.length > 0 && (
+              {linkedConsignees.length > 0 && (
                 <optgroup label="Linked to this Work">
-                  {workConsignees.map((candidate) => (
+                  {linkedConsignees.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
                       {candidate.designation}
                       {candidate.address !== null ? ` — ${candidate.address}` : ''}

@@ -13,11 +13,14 @@ import type {
   ConfirmWorkRequest,
   Membership,
   SaveChallanRequest,
+  SaveIssueChallanRequest,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
 import { Approvals } from '../src/views/Approvals.js';
 import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
+import { IssueChallanDetail } from '../src/views/IssueChallanDetail.js';
+import { IssueChallanEditor } from '../src/views/IssueChallanEditor.js';
 import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Installations } from '../src/views/Installations.js';
 import { MeasurementBooks } from '../src/views/MeasurementBooks.js';
@@ -182,6 +185,11 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadMeasurementBookDraftPreview: vi.fn(),
     completeWork: vi.fn(),
     reopenWork: vi.fn(),
+    // Ready by default, so a test that does not care about completion sees
+    // the form it always saw.
+    workCompletionReadiness: vi
+      .fn()
+      .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
     ...overrides,
   };
 }
@@ -665,6 +673,49 @@ function challanDetail(
   };
 }
 
+/** The Work behind the challan fixture. ChallanDetail reads it on a DRAFT
+ * to learn which lines are flagged for serial traceability — the challan
+ * line itself does not carry the flag. */
+function challanWork(requiresSerials = false) {
+  const scheduleId = '77777777-7777-4777-8777-777777777777';
+  return {
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: scheduleId,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /** The two consignee fields the server requires beside the items; a save
  * test has to satisfy them before it can reach the rule under test. */
 function fillConsignee() {
@@ -1057,6 +1108,7 @@ describe('ChallanDetail', () => {
     );
     const api = stubApi({
       getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
       issueChallan,
     });
     render(
@@ -1334,6 +1386,7 @@ describe('ChallanDetail', () => {
 
     const draftApi = stubApi({
       getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
     });
     render(
       <ChallanDetail
@@ -3217,6 +3270,73 @@ describe('WorkDetail amendments', () => {
     expect(screen.getByText('added')).toBeTruthy();
     expect(screen.queryByText('omitted')).toBeNull();
     expect(screen.queryByText('omission pending')).toBeNull();
+  });
+
+  it('withholds the completion form until the Work can actually close', async () => {
+    // The server refuses a completion below 100% executed value and returns
+    // the shortfall. Asking first means the operator reads the worklist
+    // instead of writing a note that was never going to be accepted.
+    renderAmended(
+      amendedApi({
+        workCompletionReadiness: vi.fn().mockResolvedValue({
+          ready: false,
+          blockers: [
+            {
+              kind: 'draft_delivery_challan',
+              recordId: '55555555-5555-4555-8555-555555555555',
+              label: 'Draft delivery challan dated 2026-08-09',
+            },
+          ],
+          unfinished: [
+            {
+              workItemId: ITEM_A,
+              itemNumber: 'A/1',
+              category: 'SUPPLY',
+              requirement: 'delivery',
+              direction: 'short',
+              requiredQuantity: '8.000',
+              deliveredQuantity: '5.000',
+              installedQuantity: '0.000',
+            },
+          ],
+        }),
+      }),
+    );
+    await openWorkTab('Overview');
+
+    expect(await screen.findByText('This Work cannot be completed yet.')).toBeTruthy();
+    expect(screen.getByText('Draft delivery challan dated 2026-08-09')).toBeTruthy();
+    expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
+    expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Complete Work' })).toBeNull();
+  });
+
+  it('offers the completion form once nothing is outstanding', async () => {
+    renderAmended(amendedApi());
+    await openWorkTab('Overview');
+
+    expect(
+      await screen.findByLabelText('Why this Work is being completed'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Complete Work' })).toBeTruthy();
+    expect(screen.queryByText('This Work cannot be completed yet.')).toBeNull();
+  });
+
+  it('still offers completion when the readiness read fails', async () => {
+    // The shortfall is an improvement on the refusal, not a precondition
+    // for it. If the read fails the page falls back to what it did before
+    // it asked, and the server still refuses with the worklist.
+    renderAmended(
+      amendedApi({
+        workCompletionReadiness: vi.fn().mockRejectedValue(new Error('offline')),
+      }),
+    );
+    await openWorkTab('Overview');
+
+    expect(
+      await screen.findByLabelText('Why this Work is being completed'),
+    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Completion status' })).toBeTruthy();
   });
 
   it('renders one row per awarded item, carrying every column', async () => {
@@ -5646,5 +5766,543 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
     await screen.findByRole('button', { name: 'Cancel Measurement Book…' });
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
+  });
+});
+
+/** The challan pages contradicted themselves in three places: they printed
+ * the evidence that blocks a cancellation and then offered Cancel anyway,
+ * they hid pre-issue serial recording behind an issued-only branch, and
+ * they offered both mutating forms on a completed Work. These cover the
+ * refusals AND the legitimate cases each one must leave alone. */
+describe('ChallanDetail cancel surface', () => {
+  const issued = () =>
+    challanDetail({
+      status: 'issued',
+      challanNumber: 'DC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-08-08T10:00:00.000Z',
+    });
+
+  function renderIssued(api: ApiClient, workActive = true) {
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel
+        canRecordEvidence={false}
+        workActive={workActive}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('closes the cancel form when the loaded evidence already blocks it, naming what is recorded', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 1, serials: 2, measurements: 0 },
+        path: 'correction_notice',
+        pendingRequestId: null,
+      }),
+    });
+    renderIssued(api);
+
+    // The section stays — a cancel-authority holder who knows the form
+    // exists is told why it is closed rather than left thinking the page
+    // is broken — but nothing can be submitted from it.
+    expect(
+      await screen.findByRole('heading', { name: 'Cancel this challan' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/1 receipt\(s\), 2 serial\(s\), and 0 measurement\(s\)/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Cancellation note')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+    expect(api.cancelChallan).not.toHaveBeenCalled();
+  });
+
+  it('closes the cancel form while a correction request is awaiting a decision', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 0, serials: 0, measurements: 0 },
+        path: 'cancel_replace',
+        pendingRequestId: '99999999-9999-4999-8999-999999999999',
+      }),
+    });
+    renderIssued(api);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Cancel this challan' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/cancelling here would go around it/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+  });
+
+  it('still cancels an evidence-free issued challan', async () => {
+    const cancelChallan = vi.fn().mockResolvedValue(
+      challanDetail({
+        status: 'cancelled',
+        challanNumber: 'DC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-08-08T10:00:00.000Z',
+        cancelledAt: '2026-08-09T10:00:00.000Z',
+        cancellationNote: 'Wrong consignee.',
+      }),
+    );
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      cancelChallan,
+    });
+    renderIssued(api);
+
+    fireEvent.change(await screen.findByLabelText('Cancellation note'), {
+      target: { value: 'Wrong consignee.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    await waitFor(() => {
+      expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        note: 'Wrong consignee.',
+      });
+    });
+  });
+
+  it('closes cancel and correction on a completed Work, keeping the record downloadable', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue({
+        ...issued(),
+        challan: { ...issued().challan, renderedAvailable: true },
+      }),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel
+        canRecordEvidence={false}
+        workActive={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
+    // Audit surface: the challan, its lines, and its PDF stay.
+    expect(screen.getByText('Main switchboard')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    // Both mutating forms close, each with its own explanation.
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+    expect(screen.getAllByText(/Reopen the Work from its page/).length).toBe(2);
+  });
+});
+
+describe('Draft challan serial recording', () => {
+  const DRAFT_LINE_ID = '66666666-6666-4666-8666-666666666666';
+  const draftSerial = (serialNumber: string, id: string) => ({
+    id,
+    deliveryChallanId: CHALLAN_ID,
+    challanItemId: DRAFT_LINE_ID,
+    challanNumber: null,
+    itemDescription: 'Main switchboard',
+    serialNumber,
+    installedOn: null,
+    installationRemarks: null,
+  });
+
+  it('records serials against the DRAFT and says what still holds the issue', async () => {
+    const recorded = [
+      draftSerial('SN-001', '88888888-8888-4888-8888-888888888888'),
+      draftSerial('SN-002', '88888888-8888-4888-8888-888888888889'),
+    ];
+    const recordSerials = vi.fn().mockResolvedValue(recorded);
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork(true)),
+      recordSerials,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    // The dead end the flag used to walk into: Issue is offered, and the
+    // page now names the line the server would refuse the issue for.
+    expect(
+      await screen.findByText(/Main switchboard \(0 of 2 recorded\)/),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Issue challan' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Serial numbers (one per line)'), {
+      target: { value: 'SN-001\nSN-002\n' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record serials' }));
+
+    await waitFor(() => {
+      expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        challanItemId: DRAFT_LINE_ID,
+        serialNumbers: ['SN-001', 'SN-002'],
+      });
+    });
+    // The line is complete, so the outstanding warning goes.
+    await waitFor(() => {
+      expect(screen.queryByText(/Main switchboard \(0 of 2 recorded\)/)).toBeNull();
+    });
+    expect(screen.getByText('SN-001, SN-002')).toBeTruthy();
+  });
+
+  it('leaves a draft with no serial-tracked line alone', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork(false)),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Draft Delivery Challan' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Issue challan' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Serial numbers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record serials' })).toBeNull();
+    expect(screen.queryByText(/Serials outstanding/)).toBeNull();
+  });
+});
+
+describe('IssueChallanDetail on a completed Work', () => {
+  const IC_ID = 'aaaa4444-4444-4444-8444-444444444444';
+  const issuedIc = () => ({
+    issueChallan: {
+      id: IC_ID,
+      workId: WORK_ID,
+      status: 'issued' as const,
+      movementType: 'issue' as const,
+      challanDate: '2026-01-15',
+      challanNumber: 'DCW-1-IC/1',
+      sequenceNumber: 1,
+      prefix: 'DCW-1-IC',
+      issuedToName: 'SSE/Signal/Delhi',
+      issuedToRole: null,
+      location: null,
+      remarks: null,
+      templateVersion: 'issue-challan-v1',
+      renderedAvailable: true,
+      signedCopyAvailable: false,
+      cancellationNote: null,
+      createdAt: '2026-01-15T00:00:00.000Z',
+      issuedAt: '2026-01-15T10:00:00.000Z',
+      cancelledAt: null,
+    },
+    lines: [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unit: 'Nos',
+        quantity: '2.000',
+        position: 1,
+      },
+    ],
+    issuedSnapshot: null,
+  });
+
+  function renderIc(workActive: boolean) {
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(issuedIc()),
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={IC_ID}
+        canModify
+        canIssue={false}
+        canCancel
+        workActive={workActive}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    return api;
+  }
+
+  it('keeps the record and its PDF but closes both mutating forms', async () => {
+    const api = renderIc(false);
+
+    await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+    expect(screen.getByText('Main switchboard')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    expect(screen.queryByLabelText('Cancellation note')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+    expect(screen.getAllByText(/Reopen the Work from its page/).length).toBe(2);
+    expect(api.cancelIssueChallan).not.toHaveBeenCalled();
+  });
+
+  it('leaves both forms open while the Work is active', async () => {
+    renderIc(true);
+
+    expect(await screen.findByLabelText('Cancellation note')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Reopen the Work from its page/)).toBeNull();
+  });
+});
+
+describe('IssueChallanEditor awarded-item quantities', () => {
+  const ITEM_B = '55555555-5555-4555-8555-555555555556';
+  const TWO_ITEM_BALANCE = {
+    allowExcessDelivery: false,
+    items: [
+      {
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unitCode: 'Nos',
+        awardedQuantity: '5.000',
+        deliveredQuantity: '0.000',
+        remainingQuantity: '5.000',
+        effectiveRate: '100.00',
+      },
+      {
+        workItemId: ITEM_B,
+        itemNumber: 'A/2',
+        description: 'Cable gland kit',
+        unitCode: 'Nos',
+        awardedQuantity: '10.000',
+        deliveredQuantity: '0.000',
+        remainingQuantity: '10.000',
+        effectiveRate: '25.00',
+      },
+    ],
+  };
+
+  function renderEditor(api: ApiClient) {
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('binds a zero typed against an awarded item to that box and sends focus there', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(TWO_ITEM_BALANCE),
+      createIssueChallan: vi.fn(),
+    });
+    renderEditor(api);
+
+    await screen.findByText('Cable gland kit');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/2 on this Issue Challan'), {
+      target: { value: '0' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+    const box = screen.getByLabelText('Quantity of A/2 on this Issue Challan');
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+    const message = screen.getByText(/Enter a quantity greater than zero/);
+    expect(box.getAttribute('aria-describedby')).toBe(message.id);
+    expect(document.activeElement).toBe(box);
+    // The summary names the offending item rather than the whole form.
+    expect((await screen.findByRole('alert')).textContent).toContain('Item A/2');
+  });
+
+  it('rejects text in an awarded box but keeps an empty box off the challan', async () => {
+    const createIssueChallan = vi.fn().mockResolvedValue({
+      issueChallan: { id: 'aaaa4444-4444-4444-8444-444444444444' },
+      lines: [],
+      issuedSnapshot: null,
+    });
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(TWO_ITEM_BALANCE),
+      createIssueChallan,
+    });
+    renderEditor(api);
+
+    await screen.findByText('Cable gland kit');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: 'abc' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(createIssueChallan).not.toHaveBeenCalled();
+
+    // The legitimate case the check must not swallow: A/1 corrected, A/2
+    // left empty because that item is simply not on this challan.
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '2.500' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => {
+      expect(createIssueChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createIssueChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveIssueChallanRequest,
+    ];
+    expect(body.lines).toEqual([{ workItemId: ITEM_A, quantity: '2.500' }]);
+    expect(screen.queryByText(/Enter a quantity greater than zero/)).toBeNull();
+  });
+});
+
+describe('Retired consignees stop being offered', () => {
+  const ACTIVE_LINK = {
+    id: '55555555-5555-4555-8555-555555555555',
+    designation: 'SSE (Signal) GZB',
+    address: 'Signal Workshop, Ghaziabad',
+    contactPerson: null,
+    phone: null,
+    email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: true,
+    isVendor: false,
+    isClient: false,
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+  const RETIRED_LINK = {
+    ...ACTIVE_LINK,
+    id: '44444444-4444-4444-8444-444444444443',
+    designation: 'DEN (Abolished) NDLS',
+    address: 'Old Divisional Office',
+    active: false,
+  };
+
+  it('keeps a retired linked consignee out of the challan picker and the active one in it', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      // The general list is already active-only server-side.
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      'Prefill consignee from contacts',
+    );
+    expect(picker.textContent).not.toContain('DEN (Abolished) NDLS');
+    expect(Array.from(picker.options).map((option) => option.value)).not.toContain(
+      RETIRED_LINK.id,
+    );
+
+    // The linked group still leads with the consignee that is still valid,
+    // and picking it still prefills the snapshot.
+    const linkedGroup = picker.querySelector('optgroup');
+    expect(linkedGroup?.label).toBe('Linked to this Work');
+    expect(linkedGroup?.querySelectorAll('option')).toHaveLength(1);
+    fireEvent.change(picker, { target: { value: ACTIVE_LINK.id } });
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'SSE (Signal) GZB',
+    );
+  });
+
+  it('keeps a retired linked consignee out of the PAC picker', async () => {
+    const api = stubApi({
+      listWorkPacCertificates: vi
+        .fn()
+        .mockResolvedValue({ certificates: [], itemSummaries: [] }),
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+    });
+    render(
+      <PacCertificates
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        workItems={challanWork().schedules[0]?.items ?? []}
+      />,
+    );
+
+    const picker = await screen.findByLabelText<HTMLSelectElement>('Issuing consignee');
+    expect(picker.textContent).not.toContain('DEN (Abolished) NDLS');
+    expect(picker.textContent).toContain('SSE (Signal) GZB');
+  });
+
+  it('still shows the retired linkage on the Work, marked as no longer offered', async () => {
+    const api = stubApi({
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+    });
+    const { WorkConsignees } = await import('../src/views/WorkConsignees.js');
+    render(
+      <WorkConsignees api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />,
+    );
+
+    // The link row is a preference, not history: it stays, and stays
+    // unlinkable, so reactivating the contact restores the offer.
+    expect(await screen.findByText('DEN (Abolished) NDLS')).toBeTruthy();
+    expect(screen.getByText('retired — not offered')).toBeTruthy();
+    expect(
+      screen.getByText(/no longer offered in the challan and PAC pickers/),
+    ).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Unlink' })).toHaveLength(2);
   });
 });

@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  StorableDecimalStringSchema,
+  UuidSchema,
+} from './primitives.js';
 
 /** Issue Challans move material out (to site, job work, loan/return).
  * Same lifecycle as Delivery Challans with looser content rules by
@@ -20,11 +25,19 @@ export const IssueChallanMovementTypeSchema = Type.Union([
 export type IssueChallanMovementType = Static<typeof IssueChallanMovementTypeSchema>;
 
 /** A line references a Work item (description/unit snapshotted from it at
- * save time) OR carries a manual description+unit outside the LOA. */
+ * save time) OR carries a manual description+unit outside the LOA.
+ *
+ * The line quantity has no CEILING by design — an Issue Challan may
+ * exceed the work quantity — but it must still fit the numeric(18,3)
+ * column it lands in. A mistyped sixteen-digit quantity used to pass both
+ * application layers and raise a numeric field overflow the route does
+ * not map, so the operator got a 500 and no idea which box to fix. The
+ * FLOOR stays with the route (QUANTITY_INVALID names the line), which is
+ * why these carry the storable variant and not the positive one. */
 export const IssueChallanWorkItemLineInputSchema = Type.Object(
   {
     workItemId: UuidSchema,
-    quantity: DecimalStringSchema,
+    quantity: StorableDecimalStringSchema,
   },
   { additionalProperties: false },
 );
@@ -36,7 +49,7 @@ export const IssueChallanManualLineInputSchema = Type.Object(
   {
     description: Type.String({ minLength: 3, maxLength: 1000 }),
     unit: Type.String({ minLength: 1, maxLength: 20 }),
-    quantity: DecimalStringSchema,
+    quantity: StorableDecimalStringSchema,
   },
   { additionalProperties: false },
 );

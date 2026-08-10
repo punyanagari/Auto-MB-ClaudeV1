@@ -333,6 +333,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  await page.route(`**/api/works/${WORK_ID}/completion-readiness`, (route) =>
+    route.fulfill(json({ ready: true, unfinished: [], blockers: [] })),
+  );
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
     route.fulfill(json({ challans: [CHALLAN] })),
   );

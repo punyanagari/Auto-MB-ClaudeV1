@@ -1997,7 +1997,7 @@ describe('review hardening: a live final MB freezes source creation', () => {
 });
 
 describe('review hardening: issue-vs-finalize race on the final MB', () => {
-  it('exactly one of a concurrent challan issue and final-MB finalize wins', async () => {
+  it('a concurrent challan issue and final-MB finalize never both land', async () => {
     const itemId = randomUUID();
     const workId = await seedWork({
       code: `HRC3${runId.slice(0, 4).toUpperCase()}`,
@@ -2050,17 +2050,28 @@ describe('review hardening: issue-vs-finalize race on the final MB', () => {
       finalize(finalDraft.book.id),
     ]);
 
-    // The works row lock serialises the two transactions: whichever
-    // commits second sees the other. No interleaving may leave BOTH a
-    // live final MB and an issued-but-unclaimable challan.
-    if (issued.statusCode === 201) {
-      expect(finalized.statusCode, finalized.body).toBe(409);
-      expect(finalized.json()).toMatchObject({ code: 'MB_FINAL_SWEEP_INCOMPLETE' });
-    } else {
-      expect(issued.statusCode, issued.body).toBe(409);
-      expect(issued.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
-      expect(finalized.statusCode, finalized.body).toBe(200);
-    }
+    // The works row lock serialises the two transactions, and in EITHER
+    // order both are refused, so no interleaving can leave a live final
+    // MB beside an issued-but-unclaimable challan. The issue loses to
+    // the 0031 freeze — a final MB counts as live from the moment it is
+    // drafted — and the finalize loses to the clean-state rule, which
+    // will not close the payment cycle over a draft it would strand.
+    expect(issued.statusCode, issued.body).toBe(409);
+    expect(issued.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
+    expect(finalized.statusCode, finalized.body).toBe(409);
+    expect(finalized.json()).toMatchObject({ code: 'MB_FINAL_DRAFTS_OPEN' });
+
+    // The named remedy clears it: delete the draft that can never be
+    // issued while this book lives, and the final MB finalizes.
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${dc2Id}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+    const retried = await finalize(finalDraft.book.id);
+    expect(retried.statusCode, retried.body).toBe(200);
+
     const [state] = await admin<{ final_live: string; issued_unclaimed: string }[]>`
       select
         (select count(*) from measurement_books
@@ -2074,11 +2085,9 @@ describe('review hardening: issue-vs-finalize race on the final MB', () => {
                 and ms.released_at is null
             ))::text as issued_unclaimed
     `;
-    // Either the final MB lives and every issued challan is claimed, or
-    // the final MB failed and the unclaimed challan can still be billed.
-    if (state?.final_live === '1') {
-      expect(state.issued_unclaimed).toBe('0');
-    }
+    // The final MB lives and every issued challan is claimed.
+    expect(state?.final_live).toBe('1');
+    expect(state?.issued_unclaimed).toBe('0');
   });
 });
 

@@ -9,6 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
+import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { requireUser } from '../session.js';
@@ -118,6 +119,19 @@ export function registerOrganisationRoutes(
   app.patch<{ Body: UpdateOrganisationProfileRequest }>(
     '/api/organisation/profile',
     {
+      /** The contract's GSTIN pattern is uppercase-only, because the
+       * stored value must be; without this a correctly-typed lowercase
+       * GSTIN would be bounced by schema validation with a generic 400
+       * before the handler could fold the case, while the contacts
+       * endpoint accepts either case. Fold it here, ahead of validation,
+       * and leave the structure to normaliseGstin below. */
+      preValidation: (request, _reply, done) => {
+        const body = request.body as UpdateOrganisationProfileRequest | undefined;
+        if (body && typeof body.gstin === 'string') {
+          body.gstin = body.gstin.trim().toUpperCase();
+        }
+        done();
+      },
       schema: {
         body: UpdateOrganisationProfileRequestSchema,
         response: { 200: OrganisationProfileSchema, ...errorResponses },
@@ -129,17 +143,27 @@ export function registerOrganisationRoutes(
         request.headers['x-organisation-id'],
       );
       const body = request.body;
+      // The contractor's own GSTIN and email are proved exactly as a
+      // contact's are (../contact-fields.js) and before the transaction
+      // opens: branding is read live at every render, so whatever lands
+      // here is printed as the supplier GSTIN and the letterhead email on
+      // every Delivery Challan, Issue Challan, MB, extension letter, and
+      // correction notice. `undefined` means "leave as it was"; an
+      // explicit null clears the field.
+      const gstin = body.gstin !== undefined ? normaliseGstin(body.gstin) : undefined;
+      const contactEmail =
+        body.contactEmail !== undefined ? normaliseEmail(body.contactEmail) : undefined;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireOwner(tx, user.id);
         const current = await loadProfile(tx);
         const next = {
           name: body.name ?? current.name,
           address: body.address !== undefined ? body.address : current.address,
-          gstin: body.gstin !== undefined ? body.gstin : current.gstin,
+          gstin: gstin !== undefined ? gstin : current.gstin,
           contact_phone:
             body.contactPhone !== undefined ? body.contactPhone : current.contact_phone,
           contact_email:
-            body.contactEmail !== undefined ? body.contactEmail : current.contact_email,
+            contactEmail !== undefined ? contactEmail : current.contact_email,
           warranty_template_text:
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText

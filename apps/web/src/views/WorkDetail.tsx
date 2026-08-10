@@ -10,6 +10,7 @@ import type {
   Serial,
   UnfinishedWorkItem,
   WorkCompletionBlocker,
+  WorkCompletionReadiness,
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
@@ -151,6 +152,75 @@ const DIRECTION_LABELS = {
   above: 'above advertised',
 } as const;
 
+/** Why a Work will not close: the records still holding a claim on it, and
+ * the items not yet at their sanctioned quantity. Rendered from the
+ * readiness read before the operator writes anything, and again from the
+ * refusal if one somehow gets past it — one component so the two can never
+ * describe the same Work differently. */
+function CompletionShortfall({
+  blockers,
+  unfinished,
+  lead,
+}: {
+  readonly blockers: readonly WorkCompletionBlocker[];
+  readonly unfinished: readonly UnfinishedWorkItem[];
+  readonly lead?: string;
+}) {
+  if (blockers.length === 0 && unfinished.length === 0) return null;
+  return (
+    <>
+      {lead !== undefined && <p className="font-medium">{lead}</p>}
+      {blockers.length > 0 && (
+        <DataTable>
+          <caption>Finish or discard these records before completing the Work</caption>
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+            </tr>
+          </thead>
+          <tbody>
+            {blockers.map((blocker) => (
+              <tr key={blocker.recordId}>
+                <th scope="row">{blocker.label}</th>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {unfinished.length > 0 && (
+        <DataTable scroll>
+          <caption>Items not yet at 100% executed value</caption>
+          <thead>
+            <tr>
+              <th scope="col">Item number</th>
+              <th scope="col">Payment category</th>
+              <th scope="col">Requires</th>
+              <th scope="col">Remedy</th>
+              <th scope="col">Required</th>
+              <th scope="col">Delivered</th>
+              <th scope="col">Installed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unfinished.map((item) => (
+              <tr key={item.workItemId}>
+                <th scope="row">{item.itemNumber}</th>
+                <td>{item.category ?? 'uncategorised'}</td>
+                <td>{REQUIREMENT_LABELS[item.requirement]}</td>
+                <td>{DIRECTION_REMEDIES[item.direction]}</td>
+                <td className={numericCell}>{item.requiredQuantity}</td>
+                <td className={numericCell}>{item.deliveredQuantity}</td>
+                <td className={numericCell}>{item.installedQuantity}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+    </>
+  );
+}
+
 export function WorkDetail({
   api,
   organisationId,
@@ -188,6 +258,9 @@ export function WorkDetail({
   const [pending, setPending] = useState(false);
   const [unfinished, setUnfinished] = useState<readonly UnfinishedWorkItem[]>([]);
   const [blockers, setBlockers] = useState<readonly WorkCompletionBlocker[]>([]);
+  /** What the server would say to a completion attempt, asked before the
+   * operator writes a note. Null while it is still being read. */
+  const [readiness, setReadiness] = useState<WorkCompletionReadiness | null>(null);
   const [ownTab, setOwnTab] = useState<WorkTab>('overview');
   const tab = controlledTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
@@ -240,6 +313,19 @@ export function WorkDetail({
             ? cause.message
             : 'The Work could not be loaded.',
         );
+      });
+    // Asked separately, and allowed to fail. It decides whether the
+    // completion form is worth offering, not whether the page can be read;
+    // a Work that cannot load its shortfall still has nine other areas.
+    // Unknown falls back to offering the form — what the page did before it
+    // thought to ask — and the server still refuses with the worklist.
+    api
+      .workCompletionReadiness(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setReadiness(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setReadiness(null);
       });
     return () => {
       cancelled = true;
@@ -577,7 +663,20 @@ export function WorkDetail({
               </p>
             )}
 
-            {canModify && workActive && (
+            {canModify && workActive && readiness?.ready === false && (
+              /* The shortfall stands where the form would be. Hiding the
+                 control on its own would leave an operator who came here to
+                 close the Work with nothing to read; this is the same
+                 worklist the refusal would have returned, minus the wasted
+                 completion note. */
+              <CompletionShortfall
+                blockers={readiness.blockers}
+                unfinished={readiness.unfinished}
+                lead="This Work cannot be completed yet."
+              />
+            )}
+
+            {canModify && workActive && readiness?.ready !== false && (
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -647,55 +746,9 @@ export function WorkDetail({
               </form>
             )}
 
-            {blockers.length > 0 && (
-              <DataTable>
-                <caption>
-                  Finish or discard these records before completing the Work
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Record</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {blockers.map((blocker) => (
-                    <tr key={blocker.recordId}>
-                      <th scope="row">{blocker.label}</th>
-                    </tr>
-                  ))}
-                </tbody>
-              </DataTable>
-            )}
-
-            {unfinished.length > 0 && (
-              <DataTable>
-                <caption>Items not yet at 100% executed value</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Item number</th>
-                    <th scope="col">Payment category</th>
-                    <th scope="col">Requires</th>
-                    <th scope="col">Remedy</th>
-                    <th scope="col">Required</th>
-                    <th scope="col">Delivered</th>
-                    <th scope="col">Installed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unfinished.map((item) => (
-                    <tr key={item.workItemId}>
-                      <th scope="row">{item.itemNumber}</th>
-                      <td>{item.category ?? 'uncategorised'}</td>
-                      <td>{REQUIREMENT_LABELS[item.requirement]}</td>
-                      <td>{DIRECTION_REMEDIES[item.direction]}</td>
-                      <td className={numericCell}>{item.requiredQuantity}</td>
-                      <td className={numericCell}>{item.deliveredQuantity}</td>
-                      <td className={numericCell}>{item.installedQuantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </DataTable>
-            )}
+            {/* The same two lists, whether they were asked for up front or
+                came back from a refused attempt. */}
+            <CompletionShortfall blockers={blockers} unfinished={unfinished} />
           </section>
 
           <CompletionExtensions

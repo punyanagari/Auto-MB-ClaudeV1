@@ -14,6 +14,7 @@ import type {
   TimelineResponse,
   UnfinishedWorkItem,
   WorkCompletionBlocker,
+  WorkCompletionReadiness,
   WorkStatusResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
@@ -470,6 +471,44 @@ describe('the R8 completion predicate', () => {
       requirement: 'delivery',
       requiredQuantity: '3.000',
     });
+  });
+
+  it('answers the same worklist to a question as to an attempt', async () => {
+    // The Work page reads this before it offers a completion form, so the
+    // two must never disagree: an operator told "nothing outstanding" who
+    // is then refused has been lied to by the screen.
+    const asked = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/completion-readiness`,
+      organisationId,
+    });
+    expect(asked.statusCode, asked.body).toBe(200);
+    const readiness = asked.json<WorkCompletionReadiness>();
+    expect(readiness.ready).toBe(false);
+
+    const attempted = await complete();
+    expect(attempted.statusCode, attempted.body).toBe(409);
+    expect(readiness.unfinished).toEqual([...unfinishedBy(attempted).values()]);
+    expect(readiness.blockers).toEqual([]);
+  });
+
+  it('lets a read-only member ask, without letting them complete', async () => {
+    const asked = await authed(viewer, {
+      method: 'GET',
+      url: `/api/works/${workId}/completion-readiness`,
+      organisationId,
+    });
+    expect(asked.statusCode, asked.body).toBe(200);
+    expect(asked.json<WorkCompletionReadiness>().ready).toBe(false);
+  });
+
+  it('denies the question across a tenant boundary', async () => {
+    const asked = await authed(outsider, {
+      method: 'GET',
+      url: `/api/works/${workId}/completion-readiness`,
+      organisationId,
+    });
+    expect([403, 404]).toContain(asked.statusCode);
   });
 
   it('refuses while a draft delivery challan holds a claim, naming it', async () => {

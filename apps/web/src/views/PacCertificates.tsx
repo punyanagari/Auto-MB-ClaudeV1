@@ -128,6 +128,11 @@ export function PacCertificates({
   const summaryByItem = new Map(
     data.itemSummaries.map((summary) => [summary.workItemId, summary]),
   );
+  // A retired contact stops being OFFERED here too. The Work list returns
+  // every linked row, retired or not — the link is a preference and is
+  // never destroyed — but an abolished post must not keep heading the
+  // picker. The "All consignees" group below is already active-only.
+  const linkedConsignees = workConsignees.filter((consignee) => consignee.active);
 
   return (
     <>
@@ -369,9 +374,9 @@ export function PacCertificates({
           <Field>
             <label htmlFor="pac-consignee">Issuing consignee</label>
             <select id="pac-consignee" name="pac-consignee" required>
-              {workConsignees.length > 0 && (
+              {linkedConsignees.length > 0 && (
                 <optgroup label="Linked to this Work">
-                  {workConsignees.map((consignee) => (
+                  {linkedConsignees.map((consignee) => (
                     <option key={consignee.id} value={consignee.id}>
                       {consignee.designation}
                       {consignee.address !== null ? ` — ${consignee.address}` : ''}

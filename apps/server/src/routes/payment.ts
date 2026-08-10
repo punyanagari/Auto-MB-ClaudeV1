@@ -159,6 +159,76 @@ function assertPercentagesSumTo100(body: UpsertPaymentMatrixRowRequest): void {
   }
 }
 
+interface BilledLineRecord {
+  id: string;
+  mb_number: string | null;
+}
+
+/**
+ * An item's payment category is frozen once a Measurement Book has
+ * BILLED it (legacy spec §8, rule R10; ADR-0006 decisions 3 and 5).
+ *
+ * The Measurement Book engine reads the item's CURRENT category and
+ * resolves the CURRENT matrix row at both preview and finalize, and the
+ * only memory it carries forward is prior STAGE QUANTITY — there is no
+ * prior-value or prior-percentage memory. Re-categorising a billed item
+ * therefore re-opens stages the earlier bill already paid: an item paid
+ * in full through a SUPPLY row of 100/0/0/0, flipped to
+ * SUPPLY_AND_INSTALLATION at 60/30/5/5, bills its installation stage a
+ * second time on the next MB and overruns the item's own value.
+ *
+ * The bar is BILLING, not evidence. Mis-categorised items are ordinary
+ * on a fresh Work and correcting them stays free — including after
+ * deliveries, installations and PAC certificates have been recorded —
+ * right up to the first Measurement Book that bills the item. Clearing
+ * a billed item back to uncategorised, and categorising a billed item
+ * that was billed while uncategorised, carry the identical hazard and
+ * are refused the same way; the remedy for both is the one the product
+ * already uses for a wrong finalised bill (ADR-0006 decision 3), a
+ * compensating entry on a subsequent MB.
+ *
+ * The evidence predicate is the one the 0030 omission guard already
+ * uses: a line on a non-cancelled Measurement Book carrying a non-zero
+ * delta or prior. A finalised MB writes one line per item of the Work,
+ * including all-zero lines for the items it did not bill, so the line
+ * alone is not billing.
+ */
+async function assertItemNotBilled(
+  tx: TransactionSql,
+  workItemId: string,
+  itemNumber: string,
+): Promise<void> {
+  const billed = await tx<BilledLineRecord[]>`
+    select mb.id, mb.mb_number
+    from measurement_book_lines mbl
+    join measurement_books mb on mb.id = mbl.measurement_book_id
+    where mbl.work_item_id = ${workItemId}
+      and mb.status <> 'cancelled'
+      and (
+        mbl.delta_supplied <> 0 or mbl.delta_installed <> 0
+        or mbl.delta_pac <> 0 or mbl.delta_final_bill <> 0
+        or mbl.prior_supplied <> 0 or mbl.prior_installed <> 0
+        or mbl.prior_pac <> 0 or mbl.prior_final_bill <> 0
+      )
+    order by mb.mb_number
+  `;
+  if (billed.length === 0) return;
+  const names = billed.map((row) => row.mb_number ?? row.id);
+  throw httpError(
+    409,
+    'ITEM_BILLED_IN_MB',
+    `Item ${itemNumber} is already billed in Measurement Book${names.length > 1 ? 's' : ''} ${names.join(', ')}, so its payment category can no longer be changed — that Measurement Book billed with the category and stage percentages in force at the time, and changing them now would bill stages a second time. Correct the billed amount with a compensating entry on the next Measurement Book instead.`,
+    {
+      workItemId,
+      itemNumber,
+      billedMeasurementBooks: billed.map((row) => ({
+        id: row.id,
+        mbNumber: row.mb_number,
+      })),
+    },
+  );
+}
+
 const MATRIX_COLUMNS_SQL = `
   id, work_id, category, pct_supply::text as pct_supply,
   pct_installation::text as pct_installation, pct_pac::text as pct_pac,
@@ -424,6 +494,15 @@ export function registerPaymentRoutes(
           throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
         }
         await assertWorkAccess(tx, user.id, item.work_id);
+
+        // The category is configuration only until a Measurement Book
+        // bills the item; after that it is part of what was paid. Re-
+        // submitting the value the item already carries changes nothing
+        // and stays a harmless no-op, so the guard runs only when the
+        // value actually moves.
+        if (body.paymentCategory !== item.payment_category) {
+          await assertItemNotBilled(tx, item.id, item.item_number);
+        }
 
         const [updated] = await tx<
           { id: string; item_number: string; payment_category: string | null }[]

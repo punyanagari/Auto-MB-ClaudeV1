@@ -166,6 +166,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadMeasurementBookDraftPreview: vi.fn(),
     completeWork: vi.fn(),
     reopenWork: vi.fn(),
+    workCompletionReadiness: vi
+      .fn()
+      .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
     ...overrides,
   };
 }
