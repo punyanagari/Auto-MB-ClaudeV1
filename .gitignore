@@ -22,3 +22,8 @@ local-data/
 # posture.
 *.loa.pdf
 fixtures-raw/
+
+# Local opt-out for the caveman SessionStart hook. Presence of this file
+# silences .claude/hooks/caveman-activate.sh for one working tree without
+# changing the committed default for everyone else.
+.claude/hooks/.caveman-off
