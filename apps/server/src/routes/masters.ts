@@ -37,10 +37,11 @@ import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
 /**
- * Contract-domain master data: the unified Contacts master (consignee
- * role active; vendor/client dormant until the procurement wave), the
- * Work↔consignee association, locations, units, and organisation
- * signatories. Masters are PICKERS ONLY — documents snapshot whatever the
+ * Contract-domain master data: the unified Contacts master (consignee,
+ * vendor and client role flags — legacy §9, woken fully by the
+ * procurement wave §5.8), the Work↔consignee association, locations,
+ * units, and organisation signatories. Masters are PICKERS ONLY —
+ * documents snapshot whatever the
  * user confirms into their own columns (the Delivery Challan consignee
  * stays a free-text snapshot; the PAC certificate snapshots the
  * designation), so master edits and retirements never rewrite history.
@@ -332,15 +333,22 @@ export function registerMasterRoutes(
     }
   }
 
-  // --- Contacts (unified master; consignee role only in this wave) ----------
+  // --- Contacts (unified master; consignee/vendor/client role flags) --------
 
   const ContactListQuerySchema = Type.Object(
     {
       includeRetired: Type.Optional(Type.Boolean()),
-      /** Pickers pass role=consignee so railway document flows stay
-       * railway-only (§9); vendor/client filters arrive with the
-       * procurement wave. */
-      role: Type.Optional(Type.Union([Type.Literal('consignee')])),
+      /** Pickers filter by role so each document flow sees only its own
+       * contacts: challan/PAC pickers pass role=consignee (railway
+       * document flows stay railway-only, §9), the purchase-order picker
+       * passes role=vendor, the tax-invoice buyer picker role=client. */
+      role: Type.Optional(
+        Type.Union([
+          Type.Literal('consignee'),
+          Type.Literal('vendor'),
+          Type.Literal('client'),
+        ]),
+      ),
     },
     { additionalProperties: false },
   );
@@ -360,7 +368,7 @@ export function registerMasterRoutes(
       );
       const { includeRetired = false, role } = request.query as {
         includeRetired?: boolean;
-        role?: 'consignee';
+        role?: 'consignee' | 'vendor' | 'client';
       };
       const rows = await withBoundTenant(
         database,
@@ -371,6 +379,8 @@ export function registerMasterRoutes(
           from contacts
           where (active or ${includeRetired})
             and (is_consignee or ${role !== 'consignee'})
+            and (is_vendor or ${role !== 'vendor'})
+            and (is_client or ${role !== 'client'})
           order by lower(designation), lower(coalesce(address, ''))
         `,
       );
@@ -392,11 +402,23 @@ export function registerMasterRoutes(
         request.headers['x-organisation-id'],
       );
       const body = request.body as SaveContactRequest;
-      // Every contact created in this wave carries the consignee role (the
-      // only active one), so the R16 authority refusal applies to every
-      // create; the GSTIN and the email are normalised before either can
-      // reach the database.
-      assertNotAuthorityDesignation(body.designation);
+      // Role resolution: a create that names neither vendor nor client is
+      // a consignee, exactly as every create was before the procurement
+      // wave; naming a role makes a vendor/client that is NOT a consignee
+      // (the roles feed disjoint pickers — railway document flows stay
+      // railway-only, §9). The R16 authority refusal therefore applies
+      // exactly when the contact will be a consignee — a vendor may carry
+      // whatever name its letterhead does. GSTIN and email are normalised
+      // before either can reach the database.
+      const isVendor = body.isVendor ?? false;
+      const isClient = body.isClient ?? false;
+      const isConsignee = !isVendor && !isClient;
+      if (isConsignee) assertNotAuthorityDesignation(body.designation);
+      const roles = [
+        ...(isConsignee ? ['consignee'] : []),
+        ...(isVendor ? ['vendor'] : []),
+        ...(isClient ? ['client'] : []),
+      ];
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
       const contact = await withBoundTenant(
@@ -408,14 +430,15 @@ export function registerMasterRoutes(
           const [row] = await tx<ContactRow[]>`
             insert into contacts (
               organisation_id, designation, contact_person, address, phone,
-              email, gstin, pincode, state_code, is_consignee,
-              created_by_user_id
+              email, gstin, pincode, state_code, is_consignee, is_vendor,
+              is_client, created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
               ${body.contactPerson ?? null}, ${body.address ?? null},
               ${body.phone ?? null}, ${email}, ${gstin},
-              ${body.pincode ?? null}, ${body.stateCode ?? null}, true,
+              ${body.pincode ?? null}, ${body.stateCode ?? null},
+              ${isConsignee}, ${isVendor}, ${isClient},
               ${user.id}
             )
             returning ${tx.unsafe(CONTACT_COLUMNS)}
@@ -437,7 +460,7 @@ export function registerMasterRoutes(
             'contact.created',
             'contacts',
             row.id,
-            { designation: body.designation, roles: ['consignee'] },
+            { designation: body.designation, roles },
           );
           return toContact(row);
         },
@@ -462,14 +485,25 @@ export function registerMasterRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as SaveContactRequest;
-      // A rename must not smuggle an authority designation onto a
-      // consignee-role contact (R16). Role flags are create-time facts and
-      // are deliberately not editable here.
-      assertNotAuthorityDesignation(body.designation);
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
+        // The consignee role is a create-time fact an update never
+        // changes, and the R16 refusal follows it: a rename must not
+        // smuggle an authority designation onto a consignee-role contact,
+        // while a vendor/client keeps whatever name its letterhead
+        // carries. The stored flag decides, so it is read first.
+        const [existing] = await tx<{ is_consignee: boolean }[]>`
+          select is_consignee from contacts where id = ${id}
+        `;
+        if (!existing) {
+          throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+        }
+        if (existing.is_consignee) assertNotAuthorityDesignation(body.designation);
+        // Vendor/client are membership, not profile text: an omitted flag
+        // keeps its stored value (the web profile form need not know
+        // about roles to be safe), an explicit false clears it.
         const [row] = await tx<ContactRow[]>`
           update contacts
           set designation = ${body.designation},
@@ -477,7 +511,9 @@ export function registerMasterRoutes(
               address = ${body.address ?? null}, phone = ${body.phone ?? null},
               email = ${email}, gstin = ${gstin},
               pincode = ${body.pincode ?? null},
-              state_code = ${body.stateCode ?? null}
+              state_code = ${body.stateCode ?? null},
+              is_vendor = coalesce(${body.isVendor ?? null}, is_vendor),
+              is_client = coalesce(${body.isClient ?? null}, is_client)
           where id = ${id}
           returning ${tx.unsafe(CONTACT_COLUMNS)}
         `.catch((error: unknown) => {
@@ -495,6 +531,8 @@ export function registerMasterRoutes(
         }
         await audit(tx, organisationId, user.id, 'contact.updated', 'contacts', id, {
           designation: body.designation,
+          ...(body.isVendor !== undefined ? { isVendor: body.isVendor } : {}),
+          ...(body.isClient !== undefined ? { isClient: body.isClient } : {}),
         });
         return toContact(row);
       });
@@ -626,9 +664,9 @@ export function registerMasterRoutes(
           `;
           if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
           if (!row.is_consignee) {
-            // Unreachable while every contact is a consignee, but the rule
-            // (and the 0028 trigger behind it) predates the vendor/client
-            // wake-up: only consignee-role contacts join a Work.
+            // Vendor/client-role contacts exist now (procurement wave) and
+            // must not join a Work's consignee list; the 0028 trigger
+            // backstops the same rule (R16) in the database.
             throw httpError(
               409,
               'CONTACT_NOT_CONSIGNEE',

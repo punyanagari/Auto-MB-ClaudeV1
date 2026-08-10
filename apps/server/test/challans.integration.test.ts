@@ -6,7 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { ChallanDetailResponse, WorkBalanceResponse } from '@auto-mb/contracts';
+import type {
+  ChallanDetailResponse,
+  Contact,
+  PurchaseOrderDetailResponse,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
@@ -89,7 +94,9 @@ const CONSIGNEE = {
   address: 'Delhi Division, New Delhi',
 };
 
-function draftBody(items: { workItemId: string; quantity: string }[]) {
+function draftBody(
+  items: { workItemId: string; quantity: string; purchaseOrderLineId?: string }[],
+) {
   return {
     challanDate: '2026-08-08',
     prefix: 'DC',
@@ -243,6 +250,10 @@ afterAll(async () => {
           'delivery_challan_items',
           'delivery_challan_counters',
           'delivery_challans',
+          'purchase_order_lines',
+          'purchase_order_counters',
+          'purchase_orders',
+          'contacts',
           'work_items',
           'work_schedules',
           'loa_documents',
@@ -1241,5 +1252,325 @@ describe('a draft amended after it was saved cannot be issued stale', () => {
       organisationId,
     });
     expect(issued.statusCode, issued.body).toBe(201);
+  });
+});
+
+/**
+ * The 0033 receipt link, end to end through the API: a challan line names
+ * the ISSUED purchase-order line it receives against (no more admin SQL —
+ * the workaround the lifecycle and purchase-order suites carry). The link
+ * is validated (same Work, order actually issued), served back, rewritten
+ * freely while the challan is a draft, and over-receipt is a WARNING on
+ * the read model — vendors over-ship, and the delivery document must
+ * record what actually arrived.
+ */
+describe('challan lines received against purchase-order lines (0033 receipt link)', () => {
+  let linkWorkId: string;
+  let linkItemId: string;
+  let vendorContactId: string;
+  let purchaseOrderId: string;
+  let poNumber: string;
+  let poLineId: string;
+  let draftPoLineId: string;
+  let crossWorkPoLineId: string;
+  let challanId: string;
+
+  /** Creates a purchase order on the Work with one line ordering
+   * `quantity` of `targetItemId`, and issues it. */
+  async function issuedPurchaseOrder(
+    targetWorkId: string,
+    targetItemId: string,
+    quantity: string,
+  ): Promise<{ id: string; lineId: string; number: string }> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${targetWorkId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId, poDate: '2025-07-01' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const lined = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${id}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: targetItemId,
+            description: 'Armoured cable drums',
+            unitCode: 'Nos',
+            quantity,
+            rate: '90.00',
+          },
+        ],
+      },
+    });
+    expect(lined.statusCode, lined.body).toBe(200);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const detail = issued.json<PurchaseOrderDetailResponse>();
+    const lineId = detail.lines[0]?.id;
+    const number = detail.purchaseOrder.poNumber;
+    if (!lineId || number === null) {
+      throw new Error('issued purchase order came back incomplete');
+    }
+    return { id, lineId, number };
+  }
+
+  beforeAll(async () => {
+    const linked = await freshWork('P', {
+      description: 'Armoured cable drum',
+      unit: 'Nos',
+      quantity: '10.000',
+      rate: '100.00',
+    });
+    linkWorkId = linked.workId;
+    linkItemId = linked.workItemId;
+
+    // The vendor is created THROUGH the contacts API: the isVendor flag
+    // is the masters half of this slice, so the seeding that used to be
+    // admin SQL is now the product path.
+    const vendor = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: `Bharat Cables Pvt Ltd ${runId}`,
+        address: 'Plot 12, MIDC, Pune',
+        isVendor: true,
+      },
+    });
+    expect(vendor.statusCode, vendor.body).toBe(201);
+    expect(vendor.json<Contact>()).toMatchObject({
+      isVendor: true,
+      isConsignee: false,
+    });
+    vendorContactId = vendor.json<Contact>().id;
+
+    const order = await issuedPurchaseOrder(linkWorkId, linkItemId, '4');
+    purchaseOrderId = order.id;
+    poLineId = order.lineId;
+    poNumber = order.number;
+
+    // A second Work with its own ISSUED order: its lines must stay
+    // invisible to this Work's challans.
+    const other = await freshWork('X', {
+      description: 'Foreign relay set',
+      unit: 'Nos',
+      quantity: '10.000',
+      rate: '100.00',
+    });
+    crossWorkPoLineId = (await issuedPurchaseOrder(other.workId, other.workItemId, '4'))
+      .lineId;
+
+    // And an open DRAFT order on this Work: it exists, but nothing has
+    // been ordered from the vendor yet, so nothing can be received on it.
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${linkWorkId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId, poDate: '2025-07-01' },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const draftOrderId = draft.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const draftLines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${draftOrderId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: linkItemId,
+            description: 'Cable drums, second lot',
+            unitCode: 'Nos',
+            quantity: '2',
+            rate: '90.00',
+          },
+        ],
+      },
+    });
+    expect(draftLines.statusCode, draftLines.body).toBe(200);
+    const draftLineId = draftLines.json<PurchaseOrderDetailResponse>().lines[0]?.id;
+    if (!draftLineId) throw new Error('draft purchase order line missing');
+    draftPoLineId = draftLineId;
+  }, 45_000);
+
+  it('links a draft line to an issued purchase-order line and serves it back', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${linkWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([
+          { workItemId: linkItemId, quantity: '3', purchaseOrderLineId: poLineId },
+        ]),
+        prefix: 'DCP',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const detail = created.json<ChallanDetailResponse>();
+    challanId = detail.challan.id;
+    expect(detail.items[0]?.purchaseOrderLineId).toBe(poLineId);
+    // Three of the four ordered: within the order, nothing to warn about.
+    expect(detail.warnings).toEqual([]);
+  });
+
+  it("refuses another Work's order line (404) and a draft order (409), writing nothing", async () => {
+    const rewrite = (purchaseOrderLineId: string) =>
+      authed(owner, {
+        method: 'PUT',
+        url: `/api/challans/${challanId}`,
+        organisationId,
+        payload: {
+          ...draftBody([
+            { workItemId: linkItemId, quantity: '3', purchaseOrderLineId },
+          ]),
+          prefix: 'DCP',
+        },
+      });
+
+    // Another Work's procurement answers exactly like an unknown id.
+    const crossWork = await rewrite(crossWorkPoLineId);
+    expect(crossWork.statusCode, crossWork.body).toBe(404);
+    expect(crossWork.json()).toMatchObject({ code: 'PO_LINE_NOT_FOUND' });
+    expect(crossWork.json<{ message: string }>().message).toContain('Line 1');
+
+    const unknown = await rewrite('00000000-0000-4000-8000-000000000000');
+    expect(unknown.statusCode, unknown.body).toBe(404);
+    expect(unknown.json()).toMatchObject({ code: 'PO_LINE_NOT_FOUND' });
+
+    // A draft order has not been placed on the vendor yet.
+    const notIssued = await rewrite(draftPoLineId);
+    expect(notIssued.statusCode, notIssued.body).toBe(409);
+    expect(notIssued.json()).toMatchObject({ code: 'PO_NOT_ISSUED' });
+    expect(notIssued.json<{ message: string }>().message).toContain('draft');
+
+    // Every refusal rolled its rewrite back: the saved link is untouched.
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${challanId}`,
+      organisationId,
+    });
+    expect(reread.json<ChallanDetailResponse>().items[0]).toMatchObject({
+      quantity: '3.000',
+      purchaseOrderLineId: poLineId,
+    });
+  });
+
+  it('keeps draft rewrites working: the link can be dropped and re-pointed', async () => {
+    const dropped = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/challans/${challanId}`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: linkItemId, quantity: '3' }]),
+        prefix: 'DCP',
+      },
+    });
+    expect(dropped.statusCode, dropped.body).toBe(200);
+    expect(
+      dropped.json<ChallanDetailResponse>().items[0]?.purchaseOrderLineId,
+    ).toBeNull();
+
+    const relinked = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/challans/${challanId}`,
+      organisationId,
+      payload: {
+        ...draftBody([
+          { workItemId: linkItemId, quantity: '3', purchaseOrderLineId: poLineId },
+        ]),
+        prefix: 'DCP',
+      },
+    });
+    expect(relinked.statusCode, relinked.body).toBe(200);
+    expect(relinked.json<ChallanDetailResponse>().items[0]?.purchaseOrderLineId).toBe(
+      poLineId,
+    );
+  });
+
+  it('warns — never refuses — when the delivery over-receives the ordered quantity', async () => {
+    // The vendor shipped five against the four ordered. The save is
+    // accepted; the response carries the over-receipt notice instead.
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/challans/${challanId}`,
+      organisationId,
+      payload: {
+        ...draftBody([
+          { workItemId: linkItemId, quantity: '5', purchaseOrderLineId: poLineId },
+        ]),
+        prefix: 'DCP',
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json<ChallanDetailResponse>().warnings).toEqual([
+      {
+        purchaseOrderLineId: poLineId,
+        poNumber,
+        poLineNumber: 1,
+        description: 'Armoured cable drums',
+        orderedQuantity: '4.000',
+        receivedQuantity: '5.000',
+      },
+    ]);
+
+    // Issue is equally unrefused, and the notice stays on the read model
+    // now that the receipts are real.
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    expect(issued.json<ChallanDetailResponse>().warnings).toEqual([
+      expect.objectContaining({
+        purchaseOrderLineId: poLineId,
+        orderedQuantity: '4.000',
+        receivedQuantity: '5.000',
+      }),
+    ]);
+
+    // The receipt feeds the purchase-order balance exactly as the
+    // admin-SQL workaround used to: fully received, pending floored at 0.
+    const order = await authed(owner, {
+      method: 'GET',
+      url: `/api/purchase-orders/${purchaseOrderId}`,
+      organisationId,
+    });
+    expect(order.statusCode, order.body).toBe(200);
+    expect(order.json<PurchaseOrderDetailResponse>().lines[0]).toMatchObject({
+      receivedQuantity: '5.000',
+      pendingQuantity: '0.000',
+    });
+  });
+
+  it("projects receipts issued elsewhere into a new draft's warning", async () => {
+    // The five over-received above are already issued; one more on a new
+    // draft projects to six of the four ordered.
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${linkWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([
+          { workItemId: linkItemId, quantity: '1', purchaseOrderLineId: poLineId },
+        ]),
+        prefix: 'DCP',
+      },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json<ChallanDetailResponse>().warnings).toEqual([
+      expect.objectContaining({
+        purchaseOrderLineId: poLineId,
+        orderedQuantity: '4.000',
+        receivedQuantity: '6.000',
+      }),
+    ]);
   });
 });
