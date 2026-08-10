@@ -294,6 +294,7 @@ afterAll(async () => {
           'eway_bills',
           'tax_invoices',
           'tax_invoice_counters',
+          'document_number_series',
           'mb_sources',
           'measurement_book_lines',
           'measurement_book_counters',
@@ -362,6 +363,15 @@ describe('1 — LOA to Work', () => {
       },
     });
     expect(profile.statusCode, profile.body).toBe(200);
+    // The organisation's own invoice series (migration 0039); the
+    // product default is TI/<FY>/NNN.
+    const series = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/tax_invoice',
+      organisationId,
+      payload: { template: '{PREFIX}{FY2}{SEQ:3}' },
+    });
+    expect(series.statusCode, series.body).toBe(200);
     expect(profile.json<{ stateCode: string; gstin: string }>()).toMatchObject({
       stateCode: '07',
       gstin: ORG_GSTIN,

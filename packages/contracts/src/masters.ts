@@ -36,6 +36,10 @@ export const ContactSchema = Type.Object(
     gstin: Type.Union([GstinSchema, Type.Null()]),
     pincode: Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
     stateCode: Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
+    /** Railway division code as the railnet STD directory writes it.
+     * A number series may draw on it ({DIV} drops one trailing zero),
+     * which is why it is stored as the directory writes it. */
+    divisionCode: Type.Union([Type.String({ pattern: '^[0-9]{2,5}$' }), Type.Null()]),
     isConsignee: Type.Boolean(),
     /** Purchase orders are placed on vendor contacts (legacy §5.8). */
     isVendor: Type.Boolean(),
@@ -72,6 +76,7 @@ export const SaveContactRequestSchema = Type.Object(
     gstin: Type.Optional(GstinSchema),
     pincode: Type.Optional(Type.String({ pattern: '^[0-9]{6}$' })),
     stateCode: Type.Optional(Type.String({ pattern: '^[0-9]{2}$' })),
+    divisionCode: Type.Optional(Type.String({ pattern: '^[0-9]{2,5}$' })),
     isVendor: Type.Optional(Type.Boolean()),
     isClient: Type.Optional(Type.Boolean()),
   },

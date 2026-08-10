@@ -1,10 +1,19 @@
 import {
   ApiErrorSchema,
+  NUMBERED_DOCUMENT_TYPES,
+  NumberSeriesListResponseSchema,
+  NumberSeriesSchema,
+  NumberedDocumentTypeSchema,
   OrganisationProfileSchema,
+  SaveNumberSeriesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
+  type NumberSeries,
+  type NumberedDocumentType,
   type OrganisationProfile,
+  type SaveNumberSeriesRequest,
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -14,6 +23,12 @@ import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
+import {
+  ALLOWED_TOKENS,
+  DEFAULT_TEMPLATES,
+  NumberTemplateError,
+  assertValidTemplate,
+} from '../number-series.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
 
@@ -34,6 +49,29 @@ function detectImageType(bytes: Buffer): 'image/png' | 'image/jpeg' | null {
   if (bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return 'image/png';
   if (bytes.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)) return 'image/jpeg';
   return null;
+}
+
+/** One audit row. The profile routes below write their own inline (they
+ * carry before/after diffs); the number-series routes state a fact, so
+ * they share this. */
+async function audit(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  details: Record<string, unknown>,
+): Promise<void> {
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    values (
+      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
+      ${jsonb(tx, details)}
+    )
+  `;
 }
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
@@ -438,6 +476,149 @@ export function registerOrganisationRoutes(
         `;
       });
       return reply.status(204).send();
+    },
+  );
+  // --- Number series (migration 0039) --------------------------------------
+  //
+  // Number formats belong to the organisation, not to us. Four documents
+  // are configurable; a type with no row here uses the product default,
+  // which is exactly the format it had before the table existed. Reads
+  // are member-wide (an operator should be able to see what their
+  // numbers will look like); writes are owner-only, like the rest of the
+  // profile.
+
+  app.get(
+    '/api/organisation/number-series',
+    {
+      schema: {
+        response: { 200: NumberSeriesListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const rows = await tx<
+          { document_type: NumberedDocumentType; template: string }[]
+        >`
+          select document_type, template from document_number_series
+        `;
+        const configured = new Map(
+          rows.map((row) => [row.document_type, row.template]),
+        );
+        const series: NumberSeries[] = NUMBERED_DOCUMENT_TYPES.map((documentType) => ({
+          documentType,
+          template: configured.get(documentType) ?? DEFAULT_TEMPLATES[documentType],
+          isDefault: !configured.has(documentType),
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        }));
+        return { series };
+      });
+    },
+  );
+
+  app.put<{
+    Params: { documentType: NumberedDocumentType };
+    Body: SaveNumberSeriesRequest;
+  }>(
+    '/api/organisation/number-series/:documentType',
+    {
+      schema: {
+        params: Type.Object(
+          { documentType: NumberedDocumentTypeSchema },
+          { additionalProperties: false },
+        ),
+        body: SaveNumberSeriesRequestSchema,
+        response: { 200: NumberSeriesSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { documentType } = request.params;
+      const template = request.body.template.trim();
+      // Proved BEFORE it is stored: a template that cannot be filled in
+      // must fail on this screen, not at the moment an operator has a
+      // finished document and nowhere to put its number.
+      try {
+        assertValidTemplate(template, ALLOWED_TOKENS[documentType]);
+      } catch (cause) {
+        if (cause instanceof NumberTemplateError) {
+          throw httpError(400, 'NUMBER_TEMPLATE_INVALID', cause.message);
+        }
+        throw cause;
+      }
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+        await tx`
+          insert into document_number_series (organisation_id, document_type, template)
+          values (${organisationId}, ${documentType}, ${template})
+          on conflict (organisation_id, document_type)
+          do update set template = excluded.template
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'organisation.number_series_set',
+          'document_number_series',
+          organisationId,
+          { documentType, template },
+        );
+        return {
+          documentType,
+          template,
+          isDefault: false,
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        };
+      });
+    },
+  );
+
+  app.delete<{ Params: { documentType: NumberedDocumentType } }>(
+    '/api/organisation/number-series/:documentType',
+    {
+      schema: {
+        params: Type.Object(
+          { documentType: NumberedDocumentTypeSchema },
+          { additionalProperties: false },
+        ),
+        response: { 200: NumberSeriesSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { documentType } = request.params;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwner(tx, user.id);
+        await tx`
+          delete from document_number_series where document_type = ${documentType}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'organisation.number_series_cleared',
+          'document_number_series',
+          organisationId,
+          { documentType },
+        );
+        // Numbers already issued keep the strings they were issued with;
+        // only future ones follow the default again.
+        return {
+          documentType,
+          template: DEFAULT_TEMPLATES[documentType],
+          isDefault: true,
+          availableTokens: [...ALLOWED_TOKENS[documentType]],
+        };
+      });
     },
   );
 }

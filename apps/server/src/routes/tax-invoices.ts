@@ -1,12 +1,14 @@
 import {
   ApiErrorSchema,
   CancelTaxInvoiceRequestSchema,
+  CreateDirectTaxInvoiceRequestSchema,
   CreateTaxInvoiceRequestSchema,
   RecordIrpResponseRequestSchema,
   TaxInvoiceDetailResponseSchema,
   TaxInvoiceListResponseSchema,
   UpdateTaxInvoiceRequestSchema,
   type CancelTaxInvoiceRequest,
+  type CreateDirectTaxInvoiceRequest,
   type CreateTaxInvoiceRequest,
   type RecordIrpResponseRequest,
   type TaxInvoice,
@@ -28,6 +30,11 @@ import {
   extractPincode,
 } from '../gsp/irp-payload.js';
 import { httpError } from '../http.js';
+import {
+  NumberTemplateError,
+  loadNumberTemplate,
+  renderNumberTemplate,
+} from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -96,8 +103,8 @@ const IdParamsSchema = Type.Object(
 
 interface InvoiceRow {
   id: string;
-  work_id: string;
-  measurement_book_id: string;
+  work_id: string | null;
+  measurement_book_id: string | null;
   mb_number: string | null;
   status: TaxInvoiceStatus;
   invoice_number: string | null;
@@ -128,6 +135,10 @@ interface InvoiceRow {
   ship_to_contact_id: string | null;
   number_prefix: string | null;
   ack_date_text: string | null;
+  /** A DIRECT invoice's taxable value — the one raised against a private
+   * customer, which has no Measurement Book to take a total from.
+   * Exactly one of this and measurement_book_id is ever set (0039). */
+  stated_taxable_value: string | null;
   /** The line's own value: the UNROUNDED sum of the taxable value and
    * its taxes, summed in SQL numeric. Derived, never stored — the
    * e-invoice payload needs it and deriving it by subtracting the
@@ -158,13 +169,16 @@ const TI_COLUMNS = `
     ::numeric(18,2)::text as line_value,
   ti.customer_po_reference, ti.unit_label, ti.notes, ti.ship_to_contact_id,
   ti.number_prefix, ti.ack_date_text,
+  ti.stated_taxable_value::text as stated_taxable_value,
   ti.irn, ti.ack_number, ti.ack_date, ti.cancellation_note,
   ti.created_at, ti.submitted_at, ti.cancelled_at
 `;
 
+// LEFT join, not inner: a DIRECT invoice names no Measurement Book, and
+// an inner join would make it invisible to every read in this module.
 const TI_FROM = `
   from tax_invoices ti
-  join measurement_books mb on mb.id = ti.measurement_book_id
+  left join measurement_books mb on mb.id = ti.measurement_book_id
 `;
 
 function toInvoice(row: InvoiceRow): TaxInvoice {
@@ -172,6 +186,7 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     id: row.id,
     workId: row.work_id,
     measurementBookId: row.measurement_book_id,
+    statedTaxableValue: row.stated_taxable_value,
     mbNumber: row.mb_number,
     status: row.status,
     invoiceNumber: row.invoice_number,
@@ -289,6 +304,7 @@ interface BuyerRow {
   gstin: string | null;
   pincode: string | null;
   state_code: string | null;
+  division_code: string | null;
   active: boolean;
 }
 
@@ -300,7 +316,7 @@ interface BuyerRow {
 async function requireBuyer(tx: TransactionSql, contactId: string): Promise<BuyerRow> {
   const [row] = await tx<BuyerRow[]>`
     select id, designation, contact_person, address, gstin, pincode,
-           state_code, active
+           state_code, division_code, active
     from contacts where id = ${contactId}
   `;
   if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
@@ -318,10 +334,22 @@ async function requireBuyer(tx: TransactionSql, contactId: string): Promise<Buye
  * reasons — a retired consignee is as wrong to deliver to as it is to
  * bill. Named separately so its refusals say which of the two parties is
  * at fault. */
+/** A direct invoice belongs to no Work, so there is no Work-scope check
+ * to make — RLS and the organisation header already bound it. An
+ * MB-backed one is checked exactly as before. */
+async function assertInvoiceWorkAccess(
+  tx: TransactionSql,
+  userId: string,
+  workId: string | null,
+): Promise<void> {
+  if (workId === null) return;
+  await assertWorkAccess(tx, userId, workId);
+}
+
 async function requireShipTo(tx: TransactionSql, contactId: string): Promise<BuyerRow> {
   const [row] = await tx<BuyerRow[]>`
     select id, designation, contact_person, address, gstin, pincode,
-           state_code, active
+           state_code, division_code, active
     from contacts where id = ${contactId}
   `;
   if (!row) {
@@ -585,7 +613,7 @@ export function registerTaxInvoiceRoutes(
             {
               workId,
               measurementBookId: body.measurementBookId,
-              mbNumber: book.mb_number,
+              mbNumber: book?.mb_number ?? null,
               buyerContactId: body.buyerContactId,
               invoiceDate: body.invoiceDate,
               sacCode: body.sacCode,
@@ -608,6 +636,71 @@ export function registerTaxInvoiceRoutes(
         );
       });
       return reply.status(201).send(detail);
+    },
+  );
+
+  // A DIRECT invoice: no Work, no Measurement Book, a stated taxable
+  // value. Everything downstream — submit, the number, the GST split,
+  // the IRP payload, the e-way bill — is the same code path, because the
+  // only thing that differs is where the taxable value came from.
+  app.post(
+    '/api/tax-invoices',
+    {
+      schema: {
+        body: CreateDirectTaxInvoiceRequestSchema,
+        response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const body = request.body as CreateDirectTaxInvoiceRequest;
+      const serviceDescription = trimmedDescription(body.serviceDescription);
+      const document = documentFields(body);
+
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await requireBuyer(tx, body.buyerContactId);
+          const [created] = await tx<{ id: string }[]>`
+            insert into tax_invoices (
+              organisation_id, invoice_date, sac_code, service_description,
+              gst_rate, place_of_supply, stated_taxable_value,
+              customer_po_reference, unit_label, notes, ship_to_contact_id,
+              number_prefix, created_by_user_id
+            )
+            values (
+              ${organisationId}, ${body.invoiceDate}, ${body.sacCode},
+              ${serviceDescription}, ${body.gstRate}, ${body.placeOfSupply},
+              ${body.taxableValue},
+              ${document.customerPoReference}, ${document.unitLabel},
+              ${document.notes}, ${document.shipToContactId},
+              ${document.numberPrefix}, ${user.id}
+            )
+            returning id
+          `;
+          if (!created) throw new Error('direct tax invoice insert returned no row');
+          await auditInvoice(
+            tx,
+            organisationId,
+            user.id,
+            'tax_invoice.created',
+            created.id,
+            {
+              direct: true,
+              taxableValue: body.taxableValue,
+              buyerContactId: body.buyerContactId,
+            },
+          );
+          return readDetail(tx, created.id);
+        },
+      );
+      return reply.code(201).send(detail);
     },
   );
 
@@ -657,14 +750,19 @@ export function registerTaxInvoiceRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const invoice = await lockInvoice(tx, id);
-        await assertWorkAccess(tx, user.id, invoice.work_id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'draft');
-        const book = await lockInvoiceableBook(
-          tx,
-          invoice.work_id,
-          invoice.measurement_book_id,
-        );
-        assertInvoiceDate(body.invoiceDate, book);
+        // Billing cannot precede measurement — but only where there IS
+        // measurement. A direct invoice has no Measurement Book to floor
+        // its date against.
+        if (invoice.work_id !== null && invoice.measurement_book_id !== null) {
+          const book = await lockInvoiceableBook(
+            tx,
+            invoice.work_id,
+            invoice.measurement_book_id,
+          );
+          assertInvoiceDate(body.invoiceDate, book);
+        }
         await requireBuyer(tx, body.buyerContactId);
         await tx`
           update tax_invoices
@@ -742,7 +840,7 @@ export function registerTaxInvoiceRoutes(
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const invoice = await lockInvoice(tx, id);
-        await assertWorkAccess(tx, user.id, invoice.work_id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         // Rule 8: a draft is not yet a document, so it deletes — which
         // also releases the MB it would have billed (the one-live index
         // and the 0035 MB-cancel guard both stop seeing it).
@@ -780,7 +878,7 @@ export function registerTaxInvoiceRoutes(
           // authority, like challan issue and MB finalize.
           await requireAuthority(tx, user.id, 'issue');
           const invoice = await lockInvoice(tx, id);
-          await assertWorkAccess(tx, user.id, invoice.work_id);
+          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
           requireStatus(invoice, 'draft');
 
           // The split is decided by the organisation's state against the
@@ -844,15 +942,29 @@ export function registerTaxInvoiceRoutes(
             );
           }
 
-          // The MB row lock serialises against its (trigger-refused
-          // anyway) cancel; its total is the taxable value VERBATIM.
-          const book = await lockInvoiceableBook(
-            tx,
-            invoice.work_id,
-            invoice.measurement_book_id,
-          );
-          if (book.total_amount === null) {
+          // A DIRECT invoice — one raised against a private customer —
+          // names no Measurement Book, so there is nothing to lock and
+          // the taxable value is the one stated on the draft. An
+          // MB-backed invoice locks its book (serialising against a
+          // cancel the trigger would refuse anyway) and takes the MB
+          // total VERBATIM. The 0039 CHECK guarantees exactly one of the
+          // two is present, so this is a real either/or, not a fallback.
+          const book =
+            invoice.measurement_book_id === null || invoice.work_id === null
+              ? null
+              : await lockInvoiceableBook(
+                  tx,
+                  invoice.work_id,
+                  invoice.measurement_book_id,
+                );
+          if (book !== null && book.total_amount === null) {
             throw new Error(`finalized Measurement Book ${book.id} has no total`);
+          }
+          const taxableValue = book?.total_amount ?? invoice.stated_taxable_value;
+          if (taxableValue === null) {
+            throw new Error(
+              `tax invoice ${id} has neither an MB total nor a stated value`,
+            );
           }
 
           // Gapless per (organisation, financial year) under the counter
@@ -868,13 +980,7 @@ export function registerTaxInvoiceRoutes(
           // because inventing a series would put a number on a legal
           // document that the owner's books do not recognise.
           const prefix = invoice.number_prefix ?? organisation.invoice_number_prefix;
-          if (prefix === null) {
-            throw httpError(
-              400,
-              'INVOICE_PREFIX_REQUIRED',
-              'This invoice has no number prefix and the organisation has no default one. Set the house prefix in Settings, or give this invoice its own, and retry.',
-            );
-          }
+          const template = await loadNumberTemplate(tx, 'tax_invoice');
           const [counter] = await tx<{ next_value: number }[]>`
             insert into tax_invoice_counters (organisation_id, fy_label)
             values (${organisationId}, ${fyLabel})
@@ -884,9 +990,25 @@ export function registerTaxInvoiceRoutes(
           `;
           if (!counter) throw new Error('tax invoice counter upsert returned no row');
           const sequence = counter.next_value;
-          // '2026-27' -> '26': the year the financial year opens in.
-          const fyShort = fyLabel.slice(2, 4);
-          const invoiceNumber = `${prefix}${fyShort}${String(sequence).padStart(3, '0')}`;
+          // The organisation's own format. The default is TI/<FY>/NNN;
+          // an organisation whose series names a division ({DIV}) draws
+          // it from the BUYER, which is why a buyer with no division
+          // code is a named refusal rather than a number with a hole.
+          let invoiceNumber: string;
+          try {
+            invoiceNumber = renderNumberTemplate(template, {
+              prefix,
+              divisionCode: buyer.division_code,
+              financialYear: fyLabel,
+              documentDate: invoice.invoice_date,
+              sequence,
+            });
+          } catch (cause) {
+            if (cause instanceof NumberTemplateError) {
+              throw httpError(400, 'INVOICE_NUMBER_UNFILLABLE', cause.message);
+            }
+            throw cause;
+          }
 
           // THE MONEY, entirely in SQL numeric arithmetic: taxable is the
           // MB total verbatim; intra-state (organisation state = place of
@@ -907,16 +1029,16 @@ export function registerTaxInvoiceRoutes(
             }[]
           >`
             with base as (
-              select mb.total_amount as taxable,
+              select ${taxableValue}::numeric(18,2) as taxable,
                      case when ${intraState}
-                       then round(mb.total_amount * ${invoice.gst_rate}::numeric / 200, 2)
+                       then round(${taxableValue}::numeric(18,2)
+                              * ${invoice.gst_rate}::numeric / 200, 2)
                        else 0 end::numeric(18,2) as half,
                      case when ${intraState}
                        then 0
-                       else round(mb.total_amount * ${invoice.gst_rate}::numeric / 100, 2)
+                       else round(${taxableValue}::numeric(18,2)
+                              * ${invoice.gst_rate}::numeric / 100, 2)
                        end::numeric(18,2) as igst
-              from measurement_books mb
-              where mb.id = ${invoice.measurement_book_id}
             )
             select taxable::text as taxable, half::text as cgst, half::text as sgst,
                    igst::text as igst,
@@ -1045,7 +1167,7 @@ export function registerTaxInvoiceRoutes(
             fyLabel,
             sequence,
             measurementBookId: invoice.measurement_book_id,
-            mbNumber: book.mb_number,
+            mbNumber: book?.mb_number ?? null,
             buyerContactId: buyer.id,
             taxableValue: money.taxable,
             cgstAmount: money.cgst,
@@ -1082,7 +1204,7 @@ export function registerTaxInvoiceRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const invoice = await lockInvoice(tx, id);
-        await assertWorkAccess(tx, user.id, invoice.work_id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         if (invoice.status === 'draft') {
           throw httpError(
             409,
@@ -1145,7 +1267,7 @@ export function registerTaxInvoiceRoutes(
         // role, not issue authority; the legal act was the submit.
         await requireWriterRole(tx, user.id);
         const invoice = await lockInvoice(tx, id);
-        await assertWorkAccess(tx, user.id, invoice.work_id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'submitted');
         // The IRP answers once per document: a second recording would
         // overwrite the registered IRN with something else.
@@ -1198,7 +1320,7 @@ export function registerTaxInvoiceRoutes(
         if (!invoice) {
           throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
         }
-        await assertWorkAccess(tx, user.id, invoice.work_id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         if (invoice.status !== 'submitted') {
           throw httpError(
             409,

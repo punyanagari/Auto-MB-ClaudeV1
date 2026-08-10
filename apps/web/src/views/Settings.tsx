@@ -1,10 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import type { OrganisationProfile } from '@auto-mb/contracts';
+import type {
+  NumberSeries,
+  NumberedDocumentType,
+  OrganisationProfile,
+} from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
+import { DataTable } from '../ui/table.js';
+
+/** What each configurable document is called on screen. */
+const SERIES_LABELS: Record<NumberedDocumentType, string> = {
+  delivery_challan: 'Delivery Challan',
+  issue_challan: 'Issue Challan',
+  tax_invoice: 'Tax Invoice',
+  budgetary_quotation: 'Budgetary Quotation',
+};
 
 interface SettingsProps {
   readonly api: ApiClient;
@@ -23,7 +37,79 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
   const [stateCodeError, setStateCodeError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Null while loading — distinct from "none configured", which the
+   * server reports as four rows carrying the product defaults. */
+  const [series, setSeries] = useState<readonly NumberSeries[] | null>(null);
+  const [seriesType, setSeriesType] = useState<NumberedDocumentType>('tax_invoice');
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  async function saveSeries(documentType: NumberedDocumentType, template: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await api.setNumberSeries(organisationId, documentType, {
+        template,
+      });
+      setSeries((current) =>
+        (current ?? []).map((row) => (row.documentType === documentType ? saved : row)),
+      );
+      setNotice(
+        `${SERIES_LABELS[documentType]} numbers will now look like ${template}.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The format was not saved.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearSeries(documentType: NumberedDocumentType) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const restored = await api.clearNumberSeries(organisationId, documentType);
+      setSeries((current) =>
+        (current ?? []).map((row) =>
+          row.documentType === documentType ? restored : row,
+        ),
+      );
+      setNotice(
+        `${SERIES_LABELS[documentType]} numbers follow the default again. Nothing already issued is renumbered.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The default was not restored.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    // Read separately from the profile: a number series that fails to
+    // load must not blank the company details, which is the screen's
+    // main job.
+    api
+      .listNumberSeries(organisationId)
+      .then((loaded) => {
+        if (!cancelled) setSeries(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setSeries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,6 +427,115 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             <dd>{profile.warrantyTemplateText ?? '—'}</dd>
           </div>
         </dl>
+      )}
+
+      <h2>Number series</h2>
+      <p className="text-muted-foreground">
+        How each document numbers itself. A document you have not configured uses the
+        product default, shown here so you can see what your numbers will look like.
+        Changing a series never renumbers anything already issued.
+      </p>
+      {series === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading number series…
+        </p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Number formats for each document</caption>
+          <thead>
+            <tr>
+              <th scope="col">Document</th>
+              <th scope="col">Format</th>
+              <th scope="col">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {series.map((row) => (
+              <tr key={row.documentType}>
+                <th scope="row">{SERIES_LABELS[row.documentType]}</th>
+                <td>
+                  <code>{row.template}</code>
+                </td>
+                <td>{row.isDefault ? 'Default' : 'Yours'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {isOwner && series !== null && (
+        <Disclosure label="Change a number series">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const documentType = formValue(data, 'series-document') as
+                NumberedDocumentType | '';
+              if (documentType === '') return;
+              void saveSeries(documentType, formValue(data, 'series-template'));
+            }}
+          >
+            <FieldRow>
+              <Field>
+                <label htmlFor="series-document">Document</label>
+                <select
+                  id="series-document"
+                  name="series-document"
+                  value={seriesType}
+                  onChange={(event) => {
+                    setSeriesType(event.target.value as NumberedDocumentType);
+                  }}
+                >
+                  {series.map((row) => (
+                    <option key={row.documentType} value={row.documentType}>
+                      {SERIES_LABELS[row.documentType]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field>
+                <label htmlFor="series-template">Format</label>
+                <input
+                  id="series-template"
+                  name="series-template"
+                  required
+                  maxLength={120}
+                  defaultValue={
+                    series.find((row) => row.documentType === seriesType)?.template ??
+                    ''
+                  }
+                  key={seriesType}
+                />
+              </Field>
+            </FieldRow>
+            <Hint>
+              Anything outside braces prints as itself. Available here:{' '}
+              {(
+                series.find((row) => row.documentType === seriesType)
+                  ?.availableTokens ?? []
+              )
+                .map((token) => `{${token}}`)
+                .join(', ')}
+              . Use <code>{'{SEQ:3}'}</code> to pad the counter to three digits — every
+              format must use <code>{'{SEQ}'}</code>, or every document would take the
+              same number.
+            </Hint>
+            <Actions>
+              <Button type="submit" disabled={busy}>
+                Save format
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  void clearSeries(seriesType);
+                }}
+                disabled={busy}
+              >
+                Restore the default
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
 
       {error !== null && <FormError>{error}</FormError>}

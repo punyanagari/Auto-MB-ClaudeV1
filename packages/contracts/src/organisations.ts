@@ -101,6 +101,56 @@ export const InvoiceNumberPrefixSchema = Type.String({
 });
 export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
 
+/** The four documents whose number format an organisation may define.
+ * Every other numbered document keeps its fixed format. */
+export const NUMBERED_DOCUMENT_TYPES = [
+  'delivery_challan',
+  'issue_challan',
+  'tax_invoice',
+  'budgetary_quotation',
+] as const;
+export const NumberedDocumentTypeSchema = Type.Union(
+  NUMBERED_DOCUMENT_TYPES.map((value) => Type.Literal(value)),
+);
+export type NumberedDocumentType = Static<typeof NumberedDocumentTypeSchema>;
+
+/** One document type's number format.
+ *
+ * Tokens: {WORK} the Work code, {PREFIX} the document's own prefix, {DIV}
+ * the buyer's railway division code less one trailing zero, {FY}
+ * '2026-27', {FY2} '26', {YYYY}/{YY} the document date's year, and {SEQ}
+ * or {SEQ:n} the zero-padded counter. Everything outside a brace is a
+ * literal. A template must use {SEQ}, or every document would take the
+ * same number. */
+export const NumberSeriesSchema = Type.Object(
+  {
+    documentType: NumberedDocumentTypeSchema,
+    template: Type.String({ minLength: 1, maxLength: 120 }),
+    /** True while the organisation has configured nothing and the
+     * product default is in force — so the screen can say so rather
+     * than presenting a default as a choice already made. */
+    isDefault: Type.Boolean(),
+    /** The tokens THIS document can fill in; the rest would be blank
+     * every time and are refused when the template is saved. */
+    availableTokens: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
+export type NumberSeries = Static<typeof NumberSeriesSchema>;
+
+export const NumberSeriesListResponseSchema = Type.Object(
+  { series: Type.Array(NumberSeriesSchema) },
+  { additionalProperties: false },
+);
+export type NumberSeriesListResponse = Static<typeof NumberSeriesListResponseSchema>;
+
+/** PUT sets a template; DELETE restores the product default. */
+export const SaveNumberSeriesRequestSchema = Type.Object(
+  { template: Type.String({ minLength: 1, maxLength: 120 }) },
+  { additionalProperties: false },
+);
+export type SaveNumberSeriesRequest = Static<typeof SaveNumberSeriesRequestSchema>;
+
 /** The organisation's document-branding profile: company details and the
  * logo that appear on generated PDFs. Presentation-level — issued
  * snapshots keep the legal record. */

@@ -18,7 +18,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip as Chip } from '../ui/chip.js';
 import { Disclosure } from '../ui/disclosure.js';
-import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
+import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 
 interface MastersProps {
@@ -178,6 +178,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     const gstin = optional('gstin');
     const pincode = optional('pincode');
     const stateCode = optional('stateCode');
+    const divisionCode = optional('divisionCode');
     // Role flags are membership, not profile text: an omitted flag leaves
     // the stored value unchanged, so only a CHANGED box travels — an
     // untouched form still sends exactly what it always sent.
@@ -196,6 +197,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(gstin !== undefined ? { gstin } : {}),
         ...(pincode !== undefined ? { pincode } : {}),
         ...(stateCode !== undefined ? { stateCode } : {}),
+        ...(divisionCode !== undefined ? { divisionCode } : {}),
         ...(roleVendor !== wasVendor ? { isVendor: roleVendor } : {}),
         ...(roleClient !== wasClient ? { isClient: roleClient } : {}),
       });
@@ -385,6 +387,20 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={6}
                   defaultValue={editing?.pincode ?? ''}
                 />
+              </Field>
+              <Field>
+                <label htmlFor="contact-division-code">Division code</label>
+                <input
+                  id="contact-division-code"
+                  name="divisionCode"
+                  inputMode="numeric"
+                  pattern="[0-9]{2,5}"
+                  maxLength={5}
+                  defaultValue={editing?.divisionCode ?? ''}
+                />
+                <Hint>
+                  As the railnet directory writes it. A number series can draw on it.
+                </Hint>
               </Field>
               <Field>
                 <label htmlFor="contact-state-code">State code (optional)</label>

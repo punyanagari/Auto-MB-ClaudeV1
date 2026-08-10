@@ -223,6 +223,10 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     recordEwayBillNicResponse: vi.fn(),
     cancelEwayBill: vi.fn(),
     deleteEwayBill: vi.fn().mockResolvedValue(undefined),
+    listNumberSeries: vi.fn().mockResolvedValue([]),
+    setNumberSeries: vi.fn(),
+    clearNumberSeries: vi.fn(),
+    createDirectTaxInvoice: vi.fn(),
     setWorkItemTaxFacts: vi.fn(),
     ...overrides,
   };

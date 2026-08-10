@@ -29,6 +29,11 @@ import {
 } from '../challan-html.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
+import {
+  NumberTemplateError,
+  loadNumberTemplate,
+  renderNumberTemplate,
+} from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
@@ -1081,7 +1086,29 @@ export function registerChallanRoutes(
           `;
           if (!counter) throw new Error('counter upsert returned no row');
           const sequence = counter.next_value;
-          const challanNumber = `${challan.prefix}/${String(sequence)}`;
+          // The organisation's own format; the default is the
+          // prefix/serial this route used to build by hand.
+          // The Work code is a template token, so it is read here rather
+          // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
+          // needs it, and the default never asks for it.
+          const [numberWork] = await tx<{ work_code: string }[]>`
+            select work_code from works where id = ${challan.work_id}
+          `;
+          const template = await loadNumberTemplate(tx, 'delivery_challan');
+          let challanNumber: string;
+          try {
+            challanNumber = renderNumberTemplate(template, {
+              prefix: challan.prefix,
+              work: numberWork?.work_code ?? null,
+              documentDate: challan.challan_date,
+              sequence,
+            });
+          } catch (cause) {
+            if (cause instanceof NumberTemplateError) {
+              throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
+            }
+            throw cause;
+          }
 
           const [organisation] = await tx<
             { name: string; warranty_template_text: string | null }[]

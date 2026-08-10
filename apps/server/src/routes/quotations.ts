@@ -21,6 +21,11 @@ import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { requireAuthority, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
+import {
+  NumberTemplateError,
+  loadNumberTemplate,
+  renderNumberTemplate,
+} from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
@@ -799,7 +804,19 @@ export function registerQuotationRoutes(
           `;
           if (!counter) throw new Error('quotation counter upsert returned no row');
           const sequence = counter.next_value;
-          const bqNumber = `BQ-${String(sequence).padStart(2, '0')}`;
+          const template = await loadNumberTemplate(tx, 'budgetary_quotation');
+          let bqNumber: string;
+          try {
+            bqNumber = renderNumberTemplate(template, {
+              documentDate: quotation.bq_date,
+              sequence,
+            });
+          } catch (cause) {
+            if (cause instanceof NumberTemplateError) {
+              throw httpError(400, 'QUOTATION_NUMBER_UNFILLABLE', cause.message);
+            }
+            throw cause;
+          }
 
           await tx`
             update budgetary_quotations

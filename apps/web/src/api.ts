@@ -98,7 +98,11 @@ import type {
   SetBudgetaryQuotationOutcomeRequest,
   TaxInvoice,
   TaxInvoiceDetailResponse,
+  CreateDirectTaxInvoiceRequest,
   CreateTaxInvoiceRequest,
+  NumberSeries,
+  NumberedDocumentType,
+  SaveNumberSeriesRequest,
   UpdateTaxInvoiceRequest,
   CancelTaxInvoiceRequest,
   RecordIrpResponseRequest,
@@ -945,6 +949,30 @@ export interface ApiClient {
    * PATCH semantics: an omitted field keeps its value, an explicit null
    * clears it. Correctable at any time; issued documents snapshot what
    * they charged, so no history is rewritten. */
+  /** The organisation's own number formats (migration 0039). Four
+   * documents are configurable; a type the organisation has not
+   * configured reports the product default with isDefault true. */
+  readonly listNumberSeries: (
+    organisationId: string,
+  ) => Promise<readonly NumberSeries[]>;
+  readonly setNumberSeries: (
+    organisationId: string,
+    documentType: NumberedDocumentType,
+    body: SaveNumberSeriesRequest,
+  ) => Promise<NumberSeries>;
+  /** Restores the product default. Numbers already issued keep the
+   * strings they were issued with; only future ones change. */
+  readonly clearNumberSeries: (
+    organisationId: string,
+    documentType: NumberedDocumentType,
+  ) => Promise<NumberSeries>;
+  /** A DIRECT tax invoice: raised against a private customer, so it
+   * names no Work and no Measurement Book and states its own taxable
+   * value. */
+  readonly createDirectTaxInvoice: (
+    organisationId: string,
+    body: CreateDirectTaxInvoiceRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
   readonly setWorkItemTaxFacts: (
     organisationId: string,
     workItemId: string,
@@ -2185,6 +2213,33 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async deleteEwayBill(organisationId, ewayBillId) {
       await request(`/api/eway-bills/${ewayBillId}`, {
         method: 'DELETE',
+        organisationId,
+      });
+    },
+    async listNumberSeries(organisationId) {
+      const payload = await request<{ series: NumberSeries[] }>(
+        '/api/organisation/number-series',
+        { organisationId },
+      );
+      return payload.series;
+    },
+    async setNumberSeries(organisationId, documentType, body) {
+      return request<NumberSeries>(`/api/organisation/number-series/${documentType}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async clearNumberSeries(organisationId, documentType) {
+      return request<NumberSeries>(`/api/organisation/number-series/${documentType}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async createDirectTaxInvoice(organisationId, body) {
+      return request<TaxInvoiceDetailResponse>('/api/tax-invoices', {
+        method: 'POST',
+        body,
         organisationId,
       });
     },

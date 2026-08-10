@@ -115,6 +115,7 @@ interface ContactRow {
   gstin: string | null;
   pincode: string | null;
   state_code: string | null;
+  division_code: string | null;
   is_consignee: boolean;
   is_vendor: boolean;
   is_client: boolean;
@@ -133,6 +134,7 @@ function toContact(row: ContactRow): Contact {
     gstin: row.gstin,
     pincode: row.pincode,
     stateCode: row.state_code,
+    divisionCode: row.division_code,
     isConsignee: row.is_consignee,
     isVendor: row.is_vendor,
     isClient: row.is_client,
@@ -143,7 +145,8 @@ function toContact(row: ContactRow): Contact {
 
 const CONTACT_COLUMNS = `
   id, designation, contact_person, address, phone, email, gstin, pincode,
-  state_code, is_consignee, is_vendor, is_client, active, created_at
+  state_code, division_code, is_consignee, is_vendor, is_client, active,
+  created_at
 `;
 
 // GSTIN and email shape live in ../contact-fields.js: the organisation
@@ -430,14 +433,15 @@ export function registerMasterRoutes(
           const [row] = await tx<ContactRow[]>`
             insert into contacts (
               organisation_id, designation, contact_person, address, phone,
-              email, gstin, pincode, state_code, is_consignee, is_vendor,
-              is_client, created_by_user_id
+              email, gstin, pincode, state_code, division_code, is_consignee,
+              is_vendor, is_client, created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
               ${body.contactPerson ?? null}, ${body.address ?? null},
               ${body.phone ?? null}, ${email}, ${gstin},
               ${body.pincode ?? null}, ${body.stateCode ?? null},
+              ${body.divisionCode ?? null},
               ${isConsignee}, ${isVendor}, ${isClient},
               ${user.id}
             )
@@ -512,6 +516,7 @@ export function registerMasterRoutes(
               email = ${email}, gstin = ${gstin},
               pincode = ${body.pincode ?? null},
               state_code = ${body.stateCode ?? null},
+              division_code = ${body.divisionCode ?? null},
               is_vendor = coalesce(${body.isVendor ?? null}, is_vendor),
               is_client = coalesce(${body.isClient ?? null}, is_client)
           where id = ${id}
@@ -620,8 +625,9 @@ export function registerMasterRoutes(
           await requireWork(tx, workId);
           return tx<ContactRow[]>`
             select c.id, c.designation, c.contact_person, c.address, c.phone,
-                   c.email, c.gstin, c.pincode, c.state_code, c.is_consignee,
-                   c.is_vendor, c.is_client, c.active, c.created_at
+                   c.email, c.gstin, c.pincode, c.state_code, c.division_code,
+                   c.is_consignee, c.is_vendor, c.is_client, c.active,
+                   c.created_at
             from work_consignees wc
             join contacts c on c.organisation_id = wc.organisation_id
               and c.id = wc.contact_id

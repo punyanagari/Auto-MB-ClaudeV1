@@ -386,6 +386,7 @@ afterAll(async () => {
           'eway_bills',
           'tax_invoices',
           'tax_invoice_counters',
+          'document_number_series',
           'mb_sources',
           'measurement_book_lines',
           'measurement_book_counters',
@@ -641,6 +642,17 @@ describe('submit: the money moment', () => {
       address: ORG_ADDRESS,
       invoiceNumberPrefix: 'P10',
     });
+
+    // The organisation defines its own invoice series (migration 0039).
+    // '{PREFIX}{FY2}{SEQ:3}' with the house prefix P10 reproduces the
+    // owner's live numbers; the product default is TI/<FY>/NNN.
+    const series = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/tax_invoice',
+      organisationId,
+      payload: { template: '{PREFIX}{FY2}{SEQ:3}' },
+    });
+    expect(series.statusCode, series.body).toBe(200);
   });
 
   it('refuses a buyer whose contact cannot fill the snapshot', async () => {
@@ -1141,5 +1153,158 @@ describe('tenancy and scope', () => {
       headers: { 'x-organisation-id': organisationId },
     });
     expect(anonymous.statusCode).toBe(401);
+  });
+});
+
+/* An invoice need not bill a Measurement Book. A contractor also sells to
+ * private customers, and that invoice descends from no LOA, no Work and
+ * no MB — it states its own taxable value and is otherwise the same
+ * document, down to the GST split and the number it takes from the same
+ * gapless series. */
+describe('direct invoices: no Work, no Measurement Book', () => {
+  it('drafts, submits and taxes an invoice that names no Measurement Book', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2027-01-15',
+        sacCode: '998734',
+        serviceDescription: 'Supply and commissioning for a private customer.',
+        gstRate: '18',
+        // Same state as the organisation (07), so CGST+SGST.
+        placeOfSupply: '07',
+        buyerContactId,
+        taxableValue: '10000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const detail = created.json<TaxInvoiceDetailResponse>();
+    expect(detail.invoice).toMatchObject({
+      workId: null,
+      measurementBookId: null,
+      statedTaxableValue: '10000.00',
+      status: 'draft',
+    });
+
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    expect(submitted.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      taxableValue: '10000.00',
+      cgstAmount: '900.00',
+      sgstAmount: '900.00',
+      igstAmount: '0.00',
+      // 11800 is already whole rupees, so nothing to round.
+      roundOff: '0.00',
+      totalAmount: '11800.00',
+      // The same series the Work-backed invoices draw on: one gapless
+      // sequence per financial year, whatever the invoice descends from.
+      fyLabel: '2026-27',
+    });
+  });
+
+  it('refuses a direct invoice that states no taxable value', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2027-01-15',
+        sacCode: '998734',
+        serviceDescription: 'Supply for a private customer.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        buyerContactId,
+      },
+    });
+    // The schema names the missing field; without a value the invoice
+    // would have no answer to what it is worth.
+    expect(created.statusCode).toBe(400);
+  });
+});
+
+/* The owner's live series, composed the way their invoices are: P, the
+ * railnet division code less its trailing zero, the financial year, and
+ * a three-digit serial. Nothing about it is hard-coded — it is one
+ * configuration of the series feature. */
+describe('a division-derived number series', () => {
+  it('composes P<div><fy><seq> from the buyer’s division code', async () => {
+    const divisionBuyerId = randomUUID();
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, address, gstin, pincode,
+        state_code, division_code, is_consignee, active, created_by_user_id
+      )
+      values (
+        ${divisionBuyerId}, ${organisationId}, 'Sr. DSTE Mumbai CST',
+        ${BUYER_ADDRESS}, ${BUYER_GSTIN}, '110055', '07', '100', true, true,
+        ${ownerUserId}
+      )
+    `;
+    const series = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/tax_invoice',
+      organisationId,
+      payload: { template: 'P{DIV}{FY2}{SEQ:3}' },
+    });
+    expect(series.statusCode, series.body).toBe(200);
+
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2027-01-20',
+        sacCode: '998734',
+        serviceDescription: 'Provision of passenger amenity services.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        buyerContactId: divisionBuyerId,
+        taxableValue: '1000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${created.json<TaxInvoiceDetailResponse>().invoice.id}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    // Division 100 -> 10, financial year 2026-27 -> 26.
+    expect(submitted.json<TaxInvoiceDetailResponse>().invoice.invoiceNumber).toMatch(
+      /^P1026\d{3}$/,
+    );
+  });
+
+  it('refuses to mint a number with a hole where the division should be', async () => {
+    // The buyer seeded for the rest of this suite has no division code,
+    // so {DIV} cannot be filled. Half a number on a legal document is
+    // worse than none.
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2027-01-21',
+        sacCode: '998734',
+        serviceDescription: 'Supply for a customer with no division.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        buyerContactId,
+        taxableValue: '1000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${created.json<TaxInvoiceDetailResponse>().invoice.id}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode).toBe(400);
+    expect(submitted.json<{ code: string }>().code).toBe('INVOICE_NUMBER_UNFILLABLE');
   });
 });

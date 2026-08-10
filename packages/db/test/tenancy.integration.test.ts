@@ -80,6 +80,8 @@ const TENANT_TABLES = [
   'tax_invoices',
   'tax_invoice_counters',
   'eway_bills',
+  // Number formats the organisation defines for itself (0039).
+  'document_number_series',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -151,6 +153,9 @@ const DELETE_REVOKED_TABLES = [
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // Restoring a document's default number format DELETES the row that
+  // overrode it — configuration, cleared in place (0039).
+  'document_number_series',
   // A draft invoice or e-way bill may be discarded; anything submitted or
   // generated cancels instead (0035).
   'tax_invoices',
@@ -691,6 +696,10 @@ async function seedTenantGraph(
     await tx`
       insert into budgetary_quotation_counters (organisation_id, next_value)
       values (${organisationId}, 2)
+    `;
+    await tx`
+      insert into document_number_series (organisation_id, document_type, template)
+      values (${organisationId}, 'tax_invoice', 'P{DIV}{FY2}{SEQ:3}')
     `;
 
     // Wave 6 tax documents (0035). The 0035 insert guards demand a

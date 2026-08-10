@@ -304,6 +304,13 @@ beforeAll(async () => {
     },
   });
   expect(profile.statusCode, profile.body).toBe(200);
+  const series = await authed(owner, {
+    method: 'PUT',
+    url: '/api/organisation/number-series/tax_invoice',
+    organisationId,
+    payload: { template: '{PREFIX}{FY2}{SEQ:3}' },
+  });
+  expect(series.statusCode, series.body).toBe(200);
 
   workId = randomUUID();
   const scheduleId = randomUUID();
@@ -382,6 +389,7 @@ afterAll(async () => {
           'eway_bills',
           'tax_invoices',
           'tax_invoice_counters',
+          'document_number_series',
           'mb_sources',
           'measurement_book_lines',
           'measurement_book_counters',

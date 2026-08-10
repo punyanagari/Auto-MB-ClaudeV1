@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
   DateOnlySchema,
+  NonNegativeDecimalStringSchema,
   RoundOffStringSchema,
   DecimalStringSchema,
   GstRateSchema,
@@ -109,6 +110,42 @@ export const CreateTaxInvoiceRequestSchema = Type.Object(
 );
 export type CreateTaxInvoiceRequest = Static<typeof CreateTaxInvoiceRequestSchema>;
 
+/** POST /api/tax-invoices — a DIRECT invoice, raised against a private
+ * customer rather than a works contract. It descends from no LOA, so it
+ * names no Work and no Measurement Book, and states its own taxable
+ * value; everything else — the SAC, the buyer, the GST split, the
+ * number, the IRN — behaves exactly as on an MB-backed invoice. */
+export const CreateDirectTaxInvoiceRequestSchema = Type.Object(
+  {
+    invoiceDate: DateOnlySchema,
+    sacCode: SacCodeSchema,
+    serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
+    gstRate: GstRateSchema,
+    placeOfSupply: GstStateCodeSchema,
+    buyerContactId: UuidSchema,
+    /** What the supply is worth before tax. Stated, because there is no
+     * Measurement Book to measure it. */
+    taxableValue: NonNegativeDecimalStringSchema,
+    customerPoReference: Type.Optional(
+      nonBlankString({ minLength: 3, maxLength: 500 }),
+    ),
+    unitLabel: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 20,
+        pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
+      }),
+    ),
+    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
+    shipToContactId: Type.Optional(UuidSchema),
+    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
+  },
+  { additionalProperties: false },
+);
+export type CreateDirectTaxInvoiceRequest = Static<
+  typeof CreateDirectTaxInvoiceRequestSchema
+>;
+
 /** PUT /api/tax-invoices/:id — edits the draft's fields. The Measurement
  * Book is the invoice's SUBJECT, not a field: re-pointing an invoice at
  * another MB is delete-and-redraft, so the 0035 finalized-MB insert
@@ -183,8 +220,15 @@ export type RecordIrpResponseRequest = Static<typeof RecordIrpResponseRequestSch
 export const TaxInvoiceSchema = Type.Object(
   {
     id: UuidSchema,
-    workId: UuidSchema,
-    measurementBookId: UuidSchema,
+    /** Null on a DIRECT invoice — one raised against a private customer
+     * rather than a works contract. It descends from no LOA, so it has
+     * no Work and no Measurement Book; its taxable value is stated on
+     * the invoice instead. */
+    workId: Type.Union([UuidSchema, Type.Null()]),
+    measurementBookId: Type.Union([UuidSchema, Type.Null()]),
+    /** A direct invoice's taxable value, stated rather than measured.
+     * Exactly one of this and measurementBookId is ever set. */
+    statedTaxableValue: Type.Union([DecimalStringSchema, Type.Null()]),
     /** The billed Measurement Book's number — how a listing says which
      * MB an invoice closes (finalized MBs always carry one). */
     mbNumber: Type.Union([Type.String(), Type.Null()]),
