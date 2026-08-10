@@ -69,6 +69,13 @@ const TENANT_TABLES = [
   'measurement_book_counters',
   'import_batches',
   'import_records',
+  // The procurement wave and the tax facts that ride with it (0033).
+  'purchase_orders',
+  'purchase_order_lines',
+  'purchase_order_counters',
+  'budgetary_quotations',
+  'budgetary_quotation_lines',
+  'budgetary_quotation_counters',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -129,11 +136,20 @@ const DELETE_REVOKED_TABLES = [
   // Cutover provenance is an append-only ledger (0025).
   'import_batches',
   'import_records',
+  // Numbering state for the procurement documents (0033).
+  'purchase_order_counters',
+  'budgetary_quotation_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A draft order or quotation is not yet a document and may be discarded;
+  // once issued the status moves to cancelled or withdrawn instead (0033).
+  'purchase_orders',
+  'purchase_order_lines',
+  'budgetary_quotations',
+  'budgetary_quotation_lines',
   'organisation_memberships',
   'work_schedules',
   'delivery_challans',
@@ -596,6 +612,74 @@ async function seedTenantGraph(
       )
       values (${organisationId}, 'work', 'auto-mb-v1', ${`w-${workCode}`},
               ${work.id}, ${importBatch.id}, ${shaFill.repeat(64)})
+    `;
+
+    // Wave 6 procurement (0033): one issued purchase order with a line and
+    // its counter, and one issued budgetary quotation with a line and its
+    // counter. Issued rather than draft so the shape CHECKs are exercised
+    // and the one-draft-per-Work index cannot collide across the two
+    // organisations this seed runs for.
+    const [purchaseOrder] = await tx<{ id: string }[]>`
+      insert into purchase_orders (
+        organisation_id, work_id, vendor_contact_id, po_date,
+        created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id},
+              '2026-02-01', ${userId})
+      returning id
+    `;
+    if (!purchaseOrder) throw new Error('seed purchase order insert returned no row');
+    await tx`
+      insert into purchase_order_lines (
+        organisation_id, purchase_order_id, work_item_id, line_number,
+        description, unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${purchaseOrder.id}, ${workItem.id}, 1,
+              'Seeded purchase order line', 'Nos', '10.000', '100.000000',
+              '1000.00')
+    `;
+    // Lines first, then issue: the 0033 guard fixes an issued order's lines.
+    await tx`
+      update purchase_orders
+         set status = 'issued', po_number = ${`${workCode}-PO-01`},
+             sequence_number = 1,
+             vendor_snapshot = ${tx.json({ designation: 'Vendor' })},
+             total_amount = '1000.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${purchaseOrder.id}
+    `;
+    await tx`
+      insert into purchase_order_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+
+    const [quotation] = await tx<{ id: string }[]>`
+      insert into budgetary_quotations (
+        organisation_id, addressed_to, subject, bq_date, created_by_user_id
+      )
+      values (${organisationId}, 'Sr. DEE (G) CR', 'Budgetary quotation',
+              '2026-01-20', ${userId})
+      returning id
+    `;
+    if (!quotation) throw new Error('seed budgetary quotation insert returned no row');
+    await tx`
+      insert into budgetary_quotation_lines (
+        organisation_id, budgetary_quotation_id, line_number, description,
+        unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${quotation.id}, 1, 'Seeded quotation line',
+              'Nos', '5.000', '100.000000', '500.00')
+    `;
+    await tx`
+      update budgetary_quotations
+         set status = 'issued', bq_number = ${`BQ-${workCode}-01`},
+             sequence_number = 1, total_amount = '500.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${quotation.id}
+    `;
+    await tx`
+      insert into budgetary_quotation_counters (organisation_id, next_value)
+      values (${organisationId}, 2)
     `;
 
     return {
