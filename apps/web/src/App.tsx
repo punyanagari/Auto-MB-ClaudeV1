@@ -98,6 +98,16 @@ export function App({ api: providedApi }: AppProps) {
     );
   }
 
+  // Signed out, the sign-in page is the whole window: it carries the brand
+  // itself, so a bar above it would say Auto-MB twice.
+  if (phase.name === 'signed-out') {
+    return (
+      <main ref={mainRef}>
+        <SignIn api={api} onSignedIn={() => void refreshSession()} />
+      </main>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-3 print:hidden">
@@ -117,9 +127,6 @@ export function App({ api: providedApi }: AppProps) {
           <p className="p-8 text-center text-muted-foreground" role="status">
             Loading…
           </p>
-        )}
-        {phase.name === 'signed-out' && (
-          <SignIn api={api} onSignedIn={() => void refreshSession()} />
         )}
         {phase.name === 'pick-organisation' && (
           <OrgPicker
