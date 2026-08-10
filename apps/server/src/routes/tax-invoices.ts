@@ -121,6 +121,18 @@ interface InvoiceRow {
   created_at: Date;
   submitted_at: Date | null;
   cancelled_at: Date | null;
+  round_off: string | null;
+  customer_po_reference: string | null;
+  unit_label: string | null;
+  notes: string | null;
+  ship_to_contact_id: string | null;
+  number_prefix: string | null;
+  ack_date_text: string | null;
+  /** The line's own value: the UNROUNDED sum of the taxable value and
+   * its taxes, summed in SQL numeric. Derived, never stored — the
+   * e-invoice payload needs it and deriving it by subtracting the
+   * rounding delta in binary floating point would be a money error. */
+  line_value: string | null;
 }
 
 /** `buyer_contact_id` is the submit-time snapshot's contactId once
@@ -141,7 +153,11 @@ const TI_COLUMNS = `
   ) as buyer_contact_id,
   ti.taxable_value::text as taxable_value, ti.cgst_amount::text as cgst_amount,
   ti.sgst_amount::text as sgst_amount, ti.igst_amount::text as igst_amount,
-  ti.total_amount::text as total_amount,
+  ti.round_off::text as round_off, ti.total_amount::text as total_amount,
+  (ti.taxable_value + ti.cgst_amount + ti.sgst_amount + ti.igst_amount)
+    ::numeric(18,2)::text as line_value,
+  ti.customer_po_reference, ti.unit_label, ti.notes, ti.ship_to_contact_id,
+  ti.number_prefix, ti.ack_date_text,
   ti.irn, ti.ack_number, ti.ack_date, ti.cancellation_note,
   ti.created_at, ti.submitted_at, ti.cancelled_at
 `;
@@ -171,10 +187,17 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     cgstAmount: row.cgst_amount,
     sgstAmount: row.sgst_amount,
     igstAmount: row.igst_amount,
+    roundOff: row.round_off,
     totalAmount: row.total_amount,
+    customerPoReference: row.customer_po_reference,
+    unitLabel: row.unit_label,
+    notes: row.notes,
+    shipToContactId: row.ship_to_contact_id,
+    numberPrefix: row.number_prefix,
     irn: row.irn,
     ackNumber: row.ack_number,
     ackDate: row.ack_date?.toISOString() ?? null,
+    ackDateText: row.ack_date_text,
     cancellationNote: row.cancellation_note,
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
@@ -187,11 +210,14 @@ async function readDetail(
   invoiceId: string,
 ): Promise<TaxInvoiceDetailResponse> {
   const rows = (await tx.unsafe(
-    `select ${TI_COLUMNS}, ti.buyer_snapshot, ti.signed_qr ${TI_FROM}
+    `select ${TI_COLUMNS}, ti.buyer_snapshot, ti.ship_to_snapshot,
+            ti.issued_snapshot, ti.signed_qr ${TI_FROM}
      where ti.id = $1`,
     [invoiceId],
   )) as unknown as (InvoiceRow & {
     buyer_snapshot: unknown;
+    ship_to_snapshot: unknown;
+    issued_snapshot: unknown;
     signed_qr: string | null;
   })[];
   const row = rows[0];
@@ -199,6 +225,8 @@ async function readDetail(
   return {
     invoice: toInvoice(row),
     buyerSnapshot: parseJsonbColumn(row.buyer_snapshot),
+    shipToSnapshot: parseJsonbColumn(row.ship_to_snapshot),
+    issuedSnapshot: parseJsonbColumn(row.issued_snapshot),
     signedQr: row.signed_qr,
   };
 }
@@ -286,6 +314,29 @@ async function requireBuyer(tx: TransactionSql, contactId: string): Promise<Buye
   return row;
 }
 
+/** The ship-to contact, resolved the same way and refused for the same
+ * reasons — a retired consignee is as wrong to deliver to as it is to
+ * bill. Named separately so its refusals say which of the two parties is
+ * at fault. */
+async function requireShipTo(tx: TransactionSql, contactId: string): Promise<BuyerRow> {
+  const [row] = await tx<BuyerRow[]>`
+    select id, designation, contact_person, address, gstin, pincode,
+           state_code, active
+    from contacts where id = ${contactId}
+  `;
+  if (!row) {
+    throw httpError(404, 'SHIP_TO_NOT_FOUND', 'No such ship-to contact.');
+  }
+  if (!row.active) {
+    throw httpError(
+      409,
+      'SHIP_TO_RETIRED',
+      'This ship-to contact is retired — reactivate it or pick another.',
+    );
+  }
+  return row;
+}
+
 interface InvoiceableBook {
   id: string;
   work_id: string;
@@ -334,6 +385,35 @@ async function lockInvoiceableBook(
     );
   }
   return book;
+}
+
+/** The template this route freezes into issued_snapshot. Bumping it is
+ * how a document change becomes visible: an invoice re-renders from the
+ * snapshot it was issued under, never from today's template. */
+export const TAX_INVOICE_TEMPLATE_VERSION = 'ti-v1';
+
+/** The unit word when the invoice does not name one. A works-contract
+ * invoice bills one whole thing, and 'set' is what the trade writes. */
+const DEFAULT_UNIT_LABEL = 'set';
+
+/** The optional document fields a draft may carry, trimmed to what the
+ * columns hold. An omitted field stores NULL — these are the invoice's
+ * own text, not a PATCH surface, because create and update share one
+ * whole-object shape. */
+function documentFields(body: CreateTaxInvoiceRequest | UpdateTaxInvoiceRequest): {
+  customerPoReference: string | null;
+  unitLabel: string | null;
+  notes: string | null;
+  shipToContactId: string | null;
+  numberPrefix: string | null;
+} {
+  return {
+    customerPoReference: body.customerPoReference?.trim() ?? null,
+    unitLabel: body.unitLabel?.trim() ?? null,
+    notes: body.notes?.trim() ?? null,
+    shipToContactId: body.shipToContactId ?? null,
+    numberPrefix: body.numberPrefix ?? null,
+  };
 }
 
 /** Billing cannot precede measurement: the invoice date floors at the
@@ -449,6 +529,7 @@ export function registerTaxInvoiceRoutes(
       const { id: workId } = request.params as { id: string };
       const body = request.body as CreateTaxInvoiceRequest;
       const serviceDescription = trimmedDescription(body.serviceDescription);
+      const document = documentFields(body);
 
       const detail = await withBoundTenant(
         database,
@@ -466,12 +547,16 @@ export function registerTaxInvoiceRoutes(
             insert into tax_invoices (
               organisation_id, work_id, measurement_book_id, invoice_date,
               sac_code, service_description, gst_rate, place_of_supply,
-              created_by_user_id
+              customer_po_reference, unit_label, notes, ship_to_contact_id,
+              number_prefix, created_by_user_id
             )
             values (
               ${organisationId}, ${workId}, ${body.measurementBookId},
               ${body.invoiceDate}, ${body.sacCode}, ${serviceDescription},
-              ${body.gstRate}, ${body.placeOfSupply}, ${user.id}
+              ${body.gstRate}, ${body.placeOfSupply},
+              ${document.customerPoReference}, ${document.unitLabel},
+              ${document.notes}, ${document.shipToContactId},
+              ${document.numberPrefix}, ${user.id}
             )
             returning id
           `.catch((error: unknown) => {
@@ -568,6 +653,7 @@ export function registerTaxInvoiceRoutes(
       const { id } = request.params as { id: string };
       const body = request.body as UpdateTaxInvoiceRequest;
       const serviceDescription = trimmedDescription(body.serviceDescription);
+      const document = documentFields(body);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const invoice = await lockInvoice(tx, id);
@@ -584,7 +670,11 @@ export function registerTaxInvoiceRoutes(
           update tax_invoices
           set invoice_date = ${body.invoiceDate}, sac_code = ${body.sacCode},
               service_description = ${serviceDescription},
-              gst_rate = ${body.gstRate}, place_of_supply = ${body.placeOfSupply}
+              gst_rate = ${body.gstRate}, place_of_supply = ${body.placeOfSupply},
+              customer_po_reference = ${document.customerPoReference},
+              unit_label = ${document.unitLabel}, notes = ${document.notes},
+              ship_to_contact_id = ${document.shipToContactId},
+              number_prefix = ${document.numberPrefix}
           where id = ${id}
         `;
         // The after-side re-reads the stored row so numbers compare in
@@ -699,9 +789,23 @@ export function registerTaxInvoiceRoutes(
           // here, not at draft time — the profile may well be completed
           // between drafting and the money moment.
           const [organisation] = await tx<
-            { state_code: string | null; gstin: string | null }[]
+            {
+              name: string;
+              state_code: string | null;
+              gstin: string | null;
+              address: string | null;
+              pincode: string | null;
+              trade_name: string | null;
+              msme_number: string | null;
+              contact_phone: string | null;
+              invoice_number_prefix: string | null;
+              invoice_notes: string | null;
+            }[]
           >`
-            select state_code, gstin from organisations
+            select name, state_code, gstin, address, pincode, trade_name,
+                   msme_number, contact_phone, invoice_number_prefix,
+                   invoice_notes
+            from organisations
           `;
           if (!organisation?.state_code) {
             throw httpError(
@@ -755,6 +859,22 @@ export function registerTaxInvoiceRoutes(
           // row lock: concurrent submits serialise here, and a rolled-
           // back transaction rolls the number back with it.
           const fyLabel = financialYearLabel(invoice.invoice_date);
+          // The number is COMPOSED, not templated: the owner's series is
+          // a prefix, the financial year's opening year, and one gapless
+          // serial per year SHARED across every prefix — P10 26 044 and
+          // P14 26 048 are the 44th and 48th invoices of 2026-27 under
+          // two prefixes. The invoice's own prefix wins over the house
+          // default; neither present is a refusal rather than a guess,
+          // because inventing a series would put a number on a legal
+          // document that the owner's books do not recognise.
+          const prefix = invoice.number_prefix ?? organisation.invoice_number_prefix;
+          if (prefix === null) {
+            throw httpError(
+              400,
+              'INVOICE_PREFIX_REQUIRED',
+              'This invoice has no number prefix and the organisation has no default one. Set the house prefix in Settings, or give this invoice its own, and retry.',
+            );
+          }
           const [counter] = await tx<{ next_value: number }[]>`
             insert into tax_invoice_counters (organisation_id, fy_label)
             values (${organisationId}, ${fyLabel})
@@ -764,7 +884,9 @@ export function registerTaxInvoiceRoutes(
           `;
           if (!counter) throw new Error('tax invoice counter upsert returned no row');
           const sequence = counter.next_value;
-          const invoiceNumber = `TI/${fyLabel}/${String(sequence).padStart(3, '0')}`;
+          // '2026-27' -> '26': the year the financial year opens in.
+          const fyShort = fyLabel.slice(2, 4);
+          const invoiceNumber = `${prefix}${fyShort}${String(sequence).padStart(3, '0')}`;
 
           // THE MONEY, entirely in SQL numeric arithmetic: taxable is the
           // MB total verbatim; intra-state (organisation state = place of
@@ -781,6 +903,7 @@ export function registerTaxInvoiceRoutes(
               sgst: string;
               igst: string;
               total: string;
+              round_off: string;
             }[]
           >`
             with base as (
@@ -797,7 +920,17 @@ export function registerTaxInvoiceRoutes(
             )
             select taxable::text as taxable, half::text as cgst, half::text as sgst,
                    igst::text as igst,
-                   (taxable + half + half + igst)::numeric(18,2)::text as total
+                   -- The invoice is payable in whole rupees, so the total
+                   -- is rounded and the delta is kept and printed. Both
+                   -- in SQL numeric: 4226994.01 + 380429.46 + 380429.46 =
+                   -- 4987852.93 becomes 4987853 with a round_off of 0.07,
+                   -- which is exactly what the customer's own invoice
+                   -- says.
+                   round(taxable + half + half + igst, 0)::numeric(18,2)::text
+                     as total,
+                   (round(taxable + half + half + igst, 0)
+                     - (taxable + half + half + igst))::numeric(18,2)::text
+                     as round_off
             from base
           `;
           if (!money) throw new Error('tax computation returned no row');
@@ -815,14 +948,85 @@ export function registerTaxInvoiceRoutes(
             pincode: buyer.pincode,
           };
 
+          // The ship-to, when one was named. Same freeze as the buyer,
+          // and deliberately NOT a copy of it: the delivered-to block on
+          // a real invoice drops the GSTIN the billed-to block carries,
+          // so repeating the buyer would print a GSTIN the document
+          // means to leave off.
+          const shipTo =
+            invoice.ship_to_contact_id === null
+              ? null
+              : await requireShipTo(tx, invoice.ship_to_contact_id);
+          const shipToSnapshot =
+            shipTo === null
+              ? null
+              : {
+                  contactId: shipTo.id,
+                  designation: shipTo.designation,
+                  contactPerson: shipTo.contact_person,
+                  address: shipTo.address,
+                  stateCode: shipTo.state_code,
+                  pincode: shipTo.pincode,
+                };
+
+          // THE DOCUMENT, frozen. Everything the printed invoice says
+          // about parties and money, captured at the one moment it
+          // becomes legal — so correcting the company address in
+          // Settings tomorrow cannot rewrite the masthead of an invoice
+          // the Government has already registered. A re-render
+          // REPRODUCES this; it never recomputes from live tables.
+          const issuedSnapshot = {
+            templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
+            invoiceNumber,
+            invoiceDate: invoice.invoice_date,
+            fyLabel,
+            supplier: {
+              name: organisation.name,
+              tradeName: organisation.trade_name,
+              address: organisation.address,
+              pincode: organisation.pincode,
+              stateCode: organisation.state_code,
+              gstin: organisation.gstin,
+              phone: organisation.contact_phone,
+              msmeNumber: organisation.msme_number,
+            },
+            buyer: buyerSnapshot,
+            shipTo: shipToSnapshot,
+            placeOfSupply: invoice.place_of_supply,
+            customerPoReference: invoice.customer_po_reference,
+            line: {
+              sacCode: invoice.sac_code,
+              description: invoice.service_description,
+              quantity: '1.00',
+              unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
+              rate: money.taxable,
+              gstRate: invoice.gst_rate,
+              amount: money.taxable,
+            },
+            totals: {
+              taxableValue: money.taxable,
+              cgstAmount: money.cgst,
+              sgstAmount: money.sgst,
+              igstAmount: money.igst,
+              roundOff: money.round_off,
+              totalAmount: money.total,
+            },
+            // The organisation's standing line unless this invoice set
+            // its own; one sample carries it and the other does not.
+            notes: invoice.notes ?? organisation.invoice_notes,
+          };
+
           await tx`
             update tax_invoices
             set status = 'submitted', invoice_number = ${invoiceNumber},
+                number_prefix = ${prefix},
                 sequence_number = ${sequence}, fy_label = ${fyLabel},
                 buyer_snapshot = ${jsonb(tx, buyerSnapshot)},
+                ship_to_snapshot = ${shipToSnapshot === null ? null : jsonb(tx, shipToSnapshot)},
+                issued_snapshot = ${jsonb(tx, issuedSnapshot)},
                 taxable_value = ${money.taxable}, cgst_amount = ${money.cgst},
                 sgst_amount = ${money.sgst}, igst_amount = ${money.igst},
-                total_amount = ${money.total},
+                round_off = ${money.round_off}, total_amount = ${money.total},
                 submitted_by_user_id = ${user.id}, submitted_at = now()
             where id = ${id}
           `.catch((error: unknown) => {
@@ -1008,9 +1212,10 @@ export function registerTaxInvoiceRoutes(
             address: string | null;
             gstin: string | null;
             state_code: string | null;
+            pincode: string | null;
           }[]
         >`
-          select name, address, gstin, state_code from organisations
+          select name, address, gstin, state_code, pincode from organisations
         `;
         // The submit proved GSTIN and state; re-proved here because the
         // profile can be cleared afterwards and the payload must never
@@ -1036,15 +1241,17 @@ export function registerTaxInvoiceRoutes(
             'The organisation profile has no address; the IRP payload needs the seller address.',
           );
         }
-        // The profile has no pincode column: the seller PIN is read out
-        // of the address (see gsp/irp-payload.ts). An address without one
-        // is refused here rather than rejected by the IRP later.
-        const sellerPincode = extractPincode(organisation.address);
+        // The PIN is a column of its own since 0037. The address scrape
+        // survives ONLY as a fallback for a profile that predates it —
+        // an address line is not required to contain a PIN, and real
+        // ones frequently do not.
+        const sellerPincode =
+          organisation.pincode ?? extractPincode(organisation.address);
         if (sellerPincode === null) {
           throw httpError(
             400,
             'ORG_PINCODE_REQUIRED',
-            'The organisation address names no six-digit PIN code; the IRP payload needs the seller PIN. Add it to the profile address.',
+            'The organisation profile has no PIN code, and its address names no six-digit one; the IRP payload needs the seller PIN. Set it in Settings.',
           );
         }
         const snapshot = parseJsonbColumn(invoice.buyer_snapshot) as {
@@ -1073,6 +1280,8 @@ export function registerTaxInvoiceRoutes(
           invoice.sgst_amount === null ||
           invoice.igst_amount === null ||
           invoice.total_amount === null ||
+          invoice.round_off === null ||
+          invoice.line_value === null ||
           invoice.invoice_number === null
         ) {
           throw new Error(`submitted tax invoice ${id} is missing frozen amounts`);
@@ -1089,6 +1298,8 @@ export function registerTaxInvoiceRoutes(
           sgstAmount: invoice.sgst_amount,
           igstAmount: invoice.igst_amount,
           totalAmount: invoice.total_amount,
+          roundOff: invoice.round_off,
+          lineValue: invoice.line_value,
           seller: {
             gstin: organisation.gstin,
             legalName: organisation.name,

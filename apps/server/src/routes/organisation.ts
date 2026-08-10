@@ -60,6 +60,11 @@ interface ProfileRow extends Record<string, unknown> {
   logo_object_key: string | null;
   warranty_template_text: string | null;
   state_code: string | null;
+  pincode: string | null;
+  trade_name: string | null;
+  msme_number: string | null;
+  invoice_number_prefix: string | null;
+  invoice_notes: string | null;
 }
 
 function toProfile(row: ProfileRow): OrganisationProfile {
@@ -73,6 +78,11 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     contactEmail: row.contact_email,
     hasLogo: row.logo_object_key !== null,
     stateCode: row.state_code,
+    pincode: row.pincode,
+    tradeName: row.trade_name,
+    msmeNumber: row.msme_number,
+    invoiceNumberPrefix: row.invoice_number_prefix,
+    invoiceNotes: row.invoice_notes,
     warrantyTemplateText: row.warranty_template_text,
   };
 }
@@ -80,7 +90,9 @@ function toProfile(row: ProfileRow): OrganisationProfile {
 async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
   const [row] = await tx<ProfileRow[]>`
     select id, name, slug, address, gstin, contact_phone,
-           contact_email, logo_object_key, warranty_template_text, state_code
+           contact_email, logo_object_key, warranty_template_text, state_code,
+           pincode, trade_name, msme_number, invoice_number_prefix,
+           invoice_notes
     from organisations
   `;
   if (!row) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
@@ -204,6 +216,21 @@ export function registerOrganisationRoutes(
           // wrong state must be able to do.
           state_code:
             body.stateCode !== undefined ? body.stateCode : current.state_code,
+          // The tax invoice's masthead. The PIN is not decoration: the
+          // e-invoice payload needs the seller's PIN as a number in its
+          // own right, and an address line is not required to contain
+          // one — the sample invoice's does not.
+          pincode: body.pincode !== undefined ? body.pincode : current.pincode,
+          trade_name:
+            body.tradeName !== undefined ? body.tradeName : current.trade_name,
+          msme_number:
+            body.msmeNumber !== undefined ? body.msmeNumber : current.msme_number,
+          invoice_number_prefix:
+            body.invoiceNumberPrefix !== undefined
+              ? body.invoiceNumberPrefix
+              : current.invoice_number_prefix,
+          invoice_notes:
+            body.invoiceNotes !== undefined ? body.invoiceNotes : current.invoice_notes,
           warranty_template_text:
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText
@@ -220,12 +247,18 @@ export function registerOrganisationRoutes(
             contact_phone = ${next.contact_phone},
             contact_email = ${next.contact_email},
             state_code = ${next.state_code},
+            pincode = ${next.pincode},
+            trade_name = ${next.trade_name},
+            msme_number = ${next.msme_number},
+            invoice_number_prefix = ${next.invoice_number_prefix},
+            invoice_notes = ${next.invoice_notes},
             warranty_template_text = ${next.warranty_template_text},
             updated_at = now()
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
                     contact_email, logo_object_key, warranty_template_text,
-                    state_code
+                    state_code, pincode, trade_name, msme_number,
+                    invoice_number_prefix, invoice_notes
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
         // Milestone 6: record each changed field's old and new value —
@@ -238,6 +271,11 @@ export function registerOrganisationRoutes(
             contactPhone: current.contact_phone,
             contactEmail: current.contact_email,
             stateCode: current.state_code,
+            pincode: current.pincode,
+            tradeName: current.trade_name,
+            msmeNumber: current.msme_number,
+            invoiceNumberPrefix: current.invoice_number_prefix,
+            invoiceNotes: current.invoice_notes,
           },
           {
             name: next.name,
@@ -246,6 +284,11 @@ export function registerOrganisationRoutes(
             contactPhone: next.contact_phone,
             contactEmail: next.contact_email,
             stateCode: next.state_code,
+            pincode: next.pincode,
+            tradeName: next.trade_name,
+            msmeNumber: next.msme_number,
+            invoiceNumberPrefix: next.invoice_number_prefix,
+            invoiceNotes: next.invoice_notes,
           },
         );
         await tx`

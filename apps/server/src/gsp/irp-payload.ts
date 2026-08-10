@@ -64,6 +64,14 @@ export interface IrpInvoiceInput {
   sgstAmount: string;
   igstAmount: string;
   totalAmount: string;
+  /** Signed whole-rupee rounding delta; rounding is an INVOICE-level
+   * adjustment, so it belongs here and not on the line. */
+  roundOff: string;
+  /** The line's own value: the UNROUNDED sum of the taxable value and
+   * its taxes, computed in SQL numeric like every other money figure
+   * here. NIC reconciles sum(TotItemVal) + RndOffAmt = TotInvVal, so
+   * this cannot be derived by subtracting in binary floating point. */
+  lineValue: string;
   seller: IrpSeller;
   buyer: IrpBuyer;
 }
@@ -155,6 +163,9 @@ export interface IrpPayload {
     CgstVal: number;
     SgstVal: number;
     IgstVal: number;
+    /** The whole-rupee rounding delta. NIC has always had the field; we
+     * had nothing to put in it until the invoice learned to round. */
+    RndOffAmt: number;
     TotInvVal: number;
   };
 }
@@ -204,7 +215,11 @@ export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
         CgstAmt: toAmount(input.cgstAmount),
         SgstAmt: toAmount(input.sgstAmount),
         IgstAmt: toAmount(input.igstAmount),
-        TotItemVal: toAmount(input.totalAmount),
+        // The LINE's value: the unrounded sum. NIC reconciles
+        // sum(TotItemVal) + RndOffAmt = TotInvVal, so sending the
+        // rounded invoice total here would break that identity by
+        // exactly the rounding delta.
+        TotItemVal: toAmount(input.lineValue),
       },
     ],
     ValDtls: {
@@ -212,6 +227,7 @@ export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
       CgstVal: toAmount(input.cgstAmount),
       SgstVal: toAmount(input.sgstAmount),
       IgstVal: toAmount(input.igstAmount),
+      RndOffAmt: toAmount(input.roundOff),
       TotInvVal: toAmount(input.totalAmount),
     },
   };

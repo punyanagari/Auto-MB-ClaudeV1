@@ -296,7 +296,12 @@ beforeAll(async () => {
     method: 'PATCH',
     url: '/api/organisation/profile',
     organisationId,
-    payload: { stateCode: '07', gstin: ORG_GSTIN, address: ORG_ADDRESS },
+    payload: {
+      stateCode: '07',
+      gstin: ORG_GSTIN,
+      address: ORG_ADDRESS,
+      invoiceNumberPrefix: 'P10',
+    },
   });
   expect(profile.statusCode, profile.body).toBe(200);
 
@@ -357,7 +362,7 @@ beforeAll(async () => {
   });
   expect(submitted.statusCode, submitted.body).toBe(201);
   const invoice = submitted.json<TaxInvoiceDetailResponse>().invoice;
-  expect(invoice.invoiceNumber).toBe('TI/2026-27/001');
+  expect(invoice.invoiceNumber).toBe('P1026001');
   expect(invoice.taxableValue).toBe('1000.00');
   expect(invoice.totalAmount).toBe('1180.00');
 
@@ -451,7 +456,7 @@ describe('drafting the movement', () => {
     const throwawayId = first.json<EwayBillDetailResponse>().ewayBill.id;
     expect(first.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
       taxInvoiceId: submittedInvoiceId,
-      invoiceNumber: 'TI/2026-27/001',
+      invoiceNumber: 'P1026001',
       status: 'draft',
       transportMode: 'road',
       vehicleNumber: null,
@@ -540,7 +545,7 @@ describe('the NIC payload and response, road carriage', () => {
       supplyType: 'O',
       subSupplyType: '1',
       docType: 'INV',
-      docNo: 'TI/2026-27/001',
+      docNo: 'P1026001',
       docDate: '05/08/2026',
       fromGstin: ORG_GSTIN,
       fromTrdName: 'EWB Constructions',
@@ -710,7 +715,7 @@ describe('rail carriage', () => {
       supplyType: 'O',
       subSupplyType: '1',
       docType: 'INV',
-      docNo: 'TI/2026-27/001',
+      docNo: 'P1026001',
       docDate: '05/08/2026',
       fromGstin: ORG_GSTIN,
       fromTrdName: 'EWB Constructions',
@@ -860,9 +865,7 @@ describe('listing, tenancy, and scope', () => {
     const { ewayBills } = response.json<EwayBillListResponse>();
     expect(ewayBills.length).toBe(2);
     expect(ewayBills.every((bill) => bill.status === 'cancelled')).toBe(true);
-    expect(ewayBills.every((bill) => bill.invoiceNumber === 'TI/2026-27/001')).toBe(
-      true,
-    );
+    expect(ewayBills.every((bill) => bill.invoiceNumber === 'P1026001')).toBe(true);
   });
 
   it('answers 404 across tenants and 401 without a session', async () => {

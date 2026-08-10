@@ -82,6 +82,25 @@ export const MemberListResponseSchema = Type.Object(
 );
 export type MemberListResponse = Static<typeof MemberListResponseSchema>;
 
+/** The Udyam (MSME) registration number, exactly as the column's CHECK
+ * holds it: UDYAM-MH-26-0224294 — two state letters, a two-digit
+ * district, seven digits. */
+export const UdyamNumberSchema = Type.String({
+  pattern: '^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$',
+  description: 'Udyam (MSME) registration number.',
+});
+export type UdyamNumber = Static<typeof UdyamNumberSchema>;
+
+/** A tax invoice number's prefix: the owner's live series runs P10 / P14,
+ * so an initial letter and up to seven more uppercase alphanumerics. The
+ * serial behind it is one gapless per-financial-year sequence shared
+ * across every prefix. */
+export const InvoiceNumberPrefixSchema = Type.String({
+  pattern: '^[A-Z][A-Z0-9]{0,7}$',
+  description: 'Tax invoice number prefix, e.g. P10.',
+});
+export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
+
 /** The organisation's document-branding profile: company details and the
  * logo that appear on generated PDFs. Presentation-level — issued
  * snapshots keep the legal record. */
@@ -109,6 +128,29 @@ export const OrganisationProfileSchema = Type.Object(
      * Optional on the wire so a reader that predates the tax columns
      * omits it rather than reporting a state it never selected. */
     stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
+    /** The tax invoice's masthead facts (migration 0037). The PIN is
+     * load-bearing rather than decorative: the e-invoice payload needs
+     * the seller's PIN as a figure in its own right, and an address line
+     * is not required to contain one. Optional on the wire for the same
+     * reason stateCode is — a reader that predates them omits them. */
+    pincode: Type.Optional(
+      Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    ),
+    /** The name traded under, when it differs from the legal name. */
+    tradeName: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),
+    ),
+    /** Udyam registration, printed as 'Our MSME No.:-'. */
+    msmeNumber: Type.Optional(Type.Union([UdyamNumberSchema, Type.Null()])),
+    /** House defaults for tax invoices (migration 0038): the number
+     * prefix most invoices take, and the standing Notes line. An invoice
+     * that sets its own overrides either. */
+    invoiceNumberPrefix: Type.Optional(
+      Type.Union([InvoiceNumberPrefixSchema, Type.Null()]),
+    ),
+    invoiceNotes: Type.Optional(
+      Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
+    ),
     /** Warranty agreement template for a later document generator;
      * stored verbatim, never rendered here (Milestone 7: CRUD only). */
     warrantyTemplateText: Type.Union([
@@ -137,6 +179,20 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     ),
     /** Two digits, exactly as the column's CHECK holds; null clears it. */
     stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
+    pincode: Type.Optional(
+      Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    ),
+    tradeName: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),
+    ),
+    msmeNumber: Type.Optional(Type.Union([UdyamNumberSchema, Type.Null()])),
+    /** House defaults an invoice inherits unless it sets its own. */
+    invoiceNumberPrefix: Type.Optional(
+      Type.Union([InvoiceNumberPrefixSchema, Type.Null()]),
+    ),
+    invoiceNotes: Type.Optional(
+      Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
+    ),
     warrantyTemplateText: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),
     ),

@@ -1,12 +1,14 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
   DateOnlySchema,
+  RoundOffStringSchema,
   DecimalStringSchema,
   GstRateSchema,
   GstStateCodeSchema,
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
+import { InvoiceNumberPrefixSchema } from './organisations.js';
 
 /**
  * The two GST tax documents (migration 0035): the TAX INVOICE and the
@@ -70,6 +72,38 @@ export const CreateTaxInvoiceRequestSchema = Type.Object(
      * (inter) at submit. */
     placeOfSupply: GstStateCodeSchema,
     buyerContactId: UuidSchema,
+    /** The BUYER's own order reference, printed on the face of the
+     * invoice and verbatim: the paying division matches the bill against
+     * it. One free-text field on purpose — the observed shape is
+     * division / tender number / order number and date, but that grammar
+     * is the railway's, it varies by division, and a parser would refuse
+     * the first invoice that did not match it. */
+    customerPoReference: Type.Optional(
+      nonBlankString({ minLength: 3, maxLength: 500 }),
+    ),
+    /** The unit word beside the quantity ('set'). Per invoice, because
+     * work billed per metre or per job says something else. The column
+     * measures TRIMMED length 1..20, and a floor of one cannot use
+     * nonBlankString — it starts at two — so the pattern demands at
+     * least one non-space character itself. */
+    unitLabel: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 20,
+        pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
+        description: "The unit word beside the quantity, e.g. 'set'.",
+      }),
+    ),
+    /** The Notes block. Falls back to the organisation's standing line
+     * when omitted; nothing to do with the cancellation note. */
+    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
+    /** Where the supply is delivered, when that differs from who is
+     * billed. Snapshotted at submit like the buyer. Omitted means the
+     * ship-to block repeats the buyer, which is the common case. */
+    shipToContactId: Type.Optional(UuidSchema),
+    /** Overrides the organisation's house prefix for this invoice's
+     * number; the serial behind it is shared across every prefix. */
+    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
   },
   { additionalProperties: false },
 );
@@ -87,6 +121,38 @@ export const UpdateTaxInvoiceRequestSchema = Type.Object(
     gstRate: GstRateSchema,
     placeOfSupply: GstStateCodeSchema,
     buyerContactId: UuidSchema,
+    /** The BUYER's own order reference, printed on the face of the
+     * invoice and verbatim: the paying division matches the bill against
+     * it. One free-text field on purpose — the observed shape is
+     * division / tender number / order number and date, but that grammar
+     * is the railway's, it varies by division, and a parser would refuse
+     * the first invoice that did not match it. */
+    customerPoReference: Type.Optional(
+      nonBlankString({ minLength: 3, maxLength: 500 }),
+    ),
+    /** The unit word beside the quantity ('set'). Per invoice, because
+     * work billed per metre or per job says something else. The column
+     * measures TRIMMED length 1..20, and a floor of one cannot use
+     * nonBlankString — it starts at two — so the pattern demands at
+     * least one non-space character itself. */
+    unitLabel: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 20,
+        pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
+        description: "The unit word beside the quantity, e.g. 'set'.",
+      }),
+    ),
+    /** The Notes block. Falls back to the organisation's standing line
+     * when omitted; nothing to do with the cancellation note. */
+    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
+    /** Where the supply is delivered, when that differs from who is
+     * billed. Snapshotted at submit like the buyer. Omitted means the
+     * ship-to block repeats the buyer, which is the common case. */
+    shipToContactId: Type.Optional(UuidSchema),
+    /** Overrides the organisation's house prefix for this invoice's
+     * number; the serial behind it is shared across every prefix. */
+    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
   },
   { additionalProperties: false },
 );
@@ -142,11 +208,28 @@ export const TaxInvoiceSchema = Type.Object(
     cgstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     sgstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     igstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** What was added to (or taken off) the sum of the taxable value and
+     * its taxes to reach a whole-rupee payable total. Prints as the
+     * Rounding line, and the document omits that line when it is zero. */
+    roundOff: Type.Union([RoundOffStringSchema, Type.Null()]),
+    /** The PAYABLE total: whole rupees, after roundOff. The unrounded
+     * sum is exactly totalAmount - roundOff. */
     totalAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    customerPoReference: Type.Union([Type.String(), Type.Null()]),
+    unitLabel: Type.Union([Type.String(), Type.Null()]),
+    notes: Type.Union([Type.String(), Type.Null()]),
+    shipToContactId: Type.Union([UuidSchema, Type.Null()]),
+    /** Prefix + the financial year's opening year + the serial: the
+     * number is composed, so the prefix is kept as a fact of its own. */
+    numberPrefix: Type.Union([Type.String(), Type.Null()]),
     /** What the IRP handed back through the GSP; null until recorded. */
     irn: Type.Union([IrnSchema, Type.Null()]),
     ackNumber: Type.Union([Type.String(), Type.Null()]),
     ackDate: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** The acknowledgement's wall clock exactly as the portal wrote it
+     * ('2026-07-30 12:09:00'). ackDate above is the same moment as an
+     * instant, for querying; this is what prints. */
+    ackDateText: Type.Union([Type.String(), Type.Null()]),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
@@ -162,6 +245,13 @@ export const TaxInvoiceDetailResponseSchema = Type.Object(
     /** The immutable submit-time buyer snapshot, verbatim; null while
      * draft. */
     buyerSnapshot: Type.Unknown(),
+    /** The ship-to as invoiced, when one was named; null otherwise. */
+    shipToSnapshot: Type.Unknown(),
+    /** The whole document as issued — supplier masthead, both parties,
+     * the line, the totals and the words. A re-render reproduces this
+     * rather than recomputing from live tables, so correcting the
+     * company address never rewrites an invoice already registered. */
+    issuedSnapshot: Type.Unknown(),
     /** The IRP's signed QR payload; null until the irp-response lands. */
     signedQr: Type.Union([Type.String(), Type.Null()]),
   },

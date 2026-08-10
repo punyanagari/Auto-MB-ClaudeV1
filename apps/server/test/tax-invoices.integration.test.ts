@@ -636,7 +636,11 @@ describe('submit: the money moment', () => {
     expect(noGstin.statusCode).toBe(400);
     expect(noGstin.json<{ code: string }>().code).toBe('ORG_GSTIN_REQUIRED');
 
-    await patchProfile({ gstin: ORG_GSTIN, address: ORG_ADDRESS });
+    await patchProfile({
+      gstin: ORG_GSTIN,
+      address: ORG_ADDRESS,
+      invoiceNumberPrefix: 'P10',
+    });
   });
 
   it('refuses a buyer whose contact cannot fill the snapshot', async () => {
@@ -669,7 +673,7 @@ describe('submit: the money moment', () => {
     const detail = response.json<TaxInvoiceDetailResponse>();
     expect(detail.invoice).toMatchObject({
       status: 'submitted',
-      invoiceNumber: 'TI/2026-27/001',
+      invoiceNumber: 'P1026001',
       sequenceNumber: 1,
       fyLabel: '2026-27',
       // The MB total VERBATIM; round(25000 x 18 / 200, 2) each side.
@@ -738,13 +742,14 @@ describe('submit: the money moment', () => {
     expect(response.statusCode, response.body).toBe(201);
     expect(response.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
       // Same FY as invoice 1 — the counter continues, gapless.
-      invoiceNumber: 'TI/2026-27/002',
+      invoiceNumber: 'P1026002',
       fyLabel: '2026-27',
       taxableValue: '250.50',
       cgstAmount: '22.55',
       sgstAmount: '22.55',
       igstAmount: '0.00',
-      totalAmount: '295.60',
+      roundOff: '0.40',
+      totalAmount: '296.00',
     });
   });
 
@@ -761,7 +766,7 @@ describe('submit: the money moment', () => {
     const submitted3 = await submitInvoice(i3Id);
     expect(submitted3.statusCode, submitted3.body).toBe(201);
     expect(submitted3.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
-      invoiceNumber: 'TI/2027-28/001',
+      invoiceNumber: 'P1027001',
       fyLabel: '2027-28',
       taxableValue: '500.00',
       cgstAmount: '0.00',
@@ -784,13 +789,14 @@ describe('submit: the money moment', () => {
     const submitted4 = await submitInvoice(i4Id);
     expect(submitted4.statusCode, submitted4.body).toBe(201);
     expect(submitted4.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
-      invoiceNumber: 'TI/2027-28/002',
+      invoiceNumber: 'P1027002',
       fyLabel: '2027-28',
       taxableValue: '250.50',
       cgstAmount: '0.00',
       sgstAmount: '0.00',
       igstAmount: '45.09',
-      totalAmount: '295.59',
+      roundOff: '0.41',
+      totalAmount: '296.00',
     });
 
     // Both FY counters agree with the numbers handed out.
@@ -825,7 +831,7 @@ describe('submit: the money moment', () => {
       first.json<TaxInvoiceDetailResponse>().invoice.invoiceNumber,
       second.json<TaxInvoiceDetailResponse>().invoice.invoiceNumber,
     ].sort();
-    expect(numbers).toEqual(['TI/2026-27/003', 'TI/2026-27/004']);
+    expect(numbers).toEqual(['P1026003', 'P1026004']);
   });
 });
 
@@ -840,7 +846,7 @@ describe('the IRP payload and response', () => {
     expect(response.json()).toStrictEqual({
       Version: '1.1',
       TranDtls: { TaxSch: 'GST', SupTyp: 'B2B' },
-      DocDtls: { Typ: 'INV', No: 'TI/2026-27/001', Dt: '15/03/2027' },
+      DocDtls: { Typ: 'INV', No: 'P1026001', Dt: '15/03/2027' },
       SellerDtls: {
         Gstin: ORG_GSTIN,
         LglNm: 'TI Constructions',
@@ -881,6 +887,9 @@ describe('the IRP payload and response', () => {
         CgstVal: 2250,
         SgstVal: 2250,
         IgstVal: 0,
+        // This invoice's taxable value lands on a whole rupee, so there
+        // is nothing to round and NIC is told so explicitly.
+        RndOffAmt: 0,
         TotInvVal: 29500,
       },
     });
@@ -1002,7 +1011,7 @@ describe('MB closure: the invoice closes the MB, cancelling releases it', () => 
     );
     expect(byMb.get(mb1.id)?.mbNumber).toBe(mb1.number);
     expect(byMb.get(mb6.id)?.mbNumber).toBe(mb6.number);
-    expect(byMb.get(mb1.id)?.invoiceNumber).toBe('TI/2026-27/001');
+    expect(byMb.get(mb1.id)?.invoiceNumber).toBe('P1026001');
   });
 
   it('the 0035 trigger refuses cancelling an invoiced MB, against ANY writer', async () => {
@@ -1039,7 +1048,7 @@ describe('MB closure: the invoice closes the MB, cancelling releases it', () => 
     const detail = cancelled.json<TaxInvoiceDetailResponse>();
     expect(detail.invoice.status).toBe('cancelled');
     // The number is kept forever (rule 8).
-    expect(detail.invoice.invoiceNumber).toMatch(/^TI\/2026-27\/00[34]$/);
+    expect(detail.invoice.invoiceNumber).toMatch(/^P102600[34]$/);
     expect(detail.invoice.cancellationNote).toBe('wrong buyer picked; re-invoicing');
 
     // The MB is released: its own cancel now succeeds through the API.

@@ -352,7 +352,14 @@ describe('1 — LOA to Work', () => {
       method: 'PATCH',
       url: '/api/organisation/profile',
       organisationId,
-      payload: { stateCode: '07', gstin: ORG_GSTIN, address: ORG_ADDRESS },
+      payload: {
+        stateCode: '07',
+        gstin: ORG_GSTIN,
+        address: ORG_ADDRESS,
+        // The house number series. Invoice numbers are composed from it,
+        // the financial year's opening year, and one gapless serial.
+        invoiceNumberPrefix: 'P10',
+      },
     });
     expect(profile.statusCode, profile.body).toBe(200);
     expect(profile.json<{ stateCode: string; gstin: string }>()).toMatchObject({
@@ -945,7 +952,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     const detail = submitted.json<TaxInvoiceDetailResponse>();
     expect(detail.invoice).toMatchObject({
       status: 'submitted',
-      invoiceNumber: 'TI/2026-27/001',
+      invoiceNumber: 'P1026001',
       sequenceNumber: 1,
       fyLabel: '2026-27',
       // The MB total VERBATIM; round(25260 x 18 / 200, 2) each side.
@@ -953,7 +960,10 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       cgstAmount: '2273.40',
       sgstAmount: '2273.40',
       igstAmount: '0.00',
-      totalAmount: '29806.80',
+      // The invoice is payable in whole rupees: 29806.80 rounds up and
+      // the 0.20 is kept as the Rounding line the document prints.
+      roundOff: '0.20',
+      totalAmount: '29807.00',
       buyerContactId,
     });
     expect(detail.buyerSnapshot).toMatchObject({
@@ -986,7 +996,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       cgst_amount: '2273.40',
       sgst_amount: '2273.40',
       igst_amount: '0.00',
-      total_amount: '29806.80',
+      total_amount: '29807.00',
       fy_label: '2026-27',
     });
   });
@@ -1016,7 +1026,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     expect(payload.json()).toStrictEqual({
       Version: '1.1',
       TranDtls: { TaxSch: 'GST', SupTyp: 'B2B' },
-      DocDtls: { Typ: 'INV', No: 'TI/2026-27/001', Dt: '01/09/2026' },
+      DocDtls: { Typ: 'INV', No: 'P1026001', Dt: '01/09/2026' },
       SellerDtls: {
         Gstin: ORG_GSTIN,
         LglNm: ORG_NAME,
@@ -1057,7 +1067,9 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
         CgstVal: 2273.4,
         SgstVal: 2273.4,
         IgstVal: 0,
-        TotInvVal: 29806.8,
+        // sum(TotItemVal) + RndOffAmt = TotInvVal, NIC's own identity.
+        RndOffAmt: 0.2,
+        TotInvVal: 29807,
       },
     });
 
@@ -1096,7 +1108,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     ewayBillId = created.json<EwayBillDetailResponse>().ewayBill.id;
     expect(created.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
       taxInvoiceId: invoice1Id,
-      invoiceNumber: 'TI/2026-27/001',
+      invoiceNumber: 'P1026001',
       status: 'draft',
       vehicleNumber: null,
     });
@@ -1136,7 +1148,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       supplyType: 'O',
       subSupplyType: '1',
       docType: 'INV',
-      docNo: 'TI/2026-27/001',
+      docNo: 'P1026001',
       docDate: '01/09/2026',
       fromGstin: ORG_GSTIN,
       fromTrdName: ORG_NAME,
@@ -1172,7 +1184,7 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       sgstValue: 2273.4,
       igstValue: 0,
       cessValue: 0,
-      totInvValue: 29806.8,
+      totInvValue: 29807,
       transMode: '1',
       transDistance: '25',
       transporterId: TRANSPORTER_ID,
@@ -1406,14 +1418,16 @@ describe('7 — the remainder, and the FINAL Measurement Book', () => {
     expect(submitted.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
       status: 'submitted',
       // Gapless within the financial year: 002 follows 001.
-      invoiceNumber: 'TI/2026-27/002',
+      invoiceNumber: 'P1026002',
       sequenceNumber: 2,
       fyLabel: '2026-27',
       taxableValue: '13740.00',
       cgstAmount: '1236.60',
       sgstAmount: '1236.60',
       igstAmount: '0.00',
-      totalAmount: '16213.20',
+      // Rounds DOWN here, so the delta is negative.
+      roundOff: '-0.20',
+      totalAmount: '16213.00',
     });
 
     // The FY counter agrees with the numbers handed out.

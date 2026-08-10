@@ -711,16 +711,19 @@ async function seedTenantGraph(
     const [taxInvoice] = await tx<{ id: string }[]>`
       insert into tax_invoices (
         organisation_id, work_id, measurement_book_id, status,
-        invoice_number, sequence_number, fy_label, invoice_date, sac_code,
+        invoice_number, number_prefix, sequence_number, fy_label,
+        invoice_date, sac_code,
         service_description, gst_rate, place_of_supply, buyer_snapshot,
-        taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount,
+        taxable_value, cgst_amount, sgst_amount, igst_amount, round_off,
+        total_amount, issued_snapshot,
         submitted_at, submitted_by_user_id, created_by_user_id
       )
       values (${organisationId}, ${work.id}, ${finalizedMb.id}, 'submitted',
-              ${`TI/2026-27/${workCode}`}, 1, '2026-27', '2026-02-07',
+              ${`TI/2026-27/${workCode}`}, 'TI', 1, '2026-27', '2026-02-07',
               '995461', 'Works contract services per MB', '18.00', '27',
               ${tx.json({ name: 'Sr. DEE (G) CR', stateCode: '27' })},
-              '100.00', '9.00', '9.00', '0.00', '118.00', now(), ${userId},
+              '100.00', '9.00', '9.00', '0.00', '0.00', '118.00',
+              ${tx.json({ templateVersion: 'ti-v1' })}, now(), ${userId},
               ${userId})
       returning id
     `;

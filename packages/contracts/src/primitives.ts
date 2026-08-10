@@ -137,6 +137,77 @@ export const GstStateCodeSchema = Type.String({
 });
 export type GstStateCode = Static<typeof GstStateCodeSchema>;
 
+/** The statutory state names behind those codes. A tax invoice prints
+ * `Place Of Supply : Maharashtra (27)` — the name and the code together —
+ * and the masthead and both address blocks name a state too, so the list
+ * is a contract fact rather than a renderer's private table.
+ *
+ * It is deliberately NOT wired into GstStateCodeSchema as an enum: the
+ * 0033 and 0035 columns hold a two-digit CHECK, and a schema that refused
+ * a code the database accepts would turn a stored row into an
+ * unreadable one. `gstStateName` answers null for an unknown code and
+ * every caller prints the bare code in that case. */
+export const GST_STATE_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  '01': 'Jammu and Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '26': 'Dadra and Nagar Haveli and Daman and Diu',
+  '27': 'Maharashtra',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman and Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh',
+  '38': 'Ladakh',
+  '97': 'Other Territory',
+  '99': 'Centre Jurisdiction',
+});
+
+/** The state's name, or null when the code is not one the Government has
+ * notified. Callers print `name (code)` when it resolves and the bare
+ * code when it does not — never a guess and never a blank. */
+export function gstStateName(code: string): string | null {
+  return GST_STATE_NAMES[code] ?? null;
+}
+
+/** The invoice's rounding delta: what was added to (or taken off) the sum
+ * of the taxable value and its taxes to reach a whole-rupee payable
+ * total. Signed, unlike every other money field here, and bounded by what
+ * half-away-from-zero rounding to the rupee can actually produce — it can
+ * add at most 0.50 and take off at most 0.49. Two fraction digits,
+ * because paise is the scale it operates at. */
+export const RoundOffStringSchema = Type.String({
+  pattern: '^(?:0\\.(?:[0-4][0-9]|50)|-0\\.(?:0[1-9]|[1-4][0-9]))$',
+  description:
+    'Whole-rupee rounding delta in rupees: greater than -0.50 and at most 0.50.',
+});
+export type RoundOffString = Static<typeof RoundOffStringSchema>;
+
 /** Text the DATABASE validates TRIMMED — `length(btrim(x)) BETWEEN n AND
  * m` — while the schema counted raw characters. A note of three spaces
  * therefore satisfied minLength, reached Postgres, and came back as a

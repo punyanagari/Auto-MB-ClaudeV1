@@ -7,14 +7,17 @@ import {
   CreateBudgetaryQuotationRequestSchema,
   CreatePurchaseOrderRequestSchema,
   DateOnlySchema,
+  GST_STATE_NAMES,
   ProposeAmendmentRequestSchema,
   RecordMbEntryRequestSchema,
   RejectAmendmentRequestSchema,
+  RoundOffStringSchema,
   SaveBudgetaryQuotationLinesRequestSchema,
   SaveExtensionRequestSchema,
   SaveIssueChallanRequestSchema,
   SavePurchaseOrderLinesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
+  gstStateName,
   type ConfirmWorkRequest,
 } from '../src/index.js';
 
@@ -676,5 +679,51 @@ describe('calendar dates', () => {
         confirmRequest({ letterDate: '2026-02-30' }),
       ),
     ).toBe(false);
+  });
+});
+
+/* The invoice's rounding delta and the statutory state names (0037).
+ * The bound is not a formality: half-away-from-zero rounding to the
+ * rupee can ADD at most 0.50 and TAKE OFF at most 0.49, and the database
+ * CHECK says exactly that. A schema that let 0.51 through would reach
+ * Postgres and come back as an opaque 500. */
+describe('RoundOffStringSchema', () => {
+  it('accepts what rounding to the whole rupee can actually produce', () => {
+    // The seven paise sample A really carries, both extremes, and zero.
+    for (const value of ['0.07', '0.00', '0.50', '-0.01', '-0.49', '-0.10']) {
+      expect(Value.Check(RoundOffStringSchema, value)).toBe(true);
+    }
+  });
+
+  it('refuses deltas rounding could never produce', () => {
+    // 0.51 and -0.50 are outside the half-open window; the rest are not
+    // the two-decimal shape numeric(18,2) hands back.
+    for (const value of ['0.51', '-0.50', '-0.51', '1.00', '0.5', '0', '0.070']) {
+      expect(Value.Check(RoundOffStringSchema, value)).toBe(false);
+    }
+  });
+});
+
+describe('gstStateName', () => {
+  it('names the states the samples are raised in', () => {
+    expect(gstStateName('27')).toBe('Maharashtra');
+    expect(gstStateName('07')).toBe('Delhi');
+  });
+
+  it('answers null for a code the Government has not notified', () => {
+    // 25 and 28 were both merged away; a stored row carrying one must
+    // still READ, so the caller prints the bare code rather than failing.
+    expect(gstStateName('25')).toBeNull();
+    expect(gstStateName('28')).toBeNull();
+    expect(gstStateName('zz')).toBeNull();
+  });
+
+  it('covers every code the schema admits that the Government has notified', () => {
+    // A two-digit code is all GstStateCodeSchema promises, so the map is
+    // the only thing that can say which of those are real.
+    expect(Object.keys(GST_STATE_NAMES).every((code) => /^[0-9]{2}$/.test(code))).toBe(
+      true,
+    );
+    expect(gstStateName('27')).toBe(GST_STATE_NAMES['27']);
   });
 });
