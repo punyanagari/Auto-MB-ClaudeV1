@@ -1,8 +1,8 @@
 import { cn } from '../lib/cn.js';
 
-/** A calm application surface. Legal documents drop all screen chrome when
- * printed; the on-screen shadow is deliberately soft so dense registers do
- * not turn into a wall of outlined boxes. */
+/** The shared operations-workspace surface. Legal documents drop all screen
+ * chrome when printed; the on-screen shadow stays deliberately soft so dense
+ * registers do not turn into a wall of outlined boxes. */
 export function Card({ className, ...props }: React.ComponentProps<'section'>) {
   return (
     <section
