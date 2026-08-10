@@ -76,6 +76,10 @@ const TENANT_TABLES = [
   'budgetary_quotations',
   'budgetary_quotation_lines',
   'budgetary_quotation_counters',
+  // The GST tax invoice and the e-way bill that moves it (0035).
+  'tax_invoices',
+  'tax_invoice_counters',
+  'eway_bills',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -139,11 +143,18 @@ const DELETE_REVOKED_TABLES = [
   // Numbering state for the procurement documents (0033).
   'purchase_order_counters',
   'budgetary_quotation_counters',
+  // Invoice numbering is a GST rule-46 serial; the invoice itself
+  // cancels, never deletes, once submitted (0035).
+  'tax_invoice_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A draft invoice or e-way bill may be discarded; anything submitted or
+  // generated cancels instead (0035).
+  'tax_invoices',
+  'eway_bills',
   // A draft order or quotation is not yet a document and may be discarded;
   // once issued the status moves to cancelled or withdrawn instead (0033).
   'purchase_orders',
@@ -680,6 +691,51 @@ async function seedTenantGraph(
     await tx`
       insert into budgetary_quotation_counters (organisation_id, next_value)
       values (${organisationId}, 2)
+    `;
+
+    // Wave 6 tax documents (0035). The 0035 insert guards demand a
+    // finalized MB behind an invoice and a submitted invoice behind an
+    // e-way bill, so the seed writes exactly that chain.
+    const [finalizedMb] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, kind, status, mb_date, mb_number,
+        sequence_number, total_amount, remark_template_version,
+        finalized_at, finalized_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'on_account', 'finalized',
+              '2026-02-06', ${`${workCode}-MB-99`}, 99, '118.00', 'v1',
+              now(), ${userId}, ${userId})
+      returning id
+    `;
+    if (!finalizedMb) throw new Error('seed finalized MB insert returned no row');
+    const [taxInvoice] = await tx<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, work_id, measurement_book_id, status,
+        invoice_number, sequence_number, fy_label, invoice_date, sac_code,
+        service_description, gst_rate, place_of_supply, buyer_snapshot,
+        taxable_value, cgst_amount, sgst_amount, igst_amount, total_amount,
+        submitted_at, submitted_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${finalizedMb.id}, 'submitted',
+              ${`TI/2026-27/${workCode}`}, 1, '2026-27', '2026-02-07',
+              '995461', 'Works contract services per MB', '18.00', '27',
+              ${tx.json({ name: 'Sr. DEE (G) CR', stateCode: '27' })},
+              '100.00', '9.00', '9.00', '0.00', '118.00', now(), ${userId},
+              ${userId})
+      returning id
+    `;
+    if (!taxInvoice) throw new Error('seed tax invoice insert returned no row');
+    await tx`
+      insert into tax_invoice_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    await tx`
+      insert into eway_bills (
+        organisation_id, tax_invoice_id, distance_km, from_pincode,
+        to_pincode, created_by_user_id
+      )
+      values (${organisationId}, ${taxInvoice.id}, 120, '422010', '400001',
+              ${userId})
     `;
 
     return {

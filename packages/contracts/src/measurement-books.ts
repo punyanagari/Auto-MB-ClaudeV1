@@ -15,13 +15,33 @@ import { WorkItemPaymentCategorySchema } from './payment.js';
  * lines from live state, and finalises into an immutable snapshot with
  * a gap-free <work_code>-MB-NN number. Bills are prepared FROM a
  * finalized MB (bills.mb_id, amount = the MB total).
+ *
+ * Migration 0034 splits the MB into three kinds. RECORD: one
+ * consignee's parallel measurement sheet — several consignees fill
+ * record MBs simultaneously, each named by consigneeContactId, and a
+ * main consignee MERGES them into an on-account MB. ON_ACCOUNT: the
+ * billable MB (started directly where one measurement suffices).
+ * FINAL: the Work's last MB — after it, no further MB may be raised.
+ * Record MBs never finalize and never take a number; they end merged
+ * (status 'merged', mergedIntoId set) or deleted while still drafts.
  */
 
-export const MEASUREMENT_BOOK_STATUSES = ['draft', 'finalized', 'cancelled'] as const;
+export const MEASUREMENT_BOOK_STATUSES = [
+  'draft',
+  'finalized',
+  'cancelled',
+  'merged',
+] as const;
 export const MeasurementBookStatusSchema = Type.Union(
   MEASUREMENT_BOOK_STATUSES.map((status) => Type.Literal(status)),
 );
 export type MeasurementBookStatus = Static<typeof MeasurementBookStatusSchema>;
+
+export const MEASUREMENT_BOOK_KINDS = ['record', 'on_account', 'final'] as const;
+export const MeasurementBookKindSchema = Type.Union(
+  MEASUREMENT_BOOK_KINDS.map((kind) => Type.Literal(kind)),
+);
+export type MeasurementBookKind = Static<typeof MeasurementBookKindSchema>;
 
 /** The three billable source record types (spec §5.9 "Sources"). */
 export const MB_SOURCE_TYPES = [
@@ -37,15 +57,36 @@ export type MbSourceType = Static<typeof MbSourceTypeSchema>;
 export const CreateMeasurementBookRequestSchema = Type.Object(
   {
     mbDate: DateOnlySchema,
-    /** The final MB bills the final-bill stage and must sweep every
-     * remaining open source; once it exists no further MB can be
-     * raised. Defaults to false. */
+    /** The Measurement Book kind; defaults to 'on_account'. A 'record'
+     * MB additionally REQUIRES consigneeContactId. */
+    kind: Type.Optional(MeasurementBookKindSchema),
+    /** Record MBs only: the active consignee contact filling this
+     * parallel sheet. One record draft per consignee per Work. */
+    consigneeContactId: Type.Optional(UuidSchema),
+    /** Compatibility alias for `kind` (pre-0034 clients): true means
+     * 'final', false/absent means 'on_account'. A body naming BOTH
+     * fields inconsistently is refused (MB_KIND_CONFLICT). */
     isFinal: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
 export type CreateMeasurementBookRequest = Static<
   typeof CreateMeasurementBookRequestSchema
+>;
+
+/** POST /api/works/:id/measurement-books/merge — merges record drafts
+ * into a NEW on-account draft: the draft claims the union of the
+ * records' sources, and each record MB is marked merged pointing at it.
+ * The one-billing-draft rule still applies to the created draft. */
+export const MergeMeasurementBooksRequestSchema = Type.Object(
+  {
+    recordMbIds: Type.Array(UuidSchema, { minItems: 1, maxItems: 100 }),
+    mbDate: DateOnlySchema,
+  },
+  { additionalProperties: false },
+);
+export type MergeMeasurementBooksRequest = Static<
+  typeof MergeMeasurementBooksRequestSchema
 >;
 
 export const MbSourceRefSchema = Type.Object(
@@ -81,7 +122,14 @@ export const MeasurementBookSchema = Type.Object(
     id: UuidSchema,
     workId: UuidSchema,
     status: MeasurementBookStatusSchema,
+    kind: MeasurementBookKindSchema,
+    /** Generated from kind (kind === 'final'); kept for compatibility. */
     isFinal: Type.Boolean(),
+    /** Record MBs only: the consignee filling this sheet. */
+    consigneeContactId: Type.Union([UuidSchema, Type.Null()]),
+    /** Merged record MBs only: the on-account draft that absorbed this
+     * record's sources. */
+    mergedIntoId: Type.Union([UuidSchema, Type.Null()]),
     mbDate: DateOnlySchema,
     mbNumber: Type.Union([Type.String(), Type.Null()]),
     sequenceNumber: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
@@ -248,3 +296,13 @@ export const MbNotNewestDetailsSchema = Type.Object(
   { additionalProperties: false },
 );
 export type MbNotNewestDetails = Static<typeof MbNotNewestDetailsSchema>;
+
+/** 409 details when deleting an on-account draft that absorbed record
+ * MBs (MB_HAS_MERGED_RECORDS): the un-merge endpoint is the remedy. */
+export const MbHasMergedRecordsDetailsSchema = Type.Object(
+  {
+    recordMbIds: Type.Array(UuidSchema),
+  },
+  { additionalProperties: false },
+);
+export type MbHasMergedRecordsDetails = Static<typeof MbHasMergedRecordsDetailsSchema>;

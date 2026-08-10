@@ -282,7 +282,12 @@ async function recordPac(
 
 async function createDraft(
   workId: string,
-  body: { mbDate: string; isFinal?: boolean },
+  body: {
+    mbDate: string;
+    isFinal?: boolean;
+    kind?: 'record' | 'on_account' | 'final';
+    consigneeContactId?: string;
+  },
 ): Promise<MeasurementBookDetailResponse> {
   const response = await authed(owner, {
     method: 'POST',
@@ -520,6 +525,7 @@ afterAll(async () => {
           'installation_serials',
           'installations',
           'consignee_masters',
+          'contacts',
           'location_masters',
           'mb_entries',
           'challan_item_serials',
@@ -2336,5 +2342,732 @@ describe('review hardening: 6dp rates carry exactly into amounts and snapshots',
       where measurement_book_id = ${draft.book.id}
     `;
     expect(stored?.effective_rate).toBe('0.851700');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0034: the three Measurement Book kinds. Record MBs are
+// per-consignee parallel measurement sheets — several run at once, they
+// claim sources like any draft, and they NEVER finalize; the merge folds
+// them into a new on-account draft; un-merge is the only way to take
+// that draft apart while it holds merged records.
+// ---------------------------------------------------------------------------
+
+describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
+  let workKId: string;
+  let workKCode: string;
+  let kItemId: string;
+  let consignee1Id: string;
+  let consignee2Id: string;
+  let consignee3Id: string;
+  let retiredConsigneeId: string;
+  let vendorOnlyContactId: string;
+  let dcK1Id: string;
+  let dcK2Id: string;
+  let dcK3Id: string;
+  let instK1Id: string;
+  let r1Id: string;
+  let r2Id: string;
+  let targetId: string;
+  let target2Id: string;
+
+  async function seedContact(input: {
+    designation: string;
+    isConsignee: boolean;
+    active: boolean;
+  }): Promise<string> {
+    const id = randomUUID();
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, address, is_consignee, is_vendor,
+        active, created_by_user_id
+      )
+      values (${id}, ${organisationId}, ${input.designation},
+              ${`Division office ${input.designation}`}, ${input.isConsignee},
+              ${!input.isConsignee}, ${input.active}, ${ownerUserId})
+    `;
+    return id;
+  }
+
+  it('seeds the kinds Work and its consignee contacts', async () => {
+    kItemId = randomUUID();
+    workKCode = `KND1${runId.slice(0, 4).toUpperCase()}`;
+    workKId = await seedWork({
+      code: workKCode,
+      items: [
+        {
+          id: kItemId,
+          itemNumber: '1',
+          description: 'Quad cable',
+          unit: 'mtr',
+          quantity: '10000.000',
+          rate: '2.00',
+          paymentCategory: null,
+        },
+      ],
+    });
+    await insertMatrixRow(workKId, 'UNCATEGORISED', [
+      '80.00',
+      '10.00',
+      '0.00',
+      '10.00',
+    ]);
+    consignee1Id = await seedContact({
+      designation: `Sr. DSTE (E) CR ${runId}`,
+      isConsignee: true,
+      active: true,
+    });
+    consignee2Id = await seedContact({
+      designation: `Sr. DEE (TRD) CR ${runId}`,
+      isConsignee: true,
+      active: true,
+    });
+    consignee3Id = await seedContact({
+      designation: `Dy. CSTE (Con) CR ${runId}`,
+      isConsignee: true,
+      active: true,
+    });
+    retiredConsigneeId = await seedContact({
+      designation: `Retired DSTE ${runId}`,
+      isConsignee: true,
+      active: false,
+    });
+    vendorOnlyContactId = await seedContact({
+      designation: `Cable vendor ${runId}`,
+      isConsignee: false,
+      active: true,
+    });
+    dcK1Id = await issueChallan(workKId, `${workKCode}DC`, [
+      { workItemId: kItemId, quantity: '100' },
+    ]);
+    dcK2Id = await issueChallan(workKId, `${workKCode}DC`, [
+      { workItemId: kItemId, quantity: '50' },
+    ]);
+    instK1Id = await recordInstallation(workKId, kItemId, '30');
+  });
+
+  it('validates kind, consignee, and the isFinal compatibility contract on create', async () => {
+    const post = (payload: Record<string, unknown>) =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workKId}/measurement-books`,
+        organisationId,
+        payload,
+      });
+
+    // A body naming both fields must agree with itself.
+    for (const payload of [
+      { mbDate: '2026-08-01', kind: 'record', isFinal: true },
+      { mbDate: '2026-08-01', kind: 'on_account', isFinal: true },
+      { mbDate: '2026-08-01', kind: 'final', isFinal: false },
+    ]) {
+      const contradiction = await post(payload);
+      expect(contradiction.statusCode, contradiction.body).toBe(400);
+      expect(contradiction.json()).toMatchObject({ code: 'MB_KIND_CONFLICT' });
+    }
+    // Consistent pairs are accepted elsewhere; here the consignee rules.
+    const missingConsignee = await post({ mbDate: '2026-08-01', kind: 'record' });
+    expect(missingConsignee.statusCode).toBe(400);
+    expect(missingConsignee.json()).toMatchObject({ code: 'MB_CONSIGNEE_REQUIRED' });
+
+    const strayConsignee = await post({
+      mbDate: '2026-08-01',
+      consigneeContactId: consignee1Id,
+    });
+    expect(strayConsignee.statusCode).toBe(400);
+    expect(strayConsignee.json()).toMatchObject({ code: 'MB_CONSIGNEE_NOT_ALLOWED' });
+
+    const unknownContact = await post({
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: randomUUID(),
+    });
+    expect(unknownContact.statusCode).toBe(404);
+    expect(unknownContact.json()).toMatchObject({ code: 'CONTACT_NOT_FOUND' });
+
+    const notConsignee = await post({
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: vendorOnlyContactId,
+    });
+    expect(notConsignee.statusCode).toBe(409);
+    expect(notConsignee.json()).toMatchObject({ code: 'CONTACT_NOT_CONSIGNEE' });
+
+    const retired = await post({
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: retiredConsigneeId,
+    });
+    expect(retired.statusCode).toBe(409);
+    expect(retired.json()).toMatchObject({ code: 'CONTACT_RETIRED' });
+  });
+
+  it('runs record drafts in parallel per consignee; the same consignee is refused', async () => {
+    const first = await createDraft(workKId, {
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: consignee1Id,
+    });
+    r1Id = first.book.id;
+    expect(first.book.kind).toBe('record');
+    expect(first.book.isFinal).toBe(false);
+    expect(first.book.consigneeContactId).toBe(consignee1Id);
+    expect(first.book.mergedIntoId).toBeNull();
+
+    // A second consignee's sheet runs IN PARALLEL — the whole point.
+    const second = await createDraft(workKId, {
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: consignee2Id,
+    });
+    r2Id = second.book.id;
+    expect(second.book.kind).toBe('record');
+
+    // The SAME consignee's second sheet is refused, naming the first.
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books`,
+      organisationId,
+      payload: {
+        mbDate: '2026-08-01',
+        kind: 'record',
+        consigneeContactId: consignee1Id,
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toMatchObject({
+      code: 'MB_RECORD_DRAFT_EXISTS',
+      details: { existingRecordId: r1Id },
+    });
+
+    // The 0034 per-consignee index holds against direct SQL too.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          insert into measurement_books (
+            organisation_id, work_id, mb_date, kind, consignee_contact_id,
+            created_by_user_id
+          )
+          values (${organisationId}, ${workKId}, '2026-08-01', 'record',
+                  ${consignee1Id}, ${ownerUserId})
+        `;
+      }),
+    ).rejects.toThrowError(/measurement_books_one_record_draft_per_consignee/);
+
+    // 0034 made is_final generated: any insert naming it fails.
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          insert into measurement_books (
+            organisation_id, work_id, mb_date, is_final, created_by_user_id
+          )
+          values (${organisationId}, ${workKId}, '2026-08-01', true,
+                  ${ownerUserId})
+        `;
+      }),
+    ).rejects.toThrowError(/is_final/);
+  });
+
+  it('keeps exactly one BILLING draft per Work while record drafts run', async () => {
+    // An on-account draft opens beside the two record drafts.
+    const billing = await createDraft(workKId, { mbDate: '2026-08-04' });
+    expect(billing.book.kind).toBe('on_account');
+    expect(billing.book.isFinal).toBe(false);
+
+    // A second billing draft is refused, naming the first…
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-04' },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toMatchObject({
+      code: 'MB_DRAFT_EXISTS',
+      details: { existingRecordId: billing.book.id },
+    });
+
+    // …but a THIRD consignee's record sheet still opens in parallel.
+    const record = await createDraft(workKId, {
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: consignee3Id,
+    });
+    for (const id of [record.book.id, billing.book.id]) {
+      const deleted = await authed(owner, {
+        method: 'DELETE',
+        url: `/api/measurement-books/${id}`,
+        organisationId,
+      });
+      expect(deleted.statusCode, deleted.body).toBe(204);
+    }
+  });
+
+  it('record drafts claim sources like any draft but can NEVER be finalized', async () => {
+    const claimed1 = await setSources(r1Id, [
+      { sourceType: 'delivery_challan', sourceId: dcK1Id },
+    ]);
+    expect(claimed1.statusCode, claimed1.body).toBe(200);
+    const preview = claimed1.json<MeasurementBookDetailResponse>();
+    expect(preview.lines[0]?.deltaSupplied).toBe('100.000');
+
+    const claimed2 = await setSources(r2Id, [
+      { sourceType: 'delivery_challan', sourceId: dcK2Id },
+      { sourceType: 'installation', sourceId: instK1Id },
+    ]);
+    expect(claimed2.statusCode, claimed2.body).toBe(200);
+
+    // A record's claim protects its source exactly like any live claim.
+    const challanCancel = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${dcK1Id}/cancel`,
+      organisationId,
+      payload: { note: 'Attempt against a record-claimed challan.' },
+    });
+    expect(challanCancel.statusCode).toBe(409);
+    expect(challanCancel.json()).toMatchObject({ code: 'SOURCE_BILLED_IN_MB' });
+
+    const refused = await finalize(r1Id);
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('MB_RECORD_NOT_BILLABLE');
+    expect(body.message).toContain('merge');
+  });
+
+  it('merge validates its inputs: billing draft open, duplicates, wrong MBs, nothing to merge', async () => {
+    const merge = (payload: Record<string, unknown>) =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workKId}/measurement-books/merge`,
+        organisationId,
+        payload,
+      });
+
+    // The one-billing-draft rule applies to the draft the merge creates.
+    const billing = await createDraft(workKId, { mbDate: '2026-08-04' });
+    const blocked = await merge({ recordMbIds: [r1Id, r2Id], mbDate: '2026-08-05' });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({
+      code: 'MB_DRAFT_EXISTS',
+      details: { existingRecordId: billing.book.id },
+    });
+    const cleared = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${billing.book.id}`,
+      organisationId,
+    });
+    expect(cleared.statusCode).toBe(204);
+
+    const duplicated = await merge({ recordMbIds: [r1Id, r1Id], mbDate: '2026-08-05' });
+    expect(duplicated.statusCode).toBe(400);
+    expect(duplicated.json()).toMatchObject({ code: 'MB_MERGE_DUPLICATED' });
+
+    // Another Work's MB answers exactly like an unknown id.
+    const foreign = await merge({ recordMbIds: [mb1Id], mbDate: '2026-08-05' });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toMatchObject({ code: 'MEASUREMENT_BOOK_NOT_FOUND' });
+
+    // Records with no sources among them have nothing to merge.
+    const emptyRecord = await createDraft(workKId, {
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: consignee3Id,
+    });
+    const empty = await merge({
+      recordMbIds: [emptyRecord.book.id],
+      mbDate: '2026-08-05',
+    });
+    expect(empty.statusCode).toBe(409);
+    expect(empty.json()).toMatchObject({ code: 'MB_MERGE_EMPTY' });
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${emptyRecord.book.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(204);
+
+    // Writer role required, like every draft act.
+    const denied = await authed(site, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [r1Id, r2Id], mbDate: '2026-08-05' },
+    });
+    expect([403, 404]).toContain(denied.statusCode);
+  });
+
+  it('merge moves the claims to a new on-account draft and marks the records merged', async () => {
+    const merged = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [r1Id, r2Id], mbDate: '2026-08-05' },
+    });
+    expect(merged.statusCode, merged.body).toBe(201);
+    const detail = merged.json<MeasurementBookDetailResponse>();
+    targetId = detail.book.id;
+    expect(detail.book.kind).toBe('on_account');
+    expect(detail.book.status).toBe('draft');
+    expect(detail.book.isFinal).toBe(false);
+    // The union of the records' sources, claimed live on the target.
+    expect(detail.sources).toHaveLength(3);
+    expect(detail.sources.every((source) => source.releasedAt === null)).toBe(true);
+    const keys = detail.sources.map((s) => `${s.sourceType}:${s.sourceId}`).sort();
+    expect(keys).toEqual(
+      [
+        `delivery_challan:${dcK1Id}`,
+        `delivery_challan:${dcK2Id}`,
+        `installation:${instK1Id}`,
+      ].sort(),
+    );
+    // The computed preview covers both records' measurements:
+    // 150 x 2.00 x 80% + 30 x 2.00 x 10% = 240 + 6.
+    expect(detail.previewTotal).toBe('246.00');
+
+    // Each record is merged, points at the absorber, and holds no claims.
+    for (const recordId of [r1Id, r2Id]) {
+      const record = await authed(owner, {
+        method: 'GET',
+        url: `/api/measurement-books/${recordId}`,
+        organisationId,
+      });
+      expect(record.statusCode, record.body).toBe(200);
+      const recordDetail = record.json<MeasurementBookDetailResponse>();
+      expect(recordDetail.book.status).toBe('merged');
+      expect(recordDetail.book.mergedIntoId).toBe(targetId);
+      expect(recordDetail.book.mbNumber).toBeNull();
+      expect(recordDetail.sources).toEqual([]);
+      expect(recordDetail.lines).toEqual([]);
+    }
+    // Exactly one live claim per source, all on the target.
+    const [claims] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_sources
+      where measurement_book_id = ${targetId} and released_at is null
+    `;
+    expect(claims?.count).toBe('3');
+    const [recordClaims] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_sources
+      where measurement_book_id in (${r1Id}, ${r2Id})
+    `;
+    expect(recordClaims?.count).toBe('0');
+    // The merge is audited on the target with its provenance payload.
+    const [auditRow] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'measurement_book.merged' and entity_id = ${targetId}
+    `;
+    expect(auditRow).toBeDefined();
+  });
+
+  it('a merged record MB is immutable at the API and the database', async () => {
+    // No source edits.
+    const sourceEdit = await setSources(r1Id, []);
+    expect(sourceEdit.statusCode).toBe(409);
+    expect(sourceEdit.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+    // Never finalized (merged or not).
+    const finalizeRefused = await finalize(r1Id);
+    expect(finalizeRefused.statusCode).toBe(409);
+    expect(finalizeRefused.json()).toMatchObject({ code: 'MB_RECORD_NOT_BILLABLE' });
+    // Not cancelled and not deleted — un-merge is the only way back.
+    const cancelRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${r1Id}/cancel`,
+      organisationId,
+      payload: { note: 'Merged records must refuse cancellation.' },
+    });
+    expect(cancelRefused.statusCode).toBe(409);
+    expect(cancelRefused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+    const deleteRefused = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${r1Id}`,
+      organisationId,
+    });
+    expect(deleteRefused.statusCode).toBe(409);
+    expect(deleteRefused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+    // Not re-merged either: while the absorbing draft is open, the
+    // one-billing-draft rule answers first, naming it.
+    const remerge = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [r1Id], mbDate: '2026-08-05' },
+    });
+    expect(remerge.statusCode).toBe(409);
+    expect(remerge.json()).toMatchObject({
+      code: 'MB_DRAFT_EXISTS',
+      details: { existingRecordId: targetId },
+    });
+    // The database refuses claims onto a merged MB…
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          insert into mb_sources (
+            organisation_id, measurement_book_id, work_id, source_type, source_id
+          )
+          values (${organisationId}, ${r1Id}, ${workKId}, 'delivery_challan',
+                  ${dcK1Id})
+        `;
+      }),
+    ).rejects.toThrowError(/draft/);
+    // …and any status escape (record + finalized violates 0034 coherence).
+    await expect(
+      withTenant(appPool, { organisationId, userId: ownerUserId }, async (tx) => {
+        await tx`
+          update measurement_books set status = 'finalized'
+          where id = ${r1Id}
+        `;
+      }),
+    ).rejects.toThrowError(/check|constraint/i);
+  });
+
+  it('deleting the absorbing draft is refused while it holds merged records', async () => {
+    const refused = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${targetId}`,
+      organisationId,
+    });
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{ code: string; details: { recordMbIds: string[] } }>();
+    expect(body.code).toBe('MB_HAS_MERGED_RECORDS');
+    expect([...body.details.recordMbIds].sort()).toEqual([r1Id, r2Id].sort());
+  });
+
+  it('un-merge restores the records and their exact claims, then deletes the draft', async () => {
+    // Un-merge is for absorbing drafts only.
+    const plain = await createDraft(work3Id, { mbDate: '2026-08-06' });
+    const notMerged = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${plain.book.id}/unmerge`,
+      organisationId,
+    });
+    expect(notMerged.statusCode).toBe(409);
+    expect(notMerged.json()).toMatchObject({ code: 'MB_NO_MERGED_RECORDS' });
+    const plainGone = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${plain.book.id}`,
+      organisationId,
+    });
+    expect(plainGone.statusCode).toBe(204);
+
+    // The absorbing draft stays an editable draft: claim one MORE source
+    // after the merge — un-merge must release it with the deleted draft,
+    // not push it onto any record.
+    dcK3Id = await issueChallan(workKId, `${workKCode}DC`, [
+      { workItemId: kItemId, quantity: '20' },
+    ]);
+    const widened = await setSources(targetId, [
+      { sourceType: 'delivery_challan', sourceId: dcK1Id },
+      { sourceType: 'delivery_challan', sourceId: dcK2Id },
+      { sourceType: 'installation', sourceId: instK1Id },
+      { sourceType: 'delivery_challan', sourceId: dcK3Id },
+    ]);
+    expect(widened.statusCode, widened.body).toBe(200);
+
+    const unmerged = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${targetId}/unmerge`,
+      organisationId,
+    });
+    expect(unmerged.statusCode, unmerged.body).toBe(204);
+
+    // The absorbing draft is gone.
+    const gone = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${targetId}`,
+      organisationId,
+    });
+    expect(gone.statusCode).toBe(404);
+
+    // Each record is a draft again holding EXACTLY what it contributed.
+    const restored1 = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${r1Id}`,
+      organisationId,
+    });
+    const detail1 = restored1.json<MeasurementBookDetailResponse>();
+    expect(detail1.book.status).toBe('draft');
+    expect(detail1.book.mergedIntoId).toBeNull();
+    expect(detail1.book.consigneeContactId).toBe(consignee1Id);
+    expect(detail1.sources.map((s) => `${s.sourceType}:${s.sourceId}`)).toEqual([
+      `delivery_challan:${dcK1Id}`,
+    ]);
+
+    const restored2 = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${r2Id}`,
+      organisationId,
+    });
+    const detail2 = restored2.json<MeasurementBookDetailResponse>();
+    expect(detail2.book.status).toBe('draft');
+    expect(detail2.book.mergedIntoId).toBeNull();
+    expect(detail2.sources.map((s) => `${s.sourceType}:${s.sourceId}`).sort()).toEqual(
+      [`delivery_challan:${dcK2Id}`, `installation:${instK1Id}`].sort(),
+    );
+
+    // The post-merge extra claim was released with the draft, and every
+    // restored source has exactly one live claim.
+    const [k3Claims] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_sources
+      where source_type = 'delivery_challan' and source_id = ${dcK3Id}
+        and released_at is null
+    `;
+    expect(k3Claims?.count).toBe('0');
+    const [liveClaims] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_sources
+      where measurement_book_id in (${r1Id}, ${r2Id}) and released_at is null
+    `;
+    expect(liveClaims?.count).toBe('3');
+
+    const [auditRow] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'measurement_book.unmerged' and entity_id = ${targetId}
+    `;
+    expect(auditRow?.count).toBe('1');
+  });
+
+  it('concurrent merges: exactly one on-account draft absorbs the records', async () => {
+    const merge = () =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workKId}/measurement-books/merge`,
+        organisationId,
+        payload: { recordMbIds: [r1Id, r2Id], mbDate: '2026-08-05' },
+      });
+    const [first, second] = await Promise.all([merge(), merge()]);
+    const statuses = [first.statusCode, second.statusCode].sort();
+    expect(statuses, `${first.body} | ${second.body}`).toEqual([201, 409]);
+    const winner = first.statusCode === 201 ? first : second;
+    const loser = first.statusCode === 201 ? second : first;
+    expect(['MB_DRAFT_EXISTS', 'MB_MERGE_NOT_RECORD_DRAFT']).toContain(
+      loser.json<{ code: string }>().code,
+    );
+    target2Id = winner.json<MeasurementBookDetailResponse>().book.id;
+    // One target, three claims, both records merged into it.
+    const [state] = await admin<{ claims: string; merged: string }[]>`
+      select
+        (select count(*) from mb_sources
+          where measurement_book_id = ${target2Id}
+            and released_at is null)::text as claims,
+        (select count(*) from measurement_books
+          where merged_into_id = ${target2Id}
+            and status = 'merged')::text as merged
+    `;
+    expect(state).toMatchObject({ claims: '3', merged: '2' });
+  });
+
+  it("the merged on-account MB finalizes and bills the records' measurements once", async () => {
+    const finalized = await finalize(target2Id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.book.kind).toBe('on_account');
+    expect(detail.book.mbNumber).toBe(`${workKCode}-MB-01`);
+    expect(detail.book.totalAmount).toBe('246.00');
+
+    // Once finalized, the merge is billed for good: no un-merge.
+    const unmergeRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${target2Id}/unmerge`,
+      organisationId,
+    });
+    expect(unmergeRefused.statusCode).toBe(409);
+    expect(unmergeRefused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+
+    // With no billing draft open, merging a MERGED record is refused on
+    // its own state.
+    const remerge = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [r1Id], mbDate: '2026-08-05' },
+    });
+    expect(remerge.statusCode).toBe(409);
+    expect(remerge.json()).toMatchObject({ code: 'MB_MERGE_NOT_RECORD_DRAFT' });
+
+    // The records stay merged forever, numberless.
+    const record = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${r1Id}`,
+      organisationId,
+    });
+    const recordDetail = record.json<MeasurementBookDetailResponse>();
+    expect(recordDetail.book.status).toBe('merged');
+    expect(recordDetail.book.mergedIntoId).toBe(target2Id);
+    expect(recordDetail.book.mbNumber).toBeNull();
+  });
+
+  it('record sheets are exempt from the register-date rule; billing drafts are not', async () => {
+    // The finalized MB-01 is dated 2026-08-05. A record sheet may be
+    // dated earlier — it never takes a number and never narrates the
+    // prior cumulative…
+    const record = await createDraft(workKId, {
+      mbDate: '2026-08-01',
+      kind: 'record',
+      consigneeContactId: consignee1Id,
+    });
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${record.book.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(204);
+    // …while the billing register must not run backwards.
+    const billing = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-01' },
+    });
+    expect(billing.statusCode).toBe(400);
+    expect(billing.json()).toMatchObject({ code: 'MB_DATE_BEFORE_PREVIOUS' });
+  });
+
+  it('the final kind (kind and isFinal agree) closes the Work for record sheets too', async () => {
+    // The pre-0034 alias still creates the final MB…
+    const viaAlias = await createDraft(workKId, {
+      mbDate: '2026-08-06',
+      isFinal: true,
+    });
+    expect(viaAlias.book.kind).toBe('final');
+    expect(viaAlias.book.isFinal).toBe(true);
+    const aliasGone = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${viaAlias.book.id}`,
+      organisationId,
+    });
+    expect(aliasGone.statusCode).toBe(204);
+    // …and the kind field is the request truth going forward.
+    const finalDraft = await createDraft(workKId, {
+      mbDate: '2026-08-06',
+      kind: 'final',
+    });
+    expect(finalDraft.book.kind).toBe('final');
+    expect(finalDraft.book.isFinal).toBe(true);
+    // The sweep sees only OPEN sources: the merged records' sources are
+    // claimed by finalized MB-01, so only the un-merged K3 remains.
+    const swept = await setSources(finalDraft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: dcK3Id },
+    ]);
+    expect(swept.statusCode, swept.body).toBe(200);
+    const finalized = await finalize(finalDraft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.book.kind).toBe('final');
+    expect(detail.book.isFinal).toBe(true);
+    expect(detail.book.mbNumber).toBe(`${workKCode}-MB-02`);
+
+    // No further MB of ANY kind — record sheets included.
+    const recordRefused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workKId}/measurement-books`,
+      organisationId,
+      payload: {
+        mbDate: '2026-08-06',
+        kind: 'record',
+        consigneeContactId: consignee1Id,
+      },
+    });
+    expect(recordRefused.statusCode).toBe(409);
+    expect(recordRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
   });
 });
