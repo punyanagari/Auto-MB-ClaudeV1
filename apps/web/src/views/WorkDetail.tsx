@@ -11,19 +11,19 @@ import type {
   UnfinishedWorkItem,
   WorkCompletionBlocker,
   WorkDetailResponse,
-  WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { WorkConsignees } from './WorkConsignees.js';
-import { Installations } from './Installations.js';
-import { PaymentMatrix } from './PaymentMatrix.js';
-import { MeasurementBooks } from './MeasurementBooks.js';
 import { WorkInstruments } from './WorkInstruments.js';
 import { WorkBills } from './WorkBills.js';
 import { WorkIssueChallans } from './WorkIssueChallans.js';
+import { WorkAmendments } from './WorkAmendments.js';
+import { WorkSchedules } from './WorkSchedules.js';
+import { WorkMeasurement } from './WorkMeasurement.js';
+import { WorkDeliveries } from './WorkDeliveries.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -47,8 +47,6 @@ interface WorkDetailProps {
   readonly onTabChange?: (tab: WorkTab) => void;
 }
 
-/** Renders "original → effective" when an approved amendment changed the
- * value, and the original alone otherwise. */
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
  * now answers for itself, and Overview summarises the rest. */
 const WORK_TABS = [
@@ -77,23 +75,6 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   timeline: 'Timeline',
 };
 
-function Amended({
-  original,
-  effective,
-}: {
-  readonly original: string;
-  readonly effective: string | null | undefined;
-}) {
-  if (effective === null || effective === undefined || effective === original) {
-    return <>{original}</>;
-  }
-  return (
-    <>
-      <s className="muted">{original}</s> → <strong>{effective}</strong>
-    </>
-  );
-}
-
 /** The work items carrying an undecided omission proposal (R7). The
  * approved omission soft-deletes the item, so it leaves the detail
  * response entirely — the only omission state worth a chip is the
@@ -116,13 +97,6 @@ function pendingRemovalItemIds(
     if (proposed?.kind === 'remove_item') ids.add(amendment.entityId);
   }
   return ids;
-}
-
-function itemFlags(item: WorkItem, pendingRemovals: ReadonlySet<string>) {
-  return {
-    removalPending: pendingRemovals.has(item.id),
-    added: item.amendmentAdded === true,
-  };
 }
 
 /** The two R8 completion 409s carry the operator's worklist in
@@ -170,10 +144,6 @@ const DIRECTION_LABELS = {
   at_par: 'at par',
   above: 'above advertised',
 } as const;
-
-/** The snapshot is stored as jsonb and typed unknown in the contract;
- * anything that does not match the expected line shape is dropped rather
- * than rendered as "[object Object]". */
 
 export function WorkDetail({
   api,
@@ -556,10 +526,7 @@ export function WorkDetail({
               </button>
             ))}
           </div>
-        </>
-      )}
-      {tab === 'overview' && (
-        <>
+
           <section aria-labelledby="work-completion-heading">
             <h2 id="work-completion-heading">Completion status</h2>
             {work.status === 'completed' ? (
@@ -707,431 +674,7 @@ export function WorkDetail({
               </table>
             )}
           </section>
-        </>
-      )}
 
-      {tab === 'schedules' && (
-        <>
-          {schedules.map((schedule) => (
-            <div key={schedule.id}>
-              <h2>
-                Schedule {schedule.scheduleCode}
-                <span className="muted"> · {schedule.items.length} items</span>
-              </h2>
-              <table className="data-table">
-                <caption className="visually-hidden">
-                  Awarded items in schedule {schedule.scheduleCode}; amended values show
-                  the original beside the sanctioned change
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Item number</th>
-                    <th scope="col">Description</th>
-                    <th scope="col">Unit</th>
-                    <th scope="col">Awarded quantity</th>
-                    <th scope="col">Rate (₹)</th>
-                    <th scope="col">Serial tracking</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedule.items.map((item) => {
-                    const flags = itemFlags(item, pendingRemovals);
-                    return (
-                      <tr key={item.id}>
-                        <th scope="row">
-                          {item.itemNumber}
-                          {flags.added && (
-                            <span className="chip chip--issued">added</span>
-                          )}
-                          {flags.removalPending && (
-                            <span className="chip chip--pending">omission pending</span>
-                          )}
-                        </th>
-                        <td className="cell--wrap">
-                          <Amended
-                            original={item.description}
-                            effective={item.effectiveDescription}
-                          />
-                        </td>
-                        <td>
-                          <Amended
-                            original={item.unitCode}
-                            effective={item.effectiveUnit}
-                          />
-                        </td>
-                        <td className="cell--numeric">
-                          <Amended
-                            original={item.awardedQuantity}
-                            effective={item.effectiveQuantity}
-                          />
-                        </td>
-                        <td className="cell--numeric">
-                          <Amended
-                            original={item.effectiveRate}
-                            effective={item.effectiveUnitRate}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {schedule.items.map((item) => (
-                    <tr key={item.id}>
-                      <th scope="row">{item.itemNumber}</th>
-                      <td className="cell--wrap">{item.description}</td>
-                      <td>{item.unitCode}</td>
-                      <td className="cell--numeric">{item.awardedQuantity}</td>
-                      <td className="cell--numeric">{item.effectiveRate}</td>
-                      <td>
-                        {canModify ? (
-                          <button
-                            type="button"
-                            className="button--ghost"
-                            role="switch"
-                            aria-checked={item.requiresSerials === true}
-                            aria-label={`Serial tracking for ${item.itemNumber}`}
-                            disabled={pending}
-                            onClick={() =>
-                              void act(
-                                async () => {
-                                  const updated = await api.updateWorkItemSerials(
-                                    organisationId,
-                                    item.id,
-                                    !item.requiresSerials,
-                                  );
-                                  setDetail((current) =>
-                                    current === null
-                                      ? current
-                                      : {
-                                          ...current,
-                                          schedules: current.schedules.map(
-                                            (candidate) => ({
-                                              ...candidate,
-                                              items: candidate.items.map(
-                                                (candidateItem) =>
-                                                  candidateItem.id === item.id
-                                                    ? {
-                                                        ...candidateItem,
-                                                        requiresSerials:
-                                                          updated.requiresSerials,
-                                                      }
-                                                    : candidateItem,
-                                              ),
-                                            }),
-                                          ),
-                                        },
-                                  );
-                                },
-                                item.requiresSerials
-                                  ? `Serial tracking switched off for ${item.itemNumber}.`
-                                  : `Serial tracking required for ${item.itemNumber}; challans for it now need one serial per unit before issue.`,
-                              )
-                            }
-                          >
-                            {item.requiresSerials ? 'Required' : 'Off'}
-                          </button>
-                        ) : (
-                          <span className={item.requiresSerials ? '' : 'muted'}>
-                            {item.requiresSerials ? 'Required' : 'Off'}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-
-          <PaymentMatrix
-            api={api}
-            organisationId={organisationId}
-            workId={workId}
-            workItems={workItems}
-            canModify={canModify}
-            onItemCategoryChanged={(workItemId, paymentCategory) => {
-              setDetail((current) =>
-                current === null
-                  ? current
-                  : {
-                      ...current,
-                      schedules: current.schedules.map((candidate) => ({
-                        ...candidate,
-                        items: candidate.items.map((candidateItem) =>
-                          candidateItem.id === workItemId
-                            ? { ...candidateItem, paymentCategory }
-                            : candidateItem,
-                        ),
-                      })),
-                    },
-              );
-            }}
-          />
-        </>
-      )}
-
-      {tab === 'amendments' && (
-        <>
-          <h2>Amendments</h2>
-          <p className="muted">
-            Sanctioned changes to quantities, rates, descriptions, and items. The
-            awarded LOA values are never overwritten; approved amendments apply as
-            effective values shown beside the originals above.
-          </p>
-          {amendments.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Amendment requests for this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Item</th>
-                  <th scope="col">Change</th>
-                  <th scope="col">Reason</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {amendments.map((amendment) => (
-                  <tr key={amendment.id}>
-                    <th scope="row">{amendment.itemNumber ?? '—'}</th>
-                    <td className="cell--wrap">
-                      {amendment.diff
-                        .map(
-                          (entry) =>
-                            `${entry.field}: ${entry.before ?? '—'} → ${entry.after ?? '—'}`,
-                        )
-                        .join('; ')}
-                    </td>
-                    <td className="cell--wrap">{amendment.reason}</td>
-                    <td>
-                      <span className={`chip chip--${amendment.status}`}>
-                        {amendment.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">No amendments proposed yet.</p>
-          )}
-          {canCreateDocuments && (
-            <AmendmentForm
-              items={workItems}
-              schedules={schedules}
-              pending={pending}
-              onProposeChange={(body) => {
-                void act(async () => {
-                  await api.proposeAmendment(organisationId, workId, body);
-                  const [freshDetail, freshAmendments] = await Promise.all([
-                    api.getWork(organisationId, workId),
-                    api.listWorkAmendments(organisationId, workId),
-                  ]);
-                  setDetail(freshDetail);
-                  setAmendments(freshAmendments);
-                }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-              }}
-              onProposeAdd={(body) => {
-                void act(async () => {
-                  await api.proposeAddItem(organisationId, workId, body);
-                  const [freshDetail, freshAmendments] = await Promise.all([
-                    api.getWork(organisationId, workId),
-                    api.listWorkAmendments(organisationId, workId),
-                  ]);
-                  setDetail(freshDetail);
-                  setAmendments(freshAmendments);
-                }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-              }}
-              onProposeRemove={(body) => {
-                void act(async () => {
-                  await api.proposeItemRemoval(organisationId, workId, body);
-                  const [freshDetail, freshAmendments] = await Promise.all([
-                    api.getWork(organisationId, workId),
-                    api.listWorkAmendments(organisationId, workId),
-                  ]);
-                  setDetail(freshDetail);
-                  setAmendments(freshAmendments);
-                }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
-              }}
-            />
-          )}
-        </>
-      )}
-
-      {tab === 'deliveries' && (
-        <>
-          <div className="card__header">
-            <h2>Delivery Challans</h2>
-            {canCreateDocuments &&
-              (challans?.some((challan) => challan.status === 'draft') === true ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const draft = challans.find(
-                      (challan) => challan.status === 'draft',
-                    );
-                    if (draft) onOpenChallan(draft.id);
-                  }}
-                >
-                  Open draft challan
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNewChallan(workId, work.workCode);
-                  }}
-                >
-                  New Delivery Challan
-                </button>
-              ))}
-          </div>
-          {challans !== null && challans.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Delivery Challans for this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Number</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {challans.map((challan) => (
-                  <tr key={challan.id}>
-                    <th scope="row">
-                      <button
-                        type="button"
-                        className="button--link"
-                        onClick={() => {
-                          onOpenChallan(challan.id);
-                        }}
-                      >
-                        {challan.challanNumber ?? 'Draft'}
-                      </button>
-                    </th>
-                    <td>{challan.challanDate}</td>
-                    <td>
-                      <span className={`chip chip--${challan.status}`}>
-                        {challan.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">No Delivery Challans yet.</p>
-          )}
-
-          {correctionNotices.length > 0 && (
-            <>
-              <h2>Correction notices</h2>
-              <table className="data-table">
-                <caption className="visually-hidden">
-                  Correction notices issued for this Work
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Notice</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Issued</th>
-                    <th scope="col">PDF</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {correctionNotices.map((correctionNotice) => (
-                    <tr key={correctionNotice.id}>
-                      <th scope="row">{correctionNotice.noticeNumber}</th>
-                      <td>
-                        <span className={`chip chip--${correctionNotice.status}`}>
-                          {correctionNotice.status}
-                        </span>
-                      </td>
-                      <td>{correctionNotice.createdAt.slice(0, 10)}</td>
-                      <td>
-                        {correctionNotice.renderedAvailable ? (
-                          <button
-                            type="button"
-                            className="button--ghost"
-                            disabled={pending}
-                            onClick={() =>
-                              void act(async () => {
-                                const blob = await api.downloadCorrectionNoticePdf(
-                                  organisationId,
-                                  correctionNotice.id,
-                                );
-                                const url = URL.createObjectURL(blob);
-                                window.open(url, '_blank', 'noopener');
-                                setTimeout(() => {
-                                  URL.revokeObjectURL(url);
-                                }, 60_000);
-                              }, 'Correction notice PDF opened in a new tab.')
-                            }
-                          >
-                            Open PDF
-                          </button>
-                        ) : canCreateDocuments &&
-                          correctionNotice.status === 'issued' ? (
-                          <button
-                            type="button"
-                            className="button--ghost"
-                            disabled={pending}
-                            onClick={() =>
-                              void act(async () => {
-                                await api.renderCorrectionNotice(
-                                  organisationId,
-                                  correctionNotice.id,
-                                );
-                                setCorrectionNotices(
-                                  await api.listWorkCorrectionNotices(
-                                    organisationId,
-                                    workId,
-                                  ),
-                                );
-                              }, 'Correction notice PDF generated.')
-                            }
-                          >
-                            Generate PDF
-                          </button>
-                        ) : (
-                          <span className="muted">not rendered</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-        </>
-      )}
-
-      {tab === 'issues' && (
-        <WorkIssueChallans
-          workId={workId}
-          issueChallans={issueChallans}
-          canCreateDocuments={canCreateDocuments}
-          onNewIssueChallan={onNewIssueChallan}
-          onOpenIssueChallan={onOpenIssueChallan}
-        />
-      )}
-
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
-
-      {tab === 'overview' && (
-        <>
           <CompletionExtensions
             api={api}
             organisationId={organisationId}
@@ -1150,6 +693,84 @@ export function WorkDetail({
         </>
       )}
 
+      {tab === 'schedules' && (
+        <WorkSchedules
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          schedules={schedules}
+          workItems={workItems}
+          pendingRemovals={pendingRemovals}
+          setDetail={setDetail}
+          canModify={canModify}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'deliveries' && (
+        <WorkDeliveries
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          work={work}
+          workItems={workItems}
+          challans={challans}
+          correctionNotices={correctionNotices}
+          setCorrectionNotices={setCorrectionNotices}
+          serials={serials}
+          setSerials={setSerials}
+          canCreateDocuments={canCreateDocuments}
+          canRecordSiteEvidence={canRecordSiteEvidence}
+          onNewChallan={onNewChallan}
+          onOpenChallan={onOpenChallan}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'issues' && (
+        <WorkIssueChallans
+          workId={workId}
+          issueChallans={issueChallans}
+          canCreateDocuments={canCreateDocuments}
+          onNewIssueChallan={onNewIssueChallan}
+          onOpenIssueChallan={onOpenIssueChallan}
+        />
+      )}
+
+      {tab === 'measurement' && (
+        <WorkMeasurement
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          mbEntries={mbEntries}
+          setMbEntries={setMbEntries}
+          issuedChallans={issuedChallans}
+          challanNumberById={challanNumberById}
+          setBills={setBills}
+          canRecordSiteEvidence={canRecordSiteEvidence}
+          canCreateDocuments={canCreateDocuments}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'bills' && (
+        <WorkBills
+          api={api}
+          organisationId={organisationId}
+          bills={bills}
+          setBills={setBills}
+          canIssue={canIssue}
+          pending={pending}
+          act={act}
+        />
+      )}
+
       {tab === 'instruments' && (
         <WorkInstruments
           api={api}
@@ -1166,228 +787,39 @@ export function WorkDetail({
         />
       )}
 
-      {tab === 'measurement' && (
-        <>
-          <h2>Measurement Book</h2>
-          {mbEntries.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Measurement Book entries for this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Item</th>
-                  <th scope="col" className="cell--numeric">
-                    Quantity
-                  </th>
-                  <th scope="col">Measured on</th>
-                  <th scope="col">Challan</th>
-                  <th scope="col">MB book</th>
-                  <th scope="col">Billing</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mbEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <th scope="row">{entry.itemNumber}</th>
-                    <td className="cell--numeric">{entry.measuredQuantity}</td>
-                    <td>{entry.measuredOn}</td>
-                    <td>
-                      {entry.deliveryChallanId !== null
-                        ? (challanNumberById.get(entry.deliveryChallanId) ?? '—')
-                        : '—'}
-                    </td>
-                    <td>{entry.mbBookRef ?? '—'}</td>
-                    <td>
-                      {entry.billId !== null ? (
-                        <span className="chip chip--confirmed">billed</span>
-                      ) : (
-                        <span className="muted">unbilled</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">No measurements recorded yet.</p>
-          )}
-          {canRecordSiteEvidence && workItems.length > 0 && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                const workItemId = formValue(data, 'mb-item');
-                const measuredQuantity = formValue(data, 'mb-quantity');
-                const measuredOn = formValue(data, 'mb-date');
-                const deliveryChallanId = formValue(data, 'mb-challan');
-                const mbBookRef = formValue(data, 'mb-book').trim();
-                const remarks = formValue(data, 'mb-remarks').trim();
-                void act(async () => {
-                  const entry = await api.recordMbEntry(organisationId, workId, {
-                    workItemId,
-                    measuredQuantity,
-                    measuredOn,
-                    ...(deliveryChallanId.length > 0 ? { deliveryChallanId } : {}),
-                    ...(mbBookRef.length > 0 ? { mbBookRef } : {}),
-                    ...(remarks.length > 0 ? { remarks } : {}),
-                  });
-                  setMbEntries((current) => [...current, entry]);
-                  form.reset();
-                }, 'Measurement recorded.');
-              }}
-            >
-              <h3>Record measurement</h3>
-              <div className="field">
-                <label htmlFor="mb-item">Work item</label>
-                <select id="mb-item" name="mb-item" required>
-                  {workItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.itemNumber} — {item.description}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="mb-quantity">Measured quantity</label>
-                <input
-                  id="mb-quantity"
-                  name="mb-quantity"
-                  inputMode="decimal"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="mb-date">Measured on</label>
-                <input id="mb-date" name="mb-date" type="date" required />
-              </div>
-              <div className="field">
-                <label htmlFor="mb-challan">Source challan (optional)</label>
-                <select id="mb-challan" name="mb-challan">
-                  <option value="">Not tied to a challan</option>
-                  {issuedChallans.map((challan) => (
-                    <option key={challan.id} value={challan.id}>
-                      {challan.challanNumber ?? challan.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="mb-book">MB book reference (optional)</label>
-                <input id="mb-book" name="mb-book" maxLength={100} />
-              </div>
-              <div className="field">
-                <label htmlFor="mb-remarks">Remarks (optional)</label>
-                <input id="mb-remarks" name="mb-remarks" maxLength={1000} />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
-                  Record measurement
-                </button>
-              </div>
-            </form>
-          )}
-        </>
-      )}
-
-      {tab === 'bills' && (
-        <WorkBills
+      {tab === 'amendments' && (
+        <WorkAmendments
           api={api}
           organisationId={organisationId}
-          bills={bills}
-          setBills={setBills}
-          canIssue={canIssue}
+          workId={workId}
+          amendments={amendments}
+          setAmendments={setAmendments}
+          setDetail={setDetail}
+          schedules={schedules}
+          workItems={workItems}
+          canCreateDocuments={canCreateDocuments}
           pending={pending}
           act={act}
         />
       )}
 
-      {tab === 'deliveries' && (
-        <>
-          <Installations
-            api={api}
-            organisationId={organisationId}
-            workId={workId}
-            canRecordEvidence={canRecordSiteEvidence}
-            workItems={workItems}
-            serials={serials}
-            onSerialsChanged={setSerials}
-          />
-        </>
-      )}
-
-      {tab === 'measurement' && (
-        <>
-          <MeasurementBooks
-            api={api}
-            organisationId={organisationId}
-            workId={workId}
-            canModify={canCreateDocuments}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            onBillPrepared={() => {
-              void api.listBills(organisationId, workId).then(setBills);
-            }}
-          />
-        </>
-      )}
-
-      {tab === 'deliveries' && (
-        <>
-          <h2>Serial trace</h2>
-          {serials.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Every serial number delivered under this Work
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Serial</th>
-                  <th scope="col">Item</th>
-                  <th scope="col">Challan</th>
-                  <th scope="col">Installation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {serials.map((serial) => (
-                  <tr key={serial.id}>
-                    <th scope="row">{serial.serialNumber}</th>
-                    <td className="cell--wrap">{serial.itemDescription}</td>
-                    <td>{serial.challanNumber ?? '—'}</td>
-                    <td>
-                      {serial.installedOn !== null ? (
-                        <span className="chip chip--installed">
-                          installed {serial.installedOn}
-                          {typeof serial.installationLocation === 'string'
-                            ? ` at ${serial.installationLocation}`
-                            : ''}
-                        </span>
-                      ) : (
-                        <span className="muted">not installed</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">
-              No serial numbers recorded yet. Serials are recorded on each issued
-              challan.
-            </p>
-          )}
-        </>
-      )}
-
       {tab === 'timeline' && (
-        <>
-          <Timeline
-            api={api}
-            organisationId={organisationId}
-            scope={{ kind: 'work', workId }}
-          />
-        </>
+        <Timeline
+          api={api}
+          organisationId={organisationId}
+          scope={{ kind: 'work', workId }}
+        />
+      )}
+
+      {notice !== null && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {actionError !== null && (
+        <p className="form-error" role="alert">
+          {actionError}
+        </p>
       )}
 
       <div className="actions">
@@ -1398,208 +830,3 @@ export function WorkDetail({
     </section>
   );
 }
-
-interface AmendmentFormProps {
-  readonly items: readonly WorkItem[];
-  readonly schedules: WorkDetailResponse['schedules'];
-  readonly pending: boolean;
-  readonly onProposeChange: (body: {
-    workItemId: string;
-    reason: string;
-    changes: {
-      quantity?: string;
-      rate?: string;
-      description?: string;
-      unit?: string;
-    };
-  }) => void;
-  readonly onProposeAdd: (body: {
-    reason: string;
-    scheduleId: string;
-    itemNumber: string;
-    description: string;
-    unitCode: string;
-    quantity: string;
-    rate: string;
-  }) => void;
-  readonly onProposeRemove: (body: { workItemId: string; reason: string }) => void;
-}
-
-/** Proposes an amendment: change an item's values, omit it, or add a new
- * item to a schedule. Every proposal needs a reason; approval authority
- * decides whether it applies immediately or waits in the queue.
- *
- * Omission files through the R7 removal path, not through a change to
- * quantity 0: the removal soft-deletes the item, keeps its number
- * reserved for the life of the Work, and refuses while any delivery,
- * installation, PAC or billing evidence names it. A quantity-0 change
- * would leave the item live, and R12 refuses zero quantities anyway. */
-function AmendmentForm({
-  items,
-  schedules,
-  pending,
-  onProposeChange,
-  onProposeAdd,
-  onProposeRemove,
-}: AmendmentFormProps) {
-  const [kind, setKind] = useState<'change' | 'omit' | 'add'>('change');
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const data = new FormData(event.currentTarget);
-        const reason = formValue(data, 'amendment-reason').trim();
-        if (kind === 'add') {
-          onProposeAdd({
-            reason,
-            scheduleId: formValue(data, 'amendment-schedule'),
-            itemNumber: formValue(data, 'amendment-item-number').trim(),
-            description: formValue(data, 'amendment-description').trim(),
-            unitCode: formValue(data, 'amendment-unit').trim(),
-            quantity: formValue(data, 'amendment-quantity').trim(),
-            rate: formValue(data, 'amendment-rate').trim(),
-          });
-          return;
-        }
-        const workItemId = formValue(data, 'amendment-item');
-        if (kind === 'omit') {
-          onProposeRemove({ workItemId, reason });
-          return;
-        }
-        const quantity = formValue(data, 'amendment-quantity').trim();
-        const rate = formValue(data, 'amendment-rate').trim();
-        const description = formValue(data, 'amendment-description').trim();
-        const unit = formValue(data, 'amendment-unit').trim();
-        onProposeChange({
-          workItemId,
-          reason,
-          changes: {
-            ...(quantity.length > 0 ? { quantity } : {}),
-            ...(rate.length > 0 ? { rate } : {}),
-            ...(description.length > 0 ? { description } : {}),
-            ...(unit.length > 0 ? { unit } : {}),
-          },
-        });
-      }}
-    >
-      <h3>Propose an amendment</h3>
-      <div className="field">
-        <label htmlFor="amendment-kind">Amendment</label>
-        <select
-          id="amendment-kind"
-          name="amendment-kind"
-          value={kind}
-          onChange={(event) => {
-            setKind(event.target.value as 'change' | 'omit' | 'add');
-          }}
-        >
-          <option value="change">Change an item</option>
-          <option value="omit">Omit an item</option>
-          <option value="add">Add a new item</option>
-        </select>
-      </div>
-      {kind !== 'add' && (
-        <div className="field">
-          <label htmlFor="amendment-item">Item to amend</label>
-          <select id="amendment-item" name="amendment-item" required>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.itemNumber} — {item.description}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {kind === 'add' && (
-        <>
-          <div className="field">
-            <label htmlFor="amendment-schedule">Schedule</label>
-            <select id="amendment-schedule" name="amendment-schedule" required>
-              {schedules.map((schedule) => (
-                <option key={schedule.id} value={schedule.id}>
-                  {schedule.scheduleCode} — {schedule.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="amendment-item-number">Item number</label>
-            <input
-              id="amendment-item-number"
-              name="amendment-item-number"
-              required
-              maxLength={100}
-            />
-          </div>
-        </>
-      )}
-      {kind !== 'omit' && (
-        <>
-          <div className="field">
-            <label htmlFor="amendment-quantity">
-              {kind === 'add' ? 'Quantity' : 'New quantity (optional)'}
-            </label>
-            <input
-              id="amendment-quantity"
-              name="amendment-quantity"
-              inputMode="decimal"
-              required={kind === 'add'}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="amendment-rate">
-              {kind === 'add' ? 'Rate (₹)' : 'New rate (₹, optional)'}
-            </label>
-            <input
-              id="amendment-rate"
-              name="amendment-rate"
-              inputMode="decimal"
-              required={kind === 'add'}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="amendment-description">
-              {kind === 'add' ? 'Description' : 'New description (optional)'}
-            </label>
-            <input
-              id="amendment-description"
-              name="amendment-description"
-              required={kind === 'add'}
-              maxLength={4000}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="amendment-unit">
-              {kind === 'add' ? 'Unit' : 'New unit (optional)'}
-            </label>
-            <input
-              id="amendment-unit"
-              name="amendment-unit"
-              required={kind === 'add'}
-              maxLength={20}
-            />
-          </div>
-        </>
-      )}
-      <div className="field">
-        <label htmlFor="amendment-reason">Reason</label>
-        <input
-          id="amendment-reason"
-          name="amendment-reason"
-          required
-          minLength={3}
-          maxLength={2000}
-        />
-      </div>
-      <div className="actions">
-        <button type="submit" disabled={pending}>
-          Submit amendment
-        </button>
-      </div>
-    </form>
-  );
-}
-
-/** Forward-only transitions out of 'active'; terminal statuses show no
- * controls (the server refuses them with INSTRUMENT_STATUS_TERMINAL). */
