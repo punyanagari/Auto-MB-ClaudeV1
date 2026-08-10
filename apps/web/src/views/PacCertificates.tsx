@@ -6,6 +6,10 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { Actions, Field, FormError, Hint } from '../ui/form.js';
 
 interface PacCertificatesProps {
   readonly api: ApiClient;
@@ -105,9 +109,7 @@ export function PacCertificates({
     return (
       <>
         <h2>PAC certificates</h2>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
+        <FormError>{loadError}</FormError>
       </>
     );
   }
@@ -116,7 +118,7 @@ export function PacCertificates({
     return (
       <>
         <h2>PAC certificates</h2>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading PAC certificates…
         </p>
       </>
@@ -130,36 +132,32 @@ export function PacCertificates({
   return (
     <>
       <h2>PAC certificates</h2>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Railway certification of installed quantities, issued in parts. Per item the
         certified total can never exceed what installation records support; cancelling a
         certificate releases its quantities.
       </p>
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           {notice}
         </p>
       )}
 
-      <table className="data-table">
-        <caption className="visually-hidden">
+      <DataTable>
+        <caption className="sr-only">
           PAC-certified quantity per item for this Work
         </caption>
         <thead>
           <tr>
             <th scope="col">Item</th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Installed
             </th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               PAC certified
             </th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Available
             </th>
           </tr>
@@ -168,42 +166,45 @@ export function PacCertificates({
           {data.itemSummaries.map((summary) => (
             <tr key={summary.workItemId}>
               <th scope="row">{summary.itemNumber}</th>
-              <td className="cell--numeric">{summary.installedQuantity}</td>
-              <td className="cell--numeric">{summary.pacCertifiedQuantity}</td>
-              <td className="cell--numeric">{summary.availableQuantity}</td>
+              <td className={numericCell}>{summary.installedQuantity}</td>
+              <td className={numericCell}>{summary.pacCertifiedQuantity}</td>
+              <td className={numericCell}>{summary.availableQuantity}</td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
 
       {data.certificates.length > 0 ? (
         data.certificates.map((certificate) => (
-          <div key={certificate.id} className="detail-block">
+          <div key={certificate.id} className="my-3">
             <h3>
               PAC {certificate.reference} · {certificate.issueDate}
             </h3>
-            <p className="muted">
+            <p className="text-muted-foreground">
               Issued by {certificate.consigneeDesignation} ·{' '}
               {certificate.status === 'cancelled' ? (
-                <span className="chip chip--cancelled">cancelled</span>
+                <StatusChip status="cancelled" />
               ) : (
-                <span className="chip chip--installed">recorded</span>
+                <StatusChip status="installed">recorded</StatusChip>
               )}
               {certificate.cancellationNote !== null && (
-                <span className="muted"> {certificate.cancellationNote}</span>
+                <span className="text-muted-foreground">
+                  {' '}
+                  {certificate.cancellationNote}
+                </span>
               )}
             </p>
-            <table className="data-table">
-              <caption className="visually-hidden">
+            <DataTable>
+              <caption className="sr-only">
                 Certified quantities on PAC {certificate.reference}
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Item</th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Certified quantity
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Released value
                   </th>
                 </tr>
@@ -212,17 +213,16 @@ export function PacCertificates({
                 {certificate.items.map((line) => (
                   <tr key={line.workItemId}>
                     <th scope="row">{line.itemNumber}</th>
-                    <td className="cell--numeric">{line.certifiedQuantity}</td>
-                    <td className="cell--numeric">{line.releasedValue ?? '—'}</td>
+                    <td className={numericCell}>{line.certifiedQuantity}</td>
+                    <td className={numericCell}>{line.releasedValue ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-            <div className="actions">
+            </DataTable>
+            <Actions>
               {certificate.documentAvailable && (
-                <button
-                  type="button"
-                  className="button--ghost"
+                <Button
+                  variant="outline"
                   disabled={pending}
                   onClick={() =>
                     void act(async () => {
@@ -236,9 +236,9 @@ export function PacCertificates({
                   }
                 >
                   Open scanned certificate
-                </button>
+                </Button>
               )}
-            </div>
+            </Actions>
             {canModify && certificate.status === 'recorded' && (
               <>
                 <form
@@ -264,7 +264,7 @@ export function PacCertificates({
                     }, 'Scanned certificate uploaded.');
                   }}
                 >
-                  <div className="field">
+                  <Field>
                     <label htmlFor={`pac-document-${certificate.id}`}>
                       Scanned certificate (PDF) for {certificate.reference}
                     </label>
@@ -274,12 +274,12 @@ export function PacCertificates({
                       type="file"
                       accept="application/pdf"
                     />
-                  </div>
-                  <div className="actions">
-                    <button type="submit" className="button--ghost" disabled={pending}>
+                  </Field>
+                  <Actions>
+                    <Button type="submit" variant="outline" disabled={pending}>
                       Upload scanned certificate
-                    </button>
-                  </div>
+                    </Button>
+                  </Actions>
                 </form>
                 <form
                   onSubmit={(event) => {
@@ -298,7 +298,7 @@ export function PacCertificates({
                     }, 'PAC certificate cancelled; its certified quantities are released.');
                   }}
                 >
-                  <div className="field">
+                  <Field>
                     <label htmlFor={`pac-cancel-note-${certificate.id}`}>
                       Cancellation note for PAC {certificate.reference}
                     </label>
@@ -309,17 +309,17 @@ export function PacCertificates({
                       minLength={3}
                       maxLength={1000}
                     />
-                  </div>
-                  <button type="submit" className="button--ghost" disabled={pending}>
+                  </Field>
+                  <Button type="submit" variant="outline" disabled={pending}>
                     Cancel certificate
-                  </button>
+                  </Button>
                 </form>
               </>
             )}
           </div>
         ))
       ) : (
-        <p className="muted">No PAC certificates recorded yet.</p>
+        <p className="text-muted-foreground">No PAC certificates recorded yet.</p>
       )}
 
       {canModify && workItems.length > 0 && (
@@ -352,7 +352,7 @@ export function PacCertificates({
           }}
         >
           <h3>Record PAC certificate</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="pac-reference">Certificate reference</label>
             <input
               id="pac-reference"
@@ -361,12 +361,12 @@ export function PacCertificates({
               minLength={1}
               maxLength={100}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="pac-date">Issue date</label>
             <input id="pac-date" name="pac-date" type="date" required />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="pac-consignee">Issuing consignee</label>
             <select id="pac-consignee" name="pac-consignee" required>
               {workConsignees.length > 0 && (
@@ -388,11 +388,11 @@ export function PacCertificates({
                 ))}
               </optgroup>
             </select>
-            <p className="hint">
+            <Hint>
               Consignees linked to this Work are listed first; any active consignee can
               be picked. The certificate snapshots the designation.
-            </p>
-          </div>
+            </Hint>
+          </Field>
           <fieldset>
             <legend>
               Certified quantities — leave an item blank to omit it; each entry is
@@ -401,7 +401,7 @@ export function PacCertificates({
             {workItems.map((item) => {
               const summary = summaryByItem.get(item.id);
               return (
-                <div className="field" key={item.id}>
+                <Field key={item.id}>
                   <label htmlFor={`pac-qty-${item.id}`}>
                     {item.itemNumber} — {item.effectiveDescription ?? item.description}
                     {summary !== undefined
@@ -413,15 +413,15 @@ export function PacCertificates({
                     name={`pac-qty-${item.id}`}
                     inputMode="decimal"
                   />
-                </div>
+                </Field>
               );
             })}
           </fieldset>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Record PAC certificate
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
     </>

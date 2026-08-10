@@ -6,6 +6,7 @@ import { cn } from '../lib/cn.js';
 export function Field({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
+      data-field=""
       className={cn(
         'my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium',
         className,
@@ -16,11 +17,19 @@ export function Field({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 /** Fields sharing a line. Each child field takes an equal share and stops
- * shrinking at 10rem, so the row wraps rather than crushing its controls. */
+ * shrinking at 10rem, so the row wraps rather than crushing its controls.
+ *
+ * The share is claimed by fields only, not by every child: a row that also
+ * holds a button would otherwise give the button an equal column and squeeze
+ * the input it belongs to. That is what `.field-row .field` said, and the
+ * data attribute is how a utility says it. */
 export function FieldRow({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
-      className={cn('flex flex-wrap gap-3 [&>*]:min-w-40 [&>*]:flex-1', className)}
+      className={cn(
+        'flex flex-wrap gap-3 [&>[data-field]]:min-w-40 [&>[data-field]]:flex-1',
+        className,
+      )}
       {...props}
     />
   );
@@ -51,15 +60,19 @@ export function ActionBar({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
+const ERROR_TEXT = 'my-2 text-[13px] font-medium text-destructive';
+
 /** Why an action failed. Always announced. */
 export function FormError({ className, ...props }: React.ComponentProps<'p'>) {
-  return (
-    <p
-      role="alert"
-      className={cn('my-2 text-[13px] font-medium text-destructive', className)}
-      {...props}
-    />
-  );
+  return <p role="alert" className={cn(ERROR_TEXT, className)} {...props} />;
+}
+
+/** Why one field is invalid — the target of its `aria-describedby`, and
+ * deliberately silent. A form that fails validation announces once through
+ * its summary; giving each field its own live region would announce the same
+ * submission five times over. Same ink as FormError, no role. */
+export function FieldError({ className, ...props }: React.ComponentProps<'p'>) {
+  return <p className={cn(ERROR_TEXT, className)} {...props} />;
 }
 
 /** What an action changed. Always announced. */

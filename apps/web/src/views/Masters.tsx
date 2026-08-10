@@ -7,6 +7,11 @@ import type {
   UnitMaster,
 } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { StatusChip as Chip } from '../ui/chip.js';
+import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
+import { DataTable, wrapCell } from '../ui/table.js';
 
 interface MastersProps {
   readonly api: ApiClient;
@@ -37,9 +42,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 function StatusChip({ active }: { readonly active: boolean }) {
   return (
-    <span className={`chip chip--${active ? 'active' : 'failed'}`}>
-      {active ? 'active' : 'retired'}
-    </span>
+    <Chip status={active ? 'active' : 'failed'}>{active ? 'active' : 'retired'}</Chip>
   );
 }
 
@@ -77,7 +80,7 @@ function RetiredFilter({
   readonly onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="muted" htmlFor={id}>
+    <label className="text-muted-foreground" htmlFor={id}>
       <input
         id={id}
         type="checkbox"
@@ -165,7 +168,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="muted">
+      <p className="text-muted-foreground">
         One master for consignees, vendors, and clients (role flags on each record).
         Contacts prefill documents; the document always keeps its own copy, so editing
         or retiring a contact never changes issued records.
@@ -176,14 +179,14 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         onChange={setIncludeRetired}
       />
       {rows === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading contacts…
         </p>
       ) : rows.length === 0 ? (
-        <p className="muted">No contacts yet.</p>
+        <p className="text-muted-foreground">No contacts yet.</p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">
+        <DataTable>
+          <caption className="sr-only">
             Contacts with designation, address, GSTIN, roles, and contact details
           </caption>
           <thead>
@@ -201,7 +204,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
             {rows.map((row) => (
               <tr key={row.id}>
                 <th scope="row">{row.designation}</th>
-                <td className="cell--wrap">
+                <td className={wrapCell}>
                   {[
                     row.address,
                     row.pincode,
@@ -211,7 +214,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                     .join(' · ') || '—'}
                 </td>
                 <td>{row.gstin ?? '—'}</td>
-                <td className="cell--wrap">
+                <td className={wrapCell}>
                   {[row.contactPerson, row.phone, row.email]
                     .filter((part) => part !== null)
                     .join(' · ') || '—'}
@@ -230,38 +233,38 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 </td>
                 {canModify && (
                   <td>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         setEditing(row);
                       }}
                     >
                       Edit
-                    </button>{' '}
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => void setActive(row, !row.active)}
                     >
                       {row.active ? 'Retire' : 'Reactivate'}
-                    </button>
+                    </Button>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {canModify && (
         <>
-          <h2>{editing === null ? 'Add a contact' : `Edit ${editing.designation}`}</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">
+            {editing === null ? 'Add a contact' : `Edit ${editing.designation}`}
+          </h2>
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
-            <div className="field-row">
-              <div className="field">
+            <FieldRow>
+              <Field>
                 <label htmlFor="contact-designation">Designation / name</label>
                 <input
                   id="contact-designation"
@@ -271,8 +274,8 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.designation ?? ''}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="contact-person">Contact person (optional)</label>
                 <input
                   id="contact-person"
@@ -280,9 +283,9 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.contactPerson ?? ''}
                 />
-              </div>
-            </div>
-            <div className="field">
+              </Field>
+            </FieldRow>
+            <Field>
               <label htmlFor="contact-address">Address (optional)</label>
               <textarea
                 id="contact-address"
@@ -291,9 +294,9 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 maxLength={1000}
                 defaultValue={editing?.address ?? ''}
               />
-            </div>
-            <div className="field-row">
-              <div className="field">
+            </Field>
+            <FieldRow>
+              <Field>
                 <label htmlFor="contact-gstin">GSTIN (optional)</label>
                 <input
                   id="contact-gstin"
@@ -303,11 +306,11 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   defaultValue={editing?.gstin ?? ''}
                   aria-describedby="contact-gstin-hint"
                 />
-                <p className="muted" id="contact-gstin-hint">
+                <p className="text-muted-foreground" id="contact-gstin-hint">
                   Railway units are TDS deductors — GSTINs ending in D are accepted.
                 </p>
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="contact-pincode">Pincode (optional)</label>
                 <input
                   id="contact-pincode"
@@ -316,8 +319,8 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={6}
                   defaultValue={editing?.pincode ?? ''}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="contact-state-code">State code (optional)</label>
                 <input
                   id="contact-state-code"
@@ -326,10 +329,10 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={2}
                   defaultValue={editing?.stateCode ?? ''}
                 />
-              </div>
-            </div>
-            <div className="field-row">
-              <div className="field">
+              </Field>
+            </FieldRow>
+            <FieldRow>
+              <Field>
                 <label htmlFor="contact-phone">Phone (optional)</label>
                 <input
                   id="contact-phone"
@@ -337,8 +340,8 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={30}
                   defaultValue={editing?.phone ?? ''}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="contact-email">Email (optional)</label>
                 <input
                   id="contact-email"
@@ -347,9 +350,9 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.email ?? ''}
                 />
-              </div>
-            </div>
-            <fieldset className="field">
+              </Field>
+            </FieldRow>
+            <fieldset className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium">
               <legend>Roles</legend>
               <label htmlFor="contact-role-consignee">
                 <input
@@ -367,41 +370,32 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
               <label htmlFor="contact-role-client">
                 <input id="contact-role-client" type="checkbox" disabled /> Client
               </label>
-              <p className="muted">
+              <p className="text-muted-foreground">
                 Every contact is a consignee for now; vendor and client roles unlock
                 with the procurement wave (PO/BQ).
               </p>
             </fieldset>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
+            <Actions>
+              <Button type="submit" disabled={pending}>
                 {editing === null ? 'Add contact' : 'Save changes'}
-              </button>
+              </Button>
               {editing !== null && (
-                <button
-                  type="button"
-                  className="button--ghost"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setEditing(null);
                   }}
                 >
                   Cancel edit
-                </button>
+                </Button>
               )}
-            </div>
+            </Actions>
           </form>
         </>
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
     </>
   );
 }
@@ -459,7 +453,7 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Stations, installation points, and stores referenced during delivery and
         installation work.
       </p>
@@ -469,14 +463,14 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
         onChange={setIncludeRetired}
       />
       {rows === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading locations…
         </p>
       ) : rows.length === 0 ? (
-        <p className="muted">No locations yet.</p>
+        <p className="text-muted-foreground">No locations yet.</p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">Location masters</caption>
+        <DataTable>
+          <caption className="sr-only">Location masters</caption>
           <thead>
             <tr>
               <th scope="col">Name</th>
@@ -495,38 +489,38 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
                 </td>
                 {canModify && (
                   <td>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         setEditing(row);
                       }}
                     >
                       Edit
-                    </button>{' '}
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => void setActive(row, !row.active)}
                     >
                       {row.active ? 'Retire' : 'Reactivate'}
-                    </button>
+                    </Button>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {canModify && (
         <>
-          <h2>{editing === null ? 'Add a location' : `Edit ${editing.name}`}</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">
+            {editing === null ? 'Add a location' : `Edit ${editing.name}`}
+          </h2>
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
-            <div className="field-row">
-              <div className="field">
+            <FieldRow>
+              <Field>
                 <label htmlFor="location-name">Name</label>
                 <input
                   id="location-name"
@@ -536,8 +530,8 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.name ?? ''}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="location-kind">Kind</label>
                 <select
                   id="location-kind"
@@ -549,38 +543,29 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
                   <option value="store">Store</option>
                   <option value="other">Other</option>
                 </select>
-              </div>
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={pending}>
                 {editing === null ? 'Add location' : 'Save changes'}
-              </button>
+              </Button>
               {editing !== null && (
-                <button
-                  type="button"
-                  className="button--ghost"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setEditing(null);
                   }}
                 >
                   Cancel edit
-                </button>
+                </Button>
               )}
-            </div>
+            </Actions>
           </form>
         </>
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
     </>
   );
 }
@@ -637,7 +622,7 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="muted">
+      <p className="text-muted-foreground">
         The standard units are added automatically on first use; retire the ones this
         organisation never uses and add any missing ones.
       </p>
@@ -647,14 +632,14 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
         onChange={setIncludeRetired}
       />
       {rows === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading units…
         </p>
       ) : rows.length === 0 ? (
-        <p className="muted">No units yet.</p>
+        <p className="text-muted-foreground">No units yet.</p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">Unit masters</caption>
+        <DataTable>
+          <caption className="sr-only">Unit masters</caption>
           <thead>
             <tr>
               <th scope="col">Unit</th>
@@ -671,37 +656,37 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
                 </td>
                 {canModify && (
                   <td>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         setEditing(row);
                       }}
                     >
                       Edit
-                    </button>{' '}
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => void setActive(row, !row.active)}
                     >
                       {row.active ? 'Retire' : 'Reactivate'}
-                    </button>
+                    </Button>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {canModify && (
         <>
-          <h2>{editing === null ? 'Add a unit' : `Edit ${editing.name}`}</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">
+            {editing === null ? 'Add a unit' : `Edit ${editing.name}`}
+          </h2>
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
-            <div className="field">
+            <Field>
               <label htmlFor="unit-name">Unit name</label>
               <input
                 id="unit-name"
@@ -711,37 +696,28 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
                 maxLength={100}
                 defaultValue={editing?.name ?? ''}
               />
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
                 {editing === null ? 'Add unit' : 'Save changes'}
-              </button>
+              </Button>
               {editing !== null && (
-                <button
-                  type="button"
-                  className="button--ghost"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setEditing(null);
                   }}
                 >
                   Cancel edit
-                </button>
+                </Button>
               )}
-            </div>
+            </Actions>
           </form>
         </>
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
     </>
   );
 }
@@ -799,7 +775,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="muted">
+      <p className="text-muted-foreground">
         The people who sign generated documents for this organisation. Documents
         snapshot the chosen signatory, so retiring one never alters past records.
       </p>
@@ -809,14 +785,14 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
         onChange={setIncludeRetired}
       />
       {rows === null ? (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading signatories…
         </p>
       ) : rows.length === 0 ? (
-        <p className="muted">No signatories yet.</p>
+        <p className="text-muted-foreground">No signatories yet.</p>
       ) : (
-        <table className="data-table">
-          <caption className="visually-hidden">Organisation signatories</caption>
+        <DataTable>
+          <caption className="sr-only">Organisation signatories</caption>
           <thead>
             <tr>
               <th scope="col">Name</th>
@@ -835,38 +811,38 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
                 </td>
                 {canModify && (
                   <td>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         setEditing(row);
                       }}
                     >
                       Edit
-                    </button>{' '}
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => void setActive(row, !row.active)}
                     >
                       {row.active ? 'Retire' : 'Reactivate'}
-                    </button>
+                    </Button>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {canModify && (
         <>
-          <h2>{editing === null ? 'Add a signatory' : `Edit ${editing.name}`}</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">
+            {editing === null ? 'Add a signatory' : `Edit ${editing.name}`}
+          </h2>
           <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
-            <div className="field-row">
-              <div className="field">
+            <FieldRow>
+              <Field>
                 <label htmlFor="signatory-name">Name</label>
                 <input
                   id="signatory-name"
@@ -876,8 +852,8 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.name ?? ''}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="signatory-designation">Designation</label>
                 <input
                   id="signatory-designation"
@@ -887,38 +863,29 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={200}
                   defaultValue={editing?.designation ?? ''}
                 />
-              </div>
-            </div>
-            <div className="actions">
-              <button type="submit" disabled={pending}>
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={pending}>
                 {editing === null ? 'Add signatory' : 'Save changes'}
-              </button>
+              </Button>
               {editing !== null && (
-                <button
-                  type="button"
-                  className="button--ghost"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setEditing(null);
                   }}
                 >
                   Cancel edit
-                </button>
+                </Button>
               )}
-            </div>
+            </Actions>
           </form>
         </>
       )}
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
     </>
   );
 }
@@ -930,18 +897,26 @@ export function Masters({ api, organisationId, canModify }: MastersProps) {
   const [tab, setTab] = useState<MastersTab>('contacts');
 
   return (
-    <section className="card card--wide" aria-labelledby="masters-title">
-      <h1 id="masters-title" tabIndex={-1}>
+    <Card className="w-full" aria-labelledby="masters-title">
+      <h1
+        id="masters-title"
+        tabIndex={-1}
+        className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
+      >
         Masters
       </h1>
-      <div className="tab-strip" role="tablist" aria-label="Master data categories">
+      <div
+        className="mb-4 flex gap-2 border-b border-border"
+        role="tablist"
+        aria-label="Master data categories"
+      >
         {TABS.map((candidate) => (
           <button
             key={candidate.key}
             type="button"
             role="tab"
             aria-selected={tab === candidate.key}
-            className="tab-strip__tab"
+            className="-mb-px border-b-2 border-transparent px-3 py-2 font-medium text-muted-foreground hover:text-foreground aria-selected:border-primary aria-selected:text-primary"
             onClick={() => {
               setTab(candidate.key);
             }}
@@ -966,6 +941,6 @@ export function Masters({ api, organisationId, canModify }: MastersProps) {
           canModify={canModify}
         />
       )}
-    </section>
+    </Card>
   );
 }

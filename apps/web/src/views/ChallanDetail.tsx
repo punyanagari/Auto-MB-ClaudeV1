@@ -8,6 +8,11 @@ import type {
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr, formatRate } from '../format.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { Timeline } from './Timeline.js';
 
 interface ChallanDetailProps {
@@ -123,27 +128,33 @@ export function ChallanDetail({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="challan-title">
-        <h1 id="challan-title" tabIndex={-1}>
+      <Card aria-labelledby="challan-title">
+        <h1
+          id="challan-title"
+          tabIndex={-1}
+          className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
+        >
           Delivery Challan
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (detail === null) {
     return (
-      <section className="card" aria-labelledby="challan-title">
-        <h1 id="challan-title" tabIndex={-1}>
+      <Card aria-labelledby="challan-title">
+        <h1
+          id="challan-title"
+          tabIndex={-1}
+          className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
+        >
           Delivery Challan
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading challan…
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -154,17 +165,21 @@ export function ChallanDetail({
   const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
 
   return (
-    <section className="card card--wide" aria-labelledby="challan-title">
-      <h1 id="challan-title" tabIndex={-1}>
+    <Card className="w-full" aria-labelledby="challan-title">
+      <h1
+        id="challan-title"
+        tabIndex={-1}
+        className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
+      >
         {challan.status === 'draft'
           ? 'Draft Delivery Challan'
           : `Delivery Challan ${challan.challanNumber ?? ''}`}
       </h1>
-      <dl className="fact-list">
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Status</dt>
           <dd>
-            <span className={`chip chip--${challan.status}`}>{challan.status}</span>
+            <StatusChip status={challan.status} />
           </dd>
         </div>
         <div>
@@ -176,7 +191,7 @@ export function ChallanDetail({
           <dd>
             {challan.consignee.name}
             <br />
-            <span className="muted">{challan.consignee.address}</span>
+            <span className="text-muted-foreground">{challan.consignee.address}</span>
           </dd>
         </div>
         {challan.issuedAt !== null && (
@@ -198,23 +213,21 @@ export function ChallanDetail({
       </dl>
 
       {challan.status === 'cancelled' && challan.cancellationNote !== null && (
-        <p className="form-error" role="note">
-          Cancelled: {challan.cancellationNote}
-        </p>
+        <FormError role="note">Cancelled: {challan.cancellationNote}</FormError>
       )}
 
-      <table className="data-table">
-        <caption className="visually-hidden">Challan line items</caption>
+      <DataTable>
+        <caption className="sr-only">Challan line items</caption>
         <thead>
           <tr>
             <th scope="col">#</th>
             <th scope="col">Description</th>
             <th scope="col">Unit</th>
             <th scope="col">Quantity</th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Rate
             </th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Amount
             </th>
           </tr>
@@ -223,50 +236,40 @@ export function ChallanDetail({
           {items.map((item) => (
             <tr key={item.id}>
               <th scope="row">{item.position}</th>
-              <td className="cell--wrap">{item.description}</td>
+              <td className={wrapCell}>{item.description}</td>
               <td>{item.unit}</td>
-              <td className="cell--numeric">{item.quantity}</td>
-              <td className="cell--numeric">{formatRate(item.rate)}</td>
-              <td className="cell--numeric">{formatInr(item.lineAmount)}</td>
+              <td className={numericCell}>{item.quantity}</td>
+              <td className={numericCell}>{formatRate(item.rate)}</td>
+              <td className={numericCell}>{formatInr(item.lineAmount)}</td>
             </tr>
           ))}
           <tr>
             <th scope="row" colSpan={5}>
               Total
             </th>
-            <td className="cell--numeric">
+            <td className={numericCell}>
               <strong>{formatInr(total)}</strong>
             </td>
           </tr>
         </tbody>
-      </table>
+      </DataTable>
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
 
-      <div className="actions">
+      <Actions>
         {challan.status === 'draft' && canModify && (
           <>
-            <button
-              type="button"
-              className="button--ghost"
+            <Button
+              variant="outline"
               onClick={() => {
                 onEdit(challan.id);
               }}
             >
               Edit draft
-            </button>
-            <button
-              type="button"
-              className="button--ghost"
+            </Button>
+            <Button
+              variant="outline"
               disabled={pending}
               onClick={() =>
                 void act(async () => {
@@ -277,12 +280,11 @@ export function ChallanDetail({
               }
             >
               Delete draft
-            </button>
+            </Button>
           </>
         )}
         {challan.status === 'draft' && canIssue && (
-          <button
-            type="button"
+          <Button
             disabled={pending}
             onClick={() =>
               void act(
@@ -292,11 +294,10 @@ export function ChallanDetail({
             }
           >
             {pending ? 'Working…' : 'Issue challan'}
-          </button>
+          </Button>
         )}
         {challan.status === 'issued' && canModify && (
-          <button
-            type="button"
+          <Button
             disabled={pending}
             onClick={() =>
               void act(
@@ -306,12 +307,11 @@ export function ChallanDetail({
             }
           >
             {challan.renderedAvailable ? 'Re-generate PDF' : 'Generate PDF'}
-          </button>
+          </Button>
         )}
         {challan.renderedAvailable && (
-          <button
-            type="button"
-            className="button--ghost"
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -323,12 +323,11 @@ export function ChallanDetail({
             }
           >
             Open PDF
-          </button>
+          </Button>
         )}
         {challan.signedCopyAvailable && (
-          <button
-            type="button"
-            className="button--ghost"
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -340,18 +339,18 @@ export function ChallanDetail({
             }
           >
             Open signed copy
-          </button>
+          </Button>
         )}
-        <button type="button" className="button--ghost" onClick={onBack}>
+        <Button variant="outline" onClick={onBack}>
           Back to Work
-        </button>
-      </div>
+        </Button>
+      </Actions>
 
       {challan.status === 'issued' && (
         <>
-          <h2>Delivery receipt</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Delivery receipt</h2>
           {receipt !== null ? (
-            <dl className="fact-list">
+            <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
               <div>
                 <dt>Received on</dt>
                 <dd>{receipt.receivedOn}</dd>
@@ -386,14 +385,14 @@ export function ChallanDetail({
                 }, 'Receipt recorded.');
               }}
             >
-              <p className="muted">
+              <p className="text-muted-foreground">
                 Record the consignee&apos;s acknowledgement of this delivery.
               </p>
-              <div className="field">
+              <Field>
                 <label htmlFor="receipt-date">Received on</label>
                 <input id="receipt-date" name="receipt-date" type="date" required />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="receipt-by">Received by</label>
                 <input
                   id="receipt-by"
@@ -402,25 +401,25 @@ export function ChallanDetail({
                   minLength={2}
                   maxLength={200}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="receipt-remarks">Remarks (optional)</label>
                 <input id="receipt-remarks" name="receipt-remarks" maxLength={1000} />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Record receipt
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           ) : (
-            <p className="muted">No receipt recorded yet.</p>
+            <p className="text-muted-foreground">No receipt recorded yet.</p>
           )}
 
-          <h2>Serial numbers</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Serial numbers</h2>
           {serials !== null && serials.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
+            <DataTable>
+              <caption className="sr-only">
                 Serial numbers recorded against this challan
               </caption>
               <thead>
@@ -434,22 +433,22 @@ export function ChallanDetail({
                 {serials.map((serial) => (
                   <tr key={serial.id}>
                     <th scope="row">{serial.serialNumber}</th>
-                    <td className="cell--wrap">{serial.itemDescription}</td>
+                    <td className={wrapCell}>{serial.itemDescription}</td>
                     <td>
                       {serial.installedOn !== null ? (
-                        <span className="chip chip--installed">
+                        <StatusChip status="installed">
                           installed {serial.installedOn}
-                        </span>
+                        </StatusChip>
                       ) : (
-                        <span className="muted">not installed</span>
+                        <span className="text-muted-foreground">not installed</span>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           ) : (
-            <p className="muted">No serial numbers recorded yet.</p>
+            <p className="text-muted-foreground">No serial numbers recorded yet.</p>
           )}
 
           {canRecordEvidence && (
@@ -478,8 +477,10 @@ export function ChallanDetail({
                 }, 'Serial numbers recorded.');
               }}
             >
-              <h3>Record serial numbers</h3>
-              <div className="field">
+              <h3 className="mt-4 mb-2 text-[13px] font-semibold">
+                Record serial numbers
+              </h3>
+              <Field>
                 <label htmlFor="serial-line">Challan line</label>
                 <select id="serial-line" name="serial-line" required>
                   {items.map((item) => (
@@ -488,16 +489,16 @@ export function ChallanDetail({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="serial-numbers">Serial numbers (one per line)</label>
                 <textarea id="serial-numbers" name="serial-numbers" rows={4} required />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Record serials
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           )}
 
@@ -525,8 +526,10 @@ export function ChallanDetail({
                 }, 'Installation recorded.');
               }}
             >
-              <h3>Record installation</h3>
-              <div className="field">
+              <h3 className="mt-4 mb-2 text-[13px] font-semibold">
+                Record installation
+              </h3>
+              <Field>
                 <label htmlFor="install-serial">Serial</label>
                 <select id="install-serial" name="install-serial" required>
                   {uninstalled.map((serial) => (
@@ -535,20 +538,20 @@ export function ChallanDetail({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="install-date">Installed on</label>
                 <input id="install-date" name="install-date" type="date" required />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="install-remarks">Remarks (optional)</label>
                 <input id="install-remarks" name="install-remarks" maxLength={1000} />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Record installation
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           )}
         </>
@@ -571,8 +574,8 @@ export function ChallanDetail({
             );
           }}
         >
-          <h2>Signed copy</h2>
-          <div className="field">
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Signed copy</h2>
+          <Field>
             <label htmlFor="signed-file">Scanned signed copy (PDF)</label>
             <input
               id="signed-file"
@@ -580,20 +583,20 @@ export function ChallanDetail({
               type="file"
               accept="application/pdf"
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Upload signed copy
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 
       {notices.length > 0 && (
         <>
-          <h2>Correction notices</h2>
-          <table className="data-table">
-            <caption className="visually-hidden">
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Correction notices</h2>
+          <DataTable>
+            <caption className="sr-only">
               Correction notices issued against this challan
             </caption>
             <thead>
@@ -609,16 +612,13 @@ export function ChallanDetail({
                 <tr key={notice.id}>
                   <th scope="row">{notice.noticeNumber}</th>
                   <td>
-                    <span className={`chip chip--${notice.status}`}>
-                      {notice.status}
-                    </span>
+                    <StatusChip status={notice.status} />
                   </td>
                   <td>{notice.createdAt.slice(0, 10)}</td>
                   <td>
                     {notice.renderedAvailable ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
+                      <Button
+                        variant="outline"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -633,11 +633,10 @@ export function ChallanDetail({
                         }
                       >
                         Open PDF
-                      </button>
+                      </Button>
                     ) : canModify ? (
-                      <button
-                        type="button"
-                        className="button--ghost"
+                      <Button
+                        variant="outline"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -648,23 +647,23 @@ export function ChallanDetail({
                         }
                       >
                         Generate PDF
-                      </button>
+                      </Button>
                     ) : (
-                      <span className="muted">not rendered</span>
+                      <span className="text-muted-foreground">not rendered</span>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </>
       )}
 
       {challan.status === 'issued' && canModify && eligibility !== null && (
         <>
-          <h2>Request correction</h2>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Request correction</h2>
           {eligibility.pendingRequestId !== null ? (
-            <p className="muted" role="note">
+            <p className="text-muted-foreground" role="note">
               A correction request for this challan is already awaiting a decision in
               the approvals queue.
             </p>
@@ -697,13 +696,13 @@ export function ChallanDetail({
                 }, 'Correction requested: on approval this challan is cancelled and a corrected draft is created.');
               }}
             >
-              <p className="muted">
+              <p className="text-muted-foreground">
                 This challan has no recorded receipt, serials, or measurements, so the
                 lawful correction path is <strong>cancel and replace</strong>: on
                 approval the issued challan is cancelled (its number stays in the
                 series) and a corrected draft is created for re-issue.
               </p>
-              <div className="field">
+              <Field>
                 <label htmlFor="correction-date">Corrected challan date</label>
                 <input
                   id="correction-date"
@@ -712,8 +711,8 @@ export function ChallanDetail({
                   defaultValue={challan.challanDate}
                   required
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="correction-consignee-name">Consignee name</label>
                 <input
                   id="correction-consignee-name"
@@ -723,8 +722,8 @@ export function ChallanDetail({
                   minLength={2}
                   maxLength={200}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="correction-consignee-address">Consignee address</label>
                 <input
                   id="correction-consignee-address"
@@ -734,8 +733,8 @@ export function ChallanDetail({
                   minLength={3}
                   maxLength={1000}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="correction-consignee-phone">
                   Consignee phone (optional)
                 </label>
@@ -745,9 +744,9 @@ export function ChallanDetail({
                   defaultValue={challan.consignee.phone ?? ''}
                   maxLength={30}
                 />
-              </div>
+              </Field>
               {items.map((item) => (
-                <div className="field" key={item.workItemId}>
+                <Field key={item.workItemId}>
                   <label htmlFor={`correction-qty-${item.workItemId}`}>
                     Quantity — {item.description}
                   </label>
@@ -758,9 +757,9 @@ export function ChallanDetail({
                     required
                     inputMode="decimal"
                   />
-                </div>
+                </Field>
               ))}
-              <div className="field">
+              <Field>
                 <label htmlFor="correction-reason">Reason for correction</label>
                 <input
                   id="correction-reason"
@@ -769,12 +768,12 @@ export function ChallanDetail({
                   minLength={3}
                   maxLength={2000}
                 />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Request cancel &amp; replace
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           ) : (
             <form
@@ -798,14 +797,14 @@ export function ChallanDetail({
                 }, 'Correction notice requested; on approval it is issued with the next notice number.');
               }}
             >
-              <p className="muted">
+              <p className="text-muted-foreground">
                 This challan has recorded evidence ({eligibility.evidence.receipts}{' '}
                 receipt(s), {eligibility.evidence.serials} serial(s),{' '}
                 {eligibility.evidence.measurements} measurement(s)), so it can no longer
                 be cancelled. The lawful correction path is a numbered{' '}
                 <strong>correction notice</strong> that preserves the original document.
               </p>
-              <div className="field">
+              <Field>
                 <label htmlFor="notice-statement">Correction statement</label>
                 <textarea
                   id="notice-statement"
@@ -813,16 +812,16 @@ export function ChallanDetail({
                   rows={3}
                   maxLength={4000}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="notice-field">Corrected field (optional)</label>
                 <input id="notice-field" name="notice-field" maxLength={100} />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="notice-corrected">Corrected reading (optional)</label>
                 <input id="notice-corrected" name="notice-corrected" maxLength={1000} />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="notice-reason">Reason for correction</label>
                 <input
                   id="notice-reason"
@@ -831,12 +830,12 @@ export function ChallanDetail({
                   minLength={3}
                   maxLength={2000}
                 />
-              </div>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              </Field>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Request correction notice
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           )}
         </>
@@ -862,8 +861,8 @@ export function ChallanDetail({
             );
           }}
         >
-          <h2>Cancel this challan</h2>
-          <div className="field">
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Cancel this challan</h2>
+          <Field>
             <label htmlFor="cancel-note">Cancellation note</label>
             <input
               id="cancel-note"
@@ -874,14 +873,14 @@ export function ChallanDetail({
               required
               minLength={3}
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Cancel challan
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
-    </section>
+    </Card>
   );
 }

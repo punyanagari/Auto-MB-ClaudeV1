@@ -15,6 +15,10 @@ import {
   type ApiClient,
 } from '../api.js';
 import { formatInr } from '../format.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError } from '../ui/form.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -214,9 +218,7 @@ export function MeasurementBooks({
     return (
       <>
         <h2>Measurement Books</h2>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
+        <FormError>{loadError}</FormError>
       </>
     );
   }
@@ -225,7 +227,7 @@ export function MeasurementBooks({
     return (
       <>
         <h2>Measurement Books</h2>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading Measurement Books…
         </p>
       </>
@@ -245,33 +247,27 @@ export function MeasurementBooks({
   return (
     <>
       <h2>Measurement Books</h2>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Stage-wise billing documents built from the Work&apos;s unbilled sources. A
         draft recomputes from live state; finalizing assigns the next gap-free MB number
         and freezes the snapshot; the bill is prepared from the finalized MB.
       </p>
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           {notice}
         </p>
       )}
 
       {books.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Measurement Books raised on this Work
-          </caption>
+        <DataTable>
+          <caption className="sr-only">Measurement Books raised on this Work</caption>
           <thead>
             <tr>
               <th scope="col">Number</th>
               <th scope="col">Date</th>
               <th scope="col">Status</th>
-              <th scope="col" className="cell--numeric">
+              <th scope="col" className={numericCell}>
                 Total
               </th>
             </tr>
@@ -280,9 +276,10 @@ export function MeasurementBooks({
             {books.map((row) => (
               <tr key={row.id}>
                 <th scope="row">
-                  <button
-                    type="button"
-                    className="button--link"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    className="font-medium"
                     onClick={() => {
                       tryAct(
                         async () => {
@@ -293,22 +290,22 @@ export function MeasurementBooks({
                     }}
                   >
                     {row.mbNumber ?? 'Draft'}
-                  </button>{' '}
-                  {row.isFinal && <span className="chip chip--issued">FINAL BILL</span>}
+                  </Button>{' '}
+                  {row.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
                 </th>
                 <td>{row.mbDate}</td>
                 <td>
-                  <span className={`chip chip--${row.status}`}>{row.status}</span>
+                  <StatusChip status={row.status} />
                 </td>
-                <td className="cell--numeric">
+                <td className={numericCell}>
                   {row.totalAmount !== null ? formatInr(row.totalAmount) : '—'}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No Measurement Books raised yet.</p>
+        <p className="text-muted-foreground">No Measurement Books raised yet.</p>
       )}
 
       {canModify && !hasDraft && !liveFinal && (
@@ -339,32 +336,31 @@ export function MeasurementBooks({
           }}
         >
           <h3>New Measurement Book draft</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="mb-draft-date">MB date</label>
             <input id="mb-draft-date" name="mb-draft-date" type="date" required />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label>
               <input type="checkbox" name="mb-draft-final" /> Final Measurement Book
             </label>
-            <p className="muted">
+            <p className="text-muted-foreground">
               The final MB bills the final-bill stage and must sweep every remaining
               open source of the Work; once it is finalized, no further Measurement
               Books can be raised.
             </p>
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Create draft
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
       {existingDraftId !== null && (
-        <div className="actions">
-          <button
-            type="button"
-            className="button--ghost"
+        <Actions>
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() => {
               const id = existingDraftId;
@@ -375,19 +371,19 @@ export function MeasurementBooks({
             }}
           >
             Open existing draft
-          </button>
-        </div>
+          </Button>
+        </Actions>
       )}
 
       {detail !== null && book !== null && (
-        <div className="detail-block">
+        <div className="my-3">
           <h3>
             Measurement Book {book.mbNumber ?? 'draft'} · {book.mbDate}{' '}
-            <span className={`chip chip--${book.status}`}>{book.status}</span>{' '}
-            {book.isFinal && <span className="chip chip--issued">FINAL BILL</span>}
+            <StatusChip status={book.status} />{' '}
+            {book.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
           </h3>
           {book.status === 'cancelled' && book.cancellationNote !== null && (
-            <p className="muted">Cancelled: {book.cancellationNote}</p>
+            <p className="text-muted-foreground">Cancelled: {book.cancellationNote}</p>
           )}
 
           {book.status === 'draft' && canModify && candidates !== null && (
@@ -471,7 +467,7 @@ export function MeasurementBooks({
                           const holder = claimedElsewhere.get(key);
                           const claimId = `mb-claim-${candidate.sourceType}-${candidate.sourceId}`;
                           return (
-                            <div className="field" key={key}>
+                            <Field key={key}>
                               {/* The chip stays outside the label so it
                                   describes the box rather than becoming part
                                   of its name, and the box is disabled because
@@ -495,25 +491,25 @@ export function MeasurementBooks({
                                 {candidate.label}
                               </label>
                               {holder !== undefined && (
-                                <span className="chip chip--cancelled" id={claimId}>
+                                <StatusChip status="cancelled" id={claimId}>
                                   claimed by {holder}
-                                </span>
+                                </StatusChip>
                               )}
-                            </div>
+                            </Field>
                           );
                         })
                       ) : (
-                        <p className="muted">None available.</p>
+                        <p className="text-muted-foreground">None available.</p>
                       )}
                     </div>
                   );
                 })}
               </fieldset>
-              <div className="actions">
-                <button type="submit" disabled={pending}>
+              <Actions>
+                <Button type="submit" disabled={pending}>
                   Save source selection
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </form>
           )}
 
@@ -522,7 +518,7 @@ export function MeasurementBooks({
               operator just did. */}
           {detail.warnings.length > 0 && (
             <div role="status">
-              <p className="form-error">
+              <p className="my-2 text-[13px] font-medium text-destructive">
                 The payment matrix cannot price every selected item — finalizing will be
                 refused until the missing category rows exist:
               </p>
@@ -539,8 +535,8 @@ export function MeasurementBooks({
           )}
 
           {detail.lines.length > 0 ? (
-            <table className="data-table">
-              <caption className="visually-hidden">
+            <DataTable>
+              <caption className="sr-only">
                 {book.status === 'draft'
                   ? 'Live preview of the Measurement Book lines'
                   : 'Finalized Measurement Book lines'}
@@ -550,16 +546,16 @@ export function MeasurementBooks({
                   <th scope="col">Schedule/Sr</th>
                   <th scope="col">Description</th>
                   <th scope="col">Unit</th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Supplied Δ
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Installed Δ
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     PAC Δ
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Amount
                   </th>
                   <th scope="col">Remark</th>
@@ -569,13 +565,13 @@ export function MeasurementBooks({
                 {detail.lines.map((line) => (
                   <tr key={line.workItemId}>
                     <th scope="row">{line.itemNumber}</th>
-                    <td className="cell--wrap">{line.description}</td>
+                    <td className={wrapCell}>{line.description}</td>
                     <td>{line.unitCode}</td>
-                    <td className="cell--numeric">{line.deltaSupplied}</td>
-                    <td className="cell--numeric">{line.deltaInstalled}</td>
-                    <td className="cell--numeric">{line.deltaPac}</td>
-                    <td className="cell--numeric">{formatInr(line.lineTotal)}</td>
-                    <td className="cell--wrap">{line.remark}</td>
+                    <td className={numericCell}>{line.deltaSupplied}</td>
+                    <td className={numericCell}>{line.deltaInstalled}</td>
+                    <td className={numericCell}>{line.deltaPac}</td>
+                    <td className={numericCell}>{formatInr(line.lineTotal)}</td>
+                    <td className={wrapCell}>{line.remark}</td>
                   </tr>
                 ))}
               </tbody>
@@ -589,7 +585,7 @@ export function MeasurementBooks({
                   <th scope="row" colSpan={6}>
                     Total payable this MB
                   </th>
-                  <td className="cell--numeric">
+                  <td className={numericCell}>
                     <strong>
                       {detail.previewTotal !== null
                         ? formatInr(detail.previewTotal)
@@ -599,18 +595,17 @@ export function MeasurementBooks({
                   <td></td>
                 </tr>
               </tfoot>
-            </table>
+            </DataTable>
           ) : (
-            <p className="muted">
+            <p className="text-muted-foreground">
               Nothing to bill yet — select sources with unbilled quantities.
             </p>
           )}
 
-          <div className="actions">
+          <Actions>
             {book.status === 'draft' && (
-              <button
-                type="button"
-                className="button--ghost"
+              <Button
+                variant="outline"
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
@@ -624,11 +619,10 @@ export function MeasurementBooks({
                 }}
               >
                 Preview PDF (draft)
-              </button>
+              </Button>
             )}
             {book.status === 'draft' && canIssue && !confirmingFinalize && (
-              <button
-                type="button"
+              <Button
                 disabled={pending}
                 onClick={() => {
                   setConfirmingDelete(false);
@@ -636,12 +630,11 @@ export function MeasurementBooks({
                 }}
               >
                 Finalize…
-              </button>
+              </Button>
             )}
             {book.status === 'draft' && canModify && !confirmingDelete && (
-              <button
-                type="button"
-                className="button--ghost"
+              <Button
+                variant="outline"
                 disabled={pending}
                 onClick={() => {
                   setConfirmingFinalize(false);
@@ -649,11 +642,10 @@ export function MeasurementBooks({
                 }}
               >
                 Delete draft…
-              </button>
+              </Button>
             )}
             {book.status === 'finalized' && canIssue && book.billId === null && (
-              <button
-                type="button"
+              <Button
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
@@ -665,12 +657,11 @@ export function MeasurementBooks({
                 }}
               >
                 Prepare bill
-              </button>
+              </Button>
             )}
             {book.status === 'finalized' && canModify && (
-              <button
-                type="button"
-                className="button--ghost"
+              <Button
+                variant="outline"
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
@@ -680,12 +671,11 @@ export function MeasurementBooks({
                 }}
               >
                 {book.renderedAvailable ? 'Re-render PDF' : 'Render PDF'}
-              </button>
+              </Button>
             )}
             {book.renderedAvailable && (
-              <button
-                type="button"
-                className="button--ghost"
+              <Button
+                variant="outline"
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
@@ -696,21 +686,20 @@ export function MeasurementBooks({
                 }}
               >
                 Open PDF
-              </button>
+              </Button>
             )}
-          </div>
+          </Actions>
 
           {book.status === 'draft' && canIssue && confirmingFinalize && (
-            <div className="detail-block">
+            <div className="my-3">
               <h4>Confirm finalize</h4>
               <p>
                 Finalizing freezes this Measurement Book as an immutable numbered
                 snapshot — next number {nextNumber} — and claims its sources for good.
                 Continue?
               </p>
-              <div className="actions">
-                <button
-                  type="button"
+              <Actions>
+                <Button
                   disabled={pending}
                   onClick={() => {
                     tryAct(async () => {
@@ -726,34 +715,32 @@ export function MeasurementBooks({
                   }}
                 >
                   Finalize now
-                </button>
-                <button
-                  type="button"
-                  className="button--ghost"
+                </Button>
+                <Button
+                  variant="outline"
                   disabled={pending}
                   onClick={() => {
                     setConfirmingFinalize(false);
                   }}
                 >
                   Keep drafting
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </div>
           )}
 
           {/* Deleting is the one unrecoverable draft action, so it gets the
               same two-step treatment as the recoverable finalize above. */}
           {book.status === 'draft' && canModify && confirmingDelete && (
-            <div className="detail-block">
+            <div className="my-3">
               <h4>Confirm delete</h4>
               <p>
                 Deleting discards this draft and its lines for good, and releases every
                 source it claimed — those challans, installations and PACs become
                 billable by another Measurement Book again. Continue?
               </p>
-              <div className="actions">
-                <button
-                  type="button"
+              <Actions>
+                <Button
                   disabled={pending}
                   onClick={() => {
                     tryAct(async () => {
@@ -765,18 +752,17 @@ export function MeasurementBooks({
                   }}
                 >
                   Delete draft now
-                </button>
-                <button
-                  type="button"
-                  className="button--ghost"
+                </Button>
+                <Button
+                  variant="outline"
                   disabled={pending}
                   onClick={() => {
                     setConfirmingDelete(false);
                   }}
                 >
                   Keep drafting
-                </button>
-              </div>
+                </Button>
+              </Actions>
             </div>
           )}
 
@@ -791,7 +777,7 @@ export function MeasurementBooks({
                   setConfirmingCancel(true);
                 }}
               >
-                <div className="field">
+                <Field>
                   <label htmlFor="mb-cancel-note">
                     Cancellation note (only the newest live MB can cancel)
                   </label>
@@ -809,15 +795,15 @@ export function MeasurementBooks({
                     minLength={3}
                     maxLength={1000}
                   />
-                </div>
+                </Field>
                 {!confirmingCancel && (
-                  <button type="submit" className="button--ghost" disabled={pending}>
+                  <Button type="submit" variant="outline" disabled={pending}>
                     Cancel Measurement Book…
-                  </button>
+                  </Button>
                 )}
               </form>
               {confirmingCancel && (
-                <div className="detail-block">
+                <div className="my-3">
                   <h4>Confirm cancellation</h4>
                   <p>
                     Measurement Book {mbNumberLabel} will be cancelled. This cannot be
@@ -825,9 +811,8 @@ export function MeasurementBooks({
                     be reused, the sources it billed are released for a later MB, and
                     the note above is stored on the record.
                   </p>
-                  <div className="actions">
-                    <button
-                      type="button"
+                  <Actions>
+                    <Button
                       disabled={pending}
                       onClick={() => {
                         tryAct(async () => {
@@ -843,24 +828,23 @@ export function MeasurementBooks({
                       }}
                     >
                       Cancel {mbNumberLabel} now
-                    </button>
-                    <button
-                      type="button"
-                      className="button--ghost"
+                    </Button>
+                    <Button
+                      variant="outline"
                       disabled={pending}
                       onClick={() => {
                         setConfirmingCancel(false);
                       }}
                     >
                       Keep this Measurement Book
-                    </button>
-                  </div>
+                    </Button>
+                  </Actions>
                 </div>
               )}
             </>
           )}
           {book.status === 'finalized' && book.billId !== null && (
-            <p className="muted">
+            <p className="text-muted-foreground">
               A bill was prepared from this Measurement Book; it is permanently locked —
               corrections happen as compensating entries on the next MB.
             </p>

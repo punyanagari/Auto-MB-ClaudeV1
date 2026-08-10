@@ -144,7 +144,6 @@ export function WorkDeliveries({
                     {correctionNotice.renderedAvailable ? (
                       <Button
                         variant="outline"
-                        size="sm"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
@@ -165,7 +164,6 @@ export function WorkDeliveries({
                     ) : canCreateDocuments && correctionNotice.status === 'issued' ? (
                       <Button
                         variant="outline"
-                        size="sm"
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
