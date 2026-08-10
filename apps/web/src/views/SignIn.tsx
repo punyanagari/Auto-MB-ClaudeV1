@@ -10,27 +10,6 @@ interface SignInProps {
 
 type Mode = 'sign-in' | 'sign-up';
 
-/** What the product does, in the order a contractor does it. Kept to four
- * because the panel is an orientation, not a feature list. */
-const STAGES = [
-  {
-    title: 'Read the letter',
-    body: 'Upload the LOA. The parser proposes header, schedules, items and rates; nothing becomes a contract record until a human confirms it.',
-  },
-  {
-    title: 'Issue the challan',
-    body: 'Every Delivery Challan draws on awarded quantities, carries its consignee, and takes a number it keeps forever.',
-  },
-  {
-    title: 'Measure and bill',
-    body: 'Stage-wise Measurement Books finalise against the payment matrix, and bills are prepared from what was actually measured.',
-  },
-  {
-    title: 'Answer for it',
-    body: 'Awarded, delivered, installed and remaining, per item — with the evidence trail behind each number.',
-  },
-] as const;
-
 /** The quantity ledger as a platform indicator board: the accent in this
  * system is the amber of an Indian Railways indicator, so the one graphic
  * on the page is that board showing the product's actual promise. Decorative
@@ -133,34 +112,13 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
             From the Letter of Acceptance to an honest quantity ledger.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-sidebar-faint text-pretty">
-            Built for Indian government works contracts — Railways first. Every issued
-            document keeps its number for good, and every number on screen can be traced
-            back to the evidence that produced it.
+            Works execution for Indian government contracts, Railways first.
           </p>
         </div>
 
-        <div className="hidden max-w-xl lg:block">
+        <div className="hidden max-w-md lg:block">
           <LedgerBoard />
         </div>
-
-        <ul className="hidden max-w-xl list-none flex-col gap-4 p-0 lg:flex">
-          {STAGES.map((stage, index) => (
-            <li key={stage.title} className="flex gap-3">
-              <span
-                className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sidebar-border font-mono text-[10px] font-semibold text-sidebar-primary tabular-nums"
-                aria-hidden="true"
-              >
-                {index + 1}
-              </span>
-              <span>
-                <span className="text-sm font-semibold">{stage.title}</span>
-                <span className="mt-0.5 block text-[13px] leading-relaxed text-sidebar-faint text-pretty">
-                  {stage.body}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
       </section>
 
       {/* Paper, and the only thing on it is the form. */}
