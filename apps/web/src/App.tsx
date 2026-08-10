@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
+import { Building2 } from 'lucide-react';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
 import { Button } from './ui/button.js';
+import { OperationsWorkspace } from './views/OperationsWorkspace.js';
 import { OrgPicker } from './views/OrgPicker.js';
 import { SignIn } from './views/SignIn.js';
-import { Workspace } from './views/Workspace.js';
 
 const ORGANISATION_STORAGE_KEY = 'auto-mb.organisation';
 
@@ -58,7 +59,6 @@ export function App({ api: providedApi }: AppProps) {
     });
   }, [refreshSession]);
 
-  // Screen-reader and keyboard users land on the new view's heading.
   useEffect(() => {
     mainRef.current?.querySelector('h1')?.focus();
   }, [phase.name]);
@@ -81,12 +81,9 @@ export function App({ api: providedApi }: AppProps) {
     }
   }
 
-  // Signed in with an organisation bound: the Workspace owns the whole
-  // frame (module sidebar plus topbar). Every other phase renders as a
-  // calm centered page under a minimal brand bar.
   if (phase.name === 'workspace') {
     return (
-      <Workspace
+      <OperationsWorkspace
         api={api}
         me={phase.me}
         organisation={phase.organisation}
@@ -98,8 +95,6 @@ export function App({ api: providedApi }: AppProps) {
     );
   }
 
-  // Signed out, the sign-in page is the whole window: it carries the brand
-  // itself, so a bar above it would say Auto-MB twice.
   if (phase.name === 'signed-out') {
     return (
       <main ref={mainRef}>
@@ -109,12 +104,24 @@ export function App({ api: providedApi }: AppProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-3 print:hidden">
-        <span className="font-semibold tracking-tight">Auto-MB</span>
+    <div className="min-h-screen bg-background">
+      <header className="flex h-[4.5rem] items-center justify-between gap-4 border-b border-border bg-card px-4 sm:px-7 print:hidden">
+        <span className="flex items-center gap-3">
+          <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Building2 className="size-5" aria-hidden="true" />
+          </span>
+          <span>
+            <strong className="block text-base tracking-tight">Auto-MB</strong>
+            <span className="block text-[11px] text-muted-foreground">
+              Contract operations
+            </span>
+          </span>
+        </span>
         {phase.name === 'pick-organisation' && (
           <div className="flex min-w-0 items-center gap-3">
-            <span className="text-muted-foreground">{phase.me.user.email}</span>
+            <span className="hidden max-w-64 truncate text-xs text-muted-foreground sm:inline">
+              {phase.me.user.email}
+            </span>
             <Button variant="outline" onClick={() => void signOut()}>
               Sign out
             </Button>
@@ -124,17 +131,21 @@ export function App({ api: providedApi }: AppProps) {
 
       <main ref={mainRef}>
         {phase.name === 'loading' && (
-          <p className="p-8 text-center text-muted-foreground" role="status">
-            Loading…
-          </p>
+          <div className="grid min-h-[calc(100vh-4.5rem)] place-items-center p-8">
+            <div className="text-center" role="status">
+              <span className="mx-auto mb-4 block size-10 animate-pulse rounded-2xl bg-primary/15" />
+              <p className="font-medium">Opening your workspace…</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Checking your session and organisations.
+              </p>
+            </div>
+          </div>
         )}
         {phase.name === 'pick-organisation' && (
           <OrgPicker
             api={api}
             onSelect={selectOrganisation}
             onCreated={(organisation) => {
-              // The new membership must be in the session snapshot before
-              // the workspace binds to the organisation.
               void refreshSession().then(() => {
                 selectOrganisation(organisation);
               });
