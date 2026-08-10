@@ -107,6 +107,15 @@ const NAVIGATION = [
   },
 ] as const;
 
+const MOBILE_MORE_ITEMS = [
+  { key: 'quotations', label: 'Quotations', icon: FileText },
+  { key: 'approvals', label: 'Approvals', icon: CheckCircle },
+  { key: 'serials', label: 'Serial Lookup', icon: Search },
+  { key: 'masters', label: 'Masters', icon: Database },
+  { key: 'members', label: 'Members', icon: Users },
+  { key: 'settings', label: 'Settings', icon: SettingsIcon },
+] as const;
+
 const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
   { key: 'contacts', label: 'Contacts' },
   { key: 'locations', label: 'Locations' },
@@ -1004,29 +1013,27 @@ export function OperationsWorkspace({
 
       {mobileMoreOpen && (
         <div className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden">
-          {NAVIGATION.slice(1)
-            .flatMap((group) => group.items)
-            .map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                  onClick={() => {
-                    openModule(item.key);
-                  }}
-                >
-                  <Icon className="size-4 text-primary" aria-hidden="true" />
-                  {item.label}
-                  {item.key === 'approvals' && pendingApprovals > 0 && (
-                    <Badge className="ml-auto" variant="destructive">
-                      {pendingApprovals}
-                    </Badge>
-                  )}
-                </button>
-              );
-            })}
+          {MOBILE_MORE_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  openModule(item.key);
+                }}
+              >
+                <Icon className="size-4 text-primary" aria-hidden="true" />
+                {item.label}
+                {item.key === 'approvals' && pendingApprovals > 0 && (
+                  <Badge className="ml-auto" variant="destructive">
+                    {pendingApprovals}
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
           <button
             type="button"
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/5"
