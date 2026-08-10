@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { SerialSearchResponse } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError } from '../ui/form.js';
 
 interface SerialLookupProps {
   readonly api: ApiClient;
@@ -25,11 +30,11 @@ export function SerialLookup({
   const [pending, setPending] = useState(false);
 
   return (
-    <section className="card card--wide" aria-labelledby="serial-lookup-title">
+    <Card className="w-full" aria-labelledby="serial-lookup-title">
       <h1 id="serial-lookup-title" tabIndex={-1}>
         Serial Lookup
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Find where a serial number was delivered: its Work, challan, receipt, and
         installation state.
       </p>
@@ -66,7 +71,7 @@ export function SerialLookup({
             });
         }}
       >
-        <div className="field">
+        <Field>
           <label htmlFor="serial-query">Serial number</label>
           <input
             id="serial-query"
@@ -75,37 +80,31 @@ export function SerialLookup({
             placeholder="e.g. SB-2026-014"
             autoComplete="off"
           />
-        </div>
-        <div className="actions">
-          <button type="submit" disabled={pending}>
+        </Field>
+        <Actions>
+          <Button type="submit" disabled={pending}>
             Search
-          </button>
-        </div>
+          </Button>
+        </Actions>
       </form>
 
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error !== null && <FormError>{error}</FormError>}
 
       {result !== null && result.matches.length === 0 && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           No serial matches “{query}”.
         </p>
       )}
 
       {result !== null && result.matches.length > 0 && (
         <>
-          <p className="muted" role="status">
+          <p className="text-muted-foreground" role="status">
             {result.truncated
               ? `Showing the first ${String(result.matches.length)} matches for “${query ?? ''}”; refine the search to narrow them down.`
               : `${String(result.matches.length)} ${result.matches.length === 1 ? 'match' : 'matches'} for “${query ?? ''}”.`}
           </p>
-          <table className="data-table">
-            <caption className="visually-hidden">
-              Serial numbers matching the search
-            </caption>
+          <DataTable>
+            <caption className="sr-only">Serial numbers matching the search</caption>
             <thead>
               <tr>
                 <th scope="col">Serial</th>
@@ -120,59 +119,59 @@ export function SerialLookup({
               {result.matches.map((match) => (
                 <tr key={match.id}>
                   <th scope="row">{match.serialNumber}</th>
-                  <td className="cell--wrap">
-                    <button
-                      type="button"
-                      className="button--link"
+                  <td className={wrapCell}>
+                    <Button
+                      variant="link"
+                      size="inline"
+                      className="font-medium"
                       onClick={() => {
                         onOpenWork(match.workId);
                       }}
                     >
                       {match.workCode}
-                    </button>{' '}
-                    <span className="muted">{match.workTitle}</span>
+                    </Button>{' '}
+                    <span className="text-muted-foreground">{match.workTitle}</span>
                   </td>
-                  <td className="cell--wrap">{match.itemDescription}</td>
+                  <td className={wrapCell}>{match.itemDescription}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="button--link"
+                    <Button
+                      variant="link"
+                      size="inline"
+                      className="font-medium"
                       onClick={() => {
                         onOpenChallan(match.workId, match.challanId);
                       }}
                     >
                       {match.challanNumber ?? 'Draft'}
-                    </button>{' '}
-                    <span className="muted">· {match.challanDate}</span>{' '}
-                    <span className={`chip chip--${match.challanStatus}`}>
-                      {match.challanStatus}
-                    </span>
+                    </Button>{' '}
+                    <span className="text-muted-foreground">· {match.challanDate}</span>{' '}
+                    <StatusChip status={match.challanStatus} />
                   </td>
                   <td>
                     {match.receiptRecorded ? (
-                      <span className="chip chip--confirmed">received</span>
+                      <StatusChip status="confirmed">received</StatusChip>
                     ) : (
-                      <span className="muted">no receipt</span>
+                      <span className="text-muted-foreground">no receipt</span>
                     )}
                   </td>
                   <td>
                     {match.installedOn !== null ? (
-                      <span className="chip chip--installed">
+                      <StatusChip status="installed">
                         installed {match.installedOn}
                         {typeof match.installationLocation === 'string'
                           ? ` at ${match.installationLocation}`
                           : ''}
-                      </span>
+                      </StatusChip>
                     ) : (
-                      <span className="muted">not installed</span>
+                      <span className="text-muted-foreground">not installed</span>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </>
       )}
-    </section>
+    </Card>
   );
 }

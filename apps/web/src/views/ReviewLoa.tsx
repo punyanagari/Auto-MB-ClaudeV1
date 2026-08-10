@@ -6,6 +6,18 @@ import type {
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, wrapCell } from '../ui/table.js';
+import {
+  Field,
+  FieldRow,
+  Actions,
+  ActionBar,
+  FormError,
+  FieldError,
+} from '../ui/form.js';
 import {
   asExtractionPayload,
   exactRowsTotal,
@@ -452,74 +464,78 @@ export function ReviewLoa({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="review-title">
+      <Card aria-labelledby="review-title">
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (document === null) {
     return (
-      <section className="card" aria-labelledby="review-title">
+      <Card aria-labelledby="review-title">
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading document…
         </p>
-      </section>
+      </Card>
     );
   }
 
   if (payload === null || header === null || items === null || pbg === null) {
     return (
-      <section className="card" aria-labelledby="review-title">
+      <Card aria-labelledby="review-title">
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
-        <p className="form-error" role="alert">
+        <FormError>
           Extraction did not produce reviewable content for {document.originalFilename}.
           Upload a clearer copy or contact support.
-        </p>
-        <div className="actions">
-          <button type="button" className="button--ghost" onClick={onBack}>
+        </FormError>
+        <Actions>
+          <Button variant="outline" onClick={onBack}>
             Back to Works
-          </button>
-        </div>
-      </section>
+          </Button>
+        </Actions>
+      </Card>
     );
   }
 
   const flagged = payload.review.needsReview.total;
 
   return (
-    <section className="card card--wide" aria-labelledby="review-title">
+    <Card className="w-full" aria-labelledby="review-title">
       <h1 id="review-title" tabIndex={-1}>
         Review {document.originalFilename}
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Values below are prefilled from the letter's own text; every parsed field keeps
         its printed source. Correct anything that reads wrong — nothing becomes a Work
         until you confirm.
       </p>
 
       {flagged > 0 && (
-        <div className="flag-panel" role="note" aria-labelledby="flags-title">
+        <div
+          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          role="note"
+          aria-labelledby="flags-title"
+        >
           <h2 id="flags-title">
             {flagged} item{flagged === 1 ? '' : 's'} need attention
           </h2>
-          <ul className="flag-list">
+          <ul className="mt-2 flex flex-col gap-2 pl-[1.125rem]">
             {payload.review.flags.map((flag, index) => (
               <li key={`${flag.code}-${String(index)}`}>
-                <span className="chip chip--review">{flag.code}</span> {flag.message}
+                <StatusChip status="review">{flag.code}</StatusChip> {flag.message}
                 <details>
                   <summary>Printed source</summary>
-                  <pre className="raw-block">{flag.rawBlock}</pre>
+                  <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {flag.rawBlock}
+                  </pre>
                 </details>
               </li>
             ))}
@@ -531,8 +547,8 @@ export function ReviewLoa({
           every failure names its field, binds a message, and moves focus. */}
       <form noValidate onSubmit={(event) => void confirm(event)}>
         <h2>Letter details</h2>
-        <div className="field-row">
-          <div className="field">
+        <FieldRow>
+          <Field>
             <label htmlFor="work-code">Work code (your reference)</label>
             <input
               id="work-code"
@@ -552,12 +568,10 @@ export function ReviewLoa({
               }
             />
             {fieldErrors['work-code'] !== undefined && (
-              <p className="form-error" id="work-code-error">
-                {fieldErrors['work-code']}
-              </p>
+              <FieldError id="work-code-error">{fieldErrors['work-code']}</FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="letter-number">Letter number</label>
             <input
               id="letter-number"
@@ -577,12 +591,12 @@ export function ReviewLoa({
               }
             />
             {fieldErrors['letter-number'] !== undefined && (
-              <p className="form-error" id="letter-number-error">
+              <FieldError id="letter-number-error">
                 {fieldErrors['letter-number']}
-              </p>
+              </FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="letter-date">Letter date</label>
             <input
               id="letter-date"
@@ -603,13 +617,13 @@ export function ReviewLoa({
               }
             />
             {fieldErrors['letter-date'] !== undefined && (
-              <p className="form-error" id="letter-date-error">
+              <FieldError id="letter-date-error">
                 {fieldErrors['letter-date']}
-              </p>
+              </FieldError>
             )}
-          </div>
-        </div>
-        <div className="field">
+          </Field>
+        </FieldRow>
+        <Field>
           <label htmlFor="work-title">Work description</label>
           <textarea
             id="work-title"
@@ -629,13 +643,11 @@ export function ReviewLoa({
             }
           />
           {fieldErrors['work-title'] !== undefined && (
-            <p className="form-error" id="work-title-error">
-              {fieldErrors['work-title']}
-            </p>
+            <FieldError id="work-title-error">{fieldErrors['work-title']}</FieldError>
           )}
-        </div>
-        <div className="field-row">
-          <div className="field">
+        </Field>
+        <FieldRow>
+          <Field>
             <label htmlFor="advertised-value">Advertised value (₹)</label>
             <input
               id="advertised-value"
@@ -656,12 +668,12 @@ export function ReviewLoa({
               }
             />
             {fieldErrors['advertised-value'] !== undefined && (
-              <p className="form-error" id="advertised-value-error">
+              <FieldError id="advertised-value-error">
                 {fieldErrors['advertised-value']}
-              </p>
+              </FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="contract-value">Contract value (₹)</label>
             <input
               id="contract-value"
@@ -682,12 +694,12 @@ export function ReviewLoa({
               }
             />
             {fieldErrors['contract-value'] !== undefined && (
-              <p className="form-error" id="contract-value-error">
+              <FieldError id="contract-value-error">
                 {fieldErrors['contract-value']}
-              </p>
+              </FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="pricing-shape">Pricing shape</label>
             <select
               id="pricing-shape"
@@ -702,11 +714,11 @@ export function ReviewLoa({
               <option value="letter_percentage">Letter percentage</option>
               <option value="per_schedule">Per-schedule totals</option>
             </select>
-          </div>
-        </div>
+          </Field>
+        </FieldRow>
         {header.pricingShape === 'letter_percentage' && (
-          <div className="field-row">
-            <div className="field">
+          <FieldRow>
+            <Field>
               <label htmlFor="letter-percentage">Percentage</label>
               <input
                 id="letter-percentage"
@@ -727,12 +739,12 @@ export function ReviewLoa({
                 }
               />
               {fieldErrors['letter-percentage'] !== undefined && (
-                <p className="form-error" id="letter-percentage-error">
+                <FieldError id="letter-percentage-error">
                   {fieldErrors['letter-percentage']}
-                </p>
+                </FieldError>
               )}
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="percentage-direction">Direction</label>
               <select
                 id="percentage-direction"
@@ -760,27 +772,27 @@ export function ReviewLoa({
                 <option value="above">Above</option>
               </select>
               {fieldErrors['percentage-direction'] !== undefined && (
-                <p className="form-error" id="percentage-direction-error">
+                <FieldError id="percentage-direction-error">
                   {fieldErrors['percentage-direction']}
-                </p>
+                </FieldError>
               )}
-            </div>
-          </div>
+            </Field>
+          </FieldRow>
         )}
 
         <h2>Performance guarantee requirement</h2>
-        <p className="muted">
+        <p className="text-muted-foreground">
           What the letter demands, not what has been submitted — record the submitted
           bank guarantee later as a PBG instrument on the Work.
         </p>
         {payload.review.header.performanceGuarantee?.needsReview === true && (
-          <p className="muted">
-            <span className="chip chip--review">needs review</span> The parser could not
+          <p className="text-muted-foreground">
+            <StatusChip status="review">needs review</StatusChip> The parser could not
             fully read the performance-guarantee clause; check the printed source below
             and correct the values.
           </p>
         )}
-        <div className="field">
+        <Field>
           <label>
             <input
               type="checkbox"
@@ -791,10 +803,10 @@ export function ReviewLoa({
             />{' '}
             The letter demands a Performance Bank Guarantee
           </label>
-        </div>
+        </Field>
         {pbg.required && (
-          <div className="field-row">
-            <div className="field">
+          <FieldRow>
+            <Field>
               <label htmlFor="pbg-amount">Required amount (₹)</label>
               <input
                 id="pbg-amount"
@@ -805,8 +817,8 @@ export function ReviewLoa({
                 required
                 inputMode="decimal"
               />
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="pbg-submission-days">Submit within (days)</label>
               <input
                 id="pbg-submission-days"
@@ -829,12 +841,12 @@ export function ReviewLoa({
                 }
               />
               {fieldErrors['pbg-submission-days'] !== undefined && (
-                <p className="form-error" id="pbg-submission-days-error">
+                <FieldError id="pbg-submission-days-error">
                   {fieldErrors['pbg-submission-days']}
-                </p>
+                </FieldError>
               )}
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="pbg-extension-days">Extension window (days)</label>
               <input
                 id="pbg-extension-days"
@@ -845,8 +857,8 @@ export function ReviewLoa({
                   updatePbg('extensionDays', event.target.value);
                 }}
               />
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
               <input
                 id="pbg-penal-interest"
@@ -856,13 +868,13 @@ export function ReviewLoa({
                 }}
                 inputMode="decimal"
               />
-            </div>
-          </div>
+            </Field>
+          </FieldRow>
         )}
         {typeof payload.review.header.performanceGuarantee?.raw === 'string' && (
           <details>
             <summary>Printed source (performance guarantee)</summary>
-            <pre className="raw-block">
+            <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
               {payload.review.header.performanceGuarantee.raw}
             </pre>
           </details>
@@ -871,8 +883,8 @@ export function ReviewLoa({
         {scheduleIds.map((scheduleId) => (
           <div key={scheduleId}>
             <h2>Schedule {scheduleId}</h2>
-            <table className="data-table data-table--editable">
-              <caption className="visually-hidden">
+            <DataTable scroll className="[&_input]:w-28">
+              <caption className="sr-only">
                 Awarded items in schedule {scheduleId}; every field is editable
               </caption>
               <thead>
@@ -904,7 +916,7 @@ export function ReviewLoa({
                           required
                         />
                       </td>
-                      <td className="cell--wrap">
+                      <td className={wrapCell}>
                         <textarea
                           aria-label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
                           value={item.description}
@@ -916,14 +928,16 @@ export function ReviewLoa({
                           rows={2}
                         />
                         {item.manual ? (
-                          <p className="muted">
-                            <span className="chip chip--review">manual row</span> Added
-                            by you — the parsed letter has no printed source row for it.
+                          <p className="text-muted-foreground">
+                            <StatusChip status="review">manual row</StatusChip> Added by
+                            you — the parsed letter has no printed source row for it.
                           </p>
                         ) : (
                           <details>
                             <summary>Printed source row</summary>
-                            <pre className="raw-block">{item.anchorLine}</pre>
+                            <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
+                              {item.anchorLine}
+                            </pre>
                           </details>
                         )}
                       </td>
@@ -988,36 +1002,33 @@ export function ReviewLoa({
                       </td>
                       <td>
                         {removeCandidate === item.key ? (
-                          <span className="actions">
-                            <button
-                              type="button"
+                          <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
+                            <Button
                               onClick={() => {
                                 removeRow(item.key);
                               }}
                             >
                               Confirm remove
-                            </button>
-                            <button
-                              type="button"
-                              className="button--ghost"
+                            </Button>
+                            <Button
+                              variant="outline"
                               onClick={() => {
                                 setRemoveCandidate(null);
                               }}
                             >
                               Keep
-                            </button>
+                            </Button>
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            className="button--ghost"
+                          <Button
+                            variant="outline"
                             aria-label={`Remove row ${item.itemSno} in schedule ${scheduleId}`}
                             onClick={() => {
                               setRemoveCandidate(item.key);
                             }}
                           >
                             Remove
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -1038,19 +1049,19 @@ export function ReviewLoa({
                   </td>
                 </tr>
               </tfoot>
-            </table>
+            </DataTable>
           </div>
         ))}
 
         <h2>Add a row</h2>
-        <p className="muted">
+        <p className="text-muted-foreground">
           For letters the parser could not fully serve: added rows are flagged for
           review and confirmed with a manual-entry marker instead of a printed source
           row. Removing a parsed row never edits the stored letter — the extraction
           stays intact on the document.
         </p>
-        <div className="field-row">
-          <div className="field">
+        <FieldRow>
+          <Field>
             <label htmlFor="add-row-schedule">Schedule for the new row</label>
             <input
               id="add-row-schedule"
@@ -1063,15 +1074,13 @@ export function ReviewLoa({
               }}
               maxLength={50}
             />
-          </div>
-          <div className="actions">
-            <button type="button" onClick={addManualRow}>
-              Add row
-            </button>
-          </div>
-        </div>
+          </Field>
+          <Actions>
+            <Button onClick={addManualRow}>Add row</Button>
+          </Actions>
+        </FieldRow>
 
-        <p className="muted" data-testid="reconciliation-totals">
+        <p className="text-muted-foreground" data-testid="reconciliation-totals">
           {rowsTotal === null
             ? 'Row totals will appear when every quantity and rate is a plain decimal number.'
             : `Entered rows total ₹${rowsTotal} across ${String(items.length)} row${items.length === 1 ? '' : 's'}${
@@ -1081,29 +1090,25 @@ export function ReviewLoa({
               }.`}
         </p>
 
-        {confirmError !== null && (
-          <p className="form-error" role="alert">
-            {confirmError}
-          </p>
-        )}
+        {confirmError !== null && <FormError>{confirmError}</FormError>}
 
-        <div className="actions action-bar">
+        <ActionBar className="flex-wrap">
           {canModify && (
-            <button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending}>
               {pending ? 'Creating Work…' : 'Confirm and create Work'}
-            </button>
+            </Button>
           )}
-          <button type="button" className="button--ghost" onClick={onBack}>
+          <Button variant="outline" onClick={onBack}>
             Back to Works
-          </button>
-        </div>
+          </Button>
+        </ActionBar>
         {!canModify && (
-          <p className="muted">
+          <p className="text-muted-foreground">
             Your role can review but not confirm; ask an owner or office member to
             confirm this letter.
           </p>
         )}
       </form>
-    </section>
+    </Card>
   );
 }

@@ -9,6 +9,10 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError } from '../ui/form.js';
 
 interface InstallationsProps {
   readonly api: ApiClient;
@@ -114,9 +118,7 @@ export function Installations({
     return (
       <>
         <h2>Installations</h2>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
+        <FormError>{loadError}</FormError>
       </>
     );
   }
@@ -125,7 +127,7 @@ export function Installations({
     return (
       <>
         <h2>Installations</h2>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading installation records…
         </p>
       </>
@@ -148,30 +150,24 @@ export function Installations({
   return (
     <>
       <h2>Installations</h2>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Quantity actually installed at site, by item and location. Per item the total
         can never exceed the sanctioned LOA quantity; serial-tracked items also need one
         delivered serial per installed unit.
       </p>
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           {notice}
         </p>
       )}
 
-      <table className="data-table">
-        <caption className="visually-hidden">
-          Installed quantity per item for this Work
-        </caption>
+      <DataTable>
+        <caption className="sr-only">Installed quantity per item for this Work</caption>
         <thead>
           <tr>
             <th scope="col">Item</th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Installed quantity
             </th>
           </tr>
@@ -180,21 +176,19 @@ export function Installations({
           {data.itemSummaries.map((summary) => (
             <tr key={summary.workItemId}>
               <th scope="row">{summary.itemNumber}</th>
-              <td className="cell--numeric">{summary.installedQuantity}</td>
+              <td className={numericCell}>{summary.installedQuantity}</td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
 
       {data.installations.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Installation records for this Work
-          </caption>
+        <DataTable>
+          <caption className="sr-only">Installation records for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Item</th>
-              <th scope="col" className="cell--numeric">
+              <th scope="col" className={numericCell}>
                 Quantity
               </th>
               <th scope="col">Installed on</th>
@@ -208,10 +202,10 @@ export function Installations({
             {data.installations.map((installation) => (
               <tr key={installation.id}>
                 <th scope="row">{installation.itemNumber}</th>
-                <td className="cell--numeric">{installation.quantity}</td>
+                <td className={numericCell}>{installation.quantity}</td>
                 <td>{installation.installedOn}</td>
-                <td className="cell--wrap">{installation.locationName}</td>
-                <td className="cell--wrap">
+                <td className={wrapCell}>{installation.locationName}</td>
+                <td className={wrapCell}>
                   {installation.serials.length > 0
                     ? installation.serials
                         .map((serial) => serial.serialNumber)
@@ -220,12 +214,15 @@ export function Installations({
                 </td>
                 <td>
                   {installation.status === 'cancelled' ? (
-                    <span className="chip chip--cancelled">cancelled</span>
+                    <StatusChip status="cancelled" />
                   ) : (
-                    <span className="chip chip--installed">recorded</span>
+                    <StatusChip status="installed">recorded</StatusChip>
                   )}
                   {installation.cancellationNote !== null && (
-                    <span className="muted"> {installation.cancellationNote}</span>
+                    <span className="text-muted-foreground">
+                      {' '}
+                      {installation.cancellationNote}
+                    </span>
                   )}
                 </td>
                 {canRecordEvidence && (
@@ -248,7 +245,7 @@ export function Installations({
                           }, 'Installation record cancelled; its serials are back in the pool.');
                         }}
                       >
-                        <div className="field">
+                        <Field>
                           <label htmlFor={`cancel-note-${installation.id}`}>
                             Cancellation note for {installation.itemNumber} on{' '}
                             {installation.installedOn}
@@ -260,14 +257,10 @@ export function Installations({
                             minLength={3}
                             maxLength={1000}
                           />
-                        </div>
-                        <button
-                          type="submit"
-                          className="button--ghost"
-                          disabled={pending}
-                        >
+                        </Field>
+                        <Button type="submit" variant="outline" disabled={pending}>
                           Cancel record
-                        </button>
+                        </Button>
                       </form>
                     )}
                   </td>
@@ -275,9 +268,9 @@ export function Installations({
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No installations recorded yet.</p>
+        <p className="text-muted-foreground">No installations recorded yet.</p>
       )}
 
       {canRecordEvidence && selectableItems.length > 0 && (
@@ -322,7 +315,7 @@ export function Installations({
           }}
         >
           <h3>Record installation</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="inst-item">Work item</label>
             <select
               id="inst-item"
@@ -339,8 +332,8 @@ export function Installations({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="inst-quantity">Quantity installed</label>
             <input
               id="inst-quantity"
@@ -348,12 +341,12 @@ export function Installations({
               inputMode="decimal"
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="inst-date">Installed on</label>
             <input id="inst-date" name="inst-date" type="date" required />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="inst-location">Location</label>
             <select
               id="inst-location"
@@ -370,10 +363,10 @@ export function Installations({
               ))}
               <option value={NEW_LOCATION}>+ Add a new location</option>
             </select>
-          </div>
+          </Field>
           {locationChoice === NEW_LOCATION && (
             <>
-              <div className="field">
+              <Field>
                 <label htmlFor="inst-location-name">New location name</label>
                 <input
                   id="inst-location-name"
@@ -382,8 +375,8 @@ export function Installations({
                   minLength={2}
                   maxLength={200}
                 />
-              </div>
-              <div className="field">
+              </Field>
+              <Field>
                 <label htmlFor="inst-location-kind">New location kind</label>
                 <select id="inst-location-kind" name="inst-location-kind">
                   {LOCATION_KINDS.map((kind) => (
@@ -392,13 +385,13 @@ export function Installations({
                     </option>
                   ))}
                 </select>
-              </div>
+              </Field>
             </>
           )}
-          <div className="field">
+          <Field>
             <label htmlFor="inst-remarks">Remarks (optional)</label>
             <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
-          </div>
+          </Field>
           {activeItem?.requiresSerials === true && (
             <fieldset>
               <legend>
@@ -407,28 +400,31 @@ export function Installations({
               </legend>
               {serialPool.length > 0 ? (
                 serialPool.map((serial) => (
-                  <label key={serial.id} className="field">
+                  <label
+                    key={serial.id}
+                    className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
+                  >
                     <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
                     {serial.serialNumber}
-                    <span className="muted">
+                    <span className="text-muted-foreground">
                       {' '}
                       · {serial.challanNumber ?? 'challan'}
                     </span>
                   </label>
                 ))
               ) : (
-                <p className="muted">
+                <p className="text-muted-foreground">
                   No delivered, uninstalled serials for this item — issue a Delivery
                   Challan with serials first.
                 </p>
               )}
             </fieldset>
           )}
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Record installation
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
     </>

@@ -3219,6 +3219,29 @@ describe('WorkDetail amendments', () => {
     expect(screen.queryByText('omission pending')).toBeNull();
   });
 
+  it('renders one row per awarded item, carrying every column', async () => {
+    renderAmended(amendedApi());
+    await openWorkTab('Schedules & items');
+
+    const table = await screen.findByRole('table', {
+      name: /Awarded items in schedule A/,
+    });
+    // A merge once duplicated the row loop, so every item rendered twice
+    // under a colliding React key and the first copy was a column short.
+    const rows = within(table).getAllByRole('row');
+    const items = AMENDED_WORK_DETAIL.schedules[0]?.items ?? [];
+    expect(rows).toHaveLength(1 + items.length);
+    expect(
+      within(table).getAllByRole('switch', { name: 'Serial tracking for A/1' }),
+    ).toHaveLength(1);
+    // Six headers, so six cells per row: the row header plus five.
+    expect(within(rows[0] as HTMLElement).getAllByRole('columnheader')).toHaveLength(6);
+    for (const row of rows.slice(1)) {
+      expect(within(row).getAllByRole('rowheader')).toHaveLength(1);
+      expect(within(row).getAllByRole('cell')).toHaveLength(5);
+    }
+  });
+
   const REMOVAL_APPROVAL = {
     id: '31111111-2222-4333-8444-555555555555',
     entityType: 'work_item_amendment' as const,

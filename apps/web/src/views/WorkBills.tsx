@@ -2,6 +2,11 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { Bill } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formatInr, formatRate } from '../format.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { CardHeader } from '../ui/card.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { Actions } from '../ui/form.js';
 
 interface BillLine {
   readonly itemNumber: string;
@@ -34,11 +39,11 @@ export function WorkBills({
 }: WorkBillsProps) {
   return (
     <>
-      <div className="card__header">
+      <CardHeader>
         <h2>Bills</h2>
-      </div>
+      </CardHeader>
       {canIssue && (
-        <p className="muted">
+        <p className="text-muted-foreground">
           Bills are prepared from a finalized stage-wise Measurement Book — use the
           Measurement Books section below.
         </p>
@@ -47,24 +52,21 @@ export function WorkBills({
         bills.map((bill) => (
           <div key={bill.id}>
             <h3>
-              Bill #{bill.billNumber}{' '}
-              <span className={`chip chip--${bill.status}`}>{bill.status}</span>
+              Bill #{bill.billNumber} <StatusChip status={bill.status} />
             </h3>
-            <table className="data-table">
-              <caption className="visually-hidden">
-                Lines of bill {bill.billNumber}
-              </caption>
+            <DataTable>
+              <caption className="sr-only">Lines of bill {bill.billNumber}</caption>
               <thead>
                 <tr>
                   <th scope="col">Item</th>
                   <th scope="col">Unit</th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Quantity
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Rate
                   </th>
-                  <th scope="col" className="cell--numeric">
+                  <th scope="col" className={numericCell}>
                     Amount
                   </th>
                 </tr>
@@ -74,26 +76,25 @@ export function WorkBills({
                   <tr key={`${bill.id}-${line.itemNumber}`}>
                     <th scope="row">{line.itemNumber}</th>
                     <td>{line.unitCode}</td>
-                    <td className="cell--numeric">{line.quantity}</td>
-                    <td className="cell--numeric">{formatRate(line.rate)}</td>
-                    <td className="cell--numeric">{formatInr(line.amount)}</td>
+                    <td className={numericCell}>{line.quantity}</td>
+                    <td className={numericCell}>{formatRate(line.rate)}</td>
+                    <td className={numericCell}>{formatInr(line.amount)}</td>
                   </tr>
                 ))}
                 <tr>
                   <th scope="row" colSpan={4}>
                     Total
                   </th>
-                  <td className="cell--numeric">
+                  <td className={numericCell}>
                     <strong>{formatInr(bill.totalAmount)}</strong>
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </DataTable>
             {canIssue && bill.status !== 'paid' && (
-              <div className="actions">
-                <button
-                  type="button"
-                  className="button--ghost"
+              <Actions>
+                <Button
+                  variant="outline"
                   disabled={pending}
                   onClick={() => {
                     const next = bill.status === 'prepared' ? 'submitted' : 'paid';
@@ -110,13 +111,13 @@ export function WorkBills({
                   }}
                 >
                   {bill.status === 'prepared' ? 'Mark submitted' : 'Mark paid'}
-                </button>
-              </div>
+                </Button>
+              </Actions>
             )}
           </div>
         ))
       ) : (
-        <p className="muted">No bills prepared yet.</p>
+        <p className="text-muted-foreground">No bills prepared yet.</p>
       )}
     </>
   );

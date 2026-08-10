@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 
 /** True when the Work's approval list carries a pending cancel-and-replace
  * request for THIS Issue Challan — surfaced instead of the correction form
@@ -120,46 +125,42 @@ export function IssueChallanDetail({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="issue-challan-title">
+      <Card aria-labelledby="issue-challan-title">
         <h1 id="issue-challan-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (detail === null) {
     return (
-      <section className="card" aria-labelledby="issue-challan-title">
+      <Card aria-labelledby="issue-challan-title">
         <h1 id="issue-challan-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading Issue Challan…
         </p>
-      </section>
+      </Card>
     );
   }
 
   const { issueChallan, lines } = detail;
 
   return (
-    <section className="card card--wide" aria-labelledby="issue-challan-title">
+    <Card className="w-full" aria-labelledby="issue-challan-title">
       <h1 id="issue-challan-title" tabIndex={-1}>
         {issueChallan.status === 'draft'
           ? 'Draft Issue Challan'
           : `Issue Challan ${issueChallan.challanNumber ?? ''}`}
       </h1>
-      <dl className="fact-list">
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Status</dt>
           <dd>
-            <span className={`chip chip--${issueChallan.status}`}>
-              {issueChallan.status}
-            </span>
+            <StatusChip status={issueChallan.status} />
           </dd>
         </div>
         <div>
@@ -177,13 +178,15 @@ export function IssueChallanDetail({
             {issueChallan.issuedToRole !== null && (
               <>
                 <br />
-                <span className="muted">{issueChallan.issuedToRole}</span>
+                <span className="text-muted-foreground">
+                  {issueChallan.issuedToRole}
+                </span>
               </>
             )}
             {issueChallan.location !== null && (
               <>
                 <br />
-                <span className="muted">{issueChallan.location}</span>
+                <span className="text-muted-foreground">{issueChallan.location}</span>
               </>
             )}
           </dd>
@@ -203,29 +206,27 @@ export function IssueChallanDetail({
       </dl>
 
       {issueChallan.movementType !== 'issue' && (
-        <p className="form-notice" role="note">
+        <FormNotice role="note">
           {issueChallan.movementType === 'loan'
             ? 'Loan movement: the material is returnable.'
             : 'Return movement: the material goes back to its origin.'}
-        </p>
+        </FormNotice>
       )}
 
       {issueChallan.status === 'cancelled' &&
         issueChallan.cancellationNote !== null && (
-          <p className="form-error" role="note">
-            Cancelled: {issueChallan.cancellationNote}
-          </p>
+          <FormError role="note">Cancelled: {issueChallan.cancellationNote}</FormError>
         )}
 
-      <table className="data-table">
-        <caption className="visually-hidden">Issue Challan lines</caption>
+      <DataTable>
+        <caption className="sr-only">Issue Challan lines</caption>
         <thead>
           <tr>
             <th scope="col">#</th>
             <th scope="col">Item</th>
             <th scope="col">Description</th>
             <th scope="col">Unit</th>
-            <th scope="col" className="cell--numeric">
+            <th scope="col" className={numericCell}>
               Quantity
             </th>
           </tr>
@@ -235,40 +236,30 @@ export function IssueChallanDetail({
             <tr key={line.id}>
               <th scope="row">{line.position}</th>
               <td>{line.itemNumber ?? 'Manual'}</td>
-              <td className="cell--wrap">{line.description}</td>
+              <td className={wrapCell}>{line.description}</td>
               <td>{line.unit}</td>
-              <td className="cell--numeric">{line.quantity}</td>
+              <td className={numericCell}>{line.quantity}</td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
 
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
 
-      <div className="actions">
+      <Actions>
         {issueChallan.status === 'draft' && canModify && (
           <>
-            <button
-              type="button"
-              className="button--ghost"
+            <Button
+              variant="outline"
               onClick={() => {
                 onEdit(issueChallan.id);
               }}
             >
               Edit draft
-            </button>
-            <button
-              type="button"
-              className="button--ghost"
+            </Button>
+            <Button
+              variant="outline"
               disabled={pending}
               onClick={() =>
                 void act(async () => {
@@ -279,12 +270,11 @@ export function IssueChallanDetail({
               }
             >
               Delete draft
-            </button>
+            </Button>
           </>
         )}
         {issueChallan.status === 'draft' && canIssue && (
-          <button
-            type="button"
+          <Button
             disabled={pending}
             onClick={() =>
               void act(
@@ -294,11 +284,10 @@ export function IssueChallanDetail({
             }
           >
             {pending ? 'Working…' : 'Issue challan'}
-          </button>
+          </Button>
         )}
         {issueChallan.status === 'issued' && canModify && (
-          <button
-            type="button"
+          <Button
             disabled={pending}
             onClick={() =>
               void act(
@@ -308,12 +297,11 @@ export function IssueChallanDetail({
             }
           >
             {issueChallan.renderedAvailable ? 'Re-generate PDF' : 'Generate PDF'}
-          </button>
+          </Button>
         )}
         {issueChallan.renderedAvailable && (
-          <button
-            type="button"
-            className="button--ghost"
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -329,12 +317,11 @@ export function IssueChallanDetail({
             }
           >
             Open PDF
-          </button>
+          </Button>
         )}
         {issueChallan.signedCopyAvailable && (
-          <button
-            type="button"
-            className="button--ghost"
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -350,12 +337,12 @@ export function IssueChallanDetail({
             }
           >
             Open signed copy
-          </button>
+          </Button>
         )}
-        <button type="button" className="button--ghost" onClick={onBack}>
+        <Button variant="outline" onClick={onBack}>
           Back to Work
-        </button>
-      </div>
+        </Button>
+      </Actions>
 
       {issueChallan.status === 'issued' && canModify && (
         <form
@@ -376,7 +363,7 @@ export function IssueChallanDetail({
           }}
         >
           <h2>Signed copy</h2>
-          <div className="field">
+          <Field>
             <label htmlFor="issue-signed-file">Scanned signed copy (PDF)</label>
             <input
               id="issue-signed-file"
@@ -384,19 +371,19 @@ export function IssueChallanDetail({
               type="file"
               accept="application/pdf"
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Upload signed copy
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 
       {issueChallan.status === 'issued' && canModify && hasPendingCorrection && (
         <>
           <h2>Request correction</h2>
-          <p className="muted" role="note">
+          <p className="text-muted-foreground" role="note">
             A correction request for this Issue Challan is already awaiting a decision
             in the approvals queue.
           </p>
@@ -445,13 +432,13 @@ export function IssueChallanDetail({
           }}
         >
           <h2>Request correction</h2>
-          <p className="muted">
+          <p className="text-muted-foreground">
             Issue Challans carry no downstream evidence, so the lawful correction path
             is <strong>cancel and replace</strong>: on approval the issued challan is
             cancelled (its number stays in the series) and a corrected draft is created
             for re-issue.
           </p>
-          <div className="field">
+          <Field>
             <label htmlFor="ic-correction-date">Corrected challan date</label>
             <input
               id="ic-correction-date"
@@ -460,8 +447,8 @@ export function IssueChallanDetail({
               defaultValue={issueChallan.challanDate}
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="ic-correction-name">Issued to</label>
             <input
               id="ic-correction-name"
@@ -471,8 +458,8 @@ export function IssueChallanDetail({
               minLength={2}
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="ic-correction-role">Issued-to role (optional)</label>
             <input
               id="ic-correction-role"
@@ -480,8 +467,8 @@ export function IssueChallanDetail({
               defaultValue={issueChallan.issuedToRole ?? ''}
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="ic-correction-location">Location (optional)</label>
             <input
               id="ic-correction-location"
@@ -489,8 +476,8 @@ export function IssueChallanDetail({
               defaultValue={issueChallan.location ?? ''}
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="ic-correction-remarks">Remarks (optional)</label>
             <input
               id="ic-correction-remarks"
@@ -498,9 +485,9 @@ export function IssueChallanDetail({
               defaultValue={issueChallan.remarks ?? ''}
               maxLength={1000}
             />
-          </div>
+          </Field>
           {lines.map((line) => (
-            <div className="field" key={line.id}>
+            <Field key={line.id}>
               <label htmlFor={`ic-correction-qty-${line.id}`}>
                 Quantity — {line.description}
               </label>
@@ -511,9 +498,9 @@ export function IssueChallanDetail({
                 required
                 inputMode="decimal"
               />
-            </div>
+            </Field>
           ))}
-          <div className="field">
+          <Field>
             <label htmlFor="ic-correction-reason">Reason for correction</label>
             <input
               id="ic-correction-reason"
@@ -522,12 +509,12 @@ export function IssueChallanDetail({
               minLength={3}
               maxLength={2000}
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Request cancel &amp; replace
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 
@@ -545,7 +532,7 @@ export function IssueChallanDetail({
           }}
         >
           <h2>Cancel this challan</h2>
-          <div className="field">
+          <Field>
             <label htmlFor="issue-cancel-note">Cancellation note</label>
             <input
               id="issue-cancel-note"
@@ -556,14 +543,14 @@ export function IssueChallanDetail({
               required
               minLength={3}
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Cancel challan
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
-    </section>
+    </Card>
   );
 }

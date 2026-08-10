@@ -20,6 +20,9 @@ const buttonVariants = cva(
         sm: 'h-8 px-3 text-[0.8rem]',
         lg: 'h-10 px-5',
         icon: 'size-9',
+        /** A button that reads as a link inside running text or a table
+         * cell: no box of its own, and free to wrap with the line. */
+        inline: 'h-auto p-0 whitespace-normal',
       },
     },
     defaultVariants: {

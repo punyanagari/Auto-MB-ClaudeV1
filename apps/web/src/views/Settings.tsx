@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { OrganisationProfile } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
 
 interface SettingsProps {
   readonly api: ApiClient;
@@ -128,41 +131,43 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
 
   if (profile === null) {
     return (
-      <section className="card">
+      <Card>
         <h1 tabIndex={-1}>Settings</h1>
         {error === null ? (
-          <p className="muted" role="status">
+          <p className="text-muted-foreground" role="status">
             Loading…
           </p>
         ) : (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
+          <FormError>{error}</FormError>
         )}
-      </section>
+      </Card>
     );
   }
 
   return (
-    <section className="card card--narrow">
+    <Card className="mx-auto mt-[10vh] mb-8 max-w-[26rem]">
       <h1 tabIndex={-1}>Settings</h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         These company details and the logo appear on Delivery Challans and other
         generated documents.
       </p>
 
       <h2>Logo</h2>
-      <div className="logo-row">
+      <div className="my-3 flex flex-wrap items-center gap-4">
         {logoUrl !== null ? (
-          <img className="logo-preview" src={logoUrl} alt="Organisation logo" />
+          <img
+            className="max-h-18 max-w-48 rounded-md border border-border bg-card p-2"
+            src={logoUrl}
+            alt="Organisation logo"
+          />
         ) : (
-          <span className="muted">No logo uploaded.</span>
+          <span className="text-muted-foreground">No logo uploaded.</span>
         )}
         {isOwner && (
-          <div className="actions">
+          <Actions>
             <input
               ref={logoInputRef}
-              className="visually-hidden"
+              className="sr-only"
               type="file"
               accept="image/png,image/jpeg"
               aria-label="Choose logo image"
@@ -172,32 +177,27 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
                 event.currentTarget.value = '';
               }}
             />
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => logoInputRef.current?.click()}
-            >
+            <Button disabled={busy} onClick={() => logoInputRef.current?.click()}>
               {profile.hasLogo ? 'Replace logo' : 'Upload logo'}
-            </button>
+            </Button>
             {profile.hasLogo && (
-              <button
-                type="button"
-                className="button--ghost"
+              <Button
+                variant="outline"
                 disabled={busy}
                 onClick={() => void removeLogo()}
               >
                 Remove logo
-              </button>
+              </Button>
             )}
-          </div>
+          </Actions>
         )}
       </div>
-      <p className="hint">PNG or JPEG, up to 1 MB. Shown at the top of documents.</p>
+      <Hint>PNG or JPEG, up to 1 MB. Shown at the top of documents.</Hint>
 
       <h2>Company details</h2>
       {isOwner ? (
         <form onSubmit={(event) => void saveProfile(event)}>
-          <div className="field">
+          <Field>
             <label htmlFor="org-name">Company name</label>
             <input
               id="org-name"
@@ -207,8 +207,8 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               maxLength={200}
               defaultValue={profile.name}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="org-address">Address</label>
             <textarea
               id="org-address"
@@ -217,9 +217,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               maxLength={600}
               defaultValue={profile.address ?? ''}
             />
-          </div>
-          <div className="field-row">
-            <div className="field">
+          </Field>
+          <FieldRow>
+            <Field>
               <label htmlFor="org-gstin">GSTIN</label>
               <input
                 id="org-gstin"
@@ -228,9 +228,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
                 pattern="[0-9A-Z]{15}"
                 defaultValue={profile.gstin ?? ''}
               />
-              <p className="hint">15 characters, as printed on GST records.</p>
-            </div>
-            <div className="field">
+              <Hint>15 characters, as printed on GST records.</Hint>
+            </Field>
+            <Field>
               <label htmlFor="org-phone">Phone</label>
               <input
                 id="org-phone"
@@ -238,9 +238,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
                 maxLength={30}
                 defaultValue={profile.contactPhone ?? ''}
               />
-            </div>
-          </div>
-          <div className="field">
+            </Field>
+          </FieldRow>
+          <Field>
             <label htmlFor="org-email">Email</label>
             <input
               id="org-email"
@@ -249,8 +249,8 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               maxLength={200}
               defaultValue={profile.contactEmail ?? ''}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="org-warranty-template">Warranty agreement template</label>
             <textarea
               id="org-warranty-template"
@@ -259,19 +259,19 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
               maxLength={20000}
               defaultValue={profile.warrantyTemplateText ?? ''}
             />
-            <p className="hint">
+            <Hint>
               Used by upcoming warranty documents; leave empty until you have your
               standard wording.
-            </p>
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={busy}>
+            </Hint>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={busy}>
               Save company details
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       ) : (
-        <dl className="fact-list">
+        <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
           <div>
             <dt>Company name</dt>
             <dd>{profile.name}</dd>
@@ -299,16 +299,8 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         </dl>
       )}
 
-      {error !== null && (
-        <p role="alert" className="form-error">
-          {error}
-        </p>
-      )}
-      {notice !== null && (
-        <p role="status" className="form-notice">
-          {notice}
-        </p>
-      )}
-    </section>
+      {error !== null && <FormError>{error}</FormError>}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+    </Card>
   );
 }

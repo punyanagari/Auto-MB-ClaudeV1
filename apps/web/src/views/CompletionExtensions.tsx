@@ -10,6 +10,10 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable } from '../ui/table.js';
+import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
 
 interface CompletionExtensionsProps {
   readonly api: ApiClient;
@@ -108,9 +112,7 @@ export function CompletionExtensions({
     return (
       <>
         <h2>Completion &amp; extensions</h2>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
+        <FormError>{loadError}</FormError>
       </>
     );
   }
@@ -119,7 +121,7 @@ export function CompletionExtensions({
     return (
       <>
         <h2>Completion &amp; extensions</h2>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading completion details…
         </p>
       </>
@@ -133,19 +135,11 @@ export function CompletionExtensions({
   return (
     <>
       <h2>Completion &amp; extensions</h2>
-      {notice !== null && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {actionError !== null && (
-        <p className="form-error" role="alert">
-          {actionError}
-        </p>
-      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
 
       {dates.currentCompletionDate !== null ? (
-        <dl className="fact-list">
+        <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
           <div>
             <dt>Original completion date</dt>
             <dd>{dates.originalCompletionDate}</dd>
@@ -170,29 +164,27 @@ export function CompletionExtensions({
             }, 'Completion date recorded.');
           }}
         >
-          <p className="muted">
+          <p className="text-muted-foreground">
             Record the contract completion date once; afterwards it changes only through
             a responded extension request.
           </p>
-          <div className="field">
+          <Field>
             <label htmlFor="completion-date">Completion date (per the contract)</label>
             <input id="completion-date" name="completion-date" type="date" required />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Set completion date
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       ) : (
-        <p className="muted">No completion date recorded yet.</p>
+        <p className="text-muted-foreground">No completion date recorded yet.</p>
       )}
 
       {extensions.length > 0 ? (
-        <table className="data-table">
-          <caption className="visually-hidden">
-            Extension requests for this Work
-          </caption>
+        <DataTable>
+          <caption className="sr-only">Extension requests for this Work</caption>
           <thead>
             <tr>
               <th scope="col">Number</th>
@@ -214,9 +206,7 @@ export function CompletionExtensions({
                     : 'software'}
                 </td>
                 <td>
-                  <span className={`chip chip--${extension.status}`}>
-                    {extension.status}
-                  </span>
+                  <StatusChip status={extension.status} />
                 </td>
                 <td>{extension.proposedCompletionDate}</td>
                 <td>{extension.letterDate ?? '—'}</td>
@@ -225,16 +215,15 @@ export function CompletionExtensions({
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       ) : (
-        <p className="muted">No extension requests yet.</p>
+        <p className="text-muted-foreground">No extension requests yet.</p>
       )}
 
       {draft !== undefined && (
-        <div className="actions">
-          <button
-            type="button"
-            className="button--ghost"
+        <Actions>
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -245,10 +234,9 @@ export function CompletionExtensions({
             }
           >
             Preview draft (DRAFT watermark)
-          </button>
+          </Button>
           {canIssue && (
-            <button
-              type="button"
+            <Button
               disabled={pending}
               onClick={() =>
                 void act(async () => {
@@ -258,12 +246,11 @@ export function CompletionExtensions({
               }
             >
               Finalise extension request
-            </button>
+            </Button>
           )}
           {canModify && (
-            <button
-              type="button"
-              className="button--ghost"
+            <Button
+              variant="outline"
               disabled={pending}
               onClick={() =>
                 void act(async () => {
@@ -273,9 +260,9 @@ export function CompletionExtensions({
               }
             >
               Delete draft
-            </button>
+            </Button>
           )}
-        </div>
+        </Actions>
       )}
 
       {canModify && dates.currentCompletionDate !== null && draft === undefined && (
@@ -301,7 +288,7 @@ export function CompletionExtensions({
           }}
         >
           <h3>Draft extension request</h3>
-          <div className="field">
+          <Field>
             <label htmlFor="extension-proposed">Proposed completion date</label>
             <input
               id="extension-proposed"
@@ -309,8 +296,8 @@ export function CompletionExtensions({
               type="date"
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="extension-addressee">Addressee</label>
             <input
               id="extension-addressee"
@@ -318,8 +305,8 @@ export function CompletionExtensions({
               required
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="extension-letter-date">Letter date</label>
             <input
               id="extension-letter-date"
@@ -327,8 +314,8 @@ export function CompletionExtensions({
               type="date"
               required
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="extension-reason">Grounds for the extension</label>
             <textarea
               id="extension-reason"
@@ -338,12 +325,12 @@ export function CompletionExtensions({
               maxLength={5000}
               rows={4}
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Save draft extension request
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 
@@ -374,14 +361,14 @@ export function CompletionExtensions({
           }}
         >
           <h3>Back-fill a paper extension letter</h3>
-          <p className="muted">
+          <p className="text-muted-foreground">
             For letters issued on paper before this register was adopted. The record is
             final on arrival, takes the next number in the sequence, and is never
             rendered — the paper letter stays the record. Back-fill letters in the order
             they were issued.
           </p>
-          <div className="field-row">
-            <div className="field">
+          <FieldRow>
+            <Field>
               <label htmlFor="backfill-reference">Paper letter reference</label>
               <input
                 id="backfill-reference"
@@ -390,8 +377,8 @@ export function CompletionExtensions({
                 minLength={1}
                 maxLength={100}
               />
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="backfill-letter-date">Paper letter date</label>
               <input
                 id="backfill-letter-date"
@@ -399,8 +386,8 @@ export function CompletionExtensions({
                 type="date"
                 required
               />
-            </div>
-            <div className="field">
+            </Field>
+            <Field>
               <label htmlFor="backfill-proposed">
                 Completion date the letter asked for
               </label>
@@ -410,9 +397,9 @@ export function CompletionExtensions({
                 type="date"
                 required
               />
-            </div>
-          </div>
-          <div className="field">
+            </Field>
+          </FieldRow>
+          <Field>
             <label htmlFor="backfill-addressee">Addressee of the letter</label>
             <input
               id="backfill-addressee"
@@ -420,8 +407,8 @@ export function CompletionExtensions({
               required
               maxLength={200}
             />
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="backfill-reason">Grounds stated in the letter</label>
             <textarea
               id="backfill-reason"
@@ -431,12 +418,12 @@ export function CompletionExtensions({
               maxLength={5000}
               rows={3}
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Record paper letter as final
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
 
@@ -491,10 +478,9 @@ function FinalisedExtensionActions({
     <div>
       <h3>Railway response — {extension.requestNumber}</h3>
       {extension.source === 'manual' && canApprove && (
-        <div className="actions">
-          <button
-            type="button"
-            className="button--ghost"
+        <Actions>
+          <Button
+            variant="outline"
             disabled={pending}
             onClick={() =>
               void act(async () => {
@@ -504,8 +490,8 @@ function FinalisedExtensionActions({
             }
           >
             Delete manual back-fill (top of sequence only)
-          </button>
-        </div>
+          </Button>
+        </Actions>
       )}
       {!extension.responseDocumentAvailable && (
         <form
@@ -523,7 +509,7 @@ function FinalisedExtensionActions({
             }, 'Railway response uploaded.');
           }}
         >
-          <div className="field">
+          <Field>
             <label htmlFor={`response-file-${extension.id}`}>
               Railway response (PDF)
             </label>
@@ -534,12 +520,12 @@ function FinalisedExtensionActions({
               accept="application/pdf"
               required
             />
-          </div>
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Upload response
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
       {extension.responseDocumentAvailable && (
@@ -560,7 +546,7 @@ function FinalisedExtensionActions({
             }, 'Response recorded.');
           }}
         >
-          <div className="field">
+          <Field>
             <label htmlFor={`response-outcome-${extension.id}`}>Outcome</label>
             <select
               id={`response-outcome-${extension.id}`}
@@ -574,9 +560,9 @@ function FinalisedExtensionActions({
               <option value="modified">modified — a different date granted</option>
               <option value="rejected">rejected — no extension</option>
             </select>
-          </div>
+          </Field>
           {outcome === 'modified' && (
-            <div className="field">
+            <Field>
               <label htmlFor={`response-granted-${extension.id}`}>
                 Granted completion date
               </label>
@@ -586,13 +572,13 @@ function FinalisedExtensionActions({
                 type="date"
                 required
               />
-            </div>
+            </Field>
           )}
-          <div className="actions">
-            <button type="submit" disabled={pending}>
+          <Actions>
+            <Button type="submit" disabled={pending}>
               Record response
-            </button>
-          </div>
+            </Button>
+          </Actions>
         </form>
       )}
     </div>

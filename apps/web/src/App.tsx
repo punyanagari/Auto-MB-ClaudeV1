@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
+import { Button } from './ui/button.js';
 import { OrgPicker } from './views/OrgPicker.js';
 import { SignIn } from './views/SignIn.js';
 import { Workspace } from './views/Workspace.js';
@@ -98,26 +99,22 @@ export function App({ api: providedApi }: AppProps) {
   }
 
   return (
-    <div className="auth-shell">
-      <header className="topbar">
-        <span className="topbar__brand">Auto-MB</span>
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-3 print:hidden">
+        <span className="font-semibold tracking-tight">Auto-MB</span>
         {phase.name === 'pick-organisation' && (
-          <div className="topbar__session">
-            <span className="muted">{phase.me.user.email}</span>
-            <button
-              type="button"
-              className="button--ghost"
-              onClick={() => void signOut()}
-            >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="text-muted-foreground">{phase.me.user.email}</span>
+            <Button variant="outline" onClick={() => void signOut()}>
               Sign out
-            </button>
+            </Button>
           </div>
         )}
       </header>
 
       <main ref={mainRef}>
         {phase.name === 'loading' && (
-          <p className="muted centered" role="status">
+          <p className="p-8 text-center text-muted-foreground" role="status">
             Loading…
           </p>
         )}

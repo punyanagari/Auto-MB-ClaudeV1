@@ -5,6 +5,19 @@ import type {
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { Card } from '../ui/card.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  Field,
+  FieldRow,
+  Actions,
+  ActionBar,
+  FormError,
+  FieldError,
+  Hint,
+} from '../ui/form.js';
 
 interface ChallanEditorProps {
   readonly api: ApiClient;
@@ -328,27 +341,25 @@ export function ChallanEditor({
 
   if (loadError !== null) {
     return (
-      <section className="card" aria-labelledby="challan-editor-title">
+      <Card aria-labelledby="challan-editor-title">
         <h1 id="challan-editor-title" tabIndex={-1}>
           Delivery Challan
         </h1>
-        <p className="form-error" role="alert">
-          {loadError}
-        </p>
-      </section>
+        <FormError>{loadError}</FormError>
+      </Card>
     );
   }
 
   if (balance === null || state === null) {
     return (
-      <section className="card" aria-labelledby="challan-editor-title">
+      <Card aria-labelledby="challan-editor-title">
         <h1 id="challan-editor-title" tabIndex={-1}>
           Delivery Challan
         </h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading balances…
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -359,19 +370,19 @@ export function ChallanEditor({
     loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
 
   return (
-    <section className="card card--wide" aria-labelledby="challan-editor-title">
+    <Card className="w-full" aria-labelledby="challan-editor-title">
       <h1 id="challan-editor-title" tabIndex={-1}>
         {challanId === null ? 'New Delivery Challan' : 'Edit draft challan'}
       </h1>
-      <p className="muted">
+      <p className="text-muted-foreground">
         Quantities are checked against each item's remaining balance when the challan is
         issued; drafts can be edited freely until then.
       </p>
       {/* noValidate: save() owns every rule, so each failure can name its
           field, bind a message, and move focus. */}
       <form noValidate onSubmit={(event) => void save(event)}>
-        <div className="field-row">
-          <div className="field">
+        <FieldRow>
+          <Field>
             <label htmlFor="challan-date">Challan date</label>
             <input
               id="challan-date"
@@ -392,12 +403,12 @@ export function ChallanEditor({
               }
             />
             {fieldErrors['challan-date'] !== undefined && (
-              <p className="form-error" id="challan-date-error">
+              <FieldError id="challan-date-error">
                 {fieldErrors['challan-date']}
-              </p>
+              </FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="challan-prefix">Number prefix</label>
             <input
               id="challan-prefix"
@@ -418,18 +429,18 @@ export function ChallanEditor({
                   : undefined,
               )}
             />
-            <p className="hint" id="challan-prefix-hint">
+            <Hint id="challan-prefix-hint">
               {PREFIX_RULE} Letters are capitalised as you type.
-            </p>
+            </Hint>
             {fieldErrors['challan-prefix'] !== undefined && (
-              <p className="form-error" id="challan-prefix-error">
+              <FieldError id="challan-prefix-error">
                 {fieldErrors['challan-prefix']}
-              </p>
+              </FieldError>
             )}
-          </div>
-        </div>
+          </Field>
+        </FieldRow>
         {consignees.length > 0 && (
-          <div className="field">
+          <Field>
             <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
             <select
               id="consignee-picker"
@@ -470,15 +481,15 @@ export function ChallanEditor({
                 ))}
               </optgroup>
             </select>
-            <p className="hint">
+            <Hint>
               Consignees linked to this Work are listed first; any active consignee can
               be picked. Picking copies the details into this challan; edits here never
               change the contact.
-            </p>
-          </div>
+            </Hint>
+          </Field>
         )}
-        <div className="field-row">
-          <div className="field">
+        <FieldRow>
+          <Field>
             <label htmlFor="consignee-name">Consignee name</label>
             <input
               id="consignee-name"
@@ -500,12 +511,12 @@ export function ChallanEditor({
               }
             />
             {fieldErrors['consignee-name'] !== undefined && (
-              <p className="form-error" id="consignee-name-error">
+              <FieldError id="consignee-name-error">
                 {fieldErrors['consignee-name']}
-              </p>
+              </FieldError>
             )}
-          </div>
-          <div className="field">
+          </Field>
+          <Field>
             <label htmlFor="consignee-phone">Consignee phone (optional)</label>
             {/* A site engineer fills this on a tablet: `tel` asks for the
                 dialling keypad rather than an alphabetic keyboard, and the
@@ -530,13 +541,13 @@ export function ChallanEditor({
               }
             />
             {fieldErrors['consignee-phone'] !== undefined && (
-              <p className="form-error" id="consignee-phone-error">
+              <FieldError id="consignee-phone-error">
                 {fieldErrors['consignee-phone']}
-              </p>
+              </FieldError>
             )}
-          </div>
-        </div>
-        <div className="field">
+          </Field>
+        </FieldRow>
+        <Field>
           <label htmlFor="consignee-address">Consignee address</label>
           <textarea
             id="consignee-address"
@@ -559,15 +570,15 @@ export function ChallanEditor({
             }
           />
           {fieldErrors['consignee-address'] !== undefined && (
-            <p className="form-error" id="consignee-address-error">
+            <FieldError id="consignee-address-error">
               {fieldErrors['consignee-address']}
-            </p>
+            </FieldError>
           )}
-        </div>
+        </Field>
 
         <h2>Items</h2>
-        <table className="data-table data-table--editable">
-          <caption className="visually-hidden">
+        <DataTable className="[&_input]:w-28">
+          <caption className="sr-only">
             Work items with awarded, delivered, and remaining quantities; enter a
             quantity to include an item on this challan
           </caption>
@@ -589,23 +600,23 @@ export function ChallanEditor({
               return (
                 <tr key={item.workItemId}>
                   <th scope="row">{item.itemNumber}</th>
-                  <td className="cell--wrap">{item.description}</td>
+                  <td className={wrapCell}>{item.description}</td>
                   <td>{item.unitCode}</td>
-                  <td className="cell--numeric">
+                  <td className={numericCell}>
                     {item.effectiveQuantity !== null &&
                     item.effectiveQuantity !== undefined &&
                     item.effectiveQuantity !== item.awardedQuantity ? (
                       // An approved amendment moved the ceiling: show both.
                       <>
-                        <s className="muted">{item.awardedQuantity}</s> →{' '}
-                        {item.effectiveQuantity}
+                        <s className="text-muted-foreground">{item.awardedQuantity}</s>{' '}
+                        → {item.effectiveQuantity}
                       </>
                     ) : (
                       item.awardedQuantity
                     )}
                   </td>
-                  <td className="cell--numeric">{item.deliveredQuantity}</td>
-                  <td className="cell--numeric">{item.remainingQuantity}</td>
+                  <td className={numericCell}>{item.deliveredQuantity}</td>
+                  <td className={numericCell}>{item.remainingQuantity}</td>
                   <td>
                     <input
                       aria-label={`Quantity of ${item.itemNumber} on this challan`}
@@ -649,35 +660,30 @@ export function ChallanEditor({
                       )}
                     />
                     {fieldErrors[quantityField] !== undefined && (
-                      <p className="form-error" id={`${quantityField}-error`}>
+                      <FieldError id={`${quantityField}-error`}>
                         {fieldErrors[quantityField]}
-                      </p>
+                      </FieldError>
                     )}
                     {over && (
-                      <span className="chip chip--review" id={`${quantityField}-over`}>
+                      <StatusChip status="review" id={`${quantityField}-over`}>
                         over the {item.remainingQuantity} remaining
-                      </span>
+                      </StatusChip>
                     )}
                   </td>
                 </tr>
               );
             })}
           </tbody>
-        </table>
+        </DataTable>
 
-        {saveError !== null && (
-          <p className="form-error" role="alert">
-            {saveError}
-          </p>
-        )}
+        {saveError !== null && <FormError>{saveError}</FormError>}
 
-        <div className="actions action-bar">
-          <button type="submit" disabled={pending}>
+        <ActionBar className="flex-wrap">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Save draft'}
-          </button>
-          <button
-            type="button"
-            className="button--ghost"
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => {
               if (edited) {
                 setConfirmingDiscard(true);
@@ -687,33 +693,32 @@ export function ChallanEditor({
             }}
           >
             Cancel
-          </button>
-        </div>
+          </Button>
+        </ActionBar>
 
         {confirmingDiscard && (
-          <div className="flag-panel">
+          <div className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3">
             <h2>Discard your changes?</h2>
             <p>
               Nothing entered here has been saved yet. Leaving now throws away the
               consignee details and every quantity you typed.
             </p>
-            <div className="actions">
-              <button type="button" ref={discardRef} onClick={onCancel}>
+            <Actions>
+              <Button ref={discardRef} onClick={onCancel}>
                 Discard and leave
-              </button>
-              <button
-                type="button"
-                className="button--ghost"
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   setConfirmingDiscard(false);
                 }}
               >
                 Keep editing
-              </button>
-            </div>
+              </Button>
+            </Actions>
           </div>
         )}
       </form>
-    </section>
+    </Card>
   );
 }
