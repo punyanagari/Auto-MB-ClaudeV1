@@ -96,6 +96,47 @@ export const StorableDecimalStringSchema = Type.String({
 });
 export type StorableDecimalString = Static<typeof StorableDecimalStringSchema>;
 
+/* --- Tax facts (migration 0033) ---------------------------------------
+ * A GST tax invoice and an e-way bill cannot be built without them: the
+ * IRP refuses an e-invoice line with no HSN/SAC code or no rate, and the
+ * NIC payload names the supplier's state. Each carries exactly the bound
+ * its column holds, so a mistyped code is a 400 naming the field rather
+ * than a CHECK violation surfacing as an opaque 500. */
+
+/** HSN (goods) or SAC (services) code: 6 to 8 digits — optional metadata
+ * everywhere it appears, because the tax invoice is cumulative (one service
+ * line at a SAC for the MB total), never per-item. Which reading
+ * applies follows the item's `isService` flag, not the code's shape —
+ * both are digits, and both columns hold the same CHECK. */
+export const HsnCodeSchema = Type.String({
+  pattern: '^[0-9]{6,8}$',
+  description: 'HSN (goods) or SAC (services) code: 6 to 8 digits.',
+});
+export type HsnCode = Static<typeof HsnCodeSchema>;
+
+/** Total GST percentage for a line, 0 to 100 inclusive, transported as a
+ * string like every other authoritative number here. Two fraction digits
+ * is the numeric(5,2) column's own scale — and a real bound, not a
+ * formality: 0.25% and 1.5% are both notified rates, while a third digit
+ * would be rounded away silently on the way in. Zero is legitimate
+ * (exempt and nil-rated supply), a negative rate is not. */
+export const GstRateSchema = Type.String({
+  pattern: '^(?:100(?:\\.0{1,2})?|0(?:\\.\\d{1,2})?|[1-9]\\d?(?:\\.\\d{1,2})?)$',
+  description:
+    'GST percentage between 0 and 100 inclusive, with up to two fraction digits.',
+});
+export type GstRate = Static<typeof GstRateSchema>;
+
+/** The two-digit GST state code. It is the first two characters of a
+ * registered GSTIN, but it is a fact in its own right: an unregistered
+ * organisation still has a place of business, and the invoice still has
+ * to name a state to decide CGST+SGST against IGST. */
+export const GstStateCodeSchema = Type.String({
+  pattern: '^[0-9]{2}$',
+  description: 'Two-digit GST state code.',
+});
+export type GstStateCode = Static<typeof GstStateCodeSchema>;
+
 /** Text the DATABASE validates TRIMMED — `length(btrim(x)) BETWEEN n AND
  * m` — while the schema counted raw characters. A note of three spaces
  * therefore satisfied minLength, reached Postgres, and came back as a

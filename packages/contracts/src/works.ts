@@ -2,6 +2,8 @@ import { Type, type Static } from '@sinclair/typebox';
 import {
   DateOnlySchema,
   DecimalStringSchema,
+  GstRateSchema,
+  HsnCodeSchema,
   NonNegativeDecimalStringSchema,
   NonNegativeRateStringSchema,
   PositiveDecimalStringSchema,
@@ -200,6 +202,18 @@ export const WorkItemSchema = Type.Object(
      * over non-cancelled PAC certificates for the item (Milestone 8
      * phase 1) — THE pac_qty the Measurement Book engine consumes. */
     pacCertifiedQuantity: Type.Optional(DecimalStringSchema),
+    /** Tax facts (migration 0033), per item because the rate follows the
+     * goods and a Work mixes them: a switchboard and its installation do
+     * not share an HSN or a rate. An item with no `hsnCode` cannot be
+     * invoiced — the IRP refuses the line — so null is a gap the tax
+     * screens chase, not a settled value. `isService` decides the SAC
+     * reading of the code and the e-invoice's IsServc flag; the column
+     * is NOT NULL, so the value is a boolean whenever it is read at all.
+     * Optional like the aggregates above: a reader that does not select
+     * the tax columns omits them rather than sending a false null. */
+    hsnCode: Type.Optional(Type.Union([HsnCodeSchema, Type.Null()])),
+    gstRate: Type.Optional(Type.Union([GstRateSchema, Type.Null()])),
+    isService: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

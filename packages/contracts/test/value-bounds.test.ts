@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import {
+  CancelPurchaseOrderRequestSchema,
   CompleteWorkRequestSchema,
   ConfirmWorkRequestSchema,
+  CreateBudgetaryQuotationRequestSchema,
+  CreatePurchaseOrderRequestSchema,
   DateOnlySchema,
   ProposeAmendmentRequestSchema,
   RecordMbEntryRequestSchema,
   RejectAmendmentRequestSchema,
+  SaveBudgetaryQuotationLinesRequestSchema,
   SaveExtensionRequestSchema,
   SaveIssueChallanRequestSchema,
+  SavePurchaseOrderLinesRequestSchema,
+  UpdateOrganisationProfileRequestSchema,
   type ConfirmWorkRequest,
 } from '../src/index.js';
 
@@ -321,6 +327,305 @@ describe('notes, reasons, and addressees', () => {
     expect(Value.Check(SaveExtensionRequestSchema, request({ addressee: 'AB' }))).toBe(
       true,
     );
+  });
+});
+
+describe('purchase order and quotation lines', () => {
+  const withLine = (overrides: Record<string, unknown> = {}): unknown => ({
+    lines: [
+      {
+        description: 'Copper cable 2.5 sqmm',
+        unitCode: 'MTR',
+        quantity: '100.000',
+        rate: '85.500000',
+        ...overrides,
+      },
+    ],
+  });
+
+  it('accepts a well-formed line on both documents', () => {
+    expect(Value.Check(SavePurchaseOrderLinesRequestSchema, withLine())).toBe(true);
+    expect(Value.Check(SaveBudgetaryQuotationLinesRequestSchema, withLine())).toBe(
+      true,
+    );
+  });
+
+  it('accepts a purchase order line bought against an awarded item', () => {
+    expect(
+      Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ workItemId: UUID })),
+    ).toBe(true);
+  });
+
+  // A budgetary quotation precedes any award, so there is no Work whose
+  // items a line could point at — and no work_item_id column to hold one.
+  it('refuses a work item on a quotation line', () => {
+    expect(
+      Value.Check(
+        SaveBudgetaryQuotationLinesRequestSchema,
+        withLine({ workItemId: UUID }),
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a zero or negative ordered quantity', () => {
+    for (const quantity of ['0', '0.000', '-1', '-0.001']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ quantity })),
+        quantity,
+      ).toBe(false);
+    }
+  });
+
+  it('accepts every quantity the numeric(18,3) column can hold', () => {
+    for (const quantity of ['0.001', '1', '999999999999999.999']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ quantity })),
+        quantity,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a quantity too wide for the column', () => {
+    expect(
+      Value.Check(
+        SavePurchaseOrderLinesRequestSchema,
+        withLine({ quantity: '1000000000000000' }),
+      ),
+    ).toBe(false);
+  });
+
+  // The rate floor is ZERO, as it is on an awarded item: a vendor line at
+  // no charge is a real line, and the column says `rate >= 0`.
+  it('accepts a nil rate and refuses a negative one', () => {
+    for (const rate of ['0', '0.000001', '85.5']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ rate })),
+        rate,
+      ).toBe(true);
+    }
+    for (const rate of ['-0.000001', '-85.5']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ rate })),
+        rate,
+      ).toBe(false);
+    }
+  });
+
+  // Money is computed server-side from quantity and rate; a client-sent
+  // amount would be a second, disagreeing authority.
+  it('refuses a client-supplied line amount', () => {
+    expect(
+      Value.Check(
+        SavePurchaseOrderLinesRequestSchema,
+        withLine({ lineAmount: '8550.00' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('holds the trimmed floor on the line description and unit code', () => {
+    for (const description of ['   ', 'ab', '  a ']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ description })),
+        JSON.stringify(description),
+      ).toBe(false);
+    }
+    // The unit code floor is ONE character, not three: 'M' is a unit.
+    for (const unitCode of ['M', ' M ', 'MTR']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ unitCode })),
+        JSON.stringify(unitCode),
+      ).toBe(true);
+    }
+    for (const unitCode of ['', ' ', '   ']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withLine({ unitCode })),
+        JSON.stringify(unitCode),
+      ).toBe(false);
+    }
+  });
+
+  it('requires at least one line', () => {
+    expect(Value.Check(SavePurchaseOrderLinesRequestSchema, { lines: [] })).toBe(false);
+    expect(Value.Check(SaveBudgetaryQuotationLinesRequestSchema, { lines: [] })).toBe(
+      false,
+    );
+  });
+});
+
+describe('HSN/SAC codes and GST rates', () => {
+  const withTax = (overrides: Record<string, unknown>): unknown => ({
+    lines: [
+      {
+        description: 'Copper cable 2.5 sqmm',
+        unitCode: 'MTR',
+        quantity: '100.000',
+        rate: '85.500000',
+        ...overrides,
+      },
+    ],
+  });
+
+  it('accepts a code of four to eight digits', () => {
+    for (const hsnCode of ['853669', '995461', '85366990']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withTax({ hsnCode })),
+        hsnCode,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a code that is too short, too long, or not digits', () => {
+    for (const hsnCode of [
+      '',
+      '853',
+      '8536',
+      '85369',
+      '853669901',
+      '8536A',
+      ' 8536',
+      '85.36',
+    ]) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withTax({ hsnCode })),
+        JSON.stringify(hsnCode),
+      ).toBe(false);
+    }
+  });
+
+  // Every notified rate, including the quarter-percent one and the nil
+  // rate an exempt line carries.
+  it('accepts every notified GST rate', () => {
+    for (const gstRate of ['0', '0.25', '1.5', '5', '12', '18', '18.00', '28', '100']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withTax({ gstRate })),
+        gstRate,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a rate outside 0 to 100, or finer than the column stores', () => {
+    // '18.999' would be rounded away silently by numeric(5,2); refusing it
+    // is the only way the operator learns the third digit was ignored.
+    for (const gstRate of ['-5', '-0.01', '100.01', '101', '18.999', '.5', '05']) {
+      expect(
+        Value.Check(SavePurchaseOrderLinesRequestSchema, withTax({ gstRate })),
+        gstRate,
+      ).toBe(false);
+    }
+  });
+
+  it('holds the same code and rate bounds on a quotation line', () => {
+    expect(
+      Value.Check(
+        SaveBudgetaryQuotationLinesRequestSchema,
+        withTax({ hsnCode: '853669', gstRate: '18.00' }),
+      ),
+    ).toBe(true);
+    expect(
+      Value.Check(
+        SaveBudgetaryQuotationLinesRequestSchema,
+        withTax({ hsnCode: '853' }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('the organisation GST state code', () => {
+  it('accepts exactly two digits, and null to clear it', () => {
+    for (const stateCode of ['09', '27', '37']) {
+      expect(
+        Value.Check(UpdateOrganisationProfileRequestSchema, { stateCode }),
+        stateCode,
+      ).toBe(true);
+    }
+    expect(
+      Value.Check(UpdateOrganisationProfileRequestSchema, { stateCode: null }),
+    ).toBe(true);
+  });
+
+  it('refuses anything that is not two digits', () => {
+    for (const stateCode of ['', '9', '270', '2A', ' 27']) {
+      expect(
+        Value.Check(UpdateOrganisationProfileRequestSchema, { stateCode }),
+        JSON.stringify(stateCode),
+      ).toBe(false);
+    }
+  });
+});
+
+describe('procurement document text', () => {
+  const purchaseOrder = (overrides: Record<string, unknown> = {}): unknown => ({
+    vendorContactId: UUID,
+    poDate: '2026-01-15',
+    ...overrides,
+  });
+  const quotation = (overrides: Record<string, unknown> = {}): unknown => ({
+    addressedTo: 'Sr. DSTE',
+    subject: 'Supply of signalling cable',
+    bqDate: '2026-01-15',
+    ...overrides,
+  });
+
+  it('accepts the smallest well-formed draft of each', () => {
+    expect(Value.Check(CreatePurchaseOrderRequestSchema, purchaseOrder())).toBe(true);
+    expect(Value.Check(CreateBudgetaryQuotationRequestSchema, quotation())).toBe(true);
+  });
+
+  // The columns measure these TRIMMED, so the schemas do too: terms and
+  // notes BETWEEN 3 AND 4000, the addressee 2, the subject 3, the
+  // cancellation note BETWEEN 3 AND 2000.
+  it('refuses whitespace-only terms, notes, addressee, and subject', () => {
+    expect(
+      Value.Check(CreatePurchaseOrderRequestSchema, purchaseOrder({ terms: '  ' })),
+    ).toBe(false);
+    expect(
+      Value.Check(CreateBudgetaryQuotationRequestSchema, quotation({ notes: '   ' })),
+    ).toBe(false);
+    expect(
+      Value.Check(
+        CreateBudgetaryQuotationRequestSchema,
+        quotation({ addressedTo: ' ' }),
+      ),
+    ).toBe(false);
+    expect(
+      Value.Check(CreateBudgetaryQuotationRequestSchema, quotation({ subject: '  ' })),
+    ).toBe(false);
+  });
+
+  it('accepts the shortest addressee a quotation can carry', () => {
+    expect(
+      Value.Check(
+        CreateBudgetaryQuotationRequestSchema,
+        quotation({ addressedTo: 'AB' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('holds the trimmed floor on the cancellation note', () => {
+    expect(Value.Check(CancelPurchaseOrderRequestSchema, { note: '   ' })).toBe(false);
+    expect(Value.Check(CancelPurchaseOrderRequestSchema, { note: 'ab' })).toBe(false);
+    expect(
+      Value.Check(CancelPurchaseOrderRequestSchema, {
+        note: 'Vendor could not supply',
+      }),
+    ).toBe(true);
+  });
+
+  // Impossible dates must not reach the date guards, which compare dates
+  // as strings: '2026-02-31' sorts LATER than '2026-02-28'.
+  it('refuses a date that is merely YYYY-MM-DD shaped', () => {
+    expect(
+      Value.Check(
+        CreatePurchaseOrderRequestSchema,
+        purchaseOrder({ poDate: '2026-02-31' }),
+      ),
+    ).toBe(false);
+    expect(
+      Value.Check(
+        CreateBudgetaryQuotationRequestSchema,
+        quotation({ validUntil: '2026-04-31' }),
+      ),
+    ).toBe(false);
   });
 });
 

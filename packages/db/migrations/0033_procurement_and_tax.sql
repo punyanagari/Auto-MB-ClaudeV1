@@ -3,12 +3,15 @@
 --
 -- Three things arrive together because none of them is useful alone:
 --
--- 1. TAX FACTS. A GST tax invoice cannot be built from what the schema
---    held: an item had a description, a unit and a rate, but no HSN/SAC
---    code and no tax rate, and the organisation knew its GSTIN but not
---    the state that GSTIN belongs to. Both the IRP e-invoice payload and
---    the NIC e-way bill payload demand all four per line, so they are
---    recorded on the item and on the organisation.
+-- 1. TAX FACTS. The tax invoice here is CUMULATIVE: a works contract is
+--    a supply of services under GST, so the invoice carries one service
+--    line at a SAC for the Measurement Book's total — not per-item HSN
+--    lines. What the invoice therefore needs is the organisation's own
+--    state (for the CGST+SGST vs IGST split) and a SAC + rate at invoice
+--    time. Per-item HSN and rate are still recorded as OPTIONAL metadata
+--    (annexures, vendor reconciliation): filled from the vendor's tax
+--    invoice against a purchase order, mapped from a stored list, or
+--    entered by hand at 6 digits minimum.
 --
 -- 2. PURCHASE ORDERS. What a contractor buys in, to supply what the Work
 --    awarded. A PO is placed on a vendor contact, carries lines against
@@ -45,7 +48,7 @@ COMMENT ON COLUMN organisations.state_code IS
 -- switchboard and its installation service do not share an HSN or a rate.
 ALTER TABLE work_items
   ADD COLUMN hsn_code text
-    CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{4,8}$'),
+    CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{6,8}$'),
   ADD COLUMN gst_rate numeric(5, 2)
     CHECK (gst_rate IS NULL OR (gst_rate >= 0 AND gst_rate <= 100)),
   -- Drives IsServc on the e-invoice line, and the choice between an HSN
@@ -53,8 +56,10 @@ ALTER TABLE work_items
   ADD COLUMN is_service boolean NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN work_items.hsn_code IS
-  'HSN (goods) or SAC (services) code, 4 to 8 digits. Mandatory on every '
-  'e-invoice line, so an item without one cannot be invoiced.';
+  'HSN (goods) or SAC (services) code, 6 to 8 digits. OPTIONAL metadata: the '
+  'tax invoice is cumulative — one service line at a SAC for the MB total — '
+  'so an item invoices fine without this. Filled from a vendor invoice '
+  'against a purchase order, a stored list, or typed by hand.';
 COMMENT ON COLUMN work_items.gst_rate IS
   'Total GST percentage for the item. Split into CGST+SGST or carried as '
   'IGST at invoice time, from the supplier state against the place of supply.';
@@ -147,7 +152,7 @@ CREATE TABLE purchase_order_lines (
   work_item_id uuid,
   line_number integer NOT NULL CHECK (line_number > 0),
   description text NOT NULL CHECK (length(btrim(description)) >= 3),
-  hsn_code text CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{4,8}$'),
+  hsn_code text CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{6,8}$'),
   unit_code text NOT NULL CHECK (length(btrim(unit_code)) BETWEEN 1 AND 20),
   quantity numeric(18, 3) NOT NULL CHECK (quantity > 0),
   rate numeric(18, 6) NOT NULL CHECK (rate >= 0),
@@ -248,7 +253,7 @@ CREATE TABLE budgetary_quotation_lines (
   budgetary_quotation_id uuid NOT NULL,
   line_number integer NOT NULL CHECK (line_number > 0),
   description text NOT NULL CHECK (length(btrim(description)) >= 3),
-  hsn_code text CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{4,8}$'),
+  hsn_code text CHECK (hsn_code IS NULL OR hsn_code ~ '^[0-9]{6,8}$'),
   unit_code text NOT NULL CHECK (length(btrim(unit_code)) BETWEEN 1 AND 20),
   quantity numeric(18, 3) NOT NULL CHECK (quantity > 0),
   rate numeric(18, 6) NOT NULL CHECK (rate >= 0),

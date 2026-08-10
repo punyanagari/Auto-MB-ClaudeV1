@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { UuidSchema } from './primitives.js';
+import { GstStateCodeSchema, UuidSchema } from './primitives.js';
 
 export const MembershipRoleSchema = Type.Union([
   Type.Literal('owner'),
@@ -101,6 +101,14 @@ export const OrganisationProfileSchema = Type.Object(
       Type.Null(),
     ]),
     hasLogo: Type.Boolean(),
+    /** The place of business's two-digit GST state code (migration
+     * 0033). Not derived from the GSTIN above, though it is its first
+     * two characters: an unregistered organisation still has a place of
+     * business, and the invoice still has to name a state — it is what
+     * decides CGST+SGST against IGST for a given place of supply.
+     * Optional on the wire so a reader that predates the tax columns
+     * omits it rather than reporting a state it never selected. */
+    stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
     /** Warranty agreement template for a later document generator;
      * stored verbatim, never rendered here (Milestone 7: CRUD only). */
     warrantyTemplateText: Type.Union([
@@ -127,6 +135,8 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     contactEmail: Type.Optional(
       Type.Union([Type.String({ minLength: 3, maxLength: 200 }), Type.Null()]),
     ),
+    /** Two digits, exactly as the column's CHECK holds; null clears it. */
+    stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
     warrantyTemplateText: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),
     ),

@@ -59,6 +59,7 @@ interface ProfileRow extends Record<string, unknown> {
   contact_email: string | null;
   logo_object_key: string | null;
   warranty_template_text: string | null;
+  state_code: string | null;
 }
 
 function toProfile(row: ProfileRow): OrganisationProfile {
@@ -71,6 +72,7 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     hasLogo: row.logo_object_key !== null,
+    stateCode: row.state_code,
     warrantyTemplateText: row.warranty_template_text,
   };
 }
@@ -78,11 +80,44 @@ function toProfile(row: ProfileRow): OrganisationProfile {
 async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
   const [row] = await tx<ProfileRow[]>`
     select id, name, slug, address, gstin, contact_phone,
-           contact_email, logo_object_key, warranty_template_text
+           contact_email, logo_object_key, warranty_template_text, state_code
     from organisations
   `;
   if (!row) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
   return row;
+}
+
+/**
+ * The state code and the GSTIN must agree (migration 0033).
+ *
+ * A registered GSTIN begins with the two-digit state code of the
+ * registration, and the supplier's state is what decides CGST+SGST
+ * against IGST for a given place of supply. Storing a state code that
+ * contradicts the GSTIN would therefore split the tax the wrong way on
+ * every invoice raised afterwards — and the invoice carries both values,
+ * so the contradiction is visible to the officer reading it.
+ *
+ * The check runs against the values as they will STAND after this
+ * request, not against the ones it happens to name: editing the GSTIN
+ * alone can contradict a state code stored months ago, and that is the
+ * same defect arriving by the other door. It is a refusal rather than a
+ * silent derivation because the column is a fact in its own right — an
+ * unregistered organisation has no GSTIN to derive from and still has a
+ * place of business — so the operator says which of the two is wrong.
+ */
+function assertStateCodeMatchesGstin(
+  stateCode: string | null,
+  gstin: string | null,
+): void {
+  if (stateCode === null || gstin === null) return;
+  const registered = gstin.slice(0, 2);
+  if (stateCode !== registered) {
+    throw httpError(
+      400,
+      'STATE_CODE_GSTIN_MISMATCH',
+      `The GST state code ${stateCode} contradicts the GSTIN ${gstin}, which is registered in state ${registered}. The state code decides CGST+SGST against IGST on every invoice, so correct whichever of the two is wrong.`,
+    );
+  }
 }
 
 /**
@@ -164,11 +199,19 @@ export function registerOrganisationRoutes(
             body.contactPhone !== undefined ? body.contactPhone : current.contact_phone,
           contact_email:
             contactEmail !== undefined ? contactEmail : current.contact_email,
+          // Two digits by the contract schema and by the column's own
+          // CHECK; null clears it, which an organisation that entered the
+          // wrong state must be able to do.
+          state_code:
+            body.stateCode !== undefined ? body.stateCode : current.state_code,
           warranty_template_text:
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText
               : current.warranty_template_text,
         };
+        // Against the values as they will stand, so neither field can be
+        // edited into contradicting the other.
+        assertStateCodeMatchesGstin(next.state_code, next.gstin);
         const [updated] = await tx<ProfileRow[]>`
           update organisations set
             name = ${next.name},
@@ -176,11 +219,13 @@ export function registerOrganisationRoutes(
             gstin = ${next.gstin},
             contact_phone = ${next.contact_phone},
             contact_email = ${next.contact_email},
+            state_code = ${next.state_code},
             warranty_template_text = ${next.warranty_template_text},
             updated_at = now()
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
-                    contact_email, logo_object_key, warranty_template_text
+                    contact_email, logo_object_key, warranty_template_text,
+                    state_code
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
         // Milestone 6: record each changed field's old and new value —
@@ -192,6 +237,7 @@ export function registerOrganisationRoutes(
             gstin: current.gstin,
             contactPhone: current.contact_phone,
             contactEmail: current.contact_email,
+            stateCode: current.state_code,
           },
           {
             name: next.name,
@@ -199,6 +245,7 @@ export function registerOrganisationRoutes(
             gstin: next.gstin,
             contactPhone: next.contact_phone,
             contactEmail: next.contact_email,
+            stateCode: next.state_code,
           },
         );
         await tx`
@@ -263,7 +310,8 @@ export function registerOrganisationRoutes(
               updated_at = now()
             where id = ${organisationId}
             returning id, name, slug, address, gstin, contact_phone,
-                      contact_email, logo_object_key, warranty_template_text
+                      contact_email, logo_object_key, warranty_template_text,
+                      state_code
           `;
           if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
           await tx`

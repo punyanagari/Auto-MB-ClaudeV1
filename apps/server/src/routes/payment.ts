@@ -1,10 +1,13 @@
 import {
   ApiErrorSchema,
+  GstRateSchema,
+  HsnCodeSchema,
   PAYMENT_MATRIX_CATEGORIES,
   PaymentMatrixResponseSchema,
   PaymentMatrixRowSchema,
   SetWorkItemPaymentCategoryRequestSchema,
   UpsertPaymentMatrixRowRequestSchema,
+  UuidSchema,
   WorkItemPaymentCategoryResponseSchema,
   type PaymentMatrixCategory,
   type PaymentMatrixRow,
@@ -12,7 +15,7 @@ import {
   type UpsertPaymentMatrixRowRequest,
 } from '@auto-mb/contracts';
 import { parseDecimalToMinorUnits } from '@auto-mb/loa-parser';
-import { Type } from '@sinclair/typebox';
+import { Type, type Static } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
@@ -22,6 +25,7 @@ import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { assertWorkOperable } from '../work-status.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix and item category
@@ -234,6 +238,61 @@ const MATRIX_COLUMNS_SQL = `
   pct_installation::text as pct_installation, pct_pac::text as pct_pac,
   pct_final_bill::text as pct_final_bill, created_at, updated_at
 `;
+
+/* --- Item tax facts (migration 0033) -----------------------------------
+ *
+ * PATCH /api/work-items/:id/tax-facts writes the three columns 0033 added
+ * to `work_items`: the HSN/SAC code, the total GST rate, and whether the
+ * item is a service. They sit beside the payment category above because
+ * they are the same KIND of thing — per-item configuration an operator
+ * corrects, not the awarded baseline the amendment engine guards — so
+ * they take the same writer role, the same item row lock and the same
+ * `assertWorkAccess`, and refuse on a completed Work like every other
+ * writer (R8).
+ *
+ * There is no billing freeze here of the sort the payment category
+ * carries. A GST tax invoice snapshots the HSN and the rate it charged,
+ * exactly as every other issued document snapshots what it printed, so
+ * correcting a mistyped HSN never rewrites an invoice already sent — and
+ * an item whose code was wrong must stay correctable, because the IRP
+ * refuses the next e-invoice line until it is.
+ *
+ * The field shapes are the contract's own primitives (HsnCodeSchema,
+ * GstRateSchema — each the exact bound of its column's CHECK) so a
+ * mistyped code is a 400 naming the field rather than a 23514 surfacing
+ * as an opaque 500. `undefined` leaves a field as it was; an explicit
+ * null clears it, which is a real operation — an HSN entered against the
+ * wrong item has to be removable. `isService` has no null: its column is
+ * NOT NULL DEFAULT false. */
+const SetWorkItemTaxFactsRequestSchema = Type.Object(
+  {
+    hsnCode: Type.Optional(Type.Union([HsnCodeSchema, Type.Null()])),
+    gstRate: Type.Optional(Type.Union([GstRateSchema, Type.Null()])),
+    isService: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+type SetWorkItemTaxFactsRequest = Static<typeof SetWorkItemTaxFactsRequestSchema>;
+
+const WorkItemTaxFactsResponseSchema = Type.Object(
+  {
+    id: UuidSchema,
+    itemNumber: Type.String(),
+    hsnCode: Type.Union([HsnCodeSchema, Type.Null()]),
+    gstRate: Type.Union([GstRateSchema, Type.Null()]),
+    isService: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+interface TaxFactsRow {
+  id: string;
+  item_number: string;
+  hsn_code: string | null;
+  /** `::text` from numeric(5,2): the exact stored decimal, never a float. */
+  gst_rate: string | null;
+  is_service: boolean;
+}
 
 export function registerPaymentRoutes(
   app: FastifyInstance,
@@ -538,6 +597,120 @@ export function registerPaymentRoutes(
           itemNumber: updated.item_number,
           paymentCategory:
             updated.payment_category as SetWorkItemPaymentCategoryRequest['paymentCategory'],
+        };
+      });
+    },
+  );
+
+  app.patch(
+    '/api/work-items/:id/tax-facts',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SetWorkItemTaxFactsRequestSchema,
+        response: { 200: WorkItemTaxFactsResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workItemId } = request.params as { id: string };
+      const body = request.body as SetWorkItemTaxFactsRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+
+        // Lock the Work row FIRST, then the item — the order every other
+        // Work-scoped writer takes (routes/work-completion.ts locks these
+        // same two rows in exactly this order), so a tax-fact edit racing
+        // a completion waits rather than deadlocking. The subquery only
+        // READS work_items, so it takes no lock of its own and cannot
+        // invert the order. A foreign or missing item leaves the subquery
+        // empty and the Work unfound: 404, never a hint that the id
+        // exists in some other tenant.
+        const [work] = await tx<{ id: string; status: string }[]>`
+          select id, status from works
+          where id = (
+              select work_id from work_items
+              where id = ${workItemId} and deleted_at is null
+            )
+            and deleted_at is null
+          for update
+        `;
+        if (!work) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        await assertWorkAccess(tx, user.id, work.id);
+        // R8: a completed Work is closed to edits until it is reopened.
+        // The lock above serialises this against the completion itself.
+        assertWorkOperable(work.status, "changing an item's tax facts");
+
+        // The item row lock serialises concurrent tax-fact edits so the
+        // before/after audit pairs chain truthfully, exactly as the
+        // category edit above does.
+        const [item] = await tx<(TaxFactsRow & { work_id: string })[]>`
+          select id, work_id, item_number, hsn_code,
+                 gst_rate::text as gst_rate, is_service
+          from work_items
+          where id = ${workItemId} and deleted_at is null
+          for update
+        `;
+        if (!item) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+
+        // `undefined` means "leave as it was"; an explicit null clears.
+        const next = {
+          hsn_code: body.hsnCode !== undefined ? body.hsnCode : item.hsn_code,
+          gst_rate: body.gstRate !== undefined ? body.gstRate : item.gst_rate,
+          is_service: body.isService !== undefined ? body.isService : item.is_service,
+        };
+        const [updated] = await tx<TaxFactsRow[]>`
+          update work_items set
+            hsn_code = ${next.hsn_code},
+            gst_rate = ${next.gst_rate},
+            is_service = ${next.is_service}
+          where id = ${workItemId}
+          returning id, item_number, hsn_code,
+                    gst_rate::text as gst_rate, is_service
+        `;
+        if (!updated) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+
+        const changes = auditDiff(
+          {
+            hsnCode: item.hsn_code,
+            gstRate: item.gst_rate,
+            isService: item.is_service,
+          },
+          {
+            hsnCode: updated.hsn_code,
+            gstRate: updated.gst_rate,
+            isService: updated.is_service,
+          },
+        );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'work_item.tax_facts_changed',
+          'work_items',
+          workItemId,
+          {
+            workId: item.work_id,
+            itemNumber: item.item_number,
+            before: changes.before,
+            after: changes.after,
+          },
+        );
+        return {
+          id: updated.id,
+          itemNumber: updated.item_number,
+          hsnCode: updated.hsn_code,
+          gstRate: updated.gst_rate,
+          isService: updated.is_service,
         };
       });
     },
