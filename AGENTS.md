@@ -57,6 +57,19 @@ High-risk work requires a fresh review pass: RLS, authentication, authorization,
 
 Do not create a new package until there is a real second consumer or independent release boundary. Document rendering and shared test infrastructure stay inside the module that needs them until that bar is met.
 
+## Agent prose style
+
+Conversational replies default to the vendored `caveman` skill
+(`.claude/skills/caveman/SKILL.md`): terse fragments, no filler or hedging,
+technical terms and numbers exact. A `SessionStart` hook turns it on for every
+session; `.claude/skills/PROVENANCE.md` explains the wiring and the off
+switches.
+
+This governs chat register only. Everything that outlives the conversation —
+code, comments, commit messages, documentation, issue and PR text — is written
+in normal prose, as is any security warning or irreversible-action
+confirmation. The engineering rules above are unaffected.
+
 ## Definition of done
 
 A change is complete only when:
