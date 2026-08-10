@@ -29,8 +29,8 @@ jobs:
           tar \
             --exclude='./.git' \
             --exclude='./node_modules' \
-            --exclude='./branch-checkout.tar.gz' \
-            -czf branch-checkout.tar.gz .
+            -czf /tmp/branch-checkout.tar.gz .
+          mv /tmp/branch-checkout.tar.gz branch-checkout.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: product-experience-checkout
