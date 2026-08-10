@@ -6,6 +6,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 
 interface WorkAmendmentsProps {
   readonly api: ApiClient;
@@ -93,29 +94,31 @@ export function WorkAmendments({
         <p className="text-muted-foreground">No amendments proposed yet.</p>
       )}
       {canCreateDocuments && (
-        <AmendmentForm
-          items={workItems}
-          schedules={schedules}
-          pending={pending}
-          onProposeChange={(body) => {
-            void act(async () => {
-              await api.proposeAmendment(organisationId, workId, body);
-              await refresh();
-            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-          onProposeAdd={(body) => {
-            void act(async () => {
-              await api.proposeAddItem(organisationId, workId, body);
-              await refresh();
-            }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-          onProposeRemove={(body) => {
-            void act(async () => {
-              await api.proposeItemRemoval(organisationId, workId, body);
-              await refresh();
-            }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
-          }}
-        />
+        <Disclosure label="Submit amendment" startOpen={amendments.length === 0}>
+          <AmendmentForm
+            items={workItems}
+            schedules={schedules}
+            pending={pending}
+            onProposeChange={(body) => {
+              void act(async () => {
+                await api.proposeAmendment(organisationId, workId, body);
+                await refresh();
+              }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+            }}
+            onProposeAdd={(body) => {
+              void act(async () => {
+                await api.proposeAddItem(organisationId, workId, body);
+                await refresh();
+              }, 'Amendment recorded — it applies once approved (immediately if you hold the approval authority).');
+            }}
+            onProposeRemove={(body) => {
+              void act(async () => {
+                await api.proposeItemRemoval(organisationId, workId, body);
+                await refresh();
+              }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
+            }}
+          />
+        </Disclosure>
       )}
     </>
   );
@@ -205,7 +208,6 @@ function AmendmentForm({
         });
       }}
     >
-      <h3>Propose an amendment</h3>
       <Field>
         <label htmlFor="amendment-kind">Amendment</label>
         <select

@@ -31,6 +31,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -144,26 +145,10 @@ const CONTACT_COLUMNS = `
   state_code, is_consignee, is_vendor, is_client, active, created_at
 `;
 
-/** GSTIN structure (legacy §2/§5.7/§9): the standard 15-character shape
- * (state code, PAN, entity code, the fixed 'Z', check character) OR a
- * TDS-deductor GSTIN — railway units are deductors, and their GSTINs end
- * in 'D'. Uppercased before validation; the 0028 CHECK re-proves both
- * shapes at the database. */
-const GSTIN_STANDARD = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
-const GSTIN_DEDUCTOR = /^[0-9]{2}[0-9A-Z]{12}D$/;
-
-function normaliseGstin(raw: string | undefined): string | null {
-  if (raw === undefined) return null;
-  const gstin = raw.trim().toUpperCase();
-  if (!GSTIN_STANDARD.test(gstin) && !GSTIN_DEDUCTOR.test(gstin)) {
-    throw httpError(
-      400,
-      'GSTIN_INVALID',
-      'The GSTIN must be 15 characters: 2-digit state code + PAN + entity code + Z + check character, or a TDS-deductor GSTIN ending in D (railway units).',
-    );
-  }
-  return gstin;
-}
+// GSTIN and email shape live in ../contact-fields.js: the organisation
+// profile writes the same two fields for the contractor itself and must
+// prove them identically (its values are printed on every generated
+// document), so the pair is shared rather than duplicated.
 
 /** Legacy rule R16: bill-paying authorities (Sr.DFM / DFM / ADFM) and
  * awarding authorities (Sr.DSTE) are NEVER consignees. The designation is
@@ -409,9 +394,11 @@ export function registerMasterRoutes(
       const body = request.body as SaveContactRequest;
       // Every contact created in this wave carries the consignee role (the
       // only active one), so the R16 authority refusal applies to every
-      // create; the GSTIN is normalised before it can reach the database.
+      // create; the GSTIN and the email are normalised before either can
+      // reach the database.
       assertNotAuthorityDesignation(body.designation);
       const gstin = normaliseGstin(body.gstin);
+      const email = normaliseEmail(body.email);
       const contact = await withBoundTenant(
         database,
         organisationId,
@@ -427,7 +414,7 @@ export function registerMasterRoutes(
             values (
               ${organisationId}, ${body.designation},
               ${body.contactPerson ?? null}, ${body.address ?? null},
-              ${body.phone ?? null}, ${body.email ?? null}, ${gstin},
+              ${body.phone ?? null}, ${email}, ${gstin},
               ${body.pincode ?? null}, ${body.stateCode ?? null}, true,
               ${user.id}
             )
@@ -480,6 +467,7 @@ export function registerMasterRoutes(
       // are deliberately not editable here.
       assertNotAuthorityDesignation(body.designation);
       const gstin = normaliseGstin(body.gstin);
+      const email = normaliseEmail(body.email);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [row] = await tx<ContactRow[]>`
@@ -487,7 +475,7 @@ export function registerMasterRoutes(
           set designation = ${body.designation},
               contact_person = ${body.contactPerson ?? null},
               address = ${body.address ?? null}, phone = ${body.phone ?? null},
-              email = ${body.email ?? null}, gstin = ${gstin},
+              email = ${email}, gstin = ${gstin},
               pincode = ${body.pincode ?? null},
               state_code = ${body.stateCode ?? null}
           where id = ${id}

@@ -347,6 +347,88 @@ describe('contacts master (consignee role active, vendor/client dormant)', () =>
     expect(invalid.json()).toMatchObject({ code: 'GSTIN_INVALID' });
   });
 
+  it('stores only real email addresses, trimming what was pasted', async () => {
+    // A single real address — plus tag, hyphens, a long government
+    // sub-domain — carrying the stray spaces of a paste: accepted, and
+    // stored trimmed.
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'SSE (P.Way) TKD',
+        address: 'Tughlakabad Depot',
+        email: '  accounts+gst@stores.nr.indianrailways.gov.in  ',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const contact = created.json<Contact>();
+    expect(contact.email).toBe('accounts+gst@stores.nr.indianrailways.gov.in');
+
+    // The field stays optional: leaving it out is still legitimate.
+    const without = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation: 'SSE (P.Way) NDLS', address: 'New Delhi Depot' },
+    });
+    expect(without.statusCode, without.body).toBe(201);
+    expect(without.json<Contact>().email).toBeNull();
+
+    // What offices actually park in an optional field: a note, a dash, a
+    // phone number, an unfinished address with a reminder beside it, two
+    // addresses in one box, a domain with no dot. None is an address.
+    for (const email of [
+      'n/a',
+      '---',
+      '011-23385678',
+      'office@ — ask Ramesh',
+      'stores@nr.gov.in / accounts@nr.gov.in',
+      'stores@nr.gov.in/accounts@nr.gov.in',
+      'ramesh@railnet',
+    ]) {
+      const refused = await authed(owner, {
+        method: 'POST',
+        url: '/api/masters/contacts',
+        organisationId,
+        payload: {
+          designation: 'SSE (Works) GZB',
+          address: 'Works Depot, Ghaziabad',
+          email,
+        },
+      });
+      expect(refused.statusCode, `${email}: ${refused.body}`).toBe(400);
+      expect(refused.json()).toMatchObject({ code: 'EMAIL_INVALID' });
+    }
+
+    // The update path is guarded too — and a good address still saves.
+    const badUpdate = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${contact.id}`,
+      organisationId,
+      payload: {
+        designation: contact.designation,
+        address: contact.address ?? undefined,
+        email: 'ask at the depot',
+      },
+    });
+    expect(badUpdate.statusCode).toBe(400);
+    expect(badUpdate.json()).toMatchObject({ code: 'EMAIL_INVALID' });
+
+    const goodUpdate = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${contact.id}`,
+      organisationId,
+      payload: {
+        designation: contact.designation,
+        address: contact.address ?? undefined,
+        email: 'sse.pway.tkd@nr.railnet.gov.in',
+      },
+    });
+    expect(goodUpdate.statusCode, goodUpdate.body).toBe(200);
+    expect(goodUpdate.json<Contact>().email).toBe('sse.pway.tkd@nr.railnet.gov.in');
+  });
+
   it('refuses bill-paying and awarding authorities as consignees (R16)', async () => {
     for (const designation of [
       'Sr. DFM Delhi Division',
@@ -969,6 +1051,122 @@ describe('organisation profile: warranty template', () => {
     });
     expect(cleared.statusCode, cleared.body).toBe(200);
     expect(cleared.json<OrganisationProfile>().warrantyTemplateText).toBeNull();
+  });
+});
+
+describe('organisation profile: the contractor own GSTIN and email', () => {
+  // Branding is read live at every render, so both fields are printed on
+  // every Delivery Challan, Issue Challan, MB, extension letter, and
+  // correction notice. They are proved exactly as a contact's are.
+
+  it('validates and uppercases the GSTIN like a contact does', async () => {
+    // Correctly typed but lowercase: accepted, stored uppercase. The
+    // contacts endpoint has always accepted either case; this one used to
+    // bounce it at the schema with a generic 400.
+    const lower = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { gstin: '27aabcs1429b1zb' },
+    });
+    expect(lower.statusCode, lower.body).toBe(200);
+    expect(lower.json<OrganisationProfile>().gstin).toBe('27AABCS1429B1ZB');
+
+    // A deductor-shaped registration is accepted too — refusing it here
+    // could only ever be a false refusal.
+    const deductor = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { gstin: '27AAAGM0289C1DD' },
+    });
+    expect(deductor.statusCode, deductor.body).toBe(200);
+    expect(deductor.json<OrganisationProfile>().gstin).toBe('27AAAGM0289C1DD');
+
+    // An unrelated field edit leaves the stored GSTIN alone (omitted is
+    // "leave as it was", not "revalidate" and not "clear").
+    const unrelated = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { contactPhone: '011-23385678' },
+    });
+    expect(unrelated.statusCode, unrelated.body).toBe(200);
+    expect(unrelated.json<OrganisationProfile>().gstin).toBe('27AAAGM0289C1DD');
+
+    // 15 uppercase alphanumerics is no longer enough: neither a filler
+    // string nor a transposed GSTIN is a GSTIN.
+    for (const gstin of ['AAAAAAAAAAAAAAA', '27AABCS1429BZ1B']) {
+      const refused = await authed(owner, {
+        method: 'PATCH',
+        url: '/api/organisation/profile',
+        organisationId,
+        payload: { gstin },
+      });
+      expect(refused.statusCode, `${gstin}: ${refused.body}`).toBe(400);
+      expect(refused.json()).toMatchObject({ code: 'GSTIN_INVALID' });
+    }
+
+    // The refusal wrote nothing; the good value still stands.
+    const read = await authed(viewer, {
+      method: 'GET',
+      url: '/api/organisation/profile',
+      organisationId,
+    });
+    expect(read.json<OrganisationProfile>().gstin).toBe('27AAAGM0289C1DD');
+
+    // Clearing an unregistered organisation's GSTIN stays possible.
+    const cleared = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { gstin: null },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json<OrganisationProfile>().gstin).toBeNull();
+  });
+
+  it('refuses a letterhead email that is not an email address', async () => {
+    const saved = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { contactEmail: '  accounts+gst@sharma-electricals.co.in  ' },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json<OrganisationProfile>().contactEmail).toBe(
+      'accounts+gst@sharma-electricals.co.in',
+    );
+
+    for (const contactEmail of ['n/a', '---', '011-23385678', 'office@ — ask Ramesh']) {
+      const refused = await authed(owner, {
+        method: 'PATCH',
+        url: '/api/organisation/profile',
+        organisationId,
+        payload: { contactEmail },
+      });
+      expect(refused.statusCode, `${contactEmail}: ${refused.body}`).toBe(400);
+      expect(refused.json()).toMatchObject({ code: 'EMAIL_INVALID' });
+    }
+
+    // Nothing junk reached the letterhead.
+    const read = await authed(viewer, {
+      method: 'GET',
+      url: '/api/organisation/profile',
+      organisationId,
+    });
+    expect(read.json<OrganisationProfile>().contactEmail).toBe(
+      'accounts+gst@sharma-electricals.co.in',
+    );
+
+    const cleared = await authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { contactEmail: null },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json<OrganisationProfile>().contactEmail).toBeNull();
   });
 });
 

@@ -63,6 +63,7 @@ let storageDir: string;
 let organisationId: string;
 let outsiderOrganisationId: string;
 let ownerUserId: string;
+let officeUserId: string;
 let workId: string;
 let itemAId: string; // installed 3.000 of awarded 10.000
 let itemBId: string; // installed 2.000 of awarded 2.000 (cap fixture)
@@ -215,6 +216,24 @@ beforeAll(async () => {
   `;
   if (!ownerUser) throw new Error('owner user missing');
   ownerUserId = ownerUser.id;
+
+  const [officeUser] = await admin<{ id: string }[]>`
+    select "id" from auth_users where "email" = ${officeEmail}
+  `;
+  if (!officeUser) throw new Error('office user missing');
+  officeUserId = officeUser.id;
+
+  // Cancelling a PAC reverses a quantity-ledger contribution (the
+  // certified quantities return to the R18 pool), so it takes the
+  // EXPLICIT cancel authority, exactly as the challan, Issue Challan and
+  // Measurement Book cancels do. Owner and office hold it here; the
+  // authority section below revokes and restores it to prove the gate.
+  await admin`
+    update organisation_memberships
+    set can_cancel_documents = true
+    where organisation_id = ${organisationId}
+      and user_id = any(${[ownerUserId, officeUserId]}::text[])
+  `;
 
   // The scoped office member sees only assigned Works — and is assigned
   // to none, so every PAC route must answer 404 for them.
@@ -1175,5 +1194,107 @@ describe('the pac_certificates cancellation CHECK is NULL-proof (0027)', () => {
           cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
       where id = ${certificate.id}
     `;
+  });
+});
+
+describe('cancelling a PAC needs the explicit cancel authority', () => {
+  let subjectId: string;
+
+  beforeAll(async () => {
+    // The earlier sections certified item A up to its installed total, so
+    // this one installs its own headroom and certifies inside it — the
+    // certificate under test is entirely this section's own.
+    const location = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/locations',
+      organisationId,
+      payload: { name: `Authority siding ${runId}`, kind: 'station' },
+    });
+    expect(location.statusCode, location.body).toBe(201);
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: itemAId,
+        quantity: '2.000',
+        installedOn: '2026-08-02',
+        locationId: location.json<{ id: string }>().id,
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+
+    const created = await record(office, {
+      reference: `PAC-AUTH-${runId}`,
+      issueDate: '2026-08-06',
+      consigneeMasterId: consigneeId,
+      items: [{ workItemId: itemAId, certifiedQuantity: '1.000' }],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    subjectId = created.json<PacCertificate>().id;
+  }, 30_000);
+
+  it('refuses an office member created without the cancel flag', async () => {
+    await admin`
+      update organisation_memberships
+      set can_cancel_documents = false
+      where organisation_id = ${organisationId} and user_id = ${officeUserId}
+    `;
+    try {
+      const denied = await authed(office, {
+        method: 'POST',
+        url: `/api/pac-certificates/${subjectId}/cancel`,
+        organisationId,
+        payload: { note: 'Certificate withdrawn by the railway' },
+      });
+      expect(denied.statusCode, denied.body).toBe(403);
+      expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+      // The certificate — and the quantities it holds out of the R18
+      // pool — are exactly as they were.
+      const [row] = await admin<{ status: string }[]>`
+        select status from pac_certificates where id = ${subjectId}
+      `;
+      expect(row?.status).toBe('recorded');
+    } finally {
+      await admin`
+        update organisation_memberships
+        set can_cancel_documents = true
+        where organisation_id = ${organisationId} and user_id = ${officeUserId}
+      `;
+    }
+  });
+
+  it('still lets a granted office member cancel, note trimmed', async () => {
+    // The remedy the exposure calls for is granting the flag, not
+    // widening the route: with it, the established office workflow is
+    // unchanged.
+    const cancelled = await authed(office, {
+      method: 'POST',
+      url: `/api/pac-certificates/${subjectId}/cancel`,
+      organisationId,
+      payload: { note: '  Certificate withdrawn by the railway.  ' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    const certificate = cancelled.json<PacCertificate>();
+    expect(certificate.status).toBe('cancelled');
+    expect(certificate.cancellationNote).toBe('Certificate withdrawn by the railway.');
+  });
+
+  it('answers a blank cancellation note with a 400, not a 500', async () => {
+    const created = await record(office, {
+      reference: `PAC-AUTH2-${runId}`,
+      issueDate: '2026-08-06',
+      consigneeMasterId: consigneeId,
+      items: [{ workItemId: itemAId, certifiedQuantity: '1.000' }],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const blank = await authed(office, {
+      method: 'POST',
+      url: `/api/pac-certificates/${created.json<PacCertificate>().id}/cancel`,
+      organisationId,
+      payload: { note: '   ' },
+    });
+    expect(blank.statusCode, blank.body).toBe(400);
+    expect(blank.json()).toMatchObject({ code: 'CANCELLATION_NOTE_REQUIRED' });
   });
 });

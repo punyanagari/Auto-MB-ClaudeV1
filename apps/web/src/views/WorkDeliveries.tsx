@@ -241,7 +241,9 @@ export function WorkDeliveries({
         </DataTable>
       ) : (
         <p className="text-muted-foreground">
-          No serial numbers recorded yet. Serials are recorded on each issued challan.
+          No serial numbers recorded yet. Serials are recorded on the challan itself —
+          on the draft for items flagged for serial traceability, which the server holds
+          the issue for until every unit has one, and after issue for the rest.
         </p>
       )}
     </>

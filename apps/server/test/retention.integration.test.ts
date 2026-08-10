@@ -403,7 +403,12 @@ describe('contract instruments', () => {
       method: 'POST',
       url: `/api/works/${workId}/instruments`,
       organisationId,
-      payload: { kind: 'pbg', reference: `PBG-${runId}`, issuedOn: '2026-08-01' },
+      payload: {
+        kind: 'pbg',
+        reference: `PBG-${runId}`,
+        amount: '45000.00',
+        issuedOn: '2026-08-01',
+      },
     });
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json()).toMatchObject({ code: 'INSTRUMENT_EXISTS' });
@@ -436,7 +441,10 @@ describe('Measurement Book and the first partial-billing cycle', () => {
         workItemId: itemAId,
         deliveryChallanId: challanId,
         measuredQuantity: '2',
-        measuredOn: '2026-08-12',
+        // Inside the measurement window: on or after the LOA letter date
+        // and not in the future (the challan issued on this date proves
+        // it is not).
+        measuredOn: '2026-08-08',
         mbBookRef: 'MB-1/p3',
       },
     });
@@ -449,7 +457,7 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       payload: {
         workItemId: itemAId,
         measuredQuantity: '1.5',
-        measuredOn: '2026-08-12',
+        measuredOn: '2026-08-08',
       },
     });
     expect(over.statusCode).toBe(409);
@@ -462,7 +470,7 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       payload: {
         workItemId: itemAId,
         measuredQuantity: '1',
-        measuredOn: '2026-08-13',
+        measuredOn: '2026-08-08',
       },
     });
     expect(second.statusCode, second.body).toBe(201);

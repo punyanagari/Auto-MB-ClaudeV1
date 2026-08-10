@@ -109,6 +109,14 @@ function toInstrument(row: InstrumentRow): Instrument {
   };
 }
 
+/** True when a DecimalString denotes a value greater than zero, decided
+ * on the digits themselves — never binary floating-point arithmetic
+ * (engineering rule 5). The schema pattern guarantees the shape, so a
+ * leading '-' is the only sign and any non-zero digit means positive. */
+function isPositiveDecimal(value: string): boolean {
+  return !value.startsWith('-') && /[1-9]/.test(value);
+}
+
 interface MbEntryRow {
   id: string;
   work_item_id: string;
@@ -594,10 +602,57 @@ export function registerRetentionRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<{ id: string }[]>`
-            select id from works where id = ${workId} and deleted_at is null
+          const [work] = await tx<{ id: string; letter_date: string; today: string }[]>`
+            select w.id, w.letter_date::text as letter_date,
+                   (now() at time zone o.timezone)::date::text as today
+            from works w
+            join organisations o on o.id = w.organisation_id
+            where w.id = ${workId} and w.deleted_at is null
           `;
           if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          // Product invariant 8, the same window every other dated record
+          // obeys (challans 0010, installations 0017, PACs 0022): the
+          // issue date is never in the future, in the organisation's own
+          // timezone rather than the server clock. A typo'd year hides
+          // the instrument from the dashboard expiry sweep while still
+          // counting toward the PBG coverage sum, silently clearing the
+          // "under value" alert for a guarantee that does not yet exist.
+          if (body.issuedOn > work.today) {
+            throw httpError(
+              400,
+              'INSTRUMENT_ISSUED_ON_INVALID',
+              `The issue date cannot be in the future (today is ${work.today}).`,
+            );
+          }
+          // Deliberately NOT refused when the issue date precedes the LOA
+          // letter date: a 'doc' instrument (tender document, or an EMD /
+          // bid security later converted) legitimately predates the
+          // letter, and paper records are back-dated. It is recorded as a
+          // warning on the audit event instead.
+          const issuedBeforeLetterDate = body.issuedOn < work.letter_date;
+          if (body.expiresOn !== undefined && body.expiresOn < body.issuedOn) {
+            throw httpError(
+              400,
+              'INSTRUMENT_EXPIRY_INVALID',
+              `The expiry date ${body.expiresOn} cannot precede the issue date ${body.issuedOn}. Check the year on the instrument — an expiry before issue reads as a lapsed guarantee on the dashboard for the rest of the Work.`,
+            );
+          }
+          // Legacy §5.5: a performance guarantee must record what it
+          // secures. The dashboard sums active pbg amounts against
+          // works.pbg_required_amount, so a NULL or zero amount keeps
+          // showing "under value" for a guarantee actually lodged, with
+          // nothing to distinguish it from a real shortfall. 'pac' and
+          // 'doc' instruments legitimately carry no amount.
+          if (
+            body.kind === 'pbg' &&
+            (body.amount === undefined || !isPositiveDecimal(body.amount))
+          ) {
+            throw httpError(
+              400,
+              'INSTRUMENT_AMOUNT_REQUIRED',
+              'A performance guarantee must record the amount it secures, greater than zero — the dashboard checks that sum against the required PBG value.',
+            );
+          }
           const [row] = await tx<InstrumentRow[]>`
             insert into work_instruments (
               organisation_id, work_id, kind, reference, amount, issued_on,
@@ -633,6 +688,10 @@ export function registerRetentionRoutes(
               workId,
               kind: body.kind,
               reference: body.reference,
+              // The soft half of the date rule: accepted, but recorded so
+              // an instrument issued before the LOA is visible in the
+              // trail rather than silent.
+              issuedBeforeLetterDate,
             },
           );
           return toInstrument(row);
@@ -666,11 +725,13 @@ export function registerRetentionRoutes(
           {
             work_id: string;
             status: string;
+            issued_on: string;
             expires_on: string | null;
             notes: string | null;
           }[]
         >`
-          select work_id, status, expires_on::text as expires_on, notes
+          select work_id, status, issued_on::text as issued_on,
+                 expires_on::text as expires_on, notes
           from work_instruments where id = ${id}
           for update
         `;
@@ -678,6 +739,15 @@ export function registerRetentionRoutes(
           throw httpError(404, 'INSTRUMENT_NOT_FOUND', 'No such instrument.');
         }
         await assertWorkAccess(tx, user.id, existing.work_id);
+        // This route can move expires_on on its own, so the issue/expiry
+        // ordering is re-proved against the STORED issue date.
+        if (body.expiresOn !== undefined && body.expiresOn < existing.issued_on) {
+          throw httpError(
+            400,
+            'INSTRUMENT_EXPIRY_INVALID',
+            `The expiry date ${body.expiresOn} cannot precede the issue date ${existing.issued_on}. Check the year on the renewal or extension letter.`,
+          );
+        }
         if (
           body.status !== undefined &&
           existing.status !== body.status &&
@@ -788,14 +858,47 @@ export function registerRetentionRoutes(
           await assertWorkAccess(tx, user.id, workId);
           // Lock the item: cumulative measurement must not exceed delivered
           // (issued challans), and this check must not race.
-          const [item] = await tx<{ id: string; item_number: string }[]>`
-            select id, item_number from work_items
-            where id = ${body.workItemId} and work_id = ${workId}
-              and deleted_at is null
-            for update
+          const [item] = await tx<
+            {
+              id: string;
+              item_number: string;
+              letter_date: string;
+              today: string;
+            }[]
+          >`
+            select wi.id, wi.item_number, w.letter_date::text as letter_date,
+                   (now() at time zone o.timezone)::date::text as today
+            from work_items wi
+            join works w on w.id = wi.work_id
+            join organisations o on o.id = w.organisation_id
+            where wi.id = ${body.workItemId} and wi.work_id = ${workId}
+              and wi.deleted_at is null
+            for update of wi
           `;
           if (!item) {
             throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+          }
+          // The same window every other dated operational record obeys
+          // (challans 0010, installations 0017, PACs 0022, Measurement
+          // Books 0024): not in the future in the organisation's own
+          // timezone, not before the LOA letter date. Nothing downstream
+          // ever revisits a measurement date, so a mistyped year would
+          // silently corrupt the site-measurement evidence. Back-dating
+          // inside the window stays fully supported — paper site
+          // measurements are typed up weeks late.
+          if (body.measuredOn > item.today) {
+            throw httpError(
+              400,
+              'MB_ENTRY_DATE_FUTURE',
+              `The measurement date cannot be in the future (today is ${item.today}).`,
+            );
+          }
+          if (body.measuredOn < item.letter_date) {
+            throw httpError(
+              400,
+              'MB_ENTRY_DATE_BEFORE_LOA',
+              `The measurement date cannot precede the LOA letter date ${item.letter_date}.`,
+            );
           }
           if (body.deliveryChallanId !== undefined) {
             // The claimed provenance must be a real, issued challan of this

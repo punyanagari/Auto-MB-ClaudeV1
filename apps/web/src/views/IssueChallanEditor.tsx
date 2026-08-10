@@ -234,11 +234,19 @@ export function IssueChallanEditor({
     // the server rejects a short description, a missing unit, and a quantity
     // that is not greater than zero, and a whole-form rejection never says
     // which box to correct.
+    const MANUAL_LINE_SUMMARY =
+      'Every manual line needs a description of at least 3 characters, a unit, ' +
+      'and a quantity greater than zero.';
     const nextFieldErrors: Record<string, string> = {};
     const invalidFields: string[] = [];
-    function flag(field: string, message: string) {
+    /** The announced summaries, in the same order as invalidFields: the
+     * first offender in reading order is the one focus lands on, so its
+     * summary is the one the form announces. */
+    const summaries: string[] = [];
+    function flag(field: string, message: string, summary = MANUAL_LINE_SUMMARY) {
       nextFieldErrors[field] = message;
       invalidFields.push(field);
+      summaries.push(summary);
     }
     // The date and the recipient were gated by native validation until this
     // form took the checks over; without them noValidate would let an empty
@@ -251,6 +259,26 @@ export function IssueChallanEditor({
         'issued-to-name',
         'Enter who the material goes to, in at least 2 characters.',
       );
+    }
+    // A quantity typed against an awarded item answers to the same rule as
+    // a manual line's: the server rejects "0", "-5" and "abc" either way,
+    // and its whole-form 400 QUANTITY_INVALID never says which of thirty
+    // boxes to correct. Only boxes the operator actually typed into are
+    // checked — an empty box is a legitimate "this item is not on this
+    // challan", not an error. The awarded quantity is deliberately NOT a
+    // ceiling here: an Issue Challan may exceed it.
+    for (const item of balance.items) {
+      const quantity = (state.quantities[item.workItemId] ?? '').trim();
+      if (quantity.length === 0) continue;
+      if (!QUANTITY_PATTERN.test(quantity) || !NONZERO_DIGIT.test(quantity)) {
+        flag(
+          `quantity-${item.workItemId}`,
+          'Enter a quantity greater than zero, with up to three decimals, or ' +
+            'clear the box to leave this item off the challan.',
+          `Item ${item.itemNumber} needs a quantity greater than zero, with up ` +
+            'to three decimals — or an empty box to leave it off this challan.',
+        );
+      }
     }
     for (const line of startedLines) {
       if (line.description.trim().length < 3) {
@@ -275,10 +303,7 @@ export function IssueChallanEditor({
     // offender on screen.
     const firstInvalidField = invalidFields[0];
     if (firstInvalidField !== undefined) {
-      setSaveError(
-        'Every manual line needs a description of at least 3 characters, a unit, ' +
-          'and a quantity greater than zero.',
-      );
+      setSaveError(summaries[0] ?? MANUAL_LINE_SUMMARY);
       focusField(firstInvalidField);
       return;
     }
@@ -473,33 +498,47 @@ export function IssueChallanEditor({
             </tr>
           </thead>
           <tbody>
-            {balance.items.map((item) => (
-              <tr key={item.workItemId}>
-                <th scope="row">{item.itemNumber}</th>
-                <td className={wrapCell}>{item.description}</td>
-                <td>{item.unitCode}</td>
-                <td className={numericCell}>{item.awardedQuantity}</td>
-                <td>
-                  <input
-                    aria-label={`Quantity of ${item.itemNumber} on this Issue Challan`}
-                    inputMode="decimal"
-                    ref={(node) => {
-                      registerField(`quantity-${item.workItemId}`, node);
-                    }}
-                    value={state.quantities[item.workItemId] ?? ''}
-                    onChange={(event) => {
-                      setState({
-                        ...state,
-                        quantities: {
-                          ...state.quantities,
-                          [item.workItemId]: event.target.value,
-                        },
-                      });
-                    }}
-                  />
-                </td>
-              </tr>
-            ))}
+            {balance.items.map((item) => {
+              const quantityField = `quantity-${item.workItemId}`;
+              return (
+                <tr key={item.workItemId}>
+                  <th scope="row">{item.itemNumber}</th>
+                  <td className={wrapCell}>{item.description}</td>
+                  <td>{item.unitCode}</td>
+                  <td className={numericCell}>{item.awardedQuantity}</td>
+                  <td>
+                    <input
+                      aria-label={`Quantity of ${item.itemNumber} on this Issue Challan`}
+                      inputMode="decimal"
+                      ref={(node) => {
+                        registerField(quantityField, node);
+                      }}
+                      aria-invalid={fieldErrors[quantityField] !== undefined}
+                      aria-describedby={
+                        fieldErrors[quantityField] !== undefined
+                          ? `${quantityField}-error`
+                          : undefined
+                      }
+                      value={state.quantities[item.workItemId] ?? ''}
+                      onChange={(event) => {
+                        setState({
+                          ...state,
+                          quantities: {
+                            ...state.quantities,
+                            [item.workItemId]: event.target.value,
+                          },
+                        });
+                      }}
+                    />
+                    {fieldErrors[quantityField] !== undefined && (
+                      <FieldError id={`${quantityField}-error`}>
+                        {fieldErrors[quantityField]}
+                      </FieldError>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </DataTable>
 

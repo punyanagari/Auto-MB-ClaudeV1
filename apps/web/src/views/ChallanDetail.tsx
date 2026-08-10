@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
   ChallanDetailResponse,
+  ChallanItem,
   CorrectionEligibilityResponse,
   CorrectionNotice,
   Receipt,
@@ -12,6 +13,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { Timeline } from './Timeline.js';
 
@@ -23,6 +25,11 @@ interface ChallanDetailProps {
   readonly canIssue: boolean;
   readonly canCancel: boolean;
   readonly canRecordEvidence: boolean;
+  /** R8: false closes the two mutating surfaces (cancel, correction) on a
+   * completed Work, which the server refuses anyway. Omitted means the
+   * caller has not resolved the Work — the surfaces stay open exactly as
+   * they were before this gate, and the server stays authoritative. */
+  readonly workActive?: boolean;
   readonly onEdit: (challanId: string) => void;
   readonly onDeleted: () => void;
   readonly onBack: () => void;
@@ -37,6 +44,117 @@ function openPdf(blob: Blob) {
   }, 60_000);
 }
 
+/** How many serials a line needs: one per delivered unit. Read off the
+ * decimal string rather than through parseFloat — the quantity is exact
+ * numeric(18,3) and only its whole part is ever a count of units. */
+function unitsOf(quantity: string): number {
+  return Number(quantity.split('.')[0] ?? '0');
+}
+
+/** Why the "Cancel this challan" form is closed, or null when a
+ * cancellation can still be attempted. The page has already loaded the
+ * correction eligibility and printed it further up; offering Cancel
+ * beside that text walked a cancel-authority holder into a guaranteed 409
+ * CHALLAN_HAS_EVIDENCE. Evidence is not the server's only reason to
+ * refuse — a challan billed into a live Measurement Book still bounces
+ * with SOURCE_BILLED_IN_MB, and that answer is reported as an action
+ * error — so this closes the cases the page can already see, not all of
+ * them. */
+function cancelClosedReason(
+  workActive: boolean,
+  eligibility: CorrectionEligibilityResponse | null,
+): string | null {
+  if (!workActive) {
+    return (
+      'This Work is completed, so its issued documents are frozen. Reopen the ' +
+      'Work from its page to cancel this challan; the challan, its lines, and ' +
+      'its PDFs above stay readable meanwhile.'
+    );
+  }
+  if (eligibility === null) return null;
+  if (eligibility.pendingRequestId !== null) {
+    return (
+      'A correction request for this challan is already awaiting an approval ' +
+      'decision. Let that decision land — cancelling here would go around it.'
+    );
+  }
+  if (eligibility.path !== 'cancel_replace') {
+    const { receipts, serials, measurements } = eligibility.evidence;
+    return (
+      `Cancellation is closed for this challan: ${String(receipts)} receipt(s), ` +
+      `${String(serials)} serial(s), and ${String(measurements)} measurement(s) ` +
+      'are recorded against it. Request a correction notice above instead.'
+    );
+  }
+  return null;
+}
+
+interface RecordSerialsFormProps {
+  /** The lines the operator may record against: every line once the
+   * challan is issued, the serial-tracked lines while it is a draft. */
+  readonly lines: readonly ChallanItem[];
+  readonly pending: boolean;
+  readonly onRecord: (
+    challanItemId: string,
+    /** Mutable because it is the request payload the API client takes. */
+    serialNumbers: string[],
+    form: HTMLFormElement,
+  ) => void;
+  readonly onInvalid: (message: string) => void;
+}
+
+/** Serial recording, shared by the draft and the issued challan. The API
+ * accepts serials against a DRAFT on purpose — that is the pre-issue flow
+ * for items flagged requires_serials — but this form used to sit inside
+ * the issued-only branch, so the flag dead-ended at a 409
+ * SERIALS_INCOMPLETE with no control anywhere to satisfy it. */
+function RecordSerialsForm({
+  lines,
+  pending,
+  onRecord,
+  onInvalid,
+}: RecordSerialsFormProps) {
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        const challanItemId = formValue(data, 'serial-line');
+        const serialNumbers = formValue(data, 'serial-numbers')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        if (challanItemId === '' || serialNumbers.length === 0) {
+          onInvalid('Choose a line and enter at least one serial number.');
+          return;
+        }
+        onRecord(challanItemId, serialNumbers, form);
+      }}
+    >
+      <Field>
+        <label htmlFor="serial-line">Challan line</label>
+        <select id="serial-line" name="serial-line" required>
+          {lines.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.position}. {item.description}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field>
+        <label htmlFor="serial-numbers">Serial numbers (one per line)</label>
+        <textarea id="serial-numbers" name="serial-numbers" rows={4} required />
+      </Field>
+      <Actions>
+        <Button type="submit" disabled={pending}>
+          Record serials
+        </Button>
+      </Actions>
+    </form>
+  );
+}
+
 export function ChallanDetail({
   api,
   organisationId,
@@ -45,6 +163,7 @@ export function ChallanDetail({
   canIssue,
   canCancel,
   canRecordEvidence,
+  workActive = true,
   onEdit,
   onDeleted,
   onBack,
@@ -52,6 +171,10 @@ export function ChallanDetail({
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [serials, setSerials] = useState<readonly Serial[] | null>(null);
+  /** Work item ids flagged for serial traceability. The challan line does
+   * not carry the flag, so a draft reads it off the Work to know which of
+   * its lines the server will hold the issue for. */
+  const [serialTracked, setSerialTracked] = useState<ReadonlySet<string>>(new Set());
   const [eligibility, setEligibility] = useState<CorrectionEligibilityResponse | null>(
     null,
   );
@@ -78,16 +201,34 @@ export function ChallanDetail({
             ]);
           setReceipt(loadedReceipt);
           setSerials(workSerials.filter((s) => s.deliveryChallanId === challanId));
+          setSerialTracked(new Set());
           setEligibility(loadedEligibility);
           setNotices(loadedNotices);
         } else if (loaded.challan.status === 'cancelled') {
           setReceipt(null);
           setSerials(null);
+          setSerialTracked(new Set());
           setEligibility(null);
           setNotices(await api.listChallanCorrectionNotices(organisationId, challanId));
         } else {
+          // A draft carries serials too: an item flagged for serial
+          // traceability needs one serial per unit BEFORE issue, so the
+          // Work's flags and whatever has been recorded so far are what
+          // the draft page is missing.
+          const [work, workSerials] = await Promise.all([
+            api.getWork(organisationId, loaded.challan.workId),
+            api.listWorkSerials(organisationId, loaded.challan.workId),
+          ]);
           setReceipt(null);
-          setSerials(null);
+          setSerials(workSerials.filter((s) => s.deliveryChallanId === challanId));
+          setSerialTracked(
+            new Set(
+              work.schedules
+                .flatMap((schedule) => schedule.items)
+                .filter((item) => item.requiresSerials)
+                .map((item) => item.id),
+            ),
+          );
           setEligibility(null);
           setNotices([]);
         }
@@ -163,6 +304,19 @@ export function ChallanDetail({
     .reduce((sum, item) => sum + Number(item.lineAmount), 0)
     .toFixed(2);
   const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
+  const recordedOn = (challanItemId: string) =>
+    (serials ?? []).filter((serial) => serial.challanItemId === challanItemId).length;
+  // The draft's serial-tracked lines, with what is recorded against each.
+  // The server counts the same way before it lets the challan be issued.
+  const trackedLines = items
+    .filter((item) => serialTracked.has(item.workItemId))
+    .map((item) => ({
+      item,
+      recorded: recordedOn(item.id),
+      required: unitsOf(item.quantity),
+    }));
+  const shortLines = trackedLines.filter((line) => line.recorded !== line.required);
+  const cancelClosed = cancelClosedReason(workActive, eligibility);
 
   return (
     <Card className="w-full" aria-labelledby="challan-title">
@@ -257,6 +411,24 @@ export function ChallanDetail({
       {notice !== null && <FormNotice>{notice}</FormNotice>}
       {actionError !== null && <FormError>{actionError}</FormError>}
 
+      {/* Said beside the Issue button, because that is where the refusal
+          used to arrive from: the server holds the issue until every
+          serial-tracked line carries one serial per unit. */}
+      {challan.status === 'draft' && shortLines.length > 0 && (
+        <FormError role="note">
+          Serials outstanding —{' '}
+          {shortLines
+            .map(
+              (line) =>
+                `${line.item.description} (${String(line.recorded)} of ` +
+                `${String(line.required)} recorded)`,
+            )
+            .join('; ')}
+          . This challan cannot be issued until each of those lines carries one serial
+          per unit; record them below.
+        </FormError>
+      )}
+
       <Actions>
         {challan.status === 'draft' && canModify && (
           <>
@@ -345,6 +517,83 @@ export function ChallanDetail({
           Back to Work
         </Button>
       </Actions>
+
+      {challan.status === 'draft' && trackedLines.length > 0 && (
+        <>
+          <h2 className="mt-6 mb-2 text-sm font-semibold">Serial numbers</h2>
+          <p className="text-muted-foreground">
+            These lines are flagged for serial traceability, so one serial per unit has
+            to be recorded here before the challan is issued. Editing the draft&apos;s
+            lines clears the serials recorded so far, so set the quantities first and
+            record serials once they are final.
+          </p>
+          <DataTable>
+            <caption className="sr-only">
+              Serial-tracked lines on this draft and their recorded serials
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Line</th>
+                <th scope="col">Quantity</th>
+                <th scope="col">Serials recorded</th>
+                <th scope="col">Serials</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trackedLines.map((line) => (
+                <tr key={line.item.id}>
+                  <th scope="row" className={wrapCell}>
+                    {line.item.position}. {line.item.description}
+                  </th>
+                  <td className={numericCell}>{line.item.quantity}</td>
+                  <td className={numericCell}>
+                    {line.recorded} of {line.required}
+                  </td>
+                  <td className={wrapCell}>
+                    {(serials ?? [])
+                      .filter((serial) => serial.challanItemId === line.item.id)
+                      .map((serial) => serial.serialNumber)
+                      .join(', ') || (
+                      <span className="text-muted-foreground">none yet</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+          {canRecordEvidence ? (
+            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+              <RecordSerialsForm
+                lines={trackedLines.map((line) => line.item)}
+                pending={pending}
+                onInvalid={setActionError}
+                onRecord={(challanItemId, serialNumbers, form) => {
+                  void act(async () => {
+                    const updated = await api.recordSerials(
+                      organisationId,
+                      challan.id,
+                      {
+                        challanItemId,
+                        serialNumbers,
+                      },
+                    );
+                    setSerials(
+                      updated.filter((s) => s.deliveryChallanId === challan.id),
+                    );
+                    form.reset();
+                    return null;
+                  }, 'Serial numbers recorded.');
+                }}
+              />
+            </Disclosure>
+          ) : (
+            <p className="text-muted-foreground">
+              Serials are recorded by a site or office member before this challan is
+              issued.
+            </p>
+          )}
+        </>
+      )}
 
       {challan.status === 'issued' && (
         <>
@@ -452,144 +701,122 @@ export function ChallanDetail({
           )}
 
           {canRecordEvidence && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                const challanItemId = formValue(data, 'serial-line');
-                const serialNumbers = formValue(data, 'serial-numbers')
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter((line) => line.length > 0);
-                if (challanItemId === '' || serialNumbers.length === 0) {
-                  setActionError('Choose a line and enter at least one serial number.');
-                  return;
-                }
-                void act(async () => {
-                  const updated = await api.recordSerials(organisationId, challan.id, {
-                    challanItemId,
-                    serialNumbers,
-                  });
-                  setSerials(updated.filter((s) => s.deliveryChallanId === challan.id));
-                  form.reset();
-                  return null;
-                }, 'Serial numbers recorded.');
-              }}
-            >
-              <h3 className="mt-4 mb-2 text-[13px] font-semibold">
-                Record serial numbers
-              </h3>
-              <Field>
-                <label htmlFor="serial-line">Challan line</label>
-                <select id="serial-line" name="serial-line" required>
-                  {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.position}. {item.description}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field>
-                <label htmlFor="serial-numbers">Serial numbers (one per line)</label>
-                <textarea id="serial-numbers" name="serial-numbers" rows={4} required />
-              </Field>
-              <Actions>
-                <Button type="submit" disabled={pending}>
-                  Record serials
-                </Button>
-              </Actions>
-            </form>
+            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+              <RecordSerialsForm
+                lines={items}
+                pending={pending}
+                onInvalid={setActionError}
+                onRecord={(challanItemId, serialNumbers, form) => {
+                  void act(async () => {
+                    const updated = await api.recordSerials(
+                      organisationId,
+                      challan.id,
+                      {
+                        challanItemId,
+                        serialNumbers,
+                      },
+                    );
+                    setSerials(
+                      updated.filter((s) => s.deliveryChallanId === challan.id),
+                    );
+                    form.reset();
+                    return null;
+                  }, 'Serial numbers recorded.');
+                }}
+              />
+            </Disclosure>
           )}
 
           {canRecordEvidence && uninstalled.length > 0 && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                const serialId = formValue(data, 'install-serial');
-                const installedOn = formValue(data, 'install-date');
-                const remarks = formValue(data, 'install-remarks').trim();
-                void act(async () => {
-                  const updated = await api.recordInstallation(
-                    organisationId,
-                    serialId,
-                    {
-                      installedOn,
-                      ...(remarks.length > 0 ? { remarks } : {}),
-                    },
-                  );
-                  setSerials(updated.filter((s) => s.deliveryChallanId === challan.id));
-                  form.reset();
-                  return null;
-                }, 'Installation recorded.');
-              }}
-            >
-              <h3 className="mt-4 mb-2 text-[13px] font-semibold">
-                Record installation
-              </h3>
-              <Field>
-                <label htmlFor="install-serial">Serial</label>
-                <select id="install-serial" name="install-serial" required>
-                  {uninstalled.map((serial) => (
-                    <option key={serial.id} value={serial.id}>
-                      {serial.serialNumber}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field>
-                <label htmlFor="install-date">Installed on</label>
-                <input id="install-date" name="install-date" type="date" required />
-              </Field>
-              <Field>
-                <label htmlFor="install-remarks">Remarks (optional)</label>
-                <input id="install-remarks" name="install-remarks" maxLength={1000} />
-              </Field>
-              <Actions>
-                <Button type="submit" disabled={pending}>
-                  Record installation
-                </Button>
-              </Actions>
-            </form>
+            <Disclosure label="Record installation">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget;
+                  const data = new FormData(form);
+                  const serialId = formValue(data, 'install-serial');
+                  const installedOn = formValue(data, 'install-date');
+                  const remarks = formValue(data, 'install-remarks').trim();
+                  void act(async () => {
+                    const updated = await api.recordInstallation(
+                      organisationId,
+                      serialId,
+                      {
+                        installedOn,
+                        ...(remarks.length > 0 ? { remarks } : {}),
+                      },
+                    );
+                    setSerials(
+                      updated.filter((s) => s.deliveryChallanId === challan.id),
+                    );
+                    form.reset();
+                    return null;
+                  }, 'Installation recorded.');
+                }}
+              >
+                <Field>
+                  <label htmlFor="install-serial">Serial</label>
+                  <select id="install-serial" name="install-serial" required>
+                    {uninstalled.map((serial) => (
+                      <option key={serial.id} value={serial.id}>
+                        {serial.serialNumber}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field>
+                  <label htmlFor="install-date">Installed on</label>
+                  <input id="install-date" name="install-date" type="date" required />
+                </Field>
+                <Field>
+                  <label htmlFor="install-remarks">Remarks (optional)</label>
+                  <input id="install-remarks" name="install-remarks" maxLength={1000} />
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Record installation
+                  </Button>
+                </Actions>
+              </form>
+            </Disclosure>
           )}
         </>
       )}
 
       {challan.status === 'issued' && canModify && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const input = event.currentTarget.elements.namedItem('signed-file');
-            const file =
-              input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null;
-            if (file === null) {
-              setActionError('Choose the scanned signed copy first.');
-              return;
-            }
-            void act(
-              () => api.uploadSignedCopy(organisationId, challan.id, file),
-              'Signed copy uploaded.',
-            );
-          }}
-        >
-          <h2 className="mt-6 mb-2 text-sm font-semibold">Signed copy</h2>
-          <Field>
-            <label htmlFor="signed-file">Scanned signed copy (PDF)</label>
-            <input
-              id="signed-file"
-              name="signed-file"
-              type="file"
-              accept="application/pdf"
-            />
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Upload signed copy
-            </Button>
-          </Actions>
-        </form>
+        <Disclosure label="Upload signed copy">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const input = event.currentTarget.elements.namedItem('signed-file');
+              const file =
+                input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null;
+              if (file === null) {
+                setActionError('Choose the scanned signed copy first.');
+                return;
+              }
+              void act(
+                () => api.uploadSignedCopy(organisationId, challan.id, file),
+                'Signed copy uploaded.',
+              );
+            }}
+          >
+            <Field>
+              <label htmlFor="signed-file">Scanned signed copy (PDF)</label>
+              <input
+                id="signed-file"
+                name="signed-file"
+                type="file"
+                accept="application/pdf"
+              />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Upload signed copy
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
 
       {notices.length > 0 && (
@@ -662,181 +889,208 @@ export function ChallanDetail({
       {challan.status === 'issued' && canModify && eligibility !== null && (
         <>
           <h2 className="mt-6 mb-2 text-sm font-semibold">Request correction</h2>
-          {eligibility.pendingRequestId !== null ? (
+          {!workActive ? (
+            // R8: corrections are refused on a completed Work
+            // (requireActiveWork), so the form closes rather than taking a
+            // filled-in replacement challan and failing on submit.
+            <p className="text-muted-foreground" role="note">
+              This Work is completed, so no correction can be filed against its
+              documents. Reopen the Work from its page first; the challan and its PDFs
+              above stay available meanwhile.
+            </p>
+          ) : eligibility.pendingRequestId !== null ? (
             <p className="text-muted-foreground" role="note">
               A correction request for this challan is already awaiting a decision in
               the approvals queue.
             </p>
           ) : eligibility.path === 'cancel_replace' ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const reason = formValue(data, 'correction-reason');
-                const phone = formValue(data, 'correction-consignee-phone').trim();
-                void act(async () => {
-                  await api.proposeChallanCancelReplace(organisationId, challan.id, {
-                    reason,
-                    replacement: {
-                      challanDate: formValue(data, 'correction-date'),
-                      prefix: challan.prefix,
-                      consignee: {
-                        name: formValue(data, 'correction-consignee-name'),
-                        address: formValue(data, 'correction-consignee-address'),
-                        ...(phone.length > 0 ? { phone } : {}),
+            <Disclosure label="Request cancel & replace">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const reason = formValue(data, 'correction-reason');
+                  const phone = formValue(data, 'correction-consignee-phone').trim();
+                  void act(async () => {
+                    await api.proposeChallanCancelReplace(organisationId, challan.id, {
+                      reason,
+                      replacement: {
+                        challanDate: formValue(data, 'correction-date'),
+                        prefix: challan.prefix,
+                        consignee: {
+                          name: formValue(data, 'correction-consignee-name'),
+                          address: formValue(data, 'correction-consignee-address'),
+                          ...(phone.length > 0 ? { phone } : {}),
+                        },
+                        items: items.map((item) => ({
+                          workItemId: item.workItemId,
+                          quantity: formValue(
+                            data,
+                            `correction-qty-${item.workItemId}`,
+                          ),
+                        })),
                       },
-                      items: items.map((item) => ({
-                        workItemId: item.workItemId,
-                        quantity: formValue(data, `correction-qty-${item.workItemId}`),
-                      })),
-                    },
-                  });
-                  reload();
-                  return null;
-                }, 'Correction requested: on approval this challan is cancelled and a corrected draft is created.');
-              }}
-            >
-              <p className="text-muted-foreground">
-                This challan has no recorded receipt, serials, or measurements, so the
-                lawful correction path is <strong>cancel and replace</strong>: on
-                approval the issued challan is cancelled (its number stays in the
-                series) and a corrected draft is created for re-issue.
-              </p>
-              <Field>
-                <label htmlFor="correction-date">Corrected challan date</label>
-                <input
-                  id="correction-date"
-                  name="correction-date"
-                  type="date"
-                  defaultValue={challan.challanDate}
-                  required
-                />
-              </Field>
-              <Field>
-                <label htmlFor="correction-consignee-name">Consignee name</label>
-                <input
-                  id="correction-consignee-name"
-                  name="correction-consignee-name"
-                  defaultValue={challan.consignee.name}
-                  required
-                  minLength={2}
-                  maxLength={200}
-                />
-              </Field>
-              <Field>
-                <label htmlFor="correction-consignee-address">Consignee address</label>
-                <input
-                  id="correction-consignee-address"
-                  name="correction-consignee-address"
-                  defaultValue={challan.consignee.address}
-                  required
-                  minLength={3}
-                  maxLength={1000}
-                />
-              </Field>
-              <Field>
-                <label htmlFor="correction-consignee-phone">
-                  Consignee phone (optional)
-                </label>
-                <input
-                  id="correction-consignee-phone"
-                  name="correction-consignee-phone"
-                  defaultValue={challan.consignee.phone ?? ''}
-                  maxLength={30}
-                />
-              </Field>
-              {items.map((item) => (
-                <Field key={item.workItemId}>
-                  <label htmlFor={`correction-qty-${item.workItemId}`}>
-                    Quantity — {item.description}
-                  </label>
+                    });
+                    reload();
+                    return null;
+                  }, 'Correction requested: on approval this challan is cancelled and a corrected draft is created.');
+                }}
+              >
+                <p className="text-muted-foreground">
+                  This challan has no recorded receipt, serials, or measurements, so the
+                  lawful correction path is <strong>cancel and replace</strong>: on
+                  approval the issued challan is cancelled (its number stays in the
+                  series) and a corrected draft is created for re-issue.
+                </p>
+                <Field>
+                  <label htmlFor="correction-date">Corrected challan date</label>
                   <input
-                    id={`correction-qty-${item.workItemId}`}
-                    name={`correction-qty-${item.workItemId}`}
-                    defaultValue={item.quantity}
+                    id="correction-date"
+                    name="correction-date"
+                    type="date"
+                    defaultValue={challan.challanDate}
                     required
-                    inputMode="decimal"
                   />
                 </Field>
-              ))}
-              <Field>
-                <label htmlFor="correction-reason">Reason for correction</label>
-                <input
-                  id="correction-reason"
-                  name="correction-reason"
-                  required
-                  minLength={3}
-                  maxLength={2000}
-                />
-              </Field>
-              <Actions>
-                <Button type="submit" disabled={pending}>
-                  Request cancel &amp; replace
-                </Button>
-              </Actions>
-            </form>
+                <Field>
+                  <label htmlFor="correction-consignee-name">Consignee name</label>
+                  <input
+                    id="correction-consignee-name"
+                    name="correction-consignee-name"
+                    defaultValue={challan.consignee.name}
+                    required
+                    minLength={2}
+                    maxLength={200}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="correction-consignee-address">
+                    Consignee address
+                  </label>
+                  <input
+                    id="correction-consignee-address"
+                    name="correction-consignee-address"
+                    defaultValue={challan.consignee.address}
+                    required
+                    minLength={3}
+                    maxLength={1000}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="correction-consignee-phone">
+                    Consignee phone (optional)
+                  </label>
+                  <input
+                    id="correction-consignee-phone"
+                    name="correction-consignee-phone"
+                    defaultValue={challan.consignee.phone ?? ''}
+                    maxLength={30}
+                  />
+                </Field>
+                {items.map((item) => (
+                  <Field key={item.workItemId}>
+                    <label htmlFor={`correction-qty-${item.workItemId}`}>
+                      Quantity — {item.description}
+                    </label>
+                    <input
+                      id={`correction-qty-${item.workItemId}`}
+                      name={`correction-qty-${item.workItemId}`}
+                      defaultValue={item.quantity}
+                      required
+                      inputMode="decimal"
+                    />
+                  </Field>
+                ))}
+                <Field>
+                  <label htmlFor="correction-reason">Reason for correction</label>
+                  <input
+                    id="correction-reason"
+                    name="correction-reason"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                  />
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Request cancel &amp; replace
+                  </Button>
+                </Actions>
+              </form>
+            </Disclosure>
           ) : (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const reason = formValue(data, 'notice-reason');
-                const statement = formValue(data, 'notice-statement').trim();
-                const field = formValue(data, 'notice-field').trim();
-                const corrected = formValue(data, 'notice-corrected').trim();
-                void act(async () => {
-                  await api.proposeChallanCorrectionNotice(organisationId, challan.id, {
-                    reason,
-                    ...(statement.length > 0 ? { statement } : {}),
-                    ...(field.length > 0 && corrected.length > 0
-                      ? { corrections: [{ field, corrected }] }
-                      : {}),
-                  });
-                  reload();
-                  return null;
-                }, 'Correction notice requested; on approval it is issued with the next notice number.');
-              }}
-            >
-              <p className="text-muted-foreground">
-                This challan has recorded evidence ({eligibility.evidence.receipts}{' '}
-                receipt(s), {eligibility.evidence.serials} serial(s),{' '}
-                {eligibility.evidence.measurements} measurement(s)), so it can no longer
-                be cancelled. The lawful correction path is a numbered{' '}
-                <strong>correction notice</strong> that preserves the original document.
-              </p>
-              <Field>
-                <label htmlFor="notice-statement">Correction statement</label>
-                <textarea
-                  id="notice-statement"
-                  name="notice-statement"
-                  rows={3}
-                  maxLength={4000}
-                />
-              </Field>
-              <Field>
-                <label htmlFor="notice-field">Corrected field (optional)</label>
-                <input id="notice-field" name="notice-field" maxLength={100} />
-              </Field>
-              <Field>
-                <label htmlFor="notice-corrected">Corrected reading (optional)</label>
-                <input id="notice-corrected" name="notice-corrected" maxLength={1000} />
-              </Field>
-              <Field>
-                <label htmlFor="notice-reason">Reason for correction</label>
-                <input
-                  id="notice-reason"
-                  name="notice-reason"
-                  required
-                  minLength={3}
-                  maxLength={2000}
-                />
-              </Field>
-              <Actions>
-                <Button type="submit" disabled={pending}>
-                  Request correction notice
-                </Button>
-              </Actions>
-            </form>
+            <Disclosure label="Request correction notice">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const reason = formValue(data, 'notice-reason');
+                  const statement = formValue(data, 'notice-statement').trim();
+                  const field = formValue(data, 'notice-field').trim();
+                  const corrected = formValue(data, 'notice-corrected').trim();
+                  void act(async () => {
+                    await api.proposeChallanCorrectionNotice(
+                      organisationId,
+                      challan.id,
+                      {
+                        reason,
+                        ...(statement.length > 0 ? { statement } : {}),
+                        ...(field.length > 0 && corrected.length > 0
+                          ? { corrections: [{ field, corrected }] }
+                          : {}),
+                      },
+                    );
+                    reload();
+                    return null;
+                  }, 'Correction notice requested; on approval it is issued with the next notice number.');
+                }}
+              >
+                <p className="text-muted-foreground">
+                  This challan has recorded evidence ({eligibility.evidence.receipts}{' '}
+                  receipt(s), {eligibility.evidence.serials} serial(s),{' '}
+                  {eligibility.evidence.measurements} measurement(s)), so it can no
+                  longer be cancelled. The lawful correction path is a numbered{' '}
+                  <strong>correction notice</strong> that preserves the original
+                  document.
+                </p>
+                <Field>
+                  <label htmlFor="notice-statement">Correction statement</label>
+                  <textarea
+                    id="notice-statement"
+                    name="notice-statement"
+                    rows={3}
+                    maxLength={4000}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="notice-field">Corrected field (optional)</label>
+                  <input id="notice-field" name="notice-field" maxLength={100} />
+                </Field>
+                <Field>
+                  <label htmlFor="notice-corrected">Corrected reading (optional)</label>
+                  <input
+                    id="notice-corrected"
+                    name="notice-corrected"
+                    maxLength={1000}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="notice-reason">Reason for correction</label>
+                  <input
+                    id="notice-reason"
+                    name="notice-reason"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                  />
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Request correction notice
+                  </Button>
+                </Actions>
+              </form>
+            </Disclosure>
           )}
         </>
       )}
@@ -851,35 +1105,44 @@ export function ChallanDetail({
         }}
       />
 
-      {challan.status === 'issued' && canCancel && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void act(
-              () => api.cancelChallan(organisationId, challan.id, { note: cancelNote }),
-              'Challan cancelled.',
-            );
-          }}
-        >
+      {challan.status === 'issued' && canCancel && cancelClosed !== null && (
+        <>
           <h2 className="mt-6 mb-2 text-sm font-semibold">Cancel this challan</h2>
-          <Field>
-            <label htmlFor="cancel-note">Cancellation note</label>
-            <input
-              id="cancel-note"
-              value={cancelNote}
-              onChange={(event) => {
-                setCancelNote(event.target.value);
-              }}
-              required
-              minLength={3}
-            />
-          </Field>
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Cancel challan
-            </Button>
-          </Actions>
-        </form>
+          <FormError role="note">{cancelClosed}</FormError>
+        </>
+      )}
+
+      {challan.status === 'issued' && canCancel && cancelClosed === null && (
+        <Disclosure label="Cancel challan">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void act(
+                () =>
+                  api.cancelChallan(organisationId, challan.id, { note: cancelNote }),
+                'Challan cancelled.',
+              );
+            }}
+          >
+            <Field>
+              <label htmlFor="cancel-note">Cancellation note</label>
+              <input
+                id="cancel-note"
+                value={cancelNote}
+                onChange={(event) => {
+                  setCancelNote(event.target.value);
+                }}
+                required
+                minLength={3}
+              />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Cancel challan
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
     </Card>
   );

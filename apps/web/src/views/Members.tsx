@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
+import { Disclosure } from '../ui/disclosure.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
 
 interface MembersProps {
@@ -375,8 +376,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       {formError !== null && <FormError>{formError}</FormError>}
 
       {isOwner && (
-        <>
-          <h2>Add a member</h2>
+        <Disclosure label="Add member">
           <p className="text-muted-foreground">
             The person must already have an Auto-MB account; add them by their account
             email. Site members record delivery evidence; set their scope to Assigned
@@ -411,7 +411,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
               </Button>
             </Actions>
           </form>
-        </>
+        </Disclosure>
       )}
     </Card>
   );

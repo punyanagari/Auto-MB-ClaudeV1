@@ -2,8 +2,12 @@ import { Type, type Static } from '@sinclair/typebox';
 import {
   DateOnlySchema,
   DecimalStringSchema,
+  NonNegativeDecimalStringSchema,
+  NonNegativeRateStringSchema,
+  PositiveDecimalStringSchema,
   RateStringSchema,
   UuidSchema,
+  nonBlankString,
 } from './primitives.js';
 import { WorkItemPaymentCategorySchema } from './payment.js';
 
@@ -20,6 +24,20 @@ export const LetterPercentageDirectionSchema = Type.Union([
 ]);
 export type LetterPercentageDirection = Static<typeof LetterPercentageDirectionSchema>;
 
+/** The letter's rebate or premium as a percentage of the advertised
+ * value: 0 to 100. A rebate cannot exceed the whole advertised value and
+ * a negative "below par" is a contradiction in terms, so neither is
+ * accepted; above 999.999 the numeric(6,3) column overflowed into an
+ * opaque 500 as well. This deliberately does NOT require 'at_par' to
+ * carry 0 — the parser models an at-par letter as declaring no
+ * percentage at all, and that decision stands. */
+export const LetterPercentageSchema = Type.String({
+  pattern: '^(?:100(?:\\.0{1,3})?|0(?:\\.\\d{1,3})?|[1-9]\\d?(?:\\.\\d{1,3})?)$',
+  description:
+    'Percentage between 0 and 100 inclusive, with up to three fraction digits.',
+});
+export type LetterPercentage = Static<typeof LetterPercentageSchema>;
+
 const WorkCodeSchema = Type.String({ pattern: '^[A-Z0-9][A-Z0-9_/-]{0,19}$' });
 
 /** One corrected item as the reviewer confirms it. `sourceRef` points back
@@ -35,8 +53,13 @@ export const ConfirmWorkItemSchema = Type.Object(
     itemNumber: Type.String({ minLength: 1, maxLength: 100 }),
     description: Type.String({ minLength: 3 }),
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
-    awardedQuantity: DecimalStringSchema,
-    effectiveRate: RateStringSchema,
+    /** Strictly positive (the column's CHECK says so); the rate is only
+     * non-negative, because free-issue and nil-rate supply lines are
+     * real letters. Both bounds live here so a reviewer who types 0 in
+     * one row out of a hundred is told WHICH row, instead of losing the
+     * whole confirmation to an unmapped CHECK violation. */
+    awardedQuantity: PositiveDecimalStringSchema,
+    effectiveRate: NonNegativeRateStringSchema,
     sourceRef: Type.Optional(
       Type.Object(
         {
@@ -89,10 +112,10 @@ export const ConfirmWorkRequestSchema = Type.Object(
     letterNumber: Type.String({ minLength: 1, maxLength: 200 }),
     letterDate: DateOnlySchema,
     title: Type.String({ minLength: 3, maxLength: 1000 }),
-    advertisedValue: DecimalStringSchema,
-    contractValue: DecimalStringSchema,
+    advertisedValue: NonNegativeDecimalStringSchema,
+    contractValue: NonNegativeDecimalStringSchema,
     pricingShape: PricingShapeSchema,
-    letterPercentage: Type.Optional(DecimalStringSchema),
+    letterPercentage: Type.Optional(LetterPercentageSchema),
     letterPercentageDirection: Type.Optional(LetterPercentageDirectionSchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
     schedules: Type.Array(ConfirmWorkScheduleSchema, { minItems: 1 }),
@@ -212,8 +235,14 @@ export type WorkDetailResponse = Static<typeof WorkDetailResponseSchema>;
 /* --- R8 work completion / reopen (Milestone 6/7 retrofit) ------------- */
 
 /** Both lifecycle transitions take a human-entered note (R8, R17); the
- * database CHECK and the 0031 transition trigger hold the same floor. */
-export const WorkCompletionNoteSchema = Type.String({ minLength: 3, maxLength: 2000 });
+ * database CHECK and the 0031 transition trigger hold the same floor —
+ * and they measure it TRIMMED, so the note schema does too. A note of
+ * three spaces used to satisfy minLength and die at the CHECK, which the
+ * operator read as a server error rather than "a note is required". */
+export const WorkCompletionNoteSchema = nonBlankString({
+  minLength: 3,
+  maxLength: 2000,
+});
 
 export const CompleteWorkRequestSchema = Type.Object(
   { note: WorkCompletionNoteSchema },
@@ -318,3 +347,20 @@ export const WorkNotCleanDetailsSchema = Type.Object(
   { additionalProperties: false },
 );
 export type WorkNotCleanDetails = Static<typeof WorkNotCleanDetailsSchema>;
+
+/** What the Work page asks before it offers to complete a Work. The two
+ * refusals a completion attempt can raise, answered as a question instead:
+ * the operator sees the shortfall before writing a completion note, not
+ * after submitting one. Computed by the same functions the POST uses, so
+ * the screen and the transition can never disagree. */
+export const WorkCompletionReadinessSchema = Type.Object(
+  {
+    /** True only when both lists are empty and the Work is still active.
+     * The caller already holds the status on the Work itself. */
+    ready: Type.Boolean(),
+    unfinished: Type.Array(UnfinishedWorkItemSchema),
+    blockers: Type.Array(WorkCompletionBlockerSchema),
+  },
+  { additionalProperties: false },
+);
+export type WorkCompletionReadiness = Static<typeof WorkCompletionReadinessSchema>;

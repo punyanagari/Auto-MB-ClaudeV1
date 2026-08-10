@@ -13,11 +13,14 @@ import type {
   ConfirmWorkRequest,
   Membership,
   SaveChallanRequest,
+  SaveIssueChallanRequest,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
 import { Approvals } from '../src/views/Approvals.js';
 import { ChallanDetail } from '../src/views/ChallanDetail.js';
 import { ChallanEditor } from '../src/views/ChallanEditor.js';
+import { IssueChallanDetail } from '../src/views/IssueChallanDetail.js';
+import { IssueChallanEditor } from '../src/views/IssueChallanEditor.js';
 import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Installations } from '../src/views/Installations.js';
 import { MeasurementBooks } from '../src/views/MeasurementBooks.js';
@@ -34,6 +37,24 @@ import { WorkDetail } from '../src/views/WorkDetail.js';
 import { Works } from '../src/views/Works.js';
 
 afterEach(cleanup);
+
+/** A create-and-record form sits behind a Disclosure labelled with the
+ * verb on its own submit button, so a detail page reads as records first
+ * and asks a question only when the operator asks. Open the panel before
+ * touching the fields — they are unmounted until then. */
+async function openForm(label: string) {
+  fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
+}
+
+/** With the panel open, two buttons carry the same name: the disclosure,
+ * which has aria-expanded, and the form's submit button, which does not. */
+function submitButton(label: string): HTMLElement {
+  const [button] = screen
+    .getAllByRole('button', { name: label })
+    .filter((candidate) => !candidate.hasAttribute('aria-expanded'));
+  if (button === undefined) throw new Error(`No submit button named "${label}".`);
+  return button;
+}
 
 function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
@@ -182,6 +203,11 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadMeasurementBookDraftPreview: vi.fn(),
     completeWork: vi.fn(),
     reopenWork: vi.fn(),
+    // Ready by default, so a test that does not care about completion sees
+    // the form it always saw.
+    workCompletionReadiness: vi
+      .fn()
+      .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
     ...overrides,
   };
 }
@@ -397,6 +423,7 @@ describe('Members', () => {
 
     expect(await screen.findByRole('table')).toBeTruthy();
     expect(screen.getByText('You')).toBeTruthy();
+    await openForm('Add member');
     expect(screen.getByLabelText('Account email')).toBeTruthy();
   });
 
@@ -426,10 +453,11 @@ describe('Members', () => {
     });
     render(<Members api={api} organisationId={ORG_ID} currentUserId="user-a" />);
 
-    fireEvent.change(await screen.findByLabelText('Account email'), {
+    await openForm('Add member');
+    fireEvent.change(screen.getByLabelText('Account email'), {
       target: { value: 'viewer@example.test' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add member' }));
+    fireEvent.click(submitButton('Add member'));
 
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('viewer@example.test');
@@ -662,6 +690,49 @@ function challanDetail(
       },
     ],
     issuedSnapshot: null,
+  };
+}
+
+/** The Work behind the challan fixture. ChallanDetail reads it on a DRAFT
+ * to learn which lines are flagged for serial traceability — the challan
+ * line itself does not carry the flag. */
+function challanWork(requiresSerials = false) {
+  const scheduleId = '77777777-7777-4777-8777-777777777777';
+  return {
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: scheduleId,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials,
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -1057,6 +1128,7 @@ describe('ChallanDetail', () => {
     );
     const api = stubApi({
       getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
       issueChallan,
     });
     render(
@@ -1123,10 +1195,11 @@ describe('ChallanDetail', () => {
     await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
     expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
 
+    await openForm('Cancel challan');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong consignee.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    fireEvent.click(submitButton('Cancel challan'));
     await waitFor(() => {
       expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong consignee.',
@@ -1226,10 +1299,12 @@ describe('ChallanDetail', () => {
       />,
     );
 
+    // Nothing is recorded yet, so the serials section already leads with
+    // its form; the installation form opens on request.
     fireEvent.change(await screen.findByLabelText('Serial numbers (one per line)'), {
       target: { value: 'SN-001\n\n' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record serials' }));
+    fireEvent.click(submitButton('Record serials'));
 
     await waitFor(() => {
       expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -1240,10 +1315,11 @@ describe('ChallanDetail', () => {
     // The serial shows in the table and in the installation picker.
     expect((await screen.findAllByText('SN-001')).length).toBeGreaterThan(0);
 
+    await openForm('Record installation');
     fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-06' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
     await waitFor(() => {
       expect(recordInstallation).toHaveBeenCalledWith(ORG_ID, SERIAL.id, {
         installedOn: '2026-08-06',
@@ -1334,6 +1410,7 @@ describe('ChallanDetail', () => {
 
     const draftApi = stubApi({
       getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
     });
     render(
       <ChallanDetail
@@ -1578,7 +1655,8 @@ describe('WorkDetail retention', () => {
     renderWorkDetail(api);
     await openWorkTab('Measurement');
 
-    fireEvent.change(await screen.findByLabelText('Measured quantity'), {
+    await openForm('Record measurement');
+    fireEvent.change(screen.getByLabelText('Measured quantity'), {
       target: { value: '1.000' },
     });
     fireEvent.change(screen.getByLabelText('Measured on'), {
@@ -1587,7 +1665,7 @@ describe('WorkDetail retention', () => {
     fireEvent.change(screen.getByLabelText('Source challan (optional)'), {
       target: { value: CHALLAN_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record measurement' }));
+    fireEvent.click(submitButton('Record measurement'));
 
     await waitFor(() => {
       expect(recordMbEntry).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -1879,8 +1957,8 @@ describe('WorkDetail R8 completion panel', () => {
     // Every document-creating surface is closed until the reopen.
     expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'New Issue Challan' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Record installation' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Propose an amendment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit amendment' })).toBeNull();
     expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
     expect(screen.getByRole('button', { name: 'Reopen Work' })).toBeTruthy();
   });
@@ -2032,9 +2110,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
       target: { value: 'Site not handed over in time.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Save draft extension request' }),
-    );
+    fireEvent.click(submitButton('Save draft extension request'));
 
     await waitFor(() => {
       expect(createExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -2084,9 +2160,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds for the extension'), {
       target: { value: 'Site not handed over in time.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Save draft extension request' }),
-    );
+    fireEvent.click(submitButton('Save draft extension request'));
 
     // The conflict message shows AND the view lands on the existing draft.
     const alert = await screen.findByRole('alert');
@@ -2141,13 +2215,14 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ respondExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    fireEvent.change(await screen.findByLabelText('Outcome'), {
+    await openForm('Record response');
+    fireEvent.change(screen.getByLabelText('Outcome'), {
       target: { value: 'modified' },
     });
     fireEvent.change(screen.getByLabelText('Granted completion date'), {
       target: { value: '2027-02-28' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record response' }));
+    fireEvent.click(submitButton('Record response'));
 
     await waitFor(() => {
       expect(respondExtensionRequest).toHaveBeenCalledWith(ORG_ID, EXTENSION_ID, {
@@ -2232,7 +2307,8 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ backfillExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    fireEvent.change(await screen.findByLabelText('Paper letter reference'), {
+    await openForm('Record paper letter as final');
+    fireEvent.change(screen.getByLabelText('Paper letter reference'), {
       target: { value: 'REF/EXT/7' },
     });
     fireEvent.change(screen.getByLabelText('Paper letter date'), {
@@ -2247,9 +2323,7 @@ describe('CompletionExtensions', () => {
     fireEvent.change(screen.getByLabelText('Grounds stated in the letter'), {
       target: { value: 'Monsoon damage to the access road.' },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Record paper letter as final' }),
-    );
+    fireEvent.click(submitButton('Record paper letter as final'));
 
     await waitFor(() => {
       expect(backfillExtensionRequest).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -2507,13 +2581,14 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    await openForm('Add contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'SSE (Signal) GZB' },
     });
     fireEvent.change(screen.getByLabelText('Address (optional)'), {
       target: { value: 'Signal Workshop, Ghaziabad' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
+    fireEvent.click(submitButton('Add contact'));
 
     await waitFor(() => {
       expect(saveContact).toHaveBeenCalledWith(ORG_ID, null, {
@@ -2530,6 +2605,7 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
+    await openForm('Add contact');
     const consigneeRole = screen.getByLabelText<HTMLInputElement>('Consignee');
     expect(consigneeRole.checked).toBe(true);
     expect(consigneeRole.disabled).toBe(true);
@@ -2562,10 +2638,11 @@ describe('Masters', () => {
       expect(setContactActive).toHaveBeenCalledWith(ORG_ID, CONSIGNEE.id, false);
     });
 
+    await openForm('Add contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'Sr. DEE (G) NR' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
+    fireEvent.click(submitButton('Add contact'));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('already exists');
   });
@@ -2764,12 +2841,13 @@ describe('WorkConsignees panel', () => {
     );
 
     expect(await screen.findByText('SSE (Signal) GZB')).toBeTruthy();
+    await openForm('Link consignee');
     // Only contacts not yet linked are offered.
     const picker = screen.getByLabelText<HTMLSelectElement>('Link a consignee contact');
     expect(Array.from(picker.options).map((option) => option.value)).toEqual([
       UNLINKED.id,
     ]);
-    fireEvent.click(screen.getByRole('button', { name: 'Link consignee' }));
+    fireEvent.click(submitButton('Link consignee'));
     await waitFor(() => {
       expect(linkWorkConsignee).toHaveBeenCalledWith(ORG_ID, WORK_ID, UNLINKED.id);
     });
@@ -3219,6 +3297,73 @@ describe('WorkDetail amendments', () => {
     expect(screen.queryByText('omission pending')).toBeNull();
   });
 
+  it('withholds the completion form until the Work can actually close', async () => {
+    // The server refuses a completion below 100% executed value and returns
+    // the shortfall. Asking first means the operator reads the worklist
+    // instead of writing a note that was never going to be accepted.
+    renderAmended(
+      amendedApi({
+        workCompletionReadiness: vi.fn().mockResolvedValue({
+          ready: false,
+          blockers: [
+            {
+              kind: 'draft_delivery_challan',
+              recordId: '55555555-5555-4555-8555-555555555555',
+              label: 'Draft delivery challan dated 2026-08-09',
+            },
+          ],
+          unfinished: [
+            {
+              workItemId: ITEM_A,
+              itemNumber: 'A/1',
+              category: 'SUPPLY',
+              requirement: 'delivery',
+              direction: 'short',
+              requiredQuantity: '8.000',
+              deliveredQuantity: '5.000',
+              installedQuantity: '0.000',
+            },
+          ],
+        }),
+      }),
+    );
+    await openWorkTab('Overview');
+
+    expect(await screen.findByText('This Work cannot be completed yet.')).toBeTruthy();
+    expect(screen.getByText('Draft delivery challan dated 2026-08-09')).toBeTruthy();
+    expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
+    expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Complete Work' })).toBeNull();
+  });
+
+  it('offers the completion form once nothing is outstanding', async () => {
+    renderAmended(amendedApi());
+    await openWorkTab('Overview');
+
+    expect(
+      await screen.findByLabelText('Why this Work is being completed'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Complete Work' })).toBeTruthy();
+    expect(screen.queryByText('This Work cannot be completed yet.')).toBeNull();
+  });
+
+  it('still offers completion when the readiness read fails', async () => {
+    // The shortfall is an improvement on the refusal, not a precondition
+    // for it. If the read fails the page falls back to what it did before
+    // it asked, and the server still refuses with the worklist.
+    renderAmended(
+      amendedApi({
+        workCompletionReadiness: vi.fn().mockRejectedValue(new Error('offline')),
+      }),
+    );
+    await openWorkTab('Overview');
+
+    expect(
+      await screen.findByLabelText('Why this Work is being completed'),
+    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Completion status' })).toBeTruthy();
+  });
+
   it('renders one row per awarded item, carrying every column', async () => {
     renderAmended(amendedApi());
     await openWorkTab('Schedules & items');
@@ -3311,6 +3456,7 @@ describe('WorkDetail amendments', () => {
     await openWorkTab('Amendments');
 
     await screen.findByRole('heading', { name: 'Amendments' });
+    // Nothing is proposed yet, so the section already leads with its form.
     fireEvent.change(screen.getByLabelText('Amendment'), {
       target: { value: 'omit' },
     });
@@ -3320,7 +3466,7 @@ describe('WorkDetail amendments', () => {
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'The switchboard was dropped from the sanction.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+    fireEvent.click(submitButton('Submit amendment'));
 
     await waitFor(() => {
       expect(proposeItemRemoval).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -3349,7 +3495,7 @@ describe('WorkDetail amendments', () => {
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Variation order 15.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit amendment' }));
+    fireEvent.click(submitButton('Submit amendment'));
 
     await waitFor(() => {
       expect(proposeAmendment).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4225,7 +4371,7 @@ describe('Installations', () => {
   it('shows the per-item installed summary and the records', async () => {
     renderInstallations(installationsApi());
 
-    await screen.findByRole('heading', { name: 'Record installation' });
+    await screen.findByRole('button', { name: 'Record installation' });
     // Summary rows: the authoritative installed quantity per item.
     expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
     expect(screen.getByText('0.000')).toBeTruthy();
@@ -4248,7 +4394,8 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Work item'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_PLAIN },
     });
     fireEvent.change(screen.getByLabelText('Quantity installed'), {
@@ -4260,7 +4407,7 @@ describe('Installations', () => {
     fireEvent.change(screen.getByLabelText('Location'), {
       target: { value: LOCATION_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
       expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4277,7 +4424,8 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Work item'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_SERIAL },
     });
     // The pool offers only delivered-but-uninstalled serials of the item.
@@ -4302,7 +4450,7 @@ describe('Installations', () => {
     });
     fireEvent.click(screen.getByLabelText(/SN-001/));
     fireEvent.click(screen.getByLabelText(/SN-002/));
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
       expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -4353,13 +4501,14 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    fireEvent.change(await screen.findByLabelText('Quantity installed'), {
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
       target: { value: '99' },
     });
     fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record installation' }));
+    fireEvent.click(submitButton('Record installation'));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('exceed the sanctioned LOA quantity');
@@ -4412,6 +4561,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
+    await openForm('Request cancel & replace');
     // The lawful path and why it applies are stated.
     expect(
       screen.getByText(/no recorded receipt, serials, or measurements/),
@@ -4423,7 +4573,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     fireEvent.change(screen.getByLabelText('Reason for correction'), {
       target: { value: 'Wrong quantity on the issued copy.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request cancel & replace' }));
+    fireEvent.click(submitButton('Request cancel & replace'));
 
     await waitFor(() => {
       expect(proposeChallanCancelReplace).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -4456,6 +4606,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
+    await openForm('Request correction notice');
     expect(screen.getByText(/can no\s+longer be cancelled/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Correction statement'), {
@@ -4464,7 +4615,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     fireEvent.change(screen.getByLabelText('Reason for correction'), {
       target: { value: 'Typo carried from the LOA.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request correction notice' }));
+    fireEvent.click(submitButton('Request correction notice'));
 
     await waitFor(() => {
       expect(proposeChallanCorrectionNotice).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
@@ -4937,7 +5088,7 @@ describe('PAC certificates', () => {
   it('shows the per-item certified summary and a null released value as a dash', async () => {
     renderPac(pacApi());
 
-    await screen.findByRole('heading', { name: 'Record PAC certificate' });
+    await screen.findByRole('button', { name: 'Record PAC certificate' });
     // Summary: installed / certified / available per item.
     expect(screen.getByText('3.000')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
@@ -4962,7 +5113,8 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+    await openForm('Record PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/02' },
     });
     fireEvent.change(screen.getByLabelText('Issue date'), {
@@ -4978,7 +5130,7 @@ describe('PAC certificates', () => {
       ),
       { target: { value: '1.000' } },
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+    fireEvent.click(submitButton('Record PAC certificate'));
 
     await waitFor(() => {
       expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -5003,7 +5155,8 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    fireEvent.change(await screen.findByLabelText('Certificate reference'), {
+    await openForm('Record PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/03' },
     });
     fireEvent.change(screen.getByLabelText('Issue date'), {
@@ -5012,7 +5165,7 @@ describe('PAC certificates', () => {
     fireEvent.change(screen.getByLabelText(/A\/2 — Main switchboard/), {
       target: { value: '5.000' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Record PAC certificate' }));
+    fireEvent.click(submitButton('Record PAC certificate'));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain(
@@ -5030,11 +5183,11 @@ describe('PAC certificates', () => {
     const api = pacApi({ cancelPacCertificate });
     renderPac(api);
 
-    fireEvent.change(
-      await screen.findByLabelText('Cancellation note for PAC PAC/2026/01'),
-      { target: { value: 'Superseded by the railway' } },
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel certificate' }));
+    await openForm('Cancel certificate');
+    fireEvent.change(screen.getByLabelText('Cancellation note for PAC PAC/2026/01'), {
+      target: { value: 'Superseded by the railway' },
+    });
+    fireEvent.click(submitButton('Cancel certificate'));
 
     await waitFor(() => {
       expect(cancelPacCertificate).toHaveBeenCalledWith(
@@ -5266,12 +5419,14 @@ describe('MeasurementBooks workspace', () => {
     });
     renderMb(api);
 
+    // No Measurement Book has been raised yet, so the section leads with its
+    // form rather than hiding the only thing there is to do.
     fireEvent.change(await screen.findByLabelText('MB date'), {
       target: { value: '2026-08-05' },
     });
     expect(screen.getByText(/must sweep every remaining open source/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Final Measurement Book/));
-    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    fireEvent.click(submitButton('Create draft'));
 
     await waitFor(() => {
       expect(createWorkMeasurementBook).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
@@ -5302,7 +5457,7 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.change(await screen.findByLabelText('MB date'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    fireEvent.click(submitButton('Create draft'));
 
     const open = await screen.findByRole('button', { name: 'Open existing draft' });
     fireEvent.click(open);
@@ -5563,10 +5718,11 @@ describe('MeasurementBooks workspace', () => {
         expect(downloadMeasurementBookPdf).toHaveBeenCalledWith(ORG_ID, MB_FINAL_ID);
       });
 
+      await openForm('Cancel Measurement Book…');
       fireEvent.change(screen.getByLabelText(/Cancellation note/), {
         target: { value: 'Wrong measurement basis.' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+      fireEvent.click(submitButton('Cancel Measurement Book…'));
 
       // Cancelling a numbered record is irreversible, so the confirm echoes
       // the number before anything is sent.
@@ -5595,9 +5751,10 @@ describe('MeasurementBooks workspace', () => {
     renderMb(api);
 
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
-    const note = await screen.findByLabelText(/Cancellation note/);
+    await openForm('Cancel Measurement Book…');
+    const note = screen.getByLabelText(/Cancellation note/);
     fireEvent.change(note, { target: { value: 'Wrong measurement basis.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel Measurement Book…' }));
+    fireEvent.click(submitButton('Cancel Measurement Book…'));
     await screen.findByRole('button', { name: 'Cancel DCW-1-MB-02 now' });
 
     // What was confirmed must be the wording that gets stored, so rewording
@@ -5646,5 +5803,546 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
     await screen.findByRole('button', { name: 'Cancel Measurement Book…' });
     expect(screen.queryByRole('button', { name: 'Prepare bill' })).toBeNull();
+  });
+});
+
+/** The challan pages contradicted themselves in three places: they printed
+ * the evidence that blocks a cancellation and then offered Cancel anyway,
+ * they hid pre-issue serial recording behind an issued-only branch, and
+ * they offered both mutating forms on a completed Work. These cover the
+ * refusals AND the legitimate cases each one must leave alone. */
+describe('ChallanDetail cancel surface', () => {
+  const issued = () =>
+    challanDetail({
+      status: 'issued',
+      challanNumber: 'DC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-08-08T10:00:00.000Z',
+    });
+
+  function renderIssued(api: ApiClient, workActive = true) {
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel
+        canRecordEvidence={false}
+        workActive={workActive}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('closes the cancel form when the loaded evidence already blocks it, naming what is recorded', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 1, serials: 2, measurements: 0 },
+        path: 'correction_notice',
+        pendingRequestId: null,
+      }),
+    });
+    renderIssued(api);
+
+    // The section stays — a cancel-authority holder who knows the form
+    // exists is told why it is closed rather than left thinking the page
+    // is broken — but nothing can be submitted from it.
+    expect(
+      await screen.findByRole('heading', { name: 'Cancel this challan' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/1 receipt\(s\), 2 serial\(s\), and 0 measurement\(s\)/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Cancellation note')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+    expect(api.cancelChallan).not.toHaveBeenCalled();
+  });
+
+  it('closes the cancel form while a correction request is awaiting a decision', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      challanCorrectionEligibility: vi.fn().mockResolvedValue({
+        challanId: CHALLAN_ID,
+        status: 'issued',
+        evidence: { receipts: 0, serials: 0, measurements: 0 },
+        path: 'cancel_replace',
+        pendingRequestId: '99999999-9999-4999-8999-999999999999',
+      }),
+    });
+    renderIssued(api);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Cancel this challan' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/cancelling here would go around it/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+  });
+
+  it('still cancels an evidence-free issued challan', async () => {
+    const cancelChallan = vi.fn().mockResolvedValue(
+      challanDetail({
+        status: 'cancelled',
+        challanNumber: 'DC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-08-08T10:00:00.000Z',
+        cancelledAt: '2026-08-09T10:00:00.000Z',
+        cancellationNote: 'Wrong consignee.',
+      }),
+    );
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(issued()),
+      cancelChallan,
+    });
+    renderIssued(api);
+
+    await openForm('Cancel challan');
+    fireEvent.change(screen.getByLabelText('Cancellation note'), {
+      target: { value: 'Wrong consignee.' },
+    });
+    fireEvent.click(submitButton('Cancel challan'));
+    await waitFor(() => {
+      expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        note: 'Wrong consignee.',
+      });
+    });
+  });
+
+  it('closes cancel and correction on a completed Work, keeping the record downloadable', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue({
+        ...issued(),
+        challan: { ...issued().challan, renderedAvailable: true },
+      }),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel
+        canRecordEvidence={false}
+        workActive={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
+    // Audit surface: the challan, its lines, and its PDF stay.
+    expect(screen.getByText('Main switchboard')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    // Both mutating forms close, each with its own explanation.
+    expect(screen.queryByRole('button', { name: 'Cancel challan' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+    expect(screen.getAllByText(/Reopen the Work from its page/).length).toBe(2);
+  });
+});
+
+describe('Draft challan serial recording', () => {
+  const DRAFT_LINE_ID = '66666666-6666-4666-8666-666666666666';
+  const draftSerial = (serialNumber: string, id: string) => ({
+    id,
+    deliveryChallanId: CHALLAN_ID,
+    challanItemId: DRAFT_LINE_ID,
+    challanNumber: null,
+    itemDescription: 'Main switchboard',
+    serialNumber,
+    installedOn: null,
+    installationRemarks: null,
+  });
+
+  it('records serials against the DRAFT and says what still holds the issue', async () => {
+    const recorded = [
+      draftSerial('SN-001', '88888888-8888-4888-8888-888888888888'),
+      draftSerial('SN-002', '88888888-8888-4888-8888-888888888889'),
+    ];
+    const recordSerials = vi.fn().mockResolvedValue(recorded);
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork(true)),
+      recordSerials,
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    // The dead end the flag used to walk into: Issue is offered, and the
+    // page now names the line the server would refuse the issue for.
+    expect(
+      await screen.findByText(/Main switchboard \(0 of 2 recorded\)/),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Issue challan' })).toBeTruthy();
+
+    // The draft has no serial recorded, so its form leads the section.
+    fireEvent.change(screen.getByLabelText('Serial numbers (one per line)'), {
+      target: { value: 'SN-001\nSN-002\n' },
+    });
+    fireEvent.click(submitButton('Record serials'));
+
+    await waitFor(() => {
+      expect(recordSerials).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        challanItemId: DRAFT_LINE_ID,
+        serialNumbers: ['SN-001', 'SN-002'],
+      });
+    });
+    // The line is complete, so the outstanding warning goes.
+    await waitFor(() => {
+      expect(screen.queryByText(/Main switchboard \(0 of 2 recorded\)/)).toBeNull();
+    });
+    expect(screen.getByText('SN-001, SN-002')).toBeTruthy();
+  });
+
+  it('leaves a draft with no serial-tracked line alone', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork(false)),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        canRecordEvidence
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Draft Delivery Challan' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Issue challan' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Serial numbers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record serials' })).toBeNull();
+    expect(screen.queryByText(/Serials outstanding/)).toBeNull();
+  });
+});
+
+describe('IssueChallanDetail on a completed Work', () => {
+  const IC_ID = 'aaaa4444-4444-4444-8444-444444444444';
+  const issuedIc = () => ({
+    issueChallan: {
+      id: IC_ID,
+      workId: WORK_ID,
+      status: 'issued' as const,
+      movementType: 'issue' as const,
+      challanDate: '2026-01-15',
+      challanNumber: 'DCW-1-IC/1',
+      sequenceNumber: 1,
+      prefix: 'DCW-1-IC',
+      issuedToName: 'SSE/Signal/Delhi',
+      issuedToRole: null,
+      location: null,
+      remarks: null,
+      templateVersion: 'issue-challan-v1',
+      renderedAvailable: true,
+      signedCopyAvailable: false,
+      cancellationNote: null,
+      createdAt: '2026-01-15T00:00:00.000Z',
+      issuedAt: '2026-01-15T10:00:00.000Z',
+      cancelledAt: null,
+    },
+    lines: [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unit: 'Nos',
+        quantity: '2.000',
+        position: 1,
+      },
+    ],
+    issuedSnapshot: null,
+  });
+
+  function renderIc(workActive: boolean) {
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(issuedIc()),
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={IC_ID}
+        canModify
+        canIssue={false}
+        canCancel
+        workActive={workActive}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    return api;
+  }
+
+  it('keeps the record and its PDF but closes both mutating forms', async () => {
+    const api = renderIc(false);
+
+    await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+    expect(screen.getByText('Main switchboard')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    expect(screen.queryByLabelText('Cancellation note')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+    expect(screen.getAllByText(/Reopen the Work from its page/).length).toBe(2);
+    expect(api.cancelIssueChallan).not.toHaveBeenCalled();
+  });
+
+  it('leaves both forms open while the Work is active', async () => {
+    renderIc(true);
+
+    await openForm('Cancel challan');
+    expect(screen.getByLabelText('Cancellation note')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Reopen the Work from its page/)).toBeNull();
+  });
+});
+
+describe('IssueChallanEditor awarded-item quantities', () => {
+  const ITEM_B = '55555555-5555-4555-8555-555555555556';
+  const TWO_ITEM_BALANCE = {
+    allowExcessDelivery: false,
+    items: [
+      {
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unitCode: 'Nos',
+        awardedQuantity: '5.000',
+        deliveredQuantity: '0.000',
+        remainingQuantity: '5.000',
+        effectiveRate: '100.00',
+      },
+      {
+        workItemId: ITEM_B,
+        itemNumber: 'A/2',
+        description: 'Cable gland kit',
+        unitCode: 'Nos',
+        awardedQuantity: '10.000',
+        deliveredQuantity: '0.000',
+        remainingQuantity: '10.000',
+        effectiveRate: '25.00',
+      },
+    ],
+  };
+
+  function renderEditor(api: ApiClient) {
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('binds a zero typed against an awarded item to that box and sends focus there', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(TWO_ITEM_BALANCE),
+      createIssueChallan: vi.fn(),
+    });
+    renderEditor(api);
+
+    await screen.findByText('Cable gland kit');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/2 on this Issue Challan'), {
+      target: { value: '0' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+    const box = screen.getByLabelText('Quantity of A/2 on this Issue Challan');
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+    const message = screen.getByText(/Enter a quantity greater than zero/);
+    expect(box.getAttribute('aria-describedby')).toBe(message.id);
+    expect(document.activeElement).toBe(box);
+    // The summary names the offending item rather than the whole form.
+    expect((await screen.findByRole('alert')).textContent).toContain('Item A/2');
+  });
+
+  it('rejects text in an awarded box but keeps an empty box off the challan', async () => {
+    const createIssueChallan = vi.fn().mockResolvedValue({
+      issueChallan: { id: 'aaaa4444-4444-4444-8444-444444444444' },
+      lines: [],
+      issuedSnapshot: null,
+    });
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(TWO_ITEM_BALANCE),
+      createIssueChallan,
+    });
+    renderEditor(api);
+
+    await screen.findByText('Cable gland kit');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: 'abc' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(createIssueChallan).not.toHaveBeenCalled();
+
+    // The legitimate case the check must not swallow: A/1 corrected, A/2
+    // left empty because that item is simply not on this challan.
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '2.500' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => {
+      expect(createIssueChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createIssueChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveIssueChallanRequest,
+    ];
+    expect(body.lines).toEqual([{ workItemId: ITEM_A, quantity: '2.500' }]);
+    expect(screen.queryByText(/Enter a quantity greater than zero/)).toBeNull();
+  });
+});
+
+describe('Retired consignees stop being offered', () => {
+  const ACTIVE_LINK = {
+    id: '55555555-5555-4555-8555-555555555555',
+    designation: 'SSE (Signal) GZB',
+    address: 'Signal Workshop, Ghaziabad',
+    contactPerson: null,
+    phone: null,
+    email: null,
+    gstin: null,
+    pincode: null,
+    stateCode: null,
+    isConsignee: true,
+    isVendor: false,
+    isClient: false,
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+  const RETIRED_LINK = {
+    ...ACTIVE_LINK,
+    id: '44444444-4444-4444-8444-444444444443',
+    designation: 'DEN (Abolished) NDLS',
+    address: 'Old Divisional Office',
+    active: false,
+  };
+
+  it('keeps a retired linked consignee out of the challan picker and the active one in it', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      // The general list is already active-only server-side.
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      'Prefill consignee from contacts',
+    );
+    expect(picker.textContent).not.toContain('DEN (Abolished) NDLS');
+    expect(Array.from(picker.options).map((option) => option.value)).not.toContain(
+      RETIRED_LINK.id,
+    );
+
+    // The linked group still leads with the consignee that is still valid,
+    // and picking it still prefills the snapshot.
+    const linkedGroup = picker.querySelector('optgroup');
+    expect(linkedGroup?.label).toBe('Linked to this Work');
+    expect(linkedGroup?.querySelectorAll('option')).toHaveLength(1);
+    fireEvent.change(picker, { target: { value: ACTIVE_LINK.id } });
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'SSE (Signal) GZB',
+    );
+  });
+
+  it('keeps a retired linked consignee out of the PAC picker', async () => {
+    const api = stubApi({
+      listWorkPacCertificates: vi
+        .fn()
+        .mockResolvedValue({ certificates: [], itemSummaries: [] }),
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+    });
+    render(
+      <PacCertificates
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        workItems={challanWork().schedules[0]?.items ?? []}
+      />,
+    );
+
+    const picker = await screen.findByLabelText<HTMLSelectElement>('Issuing consignee');
+    expect(picker.textContent).not.toContain('DEN (Abolished) NDLS');
+    expect(picker.textContent).toContain('SSE (Signal) GZB');
+  });
+
+  it('still shows the retired linkage on the Work, marked as no longer offered', async () => {
+    const api = stubApi({
+      listWorkConsignees: vi.fn().mockResolvedValue([RETIRED_LINK, ACTIVE_LINK]),
+      listContacts: vi.fn().mockResolvedValue([ACTIVE_LINK]),
+    });
+    const { WorkConsignees } = await import('../src/views/WorkConsignees.js');
+    render(
+      <WorkConsignees api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />,
+    );
+
+    // The link row is a preference, not history: it stays, and stays
+    // unlinkable, so reactivating the contact restores the offer.
+    expect(await screen.findByText('DEN (Abolished) NDLS')).toBeTruthy();
+    expect(screen.getByText('retired — not offered')).toBeTruthy();
+    expect(
+      screen.getByText(/no longer offered in the challan and PAC pickers/),
+    ).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Unlink' })).toHaveLength(2);
   });
 });

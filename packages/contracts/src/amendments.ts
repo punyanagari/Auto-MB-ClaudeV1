@@ -1,5 +1,17 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DecimalStringSchema, RateStringSchema, UuidSchema } from './primitives.js';
+import {
+  DecimalStringSchema,
+  RateStringSchema,
+  UuidSchema,
+  nonBlankString,
+} from './primitives.js';
+
+/** Every reason and decision note here is stored in a column whose CHECK
+ * measures it TRIMMED, so the schema measures it the same way: a reason
+ * of three spaces is refused at the boundary with the field named,
+ * instead of reaching Postgres and returning as a bare 500. */
+const AmendmentReasonSchema = nonBlankString({ minLength: 3, maxLength: 2000 });
+const DecisionNoteSchema = nonBlankString({ minLength: 3, maxLength: 1000 });
 
 // --- Approval engine (first consumer: work-item amendments) ----------------
 
@@ -37,7 +49,7 @@ export type AmendmentChanges = Static<typeof AmendmentChangesSchema>;
 export const ProposeAmendmentRequestSchema = Type.Object(
   {
     workItemId: UuidSchema,
-    reason: Type.String({ minLength: 3, maxLength: 2000 }),
+    reason: AmendmentReasonSchema,
     changes: AmendmentChangesSchema,
   },
   { additionalProperties: false },
@@ -49,7 +61,7 @@ export type ProposeAmendmentRequest = Static<typeof ProposeAmendmentRequestSchem
  * amendment-added and carries the approval that created it. */
 export const ProposeAddItemRequestSchema = Type.Object(
   {
-    reason: Type.String({ minLength: 3, maxLength: 2000 }),
+    reason: AmendmentReasonSchema,
     scheduleId: UuidSchema,
     itemNumber: Type.String({ minLength: 1, maxLength: 100 }),
     description: Type.String({ minLength: 3, maxLength: 4000 }),
@@ -68,7 +80,7 @@ export type ProposeAddItemRequest = Static<typeof ProposeAddItemRequestSchema>;
 export const ProposeRemoveItemRequestSchema = Type.Object(
   {
     workItemId: UuidSchema,
-    reason: Type.String({ minLength: 3, maxLength: 2000 }),
+    reason: AmendmentReasonSchema,
   },
   { additionalProperties: false },
 );
@@ -126,13 +138,13 @@ export type ApprovalListQuery = Static<typeof ApprovalListQuerySchema>;
 
 /** Approving may carry an optional note; rejecting must say why. */
 export const ApproveAmendmentRequestSchema = Type.Object(
-  { note: Type.Optional(Type.String({ minLength: 3, maxLength: 1000 })) },
+  { note: Type.Optional(DecisionNoteSchema) },
   { additionalProperties: false },
 );
 export type ApproveAmendmentRequest = Static<typeof ApproveAmendmentRequestSchema>;
 
 export const RejectAmendmentRequestSchema = Type.Object(
-  { note: Type.String({ minLength: 3, maxLength: 1000 }) },
+  { note: DecisionNoteSchema },
   { additionalProperties: false },
 );
 export type RejectAmendmentRequest = Static<typeof RejectAmendmentRequestSchema>;

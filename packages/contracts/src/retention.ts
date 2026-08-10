@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  PositiveDecimalStringSchema,
+  UuidSchema,
+} from './primitives.js';
 
 // --- Delivery receipt -----------------------------------------------------
 
@@ -153,7 +158,14 @@ export const RecordMbEntryRequestSchema = Type.Object(
   {
     workItemId: UuidSchema,
     deliveryChallanId: Type.Optional(UuidSchema),
-    measuredQuantity: DecimalStringSchema,
+    /** Strictly positive (PRODUCT.md invariant 6, and the column's own
+     * CHECK). The over-delivery guard cannot catch a zero or negative —
+     * it only asks whether sum + quantity exceeds the delivered cap,
+     * which a non-positive quantity passes trivially — so an ordinary
+     * typo used to die at the CHECK and be reported as a server error.
+     * A correction is a new entry against the delivered cap; mb_entries
+     * have no negative-adjustment concept. */
+    measuredQuantity: PositiveDecimalStringSchema,
     measuredOn: DateOnlySchema,
     mbBookRef: Type.Optional(Type.String({ maxLength: 100 })),
     remarks: Type.Optional(Type.String({ maxLength: 1000 })),

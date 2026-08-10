@@ -422,7 +422,13 @@ describe('before/after capture on update-shaped writers', () => {
       method: 'POST',
       url: `/api/works/${workAId}/instruments`,
       organisationId,
-      payload: { kind: 'pbg', reference: `BG-TL-${runId}`, issuedOn: '2026-02-01' },
+      payload: {
+        kind: 'pbg',
+        reference: `BG-TL-${runId}`,
+        // A 'pbg' instrument must record the amount it secures.
+        amount: '50000.00',
+        issuedOn: '2026-02-01',
+      },
     });
     expect(created.statusCode, created.body).toBe(201);
     const instrumentId = created.json<{ id: string }>().id;

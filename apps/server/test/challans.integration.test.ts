@@ -239,6 +239,7 @@ afterAll(async () => {
       try {
         for (const table of [
           'audit_events',
+          'approval_requests',
           'delivery_challan_items',
           'delivery_challan_counters',
           'delivery_challans',
@@ -894,5 +895,351 @@ describe('one-draft rule under concurrency', () => {
       code: 'DRAFT_EXISTS',
       details: { existingRecordId: winnerId },
     });
+  });
+});
+
+/** A throwaway Work with one item, so a guard can be proven without
+ * disturbing the fixture Work's single draft slot or its balances. */
+async function freshWork(
+  label: string,
+  item: { description: string; unit: string; quantity: string; rate: string },
+): Promise<{ workId: string; workItemId: string }> {
+  const id = randomUUID();
+  const scheduleId = randomUUID();
+  const workItemId = randomUUID();
+  await admin`
+    insert into works (
+      id, organisation_id, work_code, letter_number, letter_date, title,
+      advertised_value, contract_value, pricing_shape, letter_percentage,
+      letter_percentage_direction, created_by_user_id
+    )
+    values (
+      ${id}, ${organisationId}, ${`DC${label}-${runId.toUpperCase()}`},
+      ${`dc-${label}-letter-${runId}`}, '2025-06-01', ${`Challan ${label} work`},
+      1000.00, 900.00, 'per_schedule', null, null, ${ownerUserId}
+    )
+  `;
+  await admin`
+    insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+    values (${scheduleId}, ${organisationId}, ${id}, 'A', 'Schedule A', 1)
+  `;
+  await admin`
+    insert into work_items (
+      id, organisation_id, work_id, schedule_id, item_number, description,
+      unit_code, awarded_quantity, effective_rate
+    )
+    values (${workItemId}, ${organisationId}, ${id}, ${scheduleId}, 'A/1',
+            ${item.description}, ${item.unit}, ${item.quantity}, ${item.rate})
+  `;
+  return { workId: id, workItemId };
+}
+
+describe('line quantities the database refuses answer 400, not 500', () => {
+  let qtyWorkId: string;
+  let qtyItemId: string;
+
+  beforeAll(async () => {
+    const created = await freshWork('Q', {
+      description: 'Quantity guard switchboard',
+      unit: 'Nos',
+      quantity: '5.000',
+      rate: '100.00',
+    });
+    qtyWorkId = created.workId;
+    qtyItemId = created.workItemId;
+  }, 30_000);
+
+  it('names the offending line for zero, negative and oversized quantities', async () => {
+    for (const quantity of ['0', '0.000', '-2', '1234567890123456']) {
+      const response = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${qtyWorkId}/challans`,
+        organisationId,
+        payload: draftBody([{ workItemId: qtyItemId, quantity }]),
+      });
+      expect(response.statusCode, `${quantity}: ${response.body}`).toBe(400);
+      expect(response.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
+      // The operator is told WHICH line, not merely that something failed.
+      expect(response.json<{ message: string }>().message).toContain('Line 1');
+    }
+    // Nothing was written on the way to the refusal.
+    const [drafts] = await admin<{ total: string }[]>`
+      select count(*)::text as total from delivery_challans
+      where work_id = ${qtyWorkId}
+    `;
+    expect(drafts?.total).toBe('0');
+  });
+
+  it('still accepts a fractional part-delivery quantity', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${qtyWorkId}/challans`,
+      organisationId,
+      payload: draftBody([{ workItemId: qtyItemId, quantity: '0.5' }]),
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const detail = created.json<ChallanDetailResponse>();
+    expect(detail.items[0]).toMatchObject({ quantity: '0.500', lineAmount: '50.00' });
+
+    // And the same refusal guards the draft EDIT path, leaving the
+    // already-saved line untouched.
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/challans/${detail.challan.id}`,
+      organisationId,
+      payload: draftBody([{ workItemId: qtyItemId, quantity: '0' }]),
+    });
+    expect(edited.statusCode).toBe(400);
+    expect(edited.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${detail.challan.id}`,
+      organisationId,
+    });
+    expect(reread.json<ChallanDetailResponse>().items[0]?.quantity).toBe('0.500');
+  });
+});
+
+describe('consignee and cancellation-note text is trimmed before it is stored', () => {
+  let textWorkId: string;
+  let textItemId: string;
+
+  beforeAll(async () => {
+    const created = await freshWork('T', {
+      description: 'Consignee guard cable set',
+      unit: 'Set',
+      quantity: '5.000',
+      rate: '100.00',
+    });
+    textWorkId = created.workId;
+    textItemId = created.workItemId;
+  }, 30_000);
+
+  it('refuses a consignee that is blank once trimmed', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${textWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: textItemId, quantity: '1' }]),
+        prefix: 'DCT',
+        consignee: { name: '   ', address: '     ' },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'CONSIGNEE_INVALID' });
+  });
+
+  it('keeps a padded but real consignee, stored trimmed and printed trimmed', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${textWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: textItemId, quantity: '1' }]),
+        prefix: 'DCT',
+        consignee: {
+          name: '  Sr. DEE (G) NR  ',
+          address: ' Delhi Division, New Delhi ',
+          phone: '   ',
+        },
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const detail = created.json<ChallanDetailResponse>();
+    expect(detail.challan.consignee).toEqual({
+      name: 'Sr. DEE (G) NR',
+      address: 'Delhi Division, New Delhi',
+    });
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    // The cancellation note obeys the same rule the CHECK does:
+    // length(btrim(note)) >= 3, answered as a 400 rather than a 500.
+    const blank = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/cancel`,
+      organisationId,
+      payload: { note: '   ' },
+    });
+    expect(blank.statusCode, blank.body).toBe(400);
+    expect(blank.json()).toMatchObject({ code: 'CANCELLATION_NOTE_REQUIRED' });
+
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/cancel`,
+      organisationId,
+      payload: { note: '  Consignee changed by the railway.  ' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json<ChallanDetailResponse>().challan.cancellationNote).toBe(
+      'Consignee changed by the railway.',
+    );
+  });
+});
+
+describe('a draft amended after it was saved cannot be issued stale', () => {
+  let staleWorkId: string;
+  let staleItemId: string;
+
+  beforeAll(async () => {
+    const created = await freshWork('S', {
+      description: 'Stale draft switchboard',
+      unit: 'Nos',
+      quantity: '5.000',
+      rate: '100.00',
+    });
+    staleWorkId = created.workId;
+    staleItemId = created.workItemId;
+    // Amendments direct-apply for an approval-authority holder; the
+    // fixture owner is given that authority for this section only.
+    await admin`
+      update organisation_memberships
+      set can_approve_amendments = true
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+  }, 30_000);
+
+  afterAll(async () => {
+    await admin`
+      update organisation_memberships
+      set can_approve_amendments = false
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+  });
+
+  it('refuses the issue with DRAFT_STALE, naming the item and the fields', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${staleWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: staleItemId, quantity: '2' }]),
+        prefix: 'DCS',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<ChallanDetailResponse>().challan.id;
+    expect(created.json<ChallanDetailResponse>().items[0]).toMatchObject({
+      rate: '100.00',
+      lineAmount: '200.00',
+    });
+
+    // The railway amends the rate AFTER the draft was saved. The draft
+    // still carries the superseded snapshot, and issue would freeze it
+    // into the document handed to the consignee.
+    const amended = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${staleWorkId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: staleItemId,
+        reason: 'Rate revised by variation 4.',
+        changes: { rate: '110.00' },
+      },
+    });
+    expect(amended.statusCode, amended.body).toBe(201);
+
+    const blocked = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draftId}/issue`,
+      organisationId,
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json()).toMatchObject({ code: 'DRAFT_STALE' });
+    const message = blocked.json<{ message: string }>().message;
+    expect(message).toContain('A/1');
+    expect(message).toContain('rate');
+
+    // Nothing was numbered or issued by the refused attempt.
+    const still = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${draftId}`,
+      organisationId,
+    });
+    expect(still.json<ChallanDetailResponse>().challan.status).toBe('draft');
+    expect(still.json<ChallanDetailResponse>().challan.challanNumber).toBeNull();
+  });
+
+  it('issues at the amended rate once the draft is re-saved', async () => {
+    const list = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${staleWorkId}/challans`,
+      organisationId,
+    });
+    const draft = list
+      .json<{ challans: ChallanDetailResponse['challan'][] }>()
+      .challans.find((challan) => challan.status === 'draft');
+    if (!draft) throw new Error('stale draft missing');
+
+    // Re-saving the draft is the documented repair: the operator sees
+    // the new amounts on screen before they commit to them.
+    const resaved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/challans/${draft.id}`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: staleItemId, quantity: '2' }]),
+        prefix: 'DCS',
+      },
+    });
+    expect(resaved.statusCode, resaved.body).toBe(200);
+    expect(resaved.json<ChallanDetailResponse>().items[0]).toMatchObject({
+      rate: '110.00',
+      lineAmount: '220.00',
+    });
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draft.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const snapshot = issued.json<ChallanDetailResponse>().issuedSnapshot as {
+      totalAmount: string;
+      items: { rate: string }[];
+    };
+    expect(snapshot.items[0]?.rate).toBe('110.00');
+    expect(snapshot.totalAmount).toBe('220.00');
+  });
+
+  it('leaves a draft alone when the amendment touched only the quantity', async () => {
+    // The ceiling check already covers quantity; a quantity-only
+    // amendment must not strand a draft that is still within it.
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${staleWorkId}/challans`,
+      organisationId,
+      payload: {
+        ...draftBody([{ workItemId: staleItemId, quantity: '1' }]),
+        prefix: 'DCS',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<ChallanDetailResponse>().challan.id;
+
+    const amended = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${staleWorkId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: staleItemId,
+        reason: 'Quantity raised by variation 5.',
+        changes: { quantity: '6' },
+      },
+    });
+    expect(amended.statusCode, amended.body).toBe(201);
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draftId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
   });
 });

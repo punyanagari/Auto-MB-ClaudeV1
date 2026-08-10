@@ -219,7 +219,22 @@ test('organisation picker and members workspace pass the axe scan', async ({
 
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
+  // The rail names a module's parts only while that module is open, so
+  // Works shows its own and nothing else shows theirs.
+  const rail = page.getByRole('navigation', { name: 'Modules' });
+  await expect(rail.getByRole('button', { name: 'All Works' })).toBeVisible();
+  await expect(rail.getByRole('button', { name: 'Contacts' })).toHaveCount(0);
   await expectNoSeriousViolations(page, 'works list');
+
+  // A Masters category opens from the rail, without a stop on Contacts first.
+  await page.getByRole('button', { name: 'Masters' }).click();
+  await rail.getByRole('button', { name: 'Locations' }).click();
+  await expect(page.getByRole('tab', { name: 'Locations' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(rail.getByRole('button', { name: 'All Works' })).toHaveCount(0);
+  await expectNoSeriousViolations(page, 'masters locations from the rail');
 
   await page.getByRole('button', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
@@ -240,7 +255,7 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Upload LOA' }).click();
+  await page.getByRole('main').getByRole('button', { name: 'Upload LOA' }).click();
   await expect(
     page.getByRole('heading', { name: 'Upload Letter of Acceptance' }),
   ).toBeVisible();
@@ -332,6 +347,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
         ],
       }),
     ),
+  );
+  await page.route(`**/api/works/${WORK_ID}/completion-readiness`, (route) =>
+    route.fulfill(json({ ready: true, unfinished: [], blockers: [] })),
   );
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
     route.fulfill(json({ challans: [CHALLAN] })),
@@ -695,9 +713,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Record installation' }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Record installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail — deliveries');
 
@@ -727,11 +743,21 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     page.getByRole('heading', { name: 'Delivery Challan DC/1' }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Delivery receipt' })).toBeVisible();
+  // The record-and-create forms sit behind the verb that names them, so the
+  // page opens as what is true and asks only when asked. Each one still
+  // holds exactly the fields it always did.
+  await page.getByRole('button', { name: 'Record serials', expanded: false }).click();
   await expect(page.getByLabel('Serial numbers (one per line)')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Record installation', expanded: false })
+    .click();
   await expect(page.getByLabel('Installed on')).toBeVisible();
   // The correction flow states the lawful path for an evidence-carrying
   // challan and offers the notice form.
   await expect(page.getByRole('heading', { name: 'Request correction' })).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Request correction notice', expanded: false })
+    .click();
   await expect(page.getByLabel('Correction statement')).toBeVisible();
   await expectNoSeriousViolations(page, 'challan detail with evidence');
 

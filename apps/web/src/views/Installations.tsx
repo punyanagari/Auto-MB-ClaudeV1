@@ -13,6 +13,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
 
 interface InstallationsProps {
   readonly api: ApiClient;
@@ -274,158 +275,162 @@ export function Installations({
       )}
 
       {canRecordEvidence && selectableItems.length > 0 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = event.currentTarget;
-            const formData = new FormData(form);
-            const quantity = formValue(formData, 'inst-quantity');
-            const installedOn = formValue(formData, 'inst-date');
-            const remarks = formValue(formData, 'inst-remarks').trim();
-            const serialIds = formData
-              .getAll('inst-serials')
-              .filter((value): value is string => typeof value === 'string');
-            const body: RecordInstallationRequest = {
-              workItemId: activeItemId,
-              quantity,
-              installedOn,
-              ...(locationChoice === NEW_LOCATION
-                ? {
-                    newLocation: {
-                      name: formValue(formData, 'inst-location-name'),
-                      kind: formValue(formData, 'inst-location-kind') as LocationKind,
-                    },
-                  }
-                : { locationId: locationChoice }),
-              ...(remarks.length > 0 ? { remarks } : {}),
-              ...(serialIds.length > 0 ? { serialIds } : {}),
-            };
-            void act(async () => {
-              const recorded: Installation = await api.recordWorkInstallation(
-                organisationId,
-                workId,
-                body,
-              );
-              await refresh();
-              const freshLocations = await api.listLocationMasters(organisationId);
-              setLocations(freshLocations);
-              setLocationChoice(recorded.locationId);
-              form.reset();
-            }, 'Installation recorded.');
-          }}
+        <Disclosure
+          label="Record installation"
+          startOpen={data.installations.length === 0}
         >
-          <h3>Record installation</h3>
-          <Field>
-            <label htmlFor="inst-item">Work item</label>
-            <select
-              id="inst-item"
-              name="inst-item"
-              required
-              value={activeItemId}
-              onChange={(event) => {
-                setSelectedItemId(event.currentTarget.value);
-              }}
-            >
-              {selectableItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.itemNumber} — {item.effectiveDescription ?? item.description}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field>
-            <label htmlFor="inst-quantity">Quantity installed</label>
-            <input
-              id="inst-quantity"
-              name="inst-quantity"
-              inputMode="decimal"
-              required
-            />
-          </Field>
-          <Field>
-            <label htmlFor="inst-date">Installed on</label>
-            <input id="inst-date" name="inst-date" type="date" required />
-          </Field>
-          <Field>
-            <label htmlFor="inst-location">Location</label>
-            <select
-              id="inst-location"
-              name="inst-location"
-              value={locationChoice}
-              onChange={(event) => {
-                setLocationChoice(event.currentTarget.value);
-              }}
-            >
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-              <option value={NEW_LOCATION}>+ Add a new location</option>
-            </select>
-          </Field>
-          {locationChoice === NEW_LOCATION && (
-            <>
-              <Field>
-                <label htmlFor="inst-location-name">New location name</label>
-                <input
-                  id="inst-location-name"
-                  name="inst-location-name"
-                  required
-                  minLength={2}
-                  maxLength={200}
-                />
-              </Field>
-              <Field>
-                <label htmlFor="inst-location-kind">New location kind</label>
-                <select id="inst-location-kind" name="inst-location-kind">
-                  {LOCATION_KINDS.map((kind) => (
-                    <option key={kind.value} value={kind.value}>
-                      {kind.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </>
-          )}
-          <Field>
-            <label htmlFor="inst-remarks">Remarks (optional)</label>
-            <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
-          </Field>
-          {activeItem?.requiresSerials === true && (
-            <fieldset>
-              <legend>
-                Serials to install — one per unit, from the delivered pool of{' '}
-                {activeItem.itemNumber}
-              </legend>
-              {serialPool.length > 0 ? (
-                serialPool.map((serial) => (
-                  <label
-                    key={serial.id}
-                    className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
-                  >
-                    <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
-                    {serial.serialNumber}
-                    <span className="text-muted-foreground">
-                      {' '}
-                      · {serial.challanNumber ?? 'challan'}
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <p className="text-muted-foreground">
-                  No delivered, uninstalled serials for this item — issue a Delivery
-                  Challan with serials first.
-                </p>
-              )}
-            </fieldset>
-          )}
-          <Actions>
-            <Button type="submit" disabled={pending}>
-              Record installation
-            </Button>
-          </Actions>
-        </form>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const formData = new FormData(form);
+              const quantity = formValue(formData, 'inst-quantity');
+              const installedOn = formValue(formData, 'inst-date');
+              const remarks = formValue(formData, 'inst-remarks').trim();
+              const serialIds = formData
+                .getAll('inst-serials')
+                .filter((value): value is string => typeof value === 'string');
+              const body: RecordInstallationRequest = {
+                workItemId: activeItemId,
+                quantity,
+                installedOn,
+                ...(locationChoice === NEW_LOCATION
+                  ? {
+                      newLocation: {
+                        name: formValue(formData, 'inst-location-name'),
+                        kind: formValue(formData, 'inst-location-kind') as LocationKind,
+                      },
+                    }
+                  : { locationId: locationChoice }),
+                ...(remarks.length > 0 ? { remarks } : {}),
+                ...(serialIds.length > 0 ? { serialIds } : {}),
+              };
+              void act(async () => {
+                const recorded: Installation = await api.recordWorkInstallation(
+                  organisationId,
+                  workId,
+                  body,
+                );
+                await refresh();
+                const freshLocations = await api.listLocationMasters(organisationId);
+                setLocations(freshLocations);
+                setLocationChoice(recorded.locationId);
+                form.reset();
+              }, 'Installation recorded.');
+            }}
+          >
+            <Field>
+              <label htmlFor="inst-item">Work item</label>
+              <select
+                id="inst-item"
+                name="inst-item"
+                required
+                value={activeItemId}
+                onChange={(event) => {
+                  setSelectedItemId(event.currentTarget.value);
+                }}
+              >
+                {selectableItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.itemNumber} — {item.effectiveDescription ?? item.description}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="inst-quantity">Quantity installed</label>
+              <input
+                id="inst-quantity"
+                name="inst-quantity"
+                inputMode="decimal"
+                required
+              />
+            </Field>
+            <Field>
+              <label htmlFor="inst-date">Installed on</label>
+              <input id="inst-date" name="inst-date" type="date" required />
+            </Field>
+            <Field>
+              <label htmlFor="inst-location">Location</label>
+              <select
+                id="inst-location"
+                name="inst-location"
+                value={locationChoice}
+                onChange={(event) => {
+                  setLocationChoice(event.currentTarget.value);
+                }}
+              >
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+                <option value={NEW_LOCATION}>+ Add a new location</option>
+              </select>
+            </Field>
+            {locationChoice === NEW_LOCATION && (
+              <>
+                <Field>
+                  <label htmlFor="inst-location-name">New location name</label>
+                  <input
+                    id="inst-location-name"
+                    name="inst-location-name"
+                    required
+                    minLength={2}
+                    maxLength={200}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="inst-location-kind">New location kind</label>
+                  <select id="inst-location-kind" name="inst-location-kind">
+                    {LOCATION_KINDS.map((kind) => (
+                      <option key={kind.value} value={kind.value}>
+                        {kind.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </>
+            )}
+            <Field>
+              <label htmlFor="inst-remarks">Remarks (optional)</label>
+              <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
+            </Field>
+            {activeItem?.requiresSerials === true && (
+              <fieldset>
+                <legend>
+                  Serials to install — one per unit, from the delivered pool of{' '}
+                  {activeItem.itemNumber}
+                </legend>
+                {serialPool.length > 0 ? (
+                  serialPool.map((serial) => (
+                    <label
+                      key={serial.id}
+                      className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
+                    >
+                      <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
+                      {serial.serialNumber}
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {serial.challanNumber ?? 'challan'}
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-muted-foreground">
+                    No delivered, uninstalled serials for this item — issue a Delivery
+                    Challan with serials first.
+                  </p>
+                )}
+              </fieldset>
+            )}
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Record installation
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
       )}
     </>
   );

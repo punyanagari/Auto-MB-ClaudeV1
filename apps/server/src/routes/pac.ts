@@ -17,7 +17,8 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { cancellationNote } from './challans.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
@@ -646,7 +647,10 @@ export function registerPacRoutes(
       );
       const { id } = request.params as { id: string };
       const body = request.body as CancelPacCertificateRequest;
+      const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        // PACs stay an office document, so the writer role still gates
+        // site staff out here.
         await requireWriterRole(tx, user.id);
         // The row lock serialises cancellation against a concurrent
         // cancel; whichever wins, the loser sees the final status.
@@ -661,6 +665,19 @@ export function registerPacRoutes(
           throw httpError(404, 'PAC_CERTIFICATE_NOT_FOUND', 'No such PAC certificate.');
         }
         await assertWorkAccess(tx, user.id, existing.work_id);
+        // Cancelling reverses a quantity-ledger contribution — the
+        // certified quantities go straight back into the R18 pool — and
+        // docs/SECURITY.md holds that sensitive issue/cancel actions
+        // require an EXPLICIT authority, which is what every other cancel
+        // of a quantity-bearing record already demands (challans,
+        // Issue Challans, Measurement Books, correction notices). The
+        // move is one-way: the 0022 guard freezes a cancelled certificate
+        // forever, so the only repair is re-recording under a reference
+        // the partial unique index has just freed. Proven AFTER the
+        // work-access gate on purpose, so a cross-tenant or out-of-scope
+        // caller keeps reading 404 and never learns the certificate
+        // exists.
+        await requireAuthority(tx, user.id, 'cancel');
         if (existing.status !== 'recorded') {
           throw httpError(
             409,
@@ -686,7 +703,7 @@ export function registerPacRoutes(
         await assertSourceNotBilled(tx, 'pac_certificate', id);
         await tx`
           update pac_certificates
-          set status = 'cancelled', cancellation_note = ${body.note},
+          set status = 'cancelled', cancellation_note = ${note},
               cancelled_by_user_id = ${user.id}, cancelled_at = now()
           where id = ${id}
         `;
@@ -699,7 +716,7 @@ export function registerPacRoutes(
           before: { status: 'recorded' },
           after: { status: 'cancelled' },
           reference: existing.reference,
-          note: body.note,
+          note,
         });
         return toCertificate(full, await loadReleasedValueContext(tx, full.work_id));
       });

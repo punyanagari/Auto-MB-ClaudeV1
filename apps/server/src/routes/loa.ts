@@ -24,7 +24,7 @@ import {
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance } from 'fastify';
-import type { Sql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { auditDiff } from '../audit-diff.js';
@@ -277,6 +277,75 @@ function assertPbgRequirementCoherent(body: ConfirmWorkRequest): void {
       400,
       'PBG_AMOUNT_INVALID',
       'The PBG required amount must be a positive rupee amount with at most two decimal places.',
+    );
+  }
+}
+
+/** True when a YYYY-MM-DD string names a day that actually exists.
+ * Decided component-wise against a UTC construction, so no local
+ * timezone ever touches the legal date value (engineering rule 6). */
+function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const at = new Date(Date.UTC(year, month - 1, day));
+  return (
+    at.getUTCFullYear() === year &&
+    at.getUTCMonth() === month - 1 &&
+    at.getUTCDate() === day
+  );
+}
+
+/** Product contract: the LOA letter date is the FLOOR every downstream
+ * date window measures from — delivery challans, installations, PAC
+ * certificates and Measurement Books all refuse a date before it, with
+ * "today" as their ceiling. A Work confirmed with a letter date in the
+ * FUTURE therefore has an empty legal window: no challan, installation,
+ * PAC certificate or MB can ever be dated on it, and the dashboard's PBG
+ * due date (letter_date + pbg_submission_days) is wrong for the life of
+ * the Work. Nothing repairs it either — no route rewrites
+ * works.letter_date, and the Work cannot be deleted — so a mistyped year
+ * would brick the Work and burn its work code and letter number forever.
+ * Refusal, not a warning, is right: no LOA is dated after the day it is
+ * filed.
+ *
+ * "Today" is the organisation's own timezone (default Asia/Kolkata),
+ * never the server clock, mirroring assertChallanDate in challans.ts — a
+ * same-day IST confirmation made after 18:30 UTC is legitimate.
+ * Back-dating stays COMPLETELY unrestricted: a contractor onboarding
+ * from paper confirms letters years old. */
+async function assertLetterDateCoherent(
+  tx: TransactionSql,
+  organisationId: string,
+  letterDate: string,
+): Promise<void> {
+  // A day that does not exist ('2026-02-31') must never reach Postgres,
+  // where it surfaces as an opaque 500 — and it compares LATER than
+  // '2026-02-28' in the string comparison below, so the future bound
+  // would not catch it either. The route holds this itself rather than
+  // relying on the request schema's pattern.
+  if (!isCalendarDate(letterDate)) {
+    throw httpError(
+      400,
+      'LETTER_DATE_INVALID',
+      `${letterDate} is not a real calendar date; enter the LOA letter date as YYYY-MM-DD.`,
+    );
+  }
+  const [bounds] = await tx<{ today: string }[]>`
+    select (now() at time zone timezone)::date::text as today
+    from organisations where id = ${organisationId}
+  `;
+  // withBoundTenant has already proved the caller's membership binds to
+  // this organisation, so a missing row is an internal invariant break.
+  if (!bounds) throw new Error('organisation row missing for the bound tenant');
+  // ISO dates compare correctly as strings.
+  if (letterDate > bounds.today) {
+    throw httpError(
+      400,
+      'LETTER_DATE_INVALID',
+      `The LOA letter date cannot be in the future (today is ${bounds.today}). Check the year printed on the letter — the letter date anchors every later document date and cannot be corrected once the Work is confirmed.`,
     );
   }
 }
@@ -537,6 +606,9 @@ export function registerLoaRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          // Needs the organisation's timezone, so it runs here rather
+          // than beside the two synchronous assert* calls above.
+          await assertLetterDateCoherent(tx, organisationId, body.letterDate);
 
           const [document] = await tx<
             { id: string; extraction_status: string; extraction_payload: unknown }[]
