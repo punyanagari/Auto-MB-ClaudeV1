@@ -1,0 +1,58 @@
+name: Fix operations workspace accessibility
+
+on:
+  push:
+    branches:
+      - agent/operations-workspace-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-operations-workspace-a11y
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: true
+      - name: Apply verified contrast and accessible-name fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          css_path = Path('apps/web/src/globals.css')
+          css = css_path.read_text()
+          replacements = {
+              '--success: #039855;': '--success: #067647;',
+              '--sidebar-faint: #98a2b3;': '--sidebar-faint: #475467;',
+          }
+          for before, after in replacements.items():
+              if css.count(before) != 1:
+                  raise SystemExit(f'expected exactly one occurrence of {before!r}')
+              css = css.replace(before, after)
+          css_path.write_text(css)
+
+          workspace_path = Path('apps/web/src/views/OperationsWorkspace.tsx')
+          workspace = workspace_path.read_text()
+          before = 'Review approvals'
+          after = 'Open approval queue'
+          if workspace.count(before) != 1:
+              raise SystemExit(f'expected exactly one occurrence of {before!r}')
+          workspace_path.write_text(workspace.replace(before, after))
+          PY
+      - name: Commit fixes when needed
+        run: |
+          if git diff --quiet; then
+            echo "Accessibility fixes are already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/globals.css apps/web/src/views/OperationsWorkspace.tsx
+          git commit -m "fix(web): restore accessible contrast and labels"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
