@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react';
 import type { DashboardResponse } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formatInr, progressPercent } from '../format.js';
+import { Badge } from '../ui/badge.js';
+import { Button } from '../ui/button.js';
+import { Card } from '../ui/card.js';
+import { ProgressBar } from '../ui/progress.js';
+import { DataTable, numericCell } from '../ui/table.js';
+import { FormError } from '../ui/form.js';
 
 interface DashboardProps {
   readonly api: ApiClient;
@@ -9,10 +15,20 @@ interface DashboardProps {
   readonly onOpenWork: (workId: string) => void;
 }
 
-const SEVERITY_CLASS = {
-  danger: 'alert--danger',
-  warning: 'alert--warning',
-  notice: 'alert--notice',
+/* Severity used to ride a stripe down the left edge. It still tints the row,
+ * but around the whole hairline border at the same weight as every other
+ * card, so the list reads as one stack rather than a tab rack. The severity
+ * itself is named in words by the badge — this is the scanning aid. */
+const SEVERITY_BORDER = {
+  danger: 'border-destructive/40',
+  warning: 'border-warning/40',
+  notice: 'border-info/40',
+} as const;
+
+const SEVERITY_TONE = {
+  danger: 'destructive',
+  warning: 'warning',
+  notice: 'info',
 } as const;
 
 const SEVERITY_LABEL = {
@@ -46,22 +62,20 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
 
   if (error !== null) {
     return (
-      <section className="card">
+      <Card>
         <h1 tabIndex={-1}>Dashboard</h1>
-        <p role="alert" className="form-error">
-          {error}
-        </p>
-      </section>
+        <FormError>{error}</FormError>
+      </Card>
     );
   }
   if (data === null) {
     return (
-      <section className="card">
+      <Card>
         <h1 tabIndex={-1}>Dashboard</h1>
-        <p className="muted" role="status">
+        <p className="text-muted-foreground" role="status">
           Loading…
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -75,7 +89,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             Works
           </span>
-          <span className="block text-2xl font-semibold tracking-tight tnum">
+          <span className="block text-2xl font-semibold tracking-tight tabular-nums">
             {data.totals.works}
           </span>
         </div>
@@ -83,7 +97,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             Contract value
           </span>
-          <span className="block text-2xl font-semibold tracking-tight tnum">
+          <span className="block text-2xl font-semibold tracking-tight tabular-nums">
             {formatInr(data.totals.contractValue)}
           </span>
         </div>
@@ -91,7 +105,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             Delivered value
           </span>
-          <span className="block text-2xl font-semibold tracking-tight tnum">
+          <span className="block text-2xl font-semibold tracking-tight tabular-nums">
             {formatInr(data.totals.deliveredValue)}
           </span>
         </div>
@@ -99,33 +113,33 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             Billed value
           </span>
-          <span className="block text-2xl font-semibold tracking-tight tnum">
+          <span className="block text-2xl font-semibold tracking-tight tabular-nums">
             {formatInr(data.totals.billedValue)}
           </span>
         </div>
       </section>
 
-      <section className="card">
+      <Card>
         <h1 tabIndex={-1}>Dashboard</h1>
         <h2>Needs attention</h2>
         {data.alerts.length === 0 ? (
-          <p className="muted">
+          <p className="text-muted-foreground">
             Nothing needs attention. New warnings appear here — expiring bank
             guarantees, letters waiting for review, open drafts, and unpaid bills.
           </p>
         ) : (
-          <ul className="alert-list">
+          <ul className="my-3 flex list-none flex-col gap-2 p-0">
             {data.alerts.map((alert, index) => (
               <li
                 key={`${alert.kind}-${String(index)}`}
-                className={`alert ${SEVERITY_CLASS[alert.severity]}`}
+                className={`flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-3 ${SEVERITY_BORDER[alert.severity]}`}
               >
-                <span className={`chip alert__chip--${alert.severity}`}>
+                <Badge variant={SEVERITY_TONE[alert.severity]}>
                   {SEVERITY_LABEL[alert.severity]}
-                </span>
-                <span className="alert__message">{alert.message}</span>
+                </Badge>
+                <span className="min-w-48 flex-1 text-sm">{alert.message}</span>
                 {alert.dueInDays !== null && (
-                  <span className="alert__due">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {alert.dueInDays < 0
                       ? `${String(-alert.dueInDays)} days overdue`
                       : alert.dueInDays === 0
@@ -134,15 +148,16 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
                   </span>
                 )}
                 {alert.workId !== null && (
-                  <button
-                    type="button"
-                    className="button--link"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    className="font-medium"
                     onClick={() => {
                       if (alert.workId !== null) onOpenWork(alert.workId);
                     }}
                   >
                     Open {alert.workCode ?? 'work'}
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -151,22 +166,22 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
 
         <h2>Delivery progress</h2>
         {data.works.length === 0 ? (
-          <p className="muted">
+          <p className="text-muted-foreground">
             No Works yet. Upload an LOA letter to create the first Work.
           </p>
         ) : (
-          <table className="data-table">
+          <DataTable>
             <thead>
               <tr>
                 <th scope="col">Work</th>
                 <th scope="col">Progress</th>
-                <th scope="col" className="cell--numeric">
+                <th scope="col" className={numericCell}>
                   Delivered
                 </th>
-                <th scope="col" className="cell--numeric">
+                <th scope="col" className={numericCell}>
                   Contract value
                 </th>
-                <th scope="col" className="cell--numeric">
+                <th scope="col" className={numericCell}>
                   Challans
                 </th>
               </tr>
@@ -180,43 +195,38 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
                 return (
                   <tr key={work.workId}>
                     <th scope="row">
-                      <button
-                        type="button"
-                        className="button--link"
+                      <Button
+                        variant="link"
+                        size="inline"
+                        className="font-medium"
                         onClick={() => {
                           onOpenWork(work.workId);
                         }}
                       >
                         {work.workCode}
-                      </button>
-                      <span className="muted work-title"> {work.title}</span>
+                      </Button>
+                      <span className="text-muted-foreground"> {work.title}</span>
                     </th>
                     <td>
-                      <div
-                        className="progress"
-                        role="progressbar"
-                        aria-valuenow={percent}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label={`${work.workCode} delivery progress`}
-                      >
-                        <div
-                          className="progress__bar"
-                          style={{ width: `${String(percent)}%` }}
-                        />
-                      </div>
-                      <span className="muted progress__text">{percent}%</span>
+                      <ProgressBar
+                        value={percent}
+                        label={`${work.workCode} delivery progress`}
+                        className="h-1.5 min-w-24 bg-secondary"
+                      />
+                      <span className="font-mono text-xs font-medium text-muted-foreground tabular-nums">
+                        {percent}%
+                      </span>
                     </td>
-                    <td className="cell--numeric">{formatInr(work.deliveredValue)}</td>
-                    <td className="cell--numeric">{formatInr(work.contractValue)}</td>
-                    <td className="cell--numeric">{work.issuedChallans}</td>
+                    <td className={numericCell}>{formatInr(work.deliveredValue)}</td>
+                    <td className={numericCell}>{formatInr(work.contractValue)}</td>
+                    <td className={numericCell}>{work.issuedChallans}</td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+          </DataTable>
         )}
-      </section>
+      </Card>
     </>
   );
 }
