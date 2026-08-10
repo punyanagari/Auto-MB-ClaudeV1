@@ -33,6 +33,7 @@ import { WorkSchedules } from './WorkSchedules.js';
 import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
+import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -879,15 +880,31 @@ export function WorkDetail({
       )}
 
       {tab === 'bills' && (
-        <WorkBills
-          api={api}
-          organisationId={organisationId}
-          bills={bills}
-          setBills={setBills}
-          canIssue={canIssue}
-          pending={pending}
-          act={act}
-        />
+        <>
+          <WorkBills
+            api={api}
+            organisationId={organisationId}
+            bills={bills}
+            setBills={setBills}
+            canIssue={canIssue}
+            pending={pending}
+            act={act}
+          />
+          {/* The GST document sits with the money it bills: the bill is
+              what the contract owes, the tax invoice is what the law
+              requires for it. */}
+          <WorkTaxInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+            pending={pending}
+            act={act}
+          />
+        </>
       )}
 
       {tab === 'instruments' && (

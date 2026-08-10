@@ -7260,3 +7260,434 @@ describe('ChallanEditor purchase-order receipt link', () => {
     expect(screen.queryByLabelText('Purchase order line for A/1')).toBeNull();
   });
 });
+
+const CLIENT_CONTACT_ID = 'eeee1111-1111-4111-8111-eeeeeeeeee11';
+const TAX_INVOICE_ID = 'eeee2222-2222-4222-8222-eeeeeeeeee22';
+const BILLABLE_MB_ID = 'eeee3333-3333-4333-8333-eeeeeeeeee33';
+
+const CLIENT_CONTACT = {
+  id: CLIENT_CONTACT_ID,
+  designation: 'Central Railway Mumbai Division',
+  contactPerson: null,
+  address: 'Mumbai 400001',
+  phone: null,
+  email: null,
+  gstin: '27AAAGM0289C2ZI',
+  pincode: '400001',
+  stateCode: '27',
+  isConsignee: false,
+  isVendor: false,
+  isClient: true,
+  active: true,
+  createdAt: '2026-07-01T00:00:00.000Z',
+};
+
+function billableBook(overrides: Record<string, unknown> = {}) {
+  return {
+    id: BILLABLE_MB_ID,
+    workId: WORK_ID,
+    status: 'finalized',
+    kind: 'on_account',
+    isFinal: false,
+    consigneeContactId: null,
+    mbDate: '2026-07-30',
+    mbNumber: 'DCW-1-MB-01',
+    sequenceNumber: 1,
+    totalAmount: '4226994.01',
+    ...overrides,
+  };
+}
+
+function taxInvoice(overrides: Record<string, unknown> = {}) {
+  return {
+    id: TAX_INVOICE_ID,
+    workId: WORK_ID,
+    measurementBookId: BILLABLE_MB_ID,
+    mbNumber: 'DCW-1-MB-01',
+    status: 'draft',
+    invoiceNumber: null,
+    sequenceNumber: null,
+    fyLabel: null,
+    invoiceDate: '2026-07-30',
+    sacCode: '998734',
+    serviceDescription: 'Provision of passenger amenity services.',
+    gstRate: '18',
+    placeOfSupply: '27',
+    buyerContactId: CLIENT_CONTACT_ID,
+    taxableValue: null,
+    cgstAmount: null,
+    sgstAmount: null,
+    igstAmount: null,
+    totalAmount: null,
+    irn: null,
+    ackNumber: null,
+    ackDate: null,
+    cancellationNote: null,
+    createdAt: '2026-07-30T00:00:00.000Z',
+    submittedAt: null,
+    cancelledAt: null,
+    ...overrides,
+  };
+}
+
+const SUBMITTED_INVOICE = taxInvoice({
+  status: 'submitted',
+  invoiceNumber: 'TI/2026-27/001',
+  sequenceNumber: 1,
+  fyLabel: '2026-27',
+  taxableValue: '4226994.01',
+  cgstAmount: '380429.46',
+  sgstAmount: '380429.46',
+  igstAmount: '0.00',
+  totalAmount: '4987852.93',
+  submittedAt: '2026-07-30T06:39:00.000Z',
+});
+
+describe('WorkDetail tax invoices', () => {
+  function renderInvoiceWork(api: ApiClient) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('lists invoices with their Measurement Book, status and total', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    expect(await screen.findByText('TI/2026-27/001')).toBeTruthy();
+    expect(screen.getByText('DCW-1-MB-01')).toBeTruthy();
+    expect(screen.getByText('₹49,87,852.93')).toBeTruthy();
+  });
+
+  it('offers only finalized, unbilled, non-record Measurement Books to bill', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({
+        books: [
+          billableBook(),
+          // A record MB is merged before billing, a draft is not
+          // finalized, and the final MB below IS billable.
+          billableBook({ id: 'eeee4444-4444-4444-8444-eeeeeeeeee44', kind: 'record' }),
+          billableBook({
+            id: 'eeee5555-5555-4555-8555-eeeeeeeeee55',
+            status: 'draft',
+            mbNumber: null,
+          }),
+          billableBook({
+            id: 'eeee6666-6666-4666-8666-eeeeeeeeee66',
+            kind: 'final',
+            isFinal: true,
+            mbNumber: 'DCW-1-MB-02',
+          }),
+        ],
+      }),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    const picker = await screen.findByLabelText('Measurement Book to bill');
+    const offered = within(picker)
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '');
+    // The placeholder plus exactly the two billable books.
+    expect(offered.length).toBe(3);
+    expect(offered.some((label) => label.includes('DCW-1-MB-01'))).toBe(true);
+    expect(offered.some((label) => label.includes('DCW-1-MB-02'))).toBe(true);
+  });
+
+  it('does not offer a Measurement Book that a live invoice already bills', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [billableBook()] }),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    await screen.findByText('TI/2026-27/001');
+    // Its only billable MB is taken, so there is nothing to draft against.
+    expect(screen.queryByLabelText('Measurement Book to bill')).toBeNull();
+  });
+
+  it('drafts an invoice from the picked Measurement Book', async () => {
+    const createWorkTaxInvoice = vi.fn().mockResolvedValue({
+      invoice: taxInvoice(),
+      buyerSnapshot: null,
+      signedQr: null,
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [billableBook()] }),
+      createWorkTaxInvoice,
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: taxInvoice(),
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.change(await screen.findByLabelText('Measurement Book to bill'), {
+      target: { value: BILLABLE_MB_ID },
+    });
+    fireEvent.change(screen.getByLabelText('Invoice date'), {
+      target: { value: '2026-07-30' },
+    });
+    fireEvent.change(screen.getByLabelText('SAC code'), {
+      target: { value: '998734' },
+    });
+    fireEvent.change(screen.getByLabelText('Service description'), {
+      target: { value: 'Provision of passenger amenity services.' },
+    });
+    fireEvent.change(screen.getByLabelText('GST rate (%)'), {
+      target: { value: '18' },
+    });
+    fireEvent.change(screen.getByLabelText('Place of supply'), {
+      target: { value: '27' },
+    });
+    fireEvent.change(screen.getByLabelText('Buyer'), {
+      target: { value: CLIENT_CONTACT_ID },
+    });
+    fireEvent.click(submitButton('Create draft'));
+
+    await waitFor(() => {
+      expect(createWorkTaxInvoice).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        measurementBookId: BILLABLE_MB_ID,
+        invoiceDate: '2026-07-30',
+        sacCode: '998734',
+        serviceDescription: 'Provision of passenger amenity services.',
+        gstRate: '18',
+        placeOfSupply: '27',
+        buyerContactId: CLIENT_CONTACT_ID,
+      });
+    });
+  });
+
+  it('shows the frozen CGST/SGST split and hides the IGST row within the state', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: { designation: 'Central Railway Mumbai Division' },
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+
+    expect(await screen.findByText('Taxable value')).toBeTruthy();
+    expect(screen.getByText('CGST')).toBeTruthy();
+    expect(screen.getByText('SGST')).toBeTruthy();
+    // An intra-state invoice carries no IGST, and a zero row would only
+    // invite the reader to wonder what it means.
+    expect(screen.queryByText('IGST')).toBeNull();
+    expect(screen.getAllByText('₹3,80,429.46').length).toBe(2);
+  });
+
+  it('shows IGST alone across states', async () => {
+    const interState = taxInvoice({
+      ...SUBMITTED_INVOICE,
+      placeOfSupply: '07',
+      cgstAmount: '0.00',
+      sgstAmount: '0.00',
+      igstAmount: '760858.92',
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([interState]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: interState,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+
+    expect(await screen.findByText('IGST')).toBeTruthy();
+    expect(screen.queryByText('CGST')).toBeNull();
+    expect(screen.queryByText('SGST')).toBeNull();
+  });
+
+  it('records what the IRP answered rather than minting an IRN', async () => {
+    const recordTaxInvoiceIrpResponse = vi.fn().mockResolvedValue({
+      invoice: SUBMITTED_INVOICE,
+      buyerSnapshot: null,
+      signedQr: 'signed',
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+      recordTaxInvoiceIrpResponse,
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Record the IRP response' }),
+    );
+
+    const irn = 'fda60c09ad1134252b55949c1430a26a94587374c693ea42665d27d092dbb337';
+    fireEvent.change(screen.getByLabelText('IRN'), { target: { value: irn } });
+    fireEvent.change(screen.getByLabelText('Acknowledgement number'), {
+      target: { value: '122633844006458' },
+    });
+    fireEvent.change(screen.getByLabelText('Acknowledgement date'), {
+      target: { value: '2026-07-30T12:09' },
+    });
+    fireEvent.change(screen.getByLabelText('Signed QR'), {
+      target: { value: 'eyJhbGciOi' },
+    });
+    fireEvent.click(submitButton('Record response'));
+
+    await waitFor(() => {
+      expect(recordTaxInvoiceIrpResponse).toHaveBeenCalledWith(
+        ORG_ID,
+        TAX_INVOICE_ID,
+        expect.objectContaining({
+          irn,
+          ackNumber: '122633844006458',
+          signedQr: 'eyJhbGciOi',
+        }),
+      );
+    });
+  });
+
+  it('asks for a vehicle on a road e-way bill and a transport document otherwise', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft an e-way bill' }));
+
+    // Road is the default, and it moves on a vehicle.
+    expect(screen.getByLabelText('Vehicle number')).toBeTruthy();
+    expect(screen.queryByLabelText('Transport document number')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Transport mode'), {
+      target: { value: 'rail' },
+    });
+    expect(screen.getByLabelText('Transport document number')).toBeTruthy();
+    expect(screen.queryByLabelText('Vehicle number')).toBeNull();
+  });
+
+  it('omits empty optionals rather than sending blanks NIC would reject', async () => {
+    const createInvoiceEwayBill = vi.fn().mockResolvedValue({});
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+      createInvoiceEwayBill,
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft an e-way bill' }));
+
+    fireEvent.change(screen.getByLabelText('Distance (km)'), {
+      target: { value: '120' },
+    });
+    fireEvent.change(screen.getByLabelText('From PIN'), {
+      target: { value: '411023' },
+    });
+    fireEvent.change(screen.getByLabelText('To PIN'), { target: { value: '400001' } });
+    fireEvent.click(submitButton('Create e-way bill'));
+
+    await waitFor(() => {
+      expect(createInvoiceEwayBill).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID, {
+        transportMode: 'road',
+        distanceKm: 120,
+        fromPincode: '411023',
+        toPincode: '400001',
+      });
+    });
+  });
+
+  it('requires a note to cancel, and says the Measurement Book is released', async () => {
+    const cancelTaxInvoice = vi.fn().mockResolvedValue({
+      invoice: SUBMITTED_INVOICE,
+      buyerSnapshot: null,
+      signedQr: null,
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+      cancelTaxInvoice,
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel this invoice' }));
+
+    fireEvent.change(screen.getByLabelText('Why it is being cancelled'), {
+      target: { value: 'Wrong place of supply.' },
+    });
+    fireEvent.click(submitButton('Cancel invoice'));
+
+    await waitFor(() => {
+      expect(cancelTaxInvoice).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID, {
+        note: 'Wrong place of supply.',
+      });
+    });
+  });
+});
