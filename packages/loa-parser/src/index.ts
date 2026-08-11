@@ -49,6 +49,7 @@ export {
   type ParTokenDirection,
   type ItemScheduleBinding,
   type ItemReconciliation,
+  type ParseItemsOptions,
 } from './items.js';
 export { parseDecimalToMinorUnits, formatMinorUnits } from './decimal.js';
 // DC-24 — pricing-shape classifier (Shape A letter-level percentage vs
@@ -113,6 +114,7 @@ export {
   type QtyDecomposition,
   type NeedsReviewRollup,
   type LoaReviewPayload,
+  type ReviewLoaOptions,
   type BannedBlockSpelling,
   type BannedItemsBlockDetection,
 } from './needs-review.js';

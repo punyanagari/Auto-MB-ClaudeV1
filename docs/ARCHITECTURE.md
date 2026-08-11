@@ -112,9 +112,11 @@ private PDF
 
 The existing six-letter / 281-item corpus is a regression baseline. AI output is untrusted proposal data until reviewed.
 
-As delivered in Milestone 2: extraction is `pdftotext -layout` (poppler,
-a system dependency — the same extraction the corpus fixtures were
-produced with), run inline at upload because it is sub-second; the first
+As delivered in Milestone 2: extraction runs complementary Poppler views from
+the same PDF: `pdftotext -layout` remains authoritative for headers,
+schedules, and numeric columns, while `pdftotext -raw` supplies exact item-row
+description ownership behind a strict whole-letter tuple gate. Both run in
+parallel inline at upload because extraction is sub-second; the first
 genuinely asynchronous job remains Milestone 3's PDF rendering (§9). The
 parser's review payload — per-field value plus printed raw source plus
 needsReview, item rows with exact-decimal reconciliation, pricing-shape
@@ -122,8 +124,8 @@ classification, and the trap flags — is stored verbatim on the document
 row. Confirmation is one transaction: Work + schedules + items, each item
 carrying `source_evidence` that links back to its parsed source block,
 and the document keeps the full payload after confirmation. The
-model/OCR fallback step remains unbuilt until a real letter defeats the
-deterministic parser.
+model/OCR fallback step remains unbuilt until a real letter defeats both
+deterministic views.
 
 ## 8. API contracts
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Auto-MB Integrity Review'
+  short_description: 'Review tenant and business integrity risks'
+  default_prompt: 'Use $auto-mb-integrity-review to review this Auto-MB change for tenant and business-integrity failures.'

@@ -129,6 +129,54 @@ function firstLabelValue(
   return { value: null, raw: null, needsReview: true };
 }
 
+const WORK_DESCRIPTION_BOUNDARY_RE =
+  /^(?:payment(?:\s+terms?)?|warrant(?:y|ies)|guarantee\s+period|maintenance(?:\s+period)?|defect\s+liability|performance\s+(?:bank\s+)?guarantee|PBG|security\s+deposit|item\s+\S+\s+technical\s+specification)\b/i;
+const NEXT_LABEL_RE = /^[A-Za-z][^:]{0,80}:\s*\S/;
+
+/**
+ * Extracts a labelled prose field that may wrap over several PDF text lines.
+ * Continuations stop at a blank line, the next labelled field, a known tender
+ * clause, or the sentence-ending line. This keeps adjacent tender metadata
+ * out of the name of work while preserving its complete printed wording.
+ */
+function firstWrappedLabelValue(
+  lines: readonly string[],
+  labels: readonly RegExp[],
+): TenderField {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    for (const label of labels) {
+      const match = label.exec(line);
+      if (match === null) continue;
+
+      const valueLines: string[] = [];
+      const rawLines = [line];
+      const inline = (match.groups?.value ?? match[1] ?? '').trim();
+      if (inline.length > 0) valueLines.push(inline);
+
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const candidate = lines[cursor] ?? '';
+        if (
+          candidate.length === 0 ||
+          NEXT_LABEL_RE.test(candidate) ||
+          WORK_DESCRIPTION_BOUNDARY_RE.test(candidate)
+        ) {
+          break;
+        }
+        valueLines.push(candidate);
+        rawLines.push(candidate);
+        if (/[.!?]$/.test(candidate)) break;
+      }
+
+      const value = valueLines.join(' ').trim();
+      return value.length > 0
+        ? { value, raw: rawLines.join('\n'), needsReview: false }
+        : { value: null, raw: line, needsReview: true };
+    }
+  }
+  return { value: null, raw: null, needsReview: true };
+}
+
 function decimalText(value: string): string {
   const stripped = value.replace(/,/g, '').trim();
   const number = /^(\d{1,3}(?:\.\d{1,2})?)/.exec(stripped)?.[1] ?? stripped;
@@ -228,39 +276,138 @@ function itemReferences(block: string): readonly string[] {
   return [...references];
 }
 
+const DURATION_PATTERN = String.raw`(\d+(?:\.\d+)?)\s*(days?|months?|years?)`;
+const WARRANTY_PERIOD_LABEL = String.raw`(?:warrant(?:y|ies)(?:\s+period)?|guarantee\s+period)`;
+const MAINTENANCE_PERIOD_LABEL = String.raw`(?:maintenance\s+period|defect\s+liability(?:\s+period)?|AMC\s+period)`;
+
+function labelledPeriodDuration(
+  clause: string,
+  kind: TenderPeriodKind,
+): RegExpExecArray | null {
+  const label = kind === 'warranty' ? WARRANTY_PERIOD_LABEL : MAINTENANCE_PERIOD_LABEL;
+  const afterLabel = new RegExp(
+    String.raw`${label}\s*(?:(?:is|of|for|shall\s+be|valid\s+for|coverage)\s*)?[:=-]?\s*${DURATION_PATTERN}`,
+    'i',
+  ).exec(clause);
+  return (
+    afterLabel ??
+    new RegExp(String.raw`${DURATION_PATTERN}\s*${label}`, 'i').exec(clause)
+  );
+}
+
+function anyDuration(clause: string): RegExpExecArray | null {
+  return new RegExp(DURATION_PATTERN, 'i').exec(clause);
+}
+
+function periodDuration(
+  clause: string,
+  kind: TenderPeriodKind,
+): RegExpExecArray | null {
+  return labelledPeriodDuration(clause, kind) ?? anyDuration(clause);
+}
+
+function periodKindOf(clause: string): TenderPeriodKind | null {
+  const hasDuration = anyDuration(clause) !== null;
+  const hasExplicitPeriodDuration =
+    labelledPeriodDuration(clause, 'warranty') !== null ||
+    labelledPeriodDuration(clause, 'maintenance') !== null;
+  const isInstrumentReleaseReference =
+    /\b(?:PBG|performance\s+bank\s+guarantee|bank\s+guarantee|security\s+deposit|SD)\b/i.test(
+      clause,
+    ) &&
+    /\b(?:release(?:d)?|return(?:ed)?|refund(?:ed)?|discharg(?:ed)?|paid\s+back)\b/i.test(
+      clause,
+    ) &&
+    !hasExplicitPeriodDuration;
+  if (isInstrumentReleaseReference) return null;
+
+  const warrantyIndex = hasDuration
+    ? clause.search(
+        /\b(?:warranty|warranties)\b(?!\s+obligations?\b)|guarantee\s+period/i,
+      )
+    : clause.search(
+        /\b(?:warranty|warranties)\b(?=\s*(?:period\b|requirements?\b|terms?\b|coverage\b|valid(?:ity)?\b|appl(?:y|ies|icable)\b|(?:shall|will|is|of|for|from)\b|[:=-]|\d))|guarantee\s+period/i,
+      );
+  const maintenanceIndex = clause.search(
+    /maintenance\s+period|defect\s+liability|AMC\s+period/i,
+  );
+  return maintenanceIndex >= 0 &&
+    (warrantyIndex < 0 || maintenanceIndex < warrantyIndex)
+    ? 'maintenance'
+    : warrantyIndex >= 0
+      ? 'warranty'
+      : null;
+}
+
+function sentenceClauses(block: string): readonly string[] {
+  const protectedStop = '\uE000';
+  return block
+    .replace(/\b(?:Nos?|S\.?\s*No)\./gi, (abbreviation) =>
+      abbreviation.replaceAll('.', protectedStop),
+    )
+    .split(/[.!?]\s+/)
+    .filter((clause) => clause.length > 0)
+    .map((clause) => clause.replaceAll(protectedStop, '.'));
+}
+
 function periodSuggestions(
   blocks: readonly string[],
 ): readonly TenderPeriodSuggestion[] {
   const result: TenderPeriodSuggestion[] = [];
   for (const block of blocks) {
-    const kind: TenderPeriodKind | null = /warrant(?:y|ies)|guarantee\s+period/i.test(
-      block,
-    )
-      ? 'warranty'
-      : /maintenance\s+period|defect\s+liability|AMC\s+period/i.test(block)
-        ? 'maintenance'
-        : null;
-    if (kind === null) continue;
-    const duration = /(\d+(?:\.\d+)?)\s*(days?|months?|years?)/i.exec(block);
-    const refs = itemReferences(block);
-    const unitRaw = duration?.[2]?.toLowerCase() ?? null;
-    const durationUnit =
-      unitRaw === null
-        ? null
-        : unitRaw.startsWith('day')
-          ? 'day'
-          : unitRaw.startsWith('month')
-            ? 'month'
-            : 'year';
-    result.push({
-      kind,
-      durationValue: duration?.[1] ?? null,
-      durationUnit,
-      scope: refs.length > 0 ? 'item' : 'work',
-      itemReferences: refs,
-      rawBlock: block,
-      needsReview: duration === null,
-    });
+    // A single PDF paragraph often carries warranty and maintenance on
+    // adjacent sentences. Judge each labelled sentence independently, but
+    // retain an immediately following duration sentence as the same evidence.
+    const clauses = sentenceClauses(block);
+    const consumedClauseIndexes = new Set<number>();
+    for (const [index, clause] of clauses.entries()) {
+      if (consumedClauseIndexes.has(index)) continue;
+      const kind = periodKindOf(clause);
+      if (kind === null) continue;
+      let evidence = clause;
+      let duration = periodDuration(evidence, kind);
+      const next = clauses[index + 1];
+      const nextKind = next === undefined ? null : periodKindOf(next);
+      const clauseRefs = itemReferences(clause);
+      const nextRefs = next === undefined ? [] : itemReferences(next);
+      const sameItemScope =
+        nextRefs.length === 0 ||
+        (nextRefs.length === clauseRefs.length &&
+          nextRefs.every((reference) => clauseRefs.includes(reference)));
+      if (
+        duration === null &&
+        next !== undefined &&
+        ((nextKind === kind && sameItemScope) ||
+          (nextKind === null &&
+            /\b(?:the|this|such|its)\s+(?:said\s+)?(?:period|duration)\b/i.test(
+              next,
+            ))) &&
+        anyDuration(next) !== null
+      ) {
+        evidence = `${clause}. ${next}`;
+        duration = periodDuration(evidence, kind);
+        consumedClauseIndexes.add(index + 1);
+      }
+      const refs = itemReferences(evidence);
+      const unitRaw = duration?.[2]?.toLowerCase() ?? null;
+      const durationUnit =
+        unitRaw === null
+          ? null
+          : unitRaw.startsWith('day')
+            ? 'day'
+            : unitRaw.startsWith('month')
+              ? 'month'
+              : 'year';
+      result.push({
+        kind,
+        durationValue: duration?.[1] ?? null,
+        durationUnit,
+        scope: refs.length > 0 ? 'item' : 'work',
+        itemReferences: refs,
+        rawBlock: evidence,
+        needsReview: duration === null,
+      });
+    }
   }
   return result;
 }
@@ -315,12 +462,12 @@ export function reviewTenderDocument(
   const lines = normalizeLines(rawText);
   const blocks = paragraphs(rawText);
   const tenderNumber = firstLabelValue(lines, [
-    /^(?:tender|e-tender|nit|notice\s+inviting\s+tender)\s*(?:no\.?|number|id)?\s*[:\-]\s*(?<value>.+)$/i,
-    /^tender\s+reference\s*[:\-]\s*(?<value>.+)$/i,
+    /^(?:tender|e-tender|nit|notice\s+inviting\s+tender)\s*(?:no\.?|number|id)?\s*[:-]\s*(?<value>.+)$/i,
+    /^tender\s+reference\s*[:-]\s*(?<value>.+)$/i,
   ]);
-  const workDescription = firstLabelValue(lines, [
-    /^(?:name\s+of\s+work|work\s+description|description\s+of\s+work)\s*[:\-]\s*(?<value>.*)$/i,
-    /^(?:subject|sub\.)\s*[:\-]\s*(?<value>.*)$/i,
+  const workDescription = firstWrappedLabelValue(lines, [
+    /^(?:name\s+of\s+(?:the\s+)?work|work\s+description|description\s+of\s+work)\s*[:-]\s*(?<value>.*)$/i,
+    /^(?:subject|sub\.)\s*[:-]\s*(?<value>.*)$/i,
   ]);
   const paymentMatrix = matrixSuggestions(blocks);
   const periods = periodSuggestions(blocks);

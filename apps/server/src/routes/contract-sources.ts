@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import {
   ApiErrorSchema,
   ContractSourceContextSchema,
-  ContractSourceDocumentSchema,
   ContractSourceUploadQuerySchema,
   ContractSourceUploadResponseSchema,
   UuidSchema,

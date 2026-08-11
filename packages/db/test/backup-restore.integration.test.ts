@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,8 @@ const adminUrl =
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..');
 const migrationsDirectory = path.resolve(here, '..', 'migrations');
+const backupScript = path.join(repoRoot, 'scripts', 'backup.sh');
+const restoreScript = path.join(repoRoot, 'scripts', 'restore.sh');
 
 const runId = randomBytes(5).toString('hex');
 const restoreDbName = `auto_mb_restore_${runId}`;
@@ -83,6 +85,11 @@ beforeAll(async () => {
   }
 
   workDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-backup-'));
+  // Keep every Bash path relative to its working directory. Windows Bash
+  // implementations disagree on drive syntax (/c, /mnt/c, C:/), while the
+  // copied bytes remain the exact production scripts under test.
+  await copyFile(backupScript, path.join(workDir, 'backup.sh'));
+  await copyFile(restoreScript, path.join(workDir, 'restore.sh'));
   // Seed one organisation and one stored object so the restore has
   // something recognisable to prove.
   const [row] = await admin<{ id: string }[]>`
@@ -118,18 +125,15 @@ describe('backup and restore', () => {
     }
     const backupRoot = path.join(workDir, 'backups');
     const beforeBackup = Math.floor(Date.now() / 1000);
-    const { stdout } = await execFileAsync(
-      'bash',
-      [path.join(repoRoot, 'scripts', 'backup.sh')],
-      {
-        env: {
-          ...process.env,
-          DATABASE_ADMIN_URL: adminUrl,
-          OBJECT_STORAGE_DIR: path.join(workDir, 'objects'),
-          BACKUP_ROOT: backupRoot,
-        },
+    const { stdout } = await execFileAsync('bash', ['backup.sh'], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        DATABASE_ADMIN_URL: adminUrl,
+        OBJECT_STORAGE_DIR: 'objects',
+        BACKUP_ROOT: 'backups',
       },
-    );
+    });
     const backupDir = /backup written to (.+)$/m.exec(stdout)?.[1];
     expect(backupDir, stdout).toBeTruthy();
     if (!backupDir) return;
@@ -147,17 +151,14 @@ describe('backup and restore', () => {
     await admin.unsafe(`create database ${restoreDbName}`);
     const restoreUrl = adminUrl.replace(/\/[^/]+$/, `/${restoreDbName}`);
     const restoreObjects = path.join(workDir, 'restored-objects');
-    await execFileAsync(
-      'bash',
-      [path.join(repoRoot, 'scripts', 'restore.sh'), backupDir],
-      {
-        env: {
-          ...process.env,
-          RESTORE_DATABASE_URL: restoreUrl,
-          RESTORE_OBJECT_STORAGE_DIR: restoreObjects,
-        },
+    await execFileAsync('bash', ['restore.sh', backupDir], {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        RESTORE_DATABASE_URL: restoreUrl,
+        RESTORE_OBJECT_STORAGE_DIR: 'restored-objects',
       },
-    );
+    });
 
     const restored = createDatabasePool({
       url: restoreUrl,
@@ -200,8 +201,10 @@ describe('backup last-success marker', () => {
       await mkdir(backupRoot, { recursive: true });
       const markerPath = path.join(backupRoot, 'last-success');
       await writeFile(markerPath, '12345\n');
+      await copyFile(backupScript, path.join(scratch, 'backup.sh'));
       await expect(
-        execFileAsync('bash', [path.join(repoRoot, 'scripts', 'backup.sh')], {
+        execFileAsync('bash', ['backup.sh'], {
+          cwd: scratch,
           env: {
             ...process.env,
             // Discard port: the connection is refused, so pg_dump fails
@@ -210,8 +213,8 @@ describe('backup last-success marker', () => {
             // placeholder, not a credential.
             DATABASE_ADMIN_URL:
               'postgres://nobody:local-app-change-me@127.0.0.1:9/absent',
-            OBJECT_STORAGE_DIR: objectsDir,
-            BACKUP_ROOT: backupRoot,
+            OBJECT_STORAGE_DIR: 'objects',
+            BACKUP_ROOT: 'backups',
           },
         }),
       ).rejects.toThrow();
@@ -233,13 +236,15 @@ describe('backup last-success marker', () => {
       await writeFile(path.join(objectsDir, 'object.txt'), 'content');
       const backupRoot = path.join(scratch, 'backups');
       const markerDir = path.join(scratch, 'backup-status');
-      await execFileAsync('bash', [path.join(repoRoot, 'scripts', 'backup.sh')], {
+      await copyFile(backupScript, path.join(scratch, 'backup.sh'));
+      await execFileAsync('bash', ['backup.sh'], {
+        cwd: scratch,
         env: {
           ...process.env,
           DATABASE_ADMIN_URL: adminUrl,
-          OBJECT_STORAGE_DIR: objectsDir,
-          BACKUP_ROOT: backupRoot,
-          BACKUP_MARKER_DIR: markerDir,
+          OBJECT_STORAGE_DIR: 'objects',
+          BACKUP_ROOT: 'backups',
+          BACKUP_MARKER_DIR: 'backup-status',
         },
       });
       const marker = await readFile(path.join(markerDir, 'last-success'), 'utf8');

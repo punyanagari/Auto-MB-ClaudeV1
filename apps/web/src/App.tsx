@@ -75,39 +75,36 @@ interface AppProps {
   readonly api?: ApiClient;
 }
 
+interface RefreshSessionOptions {
+  readonly forceOrganisationChoice?: boolean;
+  readonly preferredOrganisationId?: string | null;
+}
+
 export function App({ api: providedApi }: AppProps) {
   const api = useMemo(() => providedApi ?? createApiClient(), [providedApi]);
   const [phase, setPhase] = useState<Phase>({ name: 'loading' });
   const mainRef = useRef<HTMLElement>(null);
+  const sessionRefreshIdRef = useRef(0);
 
-  const refreshSession = useCallback(
+  const loadSession = useCallback(
     async ({
       forceOrganisationChoice = false,
       preferredOrganisationId = null,
-    }: {
-      readonly forceOrganisationChoice?: boolean;
-      readonly preferredOrganisationId?: string | null;
-    } = {}) => {
+    }: RefreshSessionOptions = {}): Promise<Phase> => {
       const me = await api.me();
       if (me === null) {
-        forgetOrganisation();
-        setPhase({ name: 'signed-out' });
-        return;
+        return { name: 'signed-out' };
       }
 
       const organisations = activeOrganisations(me, await api.listOrganisations());
       if (organisations.length === 0) {
-        forgetOrganisation();
-        setPhase({ name: 'no-organisation', me });
-        return;
+        return { name: 'no-organisation', me };
       }
 
       if (organisations.length === 1) {
         const [organisation] = organisations;
         if (organisation === undefined) throw new Error('Organisation list invariant');
-        rememberOrganisation(organisation.id);
-        setPhase({ name: 'workspace', me, organisation, organisations });
-        return;
+        return { name: 'workspace', me, organisation, organisations };
       }
 
       const rememberedId = preferredOrganisationId ?? storedOrganisationId();
@@ -115,27 +112,42 @@ export function App({ api: providedApi }: AppProps) {
         (organisation) => organisation.id === rememberedId,
       );
       if (!forceOrganisationChoice && remembered !== undefined) {
-        rememberOrganisation(remembered.id);
-        setPhase({ name: 'workspace', me, organisation: remembered, organisations });
-        return;
+        return { name: 'workspace', me, organisation: remembered, organisations };
       }
 
-      forgetOrganisation();
-      setPhase({ name: 'pick-organisation', me, organisations });
+      return { name: 'pick-organisation', me, organisations };
     },
     [api],
   );
 
+  const refreshSession = useCallback(
+    async (options: RefreshSessionOptions = {}) => {
+      const refreshId = ++sessionRefreshIdRef.current;
+      try {
+        const nextPhase = await loadSession(options);
+        if (refreshId !== sessionRefreshIdRef.current) return;
+        if (nextPhase.name === 'workspace') {
+          rememberOrganisation(nextPhase.organisation.id);
+        } else {
+          forgetOrganisation();
+        }
+        setPhase(nextPhase);
+      } catch (cause: unknown) {
+        if (refreshId !== sessionRefreshIdRef.current) return;
+        setPhase({
+          name: 'session-error',
+          message:
+            cause instanceof Error
+              ? cause.message
+              : 'Auto-MB could not check your session. Try again.',
+        });
+      }
+    },
+    [loadSession],
+  );
+
   useEffect(() => {
-    refreshSession().catch((cause: unknown) => {
-      setPhase({
-        name: 'session-error',
-        message:
-          cause instanceof Error
-            ? cause.message
-            : 'Auto-MB could not check your session. Try again.',
-      });
-    });
+    void refreshSession();
   }, [refreshSession]);
 
   useEffect(() => {
@@ -143,6 +155,7 @@ export function App({ api: providedApi }: AppProps) {
   }, [phase.name]);
 
   function selectOrganisation(organisation: Organisation): void {
+    sessionRefreshIdRef.current += 1;
     rememberOrganisation(organisation.id);
     setPhase((current) =>
       current.name === 'pick-organisation'
@@ -157,6 +170,7 @@ export function App({ api: providedApi }: AppProps) {
   }
 
   async function signOut(): Promise<void> {
+    sessionRefreshIdRef.current += 1;
     try {
       await api.signOut();
     } finally {
@@ -173,6 +187,7 @@ export function App({ api: providedApi }: AppProps) {
         organisation={phase.organisation}
         organisations={phase.organisations}
         onSwitchOrganisation={() => {
+          sessionRefreshIdRef.current += 1;
           forgetOrganisation();
           setPhase({
             name: 'pick-organisation',
@@ -216,6 +231,7 @@ export function App({ api: providedApi }: AppProps) {
             <Button
               variant="outline"
               onClick={() => {
+                sessionRefreshIdRef.current += 1;
                 forgetOrganisation();
                 setPhase({ name: 'signed-out' });
               }}

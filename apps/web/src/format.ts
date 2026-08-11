@@ -30,6 +30,25 @@ export function formatCompactInr(decimal: string): string {
   return rupees.format(value);
 }
 
+function decimalThousandths(value: string): bigint {
+  const negative = value.startsWith('-');
+  const unsigned = negative ? value.slice(1) : value;
+  const [whole = '0', fraction = ''] = unsigned.split('.');
+  const magnitude =
+    BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0').slice(0, 3) || '0');
+  return negative ? -magnitude : magnitude;
+}
+
+/** Exact ordering for API decimal strings. Sorting must not use Number or
+ * lexical comparison because authoritative values may exceed safe integer
+ * precision and strings such as "9.00" sort after "100.00". */
+export function compareDecimalStrings(left: string, right: string): number {
+  const leftValue = decimalThousandths(left);
+  const rightValue = decimalThousandths(right);
+  if (leftValue === rightValue) return 0;
+  return leftValue < rightValue ? -1 : 1;
+}
+
 /** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
 export function formatDate(isoDate: string): string {
   const parsed = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);

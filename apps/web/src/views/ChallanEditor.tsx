@@ -29,6 +29,7 @@ interface ChallanEditorProps {
   readonly challanId: string | null;
   readonly onSaved: (challanId: string) => void;
   readonly onCancel: () => void;
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface EditorState {
@@ -149,6 +150,7 @@ export function ChallanEditor({
   challanId,
   onSaved,
   onCancel,
+  onDirtyChange,
 }: ChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
@@ -168,7 +170,12 @@ export function ChallanEditor({
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const discardRef = useRef<HTMLButtonElement>(null);
+  const edited =
+    state !== null &&
+    loadedState !== null &&
+    comparableContent(state) !== comparableContent(loadedState);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,8 +230,7 @@ export function ChallanEditor({
             }
           }
           const loaded: EditorState = {
-            challanDate:
-              existing?.challan.challanDate ?? new Date().toISOString().slice(0, 10),
+            challanDate: existing?.challan.challanDate ?? loadedBalance.today,
             prefix: existing?.challan.prefix ?? workCode,
             name: existing?.challan.consignee.name ?? '',
             address: existing?.challan.consignee.address ?? '',
@@ -263,9 +269,25 @@ export function ChallanEditor({
   // make, so focus moves into it rather than leaving a keyboard user parked
   // on a button whose meaning just changed.
   useEffect(() => {
-    if (!confirmingDiscard) return;
+    if (!confirmingDiscard) {
+      // Declining unmounts the button that held focus, so hand it back to
+      // Cancel rather than dropping the operator at the top of the document.
+      cancelRef.current?.focus();
+      return;
+    }
     discardRef.current?.focus();
   }, [confirmingDiscard]);
+
+  useEffect(() => {
+    onDirtyChange?.(edited);
+  }, [edited, onDirtyChange]);
+
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
 
   function registerField(field: string, node: HTMLElement | null) {
     if (node === null) {
@@ -366,473 +388,5 @@ export function ChallanEditor({
       };
     });
     if (items.length === 0) {
-      setSaveError('Enter a quantity for at least one item.');
-      // No single box is wrong here, so focus goes to the first one that can
-      // satisfy the rule.
-      const firstItem = balance.items[0];
-      if (firstItem !== undefined) {
-        focusField(`challan-quantity-${firstItem.workItemId}`);
-      }
-      return;
-    }
-    const body: SaveChallanRequest = {
-      challanDate: state.challanDate,
-      prefix: state.prefix,
-      consignee: {
-        name: state.name.trim(),
-        address: state.address.trim(),
-        ...(phone.length > 0 ? { phone } : {}),
-      },
-      items,
-    };
-    setPending(true);
-    setSaveError(null);
-    try {
-      const detail =
-        challanId === null
-          ? await api.createChallan(organisationId, workId, body)
-          : await api.updateChallan(organisationId, challanId, body);
-      onSaved(detail.challan.id);
-    } catch (cause) {
-      // DRAFT_EXISTS conflicts answer with the open draft's id so the
-      // editor routes straight to it instead of dead-ending on an error.
-      const existingId = existingRecordIdOf(cause);
-      if (existingId !== null) {
-        onSaved(existingId);
-        return;
-      }
-      setSaveError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The draft could not be saved.',
-      );
-      setPending(false);
-    }
-  }
-
-  if (loadError !== null) {
-    return (
-      <Card aria-labelledby="challan-editor-title">
-        <h1 id="challan-editor-title" tabIndex={-1}>
-          Delivery Challan
-        </h1>
-        <FormError>{loadError}</FormError>
-      </Card>
-    );
-  }
-
-  if (balance === null || state === null) {
-    return (
-      <Card aria-labelledby="challan-editor-title">
-        <h1 id="challan-editor-title" tabIndex={-1}>
-          Delivery Challan
-        </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading balancesâ€¦
-        </p>
-      </Card>
-    );
-  }
-
-  // Nothing typed here is stored anywhere until the draft is saved, and a
-  // challan can carry a hundred typed quantities, so Cancel asks before
-  // throwing an edited form away and leaves a pristine one alone.
-  const edited =
-    loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
-
-  // A retired contact stops being OFFERED, on this Work as everywhere
-  // else. The Work list returns every linked row, retired or not â€” the
-  // link is a preference and is never destroyed, so reactivating the
-  // contact brings it straight back â€” but a post that has been abolished
-  // must not keep appearing at the top of the challan picker. The general
-  // "All consignees" group is already active-only, and linking a retired
-  // contact is refused with 409 CONTACT_RETIRED.
-  const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
-
-  // The column exists only while the Work has open purchase orders with
-  // lines to receive against; without them the table reads exactly as it
-  // always did.
-  const offersPoLines = poLineChoices.size > 0;
-
-  return (
-    <Card className="w-full" aria-labelledby="challan-editor-title">
-      <h1 id="challan-editor-title" tabIndex={-1}>
-        {challanId === null ? 'New Delivery Challan' : 'Edit draft challan'}
-      </h1>
-      <p className="text-muted-foreground">
-        Quantities are checked against each item's remaining balance when the challan is
-        issued; drafts can be edited freely until then.
-      </p>
-      {/* noValidate: save() owns every rule, so each failure can name its
-          field, bind a message, and move focus. */}
-      <form noValidate onSubmit={(event) => void save(event)}>
-        <FieldRow>
-          <Field>
-            <label htmlFor="challan-date">Challan date</label>
-            <input
-              id="challan-date"
-              type="date"
-              ref={(node) => {
-                registerField('challan-date', node);
-              }}
-              value={state.challanDate}
-              onChange={(event) => {
-                setState({ ...state, challanDate: event.target.value });
-              }}
-              required
-              aria-invalid={fieldErrors['challan-date'] !== undefined}
-              aria-describedby={
-                fieldErrors['challan-date'] !== undefined
-                  ? 'challan-date-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['challan-date'] !== undefined && (
-              <FieldError id="challan-date-error">
-                {fieldErrors['challan-date']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="challan-prefix">Number prefix</label>
-            <input
-              id="challan-prefix"
-              ref={(node) => {
-                registerField('challan-prefix', node);
-              }}
-              value={state.prefix}
-              onChange={(event) => {
-                setState({ ...state, prefix: event.target.value.toUpperCase() });
-              }}
-              required
-              pattern="[A-Z0-9][A-Z0-9_/-]{0,24}"
-              aria-invalid={fieldErrors['challan-prefix'] !== undefined}
-              aria-describedby={describedBy(
-                'challan-prefix-hint',
-                fieldErrors['challan-prefix'] !== undefined
-                  ? 'challan-prefix-error'
-                  : undefined,
-              )}
-            />
-            <Hint id="challan-prefix-hint">
-              {PREFIX_RULE} Letters are capitalised as you type.
-            </Hint>
-            {fieldErrors['challan-prefix'] !== undefined && (
-              <FieldError id="challan-prefix-error">
-                {fieldErrors['challan-prefix']}
-              </FieldError>
-            )}
-          </Field>
-        </FieldRow>
-        {consignees.length > 0 && (
-          <Field>
-            <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
-            <select
-              id="consignee-picker"
-              defaultValue=""
-              onChange={(event) => {
-                // The picker only PREFILLS the snapshot fields below â€”
-                // the challan keeps its own free-text copy, and every
-                // field stays editable after picking.
-                const chosen = [...linkedConsignees, ...consignees].find(
-                  (candidate) => candidate.id === event.target.value,
-                );
-                if (chosen === undefined) return;
-                setState({
-                  ...state,
-                  name: chosen.designation,
-                  address: chosen.address ?? '',
-                  phone: chosen.phone ?? '',
-                });
-              }}
-            >
-              <option value="">Manual entry</option>
-              {linkedConsignees.length > 0 && (
-                <optgroup label="Linked to this Work">
-                  {linkedConsignees.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.designation}
-                      {candidate.address !== null ? ` â€” ${candidate.address}` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="All consignees">
-                {consignees.map((candidate) => (
-                  <option key={`all-${candidate.id}`} value={candidate.id}>
-                    {candidate.designation}
-                    {candidate.address !== null ? ` â€” ${candidate.address}` : ''}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <Hint>
-              Consignees linked to this Work are listed first; any active consignee can
-              be picked. Picking copies the details into this challan; edits here never
-              change the contact.
-            </Hint>
-          </Field>
-        )}
-        <FieldRow>
-          <Field>
-            <label htmlFor="consignee-name">Consignee name</label>
-            <input
-              id="consignee-name"
-              ref={(node) => {
-                registerField('consignee-name', node);
-              }}
-              value={state.name}
-              onChange={(event) => {
-                setState({ ...state, name: event.target.value });
-              }}
-              required
-              minLength={2}
-              autoComplete="organization"
-              aria-invalid={fieldErrors['consignee-name'] !== undefined}
-              aria-describedby={
-                fieldErrors['consignee-name'] !== undefined
-                  ? 'consignee-name-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['consignee-name'] !== undefined && (
-              <FieldError id="consignee-name-error">
-                {fieldErrors['consignee-name']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="consignee-phone">Consignee phone (optional)</label>
-            {/* A site engineer fills this on a tablet: `tel` asks for the
-                dialling keypad rather than an alphabetic keyboard, and the
-                autofill hint offers the number already on the device. */}
-            <input
-              id="consignee-phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              ref={(node) => {
-                registerField('consignee-phone', node);
-              }}
-              value={state.phone}
-              onChange={(event) => {
-                setState({ ...state, phone: event.target.value });
-              }}
-              aria-invalid={fieldErrors['consignee-phone'] !== undefined}
-              aria-describedby={
-                fieldErrors['consignee-phone'] !== undefined
-                  ? 'consignee-phone-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['consignee-phone'] !== undefined && (
-              <FieldError id="consignee-phone-error">
-                {fieldErrors['consignee-phone']}
-              </FieldError>
-            )}
-          </Field>
-        </FieldRow>
-        <Field>
-          <label htmlFor="consignee-address">Consignee address</label>
-          <textarea
-            id="consignee-address"
-            ref={(node) => {
-              registerField('consignee-address', node);
-            }}
-            value={state.address}
-            onChange={(event) => {
-              setState({ ...state, address: event.target.value });
-            }}
-            required
-            minLength={3}
-            rows={2}
-            autoComplete="street-address"
-            aria-invalid={fieldErrors['consignee-address'] !== undefined}
-            aria-describedby={
-              fieldErrors['consignee-address'] !== undefined
-                ? 'consignee-address-error'
-                : undefined
-            }
-          />
-          {fieldErrors['consignee-address'] !== undefined && (
-            <FieldError id="consignee-address-error">
-              {fieldErrors['consignee-address']}
-            </FieldError>
-          )}
-        </Field>
-
-        <h2>Items</h2>
-        <DataTable className="[&_input]:w-28">
-          <caption className="sr-only">
-            Work items with awarded, delivered, and remaining quantities; enter a
-            quantity to include an item on this challan
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Item</th>
-              <th scope="col">Description</th>
-              <th scope="col">Unit</th>
-              <th scope="col">Awarded</th>
-              <th scope="col">Delivered</th>
-              <th scope="col">Remaining</th>
-              <th scope="col">This challan</th>
-              {offersPoLines && <th scope="col">Against PO</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {balance.items.map((item) => {
-              const quantityField = `challan-quantity-${item.workItemId}`;
-              const over = overRemaining.has(item.workItemId);
-              return (
-                <tr key={item.workItemId}>
-                  <th scope="row">{item.itemNumber}</th>
-                  <td className={wrapCell}>{item.description}</td>
-                  <td>{item.unitCode}</td>
-                  <td className={numericCell}>
-                    {item.effectiveQuantity !== null &&
-                    item.effectiveQuantity !== undefined &&
-                    item.effectiveQuantity !== item.awardedQuantity ? (
-                      // An approved amendment moved the ceiling: show both.
-                      <>
-                        <s className="text-muted-foreground">{item.awardedQuantity}</s>{' '}
-                        â†’ {item.effectiveQuantity}
-                      </>
-                    ) : (
-                      item.awardedQuantity
-                    )}
-                  </td>
-                  <td className={numericCell}>{item.deliveredQuantity}</td>
-                  <td className={numericCell}>{item.remainingQuantity}</td>
-                  <td>
-                    <input
-                      aria-label={`Quantity of ${item.itemNumber} on this challan`}
-                      inputMode="decimal"
-                      ref={(node) => {
-                        registerField(quantityField, node);
-                      }}
-                      value={state.quantities[item.workItemId] ?? ''}
-                      onChange={(event) => {
-                        // A stale over-delivery flag must not survive the
-                        // edit that may be clearing it; the next blur decides
-                        // again.
-                        setOverRemaining((previous) => {
-                          if (!previous.has(item.workItemId)) return previous;
-                          const next = new Set(previous);
-                          next.delete(item.workItemId);
-                          return next;
-                        });
-                        setState({
-                          ...state,
-                          quantities: {
-                            ...state.quantities,
-                            [item.workItemId]: event.target.value,
-                          },
-                        });
-                      }}
-                      onBlur={() => {
-                        // Guidance only, and only where an excess would
-                        // actually be refused: the draft stays saveable, and
-                        // the server does the authoritative comparison when
-                        // the challan is issued.
-                        if (balance.allowExcessDelivery) return;
-                        checkRemaining(item.workItemId, item.remainingQuantity);
-                      }}
-                      aria-invalid={fieldErrors[quantityField] !== undefined}
-                      aria-describedby={describedBy(
-                        fieldErrors[quantityField] !== undefined
-                          ? `${quantityField}-error`
-                          : undefined,
-                        over ? `${quantityField}-over` : undefined,
-                      )}
-                    />
-                    {fieldErrors[quantityField] !== undefined && (
-                      <FieldError id={`${quantityField}-error`}>
-                        {fieldErrors[quantityField]}
-                      </FieldError>
-                    )}
-                    {over && (
-                      <StatusChip status="review" id={`${quantityField}-over`}>
-                        over the {item.remainingQuantity} remaining
-                      </StatusChip>
-                    )}
-                  </td>
-                  {offersPoLines && (
-                    <td>
-                      {(poLineChoices.get(item.workItemId) ?? []).length > 0 ? (
-                        <select
-                          aria-label={`Purchase order line for ${item.itemNumber}`}
-                          value={state.poLines[item.workItemId] ?? ''}
-                          onChange={(event) => {
-                            setState({
-                              ...state,
-                              poLines: {
-                                ...state.poLines,
-                                [item.workItemId]: event.target.value,
-                              },
-                            });
-                          }}
-                        >
-                          <option value="">No purchase order</option>
-                          {(poLineChoices.get(item.workItemId) ?? []).map((choice) => (
-                            <option key={choice.id} value={choice.id}>
-                              {choice.poNumber} Â· {choice.pendingQuantity} pending
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-muted-foreground">â€”</span>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </DataTable>
-
-        {saveError !== null && <FormError>{saveError}</FormError>}
-
-        <ActionBar className="flex-wrap">
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Savingâ€¦' : 'Save draft'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (edited) {
-                setConfirmingDiscard(true);
-                return;
-              }
-              onCancel();
-            }}
-          >
-            Cancel
-          </Button>
-        </ActionBar>
-
-        {confirmingDiscard && (
-          <div className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3">
-            <h2>Discard your changes?</h2>
-            <p>
-              Nothing entered here has been saved yet. Leaving now throws away the
-              consignee details and every quantity you typed.
-            </p>
-            <Actions>
-              <Button ref={discardRef} onClick={onCancel}>
-                Discard and leave
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setConfirmingDiscard(false);
-                }}
-              >
-                Keep editing
-              </Button>
-            </Actions>
-          </div>
-        )}
-      </form>
-    </Card>
-  );
-}
+      setSaveError('Enter a×N=¶‰žËkºwµçl¼¨¹½Y…±¥‘…Ñ”èÍ…Ù” ¤½Ý¹Ì•Ù•ÉäÉÕ±”°Í¼•… ™…¥±ÕÉ”…¸¹…µ”¥ÑÌ(€€€€€€€€€™¥•±°‰¥¹„µ•ÍÍ…”°…¹µ½Ù”™½ÕÌ¸€¨½ô(€€€€€€ñ™½É´¹½Y…±¥‘…Ñ”½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøÙ½¥Í…Ù”¡•Ù•¹Ð¥ôø(€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¡…±±…¸µ‘…Ñ”ˆù¡…±±…¸‘…Ñ”ð½±…‰•°ø(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€¥ô‰¡…±±…¸µ‘…Ñ”ˆ(€€€€€€€€€€€€€ÑåÁ”ô‰‘…Ñ”ˆ(€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± ¡…±±…¸µ‘…Ñ”œ°¹½‘”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹¡…±±…¹…Ñ•ô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì€¸¸¹ÍÑ…Ñ”°¡…±±…¹…Ñ”è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍl¡…±±…¸µ‘…Ñ”t€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍl¡…±±…¸µ‘…Ñ”t€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€ü€¡…±±…¸µ‘…Ñ”µ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€€€ô(€€€€€€€€€€€€¼ø(€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl¡…±±…¸µ‘…Ñ”t€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰¡…±±…¸µ‘…Ñ”µ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl¡…±±…¸µ‘…Ñ”uô(€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€¥ô(€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¡…±±…¸µÁÉ•™¥àˆù9Õµ‰•ÈÁÉ•™¥àð½±…‰•°ø(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€¥ô‰¡…±±…¸µÁÉ•™¥àˆ(€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± ¡…±±…¸µÁÉ•™¥àœ°¹½‘”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹ÁÉ•™¥áô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì€¸¸¹ÍÑ…Ñ”°ÁÉ•™¥àè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¹Ñ½UÁÁ•É…Í” ¤ô¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€Á…ÑÑ•É¸ô‰mµhÀ´åumµhÀ´å|¼µuìÀ°ÈÑôˆ(€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍl¡…±±…¸µÁÉ•™¥àt€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõí‘•ÍÉ¥‰•‘	ä (€€€€€€€€€€€€€€€€¡…±±…¸µÁÉ•™¥àµ¡¥¹Ðœ°(€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍl¡…±±…¸µÁÉ•™¥àt€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€ü€¡…±±…¸µÁÉ•™¥àµ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•°(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€¼ø(€€€€€€€€€€€€ñ!¥¹Ð¥ô‰¡…±±…¸µÁÉ•™¥àµ¡¥¹Ðˆø(€€€€€€€€€€€€€íAI%a}IU1ô1•ÑÑ•ÉÌ…É”…Á¥Ñ…±¥Í•…Ìå½ÔÑåÁ”¸(€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl¡…±±…¸µÁÉ•™¥àt€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰¡…±±…¸µÁÉ•™¥àµ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl¡…±±…¸µÁÉ•™¥àuô(€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€¥ô(€€€€€€€€€€ð½¥•±ø(€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€í½¹Í¥¹••Ì¹±•¹Ñ €ø€À€˜˜€ (€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰½¹Í¥¹•”µÁ¥­•ÈˆùAÉ•™¥±°½¹Í¥¹•”™É½´½¹Ñ…ÑÌð½±…‰•°ø(€€€€€€€€€€€€ñÍ•±•Ð(€€€€€€€€€€€€€¥ô‰½¹Í¥¹•”µÁ¥­•Èˆ(€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”ôˆˆ(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€¼¼Q¡”Á¥­•È½¹±äAI%11LÑ¡”Í¹…ÁÍ¡½Ð™¥•±‘Ì‰•±½ÜƒŠP(€€€€€€€€€€€€€€€€¼¼Ñ¡”¡…±±…¸­••ÁÌ¥ÑÌ½Ý¸™É•”µÑ•áÐ½Áä°…¹•Ù•Éä(€€€€€€€€€€€€€€€€¼¼™¥•±ÍÑ…åÌ•‘¥Ñ…‰±”…™Ñ•ÈÁ¥­¥¹œ¸(€€€€€€€€€€€€€€€½¹ÍÐ¡½Í•¸€ôl¸¸¹±¥¹­•‘½¹Í¥¹••Ì°€¸¸¹½¹Í¥¹••Ít¹™¥¹ (€€€€€€€€€€€€€€€€€€¡…¹‘¥‘…Ñ”¤€ôø…¹‘¥‘…Ñ”¹¥€ôôô•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”°(€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€¥˜€¡¡½Í•¸€ôôôÕ¹‘•™¥¹•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì(€€€€€€€€€€€€€€€€€€¸¸¹ÍÑ…Ñ”°(€€€€€€€€€€€€€€€€€¹…µ”è¡½Í•¸¹‘•Í¥¹…Ñ¥½¸°(€€€€€€€€€€€€€€€€€…‘‘É•ÍÌè¡½Í•¸¹…‘‘É•ÍÌ€üü€œœ°(€€€€€€€€€€€€€€€€€Á¡½¹”è¡½Í•¸¹Á¡½¹”€üü€œœ°(€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€ø(€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ôˆˆù5…¹Õ…°•¹ÑÉäð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€í±¥¹­•‘½¹Í¥¹••Ì¹±•¹Ñ €ø€À€˜˜€ (€€€€€€€€€€€€€€€€ñ½ÁÑÉ½ÕÀ±…‰•°ô‰1¥¹­•Ñ¼Ñ¡¥Ì]½É¬ˆø(€€€€€€€€€€€€€€€€€í±¥¹­•‘½¹Í¥¹••Ì¹µ…À ¡…¹‘¥‘…Ñ”¤€ôø€ (€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸­•äõí…¹‘¥‘…Ñ”¹¥‘ôÙ…±Õ”õí…¹‘¥‘…Ñ”¹¥‘ôø(€€€€€€€€€€€€€€€€€€€€€í…¹‘¥‘…Ñ”¹‘•Í¥¹…Ñ¥½¹ô(€€€€€€€€€€€€€€€€€€€€€í…¹‘¥‘…Ñ”¹…‘‘É•ÍÌ€„ôô¹Õ±°€ü€ƒŠP€‘í…¹‘¥‘…Ñ”¹…‘‘É•ÍÍõ€€è€œô(€€€€€€€€€€€€€€€€€€€€ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€€€ð½½ÁÑÉ½ÕÀø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ñ½ÁÑÉ½ÕÀ±…‰•°ô‰±°½¹Í¥¹••Ìˆø(€€€€€€€€€€€€€€€í½¹Í¥¹••Ì¹µ…À ¡…¹‘¥‘…Ñ”¤€ôø€ (€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸­•äõí…±°´‘í…¹‘¥‘…Ñ”¹¥‘õôÙ…±Õ”õí…¹‘¥‘…Ñ”¹¥‘ôø(€€€€€€€€€€€€€€€€€€€í…¹‘¥‘…Ñ”¹‘•Í¥¹…Ñ¥½¹ô(€€€€€€€€€€€€€€€€€€€í…¹‘¥‘…Ñ”¹…‘‘É•ÍÌ€„ôô¹Õ±°€ü€ƒŠP€‘í…¹‘¥‘…Ñ”¹…‘‘É•ÍÍõ€€è€œô(€€€€€€€€€€€€€€€€€€ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€ð½½ÁÑÉ½ÕÀø(€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€½¹Í¥¹••Ì±¥¹­•Ñ¼Ñ¡¥Ì]½É¬…É”±¥ÍÑ•™¥ÉÍÐì…¹ä…Ñ¥Ù”½¹Í¥¹•”…¸(€€€€€€€€€€€€€‰”Á¥­•¸A¥­¥¹œ½Á¥•ÌÑ¡”‘•Ñ…¥±Ì¥¹Ñ¼Ñ¡¥Ì¡…±±…¸ì•‘¥ÑÌ¡•É”¹•Ù•È(€€€€€€€€€€€€€¡…¹”Ñ¡”½¹Ñ…Ð¸(€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€ð½¥•±ø(€€€€€€€€¥ô(€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰½¹Í¥¹•”µ¹…µ”ˆù½¹Í¥¹•”¹…µ”ð½±…‰•°ø(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€¥ô‰½¹Í¥¹•”µ¹…µ”ˆ(€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± ½¹Í¥¹•”µ¹…µ”œ°¹½‘”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹¹…µ•ô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì€¸¸¹ÍÑ…Ñ”°¹…µ”è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÉô(€€€€€€€€€€€€€…ÕÑ½½µÁ±•Ñ”ô‰½É…¹¥é…Ñ¥½¸ˆ(€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ¹…µ”t€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ¹…µ”t€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€ü€½¹Í¥¹•”µ¹…µ”µ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€€€ô(€€€€€€€€€€€€¼ø(€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ¹…µ”t€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰½¹Í¥¹•”µ¹…µ”µ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ¹…µ”uô(€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€¥ô(€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰½¹Í¥¹•”µÁ¡½¹”ˆù½¹Í¥¹•”Á¡½¹”€¡½ÁÑ¥½¹…°¤ð½±…‰•°ø(€€€€€€€€€€€ì¼¨Í¥Ñ”•¹¥¹••È™¥±±ÌÑ¡¥Ì½¸„Ñ…‰±•ÐèÑ•±€…Í­Ì™½ÈÑ¡”(€€€€€€€€€€€€€€€‘¥…±±¥¹œ­•åÁ…É…Ñ¡•ÈÑ¡…¸…¸…±Á¡…‰•Ñ¥Œ­•å‰½…É°…¹Ñ¡”(€€€€€€€€€€€€€€€…ÕÑ½™¥±°¡¥¹Ð½™™•ÉÌÑ¡”¹Õµ‰•È…±É•…‘ä½¸Ñ¡”‘•Ù¥”¸€¨½ô(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€¥ô‰½¹Í¥¹•”µÁ¡½¹”ˆ(€€€€€€€€€€€€€ÑåÁ”ô‰Ñ•°ˆ(€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰Ñ•°ˆ(€€€€€€€€€€€€€…ÕÑ½½µÁ±•Ñ”ô‰Ñ•°ˆ(€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± ½¹Í¥¹•”µÁ¡½¹”œ°¹½‘”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹Á¡½¹•ô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì€¸¸¹ÍÑ…Ñ”°Á¡½¹”è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µÁ¡½¹”t€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µÁ¡½¹”t€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€ü€½¹Í¥¹•”µÁ¡½¹”µ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€€€ô(€€€€€€€€€€€€¼ø(€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µÁ¡½¹”t€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰½¹Í¥¹•”µÁ¡½¹”µ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µÁ¡½¹”uô(€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€¥ô(€€€€€€€€€€ð½¥•±ø(€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€ñ¥•±ø(€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰½¹Í¥¹•”µ…‘‘É•ÍÌˆù½¹Í¥¹•”…‘‘É•ÍÌð½±…‰•°ø(€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€¥ô‰½¹Í¥¹•”µ…‘‘É•ÍÌˆ(€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€É•¥ÍÑ•É¥•± ½¹Í¥¹•”µ…‘‘É•ÍÌœ°¹½‘”¤ì(€€€€€€€€€€€õô(€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹…‘‘É•ÍÍô(€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì€¸¸¹ÍÑ…Ñ”°…‘‘É•ÍÌè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€õô(€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€µ¥¹1•¹Ñ õìÍô(€€€€€€€€€€€É½ÝÌõìÉô(€€€€€€€€€€€…ÕÑ½½µÁ±•Ñ”ô‰ÍÑÉ••Ðµ…‘‘É•ÍÌˆ(€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ…‘‘É•ÍÌt€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ…‘‘É•ÍÌt€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€ü€½¹Í¥¹•”µ…‘‘É•ÍÌµ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€ô(€€€€€€€€€€¼ø(€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ…‘‘É•ÍÌt€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰½¹Í¥¹•”µ…‘‘É•ÍÌµ•ÉÉ½Èˆø(€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍl½¹Í¥¹•”µ…‘‘É•ÍÌuô(€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€¥ô(€€€€€€€€ð½¥•±ø((€€€€€€€€ñ Èù%Ñ•µÌð½ Èø(€€€€€€€€ñ…Ñ…Q…‰±”ÍÉ½±°±…ÍÍ9…µ”ô‰l™}¥¹ÁÕÑtéÜ´Èàˆø(€€€€€€€€€€ñ…ÁÑ¥½¸±…ÍÍ9…µ”ô‰ÍÈµ½¹±äˆø(€€€€€€€€€€€]½É¬¥Ñ•µÌÝ¥Ñ …Ý…É‘•°‘•±¥Ù•É•°…¹É•µ…¥¹¥¹œÅÕ…¹Ñ¥Ñ¥•Ìì•¹Ñ•È„(€€€€€€€€€€€ÅÕ…¹Ñ¥ÑäÑ¼¥¹±Õ‘”…¸¥Ñ•´½¸Ñ¡¥Ì¡…±±…¸(€€€€€€€€€€ð½…ÁÑ¥½¸ø(€€€€€€€€€€ñÑ¡•…ø(€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù%Ñ•´ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù•ÍÉ¥ÁÑ¥½¸ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùU¹¥Ðð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùÝ…É‘•ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù•±¥Ù•É•ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùI•µ…¥¹¥¹œð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùQ¡¥Ì¡…±±…¸ð½Ñ ø(€€€€€€€€€€€€€í½™™•ÉÍA½1¥¹•Ì€˜˜€ñÑ Í½Á”ô‰½°ˆù…¥¹ÍÐA<ð½Ñ ùô(€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€ð½Ñ¡•…ø(€€€€€€€€€€ñÑ‰½‘äø(€€€€€€€€€€€í‰…±…¹”¹¥Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôøì(€€€€€€€€€€€€€½¹ÍÐÅÕ…¹Ñ¥Ñå¥•±€ô¡…±±…¸µÅÕ…¹Ñ¥Ñä´‘í¥Ñ•´¹Ý½É­%Ñ•µ%‘õ€ì(€€€€€€€€€€€€€½¹ÍÐ½Ù•È€ô½Ù•ÉI•µ…¥¹¥¹œ¹¡…Ì¡¥Ñ•´¹Ý½É­%Ñ•µ%¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸€ (€€€€€€€€€€€€€€€€ñÑÈ­•äõí¥Ñ•´¹Ý½É­%Ñ•µ%‘ôø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰É½Üˆùí¥Ñ•´¹¥Ñ•µ9Õµ‰•Éôð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ±…ÍÍ9…µ”õíÝÉ…Á•±±ôùí¥Ñ•´¹‘•ÍÉ¥ÁÑ¥½¹ôð½Ñø(€€€€€€€€€€€€€€€€€€ñÑùí¥Ñ•´¹Õ¹¥Ñ½‘•ôð½Ñø(€€€€€€€€€€€€€€€€€€ñÑ±…ÍÍ9…µ”õí¹Õµ•É¥•±±ôø(€€€€€€€€€€€€€€€€€€€í¥Ñ•´¹•™™•Ñ¥Ù•EÕ…¹Ñ¥Ñä€„ôô¹Õ±°€˜˜(€€€€€€€€€€€€€€€€€€€¥Ñ•´¹•™™•Ñ¥Ù•EÕ…¹Ñ¥Ñä€„ôôÕ¹‘•™¥¹•€˜˜(€€€€€€€€€€€€€€€€€€€¥Ñ•´¹•™™•Ñ¥Ù•EÕ…¹Ñ¥Ñä€„ôô¥Ñ•´¹…Ý…É‘•‘EÕ…¹Ñ¥Ñä€ü€ (€€€€€€€€€€€€€€€€€€€€€€¼¼¸…ÁÁÉ½Ù•…µ•¹‘µ•¹Ðµ½Ù•Ñ¡”•¥±¥¹œèÍ¡½Ü‰½Ñ ¸(€€€€€€€€€€€€€€€€€€€€€€ðø(€€€€€€€€€€€€€€€€€€€€€€€€ñÌ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆùí¥Ñ•´¹…Ý…É‘•‘EÕ…¹Ñ¥Ñåôð½Ìùìœ€ô(€€€€€€€€€€€€€€€€€€€€€€€ƒŠHí¥Ñ•´¹•™™•Ñ¥Ù•EÕ…¹Ñ¥Ñåô(€€€€€€€€€€€€€€€€€€€€€€ð¼ø(€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€¥Ñ•´¹…Ý…É‘•‘EÕ…¹Ñ¥Ñä(€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€ñÑ±…ÍÍ9…µ”õí¹Õµ•É¥•±±ôùí¥Ñ•´¹‘•±¥Ù•É•‘EÕ…¹Ñ¥Ñåôð½Ñø(€€€€€€€€€€€€€€€€€€ñÑ±…ÍÍ9…µ”õí¹Õµ•É¥•±±ôùí¥Ñ•´¹É•µ…¥¹¥¹EÕ…¹Ñ¥Ñåôð½Ñø(€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíEÕ…¹Ñ¥Ñä½˜€‘í¥Ñ•´¹¥Ñ•µ9Õµ‰•Éô½¸Ñ¡¥Ì¡…±±…¹ô(€€€€€€€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰‘•¥µ…°ˆ(€€€€€€€€€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•±¡ÅÕ…¹Ñ¥Ñå¥•±°¹½‘”¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹ÅÕ…¹Ñ¥Ñ¥•Ím¥Ñ•´¹Ý½É­%Ñ•µ%‘t€üü€œô(€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€¼¼ÍÑ…±”½Ù•Èµ‘•±¥Ù•Éä™±…œµÕÍÐ¹½ÐÍÕÉÙ¥Ù”Ñ¡”(€€€€€€€€€€€€€€€€€€€€€€€€¼¼•‘¥ÐÑ¡…Ðµ…ä‰”±•…É¥¹œ¥ÐìÑ¡”¹•áÐ‰±ÕÈ‘•¥‘•Ì(€€€€€€€€€€€€€€€€€€€€€€€€¼¼……¥¸¸(€€€€€€€€€€€€€€€€€€€€€€€Í•Ñ=Ù•ÉI•µ…¥¹¥¹œ ¡ÁÉ•Ù¥½ÕÌ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€¥˜€ …ÁÉ•Ù¥½ÕÌ¹¡…Ì¡¥Ñ•´¹Ý½É­%Ñ•µ%¤¤É•ÑÕÉ¸ÁÉ•Ù¥½ÕÌì(€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ¹•áÐ€ô¹•ÜM•Ð¡ÁÉ•Ù¥½ÕÌ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€¹•áÐ¹‘•±•Ñ”¡¥Ñ•´¹Ý½É­%Ñ•µ%¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸¹•áÐì(€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¹ÍÑ…Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€ÅÕ…¹Ñ¥Ñ¥•Ìèì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¹ÍÑ…Ñ”¹ÅÕ…¹Ñ¥Ñ¥•Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€m¥Ñ•´¹Ý½É­%Ñ•µ%‘tè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”°(€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€½¹	±ÕÈõì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€¼¼Õ¥‘…¹”½¹±ä°…¹½¹±äÝ¡•É”…¸•á•ÍÌÝ½Õ±(€€€€€€€€€€€€€€€€€€€€€€€€¼¼…ÑÕ…±±ä‰”É•™ÕÍ•èÑ¡”‘É…™ÐÍÑ…åÌÍ…Ù•…‰±”°…¹(€€€€€€€€€€€€€€€€€€€€€€€€¼¼Ñ¡”Í•ÉÙ•È‘½•ÌÑ¡”…ÕÑ¡½É¥Ñ…Ñ¥Ù”½µÁ…É¥Í½¸Ý¡•¸(€€€€€€€€€€€€€€€€€€€€€€€€¼¼Ñ¡”¡…±±…¸¥Ì¥ÍÍÕ•¸(€€€€€€€€€€€€€€€€€€€€€€€¥˜€¡‰…±…¹”¹…±±½Ýá•ÍÍ•±¥Ù•Éä¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€€€€€€€¡•­I•µ…¥¹¥¹œ¡¥Ñ•´¹Ý½É­%Ñ•µ%°¥Ñ•´¹É•µ…¥¹¥¹EÕ…¹Ñ¥Ñä¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍmÅÕ…¹Ñ¥Ñå¥•±‘t€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõí‘•ÍÉ¥‰•‘	ä (€€€€€€€€€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍmÅÕ…¹Ñ¥Ñå¥•±‘t€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€€€€€€€€€ü€‘íÅÕ…¹Ñ¥Ñå¥•±‘ôµ•ÉÉ½É€(€€€€€€€€€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•°(€€€€€€€€€€€€€€€€€€€€€€€½Ù•È€ü€‘íÅÕ…¹Ñ¥Ñå¥•±‘ôµ½Ù•É€€èÕ¹‘•™¥¹•°(€€€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍmÅÕ…¹Ñ¥Ñå¥•±‘t€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥õí€‘íÅÕ…¹Ñ¥Ñå¥•±‘ôµ•ÉÉ½Éôø(€€€€€€€€€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍmÅÕ…¹Ñ¥Ñå¥•±‘uô(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€í½Ù•È€˜˜€ (€€€€€€€€€€€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥ÀÍÑ…ÑÕÌô‰É•Ù¥•Üˆ¥õí€‘íÅÕ…¹Ñ¥Ñå¥•±‘ôµ½Ù•Éôø(€€€€€€€€€€€€€€€€€€€€€€€½Ù•ÈÑ¡”í¥Ñ•´¹É•µ…¥¹¥¹EÕ…¹Ñ¥ÑåôÉ•µ…¥¹¥¹œ(€€€€€€€€€€€€€€€€€€€€€€ð½MÑ…ÑÕÍ¡¥Àø(€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€í½™™•ÉÍA½1¥¹•Ì€˜˜€ (€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€ì¡Á½1¥¹•¡½¥•Ì¹•Ð¡¥Ñ•´¹Ý½É­%Ñ•µ%¤€üümt¤¹±•¹Ñ €ø€À€ü€ (€€€€€€€€€€€€€€€€€€€€€€€€ñÍ•±•Ð(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíAÕÉ¡…Í”½É‘•È±¥¹”™½È€‘í¥Ñ•´¹¥Ñ•µ9Õµ‰•Éõô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õíÍÑ…Ñ”¹Á½1¥¹•Ím¥Ñ•´¹Ý½É­%Ñ•µ%‘t€üü€œô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€Í•ÑMÑ…Ñ”¡ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¹ÍÑ…Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Á½1¥¹•Ìèì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¹ÍÑ…Ñ”¹Á½1¥¹•Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€m¥Ñ•´¹Ý½É­%Ñ•µ%‘tè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ôˆˆù9¼ÁÕÉ¡…Í”½É‘•Èð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€ì¡Á½1¥¹•¡½¥•Ì¹•Ð¡¥Ñ•´¹Ý½É­%Ñ•µ%¤€üümt¤¹µ…À ¡¡½¥”¤€ôø€ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸­•äõí¡½¥”¹¥‘ôÙ…±Õ”õí¡½¥”¹¥‘ôø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€í¡½¥”¹Á½9Õµ‰•Éôƒ
+Üí¡½¥”¹Á•¹‘¥¹EÕ…¹Ñ¥ÑåôÁ•¹‘¥¹œ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆûŠPð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô¥ô(€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€ð½…Ñ…Q…‰±”ø((€€€€€€€íÍ…Ù•ÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½ÈùíÍ…Ù•ÉÉ½Éôð½½ÉµÉÉ½Èùô((€€€€€€€€ñÑ¥½¹	…È±…ÍÍ9…µ”ô‰™±•àµÝÉ…Àˆø(€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€íÁ•¹‘¥¹œ€ü€M…Ù¥¹ŸŠ˜œ€è€M…Ù”‘É…™Ðô(€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€É•˜õí…¹•±I•™ô(€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€¥˜€¡•‘¥Ñ•¤ì(€€€€€€€€€€€€€€€Í•Ñ½¹™¥Éµ¥¹¥Í…É¡ÑÉÕ”¤ì(€€€€€€€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€€€ô(€€€€€€€€€€€€€½¹…¹•° ¤ì(€€€€€€€€€€€õô(€€€€€€€€€€ø(€€€€€€€€€€€…¹•°(€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€ð½Ñ¥½¹	…Èø((€€€€€€€í½¹™¥Éµ¥¹¥Í…É€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µä´ÌÉ½Õ¹‘•µ±œ‰½É‘•È‰½É‘•ÈµÝ…É¹¥¹œ¼ÐÀ‰œµ…•¹ÐÁà´ÐÁä´Ìˆø(€€€€€€€€€€€€ñ Èù¥Í…Éå½ÕÈ¡…¹•Ìüð½ Èø(€€€€€€€€€€€€ñÀø(€€€€€€€€€€€€€9½Ñ¡¥¹œ•¹Ñ•É•¡•É”¡…Ì‰••¸Í…Ù•å•Ð¸1•…Ù¥¹œ¹½ÜÑ¡É½ÝÌ…Ý…äÑ¡”(€€€€€€€€€€€€€½¹Í¥¹•”‘•Ñ…¥±Ì…¹•Ù•ÉäÅÕ…¹Ñ¥Ñäå½ÔÑåÁ•¸(€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€ñ	ÕÑÑ½¸É•˜õí‘¥Í…É‘I•™ô½¹±¥¬õí½¹…¹•±ôø(€€€€€€€€€€€€€€€¥Í…É…¹±•…Ù”(€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€Í•Ñ½¹™¥Éµ¥¹¥Í…É¡™…±Í”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€-••À•‘¥Ñ¥¹œ(€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¥ô(€€€€€€ð½™½É´ø(€€€€ð½…Éø(€€¤ì)ô(

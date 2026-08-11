@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/coverage/**',
       '**/node_modules/**',
+      'local-data/**',
       'docs/reference/**',
       'packages/loa-parser/fixtures/**',
       // Harness-managed agent worktrees live inside the repo checkout;

@@ -180,6 +180,9 @@ export type WorkBalanceItem = Static<typeof WorkBalanceItemSchema>;
 export const WorkBalanceResponseSchema = Type.Object(
   {
     allowExcessDelivery: Type.Boolean(),
+    /** Current legal date in the Organisation timezone. Editors use this
+     * instead of a browser or UTC clock when defaulting a document date. */
+    today: DateOnlySchema,
     items: Type.Array(WorkBalanceItemSchema),
   },
   { additionalProperties: false },

@@ -31,7 +31,8 @@ export function WorkIssueChallans({
     <>
       <CardHeader>
         <h2>Issue Challans</h2>
-        {canCreateDocuments &&
+        {issueChallans !== null &&
+          canCreateDocuments &&
           (issueChallans?.some((challan) => challan.status === 'draft') === true ? (
             <Button
               onClick={() => {
@@ -53,7 +54,11 @@ export function WorkIssueChallans({
             </Button>
           ))}
       </CardHeader>
-      {issueChallans !== null && issueChallans.length > 0 ? (
+      {issueChallans === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading Issue Challans…
+        </p>
+      ) : issueChallans.length > 0 ? (
         <DataTable>
           <caption className="sr-only">Issue Challans for this Work</caption>
           <thead>

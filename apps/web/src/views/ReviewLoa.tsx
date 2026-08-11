@@ -277,19 +277,37 @@ export function ReviewLoa({
     () => (items === null ? null : exactRowsTotal(items)),
     [items],
   );
-  const totalsDifference = useMemo(() => {
+  const advertisedDifference = useMemo(() => {
     if (rowsTotal === null || header === null) return null;
     // Both sides are read at the row total's own scale â€” quantity (3 dp) Ã—
     // rate (6 dp) lands on 9. Parsing narrower silently dropped the whole
     // comparison whenever a rate carried more than a paisa of decimals.
     const totalMinor = parseDecimalMinorUnits(rowsTotal, 9);
-    const contractMinor = parseDecimalMinorUnits(header.contractValue, 9);
-    if (totalMinor === null || contractMinor === null) return null;
-    const diff = totalMinor - contractMinor;
+    const advertisedMinor = parseDecimalMinorUnits(header.advertisedValue, 9);
+    if (totalMinor === null || advertisedMinor === null) return null;
+    const diff = totalMinor - advertisedMinor;
     const negative = diff < 0n;
     const magnitude = negative ? -diff : diff;
     return `${negative ? '-' : ''}â‚¹${formatMinorUnits(magnitude, 9)}`;
   }, [rowsTotal, header]);
+
+  const contractValueContext = useMemo(() => {
+    if (header === null || header.contractValue.trim() === '') return '';
+    if (header.pricingShape === 'per_schedule') {
+      return ` Contract value â‚¹${header.contractValue} comes from the accepted schedule totals.`;
+    }
+    if (header.letterPercentageDirection === 'at_par') {
+      return ` Contract value â‚¹${header.contractValue} is accepted at par.`;
+    }
+    if (
+      header.letterPercentage.trim() !== '' &&
+      (header.letterPercentageDirection === 'above' ||
+        header.letterPercentageDirection === 'below')
+    ) {
+      return ` Contract value â‚¹${header.contractValue} reflects ${header.letterPercentage}% ${header.letterPercentageDirection} the advertised value.`;
+    }
+    return ` Contract value â‚¹${header.contractValue} uses the letter-level adjustment.`;
+  }, [header]);
 
   // The same exact-integer path, one schedule at a time: reconciling a
   // letter is done schedule by schedule, so each table carries its own
@@ -413,782 +431,8 @@ export function ReviewLoa({
       flag('letter-number', 'Enter the letter number printed on the LOA.');
     }
     if (!DATE_ONLY_PATTERN.test(header.letterDate)) {
-      flag('letter-date', 'Enter the date printed on the letter.');
-    }
-    if (header.title.trim().length < 3) {
-      flag('work-title', 'Describe the work in at least 3 characters.');
-    }
-    if (!DECIMAL_PATTERN.test(header.advertisedValue.trim())) {
-      flag(
-        'advertised-value',
-        'Enter the advertised value in rupees, with up to three decimals.',
-      );
-    }
-    if (!DECIMAL_PATTERN.test(header.contractValue.trim())) {
-      flag(
-        'contract-value',
-        'Enter the accepted value in rupees, with up to three decimals.',
-      );
-    }
-    if (withPercentage && !DECIMAL_PATTERN.test(header.letterPercentage.trim())) {
-      flag('letter-percentage', 'Enter the percentage printed on the letter.');
-    }
-    if (withPercentage && header.letterPercentageDirection === '') {
-      flag(
-        'percentage-direction',
-        'Select the percentage direction printed on the letter.',
-      );
-    }
-    const submissionDays = Number.parseInt(pbg.submissionDays, 10);
-    if (pbg.required && (!Number.isInteger(submissionDays) || submissionDays < 1)) {
-      flag('pbg-submission-days', 'Enter the PBG submission window in days (1â€“180).');
-    }
-    if (items.length === 0) {
-      // No row survives to be marked wrong, so the summary carries this one
-      // alone and focus goes to the control that can satisfy the rule.
-      failures.push('Add at least one item row before confirming.');
-      focusTargets.push('add-row-schedule');
-    }
-    setFieldErrors(nextFieldErrors);
-    // Fields are flagged in reading order, so the first one is the first
-    // offender on screen.
-    const firstInvalidField = focusTargets[0];
-    if (firstInvalidField !== undefined) {
-      setConfirmError(failures.join(' '));
-      focusField(firstInvalidField);
-      return;
-    }
-    const request: ConfirmWorkRequest = {
-      workCode: header.workCode,
-      letterNumber: header.letterNumber,
-      letterDate: header.letterDate,
-      title: header.title,
-      advertisedValue: header.advertisedValue,
-      contractValue: header.contractValue,
-      pricingShape: header.pricingShape,
-      ...(withPercentage && header.letterPercentageDirection !== ''
-        ? {
-            letterPercentage: header.letterPercentage,
-            letterPercentageDirection: header.letterPercentageDirection,
-          }
-        : {}),
-      ...(pbg.required
-        ? {
-            pbgRequirement: {
-              requiredAmount: pbg.requiredAmount.trim(),
-              submissionDays,
-              ...(pbg.extensionDays.trim().length > 0
-                ? { extensionDays: Number.parseInt(pbg.extensionDays, 10) }
-                : {}),
-              ...(pbg.penalInterestPercent.trim().length > 0
-                ? { penalInterestPercent: pbg.penalInterestPercent.trim() }
-                : {}),
-            },
-          }
-        : {}),
-      ...(initialPaymentMatrix.length > 0
-        ? { paymentMatrix: [...initialPaymentMatrix] }
-        : {}),
-      schedules: scheduleIds.map((scheduleId) => ({
-        scheduleCode: scheduleId,
-        title: `Schedule ${scheduleId}`,
-        items: items
-          .filter((item) => item.scheduleId === scheduleId)
-          .map((item) => ({
-            itemNumber: item.itemNumber,
-            description: item.description,
-            unitCode: item.unitCode,
-            awardedQuantity: item.awardedQuantity,
-            effectiveRate: item.effectiveRate,
-            ...(item.paymentCategory !== ''
-              ? { paymentCategory: item.paymentCategory }
-              : {}),
-            ...(item.manual
-              ? { manualEntry: true as const }
-              : { sourceRef: { scheduleId: item.scheduleId, itemSno: item.itemSno } }),
-          })),
-      })),
-    };
-    setPending(true);
-    setConfirmError(null);
-    try {
-      onConfirmed(await api.confirmLoa(organisationId, documentId, request));
-    } catch (cause) {
-      setConfirmError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The Work could not be created. Nothing was saved.',
-      );
-      setPending(false);
-    }
-  }
-
-  if (loadError !== null) {
-    return (
-      <Card aria-labelledby="review-title">
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
-        <FormError>{loadError}</FormError>
-      </Card>
-    );
-  }
-
-  if (document === null) {
-    return (
-      <Card aria-labelledby="review-title">
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading documentâ€¦
-        </p>
-      </Card>
-    );
-  }
-
-  if (payload === null || header === null || items === null || pbg === null) {
-    return (
-      <Card aria-labelledby="review-title">
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
-        <FormError>
-          Extraction did not produce reviewable content for {document.originalFilename}.
-          Upload a clearer copy or contact support.
-        </FormError>
-        <Actions>
-          <Button variant="outline" onClick={onBack}>
-            Back to Works
-          </Button>
-        </Actions>
-      </Card>
-    );
-  }
-
-  const flagged = payload.review.needsReview.total;
-
-  return (
-    <Card className="w-full" aria-labelledby="review-title">
-      <h1 id="review-title" tabIndex={-1}>
-        Review {document.originalFilename}
-      </h1>
-      <p className="text-muted-foreground">
-        Values below are prefilled from the letter's own text; every parsed field keeps
-        its printed source. Correct anything that reads wrong â€” nothing becomes a Work
-        until you confirm.
-      </p>
-
-      {flagged > 0 && (
-        <div
-          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
-          role="note"
-          aria-labelledby="flags-title"
-        >
-          <h2 id="flags-title">
-            {flagged} item{flagged === 1 ? '' : 's'} need attention
-          </h2>
-          <ul className="mt-2 flex flex-col gap-2 pl-[1.125rem]">
-            {payload.review.flags.map((flag, index) => (
-              <li key={`${flag.code}-${String(index)}`}>
-                <StatusChip status="review">{flag.code}</StatusChip> {flag.message}
-                <details>
-                  <summary>Printed source</summary>
-                  <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
-                    {flag.rawBlock}
-                  </pre>
-                </details>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {contractContextError !== null && (
-        <FormError>
-          {contractContextError} Reload before confirming so tender evidence is not
-          omitted silently.
-        </FormError>
-      )}
-      {contractContext === null && contractContextError === null ? (
-        <p className="my-4 text-sm text-muted-foreground" role="status">
-          Loading matched tender evidenceâ€¦
-        </p>
-      ) : contractContext !== null ? (
-        <TenderTermsReview
-          context={contractContext}
-          itemNumbers={items.map((item) => item.itemNumber)}
-          canModify={canModify}
-          onPaymentMatrixChange={handlePaymentMatrixChange}
-        />
-      ) : null}
-
-      {/* noValidate: the checks in confirm() replace the native ones so that
-          every failure names its field, binds a message, and moves focus. */}
-      <form noValidate onSubmit={(event) => void confirm(event)}>
-        <h2>Letter details</h2>
-        <FieldRow>
-          <Field>
-            <label htmlFor="work-code">Work code (your reference)</label>
-            <input
-              id="work-code"
-              ref={(node) => {
-                registerField('work-code', node);
-              }}
-              value={header.workCode}
-              onChange={(event) => {
-                updateHeader('workCode', event.target.value.toUpperCase());
-              }}
-              required
-              pattern="[A-Z0-9][A-Z0-9_/-]{0,19}"
-              autoComplete="off"
-              aria-invalid={fieldErrors['work-code'] !== undefined}
-              aria-describedby={
-                fieldErrors['work-code'] !== undefined ? 'work-code-error' : undefined
-              }
-            />
-            {fieldErrors['work-code'] !== undefined && (
-              <FieldError id="work-code-error">{fieldErrors['work-code']}</FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="letter-number">Letter number</label>
-            <input
-              id="letter-number"
-              ref={(node) => {
-                registerField('letter-number', node);
-              }}
-              value={header.letterNumber}
-              onChange={(event) => {
-                updateHeader('letterNumber', event.target.value);
-              }}
-              required
-              aria-invalid={fieldErrors['letter-number'] !== undefined}
-              aria-describedby={
-                fieldErrors['letter-number'] !== undefined
-                  ? 'letter-number-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['letter-number'] !== undefined && (
-              <FieldError id="letter-number-error">
-                {fieldErrors['letter-number']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="letter-date">Letter date</label>
-            <input
-              id="letter-date"
-              ref={(node) => {
-                registerField('letter-date', node);
-              }}
-              type="date"
-              value={header.letterDate}
-              onChange={(event) => {
-                updateHeader('letterDate', event.target.value);
-              }}
-              required
-              aria-invalid={fieldErrors['letter-date'] !== undefined}
-              aria-describedby={
-                fieldErrors['letter-date'] !== undefined
-                  ? 'letter-date-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['letter-date'] !== undefined && (
-              <FieldError id="letter-date-error">
-                {fieldErrors['letter-date']}
-              </FieldError>
-            )}
-          </Field>
-        </FieldRow>
-        <Field>
-          <label htmlFor="work-title">Work description</label>
-          <textarea
-            id="work-title"
-            ref={(node) => {
-              registerField('work-title', node);
-            }}
-            value={header.title}
-            onChange={(event) => {
-              updateHeader('title', event.target.value);
-            }}
-            required
-            minLength={3}
-            rows={2}
-            aria-invalid={fieldErrors['work-title'] !== undefined}
-            aria-describedby={
-              fieldErrors['work-title'] !== undefined ? 'work-title-error' : undefined
-            }
-          />
-          {fieldErrors['work-title'] !== undefined && (
-            <FieldError id="work-title-error">{fieldErrors['work-title']}</FieldError>
-          )}
-        </Field>
-        <FieldRow>
-          <Field>
-            <label htmlFor="advertised-value">Advertised value (â‚¹)</label>
-            <input
-              id="advertised-value"
-              ref={(node) => {
-                registerField('advertised-value', node);
-              }}
-              value={header.advertisedValue}
-              onChange={(event) => {
-                updateHeader('advertisedValue', event.target.value);
-              }}
-              required
-              inputMode="decimal"
-              aria-invalid={fieldErrors['advertised-value'] !== undefined}
-              aria-describedby={
-                fieldErrors['advertised-value'] !== undefined
-                  ? 'advertised-value-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['advertised-value'] !== undefined && (
-              <FieldError id="advertised-value-error">
-                {fieldErrors['advertised-value']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="contract-value">Contract value (â‚¹)</label>
-            <input
-              id="contract-value"
-              ref={(node) => {
-                registerField('contract-value', node);
-              }}
-              value={header.contractValue}
-              onChange={(event) => {
-                updateHeader('contractValue', event.target.value);
-              }}
-              required
-              inputMode="decimal"
-              aria-invalid={fieldErrors['contract-value'] !== undefined}
-              aria-describedby={
-                fieldErrors['contract-value'] !== undefined
-                  ? 'contract-value-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['contract-value'] !== undefined && (
-              <FieldError id="contract-value-error">
-                {fieldErrors['contract-value']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="pricing-shape">Pricing shape</label>
-            <select
-              id="pricing-shape"
-              value={header.pricingShape}
-              onChange={(event) => {
-                updateHeader(
-                  'pricingShape',
-                  event.target.value as HeaderDraft['pricingShape'],
-                );
-              }}
-            >
-              <option value="letter_percentage">Letter percentage</option>
-              <option value="per_schedule">Per-schedule totals</option>
-            </select>
-          </Field>
-        </FieldRow>
-        {header.pricingShape === 'letter_percentage' && (
-          <FieldRow>
-            <Field>
-              <label htmlFor="letter-percentage">Percentage</label>
-              <input
-                id="letter-percentage"
-                ref={(node) => {
-                  registerField('letter-percentage', node);
-                }}
-                value={header.letterPercentage}
-                onChange={(event) => {
-                  updateHeader('letterPercentage', event.target.value);
-                }}
-                required
-                inputMode="decimal"
-                aria-invalid={fieldErrors['letter-percentage'] !== undefined}
-                aria-describedby={
-                  fieldErrors['letter-percentage'] !== undefined
-                    ? 'letter-percentage-error'
-                    : undefined
-                }
-              />
-              {fieldErrors['letter-percentage'] !== undefined && (
-                <FieldError id="letter-percentage-error">
-                  {fieldErrors['letter-percentage']}
-                </FieldError>
-              )}
-            </Field>
-            <Field>
-              <label htmlFor="percentage-direction">Direction</label>
-              <select
-                id="percentage-direction"
-                ref={(node) => {
-                  registerField('percentage-direction', node);
-                }}
-                value={header.letterPercentageDirection}
-                onChange={(event) => {
-                  updateHeader(
-                    'letterPercentageDirection',
-                    event.target.value as HeaderDraft['letterPercentageDirection'],
-                  );
-                }}
-                required
-                aria-invalid={fieldErrors['percentage-direction'] !== undefined}
-                aria-describedby={
-                  fieldErrors['percentage-direction'] !== undefined
-                    ? 'percentage-direction-error'
-                    : undefined
-                }
-              >
-                <option value="">Chooseâ€¦</option>
-                <option value="below">Below</option>
-                <option value="at_par">At par</option>
-                <option value="above">Above</option>
-              </select>
-              {fieldErrors['percentage-direction'] !== undefined && (
-                <FieldError id="percentage-direction-error">
-                  {fieldErrors['percentage-direction']}
-                </FieldError>
-              )}
-            </Field>
-          </FieldRow>
-        )}
-
-        <h2>Performance guarantee requirement</h2>
-        <p className="text-muted-foreground">
-          What the letter demands, not what has been submitted â€” record the submitted
-          bank guarantee later as a PBG instrument on the Work.
-        </p>
-        {payload.review.header.performanceGuarantee?.needsReview === true && (
-          <p className="text-muted-foreground">
-            <StatusChip status="review">needs review</StatusChip> The parser could not
-            fully read the performance-guarantee clause; check the printed source below
-            and correct the values.
-          </p>
-        )}
-        <Field>
-          <label>
-            <input
-              type="checkbox"
-              checked={pbg.required}
-              onChange={(event) => {
-                updatePbg('required', event.target.checked);
-              }}
-            />{' '}
-            The letter demands a Performance Bank Guarantee
-          </label>
-        </Field>
-        {pbg.required && (
-          <FieldRow>
-            <Field>
-              <label htmlFor="pbg-amount">Required amount (â‚¹)</label>
-              <input
-                id="pbg-amount"
-                value={pbg.requiredAmount}
-                onChange={(event) => {
-                  updatePbg('requiredAmount', event.target.value);
-                }}
-                required
-                inputMode="decimal"
-              />
-            </Field>
-            <Field>
-              <label htmlFor="pbg-submission-days">Submit within (days)</label>
-              <input
-                id="pbg-submission-days"
-                type="number"
-                min={1}
-                max={180}
-                ref={(node) => {
-                  registerField('pbg-submission-days', node);
-                }}
-                value={pbg.submissionDays}
-                onChange={(event) => {
-                  updatePbg('submissionDays', event.target.value);
-                }}
-                required
-                aria-invalid={fieldErrors['pbg-submission-days'] !== undefined}
-                aria-describedby={
-                  fieldErrors['pbg-submission-days'] !== undefined
-                    ? 'pbg-submission-days-error'
-                    : undefined
-                }
-              />
-              {fieldErrors['pbg-submission-days'] !== undefined && (
-                <FieldError id="pbg-submission-days-error">
-                  {fieldErrors['pbg-submission-days']}
-                </FieldError>
-              )}
-            </Field>
-            <Field>
-              <label htmlFor="pbg-extension-days">Extension window (days)</label>
-              <input
-                id="pbg-extension-days"
-                type="number"
-                min={0}
-                value={pbg.extensionDays}
-                onChange={(event) => {
-                  updatePbg('extensionDays', event.target.value);
-                }}
-              />
-            </Field>
-            <Field>
-              <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
-              <input
-                id="pbg-penal-interest"
-                value={pbg.penalInterestPercent}
-                onChange={(event) => {
-                  updatePbg('penalInterestPercent', event.target.value);
-                }}
-                inputMode="decimal"
-              />
-            </Field>
-          </FieldRow>
-        )}
-        {typeof payload.review.header.performanceGuarantee?.raw === 'string' && (
-          <details>
-            <summary>Printed source (performance guarantee)</summary>
-            <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {payload.review.header.performanceGuarantee.raw}
-            </pre>
-          </details>
-        )}
-
-        {scheduleIds.map((scheduleId) => (
-          <div key={scheduleId}>
-            <h2>Schedule {scheduleId}</h2>
-            <DataTable scroll className="[&_input]:w-28">
-              <caption className="sr-only">
-                Awarded items in schedule {scheduleId}; every field is editable
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Item number</th>
-                  <th scope="col">Description</th>
-                  <th scope="col">Unit</th>
-                  <th scope="col">Quantity</th>
-                  <th scope="col">Rate (â‚¹)</th>
-                  <th scope="col">Payment category</th>
-                  <th scope="col">Row actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items
-                  .filter((item) => item.scheduleId === scheduleId)
-                  .map((item) => (
-                    <tr
-                      key={item.key}
-                      className={item.needsReview ? 'row--flagged' : undefined}
-                    >
-                      <td>
-                        <input
-                          aria-label={`Item number for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.itemNumber}
-                          onChange={(event) => {
-                            updateItem(item.key, { itemNumber: event.target.value });
-                          }}
-                          required
-                        />
-                      </td>
-                      <td className={wrapCell}>
-                        <textarea
-                          aria-label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.description}
-                          onChange={(event) => {
-                            updateItem(item.key, { description: event.target.value });
-                          }}
-                          required
-                          minLength={3}
-                          rows={2}
-                        />
-                        {item.manual ? (
-                          <p className="text-muted-foreground">
-                            <StatusChip status="review">manual row</StatusChip> Added by
-                            you â€” the parsed letter has no printed source row for it.
-                          </p>
-                        ) : (
-                          <details>
-                            <summary>Printed source row</summary>
-                            <pre className="my-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
-                              {item.anchorLine}
-                            </pre>
-                          </details>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          aria-label={`Unit for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.unitCode}
-                          onChange={(event) => {
-                            updateItem(item.key, { unitCode: event.target.value });
-                          }}
-                          required
-                          maxLength={20}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          aria-label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.awardedQuantity}
-                          onChange={(event) => {
-                            updateItem(item.key, {
-                              awardedQuantity: event.target.value,
-                            });
-                          }}
-                          required
-                          inputMode="decimal"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          aria-label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.effectiveRate}
-                          onChange={(event) => {
-                            updateItem(item.key, { effectiveRate: event.target.value });
-                          }}
-                          required
-                          inputMode="decimal"
-                        />
-                      </td>
-                      <td>
-                        {/* Optional, reviewer's judgement â€” the parser
-                            never proposes a category. Percentages are
-                            configured per category on the Work's payment
-                            matrix, never per item (R10). */}
-                        <select
-                          aria-label={`Payment category for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.paymentCategory}
-                          onChange={(event) => {
-                            updateItem(item.key, {
-                              paymentCategory: event.target
-                                .value as ItemDraft['paymentCategory'],
-                            });
-                          }}
-                        >
-                          <option value="">Uncategorised</option>
-                          <option value="SUPPLY">Supply</option>
-                          <option value="SUPPLY_AND_INSTALLATION">
-                            Supply + installation
-                          </option>
-                          <option value="PURE_INSTALLATION">Purely installation</option>
-                          <option value="SPARE_SUPPLY">Spare supply</option>
-                        </select>
-                      </td>
-                      <td>
-                        {removeCandidate === item.key ? (
-                          <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
-                            <Button
-                              onClick={() => {
-                                removeRow(item.key);
-                              }}
-                            >
-                              Confirm remove
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setRemoveCandidate(null);
-                              }}
-                            >
-                              Keep
-                            </Button>
-                          </span>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            aria-label={`Remove row ${item.itemSno} in schedule ${scheduleId}`}
-                            onClick={() => {
-                              setRemoveCandidate(item.key);
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-              {/* The subtotal belongs in the foot, where a table's summary
-                  is announced. It is a reconciliation aid for the reviewer's
-                  eye only â€” the server recomputes and stores every amount. */}
-              <tfoot>
-                <tr>
-                  <th scope="row" colSpan={4}>
-                    Schedule {scheduleId} subtotal
-                  </th>
-                  <td colSpan={3} data-testid={`schedule-subtotal-${scheduleId}`}>
-                    <strong>
-                      {scheduleSubtotals.get(scheduleId) ?? 'Not yet available'}
-                    </strong>
-                  </td>
-                </tr>
-              </tfoot>
-            </DataTable>
-          </div>
-        ))}
-
-        <h2>Add a row</h2>
-        <p className="text-muted-foreground">
-          For letters the parser could not fully serve: added rows are flagged for
-          review and confirmed with a manual-entry marker instead of a printed source
-          row. Removing a parsed row never edits the stored letter â€” the extraction
-          stays intact on the document.
-        </p>
-        <FieldRow>
-          <Field>
-            <label htmlFor="add-row-schedule">Schedule for the new row</label>
-            <input
-              id="add-row-schedule"
-              ref={(node) => {
-                registerField('add-row-schedule', node);
-              }}
-              value={addSchedule}
-              onChange={(event) => {
-                setAddSchedule(event.target.value);
-              }}
-              maxLength={50}
-            />
-          </Field>
-          <Actions>
-            <Button onClick={addManualRow}>Add row</Button>
-          </Actions>
-        </FieldRow>
-
-        <p className="text-muted-foreground" data-testid="reconciliation-totals">
-          {rowsTotal === null
-            ? 'Row totals will appear when every quantity and rate is a plain decimal number.'
-            : `Entered rows total â‚¹${rowsTotal} across ${String(items.length)} row${items.length === 1 ? '' : 's'}${
-                totalsDifference === null
-                  ? ''
-                  : ` â€” contract value â‚¹${header.contractValue} (difference ${totalsDifference})`
-              }.`}
-        </p>
-
-        {confirmError !== null && <FormError>{confirmError}</FormError>}
-
-        <ActionBar className="flex-wrap">
-          {canModify && (
-            <Button type="submit" disabled={pending}>
-              {pending ? 'Creating Workâ€¦' : 'Confirm and create Work'}
-            </Button>
-          )}
-          <Button variant="outline" onClick={onBack}>
-            Back to Works
-          </Button>
-        </ActionBar>
-        {!canModify && (
-          <p className="text-muted-foreground">
-            Your role can review but not confirm; ask an owner or office member to
-            confirm this letter.
-          </p>
-        )}
-      </form>
-    </Card>
-  );
-}
+      flag('letter-date', 'Enter tç]¹¶‰žËkºwµç@€€€€€€€€€€€€€€€±•ÑÑ•ÉA•É•¹Ñ…•¥É•Ñ¥½¸œ°(€€€€€€€€€€€€€€€€€€€•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”…Ì!•…‘•ÉÉ…™Ñl±•ÑÑ•ÉA•É•¹Ñ…•¥É•Ñ¥½¸t°(€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍlÁ•É•¹Ñ…”µ‘¥É•Ñ¥½¸t€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍlÁ•É•¹Ñ…”µ‘¥É•Ñ¥½¸t€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€€€ü€Á•É•¹Ñ…”µ‘¥É•Ñ¥½¸µ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ôˆˆù¡½½Í—Š˜ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰‰•±½Üˆù	•±½Üð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰…Ñ}Á…ÈˆùÐÁ…Èð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰…‰½Ù”ˆù‰½Ù”ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍlÁ•É•¹Ñ…”µ‘¥É•Ñ¥½¸t€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰Á•É•¹Ñ…”µ‘¥É•Ñ¥½¸µ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍlÁ•É•¹Ñ…”µ‘¥É•Ñ¥½¸uô(€€€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€¥ô((€€€€€€€€ñ ÈùA•É™½Éµ…¹”Õ…É…¹Ñ•”É•ÅÕ¥É•µ•¹Ðð½ Èø(€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€]¡…ÐÑ¡”±•ÑÑ•È‘•µ…¹‘Ì°¹½ÐÝ¡…Ð¡…Ì‰••¸ÍÕ‰µ¥ÑÑ•ƒŠPÉ•½ÉÑ¡”ÍÕ‰µ¥ÑÑ•(€€€€€€€€€‰…¹¬Õ…É…¹Ñ•”±…Ñ•È…Ì„A	¥¹ÍÑÉÕµ•¹Ð½¸Ñ¡”]½É¬¸(€€€€€€€€ð½Àø(€€€€€€€íÁ…å±½…¹É•Ù¥•Ü¹¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”ü¹¹••‘ÍI•Ù¥•Ü€ôôôÑÉÕ”€˜˜€ (€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥ÀÍÑ…ÑÕÌô‰É•Ù¥•Üˆù¹••‘ÌÉ•Ù¥•Üð½MÑ…ÑÕÍ¡¥ÀøQ¡”Á…ÉÍ•È½Õ±¹½Ð(€€€€€€€€€€€™Õ±±äÉ•…Ñ¡”Á•É™½Éµ…¹”µÕ…É…¹Ñ•”±…ÕÍ”ì¡•¬Ñ¡”ÁÉ¥¹Ñ•Í½ÕÉ”‰•±½Ü(€€€€€€€€€€€…¹½ÉÉ•ÐÑ¡”Ù…±Õ•Ì¸(€€€€€€€€€€ð½Àø(€€€€€€€€¥ô(€€€€€€€€ñ¥•±ø(€€€€€€€€€€ñ±…‰•°ø(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€ÑåÁ”ô‰¡•­‰½àˆ(€€€€€€€€€€€€€¡•­•õíÁ‰œ¹É•ÅÕ¥É•‘ô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€ÕÁ‘…Ñ•A‰œ É•ÅÕ¥É•œ°•Ù•¹Ð¹Ñ…É•Ð¹¡•­•¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€¼ùìœ€ô(€€€€€€€€€€€Q¡”±•ÑÑ•È‘•µ…¹‘Ì„A•É™½Éµ…¹”	…¹¬Õ…É…¹Ñ•”(€€€€€€€€€€ð½±…‰•°ø(€€€€€€€€ð½¥•±ø(€€€€€€€íÁ‰œ¹É•ÅÕ¥É•€˜˜€ (€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Á‰œµ…µ½Õ¹ÐˆùI•ÅÕ¥É•…µ½Õ¹Ð€£Š
+ä¤ð½±…‰•°ø(€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€¥ô‰Á‰œµ…µ½Õ¹Ðˆ(€€€€€€€€€€€€€€€Ù…±Õ”õíÁ‰œ¹É•ÅÕ¥É•‘µ½Õ¹Ñô(€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•A‰œ É•ÅÕ¥É•‘µ½Õ¹Ðœ°•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰‘•¥µ…°ˆ(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Á‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌˆùMÕ‰µ¥ÐÝ¥Ñ¡¥¸€¡‘…åÌ¤ð½±…‰•°ø(€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€¥ô‰Á‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌˆ(€€€€€€€€€€€€€€€ÑåÁ”ô‰¹Õµ‰•Èˆ(€€€€€€€€€€€€€€€µ¥¸õìÅô(€€€€€€€€€€€€€€€µ…àõìÄàÁô(€€€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± Á‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌœ°¹½‘”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€Ù…±Õ”õíÁ‰œ¹ÍÕ‰µ¥ÍÍ¥½¹…åÍô(€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•A‰œ ÍÕ‰µ¥ÍÍ¥½¹…åÌœ°•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€…É¥„µ¥¹Ù…±¥õí™¥•±‘ÉÉ½ÉÍlÁ‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌt€„ôôÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€€€…É¥„µ‘•ÍÉ¥‰•‘‰äõì(€€€€€€€€€€€€€€€€€™¥•±‘ÉÉ½ÉÍlÁ‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌt€„ôôÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€€€€€€ü€Á‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌµ•ÉÉ½Èœ(€€€€€€€€€€€€€€€€€€€€èÕ¹‘•™¥¹•(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍlÁ‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌt€„ôôÕ¹‘•™¥¹•€˜˜€ (€€€€€€€€€€€€€€€€ñ¥•±‘ÉÉ½È¥ô‰Á‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌµ•ÉÉ½Èˆø(€€€€€€€€€€€€€€€€€í™¥•±‘ÉÉ½ÉÍlÁ‰œµÍÕ‰µ¥ÍÍ¥½¸µ‘…åÌuô(€€€€€€€€€€€€€€€€ð½¥•±‘ÉÉ½Èø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Á‰œµ•áÑ•¹Í¥½¸µ‘…åÌˆùáÑ•¹Í¥½¸Ý¥¹‘½Ü€¡‘…åÌ¤ð½±…‰•°ø(€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€¥ô‰Á‰œµ•áÑ•¹Í¥½¸µ‘…åÌˆ(€€€€€€€€€€€€€€€ÑåÁ”ô‰¹Õµ‰•Èˆ(€€€€€€€€€€€€€€€µ¥¸õìÁô(€€€€€€€€€€€€€€€Ù…±Õ”õíÁ‰œ¹•áÑ•¹Í¥½¹…åÍô(€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•A‰œ •áÑ•¹Í¥½¹…åÌœ°•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Á‰œµÁ•¹…°µ¥¹Ñ•É•ÍÐˆùA•¹…°¥¹Ñ•É•ÍÐ€ ”À¹„¸¤ð½±…‰•°ø(€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€¥ô‰Á‰œµÁ•¹…°µ¥¹Ñ•É•ÍÐˆ(€€€€€€€€€€€€€€€Ù…±Õ”õíÁ‰œ¹Á•¹…±%¹Ñ•É•ÍÑA•É•¹Ñô(€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•A‰œ Á•¹…±%¹Ñ•É•ÍÑA•É•¹Ðœ°•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰‘•¥µ…°ˆ(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€¥ô(€€€€€€€íÑåÁ•½˜Á…å±½…¹É•Ù¥•Ü¹¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”ü¹É…Ü€ôôô€ÍÑÉ¥¹œœ€˜˜€ (€€€€€€€€€€ñ‘•Ñ…¥±Ìø(€€€€€€€€€€€€ñÍÕµµ…ÉäùAÉ¥¹Ñ•Í½ÕÉ”€¡Á•É™½Éµ…¹”Õ…É…¹Ñ•”¤ð½ÍÕµµ…Éäø(€€€€€€€€€€€€ñÁÉ”±…ÍÍ9…µ”ô‰µä´ÄÉ½Õ¹‘•µµ‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµµÕÑ•Áà´ÌÁä´È™½¹Ðµµ½¹¼Ñ•áÐµáÌÝ¡¥Ñ•ÍÁ…”µÁÉ”µÝÉ…Àm½Ù•É™±½ÜµÝÉ…Àé…¹åÝ¡•É•tˆø(€€€€€€€€€€€€€íÁ…å±½…¹É•Ù¥•Ü¹¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹É…Ýô(€€€€€€€€€€€€ð½ÁÉ”ø(€€€€€€€€€€ð½‘•Ñ…¥±Ìø(€€€€€€€€¥ô((€€€€€€€íÍ¡•‘Õ±•%‘Ì¹µ…À ¡Í¡•‘Õ±•%¤€ôø€ (€€€€€€€€€€ñ‘¥Ø­•äõíÍ¡•‘Õ±•%‘ôø(€€€€€€€€€€€€ñ ÈùM¡•‘Õ±”íÍ¡•‘Õ±•%‘ôð½ Èø(€€€€€€€€€€€€ñ…Ñ…Q…‰±”ÍÉ½±°±…ÍÍ9…µ”ô‰l™}¥¹ÁÕÑtéÜ´Èàˆø(€€€€€€€€€€€€€€ñ…ÁÑ¥½¸±…ÍÍ9…µ”ô‰ÍÈµ½¹±äˆø(€€€€€€€€€€€€€€€Ý…É‘•¥Ñ•µÌ¥¸Í¡•‘Õ±”íÍ¡•‘Õ±•%‘ôì•Ù•Éä™¥•±¥Ì•‘¥Ñ…‰±”(€€€€€€€€€€€€€€ð½…ÁÑ¥½¸ø(€€€€€€€€€€€€€€ñÑ¡•…ø(€€€€€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù%Ñ•´¹Õµ‰•Èð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù•ÍÉ¥ÁÑ¥½¸ð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùU¹¥Ðð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùEÕ…¹Ñ¥Ñäð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùI…Ñ”€£Š
+ä¤ð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùA…åµ•¹Ð…Ñ•½Éäð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùI½Ü…Ñ¥½¹Ìð½Ñ ø(€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€ð½Ñ¡•…ø(€€€€€€€€€€€€€€ñÑ‰½‘äø(€€€€€€€€€€€€€€€í¥Ñ•µÌ(€€€€€€€€€€€€€€€€€€¹™¥±Ñ•È ¡¥Ñ•´¤€ôø¥Ñ•´¹Í¡•‘Õ±•%€ôôôÍ¡•‘Õ±•%¤(€€€€€€€€€€€€€€€€€€¹µ…À ¡¥Ñ•´¤€ôø€ (€€€€€€€€€€€€€€€€€€€€ñÑÈ(€€€€€€€€€€€€€€€€€€€€€­•äõí¥Ñ•´¹­•åô(€€€€€€€€€€€€€€€€€€€€€±…ÍÍ9…µ”õí¥Ñ•´¹¹••‘ÍI•Ù¥•Ü€ü€É½Ü´µ™±…•œ€èÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õí%Ñ•´¹Õµ‰•È™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹¥Ñ•µ9Õµ‰•Éô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ì¥Ñ•µ9Õµ‰•Èè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑ±…ÍÍ9…µ”õíÝÉ…Á•±±ôø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õí•ÍÉ¥ÁÑ¥½¸™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹‘•ÍÉ¥ÁÑ¥½¹ô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ì‘•ÍÉ¥ÁÑ¥½¸è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÍô(€€€€€€€€€€€€€€€€€€€€€€€€€É½ÝÌõìÉô(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€í¥Ñ•´¹µ…¹Õ…°€ü€ (€€€€€€€€€€€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥ÀÍÑ…ÑÕÌô‰É•Ù¥•Üˆùµ…¹Õ…°É½Üð½MÑ…ÑÕÍ¡¥Àø‘‘•‰ä(€€€€€€€€€€€€€€€€€€€€€€€€€€€å½ÔƒŠPÑ¡”Á…ÉÍ•±•ÑÑ•È¡…Ì¹¼ÁÉ¥¹Ñ•Í½ÕÉ”É½Ü™½È¥Ð¸(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€€€€€€ñ‘•Ñ…¥±Ìø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñÍÕµµ…ÉäùAÉ¥¹Ñ•Í½ÕÉ”É½Üð½ÍÕµµ…Éäø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñÁÉ”±…ÍÍ9…µ”ô‰µä´ÄÉ½Õ¹‘•µµ‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµµÕÑ•Áà´ÌÁä´È™½¹Ðµµ½¹¼Ñ•áÐµáÌÝ¡¥Ñ•ÍÁ…”µÁÉ”µÝÉ…Àm½Ù•É™±½ÜµÝÉ…Àé…¹åÝ¡•É•tˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€í¥Ñ•´¹…¹¡½É1¥¹•ô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½ÁÉ”ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½‘•Ñ…¥±Ìø(€€€€€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíU¹¥Ð™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹Õ¹¥Ñ½‘•ô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ìÕ¹¥Ñ½‘”è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÁô(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíEÕ…¹Ñ¥Ñä™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹…Ý…É‘•‘EÕ…¹Ñ¥Ñåô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ý…É‘•‘EÕ…¹Ñ¥Ñäè•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰‘•¥µ…°ˆ(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíI…Ñ”™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹•™™•Ñ¥Ù•I…Ñ•ô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ì•™™•Ñ¥Ù•I…Ñ”è•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰‘•¥µ…°ˆ(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€ì¼¨=ÁÑ¥½¹…°°É•Ù¥•Ý•ÈÌ©Õ‘•µ•¹ÐƒŠPÑ¡”Á…ÉÍ•È(€€€€€€€€€€€€€€€€€€€€€€€€€€€¹•Ù•ÈÁÉ½Á½Í•Ì„…Ñ•½Éä¸A•É•¹Ñ…•Ì…É”(€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹™¥ÕÉ•Á•È…Ñ•½Éä½¸Ñ¡”]½É¬ÌÁ…åµ•¹Ð(€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…ÑÉ¥à°¹•Ù•ÈÁ•È¥Ñ•´€¡HÄÀ¤¸€¨½ô(€€€€€€€€€€€€€€€€€€€€€€€€ñÍ•±•Ð(€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíA…åµ•¹Ð…Ñ•½Éä™½ÈÉ½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí¥Ñ•´¹Á…åµ•¹Ñ…Ñ•½Éåô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÁ‘…Ñ•%Ñ•´¡¥Ñ•´¹­•ä°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Á…åµ•¹Ñ…Ñ•½Éäè•Ù•¹Ð¹Ñ…É•Ð(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹Ù…±Õ”…Ì%Ñ•µÉ…™ÑlÁ…åµ•¹Ñ…Ñ•½Éät°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ôˆˆùU¹…Ñ•½É¥Í•ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰MUAA1dˆùMÕÁÁ±äð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰MUAA1e}9}%9MQ11Q%=8ˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€MÕÁÁ±ä€¬¥¹ÍÑ…±±…Ñ¥½¸(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰AUI}%9MQ11Q%=8ˆùAÕÉ•±ä¥¹ÍÑ…±±…Ñ¥½¸ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰MAI}MUAA1dˆùMÁ…É”ÍÕÁÁ±äð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€íÉ•µ½Ù•…¹‘¥‘…Ñ”€ôôô¥Ñ•´¹­•ä€ü€ (€€€€€€€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰µÐ´Ð™±•à™±•àµÝÉ…À¥Ñ•µÌµ•¹Ñ•È…À´ÈÁÉ¥¹Ðé¡¥‘‘•¸ˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€É•µ½Ù•I½Ü¡¥Ñ•´¹­•ä¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹™¥É´É•µ½Ù”(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Í•ÑI•µ½Ù•…¹‘¥‘…Ñ”¡¹Õ±°¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€-••À(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€…É¥„µ±…‰•°õíI•µ½Ù”É½Ü€‘í¥Ñ•´¹¥Ñ•µM¹½ô¥¸Í¡•‘Õ±”€‘íÍ¡•‘Õ±•%‘õô(€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Í•ÑI•µ½Ù•…¹‘¥‘…Ñ”¡¥Ñ•´¹­•ä¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€I•µ½Ù”(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€€€€€€ì¼¨Q¡”ÍÕ‰Ñ½Ñ…°‰•±½¹Ì¥¸Ñ¡”™½½Ð°Ý¡•É”„Ñ…‰±”ÌÍÕµµ…Éä(€€€€€€€€€€€€€€€€€¥Ì…¹¹½Õ¹•¸%Ð¥Ì„É•½¹¥±¥…Ñ¥½¸…¥™½ÈÑ¡”É•Ù¥•Ý•ÈÌ(€€€€€€€€€€€€€€€€€•å”½¹±äƒŠPÑ¡”Í•ÉÙ•ÈÉ•½µÁÕÑ•Ì…¹ÍÑ½É•Ì•Ù•Éä…µ½Õ¹Ð¸€¨½ô(€€€€€€€€€€€€€€ñÑ™½½Ðø(€€€€€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰É½Üˆ½±MÁ…¸õìÑôø(€€€€€€€€€€€€€€€€€€€M¡•‘Õ±”íÍ¡•‘Õ±•%‘ôÍÕ‰Ñ½Ñ…°(€€€€€€€€€€€€€€€€€€ð½Ñ ø(€€€€€€€€€€€€€€€€€€ñÑ½±MÁ…¸õìÍô‘…Ñ„µÑ•ÍÑ¥õíÍ¡•‘Õ±”µÍÕ‰Ñ½Ñ…°´‘íÍ¡•‘Õ±•%‘õôø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€€€€íÍ¡•‘Õ±•MÕ‰Ñ½Ñ…±Ì¹•Ð¡Í¡•‘Õ±•%¤€üü€9½Ðå•Ð…Ù…¥±…‰±”ô(€€€€€€€€€€€€€€€€€€€€ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€ð½Ñ™½½Ðø(€€€€€€€€€€€€ð½…Ñ…Q…‰±”ø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¤¥ô((€€€€€€€€ñ Èù‘„É½Üð½ Èø(€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€½È±•ÑÑ•ÉÌÑ¡”Á…ÉÍ•È½Õ±¹½Ð™Õ±±äÍ•ÉÙ”è…‘‘•É½ÝÌ…É”™±…•™½È(€€€€€€€€€É•Ù¥•Ü…¹½¹™¥Éµ•Ý¥Ñ „µ…¹Õ…°µ•¹ÑÉäµ…É­•È¥¹ÍÑ•…½˜„ÁÉ¥¹Ñ•Í½ÕÉ”(€€€€€€€€€É½Ü¸I•µ½Ù¥¹œ„Á…ÉÍ•É½Ü¹•Ù•È•‘¥ÑÌÑ¡”ÍÑ½É•±•ÑÑ•ÈƒŠPÑ¡”•áÑÉ…Ñ¥½¸(€€€€€€€€€ÍÑ…åÌ¥¹Ñ…Ð½¸Ñ¡”‘½Õµ•¹Ð¸(€€€€€€€€ð½Àø(€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰…‘µÉ½ÜµÍ¡•‘Õ±”ˆùM¡•‘Õ±”™½ÈÑ¡”¹•ÜÉ½Üð½±…‰•°ø(€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€¥ô‰…‘µÉ½ÜµÍ¡•‘Õ±”ˆ(€€€€€€€€€€€€€É•˜õì¡¹½‘”¤€ôøì(€€€€€€€€€€€€€€€É•¥ÍÑ•É¥•± …‘µÉ½ÜµÍ¡•‘Õ±”œ°¹½‘”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€Ù…±Õ”õí…‘‘M¡•‘Õ±•ô(€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€Í•Ñ‘‘M¡•‘Õ±”¡•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€€µ…á1•¹Ñ õìÔÁô(€€€€€€€€€€€€¼ø(€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€ñ	ÕÑÑ½¸½¹±¥¬õí…‘‘5…¹Õ…±I½Ýôù‘É½Üð½	ÕÑÑ½¸ø(€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€ð½¥•±‘I½Üø((€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆ‘…Ñ„µÑ•ÍÑ¥ô‰É•½¹¥±¥…Ñ¥½¸µÑ½Ñ…±Ìˆø(€€€€€€€€€íÉ½ÝÍQ½Ñ…°€ôôô¹Õ±°(€€€€€€€€€€€€ü€I½ÜÑ½Ñ…±ÌÝ¥±°…ÁÁ•…ÈÝ¡•¸•Ù•ÉäÅÕ…¹Ñ¥Ñä…¹É…Ñ”¥Ì„Á±…¥¸‘•¥µ…°¹Õµ‰•È¸œ(€€€€€€€€€€€€è¹Ñ•É•É½ÝÌÑ½Ñ…°ƒŠ
+ä‘íÉ½ÝÍQ½Ñ…±ô…É½ÍÌ€‘íMÑÉ¥¹œ¡¥Ñ•µÌ¹±•¹Ñ ¥ôÉ½Ü‘í¥Ñ•µÌ¹±•¹Ñ €ôôô€Ä€ü€œœ€è€Ìô‘ì(€€€€€€€€€€€€€€€…‘Ù•ÉÑ¥Í•‘¥™™•É•¹”€ôôô¹Õ±°(€€€€€€€€€€€€€€€€€€ü€œœ(€€€€€€€€€€€€€€€€€€è€ƒŠP…‘Ù•ÉÑ¥Í•Ù…±Õ”ƒŠ
+ä‘í¡•…‘•È¹…‘Ù•ÉÑ¥Í•‘Y…±Õ•ô€¡‘¥™™•É•¹”€‘í…‘Ù•ÉÑ¥Í•‘¥™™•É•¹•ô¥€(€€€€€€€€€€€€€ô¸‘í½¹ÑÉ…ÑY…±Õ•½¹Ñ•áÑõô(€€€€€€€€ð½Àø((€€€€€€€í½¹™¥ÉµÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½Èùí½¹™¥ÉµÉÉ½Éôð½½ÉµÉÉ½Èùô((€€€€€€€€ñÑ¥½¹	…È±…ÍÍ9…µ”ô‰™±•àµÝÉ…Àˆø(€€€€€€€€€í…¹5½‘¥™ä€˜˜€ (€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€íÁ•¹‘¥¹œ€ü€É•…Ñ¥¹œ]½É¯Š˜œ€è€½¹™¥É´…¹É•…Ñ”]½É¬ô(€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€¥ô(€€€€€€€€€€ñ	ÕÑÑ½¸Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ½¹±¥¬õí½¹	…­ôø(€€€€€€€€€€€	…¬Ñ¼]½É­Ì(€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€ð½Ñ¥½¹	…Èø(€€€€€€€ì……¹5½‘¥™ä€˜˜€ (€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€e½ÕÈÉ½±”…¸É•Ù¥•Ü‰ÕÐ¹½Ð½¹™¥É´ì…Í¬…¸½Ý¹•È½È½™™¥”µ•µ‰•ÈÑ¼(€€€€€€€€€€€½¹™¥É´Ñ¡¥Ì±•ÑÑ•È¸(€€€€€€€€€€ð½Àø(€€€€€€€€¥ô(€€€€€€ð½™½É´ø(€€€€ð½…Éø(€€¤ì)ô

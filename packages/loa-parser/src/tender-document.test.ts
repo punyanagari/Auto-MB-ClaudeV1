@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  comparePaymentMatrix,
-  matchTenderIdentity,
-  reviewTenderDocument,
-} from './tender-document.js';
+import { matchTenderIdentity, reviewTenderDocument } from './tender-document.js';
 
 const TENDER_TEXT = `
 NIT No.: CR-EL-2026-017
@@ -68,46 +64,5 @@ describe('tender document review', () => {
     );
     expect(mismatch.matched).toBe(false);
     expect(mismatch.reasons).toHaveLength(2);
-  });
-
-  it('keeps the reviewed matrix authoritative and reports tender differences', () => {
-    const review = reviewTenderDocument(TENDER_TEXT, 'tender_specification');
-    const exact = comparePaymentMatrix(
-      [
-        {
-          category: 'SUPPLY_AND_INSTALLATION',
-          pctSupply: '80.00',
-          pctInstallation: '10',
-          pctPac: '5',
-          pctFinalBill: '5',
-        },
-      ],
-      review,
-    );
-    expect(exact.matches).toBe(true);
-    expect(exact.mismatches).toHaveLength(0);
-
-    const reviewerOverride = comparePaymentMatrix(
-      [
-        {
-          category: 'SUPPLY_AND_INSTALLATION',
-          pctSupply: '80',
-          pctInstallation: '8',
-          pctPac: '7',
-          pctFinalBill: '5',
-        },
-      ],
-      review,
-    );
-    expect(reviewerOverride.matches).toBe(false);
-    expect(reviewerOverride.mismatches).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          category: 'SUPPLY_AND_INSTALLATION',
-          stage: 'installation',
-        }),
-        expect.objectContaining({ category: 'SUPPLY_AND_INSTALLATION', stage: 'pac' }),
-      ]),
-    );
   });
 });

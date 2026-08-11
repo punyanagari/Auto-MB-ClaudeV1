@@ -52,6 +52,10 @@ export function Installations({
 }: InstallationsProps) {
   const [data, setData] = useState<InstallationListResponse | null>(null);
   const [locations, setLocations] = useState<readonly LocationMaster[]>([]);
+  const [locationsState, setLocationsState] = useState<
+    'loading' | 'unavailable' | 'ready'
+  >('loading');
+  const [locationsLoadVersion, setLocationsLoadVersion] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -63,17 +67,11 @@ export function Installations({
     let cancelled = false;
     setData(null);
     setLoadError(null);
-    Promise.all([
-      api.listWorkInstallations(organisationId, workId),
-      api.listLocationMasters(organisationId),
-    ])
-      .then(([loaded, loadedLocations]) => {
+    api
+      .listWorkInstallations(organisationId, workId)
+      .then((loaded) => {
         if (cancelled) return;
         setData(loaded);
-        setLocations(loadedLocations);
-        if (loadedLocations.length > 0 && loadedLocations[0] !== undefined) {
-          setLocationChoice(loadedLocations[0].id);
-        }
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -87,6 +85,30 @@ export function Installations({
       cancelled = true;
     };
   }, [api, organisationId, workId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLocations([]);
+    setLocationsState('loading');
+    setLocationChoice(NEW_LOCATION);
+    api
+      .listLocationMasters(organisationId)
+      .then((loadedLocations) => {
+        if (cancelled) return;
+        setLocations(loadedLocations);
+        setLocationsState('ready');
+        if (loadedLocations[0] !== undefined) {
+          setLocationChoice(loadedLocations[0].id);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLocationsState('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, locationsLoadVersion, organisationId]);
 
   const act = useCallback(async (work: () => Promise<void>, done: string) => {
     setPending(true);
@@ -161,6 +183,28 @@ export function Installations({
         <p className="text-muted-foreground" role="status">
           {notice}
         </p>
+      )}
+      {canRecordEvidence && locationsState === 'loading' && (
+        <p className="text-muted-foreground" role="status">
+          Loading installation locations…
+        </p>
+      )}
+      {canRecordEvidence && locationsState === 'unavailable' && (
+        <div className="space-y-3">
+          <FormError>
+            The location master could not be loaded. Existing installation records
+            remain available, but new recording is paused.
+          </FormError>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setLocationsLoadVersion((version) => version + 1);
+            }}
+          >
+            Retry locations
+          </Button>
+        </div>
       )}
 
       <DataTable>
@@ -274,164 +318,182 @@ export function Installations({
         <p className="text-muted-foreground">No installations recorded yet.</p>
       )}
 
-      {canRecordEvidence && selectableItems.length > 0 && (
-        <Disclosure
-          label="Record installation"
-          startOpen={data.installations.length === 0}
-        >
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = event.currentTarget;
-              const formData = new FormData(form);
-              const quantity = formValue(formData, 'inst-quantity');
-              const installedOn = formValue(formData, 'inst-date');
-              const remarks = formValue(formData, 'inst-remarks').trim();
-              const serialIds = formData
-                .getAll('inst-serials')
-                .filter((value): value is string => typeof value === 'string');
-              const body: RecordInstallationRequest = {
-                workItemId: activeItemId,
-                quantity,
-                installedOn,
-                ...(locationChoice === NEW_LOCATION
-                  ? {
-                      newLocation: {
-                        name: formValue(formData, 'inst-location-name'),
-                        kind: formValue(formData, 'inst-location-kind') as LocationKind,
-                      },
-                    }
-                  : { locationId: locationChoice }),
-                ...(remarks.length > 0 ? { remarks } : {}),
-                ...(serialIds.length > 0 ? { serialIds } : {}),
-              };
-              void act(async () => {
-                const recorded: Installation = await api.recordWorkInstallation(
-                  organisationId,
-                  workId,
-                  body,
-                );
-                await refresh();
-                const freshLocations = await api.listLocationMasters(organisationId);
-                setLocations(freshLocations);
-                setLocationChoice(recorded.locationId);
-                form.reset();
-              }, 'Installation recorded.');
-            }}
+      {canRecordEvidence &&
+        locationsState === 'ready' &&
+        selectableItems.length > 0 && (
+          <Disclosure
+            label="Record installation"
+            startOpen={data.installations.length === 0}
           >
-            <Field>
-              <label htmlFor="inst-item">Work item</label>
-              <select
-                id="inst-item"
-                name="inst-item"
-                required
-                value={activeItemId}
-                onChange={(event) => {
-                  setSelectedItemId(event.currentTarget.value);
-                }}
-              >
-                {selectableItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.itemNumber} — {item.effectiveDescription ?? item.description}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field>
-              <label htmlFor="inst-quantity">Quantity installed</label>
-              <input
-                id="inst-quantity"
-                name="inst-quantity"
-                inputMode="decimal"
-                required
-              />
-            </Field>
-            <Field>
-              <label htmlFor="inst-date">Installed on</label>
-              <input id="inst-date" name="inst-date" type="date" required />
-            </Field>
-            <Field>
-              <label htmlFor="inst-location">Location</label>
-              <select
-                id="inst-location"
-                name="inst-location"
-                value={locationChoice}
-                onChange={(event) => {
-                  setLocationChoice(event.currentTarget.value);
-                }}
-              >
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-                <option value={NEW_LOCATION}>+ Add a new location</option>
-              </select>
-            </Field>
-            {locationChoice === NEW_LOCATION && (
-              <>
-                <Field>
-                  <label htmlFor="inst-location-name">New location name</label>
-                  <input
-                    id="inst-location-name"
-                    name="inst-location-name"
-                    required
-                    minLength={2}
-                    maxLength={200}
-                  />
-                </Field>
-                <Field>
-                  <label htmlFor="inst-location-kind">New location kind</label>
-                  <select id="inst-location-kind" name="inst-location-kind">
-                    {LOCATION_KINDS.map((kind) => (
-                      <option key={kind.value} value={kind.value}>
-                        {kind.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </>
-            )}
-            <Field>
-              <label htmlFor="inst-remarks">Remarks (optional)</label>
-              <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
-            </Field>
-            {activeItem?.requiresSerials === true && (
-              <fieldset>
-                <legend>
-                  Serials to install — one per unit, from the delivered pool of{' '}
-                  {activeItem.itemNumber}
-                </legend>
-                {serialPool.length > 0 ? (
-                  serialPool.map((serial) => (
-                    <label
-                      key={serial.id}
-                      className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
-                    >
-                      <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
-                      {serial.serialNumber}
-                      <span className="text-muted-foreground">
-                        {' '}
-                        · {serial.challanNumber ?? 'challan'}
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">
-                    No delivered, uninstalled serials for this item — issue a Delivery
-                    Challan with serials first.
-                  </p>
-                )}
-              </fieldset>
-            )}
-            <Actions>
-              <Button type="submit" disabled={pending}>
-                Record installation
-              </Button>
-            </Actions>
-          </form>
-        </Disclosure>
-      )}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const formData = new FormData(form);
+                const quantity = formValue(formData, 'inst-quantity');
+                const installedOn = formValue(formData, 'inst-date');
+                const remarks = formValue(formData, 'inst-remarks').trim();
+                const serialIds = formData
+                  .getAll('inst-serials')
+                  .filter((value): value is string => typeof value === 'string');
+                const body: RecordInstallationRequest = {
+                  workItemId: activeItemId,
+                  quantity,
+                  installedOn,
+                  ...(locationChoice === NEW_LOCATION
+                    ? {
+                        newLocation: {
+                          name: formValue(formData, 'inst-location-name'),
+                          kind: formValue(
+                            formData,
+                            'inst-location-kind',
+                          ) as LocationKind,
+                        },
+                      }
+                    : { locationId: locationChoice }),
+                  ...(remarks.length > 0 ? { remarks } : {}),
+                  ...(serialIds.length > 0 ? { serialIds } : {}),
+                };
+                void act(async () => {
+                  const recorded: Installation = await api.recordWorkInstallation(
+                    organisationId,
+                    workId,
+                    body,
+                  );
+                  const [evidenceRefresh, locationsRefresh] = await Promise.allSettled([
+                    refresh(),
+                    api.listLocationMasters(organisationId),
+                  ]);
+                  if (evidenceRefresh.status === 'rejected') {
+                    setActionError(
+                      'Installation recorded, but the updated evidence could not be reloaded. Reopen this Work to refresh it.',
+                    );
+                  }
+                  if (locationsRefresh.status === 'fulfilled') {
+                    setLocations(locationsRefresh.value);
+                    setLocationsState('ready');
+                    setLocationChoice(recorded.locationId);
+                  } else {
+                    setLocationsState('unavailable');
+                  }
+                  form.reset();
+                }, 'Installation recorded.');
+              }}
+            >
+              <Field>
+                <label htmlFor="inst-item">Work item</label>
+                <select
+                  id="inst-item"
+                  name="inst-item"
+                  required
+                  value={activeItemId}
+                  onChange={(event) => {
+                    setSelectedItemId(event.currentTarget.value);
+                  }}
+                >
+                  {selectableItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.itemNumber} —{' '}
+                      {item.effectiveDescription ?? item.description}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field>
+                <label htmlFor="inst-quantity">Quantity installed</label>
+                <input
+                  id="inst-quantity"
+                  name="inst-quantity"
+                  inputMode="decimal"
+                  required
+                />
+              </Field>
+              <Field>
+                <label htmlFor="inst-date">Installed on</label>
+                <input id="inst-date" name="inst-date" type="date" required />
+              </Field>
+              <Field>
+                <label htmlFor="inst-location">Location</label>
+                <select
+                  id="inst-location"
+                  name="inst-location"
+                  value={locationChoice}
+                  onChange={(event) => {
+                    setLocationChoice(event.currentTarget.value);
+                  }}
+                >
+                  {locations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                  <option value={NEW_LOCATION}>+ Add a new location</option>
+                </select>
+              </Field>
+              {locationChoice === NEW_LOCATION && (
+                <>
+                  <Field>
+                    <label htmlFor="inst-location-name">New location name</label>
+                    <input
+                      id="inst-location-name"
+                      name="inst-location-name"
+                      required
+                      minLength={2}
+                      maxLength={200}
+                    />
+                  </Field>
+                  <Field>
+                    <label htmlFor="inst-location-kind">New location kind</label>
+                    <select id="inst-location-kind" name="inst-location-kind">
+                      {LOCATION_KINDS.map((kind) => (
+                        <option key={kind.value} value={kind.value}>
+                          {kind.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </>
+              )}
+              <Field>
+                <label htmlFor="inst-remarks">Remarks (optional)</label>
+                <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
+              </Field>
+              {activeItem?.requiresSerials === true && (
+                <fieldset>
+                  <legend>
+                    Serials to install — one per unit, from the delivered pool of{' '}
+                    {activeItem.itemNumber}
+                  </legend>
+                  {serialPool.length > 0 ? (
+                    serialPool.map((serial) => (
+                      <label
+                        key={serial.id}
+                        className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
+                      >
+                        <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
+                        {serial.serialNumber}
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · {serial.challanNumber ?? 'challan'}
+                        </span>
+                      </label>
+                    ))
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No delivered, uninstalled serials for this item — issue a Delivery
+                      Challan with serials first.
+                    </p>
+                  )}
+                </fieldset>
+              )}
+              <Actions>
+                <Button type="submit" disabled={pending}>
+                  Record installation
+                </Button>
+              </Actions>
+            </form>
+          </Disclosure>
+        )}
     </>
   );
 }

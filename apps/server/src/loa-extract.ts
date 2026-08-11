@@ -6,29 +6,57 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-/**
- * Extracts layout-preserving text from a PDF via `pdftotext -layout`
- * (poppler-utils) — the exact extraction the LOA parser's regression
- * corpus was produced with, so the parser sees production text in the same
- * shape as its fixtures (docs/reference/loa-parser-contract.md §0).
- * poppler is a system dependency like Gotenberg (docs/DEPENDENCIES.md).
- *
- * The buffer is written to a private temporary file because pdftotext
- * wants a seekable input; the directory is removed in all outcomes. NUL
- * bytes are stripped from the output — PostgreSQL jsonb cannot store them
- * and no text layer legitimately contains them.
- */
-export async function extractPdfText(pdf: Buffer): Promise<string> {
+export interface LoaPdfTextViews {
+  /** Layout-authoritative view used for headers, schedules, and numbers. */
+  readonly layoutText: string;
+  /** Reading-order view used only for exact item-description ownership. */
+  readonly rawText: string;
+}
+
+async function withTemporaryPdf<T>(
+  pdf: Buffer,
+  extract: (file: string) => Promise<T>,
+): Promise<T> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-loa-'));
   try {
     const file = path.join(dir, 'source.pdf');
     await writeFile(file, pdf);
-    const { stdout } = await execFileAsync('pdftotext', ['-layout', file, '-'], {
-      maxBuffer: 64 * 1024 * 1024,
-      timeout: 30_000,
-    });
-    return stdout.replaceAll('\u0000', '');
+    return await extract(file);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+async function runPdfToText(file: string, mode: '-layout' | '-raw'): Promise<string> {
+  const { stdout } = await execFileAsync('pdftotext', [mode, file, '-'], {
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 30_000,
+  });
+  // PostgreSQL jsonb cannot store NULs; a legitimate PDF text layer does
+  // not need them.
+  return stdout.replaceAll('\u0000', '');
+}
+
+/**
+ * Extracts the layout-preserving Poppler view used by tender/contract-source
+ * parsing. The temporary seekable file is private and always removed.
+ */
+export async function extractPdfText(pdf: Buffer): Promise<string> {
+  return withTemporaryPdf(pdf, (file) => runPdfToText(file, '-layout'));
+}
+
+/**
+ * Extracts both complementary LOA views from one temporary PDF. The commands
+ * run concurrently: `-layout` remains authoritative for numeric fields while
+ * `-raw` supplies exact, non-overlapping item descriptions after a strict
+ * whole-letter tuple gate.
+ */
+export async function extractLoaPdfText(pdf: Buffer): Promise<LoaPdfTextViews> {
+  return withTemporaryPdf(pdf, async (file) => {
+    const [layoutText, rawText] = await Promise.all([
+      runPdfToText(file, '-layout'),
+      runPdfToText(file, '-raw'),
+    ]);
+    return { layoutText, rawText };
+  });
 }

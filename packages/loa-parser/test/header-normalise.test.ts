@@ -39,6 +39,14 @@ it('sanity: the corpus is six letters', () => {
 // ---------------------------------------------------------------------------
 
 describe('print-furniture stripping', () => {
+  it('normalises Windows CRLF before stripping or structural parsing', () => {
+    const lf = loadLetter('PL281-BB').text;
+    const crlf = lf.replace(/\n/g, '\r\n');
+
+    expect(stripPrintFurniture(crlf)).toBe(stripPrintFurniture(lf));
+    expect(extractHeader(crlf)).toEqual(extractHeader(lf));
+  });
+
   it('recognises both observed furniture forms on all six fixtures', () => {
     for (const id of ALL_LETTER_IDS) {
       const { text } = loadLetter(id);
@@ -314,395 +322,5 @@ describe('header/prose fields, all six letters', () => {
       expect(header.bidId.value, `${id}: bidId`).not.toBeNull();
       expect(header.bidDate.value, `${id}: bidDate`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(header.contractorName.value, `${id}: contractorName`).not.toBeNull();
-      expect(header.contractorAddress.value, `${id}: contractorAddress`).not.toBeNull();
-      expect(header.signatoryName.value, `${id}: signatoryName`).not.toBeNull();
-      expect(
-        header.signatoryDesignation.value,
-        `${id}: signatoryDesignation`,
-      ).not.toBeNull();
-    }
-  });
-
-  it('the letter-number-derived division agrees with the office-address-block division on all six letters', () => {
-    for (const id of ALL_LETTER_IDS) {
-      const header = extractHeader(loadLetter(id).text);
-      const divisionFromLetterNumber = header.letterNumber.value?.split(' / ')[0];
-      expect(header.division.value, id).toBe(divisionFromLetterNumber);
-    }
-  });
-
-  it('PL270-CRB\'s wrap-broken division ("MUMBAI-CST-" / "DIVISION-S AND T") rejoins with no stray space, matching its own Letter No spelling', () => {
-    const header = extractHeader(loadLetter('PL270-CRB').text);
-    expect(header.division.value).toBe('MUMBAI-CST-DIVISION-S AND T');
-  });
-
-  it('signatory name/designation are read from the line pair immediately above "Digitally Signed"', () => {
-    const expected: Record<string, [string, string]> = {
-      'PL273-JHS': ['NARENDRA SINGH', 'Sr.DSTE/CO'],
-      'PL280-ADI': ['VIKAS KUMAR', 'Sr.DSTE ADI'],
-      'PL275-BKN': ['AKHIL GUPTA', 'ADSTEHSR'],
-      'PL276-GTL': ['BOMMA CHANDRA SHEKHAR', 'Sr.DSTE/GTL'],
-      'PL270-CRB': ['NISHANT K DWIVEDI', 'Sr.DSTE/Co'],
-      'PL281-BB': ['ASHISH TIWARI', 'Sr.DSTE/Co./BCT'],
-    };
-    for (const id of ALL_LETTER_IDS) {
-      const header = extractHeader(loadLetter(id).text);
-      const [name, designation] = expected[id] as [string, string];
-      expect(header.signatoryName.value, id).toBe(name);
-      expect(header.signatoryDesignation.value, id).toBe(designation);
-    }
-  });
-
-  it('GCC version: present in 4/6 letters (varying phrasing), genuinely absent (null + needsReview) in PL275-BKN, PL270-CRB, PL281-BB', () => {
-    const header273 = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header273.gccVersion.value).toBe('GCC-2022');
-
-    const header280 = extractHeader(loadLetter('PL280-ADI').text);
-    expect(header280.gccVersion.value).toMatch(
-      /General Condition of Contract APRIL-?\s*2022/,
-    );
-
-    const header276 = extractHeader(loadLetter('PL276-GTL').text);
-    expect(header276.gccVersion.value).toBe('IRGCC April 2022');
-
-    for (const id of ['PL275-BKN', 'PL270-CRB', 'PL281-BB'] as const) {
-      const header = extractHeader(loadLetter(id).text);
-      expect(header.gccVersion.value, id).toBeNull();
-      expect(header.gccVersion.needsReview, id).toBe(true);
-      // [m1, DC-23 review round 1]: retain a candidate raw block even with no
-      // value â€” the security-deposit clause-reference sentence, the one place
-      // in the template a GCC citation would appear if the letter carried
-      // one, not null-with-no-context.
-      expect(header.gccVersion.raw, id).not.toBeNull();
-      expect(header.gccVersion.raw, id).toContain('in terms of');
-    }
-  });
-
-  it("EMD amount + IREPS reference id, including PL270-CRB's two comma-separated reference ids", () => {
-    const header273 = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header273.emd.amount).toBe(60900);
-    expect(header273.emd.irepsReferenceId).toBe('PE443329448008');
-
-    const header270 = extractHeader(loadLetter('PL270-CRB').text);
-    expect(header270.emd.amount).toBe(1127900);
-    expect(header270.emd.irepsReferenceId).toBe('PE514428316551, PE793028316475');
-  });
-
-  it('security-deposit percentages and clause reference, including a decimal clause number ("clause 16.1")', () => {
-    const header = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header.securityDeposit.recoveryPercent).toBe(6);
-    expect(header.securityDeposit.capPercent).toBe(5);
-    // The clause-reference regex must not truncate at the decimal point
-    // WITHIN the clause number itself.
-    expect(header.securityDeposit.clauseReference).toBe('clause 16.1 of GCC-2022');
-    expect(header.securityDeposit.needsReview).toBe(false);
-  });
-
-  it('performance guarantee: amount, submission window, extension, and penal interest', () => {
-    const header = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header.performanceGuarantee.amountFigures).toBe(152321.33);
-    expect(header.performanceGuarantee.submissionDays).toBe(21);
-    expect(header.performanceGuarantee.extensionDays).toBe(60);
-    expect(header.performanceGuarantee.penalInterestPercent).toBe(12);
-    expect(header.performanceGuarantee.needsReview).toBe(false);
-  });
-
-  it('PL281-BB genuinely omits the penal-interest sentence: penalInterestPercent is null and needsReview is true, other PG fields still populated', () => {
-    const header = extractHeader(loadLetter('PL281-BB').text);
-    expect(header.performanceGuarantee.amountFigures).toBe(7376797.39);
-    expect(header.performanceGuarantee.submissionDays).toBe(21);
-    expect(header.performanceGuarantee.extensionDays).toBe(60);
-    expect(header.performanceGuarantee.penalInterestPercent).toBeNull();
-    expect(header.performanceGuarantee.needsReview).toBe(true);
-  });
-
-  it('completion period (value + unit) on all six letters', () => {
-    const expected: Record<string, number> = {
-      'PL273-JHS': 24,
-      'PL280-ADI': 36,
-      'PL275-BKN': 6,
-      'PL276-GTL': 12,
-      'PL270-CRB': 12,
-      'PL281-BB': 108,
-    };
-    for (const id of ALL_LETTER_IDS) {
-      const header = extractHeader(loadLetter(id).text);
-      expect(header.completionPeriod.value, id).toBe(expected[id]);
-      expect(header.completionPeriod.unit, id).toBe('month');
-      expect(header.completionPeriod.needsReview, id).toBe(false);
-    }
-  });
-
-  it('consignee and officer-in-charge are located wherever the letter states them, across both label-first and value-first sentence shapes', () => {
-    const header275 = extractHeader(loadLetter('PL275-BKN').text); // label-first
-    expect(header275.consignee.value).toBe('SSE/Tele/HSR');
-    expect(header275.officerInCharge.value).toBe('ADSTE/HSR');
-
-    const header281 = extractHeader(loadLetter('PL281-BB').text); // colon-labelled
-    expect(header281.consignee.value).toBe('SSE/Tele/Store/BCT & Valsad');
-    expect(header281.officerInCharge.value).toBe('ADSTE/Tele1/Mumbai Central');
-
-    const header270 = extractHeader(loadLetter('PL270-CRB').text); // value-first, no "and" before it
-    expect(header270.officerInCharge.value).toBe('Sr.DSTE/Co/BB');
-  });
-
-  // DC-23 review round 1 [M1, MAJOR]: PL273-JHS's officerInCharge snapshot
-  // previously pinned "SSE/TELE/ML/JHS and SSE/TELE/GWL will be consignee and
-  // DSTE/JHS & ADSTE/GWL" with needsReview:false â€” WRONG. The true value is
-  // "DSTE/JHS & ADSTE/GWL" (raw: "...ADSTE/GWL will be the Officer incharge
-  // of the work"): the value-first extraction's lazy capture group spanned
-  // the PRECEDING, unrelated "...will be consignee..." clause instead of
-  // stopping at it. Pinned here explicitly so a regression cannot silently
-  // reintroduce the wrong value.
-  it('PL273-JHS value-first officerInCharge does not bleed into the preceding unrelated "...will be consignee..." clause', () => {
-    const header = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header.officerInCharge.value).toBe('DSTE/JHS & ADSTE/GWL');
-    expect(header.officerInCharge.needsReview).toBe(false);
-    // The trap value a naively-scoped capture group produces (measured, DC-23
-    // review round 1) must never be emitted.
-    expect(header.officerInCharge.value).not.toContain('will be consignee');
-    expect(header.officerInCharge.value).not.toBe(
-      'SSE/TELE/ML/JHS and SSE/TELE/GWL will be consignee and DSTE/JHS & ADSTE/GWL',
-    );
-  });
-
-  // DC-23 review round 2 [R1]: the last-"and"-clause split has a dangerous
-  // fail direction if left unguarded â€” reviewer-demonstrated synthetically by
-  // mutating PL273-JHS's "&" (within the "DSTE/JHS & ADSTE/GWL" subject) to
-  // the literal word "and". An unguarded split would then see THREE "and"
-  // occurrences in the prefix and confidently take only the last fragment
-  // ("ADSTE/GWL"), silently dropping "DSTE/JHS and " â€” a PARTIAL value with
-  // needsReview:false. The guard (every discarded clause must itself contain
-  // "will be", proving each split point separates two complete role-mapping
-  // clauses) must catch this: two of the three discarded clauses here do NOT
-  // contain "will be", so the guard falls back to the WHOLE prefix with
-  // needsReview:true.
-  it('R1: a literal "and" inside a value-first subject (not a role-mapping separator) falls back to the whole prefix, flagged for review â€” never a silently-truncated partial value', () => {
-    const { text } = loadLetter('PL273-JHS');
-    expect(text).toContain('DSTE/JHS & ADSTE/GWL will be the Officer incharge');
-
-    // In-memory transform only â€” never touches the fixture on disk.
-    const mutated = text.replace(
-      'DSTE/JHS & ADSTE/GWL will be the Officer incharge',
-      'DSTE/JHS and ADSTE/GWL will be the Officer incharge',
-    );
-    expect(mutated).not.toBe(text);
-    expect(loadLetter('PL273-JHS').text).toContain('DSTE/JHS & ADSTE/GWL'); // fixture untouched
-
-    const header = extractHeader(mutated);
-
-    // The dangerous partial value the guard exists to prevent must never be
-    // emitted, confidently or otherwise.
-    expect(header.officerInCharge.value).not.toBe('ADSTE/GWL');
-
-    // Nothing discarded: the whole prefix is retained verbatim...
-    expect(header.officerInCharge.value).toContain('DSTE/JHS and ADSTE/GWL');
-    expect(header.officerInCharge.value).toContain('SSE/TELE/GWL will be consignee');
-    // ...and flagged, since the split points could not be proven safe.
-    expect(header.officerInCharge.needsReview).toBe(true);
-  });
-
-  // DC-23 review round 1 [m2, documented policy â€” see isCompoundRoleProse in
-  // header.ts]: a consignee paragraph naming exactly one role-holder is a
-  // confidently-extracted single fact (needsReview: false); a paragraph
-  // packing TWO OR MORE "<X> will be <role>" mappings into one string is
-  // compound prose â€” retained verbatim (nothing discarded) but flagged for
-  // review, since research Â§3's "consignee(s)" is plural and a single string
-  // cannot itself say which role-holder(s) are the real consignee(s).
-  it('consignee needsReview policy: a single role-mapping is confident, a compound (2+ "will be") paragraph is flagged for review', () => {
-    // Single role-mapping -> confident.
-    const header275 = extractHeader(loadLetter('PL275-BKN').text);
-    expect(header275.consignee.needsReview).toBe(false);
-    const header281 = extractHeader(loadLetter('PL281-BB').text);
-    expect(header281.consignee.needsReview).toBe(false);
-
-    // Compound (2+ "will be" role-mappings squeezed into the same paragraph)
-    // -> flagged, but the FULL text is still retained (never discarded).
-    const header273 = extractHeader(loadLetter('PL273-JHS').text);
-    expect(header273.consignee.needsReview).toBe(true);
-    expect(header273.consignee.value).not.toBeNull();
-    expect(header273.consignee.value).toContain('DSTE/JHS & ADSTE/GWL');
-
-    const header280 = extractHeader(loadLetter('PL280-ADI').text);
-    expect(header280.consignee.needsReview).toBe(true);
-    expect(header280.consignee.value).not.toBeNull();
-    expect(header280.consignee.value).toContain('ADSTE/MSH');
-
-    const header270 = extractHeader(loadLetter('PL270-CRB').text);
-    expect(header270.consignee.needsReview).toBe(true);
-    expect(header270.consignee.value).not.toBeNull();
-    expect(header270.consignee.value).toContain('SSE/Tele/Stores/KYN');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Criterion: contract value figures vs words, mismatch -> needsReview
-// ---------------------------------------------------------------------------
-
-describe('contract value: figures + words, mismatch -> needsReview', () => {
-  it('figures match the corpus manifest net_bid_value exactly, on all six letters', () => {
-    for (const letter of loadCorpus()) {
-      const header = extractHeader(letter.text);
-      expect(header.contractValue.figures, letter.manifest.id).toBe(
-        letter.manifest.net_bid_value,
-      );
-      expect(header.contractValue.words, letter.manifest.id).not.toBeNull();
-      expect(header.contractValue.needsReview, letter.manifest.id).toBe(false);
-    }
-  });
-
-  it('words-to-number parses the Indian lakh/crore grouping correctly (cross-checked against every real contract value in the corpus)', () => {
-    expect(
-      indianWordsToNumber(
-        'Sixteen Crore Ninety-Two Lakh Twenty-Eight Thousand Four Hundred And Ninety-Seven',
-      ),
-    ).toBe(169228497);
-    expect(indianWordsToNumber('Fourty-Six')).toBe(46); // IREPS's nonstandard "Fourty" spelling
-    expect(indianWordsToNumber('Forty-Six')).toBe(46); // standard spelling also accepted
-    expect(
-      parseRupeesWords(
-        'Rupees Thirty Lakh Fourty-Six Thousand Four Hundred And Twenty-Six Rupees And Fifty-Six Paise Only',
-      ),
-    ).toBe(3046426.56);
-  });
-
-  it('a figures/words MISMATCH raises needsReview and retains BOTH values â€” never silently picks one', () => {
-    const { text } = loadLetter('PL273-JHS');
-    // In-memory transform only: corrupt the FIGURES half of the contract
-    // value while leaving the words phrase untouched, so the two halves
-    // disagree. The real figure is 3046426.56 (words: "...Twenty-Six Rupees
-    // And Fifty-Six Paise Only"); this substitutes a figure that does not
-    // correspond to those words at all.
-    const corrupted = text.replace(
-      'works out to Rs. 3046426.56 (Rupees Thirty Lakh',
-      'works out to Rs. 9999999.99 (Rupees Thirty Lakh',
-    );
-    expect(corrupted).not.toBe(text); // the transform actually changed something
-    expect(loadLetter('PL273-JHS').text).toContain('works out to Rs. 3046426.56'); // fixture untouched
-
-    const header = extractHeader(corrupted);
-    expect(header.contractValue.figures).toBe(9999999.99);
-    expect(header.contractValue.words).not.toBeNull();
-    expect(header.contractValue.words).toContain('Twenty-Six');
-    expect(header.contractValue.needsReview).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Criterion: dates DD/MM/YYYY -> YYYY-MM-DD strings, no Date-object/TZ path
-// ---------------------------------------------------------------------------
-
-describe('date normalisation: DD/MM/YYYY -> YYYY-MM-DD, no timezone-aware datetime', () => {
-  it('parseDdMmYyyy handles both "/" and "-" separators, tolerant of stray whitespace from a print-layout wrap', () => {
-    expect(parseDdMmYyyy('09/02/2026')).toBe('2026-02-09');
-    expect(parseDdMmYyyy('15-01-2026')).toBe('2026-01-15');
-    expect(parseDdMmYyyy('23-03- 2026')).toBe('2026-03-23'); // PL280-ADI's wrapped tender-closing-date
-    expect(parseDdMmYyyy('not a date')).toBeNull();
-  });
-
-  it('every date field on every letter is a YYYY-MM-DD string, never a Date instance', () => {
-    for (const id of ALL_LETTER_IDS) {
-      const header = extractHeader(loadLetter(id).text);
-      for (const field of [
-        header.letterDate,
-        header.tenderClosingDate,
-        header.bidDate,
-      ] as const) {
-        expect(field.value, id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-        expect(typeof field.value, id).toBe('string');
-      }
-    }
-  });
-
-  it('TZ invariance: parsing under TZ=UTC and TZ=Asia/Kolkata produces byte-identical output (no Date object on the path)', () => {
-    const runUnder = (tz: string): string => {
-      vi.stubEnv('TZ', tz);
-      try {
-        const headers = loadCorpus().map((letter) => extractHeader(letter.text));
-        return JSON.stringify(headers);
-      } finally {
-        vi.unstubAllEnvs();
-      }
-    };
-
-    const underUtc = runUnder('UTC');
-    const underKolkata = runUnder('Asia/Kolkata');
-    expect(underKolkata).toBe(underUtc);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Criterion: all six fixtures parse their header without throwing; snapshot
-// pins the full header object per letter.
-// ---------------------------------------------------------------------------
-
-describe('every fixture parses without throwing; snapshot pins the full header per letter', () => {
-  for (const id of ALL_LETTER_IDS) {
-    it(`${id} parses without throwing and matches its snapshot`, () => {
-      const { text } = loadLetter(id);
-      let header: LoaHeader | undefined;
-      expect(() => {
-        header = extractHeader(text);
-      }).not.toThrow();
-      expect(header).toMatchSnapshot();
-    });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// test helpers
-// ---------------------------------------------------------------------------
-
-/** Deletes the 3-line "Letter No: / Dated: / continuation" block from a
- * furniture-bearing fixture's raw text, in memory only â€” never edits the
- * fixture file. Used to prove the "unlocatable field -> null + raw +
- * needsReview" contract without a synthetic/fabricated fixture. */
-function deleteLetterNumberBlock(text: string): string {
-  const lines = text.split('\n');
-  const letterNoIdx = lines.findIndex((l) => /Letter No\s*:/.test(l));
-  if (letterNoIdx === -1) {
-    throw new Error('test setup bug: fixture has no "Letter No:" line to delete');
-  }
-  // Locate the immediately-following "Dated:" line and the continuation line
-  // after it (both non-blank, per the corpus's observed layout).
-  let datedIdx = -1;
-  for (let i = letterNoIdx + 1; i < lines.length; i += 1) {
-    const line = (lines[i] ?? '').trim();
-    if (line.length === 0) {
-      continue;
-    }
-    datedIdx = i;
-    break;
-  }
-  if (datedIdx === -1 || !/Dated\s*:/.test(lines[datedIdx] ?? '')) {
-    throw new Error('test setup bug: no "Dated:" line found after "Letter No:"');
-  }
-  let continuationIdx = -1;
-  for (let i = datedIdx + 1; i < lines.length; i += 1) {
-    const line = (lines[i] ?? '').trim();
-    if (line.length === 0) {
-      continue;
-    }
-    continuationIdx = i;
-    break;
-  }
-  if (continuationIdx === -1) {
-    throw new Error('test setup bug: no continuation line found after "Dated:"');
-  }
-  const kept = lines.filter(
-    (_, i) => i !== letterNoIdx && i !== datedIdx && i !== continuationIdx,
-  );
-  return kept.join('\n');
-}
-
-/** Recursively collects every string value out of a FieldResult-shaped
- * header object, for the furniture-leak scan. */
-function collectStringValues(value: unknown): string[] {
-  if (typeof value === 'string') {
-    return [value];
-  }
-  if (value === null || typeof value !== 'object') {
-    return [];
-  }
-  return Object.values(value as Record<string, unknown>).flatMap(collectStringValues);
-}
+      expect(header.contractorAddress.value, `${id}:×nx¶‰žËkºwµçUÍ”µÉ•™•É•¹”É••àµÕÍÐ¹½ÐÑÉÕ¹…Ñ”…ÐÑ¡”‘•¥µ…°Á½¥¹Ð(€€€€¼¼]%Q!%8Ñ¡”±…ÕÍ”¹Õµ‰•È¥ÑÍ•±˜¸(€€€•áÁ•Ð¡¡•…‘•È¹Í•ÕÉ¥Ñå•Á½Í¥Ð¹±…ÕÍ•I•™•É•¹”¤¹Ñ½	” ±…ÕÍ”€ÄØ¸Ä½˜´ÈÀÈÈœ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Í•ÕÉ¥Ñå•Á½Í¥Ð¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡™…±Í”¤ì(€ô¤ì((€¥Ð Á•É™½Éµ…¹”Õ…É…¹Ñ•”è…µ½Õ¹Ð°ÍÕ‰µ¥ÍÍ¥½¸Ý¥¹‘½Ü°•áÑ•¹Í¥½¸°…¹Á•¹…°¥¹Ñ•É•ÍÐœ°€ ¤€ôøì(€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹…µ½Õ¹Ñ¥ÕÉ•Ì¤¹Ñ½	” ÄÔÈÌÈÄ¸ÌÌ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹ÍÕ‰µ¥ÍÍ¥½¹…åÌ¤¹Ñ½	” ÈÄ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹•áÑ•¹Í¥½¹…åÌ¤¹Ñ½	” ØÀ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹Á•¹…±%¹Ñ•É•ÍÑA•É•¹Ð¤¹Ñ½	” ÄÈ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡™…±Í”¤ì(€ô¤ì((€¥Ð A0ÈàÄµ	•¹Õ¥¹•±ä½µ¥ÑÌÑ¡”Á•¹…°µ¥¹Ñ•É•ÍÐÍ•¹Ñ•¹”èÁ•¹…±%¹Ñ•É•ÍÑA•É•¹Ð¥Ì¹Õ±°…¹¹••‘ÍI•Ù¥•Ü¥ÌÑÉÕ”°½Ñ¡•ÈA™¥•±‘ÌÍÑ¥±°Á½ÁÕ±…Ñ•œ°€ ¤€ôøì(€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈàÄµ	œ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹…µ½Õ¹Ñ¥ÕÉ•Ì¤¹Ñ½	” ÜÌÜØÜäÜ¸Ìä¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹ÍÕ‰µ¥ÍÍ¥½¹…åÌ¤¹Ñ½	” ÈÄ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹•áÑ•¹Í¥½¹…åÌ¤¹Ñ½	” ØÀ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹Á•¹…±%¹Ñ•É•ÍÑA•É•¹Ð¤¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹Á•É™½Éµ…¹•Õ…É…¹Ñ•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€ô¤ì((€¥Ð ½µÁ±•Ñ¥½¸Á•É¥½€¡Ù…±Õ”€¬Õ¹¥Ð¤½¸…±°Í¥à±•ÑÑ•ÉÌœ°€ ¤€ôøì(€€€½¹ÍÐ•áÁ•Ñ•èI•½ÉñÍÑÉ¥¹œ°¹Õµ‰•Èø€ôì(€€€€€€A0ÈÜÌµ)!Lœè€ÈÐ°(€€€€€€A0ÈàÀµ$œè€ÌØ°(€€€€€€A0ÈÜÔµ	-8œè€Ø°(€€€€€€A0ÈÜØµQ0œè€ÄÈ°(€€€€€€A0ÈÜÀµIœè€ÄÈ°(€€€€€€A0ÈàÄµ	œè€ÄÀà°(€€€ôì(€€€™½È€¡½¹ÍÐ¥½˜11}1QQI}%L¤ì(€€€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È¡¥¤¹Ñ•áÐ¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½µÁ±•Ñ¥½¹A•É¥½¹Ù…±Õ”°¥¤¹Ñ½	”¡•áÁ•Ñ•‘m¥‘t¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½µÁ±•Ñ¥½¹A•É¥½¹Õ¹¥Ð°¥¤¹Ñ½	” µ½¹Ñ œ¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½µÁ±•Ñ¥½¹A•É¥½¹¹••‘ÍI•Ù¥•Ü°¥¤¹Ñ½	”¡™…±Í”¤ì(€€€ô(€ô¤ì((€¥Ð ½¹Í¥¹•”…¹½™™¥•Èµ¥¸µ¡…É”…É”±½…Ñ•Ý¡•É•Ù•ÈÑ¡”±•ÑÑ•ÈÍÑ…Ñ•ÌÑ¡•´°…É½ÍÌ‰½Ñ ±…‰•°µ™¥ÉÍÐ…¹Ù…±Õ”µ™¥ÉÍÐÍ•¹Ñ•¹”Í¡…Á•Ìœ°€ ¤€ôøì(€€€½¹ÍÐ¡•…‘•ÈÈÜÔ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÔµ	-8œ¤¹Ñ•áÐ¤ì€¼¼±…‰•°µ™¥ÉÍÐ(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÔ¹½¹Í¥¹•”¹Ù…±Õ”¤¹Ñ½	” MM½Q•±”½!MHœ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÔ¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½	” MQ½!MHœ¤ì((€€€½¹ÍÐ¡•…‘•ÈÈàÄ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈàÄµ	œ¤¹Ñ•áÐ¤ì€¼¼½±½¸µ±…‰•±±•(€€€•áÁ•Ð¡¡•…‘•ÈÈàÄ¹½¹Í¥¹•”¹Ù…±Õ”¤¹Ñ½	” MM½Q•±”½MÑ½É”½	P€˜Y…±Í…œ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈàÄ¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½	” MQ½Q•±”Ä½5Õµ‰…¤•¹ÑÉ…°œ¤ì((€€€½¹ÍÐ¡•…‘•ÈÈÜÀ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÀµIœ¤¹Ñ•áÐ¤ì€¼¼Ù…±Õ”µ™¥ÉÍÐ°¹¼€‰…¹ˆ‰•™½É”¥Ð(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÀ¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½	” MÈ¹MQ½¼½	œ¤ì(€ô¤ì((€€¼¼´ÈÌÉ•Ù¥•ÜÉ½Õ¹€Äm4Ä°5)=ItèA0ÈÜÌµ)!LÌ½™™¥•É%¹¡…É”Í¹…ÁÍ¡½Ð(€€¼¼ÁÉ•Ù¥½ÕÍ±äÁ¥¹¹•€‰MM½Q1½50½)!L…¹MM½Q1½]0Ý¥±°‰”½¹Í¥¹•”…¹(€€¼¼MQ½)!L€˜MQ½]0ˆÝ¥Ñ ¹••‘ÍI•Ù¥•Üé™…±Í”ƒŠP]I=9¸Q¡”ÑÉÕ”Ù…±Õ”¥Ì(€€¼¼€‰MQ½)!L€˜MQ½]0ˆ€¡É…Üè€ˆ¸¸¹MQ½]0Ý¥±°‰”Ñ¡”=™™¥•È¥¹¡…É”(€€¼¼½˜Ñ¡”Ý½É¬ˆ¤èÑ¡”Ù…±Õ”µ™¥ÉÍÐ•áÑÉ…Ñ¥½¸Ì±…éä…ÁÑÕÉ”É½ÕÀÍÁ…¹¹•(€€¼¼Ñ¡”AI%9°Õ¹É•±…Ñ•€ˆ¸¸¹Ý¥±°‰”½¹Í¥¹•”¸¸¸ˆ±…ÕÍ”¥¹ÍÑ•…½˜(€€¼¼ÍÑ½ÁÁ¥¹œ…Ð¥Ð¸A¥¹¹•¡•É”•áÁ±¥¥Ñ±äÍ¼„É•É•ÍÍ¥½¸…¹¹½ÐÍ¥±•¹Ñ±ä(€€¼¼É•¥¹ÑÉ½‘Õ”Ñ¡”ÝÉ½¹œÙ…±Õ”¸(€¥Ð A0ÈÜÌµ)!LÙ…±Õ”µ™¥ÉÍÐ½™™¥•É%¹¡…É”‘½•Ì¹½Ð‰±••¥¹Ñ¼Ñ¡”ÁÉ••‘¥¹œÕ¹É•±…Ñ•€ˆ¸¸¹Ý¥±°‰”½¹Í¥¹•”¸¸¸ˆ±…ÕÍ”œ°€ ¤€ôøì(€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½	” MQ½)!L€˜MQ½]0œ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡™…±Í”¤ì(€€€€¼¼Q¡”ÑÉ…ÀÙ…±Õ”„¹…¥Ù•±äµÍ½Á•…ÁÑÕÉ”É½ÕÀÁÉ½‘Õ•Ì€¡µ•…ÍÕÉ•°´ÈÌ(€€€€¼¼É•Ù¥•ÜÉ½Õ¹€Ä¤µÕÍÐ¹•Ù•È‰”•µ¥ÑÑ•¸(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹¹½Ð¹Ñ½½¹Ñ…¥¸ Ý¥±°‰”½¹Í¥¹•”œ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹¹½Ð¹Ñ½	” (€€€€€€MM½Q1½50½)!L…¹MM½Q1½]0Ý¥±°‰”½¹Í¥¹•”…¹MQ½)!L€˜MQ½]0œ°(€€€€¤ì(€ô¤ì((€€¼¼´ÈÌÉ•Ù¥•ÜÉ½Õ¹€ÈmHÅtèÑ¡”±…ÍÐ´‰…¹ˆµ±…ÕÍ”ÍÁ±¥Ð¡…Ì„‘…¹•É½ÕÌ(€€¼¼™…¥°‘¥É•Ñ¥½¸¥˜±•™ÐÕ¹Õ…É‘•ƒŠPÉ•Ù¥•Ý•Èµ‘•µ½¹ÍÑÉ…Ñ•Íå¹Ñ¡•Ñ¥…±±ä‰ä(€€¼¼µÕÑ…Ñ¥¹œA0ÈÜÌµ)!LÌ€ˆ˜ˆ€¡Ý¥Ñ¡¥¸Ñ¡”€‰MQ½)!L€˜MQ½]0ˆÍÕ‰©•Ð¤Ñ¼(€€¼¼Ñ¡”±¥Ñ•É…°Ý½É€‰…¹ˆ¸¸Õ¹Õ…É‘•ÍÁ±¥ÐÝ½Õ±Ñ¡•¸Í•”Q!I€‰…¹ˆ(€€¼¼½ÕÉÉ•¹•Ì¥¸Ñ¡”ÁÉ•™¥à…¹½¹™¥‘•¹Ñ±äÑ…­”½¹±äÑ¡”±…ÍÐ™É…µ•¹Ð(€€¼¼€ ‰MQ½]0ˆ¤°Í¥±•¹Ñ±ä‘É½ÁÁ¥¹œ€‰MQ½)!L…¹€ˆƒŠP„AIQ%0Ù…±Õ”Ý¥Ñ (€€¼¼¹••‘ÍI•Ù¥•Üé™…±Í”¸Q¡”Õ…É€¡•Ù•Éä‘¥Í…É‘•±…ÕÍ”µÕÍÐ¥ÑÍ•±˜½¹Ñ…¥¸(€€¼¼€‰Ý¥±°‰”ˆ°ÁÉ½Ù¥¹œ•… ÍÁ±¥ÐÁ½¥¹ÐÍ•Á…É…Ñ•ÌÑÝ¼½µÁ±•Ñ”É½±”µµ…ÁÁ¥¹œ(€€¼¼±…ÕÍ•Ì¤µÕÍÐ…Ñ Ñ¡¥ÌèÑÝ¼½˜Ñ¡”Ñ¡É•”‘¥Í…É‘•±…ÕÍ•Ì¡•É”‘¼9=P(€€¼¼½¹Ñ…¥¸€‰Ý¥±°‰”ˆ°Í¼Ñ¡”Õ…É™…±±Ì‰…¬Ñ¼Ñ¡”]!=1ÁÉ•™¥àÝ¥Ñ (€€¼¼¹••‘ÍI•Ù¥•ÜéÑÉÕ”¸(€¥Ð HÄè„±¥Ñ•É…°€‰…¹ˆ¥¹Í¥‘”„Ù…±Õ”µ™¥ÉÍÐÍÕ‰©•Ð€¡¹½Ð„É½±”µµ…ÁÁ¥¹œÍ•Á…É…Ñ½È¤™…±±Ì‰…¬Ñ¼Ñ¡”Ý¡½±”ÁÉ•™¥à°™±…•™½ÈÉ•Ù¥•ÜƒŠP¹•Ù•È„Í¥±•¹Ñ±äµÑÉÕ¹…Ñ•Á…ÉÑ¥…°Ù…±Õ”œ°€ ¤€ôøì(€€€½¹ÍÐìÑ•áÐô€ô±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤ì(€€€•áÁ•Ð¡Ñ•áÐ¤¹Ñ½½¹Ñ…¥¸ MQ½)!L€˜MQ½]0Ý¥±°‰”Ñ¡”=™™¥•È¥¹¡…É”œ¤ì((€€€€¼¼%¸µµ•µ½ÉäÑÉ…¹Í™½É´½¹±äƒŠP¹•Ù•ÈÑ½Õ¡•ÌÑ¡”™¥áÑÕÉ”½¸‘¥Í¬¸(€€€½¹ÍÐµÕÑ…Ñ•€ôÑ•áÐ¹É•Á±…” (€€€€€€MQ½)!L€˜MQ½]0Ý¥±°‰”Ñ¡”=™™¥•È¥¹¡…É”œ°(€€€€€€MQ½)!L…¹MQ½]0Ý¥±°‰”Ñ¡”=™™¥•È¥¹¡…É”œ°(€€€€¤ì(€€€•áÁ•Ð¡µÕÑ…Ñ•¤¹¹½Ð¹Ñ½	”¡Ñ•áÐ¤ì(€€€•áÁ•Ð¡±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤¹Ñ•áÐ¤¹Ñ½½¹Ñ…¥¸ MQ½)!L€˜MQ½]0œ¤ì€¼¼™¥áÑÕÉ”Õ¹Ñ½Õ¡•((€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡µÕÑ…Ñ•¤ì((€€€€¼¼Q¡”‘…¹•É½ÕÌÁ…ÉÑ¥…°Ù…±Õ”Ñ¡”Õ…É•á¥ÍÑÌÑ¼ÁÉ•Ù•¹ÐµÕÍÐ¹•Ù•È‰”(€€€€¼¼•µ¥ÑÑ•°½¹™¥‘•¹Ñ±ä½È½Ñ¡•ÉÝ¥Í”¸(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹¹½Ð¹Ñ½	” MQ½]0œ¤ì((€€€€¼¼9½Ñ¡¥¹œ‘¥Í…É‘•èÑ¡”Ý¡½±”ÁÉ•™¥à¥ÌÉ•Ñ…¥¹•Ù•É‰…Ñ¥´¸¸¸(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½½¹Ñ…¥¸ MQ½)!L…¹MQ½]0œ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹Ù…±Õ”¤¹Ñ½½¹Ñ…¥¸ MM½Q1½]0Ý¥±°‰”½¹Í¥¹•”œ¤ì(€€€€¼¼€¸¸¹…¹™±…•°Í¥¹”Ñ¡”ÍÁ±¥ÐÁ½¥¹ÑÌ½Õ±¹½Ð‰”ÁÉ½Ù•¸Í…™”¸(€€€•áÁ•Ð¡¡•…‘•È¹½™™¥•É%¹¡…É”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€ô¤ì((€€¼¼´ÈÌÉ•Ù¥•ÜÉ½Õ¹€Äm´È°‘½Õµ•¹Ñ•Á½±¥äƒŠPÍ•”¥Í½µÁ½Õ¹‘I½±•AÉ½Í”¥¸(€€¼¼¡•…‘•È¹ÑÍtè„½¹Í¥¹•”Á…É…É…Á ¹…µ¥¹œ•á…Ñ±ä½¹”É½±”µ¡½±‘•È¥Ì„(€€¼¼½¹™¥‘•¹Ñ±äµ•áÑÉ…Ñ•Í¥¹±”™…Ð€¡¹••‘ÍI•Ù¥•Üè™…±Í”¤ì„Á…É…É…Á (€€¼¼Á…­¥¹œQ]<=H5=I€ˆñ`øÝ¥±°‰”€ñÉ½±”øˆµ…ÁÁ¥¹Ì¥¹Ñ¼½¹”ÍÑÉ¥¹œ¥Ì(€€¼¼½µÁ½Õ¹ÁÉ½Í”ƒŠPÉ•Ñ…¥¹•Ù•É‰…Ñ¥´€¡¹½Ñ¡¥¹œ‘¥Í…É‘•¤‰ÕÐ™±…•™½È(€€¼¼É•Ù¥•Ü°Í¥¹”É•Í•…É ƒ
+œÌÌ€‰½¹Í¥¹•”¡Ì¤ˆ¥ÌÁ±ÕÉ…°…¹„Í¥¹±”ÍÑÉ¥¹œ(€€¼¼…¹¹½Ð¥ÑÍ•±˜Í…äÝ¡¥ É½±”µ¡½±‘•È¡Ì¤…É”Ñ¡”É•…°½¹Í¥¹•”¡Ì¤¸(€¥Ð ½¹Í¥¹•”¹••‘ÍI•Ù¥•ÜÁ½±¥äè„Í¥¹±”É½±”µµ…ÁÁ¥¹œ¥Ì½¹™¥‘•¹Ð°„½µÁ½Õ¹€ È¬€‰Ý¥±°‰”ˆ¤Á…É…É…Á ¥Ì™±…•™½ÈÉ•Ù¥•Üœ°€ ¤€ôøì(€€€€¼¼M¥¹±”É½±”µµ…ÁÁ¥¹œ€´ø½¹™¥‘•¹Ð¸(€€€½¹ÍÐ¡•…‘•ÈÈÜÔ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÔµ	-8œ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÔ¹½¹Í¥¹•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡™…±Í”¤ì(€€€½¹ÍÐ¡•…‘•ÈÈàÄ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈàÄµ	œ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈàÄ¹½¹Í¥¹•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡™…±Í”¤ì((€€€€¼¼½µÁ½Õ¹€ È¬€‰Ý¥±°‰”ˆÉ½±”µµ…ÁÁ¥¹ÌÍÅÕ••é•¥¹Ñ¼Ñ¡”Í…µ”Á…É…É…Á ¤(€€€€¼¼€´ø™±…•°‰ÕÐÑ¡”U10Ñ•áÐ¥ÌÍÑ¥±°É•Ñ…¥¹•€¡¹•Ù•È‘¥Í…É‘•¤¸(€€€½¹ÍÐ¡•…‘•ÈÈÜÌ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÌ¹½¹Í¥¹•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÌ¹½¹Í¥¹•”¹Ù…±Õ”¤¹¹½Ð¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÌ¹½¹Í¥¹•”¹Ù…±Õ”¤¹Ñ½½¹Ñ…¥¸ MQ½)!L€˜MQ½]0œ¤ì((€€€½¹ÍÐ¡•…‘•ÈÈàÀ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈàÀµ$œ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈàÀ¹½¹Í¥¹•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈàÀ¹½¹Í¥¹•”¹Ù…±Õ”¤¹¹½Ð¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈàÀ¹½¹Í¥¹•”¹Ù…±Õ”¤¹Ñ½½¹Ñ…¥¸ MQ½5M œ¤ì((€€€½¹ÍÐ¡•…‘•ÈÈÜÀ€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È A0ÈÜÀµIœ¤¹Ñ•áÐ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÀ¹½¹Í¥¹•”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÀ¹½¹Í¥¹•”¹Ù…±Õ”¤¹¹½Ð¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð¡¡•…‘•ÈÈÜÀ¹½¹Í¥¹•”¹Ù…±Õ”¤¹Ñ½½¹Ñ…¥¸ MM½Q•±”½MÑ½É•Ì½-e8œ¤ì(€ô¤ì)ô¤ì((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼É¥Ñ•É¥½¸è½¹ÑÉ…ÐÙ…±Õ”™¥ÕÉ•ÌÙÌÝ½É‘Ì°µ¥Íµ…Ñ €´ø¹••‘ÍI•Ù¥•Ü(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()‘•ÍÉ¥‰” ½¹ÑÉ…ÐÙ…±Õ”è™¥ÕÉ•Ì€¬Ý½É‘Ì°µ¥Íµ…Ñ €´ø¹••‘ÍI•Ù¥•Üœ°€ ¤€ôøì(€¥Ð ™¥ÕÉ•Ìµ…Ñ Ñ¡”½ÉÁÕÌµ…¹¥™•ÍÐ¹•Ñ}‰¥‘}Ù…±Õ”•á…Ñ±ä°½¸…±°Í¥à±•ÑÑ•ÉÌœ°€ ¤€ôøì(€€€™½È€¡½¹ÍÐ±•ÑÑ•È½˜±½…‘½ÉÁÕÌ ¤¤ì(€€€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±•ÑÑ•È¹Ñ•áÐ¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹™¥ÕÉ•Ì°±•ÑÑ•È¹µ…¹¥™•ÍÐ¹¥¤¹Ñ½	” (€€€€€€€±•ÑÑ•È¹µ…¹¥™•ÍÐ¹¹•Ñ}‰¥‘}Ù…±Õ”°(€€€€€€¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹Ý½É‘Ì°±•ÑÑ•È¹µ…¹¥™•ÍÐ¹¥¤¹¹½Ð¹Ñ½	•9Õ±° ¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹¹••‘ÍI•Ù¥•Ü°±•ÑÑ•È¹µ…¹¥™•ÍÐ¹¥¤¹Ñ½	”¡™…±Í”¤ì(€€€ô(€ô¤ì((€¥Ð Ý½É‘ÌµÑ¼µ¹Õµ‰•ÈÁ…ÉÍ•ÌÑ¡”%¹‘¥…¸±…­ ½É½É”É½ÕÁ¥¹œ½ÉÉ•Ñ±ä€¡É½ÍÌµ¡•­•……¥¹ÍÐ•Ù•ÉäÉ•…°½¹ÑÉ…ÐÙ…±Õ”¥¸Ñ¡”½ÉÁÕÌ¤œ°€ ¤€ôøì(€€€•áÁ•Ð (€€€€€¥¹‘¥…¹]½É‘ÍQ½9Õµ‰•È (€€€€€€€€M¥áÑ••¸É½É”9¥¹•ÑäµQÝ¼1…­ QÝ•¹Ñäµ¥¡ÐQ¡½ÕÍ…¹½ÕÈ!Õ¹‘É•¹9¥¹•ÑäµM•Ù•¸œ°(€€€€€€¤°(€€€€¤¹Ñ½	” ÄØäÈÈàÐäÜ¤ì(€€€•áÁ•Ð¡¥¹‘¥…¹]½É‘ÍQ½9Õµ‰•È ½ÕÉÑäµM¥àœ¤¤¹Ñ½	” ÐØ¤ì€¼¼%IALÌ¹½¹ÍÑ…¹‘…É€‰½ÕÉÑäˆÍÁ•±±¥¹œ(€€€•áÁ•Ð¡¥¹‘¥…¹]½É‘ÍQ½9Õµ‰•È ½ÉÑäµM¥àœ¤¤¹Ñ½	” ÐØ¤ì€¼¼ÍÑ…¹‘…ÉÍÁ•±±¥¹œ…±Í¼…•ÁÑ•(€€€•áÁ•Ð (€€€€€Á…ÉÍ•IÕÁ••Í]½É‘Ì (€€€€€€€€IÕÁ••ÌQ¡¥ÉÑä1…­ ½ÕÉÑäµM¥àQ¡½ÕÍ…¹½ÕÈ!Õ¹‘É•¹QÝ•¹ÑäµM¥àIÕÁ••Ì¹¥™ÑäµM¥àA…¥Í”=¹±äœ°(€€€€€€¤°(€€€€¤¹Ñ½	” ÌÀÐØÐÈØ¸ÔØ¤ì(€ô¤ì((€¥Ð „™¥ÕÉ•Ì½Ý½É‘Ì5%M5Q É…¥Í•Ì¹••‘ÍI•Ù¥•Ü…¹É•Ñ…¥¹Ì	=Q Ù…±Õ•ÌƒŠP¹•Ù•ÈÍ¥±•¹Ñ±äÁ¥­Ì½¹”œ°€ ¤€ôøì(€€€½¹ÍÐìÑ•áÐô€ô±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤ì(€€€€¼¼%¸µµ•µ½ÉäÑÉ…¹Í™½É´½¹±äè½ÉÉÕÁÐÑ¡”%UIL¡…±˜½˜Ñ¡”½¹ÑÉ…Ð(€€€€¼¼Ù…±Õ”Ý¡¥±”±•…Ù¥¹œÑ¡”Ý½É‘ÌÁ¡É…Í”Õ¹Ñ½Õ¡•°Í¼Ñ¡”ÑÝ¼¡…±Ù•Ì(€€€€¼¼‘¥Í…É•”¸Q¡”É•…°™¥ÕÉ”¥Ì€ÌÀÐØÐÈØ¸ÔØ€¡Ý½É‘Ìè€ˆ¸¸¹QÝ•¹ÑäµM¥àIÕÁ••Ì(€€€€¼¼¹¥™ÑäµM¥àA…¥Í”=¹±äˆ¤ìÑ¡¥ÌÍÕ‰ÍÑ¥ÑÕÑ•Ì„™¥ÕÉ”Ñ¡…Ð‘½•Ì¹½Ð(€€€€¼¼½ÉÉ•ÍÁ½¹Ñ¼Ñ¡½Í”Ý½É‘Ì…Ð…±°¸(€€€½¹ÍÐ½ÉÉÕÁÑ•€ôÑ•áÐ¹É•Á±…” (€€€€€€Ý½É­Ì½ÕÐÑ¼IÌ¸€ÌÀÐØÐÈØ¸ÔØ€¡IÕÁ••ÌQ¡¥ÉÑä1…­ œ°(€€€€€€Ý½É­Ì½ÕÐÑ¼IÌ¸€äääääää¸ää€¡IÕÁ••ÌQ¡¥ÉÑä1…­ œ°(€€€€¤ì(€€€•áÁ•Ð¡½ÉÉÕÁÑ•¤¹¹½Ð¹Ñ½	”¡Ñ•áÐ¤ì€¼¼Ñ¡”ÑÉ…¹Í™½É´…ÑÕ…±±ä¡…¹•Í½µ•Ñ¡¥¹œ(€€€•áÁ•Ð¡±½…‘1•ÑÑ•È A0ÈÜÌµ)!Lœ¤¹Ñ•áÐ¤¹Ñ½½¹Ñ…¥¸ Ý½É­Ì½ÕÐÑ¼IÌ¸€ÌÀÐØÐÈØ¸ÔØœ¤ì€¼¼™¥áÑÕÉ”Õ¹Ñ½Õ¡•((€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡½ÉÉÕÁÑ•¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹™¥ÕÉ•Ì¤¹Ñ½	” äääääää¸ää¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹Ý½É‘Ì¤¹¹½Ð¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹Ý½É‘Ì¤¹Ñ½½¹Ñ…¥¸ QÝ•¹ÑäµM¥àœ¤ì(€€€•áÁ•Ð¡¡•…‘•È¹½¹ÑÉ…ÑY…±Õ”¹¹••‘ÍI•Ù¥•Ü¤¹Ñ½	”¡ÑÉÕ”¤ì(€ô¤ì)ô¤ì((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼É¥Ñ•É¥½¸è‘…Ñ•Ì½54½eeed€´øeeedµ54µÍÑÉ¥¹Ì°¹¼…Ñ”µ½‰©•Ð½QhÁ…Ñ (¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()‘•ÍÉ¥‰” ‘…Ñ”¹½Éµ…±¥Í…Ñ¥½¸è½54½eeed€´øeeedµ54µ°¹¼Ñ¥µ•é½¹”µ…Ý…É”‘…Ñ•Ñ¥µ”œ°€ ¤€ôøì(€¥Ð Á…ÉÍ•‘5µeååä¡…¹‘±•Ì‰½Ñ €ˆ¼ˆ…¹€ˆ´ˆÍ•Á…É…Ñ½ÉÌ°Ñ½±•É…¹Ð½˜ÍÑÉ…äÝ¡¥Ñ•ÍÁ…”™É½´„ÁÉ¥¹Ðµ±…å½ÕÐÝÉ…Àœ°€ ¤€ôøì(€€€•áÁ•Ð¡Á…ÉÍ•‘5µeååä œÀä¼ÀÈ¼ÈÀÈØœ¤¤¹Ñ½	” œÈÀÈØ´ÀÈ´Àäœ¤ì(€€€•áÁ•Ð¡Á…ÉÍ•‘5µeååä œÄÔ´ÀÄ´ÈÀÈØœ¤¤¹Ñ½	” œÈÀÈØ´ÀÄ´ÄÔœ¤ì(€€€•áÁ•Ð¡Á…ÉÍ•‘5µeååä œÈÌ´ÀÌ´€ÈÀÈØœ¤¤¹Ñ½	” œÈÀÈØ´ÀÌ´ÈÌœ¤ì€¼¼A0ÈàÀµ$ÌÝÉ…ÁÁ•Ñ•¹‘•Èµ±½Í¥¹œµ‘…Ñ”(€€€•áÁ•Ð¡Á…ÉÍ•‘5µeååä ¹½Ð„‘…Ñ”œ¤¤¹Ñ½	•9Õ±° ¤ì(€ô¤ì((€¥Ð •Ù•Éä‘…Ñ”™¥•±½¸•Ù•Éä±•ÑÑ•È¥Ì„eeedµ54µÍÑÉ¥¹œ°¹•Ù•È„…Ñ”¥¹ÍÑ…¹”œ°€ ¤€ôøì(€€€™½È€¡½¹ÍÐ¥½˜11}1QQI}%L¤ì(€€€€€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡±½…‘1•ÑÑ•È¡¥¤¹Ñ•áÐ¤ì(€€€€€™½È€¡½¹ÍÐ™¥•±½˜l(€€€€€€€¡•…‘•È¹±•ÑÑ•É…Ñ”°(€€€€€€€¡•…‘•È¹Ñ•¹‘•É±½Í¥¹…Ñ”°(€€€€€€€¡•…‘•È¹‰¥‘…Ñ”°(€€€€€t…Ì½¹ÍÐ¤ì(€€€€€€€•áÁ•Ð¡™¥•±¹Ù…±Õ”°¥¤¹Ñ½5…Ñ  ½yq‘ìÑôµq‘ìÉôµq‘ìÉô¼¤ì(€€€€€€€•áÁ•Ð¡ÑåÁ•½˜™¥•±¹Ù…±Õ”°¥¤¹Ñ½	” ÍÑÉ¥¹œœ¤ì(€€€€€ô(€€€ô(€ô¤ì((€¥Ð Qh¥¹Ù…É¥…¹”èÁ…ÉÍ¥¹œÕ¹‘•ÈQhõUQ…¹QhõÍ¥„½-½±­…Ñ„ÁÉ½‘Õ•Ì‰åÑ”µ¥‘•¹Ñ¥…°½ÕÑÁÕÐ€¡¹¼…Ñ”½‰©•Ð½¸Ñ¡”Á…Ñ ¤œ°€ ¤€ôøì(€€€½¹ÍÐÉÕ¹U¹‘•È€ô€¡ÑèèÍÑÉ¥¹œ¤èÍÑÉ¥¹œ€ôøì(€€€€€Ù¤¹ÍÑÕ‰¹Ø Qhœ°Ñè¤ì(€€€€€ÑÉäì(€€€€€€€½¹ÍÐ¡•…‘•ÉÌ€ô±½…‘½ÉÁÕÌ ¤¹µ…À ¡±•ÑÑ•È¤€ôø•áÑÉ…Ñ!•…‘•È¡±•ÑÑ•È¹Ñ•áÐ¤¤ì(€€€€€€€É•ÑÕÉ¸)M=8¹ÍÑÉ¥¹¥™ä¡¡•…‘•ÉÌ¤ì(€€€€€ô™¥¹…±±äì(€€€€€€€Ù¤¹Õ¹ÍÑÕ‰±±¹ÙÌ ¤ì(€€€€€ô(€€€ôì((€€€½¹ÍÐÕ¹‘•ÉUÑŒ€ôÉÕ¹U¹‘•È UQœ¤ì(€€€½¹ÍÐÕ¹‘•É-½±­…Ñ„€ôÉÕ¹U¹‘•È Í¥„½-½±­…Ñ„œ¤ì(€€€•áÁ•Ð¡Õ¹‘•É-½±­…Ñ„¤¹Ñ½	”¡Õ¹‘•ÉUÑŒ¤ì(€ô¤ì)ô¤ì((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼É¥Ñ•É¥½¸è…±°Í¥à™¥áÑÕÉ•ÌÁ…ÉÍ”Ñ¡•¥È¡•…‘•ÈÝ¥Ñ¡½ÕÐÑ¡É½Ý¥¹œìÍ¹…ÁÍ¡½Ð(¼¼Á¥¹ÌÑ¡”™Õ±°¡•…‘•È½‰©•ÐÁ•È±•ÑÑ•È¸(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()‘•ÍÉ¥‰” •Ù•Éä™¥áÑÕÉ”Á…ÉÍ•ÌÝ¥Ñ¡½ÕÐÑ¡É½Ý¥¹œìÍ¹…ÁÍ¡½ÐÁ¥¹ÌÑ¡”™Õ±°¡•…‘•ÈÁ•È±•ÑÑ•Èœ°€ ¤€ôøì(€™½È€¡½¹ÍÐ¥½˜11}1QQI}%L¤ì(€€€¥Ð¡€‘í¥‘ôÁ…ÉÍ•ÌÝ¥Ñ¡½ÕÐÑ¡É½Ý¥¹œ…¹µ…Ñ¡•Ì¥ÑÌÍ¹…ÁÍ¡½Ñ€°€ ¤€ôøì(€€€€€½¹ÍÐìÑ•áÐô€ô±½…‘1•ÑÑ•È¡¥¤ì(€€€€€±•Ð¡•…‘•Èè1½…!•…‘•ÈðÕ¹‘•™¥¹•ì(€€€€€•áÁ•Ð  ¤€ôøì(€€€€€€€¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡Ñ•áÐ¤ì(€€€€€ô¤¹¹½Ð¹Ñ½Q¡É½Ü ¤ì(€€€€€•áÁ•Ð¡¡•…‘•È¤¹Ñ½5…Ñ¡M¹…ÁÍ¡½Ð ¤ì(€€€ô¤ì(€ô)ô¤ì((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼Ñ•ÍÐ¡•±Á•ÉÌ(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((¼¨¨•±•Ñ•ÌÑ¡”€Ìµ±¥¹”€‰1•ÑÑ•È9¼è€¼…Ñ•è€¼½¹Ñ¥¹Õ…Ñ¥½¸ˆ‰±½¬™É½´„(€¨™ÕÉ¹¥ÑÕÉ”µ‰•…É¥¹œ™¥áÑÕÉ”ÌÉ…ÜÑ•áÐ°¥¸µ•µ½Éä½¹±äƒŠP¹•Ù•È•‘¥ÑÌÑ¡”(€¨™¥áÑÕÉ”™¥±”¸UÍ•Ñ¼ÁÉ½Ù”Ñ¡”€‰Õ¹±½…Ñ…‰±”™¥•±€´ø¹Õ±°€¬É…Ü€¬(€¨¹••‘ÍI•Ù¥•Üˆ½¹ÑÉ…ÐÝ¥Ñ¡½ÕÐ„Íå¹Ñ¡•Ñ¥Œ½™…‰É¥…Ñ•™¥áÑÕÉ”¸€¨¼)™Õ¹Ñ¥½¸‘•±•Ñ•1•ÑÑ•É9Õµ‰•É	±½¬¡Ñ•áÐèÍÑÉ¥¹œ¤èÍÑÉ¥¹œì(€½¹ÍÐ±¥¹•Ì€ôÑ•áÐ¹ÍÁ±¥Ð q¸œ¤ì(€½¹ÍÐ±•ÑÑ•É9½%‘à€ô±¥¹•Ì¹™¥¹‘%¹‘•à ¡°¤€ôø€½1•ÑÑ•È9½qÌ¨è¼¹Ñ•ÍÐ¡°¤¤ì(€¥˜€¡±•ÑÑ•É9½%‘à€ôôô€´Ä¤ì(€€€Ñ¡É½Ü¹•ÜÉÉ½È Ñ•ÍÐÍ•ÑÕÀ‰Õœè™¥áÑÕÉ”¡…Ì¹¼€‰1•ÑÑ•È9¼èˆ±¥¹”Ñ¼‘•±•Ñ”œ¤ì(€ô(€€¼¼1½…Ñ”Ñ¡”¥µµ•‘¥…Ñ•±äµ™½±±½Ý¥¹œ€‰…Ñ•èˆ±¥¹”…¹Ñ¡”½¹Ñ¥¹Õ…Ñ¥½¸±¥¹”(€€¼¼…™Ñ•È¥Ð€¡‰½Ñ ¹½¸µ‰±…¹¬°Á•ÈÑ¡”½ÉÁÕÌÌ½‰Í•ÉÙ•±…å½ÕÐ¤¸(€±•Ð‘…Ñ•‘%‘à€ô€´Äì(€™½È€¡±•Ð¤€ô±•ÑÑ•É9½%‘à€¬€Äì¤€ð±¥¹•Ì¹±•¹Ñ ì¤€¬ô€Ä¤ì(€€€½¹ÍÐ±¥¹”€ô€¡±¥¹•Ím¥t€üü€œœ¤¹ÑÉ¥´ ¤ì(€€€¥˜€¡±¥¹”¹±•¹Ñ €ôôô€À¤ì(€€€€€½¹Ñ¥¹Õ”ì(€€€ô(€€€‘…Ñ•‘%‘à€ô¤ì(€€€‰É•…¬ì(€ô(€¥˜€¡‘…Ñ•‘%‘à€ôôô€´Äñð€„½…Ñ•‘qÌ¨è¼¹Ñ•ÍÐ¡±¥¹•Ím‘…Ñ•‘%‘át€üü€œœ¤¤ì(€€€Ñ¡É½Ü¹•ÜÉÉ½È Ñ•ÍÐÍ•ÑÕÀ‰Õœè¹¼€‰…Ñ•èˆ±¥¹”™½Õ¹…™Ñ•È€‰1•ÑÑ•È9¼èˆœ¤ì(€ô(€±•Ð½¹Ñ¥¹Õ…Ñ¥½¹%‘à€ô€´Äì(€™½È€¡±•Ð¤€ô‘…Ñ•‘%‘à€¬€Äì¤€ð±¥¹•Ì¹±•¹Ñ ì¤€¬ô€Ä¤ì(€€€½¹ÍÐ±¥¹”€ô€¡±¥¹•Ím¥t€üü€œœ¤¹ÑÉ¥´ ¤ì(€€€¥˜€¡±¥¹”¹±•¹Ñ €ôôô€À¤ì(€€€€€½¹Ñ¥¹Õ”ì(€€€ô(€€€½¹Ñ¥¹Õ…Ñ¥½¹%‘à€ô¤ì(€€€‰É•…¬ì(€ô(€¥˜€¡½¹Ñ¥¹Õ…Ñ¥½¹%‘à€ôôô€´Ä¤ì(€€€Ñ¡É½Ü¹•ÜÉÉ½È Ñ•ÍÐÍ•ÑÕÀ‰Õœè¹¼½¹Ñ¥¹Õ…Ñ¥½¸±¥¹”™½Õ¹…™Ñ•È€‰…Ñ•èˆœ¤ì(€ô(€½¹ÍÐ­•ÁÐ€ô±¥¹•Ì¹™¥±Ñ•È (€€€€¡|°¤¤€ôø¤€„ôô±•ÑÑ•É9½%‘à€˜˜¤€„ôô‘…Ñ•‘%‘à€˜˜¤€„ôô½¹Ñ¥¹Õ…Ñ¥½¹%‘à°(€€¤ì(€É•ÑÕÉ¸­•ÁÐ¹©½¥¸ q¸œ¤ì)ô((¼¨¨I•ÕÉÍ¥Ù•±ä½±±•ÑÌ•Ù•ÉäÍÑÉ¥¹œÙ…±Õ”½ÕÐ½˜„¥•±‘I•ÍÕ±ÐµÍ¡…Á•(€¨¡•…‘•È½‰©•Ð°™½ÈÑ¡”™ÕÉ¹¥ÑÕÉ”µ±•…¬Í…¸¸€¨¼)™Õ¹Ñ¥½¸½±±•ÑMÑÉ¥¹Y…±Õ•Ì¡Ù…±Õ”èÕ¹­¹½Ý¸¤èÍÑÉ¥¹mtì(€¥˜€¡ÑåÁ•½˜Ù…±Õ”€ôôô€ÍÑÉ¥¹œœ¤ì(€€€É•ÑÕÉ¸mÙ…±Õ•tì(€ô(€¥˜€¡Ù…±Õ”€ôôô¹Õ±°ñðÑåÁ•½˜Ù…±Õ”€„ôô€½‰©•Ðœ¤ì(€€€É•ÑÕÉ¸mtì(€ô(€É•ÑÕÉ¸=‰©•Ð¹Ù…±Õ•Ì¡Ù…±Õ”…ÌI•½ÉñÍÑÉ¥¹œ°Õ¹­¹½Ý¸ø¤¹™±…Ñ5…À¡½±±•ÑMÑÉ¥¹Y…±Õ•Ì¤ì)ô

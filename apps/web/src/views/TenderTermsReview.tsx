@@ -32,7 +32,6 @@ const STAGES = [
   ['pctFinalBill', 'Final bill %'],
 ] as const;
 
-type Stage = (typeof STAGES)[number][0];
 interface MatrixDraft {
   enabled: boolean;
   pctSupply: string;
@@ -105,10 +104,20 @@ function initialDrafts(context: ContractSourceContext): Drafts {
 }
 
 function hundredths(raw: string): bigint | null {
-  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(raw.trim());
-  if (match === null) return null;
-  const result =
-    BigInt(match[1] ?? '0') * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+  const text = raw.trim();
+  const [whole = '', fraction = '', overflow] = text.split('.');
+  const isDigits = (value: string) =>
+    value.length > 0 &&
+    [...value].every((character) => character >= '0' && character <= '9');
+  if (
+    overflow !== undefined ||
+    whole.length > 3 ||
+    !isDigits(whole) ||
+    (text.includes('.') && (fraction.length > 2 || !isDigits(fraction)))
+  ) {
+    return null;
+  }
+  const result = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
   return result <= 10000n ? result : null;
 }
 

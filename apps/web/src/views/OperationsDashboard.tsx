@@ -11,7 +11,12 @@ import {
   Upload,
 } from 'lucide-react';
 import type { ApiClient } from '../api.js';
-import { formatCompactInr, formatInr, progressPercent } from '../format.js';
+import {
+  compareDecimalStrings,
+  formatCompactInr,
+  formatInr,
+  progressPercent,
+} from '../format.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -99,7 +104,7 @@ export function OperationsDashboard({
     () =>
       [...(data?.works ?? [])].sort((left, right) => {
         if (left.status === right.status) {
-          return right.contractValue.localeCompare(left.contractValue);
+          return compareDecimalStrings(right.contractValue, left.contractValue);
         }
         if (left.status === 'active') return -1;
         if (right.status === 'active') return 1;
@@ -308,7 +313,7 @@ export function OperationsDashboard({
                       </div>
                       <p className="mt-1 text-sm leading-5">{alert.message}</p>
                     </div>
-                    {alert.workId !== null && (
+                    {alert.workId !== null ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -318,7 +323,11 @@ export function OperationsDashboard({
                       >
                         Open {alert.workCode ?? 'Work'}
                       </Button>
-                    )}
+                    ) : alert.kind === 'loa_review_pending' ? (
+                      <Button variant="outline" size="sm" onClick={onOpenWorks}>
+                        Review LOAs
+                      </Button>
+                    ) : null}
                   </li>
                 );
               })}

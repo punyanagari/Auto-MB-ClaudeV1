@@ -4,16 +4,16 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 
 ## Foundation dependencies
 
-| Capability    | Dependency               | Why                                                                                                                                  |
-| ------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Web           | React + Vite             | Small, conventional SPA surface                                                                                                      |
-| API           | Fastify                  | JSON Schema validation, logging, low overhead                                                                                        |
-| Contracts     | TypeBox                  | One definition for runtime validation, TS types, and OpenAPI                                                                         |
-| Database      | PostgreSQL + postgres.js | Transactions, RLS, constraints, simple operational model                                                                             |
-| Typed queries | Drizzle ORM              | Adopt when the first module queries land; SQL remains visible                                                                        |
-| Testing       | Vitest                   | Shared TypeScript test runner                                                                                                        |
-| PDF service   | Gotenberg                | Isolated, repeatable Chromium rendering                                                                                              |
-| PDF text      | poppler-utils            | `pdftotext -layout` — the exact extraction the LOA parser corpus was built with; system binary, argument-vector invocation, no shell |
+| Capability    | Dependency               | Why                                                                                                                                                          |
+| ------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Web           | React + Vite             | Small, conventional SPA surface                                                                                                                              |
+| API           | Fastify                  | JSON Schema validation, logging, low overhead                                                                                                                |
+| Contracts     | TypeBox                  | One definition for runtime validation, TS types, and OpenAPI                                                                                                 |
+| Database      | PostgreSQL + postgres.js | Transactions, RLS, constraints, simple operational model                                                                                                     |
+| Typed queries | Drizzle ORM              | Adopt when the first module queries land; SQL remains visible                                                                                                |
+| Testing       | Vitest                   | Shared TypeScript test runner                                                                                                                                |
+| PDF service   | Gotenberg                | Isolated, repeatable Chromium rendering                                                                                                                      |
+| PDF text      | poppler-utils            | Parallel `pdftotext -layout` + `-raw`: layout-authoritative fields and exact item-description ownership; system binary, argument-vector invocation, no shell |
 
 ## Adopt with the relevant milestone
 

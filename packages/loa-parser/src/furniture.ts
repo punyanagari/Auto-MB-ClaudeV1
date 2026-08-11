@@ -55,7 +55,12 @@ export function isPrintFurnitureLine(line: string): boolean {
  * Runs before any structural parsing, per the ticket's ordering requirement.
  */
 export function stripPrintFurniture(text: string): string {
+  // Poppler writes CRLF on Windows. Leaving the terminal carriage return on
+  // each line breaks the line-anchored furniture and item-row expressions.
+  // Normalise at this shared boundary so every structural parser sees the
+  // same LF geometry as the regression corpus, regardless of host OS.
   return text
+    .replace(/\r\n?/g, '\n')
     .split('\n')
     .filter((line) => !isPrintFurnitureLine(line))
     .join('\n');

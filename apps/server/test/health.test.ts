@@ -89,6 +89,31 @@ describe('error handling', () => {
     expect(body.code).toBe('INTERNAL_ERROR');
     expect(body.message).not.toContain('secret internal detail');
   });
+
+  it('turns nested database connection failures into a safe retryable 503', async () => {
+    app = await buildApp();
+    app.get('/test-database-error', () => {
+      const connectionError = Object.assign(
+        new Error('connect ECONNREFUSED postgres://secret@127.0.0.1:55432'),
+        { code: 'ECONNREFUSED' },
+      );
+      throw new AggregateError([connectionError], 'database connection failed');
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-database-error',
+    });
+
+    expect(response.statusCode).toBe(503);
+    const body = response.json<{ code: string; message: string; requestId: string }>();
+    expect(body).toMatchObject({
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'The database is temporarily unavailable. Nothing was saved. Try again.',
+    });
+    expect(body.requestId.length).toBeGreaterThan(0);
+    expect(response.body).not.toContain('secret');
+    expect(response.body).not.toContain('127.0.0.1');
+  });
 });
 
 describe('documentation UI', () => {
