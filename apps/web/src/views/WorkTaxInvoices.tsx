@@ -415,6 +415,603 @@ export function WorkTaxInvoices({
           <p className={wrapCell}>{invoice.serviceDescription}</p>
 
           {invoice.status === 'submitted' || invoice.status === 'cancelled' ? (
-            <Dßnú¶‰žËkºwµç@€€€€€€€€€€€€€€€€€)M=8¹ÍÑÉ¥¹¥™ä¡Á…å±½…°¹Õ±°°€È¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€ô°€Q¡””µ¥¹Ù½¥”Á…å±½…¥Ì½¸Ñ¡”±¥Á‰½…É°É•…‘ä™½ÈÑ¡”M@¸œ¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€½Áä”µ¥¹Ù½¥”Á…å±½…(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€€€€í…¹%ÍÍÕ”€˜˜€ (€€€€€€€€€€€€€€€€€€€€ñ¥Í±½ÍÕÉ”±…‰•°ô‰I•½ÉÑ¡”%I@É•ÍÁ½¹Í”ˆø(€€€€€€€€€€€€€€€€€€€€€€ñ™½É´(€€€€€€€€€€€€€€€€€€€€€€€½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ð¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€Ù½¥…Ð¡…Íå¹Œ€ ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ý…¥Ð…Á¤¹É•½É‘Q…á%¹Ù½¥•%ÉÁI•ÍÁ½¹Í” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥¹Ù½¥”¹¥°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥É¸è™½ÉµY…±Õ”¡‘…Ñ„°€¥ÉÀµ¥É¸œ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€…­9Õµ‰•Èè™½ÉµY…±Õ”¡‘…Ñ„°€¥ÉÀµ…¬µ¹Õµ‰•Èœ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€…­…Ñ”è¹•Ü…Ñ” (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€™½ÉµY…±Õ”¡‘…Ñ„°€¥ÉÀµ…¬µ‘…Ñ”œ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤¹Ñ½%M=MÑÉ¥¹œ ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€Í¥¹•‘EÈè™½ÉµY…±Õ”¡‘…Ñ„°€¥ÉÀµÍ¥¹•µÅÈœ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ý…¥ÐÉ•™É•Í¡1¥ÍÐ ¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€…Ý…¥Ð½Á•¹%¹Ù½¥••Ñ…¥°¡¥¹Ù½¥”¹¥¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€ô°€%I@É•ÍÁ½¹Í”É•½É‘•ƒŠPÑ¡”¥¹Ù½¥”¹½Ü…ÉÉ¥•Ì¥ÑÌ%I8¸œ¤ì(€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¥ÉÀµ¥É¸ˆù%I8ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰¥ÉÀµ¥É¸ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰¥ÉÀµ¥É¸ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€€€Á…ÑÑ•É¸ô‰lÀ´å„µ™uìØÑôˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìØÑô(€€€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€€€€M¥áÑäµ™½ÕÈ¡•á…‘•¥µ…°¡…É…Ñ•ÉÌ°•á…Ñ±ä…ÌÉ•ÑÕÉ¹•¸(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¥ÉÀµ…¬µ¹Õµ‰•Èˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€­¹½Ý±•‘•µ•¹Ð¹Õµ‰•È(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ¥ô‰¥ÉÀµ…¬µ¹Õµ‰•Èˆ¹…µ”ô‰¥ÉÀµ…¬µ¹Õµ‰•ÈˆÉ•ÅÕ¥É•€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¥ÉÀµ…¬µ‘…Ñ”ˆù­¹½Ý±•‘•µ•¹Ð‘…Ñ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰¥ÉÀµ…¬µ‘…Ñ”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰¥ÉÀµ…¬µ‘…Ñ”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€ÑåÁ”ô‰‘…Ñ•Ñ¥µ”µ±½…°ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¥ÉÀµÍ¥¹•µÅÈˆùM¥¹•EHð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰¥ÉÀµÍ¥¹•µÅÈˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰¥ÉÀµÍ¥¹•µÅÈˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€É½ÝÌõìÍô(€€€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€€€€Q¡”Í¥¹•Á…å±½…Ñ¡”Á½ÉÑ…°É•ÑÕÉ¹•ì¥ÐÁÉ¥¹ÑÌ…ÌÑ¡”EH(€€€€€€€€€€€€€€€€€€€€€€€€€€€½‘”½¸Ñ¡”¥¹Ù½¥”¸(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€€€€€€€€€€€€€I•½ÉÉ•ÍÁ½¹Í”(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€€€€€€€€€€€ð½¥Í±½ÍÕÉ”ø(€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€ð¼ø(€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€ñ‘°ø(€€€€€€€€€€€€€€€€€€ñ‘Ðù%I8ð½‘Ðø(€€€€€€€€€€€€€€€€€€ñ‘±…ÍÍ9…µ”õíÝÉ…Á•±±ôùí¥¹Ù½¥”¹¥É¹ôð½‘ø(€€€€€€€€€€€€€€€€€€ñ‘Ðù­¹½Ý±•‘•µ•¹Ðð½‘Ðø(€€€€€€€€€€€€€€€€€€ñ‘ø(€€€€€€€€€€€€€€€€€€€í¥¹Ù½¥”¹…­9Õµ‰•È€üü€ŸŠPô(€€€€€€€€€€€€€€€€€€€í¥¹Ù½¥”¹…­…Ñ”€„ôô¹Õ±°€˜˜€ƒ
-Ü€‘í™½Éµ…Ñ…Ñ”¡¥¹Ù½¥”¹…­…Ñ”¥õô(€€€€€€€€€€€€€€€€€€ð½‘ø(€€€€€€€€€€€€€€€€ð½‘°ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð¼ø(€€€€€€€€€€¥ô((€€€€€€€€€í¥¹Ù½¥”¹ÍÑ…ÑÕÌ€ôôô€ÍÕ‰µ¥ÑÑ•œ€˜˜€ (€€€€€€€€€€€€ðø(€€€€€€€€€€€€€€ñ ÐùµÝ…ä‰¥±±Ìð½ Ðø(€€€€€€€€€€€€€í•Ý…å	¥±±Ì¹±•¹Ñ €ø€À€ü€ (€€€€€€€€€€€€€€€€ñ…Ñ…Q…‰±”ø(€€€€€€€€€€€€€€€€€€ñ…ÁÑ¥½¸±…ÍÍ9…µ”ô‰ÍÈµ½¹±äˆø(€€€€€€€€€€€€€€€€€€€µÝ…ä‰¥±±ÌÉ…¥Í•Ñ¼µ½Ù”Ñ¡¥Ì¥¹Ù½¥”(€€€€€€€€€€€€€€€€€€ð½…ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€ñÑ¡•…ø(€€€€€€€€€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù]¹Õµ‰•Èð½Ñ ø(€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù5½‘”ð½Ñ ø(€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùI½ÕÑ”ð½Ñ ø(€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùMÑ…ÑÕÌð½Ñ ø(€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùY…±¥Õ¹Ñ¥°ð½Ñ ø(€€€€€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€€€€€ð½Ñ¡•…ø(€€€€€€€€€€€€€€€€€€ñÑ‰½‘äø(€€€€€€€€€€€€€€€€€€€í•Ý…å	¥±±Ì¹µ…À ¡‰¥±°¤€ôø€ (€€€€€€€€€€€€€€€€€€€€€€ñÑÈ­•äõí‰¥±°¹¥‘ôø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰É½Üˆùí‰¥±°¹•Ý‰9Õµ‰•È€üü€É…™Ðôð½Ñ ø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑùíQI9MA=IQ}5=}1	1Mm‰¥±°¹ÑÉ…¹ÍÁ½ÉÑ5½‘•uôð½Ñø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€€í‰¥±°¹™É½µA¥¹½‘•ôƒŠHí‰¥±°¹Ñ½A¥¹½‘•ôƒ
-Üí‰¥±°¹‘¥ÍÑ…¹•-µô­´(€€€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥ÀÍÑ…ÑÕÌõí‰¥±°¹ÍÑ…ÑÕÍôùí‰¥±°¹ÍÑ…ÑÕÍôð½MÑ…ÑÕÍ¡¥Àø(€€€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€€€€€€í‰¥±°¹Ù…±¥‘U¹Ñ¥°€ôôô¹Õ±°€ü€ŸŠPœ€è™½Éµ…Ñ…Ñ”¡‰¥±°¹Ù…±¥‘U¹Ñ¥°¥ô(€€€€€€€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€€€€€€€€€ð½…Ñ…Q…‰±”ø(€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€€€€€€9¼”µÝ…ä‰¥±°¡…Ì‰••¸É…¥Í•™½ÈÑ¡¥Ì¥¹Ù½¥”¸(€€€€€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€€€¥ô((€€€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€ (€€€€€€€€€€€€€€€€ñ¥Í±½ÍÕÉ”±…‰•°ô‰É…™Ð…¸”µÝ…ä‰¥±°ˆø(€€€€€€€€€€€€€€€€€€ñ™½É´(€€€€€€€€€€€€€€€€€€€½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ™½É´€ô•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ðì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡™½É´¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐÙ•¡¥±•9Õµ‰•È€ô™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµÙ•¡¥±”œ¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ‘½9Õµ‰•È€ô™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµ‘½Œµ¹Õµ‰•Èœ¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐ‘½…Ñ”€ô™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµ‘½Œµ‘…Ñ”œ¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐÑÉ…¹ÍÁ½ÉÑ•É%€ô™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¥œ¤ì(€€€€€€€€€€€€€€€€€€€€€½¹ÍÐÑÉ…¹ÍÁ½ÉÑ•É9…µ”€ô™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¹…µ”œ¤ì(€€€€€€€€€€€€€€€€€€€€€Ù½¥…Ð¡…Íå¹Œ€ ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€…Ý…¥Ð…Á¤¹É•…Ñ•%¹Ù½¥•Ý…å	¥±°¡½É…¹¥Í…Ñ¥½¹%°¥¹Ù½¥”¹¥°ì(€€€€€€€€€€€€€€€€€€€€€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è•Ý…å5½‘”°(€€€€€€€€€€€€€€€€€€€€€€€€€‘¥ÍÑ…¹•-´è9Õµ‰•È¡™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµ‘¥ÍÑ…¹”œ¤¤°(€€€€€€€€€€€€€€€€€€€€€€€€€™É½µA¥¹½‘”è™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµ™É½´œ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€Ñ½A¥¹½‘”è™½ÉµY…±Õ”¡‘…Ñ„°€•Ý…äµÑ¼œ¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¼¼µÁÑä½ÁÑ¥½¹…±Ì…É”½µ¥ÑÑ•É…Ñ¡•ÈÑ¡…¸Í•¹Ð(€€€€€€€€€€€€€€€€€€€€€€€€€€¼¼‰±…¹¬èÑ¡”½¹ÑÉ…ÐÌÁ…ÑÑ•É¹ÌÉ•©•Ð€œœ…¹„(€€€€€€€€€€€€€€€€€€€€€€€€€€¼¼‘É…™Ð¥Ì…±±½Ý•Ñ¼‰”ÍÑ¥±°™¥±±¥¹œ¥¸¸(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¸¡ÑÉ…¹ÍÁ½ÉÑ•É%€„ôô€œœ€üìÑÉ…¹ÍÁ½ÉÑ•É%ô€èíô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¸¡ÑÉ…¹ÍÁ½ÉÑ•É9…µ”€„ôô€œœ€üìÑÉ…¹ÍÁ½ÉÑ•É9…µ”ô€èíô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¸¡Ù•¡¥±•9Õµ‰•È€„ôô€œœ€üìÙ•¡¥±•9Õµ‰•Èô€èíô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¸¡‘½9Õµ‰•È€„ôô€œœ(€€€€€€€€€€€€€€€€€€€€€€€€€€€€üìÑÉ…¹ÍÁ½ÉÑ½9Õµ‰•Èè‘½9Õµ‰•Èô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€èíô¤°(€€€€€€€€€€€€€€€€€€€€€€€€€€¸¸¸¡‘½…Ñ”€„ôô€œœ€üìÑÉ…¹ÍÁ½ÉÑ½…Ñ”è‘½…Ñ”ô€èíô¤°(€€€€€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€€€€€Í•ÑÝ…å	¥±±Ì (€€€€€€€€€€€€€€€€€€€€€€€€€…Ý…¥Ð…Á¤¹±¥ÍÑ%¹Ù½¥•Ý…å	¥±±Ì¡½É…¹¥Í…Ñ¥½¹%°¥¹Ù½¥”¹¥¤°(€€€€€€€€€€€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€€€€€€€€€€€€€™½É´¹É•Í•Ð ¤ì(€€€€€€€€€€€€€€€€€€€€€€€Í•ÑÝ…å5½‘” É½…œ¤ì(€€€€€€€€€€€€€€€€€€€€€ô°€É…™Ð”µÝ…ä‰¥±°É•…Ñ•ƒŠPÍ•¹¥ÐÑ¼Ñ¡”M@°Ñ¡•¸É•½ÉÝ¡…Ð9%…¹ÍÝ•É•¸œ¤ì(€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµµ½‘”ˆùQÉ…¹ÍÁ½ÉÐµ½‘”ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñÍ•±•Ð(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµµ½‘”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµµ½‘”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí•Ý…å5½‘•ô(€€€€€€€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€€€€€Í•ÑÝ…å5½‘”¡•Ù•¹Ð¹Ñ…É•Ð¹Ù…±Õ”…ÌQÉ…¹ÍÁ½ÉÑ5½‘”¤ì(€€€€€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€€€€€ì (€€€€€€€€€€€€€€€€€€€€€€€€€€€=‰©•Ð¹­•åÌ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€€QI9MA=IQ}5=}1	1L°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¤…ÌÉ•…‘½¹±äQÉ…¹ÍÁ½ÉÑ5½‘•mt(€€€€€€€€€€€€€€€€€€€€€€€€€€¤¹µ…À ¡µ½‘”¤€ôø€ (€€€€€€€€€€€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸­•äõíµ½‘•ôÙ…±Õ”õíµ½‘•ôø(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€íQI9MA=IQ}5=}1	1Mmµ½‘•uô(€€€€€€€€€€€€€€€€€€€€€€€€€€€€ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€€€€€€€€€¤¥ô(€€€€€€€€€€€€€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµ‘¥ÍÑ…¹”ˆù¥ÍÑ…¹”€¡­´¤ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµ‘¥ÍÑ…¹”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµ‘¥ÍÑ…¹”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€ÑåÁ”ô‰¹Õµ‰•Èˆ(€€€€€€€€€€€€€€€€€€€€€€€€€µ¥¸õìÁô(€€€€€€€€€€€€€€€€€€€€€€€€€µ…àõìÐÀÀÁô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµ™É½´ˆùÉ½´A%8ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµ™É½´ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµ™É½´ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰¹Õµ•É¥Œˆ(€€€€€€€€€€€€€€€€€€€€€€€€€Á…ÑÑ•É¸ô‰lÀ´åuìÙôˆ(€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÙô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµÑ¼ˆùQ¼A%8ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµÑ¼ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµÑ¼ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¥¹ÁÕÑ5½‘”ô‰¹Õµ•É¥Œˆ(€€€€€€€€€€€€€€€€€€€€€€€€€Á…ÑÑ•É¸ô‰lÀ´åuìÙôˆ(€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÙô(€€€€€€€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€íµ½Ù•Í=¹Y•¡¥±”¡•Ý…å5½‘”¤€ü€ (€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµÙ•¡¥±”ˆùY•¡¥±”¹Õµ‰•Èð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµÙ•¡¥±”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµÙ•¡¥±”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€Á…ÑÑ•É¸ô‰mµhÀ´åuìØ°ÄÉôˆ(€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÄÉô(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€€UÁÁ•É…Í”±•ÑÑ•ÉÌ…¹‘¥¥ÑÌ°¹¼ÍÁ…•Ì¸É½…µ½Ù•µ•¹Ð¹••‘Ì(€€€€€€€€€€€€€€€€€€€€€€€€€½¹”‰•™½É”9%Ý¥±°…¹ÍÝ•È¸(€€€€€€€€€€€€€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµ‘½Œµ¹Õµ‰•Èˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€QÉ…¹ÍÁ½ÉÐ‘½Õµ•¹Ð¹Õµ‰•È(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµ‘½Œµ¹Õµ‰•Èˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµ‘½Œµ¹Õµ‰•Èˆ(€€€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÌÁô(€€€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€€€€Q¡”É…¥±Ý…äÉ••¥ÁÐ°…¥ÉÝ…ä‰¥±°½È‰¥±°½˜±…‘¥¹œÑ¡¥Ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹Í¥¹µ•¹Ðµ½Ù•Ì½¸¸(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµ‘½Œµ‘…Ñ”ˆùQÉ…¹ÍÁ½ÉÐ‘½Õµ•¹Ð‘…Ñ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ¥ô‰•Ý…äµ‘½Œµ‘…Ñ”ˆ¹…µ”ô‰•Ý…äµ‘½Œµ‘…Ñ”ˆÑåÁ”ô‰‘…Ñ”ˆ€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¥ˆùQÉ…¹ÍÁ½ÉÑ•È¥ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¥ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¥ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÄÕô(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ!¥¹Ðù¥™Ñ••¸¡…É…Ñ•ÉÌìå½ÕÈ½Ý¸Ù•¡¥±”¹••‘Ì¹½¹”¸ð½!¥¹Ðø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¹…µ”ˆùQÉ…¹ÍÁ½ÉÑ•È¹…µ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€€€€€€€€€¥ô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¹…µ”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€€¹…µ”ô‰•Ý…äµÑÉ…¹ÍÁ½ÉÑ•Èµ¹…µ”ˆ(€€€€€€€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€€€€€€€€€É•…Ñ””µÝ…ä‰¥±°(€€€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€€€€€€€ð½¥Í±½ÍÕÉ”ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð¼ø(€€€€€€€€€€¥ô((€€€€€€€€€í¥¹Ù½¥”¹ÍÑ…ÑÕÌ€ôôô€ÍÕ‰µ¥ÑÑ•œ€˜˜…¹…¹•°€˜˜€ (€€€€€€€€€€€€ñ¥Í±½ÍÕÉ”±…‰•°ô‰…¹•°Ñ¡¥Ì¥¹Ù½¥”ˆø(€€€€€€€€€€€€€€ñ™½É´(€€€€€€€€€€€€€€€½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€€€€€€€€€€€€€€€Ù½¥…Ð¡…Íå¹Œ€ ¤€ôøì(€€€€€€€€€€€€€€€€€€€…Ý…¥Ð…Á¤¹…¹•±Q…á%¹Ù½¥”¡½É…¹¥Í…Ñ¥½¹%°¥¹Ù½¥”¹¥°ì(€€€€€€€€€€€€€€€€€€€€€¹½Ñ”è…¹•±9½Ñ”°(€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€…Ý…¥ÐÉ•™É•Í¡1¥ÍÐ ¤ì(€€€€€€€€€€€€€€€€€€€…Ý…¥Ð½Á•¹%¹Ù½¥••Ñ…¥°¡¥¹Ù½¥”¹¥¤ì(€€€€€€€€€€€€€€€€€€€Í•Ñ…¹•±9½Ñ” œœ¤ì(€€€€€€€€€€€€€€€€€ô°€Q…à¥¹Ù½¥”…¹•±±•ƒŠPÑ¡”5•…ÍÕÉ•µ•¹Ð	½½¬¥Ð‰¥±±•¥ÌÉ•±•…Í•™½È„½ÉÉ•Ñ•¥¹Ù½¥”¸œ¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰¥¹Ù½¥”µ…¹•°µ¹½Ñ”ˆù]¡ä¥Ð¥Ì‰•¥¹œ…¹•±±•ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€€€€€€€€€¥ô‰¥¹Ù½¥”µ…¹•°µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€¹…µ”ô‰¥¹Ù½¥”µ…¹•°µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€É½ÝÌõìÉô(€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÍô(€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÀÁô(€€€€€€€€€€€€€€€€€€€Ù…±Õ”õí…¹•±9½Ñ•ô(€€€€€€€€€€€€€€€€€€€½¹¡…¹”õì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€€€€€Í•Ñ…¹•±9½Ñ”¡•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ð¹Ù…±Õ”¤ì(€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€€€ñ!¥¹Ðø(€€€€€€€€€€€€€€€€€€€…¹•±±•¥¹Ù½¥”­••ÁÌ¥ÑÌ¹Õµ‰•È™½È•Ù•ÈƒŠPÑ¡”¹Õµ‰•È¥Ì¹•Ù•È(€€€€€€€€€€€€€€€€€€€É•ÕÍ•ƒŠP…¹Ñ¡¥Ì¹½Ñ”¥ÌÑ¡”É•½É½˜Ý¡ä¸(€€€€€€€€€€€€€€€€€€ð½!¥¹Ðø(€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥ÐˆÙ…É¥…¹Ðô‰‘•ÍÑÉÕÑ¥Ù”ˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€€€€€…¹•°¥¹Ù½¥”(€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€€€ð½¥Í±½ÍÕÉ”ø(€€€€€€€€€€¥ô(€€€€€€€€ð½Í•Ñ¥½¸ø(€€€€€€¥ô(€€€€ð¼ø(€€¤ì)ô(
+            <DataTable>
+              <caption className="sr-only">
+                The amounts frozen when this invoice was submitted
+              </caption>
+              <tbody>
+                <tr>
+                  <th scope="row">Taxable value</th>
+                  <td className={numericCell}>
+                    {invoice.taxableValue === null
+                      ? 'â€”'
+                      : formatInr(invoice.taxableValue)}
+                  </td>
+                </tr>
+                {/* Exactly one of the two splits is live: CGST+SGST within
+                    the state, IGST across it. Showing the zero half would
+                    only invite the reader to wonder what it means. */}
+                {invoice.igstAmount !== null && Number(invoice.igstAmount) > 0 ? (
+                  <tr>
+                    <th scope="row">IGST</th>
+                    <td className={numericCell}>{formatInr(invoice.igstAmount)}</td>
+                  </tr>
+                ) : (
+                  <>
+                    <tr>
+                      <th scope="row">CGST</th>
+                      <td className={numericCell}>
+                        {invoice.cgstAmount === null
+                          ? 'â€”'
+                          : formatInr(invoice.cgstAmount)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th scope="row">SGST</th>
+                      <td className={numericCell}>
+                        {invoice.sgstAmount === null
+                          ? 'â€”'
+                          : formatInr(invoice.sgstAmount)}
+                      </td>
+                    </tr>
+                  </>
+                )}
+                <tr>
+                  <th scope="row">Total</th>
+                  <td className={numericCell}>
+                    {invoice.totalAmount === null
+                      ? 'â€”'
+                      : formatInr(invoice.totalAmount)}
+                  </td>
+                </tr>
+              </tbody>
+            </DataTable>
+          ) : (
+            <p className="text-muted-foreground">
+              The amounts are computed from the Measurement Book total at submit, so a
+              draft carries none yet.
+            </p>
+          )}
+
+          {invoice.cancellationNote !== null && (
+            <p>
+              <strong>Cancelled:</strong> {invoice.cancellationNote}
+            </p>
+          )}
+
+          {invoice.status === 'draft' && canModify && (
+            <Disclosure label="Edit this draft">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  void act(async () => {
+                    await api.updateTaxInvoice(organisationId, invoice.id, {
+                      invoiceDate: formValue(data, 'edit-invoice-date'),
+                      sacCode: formValue(data, 'edit-invoice-sac'),
+                      serviceDescription: formValue(data, 'edit-invoice-description'),
+                      gstRate: formValue(data, 'edit-invoice-gst-rate'),
+                      placeOfSupply: formValue(data, 'edit-invoice-place-of-supply'),
+                      buyerContactId: formValue(data, 'edit-invoice-buyer'),
+                    });
+                    await refreshList();
+                    await openInvoiceDetail(invoice.id);
+                  }, 'Draft tax invoice updated.');
+                }}
+              >
+                <FieldRow>
+                  <Field>
+                    <label htmlFor="edit-invoice-date">Invoice date</label>
+                    <input
+                      id="edit-invoice-date"
+                      name="edit-invoice-date"
+                      type="date"
+                      required
+                      defaultValue={invoice.invoiceDate}
+                    />
+                  </Field>
+                  <Field>
+                    <label htmlFor="edit-invoice-sac">SAC code</label>
+                    <input
+                      id="edit-invoice-sac"
+                      name="edit-invoice-sac"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      required
+                      defaultValue={invoice.sacCode}
+                    />
+                  </Field>
+                </FieldRow>
+                <Field>
+                  <label htmlFor="edit-invoice-description">Service description</label>
+                  <textarea
+                    id="edit-invoice-description"
+                    name="edit-invoice-description"
+                    rows={3}
+                    required
+                    minLength={3}
+                    maxLength={1000}
+                    defaultValue={invoice.serviceDescription}
+                  />
+                </Field>
+                <FieldRow>
+                  <Field>
+                    <label htmlFor="edit-invoice-gst-rate">GST rate (%)</label>
+                    <input
+                      id="edit-invoice-gst-rate"
+                      name="edit-invoice-gst-rate"
+                      inputMode="decimal"
+                      required
+                      defaultValue={invoice.gstRate}
+                    />
+                  </Field>
+                  <Field>
+                    <label htmlFor="edit-invoice-place-of-supply">
+                      Place of supply
+                    </label>
+                    <input
+                      id="edit-invoice-place-of-supply"
+                      name="edit-invoice-place-of-supply"
+                      inputMode="numeric"
+                      pattern="[0-9]{2}"
+                      maxLength={2}
+                      required
+                      defaultValue={invoice.placeOfSupply}
+                    />
+                  </Field>
+                </FieldRow>
+                <Field>
+                  <label htmlFor="edit-invoice-buyer">Buyer</label>
+                  <select
+                    id="edit-invoice-buyer"
+                    name="edit-invoice-buyer"
+                    required
+                    defaultValue={invoice.buyerContactId ?? ''}
+                  >
+                    <option value="" disabled>
+                      Pick a client contact
+                    </option>
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.designation}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Save draft
+                  </Button>
+                </Actions>
+              </form>
+            </Disclosure>
+          )}
+
+          <Actions>
+            {invoice.status === 'draft' && canIssue && (
+              <Button
+                onClick={() => {
+                  void act(async () => {
+                    await api.submitTaxInvoice(organisationId, invoice.id);
+                    await refreshList();
+                    await openInvoiceDetail(invoice.id);
+                  }, 'Tax invoice submitted â€” it is numbered, its amounts are frozen, and the Measurement Book it bills is closed.');
+                }}
+                disabled={pending}
+              >
+                Submit invoice
+              </Button>
+            )}
+            {invoice.status === 'draft' && canModify && !confirmingDelete && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirmingDelete(true);
+                }}
+                disabled={pending}
+              >
+                Delete draft
+              </Button>
+            )}
+          </Actions>
+
+          {confirmingDelete && invoice.status === 'draft' && (
+            <Actions>
+              <p role="status">
+                Delete this draft tax invoice? Nothing has been numbered, so nothing is
+                lost but the typing.
+              </p>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  void act(async () => {
+                    await api.deleteTaxInvoice(organisationId, invoice.id);
+                    setDetail(null);
+                    setConfirmingDelete(false);
+                    await refreshList();
+                  }, 'Draft tax invoice deleted.');
+                }}
+                disabled={pending}
+              >
+                Delete it
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                }}
+                disabled={pending}
+              >
+                Keep it
+              </Button>
+            </Actions>
+          )}
+
+          {invoice.status === 'submitted' && (
+            <>
+              <h4>Government e-invoicing</h4>
+              {invoice.irn === null ? (
+                <>
+                  <p className="text-muted-foreground">
+                    The invoice is numbered and ready to register. Send the payload to
+                    the GSP, then record exactly what the Invoice Registration Portal
+                    answered â€” the IRN is minted there, never here.
+                  </p>
+                  <Actions>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        void act(async () => {
+                          const payload = await api.taxInvoiceIrpPayload(
+                            organisationId,
+                            invoice.id,
+                          );
+                          await navigator.clipboard.writeText(
+                            JSON.stringify(payload, null, 2),
+                          );
+                        }, 'The e-invoice payload is on the clipboard, ready for the GSP.');
+                      }}
+                      disabled={pending}
+                    >
+                      Copy e-invoice payload
+                    </Button>
+                  </Actions>
+                  {canIssue && (
+                    <Disclosure label="Record the IRP response">
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const data = new FormData(event.currentTarget);
+                          void act(async () => {
+                            await api.recordTaxInvoiceIrpResponse(
+                              organisationId,
+                              invoice.id,
+                              {
+                                irn: formValue(data, 'irp-irn'),
+                                ackNumber: formValue(data, 'irp-ack-number'),
+                                ackDate: new Date(
+                                  formValue(data, 'irp-ack-date'),
+                                ).toISOString(),
+                                signedQr: formValue(data, 'irp-signed-qr'),
+                              },
+                            );
+                            await refreshList();
+                            await openInvoiceDetail(invoice.id);
+                          }, 'IRP response recorded â€” the invoice now carries its IRN.');
+                        }}
+                      >
+                        <Field>
+                          <label htmlFor="irp-irn">IRN</label>
+                          <input
+                            id="irp-irn"
+                            name="irp-irn"
+                            required
+                            pattern="[0-9a-f]{64}"
+                            maxLength={64}
+                          />
+                          <Hint>
+                            Sixty-four hexadecimal characters, exactly as returned.
+                          </Hint>
+                        </Field>
+                        <FieldRow>
+                          <Field>
+                            <label htmlFor="irp-ack-number">
+                              Acknowledgement number
+                            </label>
+                            <input id="irp-ack-number" name="irp-ack-number" required />
+                          </Field>
+                          <Field>
+                            <label htmlFor="irp-ack-date">Acknowledgement date</label>
+                            <input
+                              id="irp-ack-date"
+                              name="irp-ack-date"
+                              type="datetime-local"
+                              required
+                            />
+                          </Field>
+                        </FieldRow>
+                        <Field>
+                          <label htmlFor="irp-signed-qr">Signed QR</label>
+                          <textarea
+                            id="irp-signed-qr"
+                            name="irp-signed-qr"
+                            rows={3}
+                            required
+                          />
+                          <Hint>
+                            The signed payload the portal returned; it prints as the QR
+                            code on the invoice.
+                          </Hint>
+                        </Field>
+                        <Actions>
+                          <Button type="submit" disabled={pending}>
+                            Record response
+                          </Button>
+                        </Actions>
+                      </form>
+                    </Disclosure>
+                  )}
+                </>
+              ) : (
+                <dl>
+                  <dt>IRN</dt>
+                  <dd className={wrapCell}>{invoice.irn}</dd>
+                  <dt>Acknowledgement</dt>
+                  <dd>
+                    {invoice.ackNumber ?? 'â€”'}
+                    {invoice.ackDate !== null && ` Â· ${formatDate(invoice.ackDate)}`}
+                  </dd>
+                </dl>
+              )}
+            </>
+          )}
+
+          {invoice.status === 'submitted' && (
+            <>
+              <h4>E-way bills</h4>
+              {ewayBills.length > 0 ? (
+                <DataTable>
+                  <caption className="sr-only">
+                    E-way bills raised to move this invoice
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">EWB number</th>
+                      <th scope="col">Mode</th>
+                      <th scope="col">Route</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Valid until</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ewayBills.map((bill) => (
+                      <tr key={bill.id}>
+                        <th scope="row">{bill.ewbNumber ?? 'Draft'}</th>
+                        <td>{TRANSPORT_MODE_LABELS[bill.transportMode]}</td>
+                        <td>
+                          {bill.fromPincode} â†’ {bill.toPincode} Â· {bill.distanceKm} km
+                        </td>
+                        <td>
+                          <StatusChip status={bill.status}>{bill.status}</StatusChip>
+                        </td>
+                        <td>
+                          {bill.validUntil === null ? 'â€”' : formatDate(bill.validUntil)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+              ) : (
+                <p className="text-muted-foreground">
+                  No e-way bill has been raised for this invoice.
+                </p>
+              )}
+
+              {canModify && (
+                <Disclosure label="Draft an e-way bill">
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const form = event.currentTarget;
+                      const data = new FormData(form);
+                      const vehicleNumber = formValue(data, 'eway-vehicle');
+                      const docNumber = formValue(data, 'eway-doc-number');
+                      const docDate = formValue(data, 'eway-doc-date');
+                      const transporterId = formValue(data, 'eway-transporter-id');
+                      const transporterName = formValue(data, 'eway-transporter-name');
+                      void act(async () => {
+                        await api.createInvoiceEwayBill(organisationId, invoice.id, {
+                          transportMode: ewayMode,
+                          distanceKm: Number(formValue(data, 'eway-distance')),
+                          fromPincode: formValue(data, 'eway-from'),
+                          toPincode: formValue(data, 'eway-to'),
+                          // Empty optionals are omitted rather than sent
+                          // blank: the contract's patterns reject '' and a
+                          // draft is allowed to be still filling in.
+                          ...(transporterId !== '' ? { transporterId } : {}),
+                          ...(transporterName !== '' ? { transporterName } : {}),
+                          ...(vehicleNumber !== '' ? { vehicleNumber } : {}),
+                          ...(docNumber !== ''
+                            ? { transportDocNumber: docNumber }
+                            : {}),
+                          ...(docDate !== '' ? { transportDocDate: docDate } : {}),
+                        });
+                        setEwayBills(
+                          await api.listInvoiceEwayBills(organisationId, invoice.id),
+                        );
+                        form.reset();
+                        setEwayMode('road');
+                      }, 'Draft e-way bill created â€” send it to the GSP, then record what NIC answered.');
+                    }}
+                  >
+                    <FieldRow>
+                      <Field>
+                        <label htmlFor="eway-mode">Transport mode</label>
+                        <select
+                          id="eway-mode"
+                          name="eway-mode"
+                          value={ewayMode}
+                          onChange={(event) => {
+                            setEwayMode(event.target.value as TransportMode);
+                          }}
+                        >
+                          {(
+                            Object.keys(
+                              TRANSPORT_MODE_LABELS,
+                            ) as readonly TransportMode[]
+                          ).map((mode) => (
+                            <option key={mode} value={mode}>
+                              {TRANSPORT_MODE_LABELS[mode]}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field>
+                        <label htmlFor="eway-distance">Distance (km)</label>
+                        <input
+                          id="eway-distance"
+                          name="eway-distance"
+                          type="number"
+                          min={0}
+                          max={4000}
+                          required
+                        />
+                      </Field>
+                    </FieldRow>
+                    <FieldRow>
+                      <Field>
+                        <label htmlFor="eway-from">From PIN</label>
+                        <input
+                          id="eway-from"
+                          name="eway-from"
+                          inputMode="numeric"
+                          pattern="[0-9]{6}"
+                          maxLength={6}
+                          required
+                        />
+                      </Field>
+                      <Field>
+                        <label htmlFor="eway-to">To PIN</label>
+                        <input
+                          id="eway-to"
+                          name="eway-to"
+                          inputMode="numeric"
+                          pattern="[0-9]{6}"
+                          maxLength={6}
+                          required
+                        />
+                      </Field>
+                    </FieldRow>
+                    {movesOnVehicle(ewayMode) ? (
+                      <Field>
+                        <label htmlFor="eway-vehicle">Vehicle number</label>
+                        <input
+                          id="eway-vehicle"
+                          name="eway-vehicle"
+                          pattern="[A-Z0-9]{6,12}"
+                          maxLength={12}
+                        />
+                        <Hint>
+                          Uppercase letters and digits, no spaces. A road movement needs
+                          one before NIC will answer.
+                        </Hint>
+                      </Field>
+                    ) : (
+                      <FieldRow>
+                        <Field>
+                          <label htmlFor="eway-doc-number">
+                            Transport document number
+                          </label>
+                          <input
+                            id="eway-doc-number"
+                            name="eway-doc-number"
+                            maxLength={30}
+                          />
+                          <Hint>
+                            The railway receipt, airway bill or bill of lading this
+                            consignment moves on.
+                          </Hint>
+                        </Field>
+                        <Field>
+                          <label htmlFor="eway-doc-date">Transport document date</label>
+                          <input id="eway-doc-date" name="eway-doc-date" type="date" />
+                        </Field>
+                      </FieldRow>
+                    )}
+                    <FieldRow>
+                      <Field>
+                        <label htmlFor="eway-transporter-id">Transporter id</label>
+                        <input
+                          id="eway-transporter-id"
+                          name="eway-transporter-id"
+                          maxLength={15}
+                        />
+                        <Hint>Fifteen characters; your own vehicle needs none.</Hint>
+                      </Field>
+                      <Field>
+                        <label htmlFor="eway-transporter-name">Transporter name</label>
+                        <input
+                          id="eway-transporter-name"
+                          name="eway-transporter-name"
+                        />
+                      </Field>
+                    </FieldRow>
+                    <Actions>
+                      <Button type="submit" disabled={pending}>
+                        Create e-way bill
+                      </Button>
+                    </Actions>
+                  </form>
+                </Disclosure>
+              )}
+            </>
+          )}
+
+          {invoice.status === 'submitted' && canCancel && (
+            <Disclosure label="Cancel this invoice">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void act(async () => {
+                    await api.cancelTaxInvoice(organisationId, invoice.id, {
+                      note: cancelNote,
+                    });
+                    await refreshList();
+                    await openInvoiceDetail(invoice.id);
+                    setCancelNote('');
+                  }, 'Tax invoice cancelled â€” the Measurement Book it billed is released for a corrected invoice.');
+                }}
+              >
+                <Field>
+                  <label htmlFor="invoice-cancel-note">Why it is being cancelled</label>
+                  <textarea
+                    id="invoice-cancel-note"
+                    name="invoice-cancel-note"
+                    rows={2}
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                    value={cancelNote}
+                    onChange={(event) => {
+                      setCancelNote(event.currentTarget.value);
+                    }}
+                  />
+                  <Hint>
+                    A cancelled invoice keeps its number for ever â€” the number is never
+                    reused â€” and this note is the record of why.
+                  </Hint>
+                </Field>
+                <Actions>
+                  <Button type="submit" variant="destructive" disabled={pending}>
+                    Cancel invoice
+                  </Button>
+                </Actions>
+              </form>
+            </Disclosure>
+          )}
+        </section>
+      )}
+    </>
+  );
+}

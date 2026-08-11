@@ -1,4 +1,4 @@
-# Pilot runbook (Milestone 4)
+# Pilot deployment and operations runbook
 
 The concrete procedures for the design-partner pilot deployment. The
 principles they implement live in docs/OPERATIONS.md; where the two ever
@@ -169,10 +169,14 @@ Per partner (3–5 for the pilot):
 - [ ] support channel agreed (shared chat/phone), response expectations
       set (pilot: business hours, same-day);
 - [ ] retention walkthrough completed: receipt → serials/installation →
-      Measurement Book → bill preparation and status progression;
+      record/on-account/final Measurement Book → bill preparation and status
+      progression;
+- [ ] procurement and tax walkthrough completed where enabled: vendor →
+      purchase order → receipt, and submitted GST invoice → rendered PDF →
+      operator-assisted IRP/NIC response recording;
 - [ ] partner told, in writing, what the pilot does NOT yet include
-      (GST documents, security-deposit/price-variation bill maths —
-      docs/ROADMAP.md).
+      (automatic Whitebooks submission, security-deposit/price-variation bill
+      maths, offline sync — docs/ROADMAP.md).
 
 ## 9. External items before paid production
 

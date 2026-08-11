@@ -441,33 +441,73 @@ apply, reconcile, invite users. Data-quality exceptions found in the
 real backup were delivered to the operator for correction in v1 before
 the final run.
 
-## Milestone 9 — operational depth, evidence-gated
+## Milestone 9 — procurement and parallel measurement
 
-Each item enters build only when a design partner supplies the evidence
-named with it:
+Delivered (2026-08-10, migrations 0033–0034):
+
+- vendor contacts, purchase orders with Work-item lines, gapless issue,
+  immutable vendor/line snapshots, receipt-aware closure, and cancellation;
+- Work-independent budgetary quotations with draft, issue, outcome, and
+  cancellation lifecycles;
+- supplier state plus optional Work-item HSN/SAC, GST rate, and goods/service
+  facts needed by procurement and statutory documents;
+- record Measurement Books for parallel consignee measurement, merge into an
+  on-account draft, and final Measurement Books that close further measurement.
+
+## Milestone 10 — GST invoices and e-way bills
+
+Delivered locally (2026-08-10, migrations 0035–0039):
+
+- direct and finalized-MB-backed GST invoices with draft, submitted, and
+  cancelled lifecycles;
+- configurable organisation numbering templates, financial-year counters,
+  buyer division tokens, direct-invoice values, and house defaults;
+- exact intra-state CGST/SGST or inter-state IGST split, whole-rupee rounding,
+  immutable supplier/buyer/ship-to snapshots, amount in words, and rendered
+  invoice PDFs;
+- deterministic IRP schema 1.1 and NIC e-way-bill payloads, append-only IRN/
+  acknowledgement/signed-QR evidence, e-way number/validity evidence, and
+  cancellation ordering that refuses an invoice cancellation while a live
+  e-way bill exists;
+- full RLS, work-scope, authority, audit, concurrency, lifecycle, and database
+  backstop tests for the new records.
+
+Remaining: direct Whitebooks transport. Current UI is honest operator-assisted
+mode: copy the provider-ready payload, submit externally, and record exactly
+what IRP/NIC returned. It never labels a local document externally registered
+without that evidence.
+
+## Milestone 11 — contract-source intake and product experience
+
+Delivered on the 2026-08-11 merge candidate (migration 0040):
+
+- optional NIT, Contract Agreement, and tender/specification PDFs under the
+  LOA package, accepted only when tender number and name of work match;
+- complementary Poppler layout/raw extraction that preserves exact LOA item
+  descriptions across wrapped lines and page breaks;
+- advertised-value reconciliation for printed item rows, with percentage and
+  schedule pricing explaining accepted contract value instead of false missing
+  money;
+- task-first navigation, Work-centred execution, responsive/mobile shells, and
+  explicit loading, empty, error, retry, permission, and blocked-action states;
+- safe database-unavailable responses that preserve review edits and include a
+  request reference.
+
+## Remaining evidence-gated depth
 
 - Excel Work-item import with validation, mapping preview, and
-  review-before-accept — first real letter or BOQ the PDF path cannot
-  serve (Milestone 6's row editing covers the known failure mode until
-  then);
-- organisation-wide audit search with structured diffs — first
-  investigation need the per-Work timeline cannot answer (capture starts
-  in Milestone 6, so the evidence exists by then);
-- multiple numbering series and per-document signatory selection within
-  one organisation — first partner needing more than the single profile;
-  a series or signatory never changes the legal entity that owns the
-  record (multiple legal entities remain multiple organisations,
-  ADR-0005);
-- a unified cross-document register — first partner request the per-type
-  surfaces cannot satisfy (the concept has no legacy-spec antecedent);
-- standalone/non-Work material movements with a separate company-level
-  numbering series — real demand only; it forks the one-draft-per-Work,
-  per-Work-numbering, and LOA-date invariants.
+  review-before-accept — first real letter or BOQ the PDF path cannot serve;
+- organisation-wide audit search — first investigation the per-Work timeline
+  cannot answer;
+- standalone/non-Work material movements — real demand only; this forks Work
+  scope, numbering, and LOA-date invariants;
+- broad reporting, department expansion, and per-document signatory selection
+  when partner evidence defines the required outputs.
 
 ## Deferred until usage proves demand
 
-- GST IRN/e-way-bill automation;
-- procurement, POs, and BQs;
+- automatic statutory filing without an operator-visible provider request,
+  response, and audit trail;
 - broad reporting;
 - department expansion;
 - enterprise SSO/custom policy engine;

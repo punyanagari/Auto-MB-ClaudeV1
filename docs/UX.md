@@ -170,6 +170,21 @@ The approved design pack covers:
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use shared patterns rather than becoming separate product architectures.
 
+## Current implementation status
+
+The task-first shell, organisation entry, Home/Works/Documents/Operations/
+Administration navigation, Work workspace, LOA and contract-source review,
+delivery/issue documents, installation, Measurement Book, billing, tax invoice,
+and e-way-bill surfaces are implemented. Shared loading, empty, retry,
+read-only, permission, and blocked-action states cover the primary paths, with
+component and Playwright/axe regression coverage.
+
+Current statutory registration remains operator-assisted: the product creates
+and displays deterministic IRP/NIC payloads and records verified responses, but
+does not yet send them directly to Whitebooks. Provider submission will keep
+the same local/external state split and add progress, retry, and redacted error
+states rather than presenting a local issue as government registration.
+
 ## Definition of UX completion
 
 The overhaul is complete only when:
@@ -180,4 +195,4 @@ The overhaul is complete only when:
 - every major page has loading, empty, failure and read-only coverage;
 - desktop, tablet and mobile layouts pass keyboard and serious axe checks;
 - the final branch passes `pnpm verify`, production Compose smoke and fresh-cluster restore;
-- the draft PR receives product-owner visual approval before merge.
+- the merge candidate receives product-owner visual approval.

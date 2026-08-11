@@ -448,4 +448,816 @@ export function WorkDetail({
     // Unknown falls back to offering the form â€” what the page did before it
     // thought to ask â€” and the server still refuses with the worklist.
     api
-      .workCompletionReadã^¸¶‰žËkºwµç@€€€€€€€€€¥ô(€€€€€€€€€€ð½‘ø(€€€€€€€€ð½‘¥Øø(€€€€€€ð½‘°ø((€€€€€ì¼¨±•Ù•¸Í•Ñ¥½¹ÌÕÍ•Ñ¼ÍÑ…¬½¸½¹”ÍÉ½±°¸… …É•„¹½Ü…¹ÍÝ•ÉÌ(€€€€€€€€€™½È¥ÑÍ•±˜°…¹Ñ¡”½Õ¹ÑÌÍ¡½ÜÝ¡…Ð¥Ì¥¹Í¥‘”‰•™½É”¥Ð¥Ì½Á•¹•¸€¨½ô(€€€€€€ñ¹…Ø(€€€€€€€±…ÍÍ9…µ”ô‰µÐ´Ðµˆ´È™±•à¥Ñ•µÌµ•¹Ñ•È…À´À¸Ô½Ù•É™±½Üµàµ…ÕÑ¼‰½É‘•Èµˆ‰½É‘•Èµ‰½É‘•Èˆ(€€€€€€€…É¥„µ±…‰•°ô‰]½É¬Í•Ñ¥½¹Ìˆ(€€€€€€ø(€€€€€€€í]=I-}Q	L¹µ…À ¡…¹‘¥‘…Ñ”¤€ôøì(€€€€€€€€€½¹ÍÐ½Õ¹Ð€ôÑ…‰½Õ¹ÑÍm…¹‘¥‘…Ñ•tì(€€€€€€€€€½¹ÍÐÕÉÉ•¹Ð€ôÑ…ˆ€ôôô…¹‘¥‘…Ñ”ì(€€€€€€€€€É•ÑÕÉ¸€ (€€€€€€€€€€€€ñ‰ÕÑÑ½¸(€€€€€€€€€€€€€­•äõí…¹‘¥‘…Ñ•ô(€€€€€€€€€€€€€ÑåÁ”ô‰‰ÕÑÑ½¸ˆ(€€€€€€€€€€€€€±…ÍÍ9…µ”õí¸ (€€€€€€€€€€€€€€€€œµµˆµÁà¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È…À´È‰½É‘•Èµˆ´È‰½É‘•ÈµÑÉ…¹ÍÁ…É•¹ÐÁà´ÌÁä´Èœ°(€€€€€€€€€€€€€€€€Ñ•áÐµÍ´Ý¡¥Ñ•ÍÁ…”µ¹½ÝÉ…ÀÑÉ…¹Í¥Ñ¥½¸µ½±½ÉÌœ°(€€€€€€€€€€€€€€€ÕÉÉ•¹Ð(€€€€€€€€€€€€€€€€€€ü€‰½É‘•ÈµÁÉ¥µ…Éä™½¹ÐµÍ•µ¥‰½±Ñ•áÐµ™½É•É½Õ¹œ(€€€€€€€€€€€€€€€€€€è€Ñ•áÐµµÕÑ•µ™½É•É½Õ¹¡½Ù•ÈéÑ•áÐµ™½É•É½Õ¹œ°(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€…É¥„µÕÉÉ•¹ÐõíÕÉÉ•¹Ð€ü€Á…”œ€èÕ¹‘•™¥¹•‘ô(€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€Í•ÑQ…ˆ¡…¹‘¥‘…Ñ”¤ì(€€€€€€€€€€€€€õô(€€€€€€€€€€€€ø(€€€€€€€€€€€€€í]=I-}Q	}1	1Mm…¹‘¥‘…Ñ•uô(€€€€€€€€€€€€€í½Õ¹Ð€„ôô¹Õ±°€˜˜€ (€€€€€€€€€€€€€€€€ñÍÁ…¸(€€€€€€€€€€€€€€€€€±…ÍÍ9…µ”õí¸ (€€€€€€€€€€€€€€€€€€€€É½Õ¹‘•µÍ´Áà´Ä¸ÔÁäµÁà™½¹Ðµµ½¹¼Ñ•áÐµlÄÅÁát™½¹ÐµÍ•µ¥‰½±Ñ…‰Õ±…Èµ¹ÕµÌœ°(€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹Ð(€€€€€€€€€€€€€€€€€€€€€€ü€‰œµÁÉ¥µ…ÉäÑ•áÐµÁÉ¥µ…Éäµ™½É•É½Õ¹œ(€€€€€€€€€€€€€€€€€€€€€€è€‰œµµÕÑ•Ñ•áÐµµÕÑ•µ™½É•É½Õ¹œ°(€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€í½Õ¹Ñô(€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€¤ì(€€€€€€€ô¥ô(€€€€€€ð½¹…Øø((€€€€€íÑ…ˆ€ôôô€½Ù•ÉÙ¥•Üœ€˜˜€ (€€€€€€€€ðø(€€€€€€€€€ì¼¨Q¡”Ý¡½±”ÍÑ…Ñ”½˜„]½É¬°‰•™½É”…¹åÑ¡¥¹œ¥Ì½Á•¹•¸… •±°(€€€€€€€€€€€€€…ÉÉ¥•ÌÑ¡”½Õ¹Ð¥ÑÌÑ…ˆÍ¡½ÝÌ°Í¼Ñ¡”ÍÕµµ…Éä…¹Ñ¡”Ñ…ˆÍÑÉ¥À(€€€€€€€€€€€€€…¸¹•Ù•È‘¥Í…É•”ƒŠP‰½Ñ É•…Ñ¡”Í…µ”‘•É¥Ù…Ñ¥½¸¸€¨½ô(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µˆ´ÐÉ¥É¥µ½±ÌµmÉ•Á•…Ð¡…ÕÑ¼µ™¥Ð±µ¥¹µ…à ÄÕÉ•´°Å™È¤¥t½Ù•É™±½Üµ¡¥‘‘•¸É½Õ¹‘•µá°‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµ…Éˆø(€€€€€€€€€€€í]=I-}Q	L¹™¥±Ñ•È (€€€€€€€€€€€€€€¡…¹‘¥‘…Ñ”¤€ôø…¹‘¥‘…Ñ”€„ôô€½Ù•ÉÙ¥•Üœ€˜˜…¹‘¥‘…Ñ”€„ôô€Ñ¥µ•±¥¹”œ°(€€€€€€€€€€€€¤¹µ…À ¡…¹‘¥‘…Ñ”¤€ôøì(€€€€€€€€€€€€€½¹ÍÐÉ•±…Ñ•‘MÑ…Ñ”€ôÉ•±…Ñ•‘MÑ…Ñ•½ÉQ…ˆ¡…¹‘¥‘…Ñ”¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸€ (€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸(€€€€€€€€€€€€€€€€€­•äõí…¹‘¥‘…Ñ•ô(€€€€€€€€€€€€€€€€€ÑåÁ”ô‰‰ÕÑÑ½¸ˆ(€€€€€€€€€€€€€€€€€±…ÍÍ9…µ”ô‰™±•àÕÉÍ½ÈµÁ½¥¹Ñ•È™±•àµ½°¥Ñ•µÌµÍÑÉ•Ñ …À´È‰½É‘•ÈµÐ‰½É‘•Èµ°‰½É‘•Èµ‰½É‘•ÈÁà´ÐÁä´ÌÑ•áÐµ±•™ÐÑÉ…¹Í¥Ñ¥½¸µ½±½ÉÌ¡½Ù•Èé‰œµµÕÑ•ˆ(€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€Í•ÑQ…ˆ¡…¹‘¥‘…Ñ”¤ì(€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰™±•à¥Ñ•µÌµ‰…Í•±¥¹”…À´Èˆø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµÍ´™½¹ÐµÍ•µ¥‰½±ˆø(€€€€€€€€€€€€€€€€€€€€€í]=I-}Q	}1	1Mm…¹‘¥‘…Ñ•uô(€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰µ°µ…ÕÑ¼™½¹Ðµµ½¹¼Ñ•áÐµ±œ™½¹ÐµÍ•µ¥‰½±ÑÉ…­¥¹œµÑ¥¡ÐÑ…‰Õ±…Èµ¹ÕµÌˆø(€€€€€€€€€€€€€€€€€€€€€íÑ…‰½Õ¹ÑÍm…¹‘¥‘…Ñ•t€üü€ŸŠPô(€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰™±•à™±•àµ½°…À´ÄÑ•áÐµlÄÅÁátÑ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€€€€€€€€íÉ•±…Ñ•‘MÑ…Ñ”€ôôô€É•…‘äœ€ü€ (€€€€€€€€€€€€€€€€€€€€€€¡ÍÕµµ…Éå1¥¹•Ím…¹‘¥‘…Ñ•t€üümt¤¹µ…À ¡±¥¹”¤€ôø€ (€€€€€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰™±•à¥Ñ•µÌµ‰…Í•±¥¹”…À´Èˆ­•äõí±¥¹”¹±…‰•±ôø(€€€€€€€€€€€€€€€€€€€€€€€€€í±¥¹”¹±…‰•±ô(€€€€€€€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰µ°µ…ÕÑ¼™½¹Ðµµ½¹¼Ñ•áÐµÍ•½¹‘…Éäµ™½É•É½Õ¹Ñ…‰Õ±…Èµ¹ÕµÌˆø(€€€€€€€€€€€€€€€€€€€€€€€€€€€í±¥¹”¹Ù…±Õ•ô(€€€€€€€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€€€¤¤(€€€€€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€€€€íÉ•±…Ñ•‘MÑ…Ñ”€ôôô€±½…‘¥¹œœ€ü€1½…‘¥¹ŸŠ˜œ€è€U¹…Ù…¥±…‰±”ô(€€€€€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€€€€ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô¥ô(€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€ñÍ•Ñ¥½¸…É¥„µ±…‰•±±•‘‰äô‰Ý½É¬µ½µÁ±•Ñ¥½¸µ¡•…‘¥¹œˆø(€€€€€€€€€€€€ñ È¥ô‰Ý½É¬µ½µÁ±•Ñ¥½¸µ¡•…‘¥¹œˆù½µÁ±•Ñ¥½¸ÍÑ…ÑÕÌð½ Èø(€€€€€€€€€€€íÝ½É¬¹ÍÑ…ÑÕÌ€ôôô€½µÁ±•Ñ•œ€ü€ (€€€€€€€€€€€€€€ðø(€€€€€€€€€€€€€€€€ñÀø(€€€€€€€€€€€€€€€€€Q¡¥Ì]½É¬¥Ì€ñÍÑÉ½¹œù½µÁ±•Ñ•ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€íÝ½É¬¹½µÁ±•Ñ•‘Ð€ôôô¹Õ±°(€€€€€€€€€€€€€€€€€€€€ü€œœ(€€€€€€€€€€€€€€€€€€€€è€½¸€‘íÝ½É¬¹½µÁ±•Ñ•‘Ð¹Í±¥” À°€ÄÀ¥õô(€€€€€€€€€€€€€€€€€€¸9¼¹•Ü¡…±±…¸°¥¹ÍÑ…±±…Ñ¥½¸°A•ÉÑ¥™¥…Ñ”°5•…ÍÕÉ•µ•¹Ð	½½¬°(€€€€€€€€€€€€€€€€€•áÑ•¹Í¥½¸É•ÅÕ•ÍÐ°½È¡…¹”ÁÉ½Á½Í…°…¸‰”É•½É‘•Õ¹Ñ¥°¥Ð¥Ì(€€€€€€€€€€€€€€€€€É•½Á•¹•¸(€€€€€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€€€€íÝ½É¬¹½µÁ±•Ñ¥½¹9½Ñ”€„ôô¹Õ±°€˜˜€ (€€€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€€€€€€€€½µÁ±•Ñ¥½¸¹½Ñ”èíÝ½É¬¹½µÁ±•Ñ¥½¹9½Ñ•ô(€€€€€€€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð¼ø(€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€€€€€€€€€]½É¬½µÁ±•Ñ•Ì½¹±ä…Ð€ÄÀÀ”•á•ÕÑ•Ù…±Õ”€¡•Ù•Éä¥Ñ•´™Õ±±ä‘•±¥Ù•É•(€€€€€€€€€€€€€€€…¹½½È¥¹ÍÑ…±±•Á•È¥ÑÌÁ…åµ•¹Ð…Ñ•½Éä¤¸½È„Í¡½ÉÐ±½ÍÕÉ”°…µ•¹(€€€€€€€€€€€€€€€Ñ¡”ÅÕ…¹Ñ¥Ñ¥•Ì‘½Ý¸Ñ¡É½Õ Ñ¡”…ÁÁÉ½Ù…°Á…Ñ ™¥ÉÍÐ¸(€€€€€€€€€€€€€€ð½Àø(€€€€€€€€€€€€¥ô((€€€€€€€€€€€í…¹5½‘¥™ä€˜˜Ý½É­Ñ¥Ù”€˜˜É•…‘¥¹•ÍÌü¹É•…‘ä€ôôô™…±Í”€˜˜€ (€€€€€€€€€€€€€€¼¨Q¡”Í¡½ÉÑ™…±°ÍÑ…¹‘ÌÝ¡•É”Ñ¡”™½É´Ý½Õ±‰”¸!¥‘¥¹œÑ¡”(€€€€€€€€€€€€€€€€½¹ÑÉ½°½¸¥ÑÌ½Ý¸Ý½Õ±±•…Ù”…¸½Á•É…Ñ½ÈÝ¡¼…µ”¡•É”Ñ¼(€€€€€€€€€€€€€€€€±½Í”Ñ¡”]½É¬Ý¥Ñ ¹½Ñ¡¥¹œÑ¼É•…ìÑ¡¥Ì¥ÌÑ¡”Í…µ”(€€€€€€€€€€€€€€€€Ý½É­±¥ÍÐÑ¡”É•™ÕÍ…°Ý½Õ±¡…Ù”É•ÑÕÉ¹•°µ¥¹ÕÌÑ¡”Ý…ÍÑ•(€€€€€€€€€€€€€€€€½µÁ±•Ñ¥½¸¹½Ñ”¸€¨¼(€€€€€€€€€€€€€€ñ½µÁ±•Ñ¥½¹M¡½ÉÑ™…±°(€€€€€€€€€€€€€€€‰±½­•ÉÌõíÉ•…‘¥¹•ÍÌ¹‰±½­•ÉÍô(€€€€€€€€€€€€€€€Õ¹™¥¹¥Í¡•õíÉ•…‘¥¹•ÍÌ¹Õ¹™¥¹¥Í¡•‘ô(€€€€€€€€€€€€€€€±•…ô‰Q¡¥Ì]½É¬…¹¹½Ð‰”½µÁ±•Ñ•å•Ð¸ˆ(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€¥ô((€€€€€€€€€€€í…¹5½‘¥™ä€˜˜Ý½É­Ñ¥Ù”€˜˜É•…‘¥¹•ÍÌü¹É•…‘ä€„ôô™…±Í”€˜˜€ (€€€€€€€€€€€€€€ñ™½É´(€€€€€€€€€€€€€€€½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ð¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐ¹½Ñ”€ô™½ÉµY…±Õ”¡‘…Ñ„°€½µÁ±•Ñ¥½¸µ¹½Ñ”œ¤ì(€€€€€€€€€€€€€€€€€Ù½¥ÑÉ…¹Í¥Ñ¥½¸¡…Íå¹Œ€ ¤€ôøì(€€€€€€€€€€€€€€€€€€€½¹ÍÐÕÁ‘…Ñ•€ô…Ý…¥Ð…Á¤¹½µÁ±•Ñ•]½É¬¡½É…¹¥Í…Ñ¥½¹%°Ý½É­%°ì(€€€€€€€€€€€€€€€€€€€€€¹½Ñ”°(€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸ÕÁ‘…Ñ•¹Ý½É¬ì(€€€€€€€€€€€€€€€€€ô°€]½É¬µ…É­•½µÁ±•Ñ•¸œ¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Ý½É¬µ½µÁ±•Ñ¥½¸µ¹½Ñ”ˆø(€€€€€€€€€€€€€€€€€€€]¡äÑ¡¥Ì]½É¬¥Ì‰•¥¹œ½µÁ±•Ñ•(€€€€€€€€€€€€€€€€€€ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€€€€€€€€€¥ô‰Ý½É¬µ½µÁ±•Ñ¥½¸µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€¹…µ”ô‰½µÁ±•Ñ¥½¸µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÍô(€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÀÁô(€€€€€€€€€€€€€€€€€€€É½ÝÌõìÉô(€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€€€€€½µÁ±•Ñ”]½É¬(€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€€€¥ô((€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€…Ý½É­Ñ¥Ù”€˜˜€ (€€€€€€€€€€€€€€ñ™½É´(€€€€€€€€€€€€€€€½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøì(€€€€€€€€€€€€€€€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ð¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐ¹½Ñ”€ô™½ÉµY…±Õ”¡‘…Ñ„°€É•½Á•¸µ¹½Ñ”œ¤ì(€€€€€€€€€€€€€€€€€Ù½¥ÑÉ…¹Í¥Ñ¥½¸¡…Íå¹Œ€ ¤€ôøì(€€€€€€€€€€€€€€€€€€€½¹ÍÐÕÁ‘…Ñ•€ô…Ý…¥Ð…Á¤¹É•½Á•¹]½É¬¡½É…¹¥Í…Ñ¥½¹%°Ý½É­%°ì(€€€€€€€€€€€€€€€€€€€€€¹½Ñ”°(€€€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸ÕÁ‘…Ñ•¹Ý½É¬ì(€€€€€€€€€€€€€€€€€ô°€]½É¬É•½Á•¹•¸œ¤ì(€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Ý½É¬µÉ•½Á•¸µ¹½Ñ”ˆø(€€€€€€€€€€€€€€€€€€€]¡äÑ¡¥Ì]½É¬¥Ì‰•¥¹œÉ•½Á•¹•(€€€€€€€€€€€€€€€€€€ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„(€€€€€€€€€€€€€€€€€€€¥ô‰Ý½É¬µÉ•½Á•¸µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€¹…µ”ô‰É•½Á•¸µ¹½Ñ”ˆ(€€€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÍô(€€€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÀÁô(€€€€€€€€€€€€€€€€€€€É½ÝÌõìÉô(€€€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€€€€€I•½Á•¸]½É¬(€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€€€¥ô((€€€€€€€€€€€ì¼¨Q¡”Í…µ”ÑÝ¼±¥ÍÑÌ°Ý¡•Ñ¡•ÈÑ¡•äÝ•É”…Í­•™½ÈÕÀ™É½¹Ð½È(€€€€€€€€€€€€€€€…µ”‰…¬™É½´„É•™ÕÍ•…ÑÑ•µÁÐ¸€¨½ô(€€€€€€€€€€€€ñ½µÁ±•Ñ¥½¹M¡½ÉÑ™…±°‰±½­•ÉÌõí‰±½­•ÉÍôÕ¹™¥¹¥Í¡•õíÕ¹™¥¹¥Í¡•‘ô€¼ø(€€€€€€€€€€ð½Í•Ñ¥½¸ø((€€€€€€€€€€ñ½µÁ±•Ñ¥½¹áÑ•¹Í¥½¹Ì(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€…¹5½‘¥™äõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹%ÍÍÕ”õí…¹%ÍÍÕ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹ÁÁÉ½Ù”õí…¹ÁÁÉ½Ù•ô(€€€€€€€€€€¼ø((€€€€€€€€€€ñ]½É­½¹Í¥¹••Ì(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™åô(€€€€€€€€€€¼ø(€€€€€€€€ð¼ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€Í¡•‘Õ±•Ìœ€˜˜€ (€€€€€€€€ñ]½É­M¡•‘Õ±•Ì(€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€Í¡•‘Õ±•ÌõíÍ¡•‘Õ±•Íô(€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€Á•¹‘¥¹I•µ½Ù…±ÌõíÁ•¹‘¥¹I•µ½Ù…±Íô(€€€€€€€€€Í•Ñ•Ñ…¥°õíÍ•Ñ•Ñ…¥±ô(€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™ä€˜˜É•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹…µ•¹‘µ•¹ÑÍt¤€ôôô€É•…‘äô(€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€…Ðõí…Ñô(€€€€€€€€¼ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€‘•±¥Ù•É¥•Ìœ€˜˜€ (€€€€€€€€ñ]½É­•±¥Ù•É¥•Ì(€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€Ý½É¬õíÝ½É­ô(€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€¡…±±…¹Ìõí¡…±±…¹Íô(€€€€€€€€€¡…±±…¹ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹¡…±±…¹Ít¥ô(€€€€€€€€€½ÉÉ•Ñ¥½¹9½Ñ¥•Ìõí½ÉÉ•Ñ¥½¹9½Ñ¥•Íô(€€€€€€€€€½ÉÉ•Ñ¥½¹9½Ñ¥•ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹½ÉÉ•Ñ¥½¹9½Ñ¥•Ít¥ô(€€€€€€€€€Í•Ñ½ÉÉ•Ñ¥½¹9½Ñ¥•ÌõíÍ•Ñ½ÉÉ•Ñ¥½¹9½Ñ¥•Íô(€€€€€€€€€Í•É¥…±ÌõíÍ•É¥…±Íô(€€€€€€€€€Í•É¥…±ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹Í•É¥…±Ít¥ô(€€€€€€€€€Í•ÑM•É¥…±ÌõíÍ•ÑM•É¥…±Íô(€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€…¹I•½É‘M¥Ñ•Ù¥‘•¹”õí…¹I•½É‘M¥Ñ•Ù¥‘•¹•ô(€€€€€€€€€½¹9•Ý¡…±±…¸õí½¹9•Ý¡…±±…¹ô(€€€€€€€€€½¹=Á•¹¡…±±…¸õí½¹=Á•¹¡…±±…¹ô(€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€…Ðõí…Ñô(€€€€€€€€¼ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€ÁÉ½ÕÉ•µ•¹Ðœ€˜˜€ (€€€€€€€€ñI•±…Ñ•‘M•Ñ¥½¹…Ñ”(€€€€€€€€€±…‰•±ÌõímI1Q¹ÁÕÉ¡…Í•=É‘•ÉÍuô(€€€€€€€€€Á•¹‘¥¹œõíÉ•±…Ñ•‘A•¹‘¥¹ô(€€€€€€€€€™…¥±ÕÉ•ÌõíÉ•±…Ñ•‘…¥±ÕÉ•Íô(€€€€€€€€ø(€€€€€€€€€€ñ]½É­AÕÉ¡…Í•=É‘•ÉÌ(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€€€ÁÕÉ¡…Í•=É‘•ÉÌõíÁÕÉ¡…Í•=É‘•ÉÍô(€€€€€€€€€€€Í•ÑAÕÉ¡…Í•=É‘•ÉÌõíÍ•ÑAÕÉ¡…Í•=É‘•ÉÍô(€€€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™åô(€€€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹%ÍÍÕ”õí…¹%ÍÍÕ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹…¹•°õí…¹…¹•±ô(€€€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€€€…Ðõí…Ñô(€€€€€€€€€€¼ø(€€€€€€€€ð½I•±…Ñ•‘M•Ñ¥½¹…Ñ”ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€¥ÍÍÕ•Ìœ€˜˜€ (€€€€€€€€ñI•±…Ñ•‘M•Ñ¥½¹…Ñ”(€€€€€€€€€±…‰•±ÌõímI1Q¹¥ÍÍÕ•¡…±±…¹Íuô(€€€€€€€€€Á•¹‘¥¹œõíÉ•±…Ñ•‘A•¹‘¥¹ô(€€€€€€€€€™…¥±ÕÉ•ÌõíÉ•±…Ñ•‘…¥±ÕÉ•Íô(€€€€€€€€ø(€€€€€€€€€€ñ]½É­%ÍÍÕ•¡…±±…¹Ì(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€¥ÍÍÕ•¡…±±…¹Ìõí¥ÍÍÕ•¡…±±…¹Íô(€€€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€½¹9•Ý%ÍÍÕ•¡…±±…¸õí½¹9•Ý%ÍÍÕ•¡…±±…¹ô(€€€€€€€€€€€½¹=Á•¹%ÍÍÕ•¡…±±…¸õí½¹=Á•¹%ÍÍÕ•¡…±±…¹ô(€€€€€€€€€€¼ø(€€€€€€€€ð½I•±…Ñ•‘M•Ñ¥½¹…Ñ”ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€µ•…ÍÕÉ•µ•¹Ðœ€˜˜€ (€€€€€€€€ñ]½É­5•…ÍÕÉ•µ•¹Ð(€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€µ‰¹ÑÉ¥•Ìõíµ‰¹ÑÉ¥•Íô(€€€€€€€€€µ‰¹ÑÉ¥•ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹µ•…ÍÕÉ•µ•¹ÑÍt¥ô(€€€€€€€€€Í•Ñ5‰¹ÑÉ¥•ÌõíÍ•Ñ5‰¹ÑÉ¥•Íô(€€€€€€€€€¥ÍÍÕ•‘¡…±±…¹Ìõí¥ÍÍÕ•‘¡…±±…¹Íô(€€€€€€€€€¡…±±…¹9Õµ‰•É	å%õí¡…±±…¹9Õµ‰•É	å%‘ô(€€€€€€€€€¡…±±…¹ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹¡…±±…¹Ít¥ô(€€€€€€€€€Í•Ñ	¥±±ÌõíÍ•Ñ	¥±±Íô(€€€€€€€€€‰¥±±ÍMÑ…Ñ”õíÉ•±…Ñ•‘MÑ…Ñ•½È¡mI1Q¹‰¥±±Ít¥ô(€€€€€€€€€…¹I•½É‘M¥Ñ•Ù¥‘•¹”õí…¹I•½É‘M¥Ñ•Ù¥‘•¹•ô(€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€…¹%ÍÍÕ”õí…¹%ÍÍÕ•ô(€€€€€€€€€…¹…¹•°õí…¹…¹•±ô(€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€…Ðõí…Ñô(€€€€€€€€¼ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€‰¥±±Ìœ€˜˜€ (€€€€€€€€ðø(€€€€€€€€€€ñI•±…Ñ•‘M•Ñ¥½¹…Ñ”(€€€€€€€€€€€±…‰•±ÌõímI1Q¹‰¥±±Íuô(€€€€€€€€€€€Á•¹‘¥¹œõíÉ•±…Ñ•‘A•¹‘¥¹ô(€€€€€€€€€€€™…¥±ÕÉ•ÌõíÉ•±…Ñ•‘…¥±ÕÉ•Íô(€€€€€€€€€€ø(€€€€€€€€€€€€ñ]½É­	¥±±Ì(€€€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€€€‰¥±±Ìõí‰¥±±Íô(€€€€€€€€€€€€€Í•Ñ	¥±±ÌõíÍ•Ñ	¥±±Íô(€€€€€€€€€€€€€…¹%ÍÍÕ”õí…¹%ÍÍÕ•ô(€€€€€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€€€€€…Ðõí…Ñô(€€€€€€€€€€€€¼ø(€€€€€€€€€€ð½I•±…Ñ•‘M•Ñ¥½¹…Ñ”ø(€€€€€€€€€ì¼¨Q¡”MP‘½Õµ•¹ÐÍ¥ÑÌÝ¥Ñ Ñ¡”µ½¹•ä¥Ð‰¥±±ÌèÑ¡”‰¥±°¥Ì(€€€€€€€€€€€€€Ý¡…ÐÑ¡”½¹ÑÉ…Ð½Ý•Ì°Ñ¡”Ñ…à¥¹Ù½¥”¥ÌÝ¡…ÐÑ¡”±…Ü(€€€€€€€€€€€€€É•ÅÕ¥É•Ì™½È¥Ð¸€¨½ô(€€€€€€€€€€ñ]½É­Q…á%¹Ù½¥•Ì(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™åô(€€€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹%ÍÍÕ”õí…¹%ÍÍÕ•½Õµ•¹ÑÍô(€€€€€€€€€€€…¹…¹•°õí…¹…¹•±ô(€€€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€€€…Ðõí…Ñô(€€€€€€€€€€¼ø(€€€€€€€€ð¼ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€¥¹ÍÑÉÕµ•¹ÑÌœ€˜˜€ (€€€€€€€€ñI•±…Ñ•‘M•Ñ¥½¹…Ñ”(€€€€€€€€€±…‰•±ÌõímI1Q¹¥¹ÍÑÉÕµ•¹ÑÍuô(€€€€€€€€€Á•¹‘¥¹œõíÉ•±…Ñ•‘A•¹‘¥¹ô(€€€€€€€€€™…¥±ÕÉ•ÌõíÉ•±…Ñ•‘…¥±ÕÉ•Íô(€€€€€€€€ø(€€€€€€€€€€ñ]½É­%¹ÍÑÉÕµ•¹ÑÌ(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€Ý½É¬õíÝ½É­ô(€€€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€€€¥¹ÍÑÉÕµ•¹ÑÌõí¥¹ÍÑÉÕµ•¹ÑÍô(€€€€€€€€€€€Í•Ñ%¹ÍÑÉÕµ•¹ÑÌõíÍ•Ñ%¹ÍÑÉÕµ•¹ÑÍô(€€€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™åô(€€€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€€€…Ðõí…Ñô(€€€€€€€€€€¼ø(€€€€€€€€ð½I•±…Ñ•‘M•Ñ¥½¹…Ñ”ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€…µ•¹‘µ•¹ÑÌœ€˜˜€ (€€€€€€€€ñI•±…Ñ•‘M•Ñ¥½¹…Ñ”(€€€€€€€€€±…‰•±ÌõímI1Q¹…µ•¹‘µ•¹ÑÍuô(€€€€€€€€€Á•¹‘¥¹œõíÉ•±…Ñ•‘A•¹‘¥¹ô(€€€€€€€€€™…¥±ÕÉ•ÌõíÉ•±…Ñ•‘…¥±ÕÉ•Íô(€€€€€€€€ø(€€€€€€€€€€ñ]½É­µ•¹‘µ•¹ÑÌ(€€€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€€€Ý½É­%õíÝ½É­%‘ô(€€€€€€€€€€€…µ•¹‘µ•¹ÑÌõí…µ•¹‘µ•¹ÑÍô(€€€€€€€€€€€Í•Ñµ•¹‘µ•¹ÑÌõíÍ•Ñµ•¹‘µ•¹ÑÍô(€€€€€€€€€€€Í•Ñ•Ñ…¥°õíÍ•Ñ•Ñ…¥±ô(€€€€€€€€€€€Í¡•‘Õ±•ÌõíÍ¡•‘Õ±•Íô(€€€€€€€€€€€Ý½É­%Ñ•µÌõíÝ½É­%Ñ•µÍô(€€€€€€€€€€€…¹É•…Ñ•½Õµ•¹ÑÌõí…¹É•…Ñ•½Õµ•¹ÑÍô(€€€€€€€€€€€Á•¹‘¥¹œõíÁ•¹‘¥¹ô(€€€€€€€€€€€…Ðõí…Ñô(€€€€€€€€€€¼ø(€€€€€€€€ð½I•±…Ñ•‘M•Ñ¥½¹…Ñ”ø(€€€€€€¥ô((€€€€€íÑ…ˆ€ôôô€Ñ¥µ•±¥¹”œ€˜˜€ (€€€€€€€€ñQ¥µ•±¥¹”(€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€Í½Á”õíì­¥¹è€Ý½É¬œ°Ý½É­%õô(€€€€€€€€¼ø(€€€€€€¥ô((€€€€€í¹½Ñ¥”€„ôô¹Õ±°€˜˜€ñ½Éµ9½Ñ¥”ùí¹½Ñ¥•ôð½½Éµ9½Ñ¥”ùô(€€€€€í…Ñ¥½¹ÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½Èùí…Ñ¥½¹ÉÉ½Éôð½½ÉµÉÉ½Èùô((€€€€€€ñÑ¥½¹Ìø(€€€€€€€€ñ	ÕÑÑ½¸Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ½¹±¥¬õí½¹	…­ôø(€€€€€€€€€	…¬Ñ¼]½É­Ì(€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€ð½Ñ¥½¹Ìø(€€€€ð½…Éø(€€¤ì)ô(
+      .workCompletionReadiness(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setReadiness(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setReadiness(null);
+      });
+    return () => {
+      cancelled = true;
+      if (relatedGenerationRef.current === generation) {
+        relatedGenerationRef.current += 1;
+      }
+    };
+  }, [api, organisationId, workId]);
+
+  function retryFailedSections(): void {
+    const labels = new Set(relatedFailures);
+    if (labels.size === 0) return;
+    const generation = relatedGenerationRef.current;
+    setRelatedPending((current) => new Set([...current, ...labels]));
+    setRelatedFailures((current) => {
+      const next = new Set(current);
+      for (const label of labels) next.delete(label);
+      return next;
+    });
+
+    function retryRelated<T>(
+      label: RelatedLabel,
+      request: Promise<T>,
+      apply: (value: T) => void,
+    ): void {
+      void request.then(
+        (value) => {
+          if (relatedGenerationRef.current !== generation) return;
+          apply(value);
+          setRelatedPending((current) => {
+            const next = new Set(current);
+            next.delete(label);
+            return next;
+          });
+        },
+        () => {
+          if (relatedGenerationRef.current !== generation) return;
+          setRelatedFailures((current) => new Set(current).add(label));
+          setRelatedPending((current) => {
+            const next = new Set(current);
+            next.delete(label);
+            return next;
+          });
+        },
+      );
+    }
+
+    if (labels.has(RELATED.challans)) {
+      retryRelated(
+        RELATED.challans,
+        api.listChallans(organisationId, workId),
+        setChallans,
+      );
+    }
+    if (labels.has(RELATED.instruments)) {
+      retryRelated(
+        RELATED.instruments,
+        api.listInstruments(organisationId, workId),
+        setInstruments,
+      );
+    }
+    if (labels.has(RELATED.measurements)) {
+      retryRelated(
+        RELATED.measurements,
+        api.listMbEntries(organisationId, workId),
+        setMbEntries,
+      );
+    }
+    if (labels.has(RELATED.bills)) {
+      retryRelated(RELATED.bills, api.listBills(organisationId, workId), setBills);
+    }
+    if (labels.has(RELATED.serials)) {
+      retryRelated(
+        RELATED.serials,
+        api.listWorkSerials(organisationId, workId),
+        setSerials,
+      );
+    }
+    if (labels.has(RELATED.issueChallans)) {
+      retryRelated(
+        RELATED.issueChallans,
+        api.listIssueChallans(organisationId, workId),
+        setIssueChallans,
+      );
+    }
+    if (labels.has(RELATED.amendments)) {
+      retryRelated(
+        RELATED.amendments,
+        api.listWorkAmendments(organisationId, workId),
+        setAmendments,
+      );
+    }
+    if (labels.has(RELATED.correctionNotices)) {
+      retryRelated(
+        RELATED.correctionNotices,
+        api.listWorkCorrectionNotices(organisationId, workId),
+        setCorrectionNotices,
+      );
+    }
+    if (labels.has(RELATED.purchaseOrders)) {
+      retryRelated(
+        RELATED.purchaseOrders,
+        api.listWorkPurchaseOrders(organisationId, workId),
+        setPurchaseOrders,
+      );
+    }
+  }
+
+  const act = useCallback(async (work: () => Promise<void>, done: string) => {
+    setPending(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await work();
+      setNotice(done);
+    } catch (cause) {
+      setActionError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The action failed; nothing was changed.',
+      );
+    } finally {
+      setPending(false);
+    }
+  }, []);
+
+  /** The R8 lifecycle transitions. Unlike `act`, these keep the 409's
+   * structured worklist so the panel can render it: the message alone
+   * would send the operator hunting for the short items. */
+  const transition = useCallback(
+    async (run: () => Promise<WorkDetailResponse['work']>, done: string) => {
+      setPending(true);
+      setActionError(null);
+      setNotice(null);
+      setUnfinished([]);
+      setBlockers([]);
+      try {
+        const updated = await run();
+        setDetail((current) =>
+          current === null ? current : { ...current, work: updated },
+        );
+        setNotice(done);
+      } catch (cause) {
+        setUnfinished(unfinishedItemsOf(cause));
+        setBlockers(completionBlockersOf(cause));
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The action failed; nothing was changed.',
+        );
+      } finally {
+        setPending(false);
+      }
+    },
+    [],
+  );
+
+  if (loadError !== null) {
+    return (
+      <Card aria-labelledby="work-title">
+        <h1 id="work-title" tabIndex={-1}>
+          Work
+        </h1>
+        <FormError>{loadError}</FormError>
+      </Card>
+    );
+  }
+
+  if (detail === null) {
+    return (
+      <Card aria-labelledby="work-title">
+        <h1 id="work-title" tabIndex={-1}>
+          Work
+        </h1>
+        <p className="text-muted-foreground" role="status">
+          Loading Workâ€¦
+        </p>
+      </Card>
+    );
+  }
+
+  const failedSections = ALL_RELATED_LABELS.filter((label) =>
+    relatedFailures.has(label),
+  );
+  function relatedStateFor(labels: readonly RelatedLabel[]): RelatedState {
+    if (labels.some((label) => relatedFailures.has(label))) return 'unavailable';
+    if (labels.some((label) => relatedPending.has(label))) return 'loading';
+    return 'ready';
+  }
+  function relatedStateForTab(candidate: WorkTab): RelatedState {
+    return relatedStateFor(RELATED_BY_TAB[candidate] ?? []);
+  }
+
+  const { work, schedules } = detail;
+  const workItems = schedules.flatMap((schedule) => schedule.items);
+  const pendingRemovals = pendingRemovalItemIds(amendments);
+  const issuedChallans = (challans ?? []).filter(
+    (challan) => challan.status === 'issued',
+  );
+  const challanNumberById = new Map(
+    (challans ?? []).map((challan) => [challan.id, challan.challanNumber]),
+  );
+  // R8: a completed Work accepts no new operational documents until it
+  // is reopened, so every create/record surface below closes with it.
+  // The server refuses regardless (and the database backstops that) â€”
+  // hiding the forms just stops the operator walking into the refusal.
+  const workActive = work.status === 'active';
+  const canCreateDocuments = canModify && workActive;
+  const canRecordSiteEvidence = canRecordEvidence && workActive;
+  const canIssueDocuments = canIssue && workActive;
+  const summaryLines: Partial<
+    Record<WorkTab, readonly { readonly label: string; readonly value: string }[]>
+  > = {
+    schedules: [
+      { label: 'Schedules', value: String(schedules.length) },
+      {
+        label: 'Serial-tracked',
+        value:
+          relatedStateFor([RELATED.serials]) === 'ready' ? String(serials.length) : 'â€”',
+      },
+    ],
+    deliveries: [
+      { label: 'Issued', value: String(issuedChallans.length) },
+      {
+        label: 'Draft',
+        value: String((challans ?? []).filter((c) => c.status === 'draft').length),
+      },
+      {
+        label: 'Correction notices',
+        value:
+          relatedStateFor([RELATED.correctionNotices]) === 'ready'
+            ? String(correctionNotices.length)
+            : 'â€”',
+      },
+    ],
+    procurement: [
+      {
+        label: 'Issued',
+        value: String(
+          (purchaseOrders ?? []).filter((po) => po.status === 'issued').length,
+        ),
+      },
+      {
+        label: 'Draft',
+        value: String(
+          (purchaseOrders ?? []).filter((po) => po.status === 'draft').length,
+        ),
+      },
+    ],
+    issues: [
+      {
+        label: 'Draft',
+        value: String((issueChallans ?? []).filter((c) => c.status === 'draft').length),
+      },
+    ],
+    measurement: [{ label: 'Entries recorded', value: String(mbEntries.length) }],
+    bills: [{ label: 'Prepared', value: String(bills.length) }],
+    instruments: [
+      {
+        label: 'Active',
+        value: String(instruments.filter((i) => i.status === 'active').length),
+      },
+    ],
+    amendments: [
+      {
+        label: 'Awaiting decision',
+        value: String(amendments.filter((a) => a.status === 'pending').length),
+      },
+    ],
+  };
+  const tabCounts: Record<WorkTab, number | null> = {
+    overview: null,
+    schedules: relatedStateForTab('schedules') === 'ready' ? workItems.length : null,
+    deliveries:
+      relatedStateForTab('deliveries') === 'ready' ? (challans?.length ?? 0) : null,
+    procurement:
+      relatedStateForTab('procurement') === 'ready'
+        ? (purchaseOrders?.length ?? 0)
+        : null,
+    issues:
+      relatedStateForTab('issues') === 'ready' ? (issueChallans?.length ?? 0) : null,
+    measurement:
+      relatedStateForTab('measurement') === 'ready' ? mbEntries.length : null,
+    bills: relatedStateForTab('bills') === 'ready' ? bills.length : null,
+    instruments:
+      relatedStateForTab('instruments') === 'ready' ? instruments.length : null,
+    amendments: relatedStateForTab('amendments') === 'ready' ? amendments.length : null,
+    timeline: null,
+  };
+  return (
+    <Card className="w-full" aria-labelledby="work-title">
+      <h1 id="work-title" tabIndex={-1}>
+        {work.workCode} â€” {work.title}
+      </h1>
+      {failedSections.length > 0 && (
+        <>
+          <FormError>
+            Some Work sections could not be loaded: {failedSections.join(', ')}. The
+            available Work information remains open.
+          </FormError>
+          <Button size="sm" variant="outline" onClick={retryFailedSections}>
+            Retry supporting sections
+          </Button>
+        </>
+      )}
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+        <div>
+          <dt>Letter</dt>
+          <dd>
+            {work.letterNumber} Â· {work.letterDate}
+          </dd>
+        </div>
+        <div>
+          <dt>Advertised value</dt>
+          <dd>{formatInr(work.advertisedValue)}</dd>
+        </div>
+        <div>
+          <dt>Contract value</dt>
+          <dd>{formatInr(work.contractValue)}</dd>
+        </div>
+        <div>
+          <dt>Pricing</dt>
+          <dd>
+            {work.pricingShape === 'letter_percentage' &&
+            work.letterPercentage !== null &&
+            work.letterPercentageDirection !== null
+              ? `${work.letterPercentage}% ${DIRECTION_LABELS[work.letterPercentageDirection]}`
+              : 'Per-schedule totals'}
+          </dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <Badge variant={work.status === 'completed' ? 'success' : 'info'}>
+              {work.status}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Excess delivery</dt>
+          <dd>
+            {isOwner ? (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={work.allowExcessDelivery ?? false}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const next = event.currentTarget.checked;
+                    void act(
+                      async () => {
+                        const updated = await api.setWorkSettings(
+                          organisationId,
+                          workId,
+                          next,
+                        );
+                        setDetail((current) =>
+                          current === null
+                            ? current
+                            : {
+                                ...current,
+                                work: {
+                                  ...current.work,
+                                  allowExcessDelivery: updated.allowExcessDelivery,
+                                },
+                              },
+                        );
+                      },
+                      next
+                        ? 'Excess delivery allowed â€” issues may now exceed the sanctioned quantities.'
+                        : 'Excess delivery disallowed again.',
+                    );
+                  }}
+                />{' '}
+                Allow issuing beyond sanctioned quantities
+              </label>
+            ) : (
+              <span>
+                {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
+              </span>
+            )}
+          </dd>
+        </div>
+      </dl>
+
+      {/* Eleven sections used to stack on one scroll. Each area now answers
+          for itself, and the counts show what is inside before it is opened. */}
+      <nav
+        className="mt-4 mb-2 flex items-center gap-0.5 overflow-x-auto border-b border-border"
+        aria-label="Work sections"
+      >
+        {WORK_TABS.map((candidate) => {
+          const count = tabCounts[candidate];
+          const current = tab === candidate;
+          return (
+            <button
+              key={candidate}
+              type="button"
+              className={cn(
+                '-mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2',
+                'text-sm whitespace-nowrap transition-colors',
+                current
+                  ? 'border-primary font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              aria-current={current ? 'page' : undefined}
+              onClick={() => {
+                setTab(candidate);
+              }}
+            >
+              {WORK_TAB_LABELS[candidate]}
+              {count !== null && (
+                <span
+                  className={cn(
+                    'rounded-sm px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
+                    current
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {tab === 'overview' && (
+        <>
+          {/* The whole state of a Work, before anything is opened. Each cell
+              carries the count its tab shows, so the summary and the tab strip
+              can never disagree â€” both read the same derivation. */}
+          <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] overflow-hidden rounded-xl border border-border bg-card">
+            {WORK_TABS.filter(
+              (candidate) => candidate !== 'overview' && candidate !== 'timeline',
+            ).map((candidate) => {
+              const relatedState = relatedStateForTab(candidate);
+              return (
+                <button
+                  key={candidate}
+                  type="button"
+                  className="flex cursor-pointer flex-col items-stretch gap-2 border-t border-l border-border px-4 py-3 text-left transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setTab(candidate);
+                  }}
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold">
+                      {WORK_TAB_LABELS[candidate]}
+                    </span>
+                    <span className="ml-auto font-mono text-lg font-semibold tracking-tight tabular-nums">
+                      {tabCounts[candidate] ?? 'â€”'}
+                    </span>
+                  </span>
+                  <span className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                    {relatedState === 'ready' ? (
+                      (summaryLines[candidate] ?? []).map((line) => (
+                        <span className="flex items-baseline gap-2" key={line.label}>
+                          {line.label}
+                          <span className="ml-auto font-mono text-secondary-foreground tabular-nums">
+                            {line.value}
+                          </span>
+                        </span>
+                      ))
+                    ) : (
+                      <span>
+                        {relatedState === 'loading' ? 'Loadingâ€¦' : 'Unavailable'}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <section aria-labelledby="work-completion-heading">
+            <h2 id="work-completion-heading">Completion status</h2>
+            {work.status === 'completed' ? (
+              <>
+                <p>
+                  This Work is <strong>completed</strong>
+                  {work.completedAt === null
+                    ? ''
+                    : ` on ${work.completedAt.slice(0, 10)}`}
+                  . No new challan, installation, PAC certificate, Measurement Book,
+                  extension request, or change proposal can be recorded until it is
+                  reopened.
+                </p>
+                {work.completionNote !== null && (
+                  <p className="text-muted-foreground">
+                    Completion note: {work.completionNote}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                A Work completes only at 100% executed value (every item fully delivered
+                and/or installed per its payment category). For a short closure, amend
+                the quantities down through the approval path first.
+              </p>
+            )}
+
+            {canModify && workActive && readiness?.ready === false && (
+              /* The shortfall stands where the form would be. Hiding the
+                 control on its own would leave an operator who came here to
+                 close the Work with nothing to read; this is the same
+                 worklist the refusal would have returned, minus the wasted
+                 completion note. */
+              <CompletionShortfall
+                blockers={readiness.blockers}
+                unfinished={readiness.unfinished}
+                lead="This Work cannot be completed yet."
+              />
+            )}
+
+            {canModify && workActive && readiness?.ready !== false && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const note = formValue(data, 'completion-note');
+                  void transition(async () => {
+                    const updated = await api.completeWork(organisationId, workId, {
+                      note,
+                    });
+                    return updated.work;
+                  }, 'Work marked completed.');
+                }}
+              >
+                <Field>
+                  <label htmlFor="work-completion-note">
+                    Why this Work is being completed
+                  </label>
+                  <textarea
+                    id="work-completion-note"
+                    name="completion-note"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                    rows={2}
+                  />
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Complete Work
+                  </Button>
+                </Actions>
+              </form>
+            )}
+
+            {canModify && !workActive && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const note = formValue(data, 'reopen-note');
+                  void transition(async () => {
+                    const updated = await api.reopenWork(organisationId, workId, {
+                      note,
+                    });
+                    return updated.work;
+                  }, 'Work reopened.');
+                }}
+              >
+                <Field>
+                  <label htmlFor="work-reopen-note">
+                    Why this Work is being reopened
+                  </label>
+                  <textarea
+                    id="work-reopen-note"
+                    name="reopen-note"
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                    rows={2}
+                  />
+                </Field>
+                <Actions>
+                  <Button type="submit" disabled={pending}>
+                    Reopen Work
+                  </Button>
+                </Actions>
+              </form>
+            )}
+
+            {/* The same two lists, whether they were asked for up front or
+                came back from a refused attempt. */}
+            <CompletionShortfall blockers={blockers} unfinished={unfinished} />
+          </section>
+
+          <CompletionExtensions
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canApprove={canApprove}
+          />
+
+          <WorkConsignees
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canModify}
+          />
+        </>
+      )}
+
+      {tab === 'schedules' && (
+        <WorkSchedules
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          schedules={schedules}
+          workItems={workItems}
+          pendingRemovals={pendingRemovals}
+          setDetail={setDetail}
+          canModify={canModify && relatedStateFor([RELATED.amendments]) === 'ready'}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'deliveries' && (
+        <WorkDeliveries
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          work={work}
+          workItems={workItems}
+          challans={challans}
+          challansState={relatedStateFor([RELATED.challans])}
+          correctionNotices={correctionNotices}
+          correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
+          setCorrectionNotices={setCorrectionNotices}
+          serials={serials}
+          serialsState={relatedStateFor([RELATED.serials])}
+          setSerials={setSerials}
+          canCreateDocuments={canCreateDocuments}
+          canRecordSiteEvidence={canRecordSiteEvidence}
+          onNewChallan={onNewChallan}
+          onOpenChallan={onOpenChallan}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'procurement' && (
+        <RelatedSectionGate
+          labels={[RELATED.purchaseOrders]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkPurchaseOrders
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            workItems={workItems}
+            purchaseOrders={purchaseOrders}
+            setPurchaseOrders={setPurchaseOrders}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
+      )}
+
+      {tab === 'issues' && (
+        <RelatedSectionGate
+          labels={[RELATED.issueChallans]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkIssueChallans
+            workId={workId}
+            issueChallans={issueChallans}
+            canCreateDocuments={canCreateDocuments}
+            onNewIssueChallan={onNewIssueChallan}
+            onOpenIssueChallan={onOpenIssueChallan}
+          />
+        </RelatedSectionGate>
+      )}
+
+      {tab === 'measurement' && (
+        <WorkMeasurement
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          mbEntries={mbEntries}
+          mbEntriesState={relatedStateFor([RELATED.measurements])}
+          setMbEntries={setMbEntries}
+          issuedChallans={issuedChallans}
+          challanNumberById={challanNumberById}
+          challansState={relatedStateFor([RELATED.challans])}
+          setBills={setBills}
+          billsState={relatedStateFor([RELATED.bills])}
+          canRecordSiteEvidence={canRecordSiteEvidence}
+          canCreateDocuments={canCreateDocuments}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'bills' && (
+        <>
+          <RelatedSectionGate
+            labels={[RELATED.bills]}
+            pending={relatedPending}
+            failures={relatedFailures}
+          >
+            <WorkBills
+              api={api}
+              organisationId={organisationId}
+              bills={bills}
+              setBills={setBills}
+              canIssue={canIssue}
+              pending={pending}
+              act={act}
+            />
+          </RelatedSectionGate>
+          {/* The GST document sits with the money it bills: the bill is
+              what the contract owes, the tax invoice is what the law
+              requires for it. */}
+          <WorkTaxInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+            pending={pending}
+            act={act}
+          />
+        </>
+      )}
+
+      {tab === 'instruments' && (
+        <RelatedSectionGate
+          labels={[RELATED.instruments]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkInstruments
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            work={work}
+            workItems={workItems}
+            instruments={instruments}
+            setInstruments={setInstruments}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
+      )}
+
+      {tab === 'amendments' && (
+        <RelatedSectionGate
+          labels={[RELATED.amendments]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkAmendments
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            amendments={amendments}
+            setAmendments={setAmendments}
+            setDetail={setDetail}
+            schedules={schedules}
+            workItems={workItems}
+            canCreateDocuments={canCreateDocuments}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
+      )}
+
+      {tab === 'timeline' && (
+        <Timeline
+          api={api}
+          organisationId={organisationId}
+          scope={{ kind: 'work', workId }}
+        />
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
+
+      <Actions>
+        <Button variant="outline" onClick={onBack}>
+          Back to Works
+        </Button>
+      </Actions>
+    </Card>
+  );
+}

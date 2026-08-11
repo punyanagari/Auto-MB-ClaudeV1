@@ -423,4 +423,521 @@ describe('LOA upload and extraction', () => {
 
     const events = await admin<{ action: string }[]>`
       select action from audit_events
-      where organisat×^z¶‰žËkºwµçQÉ¥¹œõmtù€(€€€€€€€Í•±•Ð½Õ¹Ð ¨¤™¥±Ñ•È€ (€€€€€€€€€Ý¡•É”Í½ÕÉ•}•Ù¥‘•¹”´øøÉ•Í½±Ù•œ¥Ì‘¥ÍÑ¥¹Ð™É½´€ÑÉÕ”œ(€€€€€€€€¤èéÑ•áÐ…ÌÕ¹É•Í½±Ù•(€€€€€€€™É½´Ý½É­}¥Ñ•µÌÝ¡•É”Ý½É­}¥€ô€‘í‘•Ñ…¥°¹Ý½É¬¹¥‘ô(€€€€€€ì(€€€€€•áÁ•Ð¡•Ù¥‘•¹”ü¹Õ¹É•Í½±Ù•¤¹Ñ½	” œÀœ¤ì((€€€€€½¹ÍÐ™•Ñ¡•€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€€€µ•Ñ¡½è€Pœ°(€€€€€€€ÕÉ°è€½…Á¤½Ý½É­Ì¼‘í‘•Ñ…¥°¹Ý½É¬¹¥‘õ€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤ì(€€€€€•áÁ•Ð¡™•Ñ¡•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ÈÀÀ¤ì(€€€€€•áÁ•Ð (€€€€€€€™•Ñ¡•(€€€€€€€€€€¹©Í½¸ñ]½É­•Ñ…¥±I•ÍÁ½¹Í”ø ¤(€€€€€€€€€€¹Í¡•‘Õ±•Ì¹É•‘Õ” ¡Ñ½Ñ…°°Ì¤€ôøÑ½Ñ…°€¬Ì¹¥Ñ•µÌ¹±•¹Ñ °€À¤°(€€€€€€¤¹Ñ½	”¡±•ÑÑ•È¹µ…¹¥™•ÍÐ¹¥Ñ•µ}½Õ¹Ð¤ì(€€€ô°(€€€€ÌÁ|ÀÀÀ°(€€¤ì((€¥Ð É•™ÕÍ•ÌÑ¼½¹™¥É´Ñ¡”Í…µ”‘½Õµ•¹ÐÑÝ¥”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐm½¹™¥Éµ•‘½t€ô…Ý…¥Ð…‘µ¥¸ñì¥èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð¥™É½´±½…}‘½Õµ•¹ÑÌ(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹•áÑÉ…Ñ¥½¹}ÍÑ…ÑÕÌ€ô€½¹™¥Éµ•œ(€€€€€±¥µ¥Ð€Ä(€€€€ì(€€€•áÁ•Ð¡½¹™¥Éµ•‘½Œ¤¹Ñ½	••™¥¹• ¤ì(€€€½¹ÍÐ±•ÑÑ•È€ô½ÉÁÕÍlÁtì(€€€¥˜€ …±•ÑÑ•Èñð€…½¹™¥Éµ•‘½Œ¤Ñ¡É½Ü¹•ÜÉÉ½È µ¥ÍÍ¥¹œ½ÉÁÕÌ½™¥áÑÕÉ”‘½Œœ¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘í½¹™¥Éµ•‘½Œ¹¥‘ô½½¹™¥Éµ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€€¸¸¹‰Õ¥±‘½¹™¥ÉµI•ÅÕ•ÍÐ¡±•ÑÑ•È°É•Ù¥•Ý1½…1•ÑÑ•È¡±•ÑÑ•È¹Ñ•áÐ¤¤°(€€€€€€€Ý½É­½‘”è€IAP´Äœ°(€€€€€€€±•ÑÑ•É9Õµ‰•ÈèÉ•Á•…Ð´‘íÉÕ¹%‘õ€°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ÐÀä¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ð¡ì½‘”è€=U59Q}9=Q}IY%]	1œô¤ì(€ô¤ì((€¥Ð É•™ÕÍ•Ì½¹™¥Éµ…Ñ¥½¸™É½´Ù¥•Ý•ÉÌœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ±•ÑÑ•È€ô½ÉÁÕÍlÁtì(€€€¥˜€ …±•ÑÑ•È¤Ñ¡É½Ü¹•ÜÉÉ½È •µÁÑä½ÉÁÕÌœ¤ì(€€€½¹ÍÐ‘½Õµ•¹Ñ%€ô…Ý…¥ÐÍ••‘I•Ù¥•Ý½Õµ•¹Ð¡±•ÑÑ•È¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥Ð…ÕÑ¡•¡Ù¥•Ý•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘í‘½Õµ•¹Ñ%‘ô½½¹™¥Éµ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€€¸¸¹‰Õ¥±‘½¹™¥ÉµI•ÅÕ•ÍÐ¡±•ÑÑ•È°É•Ù¥•Ý1½…1•ÑÑ•È¡±•ÑÑ•È¹Ñ•áÐ¤¤°(€€€€€€€Ý½É­½‘”è€Y%]Hµ9%´Äœ°(€€€€€€€±•ÑÑ•É9Õµ‰•ÈèÙ¥•Ý•Èµ‘•¹¥•´‘íÉÕ¹%‘õ€°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ÐÀÌ¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ð¡ì½‘”è€I=1}=I	%8œô¤ì(€ô¤ì((€¥Ð ±¥ÍÑÌ½¹™¥Éµ•]½É­Ì™½Èµ•µ‰•ÉÌ…¹­••ÁÌÑ¡”…Õ‘¥ÐÑÉ…¥°œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ±¥ÍÐ€ô…Ý…¥Ð…ÕÑ¡•¡Ù¥•Ý•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€œ½…Á¤½Ý½É­Ìœ°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ð¡±¥ÍÐ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ð (€€€€€±¥ÍÐ¹©Í½¸ñìÝ½É­ÌèìÝ½É­½‘”èÍÑÉ¥¹œõmtôø ¤¹Ý½É­Ì¹±•¹Ñ °(€€€€¤¹Ñ½	•É•…Ñ•ÉQ¡…¹=ÉÅÕ…°¡½ÉÁÕÌ¹±•¹Ñ ¤ì((€€€½¹ÍÐ•Ù•¹ÑÌ€ô…Ý…¥Ð…‘µ¥¸ñì…Ñ¥½¸èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð…Ñ¥½¸™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹…Ñ¥½¸€ô€Ý½É¬¹É•…Ñ•œ(€€€€ì(€€€•áÁ•Ð¡•Ù•¹ÑÌ¹±•¹Ñ ¤¹Ñ½	•É•…Ñ•ÉQ¡…¹=ÉÅÕ…°¡½ÉÁÕÌ¹±•¹Ñ ¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” µ…Ñ¡•Ñ•¹‘•È…¹½¹ÑÉ…ÐµÍ½ÕÉ”Á…­…”œ°€ ¤€ôøì(€…Íå¹Œ™Õ¹Ñ¥½¸Í••‘A…É•¹Ñ1½„ ¤èAÉ½µ¥Í”ñÍÑÉ¥¹œøì(€€€½¹ÍÐ¥€ôÉ…¹‘½µUU% ¤ì(€€€½¹ÍÐÁ…å±½…€ôì(€€€€€Í½ÕÉ•Q•áÐè€Íå¹Ñ¡•Ñ¥ŒÁ…É•¹Ð¥‘•¹Ñ¥Ñäœ°(€€€€€É•Ù¥•Üèì(€€€€€€€¡•…‘•Èèì(€€€€€€€€€Ñ•¹‘•É9Õµ‰•ÈèìÙ…±Õ”è€9HµM9P´ÈÀÈØ´ÀÀÐÈœô°(€€€€€€€€€Ý½É­•ÍÉ¥ÁÑ¥½¸èì(€€€€€€€€€€€Ù…±Õ”è(€€€€€€€€€€€€€€MÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ð)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€€€€€ô°(€€€€€€€ô°(€€€€€ô°(€€€ôì(€€€…Ý…¥Ð…‘µ¥¹€(€€€€€¥¹Í•ÉÐ¥¹Ñ¼±½…}‘½Õµ•¹ÑÌ€ (€€€€€€€¥°½É…¹¥Í…Ñ¥½¹}¥°½‰©•Ñ}­•ä°½É¥¥¹…±}™¥±•¹…µ”°Í¡„ÈÔØ°(€€€€€€€µ•‘¥…}ÑåÁ”°Í¥é•}‰åÑ•Ì°•áÑÉ…Ñ¥½¹}ÍÑ…ÑÕÌ°•áÑÉ…Ñ¥½¹}Á…å±½…°(€€€€€€€ÕÁ±½…‘•‘}‰å}ÕÍ•É}¥(€€€€€€¤(€€€€€Ù…±Õ•Ì€ (€€€€€€€€‘í¥‘ô°€‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í€‘í½É…¹¥Í…Ñ¥½¹%‘ô½±½„¼‘í¥‘ô¹Á‘™ô°(€€€€€€€€µ…Ñ¡•µÁ…É•¹Ðµ±½„¹Á‘˜œ°€‘íÉ•…Ñ•!…Í  Í¡„ÈÔØœ¤¹ÕÁ‘…Ñ”¡¥¤¹‘¥•ÍÐ ¡•àœ¥ô°(€€€€€€€€…ÁÁ±¥…Ñ¥½¸½Á‘˜œ°€Ä°€É•Ù¥•Üœ°€‘í©Í½¹ˆ¡…‘µ¥¸°Á…å±½…¥ô°€‘í½Ý¹•ÉUÍ•É%‘ô(€€€€€€¤(€€€€ì(€€€É•ÑÕÉ¸¥ì(€ô((€™Õ¹Ñ¥½¸µ…Ñ¡¥¹Q•¹‘•ÉA‘˜ ¤è	Õ™™•Èì(€€€É•ÑÕÉ¸‰Õ¥±‘5Õ±Ñ¥±¥¹•Q•ÍÑA‘˜¡l(€€€€€€Q•¹‘•È9¼¸è9HµM9P´ÈÀÈØ´ÀÀÐÈœ°(€€€€€€9…µ”½˜]½É¬èMÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ð)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€€A…åµ•¹ÐÑ•ÉµÌMÕÁÁ±ä…¹%¹ÍÑ…±±…Ñ¥½¸…Ñ•½Éäèœ°(€€€€€€œØÀ”½¸ÍÕÁÁ±ä°€ÈÔ”½¸ÍÕ•ÍÍ™Õ°¥¹ÍÑ…±±…Ñ¥½¸°€ÄÀ”½¸¥ÍÍÕ”½˜A…¹€Ô”½¸™¥¹…°…•ÁÑ…¹”¸œ°(€€€€€€]…ÉÉ…¹ÑäÁ•É¥½è€ÌØµ½¹Ñ¡Ì™½È%Ñ•´%Q4´ÀÀÄ™É½´½µµ¥ÍÍ¥½¹¥¹œ¸œ°(€€€€€€5…¥¹Ñ•¹…¹”Á•É¥½è€Ôå•…ÉÌ™½ÈÑ¡”½µÁ±•Ñ”Ý½É¬…™Ñ•ÈÝ…ÉÉ…¹Ñä¸œ°(€€€€€€Q¡”A•É™½Éµ…¹”	…¹¬Õ…É…¹Ñ•”A	Í¡…±°‰”É•±•…Í•…™Ñ•È™¥¹…°…•ÁÑ…¹”…¹•áÁ¥Éä½˜Ý…ÉÉ…¹Ñä½‰±¥…Ñ¥½¹Ì¸œ°(€€€€€€Q¡”M•ÕÉ¥Ñä•Á½Í¥ÐÍ¡…±°‰”É•ÑÕÉ¹•…™Ñ•È¥ÍÍÕ”½˜Ñ¡”½µÁ±•Ñ¥½¸•ÉÑ¥™¥…Ñ”…¹Í•ÑÑ±•µ•¹Ð½˜‘Õ•Ì¸œ°(€€€€€€%Ñ•´%Q4´ÀÀÄÑ•¡¹¥…°ÍÁ•¥™¥…Ñ¥½¸èI½ÕÑ•ÈÍ¡…±°½¹™½É´Ñ¼QH9¼QµHµQ`µ%A4´ÀÀÄ…¹ÍÕÁÁ½ÉÐ5A1LµQ¸œ°(€€€t¤ì(€ô((€™Õ¹Ñ¥½¸µ…Ñ¡¥¹]É…ÁÁ•‘Q•¹‘•ÉA‘˜ ¤è	Õ™™•Èì(€€€É•ÑÕÉ¸‰Õ¥±‘5Õ±Ñ¥±¥¹•Q•ÍÑA‘˜¡l(€€€€€€Q•¹‘•È9¼¸è9HµM9P´ÈÀÈØ´ÀÀÐÈœ°(€€€€€€9…µ”½˜]½É¬èMÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹œ°(€€€€€€½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ðœ°(€€€€€€)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€€Q•¹‘•È½Õµ•¹Ð½ÍÐèIÌ¸€À¸ÀÀœ°(€€€t¤ì(€ô((€¥Ð …•ÁÑÌ½¹±ä„µ…Ñ¡¥¹œÍ½ÕÉ”°•áÑÉ…ÑÌÑ¡”Ñ•¹‘•È½¹Ñ•áÐ…¹É•½É‘ÌÑ¡”¥µµÕÑ…‰±”É•±…Ñ¥½¹Í¡¥Àœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁ…É•¹Ñ%€ô…Ý…¥ÐÍ••‘A…É•¹Ñ1½„ ¤ì(€€€½¹ÍÐÕÁ±½…€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹ÑÉ…ÐµÍ½ÕÉ•Ìý­¥¹õÑ•¹‘•É}ÍÁ•¥™¥…Ñ¥½¸™™¥±•¹…µ”õÑ•¹‘•ÈµÍÁ•Œ¹Á‘™€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€¡•…‘•ÉÌèì€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œô°(€€€€€Á…å±½…èµ…Ñ¡¥¹Q•¹‘•ÉA‘˜ ¤°(€€€ô¤ì(€€€•áÁ•Ð¡ÕÁ±½…¹ÍÑ…ÑÕÍ½‘”°ÕÁ±½…¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ôÕÁ±½…¹©Í½¸ñì½¹Ñ•áÐè½¹ÑÉ…ÑM½ÕÉ•½¹Ñ•áÐôø ¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹½¹Ñ•áÐ¹‘½Õµ•¹ÑÌ¤¹Ñ½!…Ù•1•¹Ñ  Ä¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹½¹Ñ•áÐ¹Á…åµ•¹Ñ5…ÑÉ¥álÁt¤¹Ñ½5…Ñ¡=‰©•Ð¡ì(€€€€€…Ñ•½Éäè€MUAA1e}9}%9MQ11Q%=8œ°(€€€€€ÁÑMÕÁÁ±äè€œØÀœ°(€€€€€ÁÑ%¹ÍÑ…±±…Ñ¥½¸è€œÈÔœ°(€€€€€ÁÑA…Œè€œÄÀœ°(€€€€€ÁÑ¥¹…±	¥±°è€œÔœ°(€€€ô¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹½¹Ñ•áÐ¹Á•É¥½‘Ì¹µ…À ¡Á•É¥½¤€ôøÁ•É¥½¹­¥¹¤¹Í½ÉÐ ¤¤¹Ñ½ÅÕ…°¡l(€€€€€€µ…¥¹Ñ•¹…¹”œ°(€€€€€€Ý…ÉÉ…¹Ñäœ°(€€€t¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹½¹Ñ•áÐ¹É•±•…Í•±…ÕÍ•Ì¹µ…À ¡±…ÕÍ”¤€ôø±…ÕÍ”¹­¥¹¤¹Í½ÉÐ ¤¤¹Ñ½ÅÕ…° (€€€€€lÁ‰œœ°€Í•ÕÉ¥Ñå}‘•Á½Í¥Ðt°(€€€€¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹½¹Ñ•áÐ¹¥Ñ•µMÁ•¥™¥…Ñ¥½¹ÍlÁtü¹¥Ñ•µI•™•É•¹•Ì¤¹Ñ½½¹Ñ…¥¸ %Q4´ÀÀÄœ¤ì((€€€½¹ÍÐmÍÑ½É•‘t€ô…Ý…¥Ð…‘µ¥¸ð(€€€€€ì(€€€€€€€‘½Õµ•¹Ñ}­¥¹èÍÑÉ¥¹œì(€€€€€€€Á…É•¹Ñ}±½…}‘½Õµ•¹Ñ}¥èÍÑÉ¥¹œì(€€€€€€€µ…Ñ¡}ÍÑ…ÑÕÌèÍÑÉ¥¹œì(€€€€€õmt(€€€€ù€(€€€€€Í•±•Ð‘½Õµ•¹Ñ}­¥¹°Á…É•¹Ñ}±½…}‘½Õµ•¹Ñ}¥°µ…Ñ¡}ÍÑ…ÑÕÌ(€€€€€™É½´±½…}‘½Õµ•¹ÑÌ(€€€€€Ý¡•É”Á…É•¹Ñ}±½…}‘½Õµ•¹Ñ}¥€ô€‘íÁ…É•¹Ñ%‘ô(€€€€ì(€€€•áÁ•Ð¡ÍÑ½É•¤¹Ñ½ÅÕ…°¡ì(€€€€€‘½Õµ•¹Ñ}­¥¹è€Ñ•¹‘•É}ÍÁ•¥™¥…Ñ¥½¸œ°(€€€€€Á…É•¹Ñ}±½…}‘½Õµ•¹Ñ}¥èÁ…É•¹Ñ%°(€€€€€µ…Ñ¡}ÍÑ…ÑÕÌè€µ…Ñ¡•œ°(€€€ô¤ì(€ô¤ì((€¥Ð …•ÁÑÌ„µ…Ñ¡¥¹œ¹…µ”½˜Ý½É¬ÝÉ…ÁÁ•…É½ÍÌA±¥¹•Ìœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁ…É•¹Ñ%€ô…Ý…¥ÐÍ••‘A…É•¹Ñ1½„ ¤ì(€€€½¹ÍÐÕÁ±½…€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹ÑÉ…ÐµÍ½ÕÉ•Ìý­¥¹õ¹¥Ð™™¥±•¹…µ”õÝÉ…ÁÁ•µ¹¥Ð¹Á‘™€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€¡•…‘•ÉÌèì€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œô°(€€€€€Á…å±½…èµ…Ñ¡¥¹]É…ÁÁ•‘Q•¹‘•ÉA‘˜ ¤°(€€€ô¤ì((€€€•áÁ•Ð¡ÕÁ±½…¹ÍÑ…ÑÕÍ½‘”°ÕÁ±½…¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€•áÁ•Ð (€€€€€ÕÁ±½…¹©Í½¸ñì(€€€€€€€‘½Õµ•¹Ðèì(€€€€€€€€€¥‘•¹Ñ¥Ñå5…Ñ èì(€€€€€€€€€€€•áÑÉ…Ñ•‘]½É­•ÍÉ¥ÁÑ¥½¸èÍÑÉ¥¹œì(€€€€€€€€€€€Ý½É­•ÍÉ¥ÁÑ¥½¹5…Ñ¡•è‰½½±•…¸ì(€€€€€€€€€ôì(€€€€€€€ôì(€€€€€ôø ¤¹‘½Õµ•¹Ð¹¥‘•¹Ñ¥Ñå5…Ñ °(€€€€¤¹Ñ½5…Ñ¡=‰©•Ð¡ì(€€€€€•áÑÉ…Ñ•‘]½É­•ÍÉ¥ÁÑ¥½¸è(€€€€€€€€MÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ð)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€Ý½É­•ÍÉ¥ÁÑ¥½¹5…Ñ¡•èÑÉÕ”°(€€€ô¤ì(€ô¤ì((€¥Ð É•©•ÑÌ„™½É•¥¸Ñ•¹‘•È‰•™½É”½‰©•Ðµ•Ñ…‘…Ñ„¥ÌÍÑ½É•…¹…Õ‘¥ÑÌ½¹±äÑ¡”É•™ÕÍ…°œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁ…É•¹Ñ%€ô…Ý…¥ÐÍ••‘A…É•¹Ñ1½„ ¤ì(€€€½¹ÍÐ™½É•¥¸€ô‰Õ¥±‘5Õ±Ñ¥±¥¹•Q•ÍÑA‘˜¡l(€€€€€€Q•¹‘•È9¼¸è=I%8´ÀÀäœ°(€€€€€€9…µ”½˜]½É¬è½¹ÍÑÉÕÑ¥½¸½˜„ÍÑ…Ñ¥½¸‰Õ¥±‘¥¹œ…ÐÉ„œ°(€€€€€€A…åµ•¹ÐÑ•ÉµÌè€àÀ”½¸ÍÕÁÁ±ä…¹€ÈÀ”½¸¥¹ÍÑ…±±…Ñ¥½¸¸œ°(€€€t¤ì(€€€½¹ÍÐÍ¡„€ôÉ•…Ñ•!…Í  Í¡„ÈÔØœ¤¹ÕÁ‘…Ñ”¡™½É•¥¸¤¹‘¥•ÍÐ ¡•àœ¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹ÑÉ…ÐµÍ½ÕÉ•Ìý­¥¹õ¹¥Ð™™¥±•¹…µ”õ™½É•¥¸¹Á‘™€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€¡•…‘•ÉÌèì€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œô°(€€€€€Á…å±½…è™½É•¥¸°(€€€ô¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÐÀä¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ð¡ì(€€€€€½‘”è€=9QIQ}M=UI}%9Q%Qe}5%M5Q œ°(€€€€€‘•Ñ…¥±Ìèì(€€€€€€€µ…Ñ¡•è™…±Í”°(€€€€€€€Ñ•¹‘•É9Õµ‰•É5…Ñ¡•è™…±Í”°(€€€€€€€Ý½É­•ÍÉ¥ÁÑ¥½¹5…Ñ¡•è™…±Í”°(€€€€€ô°(€€€ô¤ì(€€€½¹ÍÐmÍÑ½É•‘t€ô…Ý…¥Ð…‘µ¥¸ñì½Õ¹ÐèÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð½Õ¹Ð ¨¤èéÑ•áÐ…Ì½Õ¹Ð™É½´±½…}‘½Õµ•¹ÑÌ(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹Í¡„ÈÔØ€ô€‘íÍ¡…ô(€€€€ì(€€€•áÁ•Ð¡ÍÑ½É•ü¹½Õ¹Ð¤¹Ñ½	” œÀœ¤ì(€€€½¹ÍÐm…Õ‘¥Ñt€ô…Ý…¥Ð…‘µ¥¸ñì½Õ¹ÐèÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð½Õ¹Ð ¨¤èéÑ•áÐ…Ì½Õ¹Ð™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€…¹…Ñ¥½¸€ô€½¹ÑÉ…Ñ}Í½ÕÉ”¹É•©•Ñ•œ(€€€€€€€…¹•¹Ñ¥Ñå}¥€ô€‘íÁ…É•¹Ñ%‘ô(€€€€ì(€€€•áÁ•Ð¡…Õ‘¥Ðü¹½Õ¹Ð¤¹Ñ½	” œÄœ¤ì(€ô¤ì((€¥Ð ½¹™¥ÉµÌÑ¡”É•Ù¥•Ý•Èµ•¹Ñ•É•¥¹¥Ñ¥…°µ…ÑÉ¥à…Ñ½µ¥…±±ä…¹±¥¹­ÌÍÕÁÁ½ÉÑ¥¹œ•Ù¥‘•¹”Ñ¼Ñ¡”]½É¬œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁ…É•¹Ñ%€ô…Ý…¥ÐÍ••‘A…É•¹Ñ1½„ ¤ì(€€€½¹ÍÐÕÁ±½…€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹ÑÉ…ÐµÍ½ÕÉ•Ìý­¥¹õÑ•¹‘•É}ÍÁ•¥™¥…Ñ¥½¸™™¥±•¹…µ”õÑ•¹‘•ÈµÍÁ•Œµ½¹™¥É´¹Á‘™€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€¡•…‘•ÉÌèì€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œô°(€€€€€Á…å±½…èµ…Ñ¡¥¹Q•¹‘•ÉA‘˜ ¤°(€€€ô¤ì(€€€•áÁ•Ð¡ÕÁ±½…¹ÍÑ…ÑÕÍ½‘”°ÕÁ±½…¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì((€€€½¹ÍÐ½¹™¥É´€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹™¥Éµ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€Ý½É­½‘”èQ9H´‘íÉÕ¹%‘õ€¹Ñ½UÁÁ•É…Í” ¤¹Í±¥” À°€ÈÀ¤°(€€€€€€€±•ÑÑ•É9Õµ‰•Èè1=µQ9H´‘íÉÕ¹%‘õ€°(€€€€€€€±•ÑÑ•É…Ñ”è€œÈÀÈÔ´ÀÄ´ÀÄœ°(€€€€€€€Ñ¥Ñ±”è(€€€€€€€€€€MÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ð)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€€€…‘Ù•ÉÑ¥Í•‘Y…±Õ”è€œÄÀÀÀÀÀœ°(€€€€€€€½¹ÑÉ…ÑY…±Õ”è€œäÀÀÀÀœ°(€€€€€€€ÁÉ¥¥¹M¡…Á”è€Á•É}Í¡•‘Õ±”œ°(€€€€€€€Á…åµ•¹Ñ5…ÑÉ¥àèl(€€€€€€€€€ì(€€€€€€€€€€€…Ñ•½Éäè€MUAA1e}9}%9MQ11Q%=8œ°(€€€€€€€€€€€ÁÑMÕÁÁ±äè€œÔÔœ°(€€€€€€€€€€€ÁÑ%¹ÍÑ…±±…Ñ¥½¸è€œÌÀœ°(€€€€€€€€€€€ÁÑA…Œè€œÄÀœ°(€€€€€€€€€€€ÁÑ¥¹…±	¥±°è€œÔœ°(€€€€€€€€€ô°(€€€€€€€t°(€€€€€€€Í¡•‘Õ±•Ìèl(€€€€€€€€€ì(€€€€€€€€€€€Í¡•‘Õ±•½‘”è€œ°(€€€€€€€€€€€Ñ¥Ñ±”è€M¡•‘Õ±”œ°(€€€€€€€€€€€¥Ñ•µÌèl(€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€¥Ñ•µ9Õµ‰•Èè€%Q4´ÀÀÄœ°(€€€€€€€€€€€€€€€‘•ÍÉ¥ÁÑ¥½¸è€%@5A1L•‘”É½ÕÑ•Èœ°(€€€€€€€€€€€€€€€Õ¹¥Ñ½‘”è€9=Lœ°(€€€€€€€€€€€€€€€…Ý…É‘•‘EÕ…¹Ñ¥Ñäè€œÄÀœ°(€€€€€€€€€€€€€€€•™™•Ñ¥Ù•I…Ñ”è€œäÀÀÀœ°(€€€€€€€€€€€€€€€Á…åµ•¹Ñ…Ñ•½Éäè€MUAA1e}9}%9MQ11Q%=8œ°(€€€€€€€€€€€€€€€µ…¹Õ…±¹ÑÉäèÑÉÕ”°(€€€€€€€€€€€€€ô°(€€€€€€€€€€€t°(€€€€€€€€€ô°(€€€€€€€t°(€€€€€ôÍ…Ñ¥Í™¥•Ì½¹™¥Éµ]½É­I•ÅÕ•ÍÐ°(€€€ô¤ì(€€€•áÁ•Ð¡½¹™¥É´¹ÍÑ…ÑÕÍ½‘”°½¹™¥É´¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍÐÝ½É¬€ô½¹™¥É´¹©Í½¸ñ]½É­•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹Ý½É¬ì((€€€½¹ÍÐmµ…ÑÉ¥át€ô…Ý…¥Ð…‘µ¥¸ð(€€€€€ì(€€€€€€€ÁÑ}ÍÕÁÁ±äèÍÑÉ¥¹œì(€€€€€€€ÁÑ}¥¹ÍÑ…±±…Ñ¥½¸èÍÑÉ¥¹œì(€€€€€€€ÁÑ}Á…ŒèÍÑÉ¥¹œì(€€€€€€€ÁÑ}™¥¹…±}‰¥±°èÍÑÉ¥¹œì(€€€€€õmt(€€€€ù€(€€€€€Í•±•ÐÁÑ}ÍÕÁÁ±äèéÑ•áÐ°ÁÑ}¥¹ÍÑ…±±…Ñ¥½¸èéÑ•áÐ°ÁÑ}Á…ŒèéÑ•áÐ°(€€€€€€€€€€€€ÁÑ}™¥¹…±}‰¥±°èéÑ•áÐ(€€€€€™É½´Á…åµ•¹Ñ}µ…ÑÉ¥•ÌÝ¡•É”Ý½É­}¥€ô€‘íÝ½É¬¹¥‘ô(€€€€ì(€€€•áÁ•Ð¡µ…ÑÉ¥à¤¹Ñ½ÅÕ…°¡ì(€€€€€ÁÑ}ÍÕÁÁ±äè€œÔÔ¸ÀÀœ°(€€€€€ÁÑ}¥¹ÍÑ…±±…Ñ¥½¸è€œÌÀ¸ÀÀœ°(€€€€€ÁÑ}Á…Œè€œÄÀ¸ÀÀœ°(€€€€€ÁÑ}™¥¹…±}‰¥±°è€œÔ¸ÀÀœ°(€€€ô¤ì(€€€½¹ÍÐm±¥¹­•‘t€ô…Ý…¥Ð…‘µ¥¸ñì½¹™¥Éµ•‘}Ý½É­}¥èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð½¹™¥Éµ•‘}Ý½É­}¥™É½´±½…}‘½Õµ•¹ÑÌ(€€€€€Ý¡•É”Á…É•¹Ñ}±½…}‘½Õµ•¹Ñ}¥€ô€‘íÁ…É•¹Ñ%‘ô(€€€€ì(€€€•áÁ•Ð¡±¥¹­•ü¹½¹™¥Éµ•‘}Ý½É­}¥¤¹Ñ½	”¡Ý½É¬¹¥¤ì((€€€½¹ÍÐ½¹Ñ•áÐ€ô…Ý…¥Ð…ÕÑ¡•¡Ù¥•Ý•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½Ý½É­Ì¼‘íÝ½É¬¹¥‘ô½½¹ÑÉ…ÐµÍ½ÕÉ”µ½¹Ñ•áÑ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ð¡½¹Ñ•áÐ¹ÍÑ…ÑÕÍ½‘”°½¹Ñ•áÐ¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ð (€€€€€½¹Ñ•áÐ¹©Í½¸ñ½¹ÑÉ…ÑM½ÕÉ•½¹Ñ•áÐø ¤¹¥Ñ•µMÁ•¥™¥…Ñ¥½¹ÍlÁtü¹µ…ÁÁ•‘]½É­%Ñ•µ%‘Ì°(€€€€¤¹Ñ½!…Ù•1•¹Ñ  Ä¤ì(€ô¤ì((€¥Ð É•™ÕÍ•Ìµ…±™½Éµ•¥¹¥Ñ¥…°Á…åµ•¹ÐÉ½ÝÌÝ¥Ñ¡½ÕÐÉ•…Ñ¥¹œÑ¡”]½É¬œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁ…É•¹Ñ%€ô…Ý…¥ÐÍ••‘A…É•¹Ñ1½„ ¤ì(€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥Ð…ÕÑ¡•¡½Ý¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½±½„µ‘½Õµ•¹ÑÌ¼‘íÁ…É•¹Ñ%‘ô½½¹™¥Éµ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€Ý½É­½‘”è	5P´‘íÉÕ¹%‘õ€¹Ñ½UÁÁ•É…Í” ¤¹Í±¥” À°€ÈÀ¤°(€€€€€€€±•ÑÑ•É9Õµ‰•Èè1=µ	µ5QI%`´‘íÉÕ¹%‘õ€°(€€€€€€€±•ÑÑ•É…Ñ”è€œÈÀÈÔ´ÀÄ´ÀÄœ°(€€€€€€€Ñ¥Ñ±”è(€€€€€€€€€€MÕÁÁ±ä¥¹ÍÑ…±±…Ñ¥½¸…¹½µµ¥ÍÍ¥½¹¥¹œ½˜%@5A1L•ÅÕ¥Áµ•¹Ð…Ð)¡…¹Í¤‘¥Ù¥Í¥½¸œ°(€€€€€€€…‘Ù•ÉÑ¥Í•‘Y…±Õ”è€œÄÀÀÀœ°(€€€€€€€½¹ÑÉ…ÑY…±Õ”è€œÄÀÀÀœ°(€€€€€€€ÁÉ¥¥¹M¡…Á”è€Á•É}Í¡•‘Õ±”œ°(€€€€€€€Á…åµ•¹Ñ5…ÑÉ¥àèl(€€€€€€€€€ì(€€€€€€€€€€€…Ñ•½Éäè€MUAA1dœ°(€€€€€€€€€€€ÁÑMÕÁÁ±äè€œàÀœ°(€€€€€€€€€€€ÁÑ%¹ÍÑ…±±…Ñ¥½¸è€œÄÀœ°(€€€€€€€€€€€ÁÑA…Œè€œÔœ°(€€€€€€€€€€€ÁÑ¥¹…±	¥±°è€œÐœ°(€€€€€€€€€ô°(€€€€€€€t°(€€€€€€€Í¡•‘Õ±•Ìèl(€€€€€€€€€ì(€€€€€€€€€€€Í¡•‘Õ±•½‘”è€œ°(€€€€€€€€€€€Ñ¥Ñ±”è€M¡•‘Õ±”œ°(€€€€€€€€€€€¥Ñ•µÌèl(€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€¥Ñ•µ9Õµ‰•Èè€%Q4´ÀÀÄœ°(€€€€€€€€€€€€€€€‘•ÍÉ¥ÁÑ¥½¸è€Q•ÍÐ¥Ñ•´œ°(€€€€€€€€€€€€€€€Õ¹¥Ñ½‘”è€9=Lœ°(€€€€€€€€€€€€€€€…Ý…É‘•‘EÕ…¹Ñ¥Ñäè€œÄœ°(€€€€€€€€€€€€€€€•™™•Ñ¥Ù•I…Ñ”è€œÄÀÀÀœ°(€€€€€€€€€€€€€€€µ…¹Õ…±¹ÑÉäèÑÉÕ”°(€€€€€€€€€€€€€ô°(€€€€€€€€€€€t°(€€€€€€€€€ô°(€€€€€€€t°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÐÀÀ¤ì(€€€•áÁ•Ð¡É•ÍÁ½¹Í”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ð¡ì½‘”è€Ae59Q}5QI%a}MU5}%9Y1%œô¤ì(€€€½¹ÍÐmÝ½É­t€ô…Ý…¥Ð…‘µ¥¸ñì½Õ¹ÐèÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð½Õ¹Ð ¨¤èéÑ•áÐ…Ì½Õ¹Ð™É½´Ý½É­Ì(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€…¹±•ÑÑ•É}¹Õµ‰•È€ô€‘í1=µ	µ5QI%`´‘íÉÕ¹%‘õô(€€€€ì(€€€•áÁ•Ð¡Ý½É¬ü¹½Õ¹Ð¤¹Ñ½	” œÀœ¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” ÕÁ±½…µ…±Ý…É”Í…¹¹¥¹œ€¡5¥±•ÍÑ½¹”€Ð¤œ°€ ¤€ôøì(€¥Ð É•©•ÑÌ„™±…•ÕÁ±½…‰•™½É”…¹åÑ¡¥¹œ¥ÌÍÑ½É•…¹…•ÁÑÌ±•…¸½¹•Ìœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ™±…•€ô‰Õ¥±‘Q•ÍÑA‘˜ %HµQMPµ5I-H¥¹Í¥‘”œ¤ì(€€€½¹ÍÐÉ•©•Ñ•€ô…Ý…¥ÐÍ…¹¹¥¹ÁÀ¹¥¹©•Ð¡ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€œ½…Á¤½±½„µ‘½Õµ•¹ÑÌý™¥±•¹…µ”õ™±…•¹Á‘˜œ°(€€€€€¡•…‘•ÉÌèì(€€€€€€€½½­¥”è½Ý¹•È¹½½­¥”°(€€€€€€€€àµ½É…¹¥Í…Ñ¥½¸µ¥œè½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œ°(€€€€€ô°(€€€€€Á…å±½…è™±…•°(€€€ô¤ì(€€€•áÁ•Ð¡É•©•Ñ•¹ÍÑ…ÑÕÍ½‘”°É•©•Ñ•¹‰½‘ä¤¹Ñ½	” ÐÀÀ¤ì(€€€•áÁ•Ð¡É•©•Ñ•¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ð¡ì½‘”è€51]I}QQœô¤ì(€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥Ð…‘µ¥¸ñì½Õ¹ÐèÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ð½Õ¹Ð ¨¤èéÑ•áÐ…Ì½Õ¹Ð™É½´±½…}‘½Õµ•¹ÑÌ(€€€€€Ý¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹Í¡„ÈÔØ€ô€‘íÉ•…Ñ•!…Í  Í¡„ÈÔØœ¤(€€€€€€€€¹ÕÁ‘…Ñ”¡™±…•¤(€€€€€€€€¹‘¥•ÍÐ ¡•àœ¥ô(€€€€ì(€€€•áÁ•Ð¡É½Üü¹½Õ¹Ð¤¹Ñ½	” œÀœ¤ì((€€€½¹ÍÐ±•…¸€ô…Ý…¥ÐÍ…¹¹¥¹ÁÀ¹¥¹©•Ð¡ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€œ½…Á¤½±½„µ‘½Õµ•¹ÑÌý™¥±•¹…µ”õ±•…¸¹Á‘˜œ°(€€€€€¡•…‘•ÉÌèì(€€€€€€€½½­¥”è½Ý¹•È¹½½­¥”°(€€€€€€€€àµ½É…¹¥Í…Ñ¥½¸µ¥œè½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€½¹Ñ•¹ÐµÑåÁ”œè€…ÁÁ±¥…Ñ¥½¸½Á‘˜œ°(€€€€€ô°(€€€€€Á…å±½…è‰Õ¥±‘Q•ÍÑA‘˜ Á•É™•Ñ±ä±•…¸±•ÑÑ•Èœ¤°(€€€ô¤ì(€€€•áÁ•Ð¡±•…¸¹ÍÑ…ÑÕÍ½‘”°±•…¸¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€ô¤ì)ô¤ì(
+      where organisation_id = ${organisationId} and entity_id = ${body.id}
+    `;
+    expect(events.map((event) => event.action)).toContain('loa.uploaded');
+
+    const list = await authed(owner, {
+      method: 'GET',
+      url: '/api/loa-documents',
+      organisationId,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(
+      list.json<{ documents: { id: string }[] }>().documents.map((d) => d.id),
+    ).toContain(body.id);
+  });
+
+  it('rejects non-PDF bytes despite a PDF content type', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=junk.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: Buffer.from('this is not a pdf at all'),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'NOT_A_PDF' });
+  });
+
+  it('refuses uploads from viewers', async () => {
+    const response = await authed(viewer, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=viewer.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('viewer upload'),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
+  });
+});
+
+describe('review and confirm across the legacy corpus', () => {
+  // The Milestone 2 exit criterion: every one of the six legacy LOA
+  // fixtures can be reviewed and confirmed without losing source evidence.
+  const corpus = loadCorpus();
+
+  it.each(corpus.map((letter) => [letter.manifest.id, letter] as const))(
+    'confirms %s into a Work with full source evidence',
+    async (_id, letter) => {
+      const documentId = await seedReviewDocument(letter);
+      const payload = reviewLoaLetter(letter.text);
+      const request = buildConfirmRequest(letter, payload);
+
+      const response = await authed(owner, {
+        method: 'POST',
+        url: `/api/loa-documents/${documentId}/confirm`,
+        organisationId,
+        payload: request,
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      const detail = response.json<WorkDetailResponse>();
+
+      expect(detail.schedules).toHaveLength(letter.manifest.schedule_count);
+      const itemCount = detail.schedules.reduce(
+        (total, schedule) => total + schedule.items.length,
+        0,
+      );
+      expect(itemCount).toBe(letter.manifest.item_count);
+      expect(detail.work.contractValue).toBe(letter.manifest.net_bid_value.toFixed(2));
+
+      // Confirming must not lose the source: payload retained verbatim,
+      // document linked to the created Work.
+      const [document] = await admin<
+        {
+          extraction_status: string;
+          confirmed_work_id: string | null;
+          extraction_payload: unknown;
+        }[]
+      >`
+        select extraction_status, confirmed_work_id, extraction_payload
+        from loa_documents where id = ${documentId}
+      `;
+      expect(document?.extraction_status).toBe('confirmed');
+      expect(document?.confirmed_work_id).toBe(detail.work.id);
+      const retained = document?.extraction_payload as {
+        sourceText: string;
+        review: { items: unknown[] };
+      };
+      expect(retained.sourceText).toBe(letter.text);
+      expect(retained.review.items).toHaveLength(letter.manifest.item_count);
+
+      // Every created item carries resolved parser evidence.
+      const [evidence] = await admin<{ unresolved: string }[]>`
+        select count(*) filter (
+          where source_evidence->>'resolved' is distinct from 'true'
+        )::text as unresolved
+        from work_items where work_id = ${detail.work.id}
+      `;
+      expect(evidence?.unresolved).toBe('0');
+
+      const fetched = await authed(owner, {
+        method: 'GET',
+        url: `/api/works/${detail.work.id}`,
+        organisationId,
+      });
+      expect(fetched.statusCode).toBe(200);
+      expect(
+        fetched
+          .json<WorkDetailResponse>()
+          .schedules.reduce((total, s) => total + s.items.length, 0),
+      ).toBe(letter.manifest.item_count);
+    },
+    30_000,
+  );
+
+  it('refuses to confirm the same document twice', async () => {
+    const [confirmedDoc] = await admin<{ id: string }[]>`
+      select id from loa_documents
+      where organisation_id = ${organisationId} and extraction_status = 'confirmed'
+      limit 1
+    `;
+    expect(confirmedDoc).toBeDefined();
+    const letter = corpus[0];
+    if (!letter || !confirmedDoc) throw new Error('missing corpus/fixture doc');
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${confirmedDoc.id}/confirm`,
+      organisationId,
+      payload: {
+        ...buildConfirmRequest(letter, reviewLoaLetter(letter.text)),
+        workCode: 'REPEAT-1',
+        letterNumber: `repeat-${runId}`,
+      },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'DOCUMENT_NOT_REVIEWABLE' });
+  });
+
+  it('refuses confirmation from viewers', async () => {
+    const letter = corpus[0];
+    if (!letter) throw new Error('empty corpus');
+    const documentId = await seedReviewDocument(letter);
+    const response = await authed(viewer, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: {
+        ...buildConfirmRequest(letter, reviewLoaLetter(letter.text)),
+        workCode: 'VIEWER-DENIED-1',
+        letterNumber: `viewer-denied-${runId}`,
+      },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
+  });
+
+  it('lists confirmed Works for members and keeps the audit trail', async () => {
+    const list = await authed(viewer, {
+      method: 'GET',
+      url: '/api/works',
+      organisationId,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(
+      list.json<{ works: { workCode: string }[] }>().works.length,
+    ).toBeGreaterThanOrEqual(corpus.length);
+
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and action = 'work.created'
+    `;
+    expect(events.length).toBeGreaterThanOrEqual(corpus.length);
+  });
+});
+
+describe('matched tender and contract-source package', () => {
+  async function seedParentLoa(): Promise<string> {
+    const id = randomUUID();
+    const payload = {
+      sourceText: 'synthetic parent identity',
+      review: {
+        header: {
+          tenderNumber: { value: 'NCR-SNT-2026-0042' },
+          workDescription: {
+            value:
+              'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+          },
+        },
+      },
+    };
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, extraction_status, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
+        'matched-parent-loa.pdf', ${createHash('sha256').update(id).digest('hex')},
+        'application/pdf', 1, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+      )
+    `;
+    return id;
+  }
+
+  function matchingTenderPdf(): Buffer {
+    return buildMultilineTestPdf([
+      'Tender No.: NCR-SNT-2026-0042',
+      'Name of Work: Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+      'Payment terms Supply and Installation category:',
+      '60% on supply, 25% on successful installation, 10% on issue of PAC and 5% on final acceptance.',
+      'Warranty period: 36 months for Item ITM-001 from commissioning.',
+      'Maintenance period: 5 years for the complete work after warranty.',
+      'The Performance Bank Guarantee PBG shall be released after final acceptance and expiry of warranty obligations.',
+      'The Security Deposit shall be returned after issue of the completion certificate and settlement of dues.',
+      'Item ITM-001 technical specification: Router shall conform to TEC GR No TEC-GR-TX-IPM-001 and support MPLS-TE.',
+    ]);
+  }
+
+  function matchingWrappedTenderPdf(): Buffer {
+    return buildMultilineTestPdf([
+      'Tender No.: NCR-SNT-2026-0042',
+      'Name of Work: Supply installation and',
+      'commissioning of IP MPLS equipment at',
+      'Jhansi division',
+      'Tender Document Cost: Rs. 0.00',
+    ]);
+  }
+
+  it('accepts only a matching source, extracts the tender context and records the immutable relationship', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=tender-spec.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingTenderPdf(),
+    });
+    expect(upload.statusCode, upload.body).toBe(201);
+    const response = upload.json<{ context: ContractSourceContext }>();
+    expect(response.context.documents).toHaveLength(1);
+    expect(response.context.paymentMatrix[0]).toMatchObject({
+      category: 'SUPPLY_AND_INSTALLATION',
+      pctSupply: '60',
+      pctInstallation: '25',
+      pctPac: '10',
+      pctFinalBill: '5',
+    });
+    expect(response.context.periods.map((period) => period.kind).sort()).toEqual([
+      'maintenance',
+      'warranty',
+    ]);
+    expect(response.context.releaseClauses.map((clause) => clause.kind).sort()).toEqual(
+      ['pbg', 'security_deposit'],
+    );
+    expect(response.context.itemSpecifications[0]?.itemReferences).toContain('ITM-001');
+
+    const [stored] = await admin<
+      {
+        document_kind: string;
+        parent_loa_document_id: string;
+        match_status: string;
+      }[]
+    >`
+      select document_kind, parent_loa_document_id, match_status
+      from loa_documents
+      where parent_loa_document_id = ${parentId}
+    `;
+    expect(stored).toEqual({
+      document_kind: 'tender_specification',
+      parent_loa_document_id: parentId,
+      match_status: 'matched',
+    });
+  });
+
+  it('accepts a matching name of work wrapped across PDF lines', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=nit&filename=wrapped-nit.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingWrappedTenderPdf(),
+    });
+
+    expect(upload.statusCode, upload.body).toBe(201);
+    expect(
+      upload.json<{
+        document: {
+          identityMatch: {
+            extractedWorkDescription: string;
+            workDescriptionMatched: boolean;
+          };
+        };
+      }>().document.identityMatch,
+    ).toMatchObject({
+      extractedWorkDescription:
+        'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+      workDescriptionMatched: true,
+    });
+  });
+
+  it('rejects a foreign tender before object metadata is stored and audits only the refusal', async () => {
+    const parentId = await seedParentLoa();
+    const foreign = buildMultilineTestPdf([
+      'Tender No.: FOREIGN-009',
+      'Name of Work: Construction of a station building at Agra',
+      'Payment terms: 80% on supply and 20% on installation.',
+    ]);
+    const sha = createHash('sha256').update(foreign).digest('hex');
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=nit&filename=foreign.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: foreign,
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'CONTRACT_SOURCE_IDENTITY_MISMATCH',
+      details: {
+        matched: false,
+        tenderNumberMatched: false,
+        workDescriptionMatched: false,
+      },
+    });
+    const [stored] = await admin<{ count: string }[]>`
+      select count(*)::text as count from loa_documents
+      where organisation_id = ${organisationId} and sha256 = ${sha}
+    `;
+    expect(stored?.count).toBe('0');
+    const [audit] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'contract_source.rejected'
+        and entity_id = ${parentId}
+    `;
+    expect(audit?.count).toBe('1');
+  });
+
+  it('confirms the reviewer-entered initial matrix atomically and links supporting evidence to the Work', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=tender-spec-confirm.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingTenderPdf(),
+    });
+    expect(upload.statusCode, upload.body).toBe(201);
+
+    const confirm = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `TENDER-${runId}`.toUpperCase().slice(0, 20),
+        letterNumber: `LOA-TENDER-${runId}`,
+        letterDate: '2025-01-01',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        advertisedValue: '100000',
+        contractValue: '90000',
+        pricingShape: 'per_schedule',
+        paymentMatrix: [
+          {
+            category: 'SUPPLY_AND_INSTALLATION',
+            pctSupply: '55',
+            pctInstallation: '30',
+            pctPac: '10',
+            pctFinalBill: '5',
+          },
+        ],
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'ITM-001',
+                description: 'IP MPLS edge router',
+                unitCode: 'NOS',
+                awardedQuantity: '10',
+                effectiveRate: '9000',
+                paymentCategory: 'SUPPLY_AND_INSTALLATION',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      } satisfies ConfirmWorkRequest,
+    });
+    expect(confirm.statusCode, confirm.body).toBe(201);
+    const work = confirm.json<WorkDetailResponse>().work;
+
+    const [matrix] = await admin<
+      {
+        pct_supply: string;
+        pct_installation: string;
+        pct_pac: string;
+        pct_final_bill: string;
+      }[]
+    >`
+      select pct_supply::text, pct_installation::text, pct_pac::text,
+             pct_final_bill::text
+      from payment_matrices where work_id = ${work.id}
+    `;
+    expect(matrix).toEqual({
+      pct_supply: '55.00',
+      pct_installation: '30.00',
+      pct_pac: '10.00',
+      pct_final_bill: '5.00',
+    });
+    const [linked] = await admin<{ confirmed_work_id: string }[]>`
+      select confirmed_work_id from loa_documents
+      where parent_loa_document_id = ${parentId}
+    `;
+    expect(linked?.confirmed_work_id).toBe(work.id);
+
+    const context = await authed(viewer, {
+      method: 'GET',
+      url: `/api/works/${work.id}/contract-source-context`,
+      organisationId,
+    });
+    expect(context.statusCode, context.body).toBe(200);
+    expect(
+      context.json<ContractSourceContext>().itemSpecifications[0]?.mappedWorkItemIds,
+    ).toHaveLength(1);
+  });
+
+  it('refuses malformed initial payment rows without creating the Work', async () => {
+    const parentId = await seedParentLoa();
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `BADMAT-${runId}`.toUpperCase().slice(0, 20),
+        letterNumber: `LOA-BAD-MATRIX-${runId}`,
+        letterDate: '2025-01-01',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        advertisedValue: '1000',
+        contractValue: '1000',
+        pricingShape: 'per_schedule',
+        paymentMatrix: [
+          {
+            category: 'SUPPLY',
+            pctSupply: '80',
+            pctInstallation: '10',
+            pctPac: '5',
+            pctFinalBill: '4',
+          },
+        ],
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'ITM-001',
+                description: 'Test item',
+                unitCode: 'NOS',
+                awardedQuantity: '1',
+                effectiveRate: '1000',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'PAYMENT_MATRIX_SUM_INVALID' });
+    const [work] = await admin<{ count: string }[]>`
+      select count(*)::text as count from works
+      where organisation_id = ${organisationId}
+        and letter_number = ${`LOA-BAD-MATRIX-${runId}`}
+    `;
+    expect(work?.count).toBe('0');
+  });
+});
+
+describe('upload malware scanning (Milestone 4)', () => {
+  it('rejects a flagged upload before anything is stored and accepts clean ones', async () => {
+    const flagged = buildTestPdf('EICAR-TEST-MARKER inside');
+    const rejected = await scanningApp.inject({
+      method: 'POST',
+      url: '/api/loa-documents?filename=flagged.pdf',
+      headers: {
+        cookie: owner.cookie,
+        'x-organisation-id': organisationId,
+        'content-type': 'application/pdf',
+      },
+      payload: flagged,
+    });
+    expect(rejected.statusCode, rejected.body).toBe(400);
+    expect(rejected.json()).toMatchObject({ code: 'MALWARE_DETECTED' });
+    const [row] = await admin<{ count: string }[]>`
+      select count(*)::text as count from loa_documents
+      where organisation_id = ${organisationId} and sha256 = ${createHash('sha256')
+        .update(flagged)
+        .digest('hex')}
+    `;
+    expect(row?.count).toBe('0');
+
+    const clean = await scanningApp.inject({
+      method: 'POST',
+      url: '/api/loa-documents?filename=clean.pdf',
+      headers: {
+        cookie: owner.cookie,
+        'x-organisation-id': organisationId,
+        'content-type': 'application/pdf',
+      },
+      payload: buildTestPdf('perfectly clean letter'),
+    });
+    expect(clean.statusCode, clean.body).toBe(201);
+  });
+});
