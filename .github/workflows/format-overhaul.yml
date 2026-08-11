@@ -1,0 +1,62 @@
+name: Format product overhaul checkpoint
+
+on:
+  push:
+    branches:
+      - agent/product-experience-rebuild
+    paths:
+      - .github/workflows/format-overhaul.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: agent/product-experience-rebuild
+          persist-credentials: true
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Format the overhaul diff
+        run: |
+          pnpm exec prettier --write \
+            adr/0006-organisation-entry-and-contract-source-pack.md \
+            apps/server/src/app.ts \
+            apps/server/src/routes/contract-sources.ts \
+            apps/server/src/routes/loa.ts \
+            apps/server/test/contract-sources.integration.test.ts \
+            apps/web/src/App.tsx \
+            apps/web/src/api.ts \
+            apps/web/src/views/OrganisationAccessSettings.tsx \
+            apps/web/src/views/OrganisationCreateForm.tsx \
+            apps/web/src/views/OrganisationOnboarding.tsx \
+            apps/web/src/views/OperationsWorkspace.tsx \
+            apps/web/src/views/OrgPicker.tsx \
+            apps/web/src/views/PaymentMatrix.tsx \
+            apps/web/src/views/ReviewLoa.tsx \
+            apps/web/src/views/TenderTermsReview.tsx \
+            apps/web/src/views/UploadLoa.tsx \
+            packages/contracts/src/contract-sources.ts \
+            packages/contracts/src/index.ts \
+            packages/contracts/src/works.ts \
+            packages/db/migrations/0040_contract_source_documents.sql \
+            packages/loa-parser/src/index.ts \
+            packages/loa-parser/src/tender-document.test.ts \
+            packages/loa-parser/src/tender-document.ts
+          rm .github/workflows/format-overhaul.yml
+      - name: Commit formatting
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'style: format tender-aware overhaul'
+          git push origin HEAD:agent/product-experience-rebuild
