@@ -1,8 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import type {
-  ContractSourceDocumentKind,
-  LoaDocumentDetail,
-} from '@auto-mb/contracts';
+import type { ContractSourceDocumentKind, LoaDocumentDetail } from '@auto-mb/contracts';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -53,7 +50,11 @@ type UploadState =
   | { readonly status: 'idle' }
   | { readonly status: 'pending' }
   | { readonly status: 'accepted'; readonly filename: string }
-  | { readonly status: 'rejected'; readonly filename: string; readonly message: string };
+  | {
+      readonly status: 'rejected';
+      readonly filename: string;
+      readonly message: string;
+    };
 
 function fileOf(input: HTMLInputElement | null): File | null {
   return input?.files?.[0] ?? null;
@@ -179,9 +180,9 @@ export function UploadLoa({
             Upload contract documents
           </h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            The Letter of Acceptance is required. Tender documents are optional evidence;
-            Auto-MB accepts them only when both the tender number and name of work match
-            the LOA.
+            The Letter of Acceptance is required. Tender documents are optional
+            evidence; Auto-MB accepts them only when both the tender number and name of
+            work match the LOA.
           </p>
         </div>
         <Badge variant="info">Human confirmation required</Badge>
@@ -199,8 +200,8 @@ export function UploadLoa({
                   Letter of Acceptance
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Required. Its tender number and name of work become the identity anchor
-                  for every optional document in this package.
+                  Required. Its tender number and name of work become the identity
+                  anchor for every optional document in this package.
                 </p>
               </div>
             </div>
@@ -215,17 +216,24 @@ export function UploadLoa({
                   accept="application/pdf,.pdf"
                   required
                 />
-                <Hint>Searchable PDF, up to 25 MB. Scanned image-only files may fail extraction.</Hint>
+                <Hint>
+                  Searchable PDF, up to 25 MB. Scanned image-only files may fail
+                  extraction.
+                </Hint>
               </Field>
             ) : (
               <div className="mt-6 flex items-center gap-3 rounded-xl border border-success/25 bg-success/5 p-4">
-                <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden="true" />
+                <CheckCircle2
+                  className="size-5 shrink-0 text-success"
+                  aria-hidden="true"
+                />
                 <span className="min-w-0">
                   <strong className="block truncate text-sm">
                     {uploadedLoa.originalFilename}
                   </strong>
                   <span className="text-xs text-muted-foreground">
-                    LOA uploaded. Correct rejected supporting documents or continue to review.
+                    LOA uploaded. Correct rejected supporting documents or continue to
+                    review.
                   </span>
                 </span>
               </div>
@@ -240,9 +248,9 @@ export function UploadLoa({
                 <div>
                   <p className="text-sm font-medium">Identity matching is mandatory</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    Missing or different tender numbers and work names are rejected before
-                    storage. Punctuation differences are ignored, but Auto-MB never guesses a
-                    relationship between contracts.
+                    Missing or different tender numbers and work names are rejected
+                    before storage. Punctuation differences are ignored, but Auto-MB
+                    never guesses a relationship between contracts.
                   </p>
                 </div>
               </div>
@@ -332,7 +340,10 @@ export function UploadLoa({
                     </div>
                   ) : (
                     <Field className="mt-3 mb-0 max-w-none">
-                      <label className="sr-only" htmlFor={supportInputId(definition.kind)}>
+                      <label
+                        className="sr-only"
+                        htmlFor={supportInputId(definition.kind)}
+                      >
                         {definition.label} PDF
                       </label>
                       <input
@@ -345,7 +356,10 @@ export function UploadLoa({
                     </Field>
                   )}
                   {state.status === 'rejected' && (
-                    <p className="mt-2 text-xs font-medium text-destructive" role="alert">
+                    <p
+                      className="mt-2 text-xs font-medium text-destructive"
+                      role="alert"
+                    >
                       {state.message}
                     </p>
                   )}

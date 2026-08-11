@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  matchTenderIdentity,
-  reviewTenderDocument,
-} from '../src/index.js';
+import { matchTenderIdentity, reviewTenderDocument } from '../src/index.js';
 
 const TENDER_TEXT = `
 NORTH CENTRAL RAILWAY

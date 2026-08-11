@@ -5,12 +5,19 @@ on:
   push:
     branches: [main]
   schedule:
+    # Weekly: advisories published after a merge must still surface without
+    # waiting for the next pull request.
     - cron: '30 2 * * 1'
 
 permissions:
   contents: read
 
 jobs:
+  # The dependency-review-action requires GitHub Advanced Security on
+  # private repositories, so it can never pass here. pnpm audit provides
+  # the SECURITY.md dependency-scan baseline instead: it proves no known
+  # advisory of high or critical severity affects the locked dependency
+  # graph. It does not prove anything about unpublished vulnerabilities.
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -25,42 +32,3 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
-
-  format-overhaul:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-experience-rebuild'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: agent/product-experience-rebuild
-          fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: 22.16.0
-      - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Format supported files changed by the PR
-        run: |
-          mapfile -t changed < <(
-            git diff --name-only --diff-filter=ACMRT origin/main...HEAD -- \
-              '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.md' '*.css' '*.yaml' '*.yml'
-          )
-          if [ "${#changed[@]}" -gt 0 ]; then
-            printf 'Formatting %s\n' "${changed[@]}"
-            pnpm exec prettier --write "${changed[@]}"
-          fi
-          rm -f .github/workflows/format-overhaul.yml
-          git show origin/main:.github/workflows/dependency-audit.yml > .github/workflows/dependency-audit.yml
-      - name: Commit formatting
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'style: format tender-aware overhaul'
-          git push origin HEAD:agent/product-experience-rebuild

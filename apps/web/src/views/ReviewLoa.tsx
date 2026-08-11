@@ -170,15 +170,14 @@ export function ReviewLoa({
   onBack,
 }: ReviewLoaProps) {
   const [document, setDocument] = useState<LoaDocumentDetail | null>(null);
-  const [contractContext, setContractContext] =
-    useState<ContractSourceContext | null>(null);
+  const [contractContext, setContractContext] = useState<ContractSourceContext | null>(
+    null,
+  );
   const [contractContextError, setContractContextError] = useState<string | null>(null);
   const [initialPaymentMatrix, setInitialPaymentMatrix] = useState<
     readonly ConfirmPaymentMatrixRow[]
   >([]);
-  const [paymentMatrixProblem, setPaymentMatrixProblem] = useState<string | null>(
-    null,
-  );
+  const [paymentMatrixProblem, setPaymentMatrixProblem] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [header, setHeader] = useState<HeaderDraft | null>(null);
   const [items, setItems] = useState<ItemDraft[] | null>(null);

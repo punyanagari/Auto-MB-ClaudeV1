@@ -108,8 +108,7 @@ function hundredths(raw: string): bigint | null {
   const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(raw.trim());
   if (match === null) return null;
   const result =
-    BigInt(match[1] ?? '0') * 100n +
-    BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+    BigInt(match[1] ?? '0') * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
   return result <= 10000n ? result : null;
 }
 
@@ -123,13 +122,17 @@ function rowProblem(draft: MatrixDraft): string | null {
   let total = 0n;
   for (const [field, label] of STAGES) {
     const value = hundredths(draft[field]);
-    if (value === null) return `${label} must be between 0 and 100 with at most two decimals.`;
+    if (value === null)
+      return `${label} must be between 0 and 100 with at most two decimals.`;
     total += value;
   }
   return total === 10000n ? null : 'The four stages must sum to exactly 100.';
 }
 
-function rowOf(category: PaymentMatrixCategory, draft: MatrixDraft): ConfirmPaymentMatrixRow {
+function rowOf(
+  category: PaymentMatrixCategory,
+  draft: MatrixDraft,
+): ConfirmPaymentMatrixRow {
   return {
     category,
     pctSupply: draft.pctSupply.trim(),
@@ -144,7 +147,8 @@ function sameMatrix(
   extracted: ConfirmPaymentMatrixRow,
 ): boolean {
   return STAGES.every(
-    ([field]) => normalisedPercent(manual[field]) === normalisedPercent(extracted[field]),
+    ([field]) =>
+      normalisedPercent(manual[field]) === normalisedPercent(extracted[field]),
   );
 }
 
@@ -221,10 +225,7 @@ export function TenderTermsReview({
     return messages;
   }, [context.paymentMatrix, drafts]);
 
-  function update(
-    category: PaymentMatrixCategory,
-    patch: Partial<MatrixDraft>,
-  ): void {
+  function update(category: PaymentMatrixCategory, patch: Partial<MatrixDraft>): void {
     setDrafts((current) => ({
       ...current,
       [category]: { ...current[category], ...patch },
@@ -275,8 +276,13 @@ export function TenderTermsReview({
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {context.documents.map((document) => (
-            <div key={document.id} className="rounded-xl border border-border bg-background/60 p-3">
-              <p className="truncate text-sm font-medium">{document.originalFilename}</p>
+            <div
+              key={document.id}
+              className="rounded-xl border border-border bg-background/60 p-3"
+            >
+              <p className="truncate text-sm font-medium">
+                {document.originalFilename}
+              </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {document.kind.replaceAll('_', ' ')}
               </p>
@@ -305,7 +311,10 @@ export function TenderTermsReview({
         </div>
 
         {mismatches.length > 0 && (
-          <div className="mt-4 rounded-xl border border-warning/35 bg-warning/[0.07] p-4" role="note">
+          <div
+            className="mt-4 rounded-xl border border-warning/35 bg-warning/[0.07] p-4"
+            role="note"
+          >
             <p className="flex items-center gap-2 text-sm font-semibold text-warning-foreground">
               <AlertTriangle className="size-4" aria-hidden="true" />
               Manual matrix differs from tender evidence
@@ -385,8 +394,9 @@ export function TenderTermsReview({
                             >
                               <strong className="block">{entry.sourceFilename}</strong>
                               <span>
-                                {entry.pctSupply ?? '—'} / {entry.pctInstallation ?? '—'} /{' '}
-                                {entry.pctPac ?? '—'} / {entry.pctFinalBill ?? '—'}
+                                {entry.pctSupply ?? '—'} /{' '}
+                                {entry.pctInstallation ?? '—'} / {entry.pctPac ?? '—'} /{' '}
+                                {entry.pctFinalBill ?? '—'}
                               </span>
                             </div>
                           ))}
@@ -394,7 +404,9 @@ export function TenderTermsReview({
                       </details>
                     )}
                     {problem !== null && draft.enabled && (
-                      <p className="mt-2 text-xs font-medium text-destructive">{problem}</p>
+                      <p className="mt-2 text-xs font-medium text-destructive">
+                        {problem}
+                      </p>
                     )}
                   </td>
                 </tr>
@@ -410,15 +422,18 @@ export function TenderTermsReview({
             Warranty and maintenance periods
           </h2>
           {context.periods.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No period clause was extracted.</p>
+            <p className="text-sm text-muted-foreground">
+              No period clause was extracted.
+            </p>
           ) : (
             <ul className="mt-3 flex list-none flex-col gap-3 p-0">
               {context.periods.map((period) => {
                 const mapped = period.itemReferences.filter((reference) =>
                   itemNumbers.some((item) =>
-                    item.toUpperCase().replace(/[^A-Z0-9]/g, '').endsWith(
-                      reference.toUpperCase().replace(/[^A-Z0-9]/g, ''),
-                    ),
+                    item
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, '')
+                      .endsWith(reference.toUpperCase().replace(/[^A-Z0-9]/g, '')),
                   ),
                 );
                 return (
@@ -431,7 +446,8 @@ export function TenderTermsReview({
                         {period.kind}
                       </Badge>
                       <strong className="text-sm">
-                        {period.durationValue ?? 'Unresolved'} {period.durationUnit ?? ''}
+                        {period.durationValue ?? 'Unresolved'}{' '}
+                        {period.durationUnit ?? ''}
                       </strong>
                       <span className="text-xs text-muted-foreground">
                         {period.scope === 'work' ? 'Whole Work' : 'Specific items'}
@@ -495,8 +511,8 @@ export function TenderTermsReview({
               Item specifications
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              References are mapped only when one unambiguous Work item matches. Ambiguous
-              or missing references stay visible for manual review.
+              References are mapped only when one unambiguous Work item matches.
+              Ambiguous or missing references stay visible for manual review.
             </p>
           </div>
         </div>
@@ -519,9 +535,10 @@ export function TenderTermsReview({
               {context.itemSpecifications.map((entry) => {
                 const mapped = itemNumbers.filter((item) =>
                   entry.itemReferences.some((reference) =>
-                    item.toUpperCase().replace(/[^A-Z0-9]/g, '').endsWith(
-                      reference.toUpperCase().replace(/[^A-Z0-9]/g, ''),
-                    ),
+                    item
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, '')
+                      .endsWith(reference.toUpperCase().replace(/[^A-Z0-9]/g, '')),
                   ),
                 );
                 return (

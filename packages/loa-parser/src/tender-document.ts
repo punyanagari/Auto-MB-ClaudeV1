@@ -169,7 +169,9 @@ function matrixCategory(block: string): TenderMatrixCategory {
   return 'UNCATEGORISED';
 }
 
-function matrixSuggestions(blocks: readonly string[]): readonly TenderPaymentMatrixSuggestion[] {
+function matrixSuggestions(
+  blocks: readonly string[],
+): readonly TenderPaymentMatrixSuggestion[] {
   const byCategory = new Map<TenderMatrixCategory, TenderPaymentMatrixSuggestion>();
   for (const block of blocks) {
     if (!/%|percent|payment/i.test(block)) continue;
@@ -193,10 +195,7 @@ function matrixSuggestions(blocks: readonly string[]): readonly TenderPaymentMat
     if (values.filter((value) => value !== null).length < 2) continue;
     const parsed = values.map(percentageHundredths);
     const complete = parsed.every((value) => value !== null);
-    const total = parsed.reduce<bigint>(
-      (sum, value) => sum + (value ?? 0n),
-      0n,
-    );
+    const total = parsed.reduce<bigint>((sum, value) => sum + (value ?? 0n), 0n);
     const category = matrixCategory(block);
     byCategory.set(category, {
       category,
@@ -229,10 +228,14 @@ function itemReferences(block: string): readonly string[] {
   return [...references];
 }
 
-function periodSuggestions(blocks: readonly string[]): readonly TenderPeriodSuggestion[] {
+function periodSuggestions(
+  blocks: readonly string[],
+): readonly TenderPeriodSuggestion[] {
   const result: TenderPeriodSuggestion[] = [];
   for (const block of blocks) {
-    const kind: TenderPeriodKind | null = /warrant(?:y|ies)|guarantee\s+period/i.test(block)
+    const kind: TenderPeriodKind | null = /warrant(?:y|ies)|guarantee\s+period/i.test(
+      block,
+    )
       ? 'warranty'
       : /maintenance\s+period|defect\s+liability|AMC\s+period/i.test(block)
         ? 'maintenance'
@@ -286,7 +289,11 @@ function specificationSuggestions(
 ): readonly TenderItemSpecificationSuggestion[] {
   const result: TenderItemSpecificationSuggestion[] = [];
   for (const block of blocks) {
-    if (!/specification|technical\s+requirement|shall\s+conform|make\s*\/\s*model|standard\s+(?:as|no\.?)/i.test(block)) {
+    if (
+      !/specification|technical\s+requirement|shall\s+conform|make\s*\/\s*model|standard\s+(?:as|no\.?)/i.test(
+        block,
+      )
+    ) {
       continue;
     }
     const refs = itemReferences(block);
@@ -341,7 +348,10 @@ export function reviewTenderDocument(
 }
 
 function normalizedTenderNumber(value: string): string {
-  return value.normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return value
+    .normalize('NFKC')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 }
 
 function normalizedWords(value: string): readonly string[] {
@@ -351,7 +361,10 @@ function normalizedWords(value: string): readonly string[] {
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim()
     .split(/\s+/)
-    .filter((word) => word.length > 1 && !['THE', 'OF', 'FOR', 'AND', 'AT', 'IN'].includes(word));
+    .filter(
+      (word) =>
+        word.length > 1 && !['THE', 'OF', 'FOR', 'AND', 'AT', 'IN'].includes(word),
+    );
 }
 
 function workDescriptionMatches(expected: string, actual: string): boolean {
@@ -362,7 +375,9 @@ function workDescriptionMatches(expected: string, actual: string): boolean {
   const rightText = right.join(' ');
   if (leftText === rightText) return true;
   if (leftText.includes(rightText) || rightText.includes(leftText)) {
-    const ratio = Math.min(leftText.length, rightText.length) / Math.max(leftText.length, rightText.length);
+    const ratio =
+      Math.min(leftText.length, rightText.length) /
+      Math.max(leftText.length, rightText.length);
     if (ratio >= 0.72) return true;
   }
   const rightSet = new Set(right);

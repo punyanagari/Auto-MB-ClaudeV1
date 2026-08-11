@@ -423,13 +423,7 @@ export async function buildApp(
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
-    registerContractSourceRoutes(
-      app,
-      authInstance,
-      database,
-      storage,
-      scanner,
-    );
+    registerContractSourceRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,
       authInstance,

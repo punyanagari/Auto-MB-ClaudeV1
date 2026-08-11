@@ -1157,13 +1157,7 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       if (!response.ok) throw await parseError(response);
       return (await response.json()) as LoaDocumentDetail;
     },
-    async uploadContractSource(
-      organisationId,
-      loaDocumentId,
-      kind,
-      file,
-      filename,
-    ) {
+    async uploadContractSource(organisationId, loaDocumentId, kind, file, filename) {
       const query = new URLSearchParams({ kind, filename });
       const response = await fetchImpl(
         `/api/loa-documents/${loaDocumentId}/contract-sources?${query.toString()}`,

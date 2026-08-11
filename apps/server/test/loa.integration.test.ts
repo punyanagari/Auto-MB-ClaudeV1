@@ -122,7 +122,8 @@ function buildTestPdf(text: string): Buffer {
  * this fixture preserves the same line boundaries pdftotext sees in real
  * searchable tender documents. */
 function buildMultilineTestPdf(lines: readonly string[]): Buffer {
-  const escape = (line: string) => line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+  const escape = (line: string) =>
+    line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
   const commands = lines
     .map((line, index) =>
       index === 0
@@ -598,7 +599,8 @@ describe('matched tender and contract-source package', () => {
         header: {
           tenderNumber: { value: 'NCR-SNT-2026-0042' },
           workDescription: {
-            value: 'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+            value:
+              'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
           },
         },
       },
@@ -654,17 +656,18 @@ describe('matched tender and contract-source package', () => {
       'maintenance',
       'warranty',
     ]);
-    expect(response.context.releaseClauses.map((clause) => clause.kind).sort()).toEqual([
-      'pbg',
-      'security_deposit',
-    ]);
+    expect(response.context.releaseClauses.map((clause) => clause.kind).sort()).toEqual(
+      ['pbg', 'security_deposit'],
+    );
     expect(response.context.itemSpecifications[0]?.itemReferences).toContain('ITM-001');
 
-    const [stored] = await admin<{
-      document_kind: string;
-      parent_loa_document_id: string;
-      match_status: string;
-    }[]>`
+    const [stored] = await admin<
+      {
+        document_kind: string;
+        parent_loa_document_id: string;
+        match_status: string;
+      }[]
+    >`
       select document_kind, parent_loa_document_id, match_status
       from loa_documents
       where parent_loa_document_id = ${parentId}
@@ -733,7 +736,8 @@ describe('matched tender and contract-source package', () => {
         workCode: `TENDER-${runId}`.toUpperCase().slice(0, 20),
         letterNumber: `LOA-TENDER-${runId}`,
         letterDate: '2025-01-01',
-        title: 'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
         advertisedValue: '100000',
         contractValue: '90000',
         pricingShape: 'per_schedule',
@@ -768,12 +772,14 @@ describe('matched tender and contract-source package', () => {
     expect(confirm.statusCode, confirm.body).toBe(201);
     const work = confirm.json<WorkDetailResponse>().work;
 
-    const [matrix] = await admin<{
-      pct_supply: string;
-      pct_installation: string;
-      pct_pac: string;
-      pct_final_bill: string;
-    }[]>`
+    const [matrix] = await admin<
+      {
+        pct_supply: string;
+        pct_installation: string;
+        pct_pac: string;
+        pct_final_bill: string;
+      }[]
+    >`
       select pct_supply::text, pct_installation::text, pct_pac::text,
              pct_final_bill::text
       from payment_matrices where work_id = ${work.id}
@@ -811,7 +817,8 @@ describe('matched tender and contract-source package', () => {
         workCode: `BADMAT-${runId}`.toUpperCase().slice(0, 20),
         letterNumber: `LOA-BAD-MATRIX-${runId}`,
         letterDate: '2025-01-01',
-        title: 'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
         advertisedValue: '1000',
         contractValue: '1000',
         pricingShape: 'per_schedule',

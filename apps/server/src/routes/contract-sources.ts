@@ -48,10 +48,7 @@ const errorResponses = {
   502: ApiErrorSchema,
 } as const;
 
-const IdParamsSchema = Type.Object(
-  { id: UuidSchema },
-  { additionalProperties: false },
-);
+const IdParamsSchema = Type.Object({ id: UuidSchema }, { additionalProperties: false });
 
 interface StoredLoaPayload {
   readonly review: {
@@ -165,7 +162,10 @@ function toContractSourceDocument(row: ContractSourceRow): ContractSourceDocumen
 }
 
 function normalizedItemReference(value: string): string {
-  return value.normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return value
+    .normalize('NFKC')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 }
 
 function itemReferenceMatches(itemNumber: string, reference: string): boolean {
@@ -368,11 +368,8 @@ export function registerContractSourceRoutes(
 
       // Authorisation and expected identity are resolved before malware scan
       // and text extraction, so a forbidden account cannot spend either.
-      const expected = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        (tx) => parentLoaForWriter(tx, user.id, parentId, false),
+      const expected = await withBoundTenant(database, organisationId, user.id, (tx) =>
+        parentLoaForWriter(tx, user.id, parentId, false),
       );
       await assertNotMalware(scanner, body);
 

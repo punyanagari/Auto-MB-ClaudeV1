@@ -242,8 +242,7 @@ export function App({ api: providedApi }: AppProps) {
             </span>
           </span>
         </span>
-        {(phase.name === 'pick-organisation' ||
-          phase.name === 'no-organisation') && (
+        {(phase.name === 'pick-organisation' || phase.name === 'no-organisation') && (
           <div className="flex min-w-0 items-center gap-3">
             <span className="hidden max-w-64 truncate text-xs text-muted-foreground sm:inline">
               {phase.me.user.email}
@@ -275,10 +274,7 @@ export function App({ api: providedApi }: AppProps) {
           />
         )}
         {phase.name === 'no-organisation' && (
-          <OrganisationOnboarding
-            api={api}
-            onCreated={() => void refreshSession()}
-          />
+          <OrganisationOnboarding api={api} onCreated={() => void refreshSession()} />
         )}
       </main>
     </div>

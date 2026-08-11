@@ -225,8 +225,7 @@ export function PaymentMatrix({
   }, [api, organisationId, workId]);
 
   const tenderWarnings = useMemo(
-    () =>
-      tenderContext === null ? [] : matrixEvidenceWarnings(tenderContext, drafts),
+    () => (tenderContext === null ? [] : matrixEvidenceWarnings(tenderContext, drafts)),
     [tenderContext, drafts],
   );
 
@@ -289,7 +288,10 @@ export function PaymentMatrix({
         later matrix edits never change a raised MB.
       </p>
       {tenderContextError !== null && (
-        <div className="my-4 rounded-xl border border-warning/35 bg-warning/[0.06] p-4" role="note">
+        <div
+          className="my-4 rounded-xl border border-warning/35 bg-warning/[0.06] p-4"
+          role="note"
+        >
           <p className="flex items-center gap-2 text-sm font-semibold text-warning-foreground">
             <AlertTriangle className="size-4" aria-hidden="true" />
             Tender comparison unavailable
@@ -310,9 +312,7 @@ export function PaymentMatrix({
             <div>
               <p
                 className={`flex items-center gap-2 text-sm font-semibold ${
-                  tenderWarnings.length > 0
-                    ? 'text-warning-foreground'
-                    : 'text-success'
+                  tenderWarnings.length > 0 ? 'text-warning-foreground' : 'text-success'
                 }`}
               >
                 {tenderWarnings.length > 0 ? (
@@ -325,8 +325,8 @@ export function PaymentMatrix({
                   : 'Manual matrix matches the extracted tender percentages'}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                The manual matrix remains authoritative. This comparison never overwrites
-                a saved value.
+                The manual matrix remains authoritative. This comparison never
+                overwrites a saved value.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1.5 text-xs text-muted-foreground">
