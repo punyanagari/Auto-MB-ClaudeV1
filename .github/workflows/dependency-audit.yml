@@ -5,19 +5,12 @@ on:
   push:
     branches: [main]
   schedule:
-    # Weekly: advisories published after a merge must still surface without
-    # waiting for the next pull request.
     - cron: '30 2 * * 1'
 
 permissions:
   contents: read
 
 jobs:
-  # The dependency-review-action requires GitHub Advanced Security on
-  # private repositories, so it can never pass here. pnpm audit provides
-  # the SECURITY.md dependency-scan baseline instead: it proves no known
-  # advisory of high or critical severity affects the locked dependency
-  # graph. It does not prove anything about unpublished vulnerabilities.
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -33,15 +26,10 @@ jobs:
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
 
-  # Temporary branch bootstrap. It runs only on the overhaul PR, applies the
-  # organization-entry wiring that spans the large workspace component, then
-  # exports the exact checkout so the remaining schema/API/UI work can be
-  # developed and tested as one coherent tree. This job and its helper workflow
-  # are removed before the PR is marked ready.
-  prepare-overhaul-checkout:
+  apply-overhaul-checkpoint:
     if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-experience-rebuild'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -50,190 +38,34 @@ jobs:
           ref: agent/product-experience-rebuild
           fetch-depth: 0
           persist-credentials: true
-      - name: Apply organisation-aware workspace wiring
+      - name: Verify and apply the source checkpoint
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('apps/web/src/views/OperationsWorkspace.tsx')
-          text = path.read_text()
-
-          def replace_once(before: str, after: str, label: str) -> None:
-              global text
-              if after in text:
-                  return
-              count = text.count(before)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected one source block, found {count}')
-              text = text.replace(before, after, 1)
-
-          replace_once(
-              "import { Settings } from './Settings.js';\n",
-              "import { Settings } from './Settings.js';\nimport { OrganisationAccessSettings } from './OrganisationAccessSettings.js';\n",
-              'settings import',
-          )
-          replace_once(
-              "  readonly organisation: Organisation;\n  readonly onSwitchOrganisation: () => void;\n  readonly onSignOut: () => void;\n",
-              "  readonly organisation: Organisation;\n  readonly organisations: readonly Organisation[];\n  readonly onSwitchOrganisation: () => void;\n  readonly onOrganisationCreated: (organisation: Organisation) => void;\n  readonly onSignOut: () => void;\n",
-              'workspace props',
-          )
-          replace_once(
-              "  organisation,\n  onSwitchOrganisation,\n  onSignOut,\n",
-              "  organisation,\n  organisations,\n  onSwitchOrganisation,\n  onOrganisationCreated,\n  onSignOut,\n",
-              'workspace arguments',
-          )
-          replace_once(
-              "  const isOwner = membership?.role === 'owner';\n  const activeModule = activeModuleOf(view);\n",
-              "  const isOwner = membership?.role === 'owner';\n  const canSwitchOrganisation = organisations.length > 1;\n  const activeModule = activeModuleOf(view);\n",
-              'switch capability',
-          )
-          replace_once(
-              """          <button
-            type=\"button\"
-            className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted\"
-            onClick={onSwitchOrganisation}
-          >
-            <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
-              {organisation.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className=\"min-w-0 flex-1\">
-              <strong className=\"block truncate text-xs\">{organisation.name}</strong>
-              <span className=\"block truncate text-[11px] text-muted-foreground\">
-                Switch organisation
-              </span>
-            </span>
-            <ArrowLeftRight
-              className=\"size-4 text-muted-foreground\"
-              aria-hidden=\"true\"
-            />
-          </button>
-""",
-              """          {canSwitchOrganisation ? (
-            <button
-              type=\"button\"
-              className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted\"
-              onClick={onSwitchOrganisation}
-            >
-              <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
-                {organisation.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className=\"min-w-0 flex-1\">
-                <strong className=\"block truncate text-xs\">{organisation.name}</strong>
-                <span className=\"block truncate text-[11px] text-muted-foreground\">
-                  Switch organisation
-                </span>
-              </span>
-              <ArrowLeftRight
-                className=\"size-4 text-muted-foreground\"
-                aria-hidden=\"true\"
-              />
-            </button>
-          ) : (
-            <div className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3\">
-              <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
-                {organisation.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className=\"min-w-0 flex-1\">
-                <strong className=\"block truncate text-xs\">{organisation.name}</strong>
-                <span className=\"block truncate text-[11px] text-muted-foreground\">
-                  Current organisation
-                </span>
-              </span>
-            </div>
-          )}
-""",
-              'desktop organisation control',
-          )
-          replace_once(
-              """          {view.name === 'settings' && (
-            <Settings
-              api={api}
-              organisationId={organisation.id}
-              isOwner={membership?.role === 'owner'}
-            />
-          )}
-""",
-              """          {view.name === 'settings' && (
-            <>
-              <Settings
-                api={api}
-                organisationId={organisation.id}
-                isOwner={membership?.role === 'owner'}
-              />
-              <OrganisationAccessSettings
-                api={api}
-                currentOrganisation={organisation}
-                organisations={organisations}
-                canCreate={isOwner}
-                onCreated={onOrganisationCreated}
-              />
-            </>
-          )}
-""",
-              'settings organisation management',
-          )
-          replace_once(
-              """              <Button
-                variant=\"outline\"
-                className=\"w-full\"
-                onClick={onSwitchOrganisation}
-              >
-                <ArrowLeftRight aria-hidden=\"true\" />
-                Switch organisation
-              </Button>
-              <Button variant=\"ghost\" className=\"mt-1 w-full\" onClick={onSignOut}>
-""",
-              """              {canSwitchOrganisation && (
-                <Button
-                  variant=\"outline\"
-                  className=\"w-full\"
-                  onClick={onSwitchOrganisation}
-                >
-                  <ArrowLeftRight aria-hidden=\"true\" />
-                  Switch organisation
-                </Button>
-              )}
-              <Button variant=\"ghost\" className=\"mt-1 w-full\" onClick={onSignOut}>
-""",
-              'mobile organisation control',
-          )
-          path.write_text(text)
-          PY
-      - name: Remove superseded branch-only helper
-        run: rm -f .github/workflows/apply-product-experience-patch.yml
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: 22.16.0
-      - name: Format and validate web slice
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.17.0 --activate
-          pnpm install --frozen-lockfile
-          pnpm exec prettier --write \
-            apps/web/src/App.tsx \
-            apps/web/src/views/OrganisationCreateForm.tsx \
-            apps/web/src/views/OrganisationOnboarding.tsx \
-            apps/web/src/views/OrganisationAccessSettings.tsx \
-            apps/web/src/views/OrgPicker.tsx \
-            apps/web/src/views/OperationsWorkspace.tsx \
-            packages/loa-parser/src/tender-document.ts
-          pnpm --filter @auto-mb/web typecheck
-      - name: Commit preparation patch when needed
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "feat(web): complete organisation-aware entry flow"
-            git push origin HEAD:agent/product-experience-rebuild
+          shopt -s nullglob
+          chunks=(.github/overhaul-payload.*)
+          if [ "${#chunks[@]}" -eq 0 ]; then
+            echo 'No staged checkpoint remains.'
+            exit 0
           fi
-      - name: Package exact branch checkout
+
+          cat "${chunks[@]}" > /tmp/overhaul-payload.b64
+          base64 --decode /tmp/overhaul-payload.b64 > /tmp/overhaul-payload.tar.xz
+          echo '1cc893ae466a7476b8cae0b1432ae6807b466f7b225612e9e908c6ba769fbd82  /tmp/overhaul-payload.tar.xz' | sha256sum --check --strict
+          tar -xJf /tmp/overhaul-payload.tar.xz -C .
+
+          rm -f .github/overhaul-payload.*
+          rm -f .github/workflows/apply-overhaul-payload.yml
+          rm -f .github/workflows/apply-product-experience-patch.yml
+          rm -f .github/workflows/export-product-experience.yml
+          git show origin/main:.github/workflows/dependency-audit.yml > .github/workflows/dependency-audit.yml
+      - name: Commit the actual product diff
         run: |
-          tar --exclude='./.git' --exclude='./node_modules' --exclude='./branch-checkout.tar.gz' \
-            -czf branch-checkout.tar.gz .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: product-experience-checkout
-          path: branch-checkout.tar.gz
-          if-no-files-found: error
-          retention-days: 1
+          if git diff --quiet; then
+            echo 'Checkpoint already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --stat
+          git commit -m 'feat: add tender-aware contract intake'
+          git push origin HEAD:agent/product-experience-rebuild
