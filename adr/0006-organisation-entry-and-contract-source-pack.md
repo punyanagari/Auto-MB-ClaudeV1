@@ -17,11 +17,14 @@ After authentication, Auto-MB loads the user's active organisation memberships a
 
 - Zero active organisations: show first-organisation onboarding and invitation guidance.
 - Exactly one active organisation: enter it automatically.
-- Two or more active organisations: require the user to select the active tenant.
+- Two or more active organisations: require the user to select the active tenant after a fresh sign-in.
+- A page refresh within the same browser session may reopen the previously selected active organisation; a stale, disabled or missing membership is discarded before entry.
 - The organisation switch control is visible only when two or more active organisations remain available.
 - Creating an additional organisation is a deliberate account-level action exposed from Settings, not a form shown during ordinary login.
 
 Organisation selection remains navigation state, never authority. The server membership check, role, Work scope, Work assignments, explicit sensitive-action flags, PostgreSQL membership floor and RLS continue to decide every request. Disabled or absent memberships are not offered and cannot be recovered by altering browser state or tenant headers.
+
+When an active membership is revoked while the user is inside a tenant, the next scoped request fails closed. The client must discard the selected organisation and rebuild the zero/one/many entry state instead of continuing to show cached tenant data as though access remained valid.
 
 One Organisation remains one legal entity. Creating another organisation creates a new tenant with separate members, Works, numbering, documents and audit history; it does not create another legal profile inside the current tenant.
 
