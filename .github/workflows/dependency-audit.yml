@@ -45,31 +45,16 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Format the changed TypeScript and Markdown sources
+      - name: Format supported files changed by the PR
         run: |
-          pnpm exec prettier --write \
-            adr/0006-organisation-entry-and-contract-source-pack.md \
-            apps/server/src/app.ts \
-            apps/server/src/routes/contract-sources.ts \
-            apps/server/src/routes/loa.ts \
-            apps/server/test/contract-sources.integration.test.ts \
-            apps/web/src/App.tsx \
-            apps/web/src/api.ts \
-            apps/web/src/views/OrganisationAccessSettings.tsx \
-            apps/web/src/views/OrganisationCreateForm.tsx \
-            apps/web/src/views/OrganisationOnboarding.tsx \
-            apps/web/src/views/OperationsWorkspace.tsx \
-            apps/web/src/views/OrgPicker.tsx \
-            apps/web/src/views/PaymentMatrix.tsx \
-            apps/web/src/views/ReviewLoa.tsx \
-            apps/web/src/views/TenderTermsReview.tsx \
-            apps/web/src/views/UploadLoa.tsx \
-            packages/contracts/src/contract-sources.ts \
-            packages/contracts/src/index.ts \
-            packages/contracts/src/works.ts \
-            packages/loa-parser/src/index.ts \
-            packages/loa-parser/src/tender-document.test.ts \
-            packages/loa-parser/src/tender-document.ts
+          mapfile -t changed < <(
+            git diff --name-only --diff-filter=ACMRT origin/main...HEAD -- \
+              '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.md' '*.css' '*.yaml' '*.yml'
+          )
+          if [ "${#changed[@]}" -gt 0 ]; then
+            printf 'Formatting %s\n' "${changed[@]}"
+            pnpm exec prettier --write "${changed[@]}"
+          fi
           rm -f .github/workflows/format-overhaul.yml
           git show origin/main:.github/workflows/dependency-audit.yml > .github/workflows/dependency-audit.yml
       - name: Commit formatting
