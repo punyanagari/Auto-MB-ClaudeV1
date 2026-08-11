@@ -29,7 +29,7 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
   generated MB documents;
 - procurement and tax-document foundations: contacts, purchase orders,
   budgetary quotations, direct or MB-backed GST invoices, configurable
-  numbering, rendered invoice PDFs, IRP/NIC payloads, and e-way-bill
+  numbering, immutable invoice snapshots, IRP/NIC payloads, and e-way-bill
   lifecycle records. External GSP submission is not yet automatic;
 - optional NIT, Contract Agreement, and tender/specification uploads tied to
   an LOA only after deterministic tender-number and work-name matching;

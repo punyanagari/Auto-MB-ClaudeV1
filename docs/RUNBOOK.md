@@ -172,8 +172,8 @@ Per partner (3–5 for the pilot):
       record/on-account/final Measurement Book → bill preparation and status
       progression;
 - [ ] procurement and tax walkthrough completed where enabled: vendor →
-      purchase order → receipt, and submitted GST invoice → rendered PDF →
-      operator-assisted IRP/NIC response recording;
+      purchase order → receipt, and submitted GST invoice → operator-assisted
+      IRP/NIC response recording;
 - [ ] partner told, in writing, what the pilot does NOT yet include
       (automatic Whitebooks submission, security-deposit/price-variation bill
       maths, offline sync — docs/ROADMAP.md).

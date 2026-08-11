@@ -141,7 +141,7 @@ The current product also includes:
 - vendor contacts, purchase orders, and budgetary quotations;
 - MB-backed and direct GST invoices with configurable numbering, exact GST
   split and whole-rupee rounding, immutable supplier/buyer/ship-to snapshots,
-  rendered PDFs, IRP payloads, and recorded IRP responses;
+  render-ready document data, IRP payloads, and recorded IRP responses;
 - draft/generated/cancelled e-way-bill records with NIC payloads and recorded
   NIC responses;
 - optional contract-source PDFs accepted only after tender-number and

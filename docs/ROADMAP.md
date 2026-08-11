@@ -463,8 +463,8 @@ Delivered locally (2026-08-10, migrations 0035–0039):
 - configurable organisation numbering templates, financial-year counters,
   buyer division tokens, direct-invoice values, and house defaults;
 - exact intra-state CGST/SGST or inter-state IGST split, whole-rupee rounding,
-  immutable supplier/buyer/ship-to snapshots, amount in words, and rendered
-  invoice PDFs;
+  immutable supplier/buyer/ship-to snapshots, amount in words, and
+  render-ready invoice data;
 - deterministic IRP schema 1.1 and NIC e-way-bill payloads, append-only IRN/
   acknowledgement/signed-QR evidence, e-way number/validity evidence, and
   cancellation ordering that refuses an invoice cancellation while a live
@@ -472,10 +472,10 @@ Delivered locally (2026-08-10, migrations 0035–0039):
 - full RLS, work-scope, authority, audit, concurrency, lifecycle, and database
   backstop tests for the new records.
 
-Remaining: direct Whitebooks transport. Current UI is honest operator-assisted
-mode: copy the provider-ready payload, submit externally, and record exactly
-what IRP/NIC returned. It never labels a local document externally registered
-without that evidence.
+Remaining: invoice PDF rendering and direct Whitebooks transport. Current UI
+is honest operator-assisted mode: copy the provider-ready payload, submit
+externally, and record exactly what IRP/NIC returned. It never labels a local
+document externally registered without that evidence.
 
 ## Milestone 11 — contract-source intake and product experience
 
