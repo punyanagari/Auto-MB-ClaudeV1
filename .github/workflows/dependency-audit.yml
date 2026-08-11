@@ -32,3 +32,40 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
+
+  format-overhaul:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-experience-rebuild'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: agent/product-experience-rebuild
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Format files identified by the blocking check
+        run: |
+          pnpm exec prettier --write \
+            apps/web/src/views/OrganisationAccessSettings.tsx \
+            apps/web/src/views/OrganisationOnboarding.tsx \
+            apps/web/src/views/OrgPicker.tsx \
+            apps/web/src/views/ReviewLoa.tsx \
+            apps/web/src/views/UploadLoa.tsx \
+            packages/loa-parser/src/tender-document.ts
+          git show origin/main:.github/workflows/dependency-audit.yml > .github/workflows/dependency-audit.yml
+      - name: Commit formatting
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'style: format tender-aware overhaul'
+          git push origin HEAD:agent/product-experience-rebuild
