@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Auto-MB Verify'
+  short_description: 'Run scoped checks and full verification'
+  default_prompt: 'Use $auto-mb-verify to verify this Auto-MB change and report every required or skipped check.'

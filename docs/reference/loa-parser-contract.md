@@ -113,14 +113,40 @@ line is the 14th:
 2. Parse the anchor line right-to-left for `bid_amount`, `par_token`,
    `unit_rate`, `qty_unit`, `qty`, `item_code`; parse left-to-right for
    `item_sno`.
-3. **Collect the description from lines both above and below the anchor**,
-   bounded by the previous/next anchor and by schedule headers. A parser that
-   assumes the description precedes the numbers loses most of the text.
+3. In the `-layout` view, **collect the description from lines both above and
+   below the anchor**, bounded by the previous/next anchor and by schedule
+   headers. This is the conservative no-loss fallback; lines between adjacent
+   anchors cannot prove which neighbour owns them and therefore overlap.
 4. Bound every item to its schedule using the nearest preceding
    `Schedule <id>-<name>` header.
 
-Do **not** anchor on the leading serial number: it is left-aligned in a
-column that also contains wrapped description text.
+**Exact description ownership (added 2026-08-11).** Production extraction
+runs a second Poppler view, `pdftotext -raw`, from the same PDF. Raw reading
+order emits each item serial cell, that row's description cell, and its
+numeric tail. Parse it against the already-validated layout schedule/item
+sequence, and replace descriptions only when the complete letter passes all
+of these gates:
+
+- schedule ids, item serial order, and row count match exactly;
+- every raw numeric tuple (`item_code`, quantity, unit, rate, par token,
+  amount) matches its layout row;
+- every row has exactly one numeric tail and a non-empty description;
+- form feeds are split before furniture removal, preserving next-page text
+  such as `... 3/7\fthrough HDPE...`;
+- a row closes only at the next confirmed serial, schedule total/header, or
+  table end — never at its numeric tail, because description prose can
+  continue on the next page.
+
+The gate is all-or-nothing. On any ambiguity, retain the conservative layout
+descriptions and raise `unresolved_item_description`; never guess or silently
+drop prose. Exactness means printed characters in reading order with physical
+layout whitespace normalised to single spaces, consistent with other prose
+fields in this package.
+
+Do **not** use a leading serial number as a layout-row anchor: it is
+left-aligned in a column that also contains wrapped description text. In the
+raw view it is accepted only when it equals the next layout-validated serial
+for the active schedule and the previous row already has its numeric tail.
 
 ## 3. Fields the letters carry
 

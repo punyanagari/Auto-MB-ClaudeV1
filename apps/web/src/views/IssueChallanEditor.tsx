@@ -26,6 +26,7 @@ interface IssueChallanEditorProps {
   readonly challanId: string | null;
   readonly onSaved: (challanId: string) => void;
   readonly onCancel: () => void;
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface ManualLine {
@@ -95,6 +96,7 @@ export function IssueChallanEditor({
   challanId,
   onSaved,
   onCancel,
+  onDirtyChange,
 }: IssueChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
@@ -109,6 +111,10 @@ export function IssueChallanEditor({
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const discardRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const edited =
+    state !== null &&
+    loadedState !== null &&
+    comparableContent(state) !== comparableContent(loadedState);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +146,7 @@ export function IssueChallanEditor({
           }
         }
         const loaded: EditorState = {
-          challanDate:
-            existing?.issueChallan.challanDate ?? new Date().toISOString().slice(0, 10),
+          challanDate: existing?.issueChallan.challanDate ?? loadedBalance.today,
           movementType: existing?.issueChallan.movementType ?? 'issue',
           issuedToName: existing?.issueChallan.issuedToName ?? '',
           issuedToRole: existing?.issueChallan.issuedToRole ?? '',
@@ -178,6 +183,17 @@ export function IssueChallanEditor({
     }
     discardRef.current?.focus();
   }, [confirmingDiscard]);
+
+  useEffect(() => {
+    onDirtyChange?.(edited);
+  }, [edited, onDirtyChange]);
+
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
 
   function registerField(field: string, node: HTMLElement | null) {
     if (node === null) {
@@ -252,12 +268,17 @@ export function IssueChallanEditor({
     // form took the checks over; without them noValidate would let an empty
     // form reach the server.
     if (!DATE_ONLY_PATTERN.test(state.challanDate)) {
-      flag('issue-challan-date', 'Enter the challan date.');
+      flag(
+        'issue-challan-date',
+        'Enter the challan date.',
+        'Enter a challan date before saving.',
+      );
     }
     if (state.issuedToName.trim().length < 2) {
       flag(
         'issued-to-name',
         'Enter who the material goes to, in at least 2 characters.',
+        'Enter who the material goes to before saving.',
       );
     }
     // A quantity typed against an awarded item answers to the same rule as
@@ -385,12 +406,6 @@ export function IssueChallanEditor({
     );
   }
 
-  // Nothing typed here is stored anywhere until the draft is saved, so
-  // Cancel asks before throwing an edited form away and leaves a pristine
-  // one alone.
-  const edited =
-    loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
-
   return (
     <Card className="w-full" aria-labelledby="issue-challan-editor-title">
       <h1 id="issue-challan-editor-title" tabIndex={-1}>
@@ -410,12 +425,26 @@ export function IssueChallanEditor({
             <input
               id="issue-challan-date"
               type="date"
+              ref={(node) => {
+                registerField('issue-challan-date', node);
+              }}
               value={state.challanDate}
               onChange={(event) => {
                 setState({ ...state, challanDate: event.target.value });
               }}
               required
+              aria-invalid={fieldErrors['issue-challan-date'] !== undefined}
+              aria-describedby={
+                fieldErrors['issue-challan-date'] !== undefined
+                  ? 'issue-challan-date-error'
+                  : undefined
+              }
             />
+            {fieldErrors['issue-challan-date'] !== undefined && (
+              <FieldError id="issue-challan-date-error">
+                {fieldErrors['issue-challan-date']}
+              </FieldError>
+            )}
           </Field>
           <Field>
             <label htmlFor="issue-challan-movement">Movement</label>
@@ -440,13 +469,27 @@ export function IssueChallanEditor({
             <label htmlFor="issued-to-name">Issued to (name)</label>
             <input
               id="issued-to-name"
+              ref={(node) => {
+                registerField('issued-to-name', node);
+              }}
               value={state.issuedToName}
               onChange={(event) => {
                 setState({ ...state, issuedToName: event.target.value });
               }}
               required
               minLength={2}
+              aria-invalid={fieldErrors['issued-to-name'] !== undefined}
+              aria-describedby={
+                fieldErrors['issued-to-name'] !== undefined
+                  ? 'issued-to-name-error'
+                  : undefined
+              }
             />
+            {fieldErrors['issued-to-name'] !== undefined && (
+              <FieldError id="issued-to-name-error">
+                {fieldErrors['issued-to-name']}
+              </FieldError>
+            )}
           </Field>
           <Field>
             <label htmlFor="issued-to-role">Role (optional)</label>
@@ -483,7 +526,7 @@ export function IssueChallanEditor({
         </FieldRow>
 
         <h2>Awarded items</h2>
-        <DataTable className="[&_input]:w-28">
+        <DataTable scroll className="[&_input]:w-28">
           <caption className="sr-only">
             Work items with awarded, delivered, and remaining quantities; enter a
             quantity to include an item on this Issue Challan

@@ -1,5 +1,12 @@
 import { defineConfig } from '@playwright/test';
 
+const requestedPort = Number(process.env.PLAYWRIGHT_PORT ?? '4173');
+if (!Number.isInteger(requestedPort) || requestedPort < 1 || requestedPort > 65_535) {
+  throw new Error('PLAYWRIGHT_PORT must be an integer between 1 and 65535.');
+}
+const baseURL = `http://127.0.0.1:${requestedPort}`;
+const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === 'true';
+
 // Browser accessibility/security smoke (docs/SECURITY.md: activates with
 // the first accepted browser workflow). Runs against the real production
 // bundle via vite preview with the API mocked at the network layer, so it
@@ -10,7 +17,7 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL,
     ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
       ? {
           launchOptions: {
@@ -25,9 +32,9 @@ export default defineConfig({
   // pinned to 127.0.0.1 because "localhost" can resolve to ::1 on CI
   // runners, leaving the IPv4 readiness probe waiting forever.
   webServer: {
-    command: 'pnpm exec vite preview --host 127.0.0.1 --port 4173 --strictPort',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: false,
+    command: `node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port ${requestedPort} --strictPort`,
+    url: baseURL,
+    reuseExistingServer,
     timeout: 120_000,
     stdout: 'pipe',
     stderr: 'pipe',

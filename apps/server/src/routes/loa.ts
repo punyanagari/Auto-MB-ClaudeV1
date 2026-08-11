@@ -3,15 +3,18 @@ import {
   ApiErrorSchema,
   ConfirmWorkRequestSchema,
   LoaDocumentDetailSchema,
+  PAYMENT_MATRIX_CATEGORIES,
   LoaDocumentListResponseSchema,
   UploadLoaQuerySchema,
   WorkDetailResponseSchema,
   WorkListResponseSchema,
+  type ConfirmPaymentMatrixRow,
   type ConfirmPbgRequirement,
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
   type LoaDocument,
   type LoaDocumentDetail,
+  type PaymentMatrixCategory,
   type UploadLoaQuery,
   type Work,
   type WorkSchedule,
@@ -36,7 +39,7 @@ import {
 } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractPdfText } from '../loa-extract.js';
+import { extractLoaPdfText } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
@@ -45,10 +48,11 @@ import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
 /** What loa_documents.extraction_payload holds for a parsed document:
- * the raw extracted text plus the parser's review payload, both verbatim.
+ * both extracted text views plus the parser's review payload, all verbatim.
  * A failed extraction stores { error } instead. */
 interface ExtractionPayload {
   readonly sourceText: string;
+  readonly rawSourceText: string;
   readonly review: LoaReviewPayload;
 }
 
@@ -365,6 +369,54 @@ function assertPricingShapeCoherent(body: ConfirmWorkRequest): void {
   }
 }
 
+function assertInitialPaymentMatrix(
+  rows: readonly ConfirmPaymentMatrixRow[] | undefined,
+): void {
+  if (rows === undefined) return;
+  const seen = new Set<PaymentMatrixCategory>();
+  for (const row of rows) {
+    if (!(PAYMENT_MATRIX_CATEGORIES as readonly string[]).includes(row.category)) {
+      throw httpError(
+        400,
+        'PAYMENT_MATRIX_CATEGORY_INVALID',
+        `Unknown payment category ${row.category}.`,
+      );
+    }
+    if (seen.has(row.category)) {
+      throw httpError(
+        400,
+        'PAYMENT_MATRIX_CATEGORY_DUPLICATE',
+        `The initial payment matrix contains ${row.category} more than once.`,
+      );
+    }
+    seen.add(row.category);
+    let total = 0n;
+    for (const [field, label] of [
+      ['pctSupply', 'supply'],
+      ['pctInstallation', 'installation'],
+      ['pctPac', 'PAC'],
+      ['pctFinalBill', 'final bill'],
+    ] as const) {
+      const value = parseDecimalToMinorUnits(row[field], 2);
+      if (value === null || value < 0n || value > 10000n) {
+        throw httpError(
+          400,
+          'PAYMENT_MATRIX_PERCENTAGE_INVALID',
+          `The ${label} percentage for ${row.category} must be between 0 and 100 with at most two decimal places.`,
+        );
+      }
+      total += value;
+    }
+    if (total !== 10000n) {
+      throw httpError(
+        400,
+        'PAYMENT_MATRIX_SUM_INVALID',
+        `The four percentages for ${row.category} must sum to exactly 100.`,
+      );
+    }
+  }
+}
+
 export function registerLoaRoutes(
   app: FastifyInstance,
   auth: Auth,
@@ -419,8 +471,13 @@ export function registerLoaRoutes(
       let status: LoaDocument['extractionStatus'];
       let payload: ExtractionPayload | { error: string };
       try {
-        const sourceText = await extractPdfText(body);
-        payload = { sourceText, review: reviewLoaLetter(sourceText) };
+        const { layoutText: sourceText, rawText: rawSourceText } =
+          await extractLoaPdfText(body);
+        payload = {
+          sourceText,
+          rawSourceText,
+          review: reviewLoaLetter(sourceText, { rawItemText: rawSourceText }),
+        };
         status = 'review';
       } catch (error) {
         payload = {
@@ -501,6 +558,7 @@ export function registerLoaRoutes(
               select id, original_filename, sha256, size_bytes,
                      extraction_status, confirmed_work_id, created_at
               from loa_documents
+              where document_kind = 'loa'
               order by created_at desc, id
             `;
           }
@@ -509,7 +567,8 @@ export function registerLoaRoutes(
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at
             from loa_documents
-            where confirmed_work_id is not null
+            where document_kind = 'loa'
+              and confirmed_work_id is not null
               and (${full} or exists (
                 select 1 from work_assignments wa
                 where wa.work_id = loa_documents.confirmed_work_id
@@ -547,7 +606,7 @@ export function registerLoaRoutes(
                    extraction_status, confirmed_work_id, created_at,
                    extraction_payload
             from loa_documents
-            where id = ${id}
+            where id = ${id} and document_kind = 'loa'
           `;
           if (!found) {
             throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
@@ -599,6 +658,7 @@ export function registerLoaRoutes(
       const body = request.body as ConfirmWorkRequest;
       assertPricingShapeCoherent(body);
       assertPbgRequirementCoherent(body);
+      assertInitialPaymentMatrix(body.paymentMatrix);
 
       const result = await withBoundTenant(
         database,
@@ -615,7 +675,7 @@ export function registerLoaRoutes(
           >`
             select id, extraction_status, extraction_payload
             from loa_documents
-            where id = ${documentId}
+            where id = ${documentId} and document_kind = 'loa'
             for update
           `;
           if (!document) {
@@ -742,10 +802,28 @@ export function registerLoaRoutes(
             });
           }
 
+          for (const matrixRow of body.paymentMatrix ?? []) {
+            await tx`
+              insert into payment_matrices (
+                organisation_id, work_id, category, pct_supply,
+                pct_installation, pct_pac, pct_final_bill, created_by_user_id
+              )
+              values (
+                ${organisationId}, ${work.id}, ${matrixRow.category},
+                ${matrixRow.pctSupply}, ${matrixRow.pctInstallation},
+                ${matrixRow.pctPac}, ${matrixRow.pctFinalBill}, ${user.id}
+              )
+            `;
+          }
+
           await tx`
             update loa_documents
-            set confirmed_work_id = ${work.id}, extraction_status = 'confirmed'
-            where id = ${documentId}
+            set confirmed_work_id = ${work.id},
+                extraction_status = case
+                  when id = ${documentId} then 'confirmed'
+                  else extraction_status
+                end
+            where id = ${documentId} or parent_loa_document_id = ${documentId}
           `;
 
           await tx`
@@ -775,6 +853,7 @@ export function registerLoaRoutes(
                       .length,
                   0,
                 ),
+                paymentMatrixRows: body.paymentMatrix?.length ?? 0,
                 pbgRequirement:
                   pbg === undefined
                     ? null

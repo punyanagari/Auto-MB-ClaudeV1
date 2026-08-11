@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   ApprovalRequest,
   Bill,
@@ -86,6 +86,61 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   amendments: 'Amendments',
   timeline: 'Timeline',
 };
+
+const RELATED = {
+  challans: 'Delivery Challans',
+  instruments: 'instruments',
+  measurements: 'Measurement Book entries',
+  bills: 'bills',
+  serials: 'serials',
+  issueChallans: 'Issue Challans',
+  amendments: 'amendments',
+  correctionNotices: 'correction notices',
+  purchaseOrders: 'purchase orders',
+} as const;
+
+type RelatedLabel = (typeof RELATED)[keyof typeof RELATED];
+type RelatedState = 'loading' | 'unavailable' | 'ready';
+const ALL_RELATED_LABELS = Object.values(RELATED);
+const RELATED_BY_TAB: Partial<Record<WorkTab, readonly RelatedLabel[]>> = {
+  deliveries: [RELATED.challans],
+  procurement: [RELATED.purchaseOrders],
+  issues: [RELATED.issueChallans],
+  measurement: [RELATED.measurements],
+  bills: [RELATED.bills],
+  instruments: [RELATED.instruments],
+  amendments: [RELATED.amendments],
+};
+
+function RelatedSectionGate({
+  labels,
+  pending,
+  failures,
+  children,
+}: {
+  readonly labels: readonly RelatedLabel[];
+  readonly pending: ReadonlySet<RelatedLabel>;
+  readonly failures: ReadonlySet<RelatedLabel>;
+  readonly children: ReactNode;
+}) {
+  const failed = labels.filter((label) => failures.has(label));
+  if (failed.length > 0) {
+    return (
+      <FormError>
+        This section is unavailable because {failed.join(', ')} could not be loaded. Try
+        again later.
+      </FormError>
+    );
+  }
+  if (labels.some((label) => pending.has(label))) {
+    return (
+      <p className="text-muted-foreground" role="status">
+        Loading this Work section…
+      </p>
+    );
+  }
+  return children;
+}
 
 /** The work items carrying an undecided omission proposal (R7). The
  * approved omission soft-deletes the item, so it leaves the detail
@@ -261,6 +316,12 @@ export function WorkDetail({
     readonly CorrectionNotice[]
   >([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [relatedPending, setRelatedPending] = useState<ReadonlySet<RelatedLabel>>(
+    new Set(),
+  );
+  const [relatedFailures, setRelatedFailures] = useState<ReadonlySet<RelatedLabel>>(
+    new Set(),
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -270,54 +331,36 @@ export function WorkDetail({
    * operator writes a note. Null while it is still being read. */
   const [readiness, setReadiness] = useState<WorkCompletionReadiness | null>(null);
   const [ownTab, setOwnTab] = useState<WorkTab>('overview');
+  const relatedGenerationRef = useRef(0);
   const tab = controlledTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
 
   useEffect(() => {
     let cancelled = false;
+    const generation = ++relatedGenerationRef.current;
     setDetail(null);
     setChallans(null);
     setIssueChallans(null);
     setPurchaseOrders(null);
+    setInstruments([]);
+    setMbEntries([]);
+    setBills([]);
+    setSerials([]);
+    setAmendments([]);
+    setCorrectionNotices([]);
     setLoadError(null);
-    Promise.all([
-      api.getWork(organisationId, workId),
-      api.listChallans(organisationId, workId),
-      api.listInstruments(organisationId, workId),
-      api.listMbEntries(organisationId, workId),
-      api.listBills(organisationId, workId),
-      api.listWorkSerials(organisationId, workId),
-      api.listIssueChallans(organisationId, workId),
-      api.listWorkAmendments(organisationId, workId),
-      api.listWorkCorrectionNotices(organisationId, workId),
-      api.listWorkPurchaseOrders(organisationId, workId),
-    ])
-      .then(
-        ([
-          loaded,
-          loadedChallans,
-          loadedInstruments,
-          loadedEntries,
-          loadedBills,
-          loadedSerials,
-          loadedIssueChallans,
-          loadedAmendments,
-          loadedCorrectionNotices,
-          loadedPurchaseOrders,
-        ]) => {
-          if (cancelled) return;
-          setDetail(loaded);
-          setChallans(loadedChallans);
-          setInstruments(loadedInstruments);
-          setMbEntries(loadedEntries);
-          setBills(loadedBills);
-          setSerials(loadedSerials);
-          setIssueChallans(loadedIssueChallans);
-          setAmendments(loadedAmendments);
-          setCorrectionNotices(loadedCorrectionNotices);
-          setPurchaseOrders(loadedPurchaseOrders);
-        },
-      )
+    setRelatedPending(new Set(ALL_RELATED_LABELS));
+    setRelatedFailures(new Set());
+    setReadiness(null);
+
+    // The Work identity and schedules are the page's critical read. Load them
+    // independently so a temporary failure in one supporting register cannot
+    // replace the entire Work with an error card.
+    api
+      .getWork(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setDetail(loaded);
+      })
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
@@ -326,6 +369,79 @@ export function WorkDetail({
             : 'The Work could not be loaded.',
         );
       });
+
+    function settleRelated(label: RelatedLabel, failed: boolean): void {
+      setRelatedPending((current) => {
+        const next = new Set(current);
+        next.delete(label);
+        return next;
+      });
+      if (failed) {
+        setRelatedFailures((current) => new Set(current).add(label));
+      }
+    }
+
+    function loadRelated<T>(
+      label: RelatedLabel,
+      request: Promise<T>,
+      apply: (value: T) => void,
+    ): void {
+      void request.then(
+        (value) => {
+          if (cancelled) return;
+          apply(value);
+          settleRelated(label, false);
+        },
+        () => {
+          if (cancelled) return;
+          settleRelated(label, true);
+        },
+      );
+    }
+
+    // Supporting registers settle independently. One slow or unavailable API
+    // cannot hold back successful data or turn an unknown list into a fake empty one.
+    loadRelated(
+      RELATED.challans,
+      api.listChallans(organisationId, workId),
+      setChallans,
+    );
+    loadRelated(
+      RELATED.instruments,
+      api.listInstruments(organisationId, workId),
+      setInstruments,
+    );
+    loadRelated(
+      RELATED.measurements,
+      api.listMbEntries(organisationId, workId),
+      setMbEntries,
+    );
+    loadRelated(RELATED.bills, api.listBills(organisationId, workId), setBills);
+    loadRelated(
+      RELATED.serials,
+      api.listWorkSerials(organisationId, workId),
+      setSerials,
+    );
+    loadRelated(
+      RELATED.issueChallans,
+      api.listIssueChallans(organisationId, workId),
+      setIssueChallans,
+    );
+    loadRelated(
+      RELATED.amendments,
+      api.listWorkAmendments(organisationId, workId),
+      setAmendments,
+    );
+    loadRelated(
+      RELATED.correctionNotices,
+      api.listWorkCorrectionNotices(organisationId, workId),
+      setCorrectionNotices,
+    );
+    loadRelated(
+      RELATED.purchaseOrders,
+      api.listWorkPurchaseOrders(organisationId, workId),
+      setPurchaseOrders,
+    );
     // Asked separately, and allowed to fail. It decides whether the
     // completion form is worth offering, not whether the page can be read;
     // a Work that cannot load its shortfall still has nine other areas.
@@ -341,8 +457,110 @@ export function WorkDetail({
       });
     return () => {
       cancelled = true;
+      if (relatedGenerationRef.current === generation) {
+        relatedGenerationRef.current += 1;
+      }
     };
   }, [api, organisationId, workId]);
+
+  function retryFailedSections(): void {
+    const labels = new Set(relatedFailures);
+    if (labels.size === 0) return;
+    const generation = relatedGenerationRef.current;
+    setRelatedPending((current) => new Set([...current, ...labels]));
+    setRelatedFailures((current) => {
+      const next = new Set(current);
+      for (const label of labels) next.delete(label);
+      return next;
+    });
+
+    function retryRelated<T>(
+      label: RelatedLabel,
+      request: Promise<T>,
+      apply: (value: T) => void,
+    ): void {
+      void request.then(
+        (value) => {
+          if (relatedGenerationRef.current !== generation) return;
+          apply(value);
+          setRelatedPending((current) => {
+            const next = new Set(current);
+            next.delete(label);
+            return next;
+          });
+        },
+        () => {
+          if (relatedGenerationRef.current !== generation) return;
+          setRelatedFailures((current) => new Set(current).add(label));
+          setRelatedPending((current) => {
+            const next = new Set(current);
+            next.delete(label);
+            return next;
+          });
+        },
+      );
+    }
+
+    if (labels.has(RELATED.challans)) {
+      retryRelated(
+        RELATED.challans,
+        api.listChallans(organisationId, workId),
+        setChallans,
+      );
+    }
+    if (labels.has(RELATED.instruments)) {
+      retryRelated(
+        RELATED.instruments,
+        api.listInstruments(organisationId, workId),
+        setInstruments,
+      );
+    }
+    if (labels.has(RELATED.measurements)) {
+      retryRelated(
+        RELATED.measurements,
+        api.listMbEntries(organisationId, workId),
+        setMbEntries,
+      );
+    }
+    if (labels.has(RELATED.bills)) {
+      retryRelated(RELATED.bills, api.listBills(organisationId, workId), setBills);
+    }
+    if (labels.has(RELATED.serials)) {
+      retryRelated(
+        RELATED.serials,
+        api.listWorkSerials(organisationId, workId),
+        setSerials,
+      );
+    }
+    if (labels.has(RELATED.issueChallans)) {
+      retryRelated(
+        RELATED.issueChallans,
+        api.listIssueChallans(organisationId, workId),
+        setIssueChallans,
+      );
+    }
+    if (labels.has(RELATED.amendments)) {
+      retryRelated(
+        RELATED.amendments,
+        api.listWorkAmendments(organisationId, workId),
+        setAmendments,
+      );
+    }
+    if (labels.has(RELATED.correctionNotices)) {
+      retryRelated(
+        RELATED.correctionNotices,
+        api.listWorkCorrectionNotices(organisationId, workId),
+        setCorrectionNotices,
+      );
+    }
+    if (labels.has(RELATED.purchaseOrders)) {
+      retryRelated(
+        RELATED.purchaseOrders,
+        api.listWorkPurchaseOrders(organisationId, workId),
+        setPurchaseOrders,
+      );
+    }
+  }
 
   const act = useCallback(async (work: () => Promise<void>, done: string) => {
     setPending(true);
@@ -417,6 +635,18 @@ export function WorkDetail({
     );
   }
 
+  const failedSections = ALL_RELATED_LABELS.filter((label) =>
+    relatedFailures.has(label),
+  );
+  function relatedStateFor(labels: readonly RelatedLabel[]): RelatedState {
+    if (labels.some((label) => relatedFailures.has(label))) return 'unavailable';
+    if (labels.some((label) => relatedPending.has(label))) return 'loading';
+    return 'ready';
+  }
+  function relatedStateForTab(candidate: WorkTab): RelatedState {
+    return relatedStateFor(RELATED_BY_TAB[candidate] ?? []);
+  }
+
   const { work, schedules } = detail;
   const workItems = schedules.flatMap((schedule) => schedule.items);
   const pendingRemovals = pendingRemovalItemIds(amendments);
@@ -439,7 +669,11 @@ export function WorkDetail({
   > = {
     schedules: [
       { label: 'Schedules', value: String(schedules.length) },
-      { label: 'Serial-tracked', value: String(serials.length) },
+      {
+        label: 'Serial-tracked',
+        value:
+          relatedStateFor([RELATED.serials]) === 'ready' ? String(serials.length) : '—',
+      },
     ],
     deliveries: [
       { label: 'Issued', value: String(issuedChallans.length) },
@@ -447,7 +681,13 @@ export function WorkDetail({
         label: 'Draft',
         value: String((challans ?? []).filter((c) => c.status === 'draft').length),
       },
-      { label: 'Correction notices', value: String(correctionNotices.length) },
+      {
+        label: 'Correction notices',
+        value:
+          relatedStateFor([RELATED.correctionNotices]) === 'ready'
+            ? String(correctionNotices.length)
+            : '—',
+      },
     ],
     procurement: [
       {
@@ -486,14 +726,21 @@ export function WorkDetail({
   };
   const tabCounts: Record<WorkTab, number | null> = {
     overview: null,
-    schedules: workItems.length,
-    deliveries: challans?.length ?? 0,
-    procurement: purchaseOrders?.length ?? 0,
-    issues: issueChallans?.length ?? 0,
-    measurement: mbEntries.length,
-    bills: bills.length,
-    instruments: instruments.length,
-    amendments: amendments.length,
+    schedules: relatedStateForTab('schedules') === 'ready' ? workItems.length : null,
+    deliveries:
+      relatedStateForTab('deliveries') === 'ready' ? (challans?.length ?? 0) : null,
+    procurement:
+      relatedStateForTab('procurement') === 'ready'
+        ? (purchaseOrders?.length ?? 0)
+        : null,
+    issues:
+      relatedStateForTab('issues') === 'ready' ? (issueChallans?.length ?? 0) : null,
+    measurement:
+      relatedStateForTab('measurement') === 'ready' ? mbEntries.length : null,
+    bills: relatedStateForTab('bills') === 'ready' ? bills.length : null,
+    instruments:
+      relatedStateForTab('instruments') === 'ready' ? instruments.length : null,
+    amendments: relatedStateForTab('amendments') === 'ready' ? amendments.length : null,
     timeline: null,
   };
   return (
@@ -501,6 +748,17 @@ export function WorkDetail({
       <h1 id="work-title" tabIndex={-1}>
         {work.workCode} — {work.title}
       </h1>
+      {failedSections.length > 0 && (
+        <>
+          <FormError>
+            Some Work sections could not be loaded: {failedSections.join(', ')}. The
+            available Work information remains open.
+          </FormError>
+          <Button size="sm" variant="outline" onClick={retryFailedSections}>
+            Retry supporting sections
+          </Button>
+        </>
+      )}
       <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Letter</dt>
@@ -632,35 +890,44 @@ export function WorkDetail({
           <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] overflow-hidden rounded-xl border border-border bg-card">
             {WORK_TABS.filter(
               (candidate) => candidate !== 'overview' && candidate !== 'timeline',
-            ).map((candidate) => (
-              <button
-                key={candidate}
-                type="button"
-                className="flex cursor-pointer flex-col items-stretch gap-2 border-t border-l border-border px-4 py-3 text-left transition-colors hover:bg-muted"
-                onClick={() => {
-                  setTab(candidate);
-                }}
-              >
-                <span className="flex items-baseline gap-2">
-                  <span className="text-sm font-semibold">
-                    {WORK_TAB_LABELS[candidate]}
-                  </span>
-                  <span className="ml-auto font-mono text-lg font-semibold tracking-tight tabular-nums">
-                    {tabCounts[candidate] ?? 0}
-                  </span>
-                </span>
-                <span className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                  {(summaryLines[candidate] ?? []).map((line) => (
-                    <span className="flex items-baseline gap-2" key={line.label}>
-                      {line.label}
-                      <span className="ml-auto font-mono text-secondary-foreground tabular-nums">
-                        {line.value}
-                      </span>
+            ).map((candidate) => {
+              const relatedState = relatedStateForTab(candidate);
+              return (
+                <button
+                  key={candidate}
+                  type="button"
+                  className="flex cursor-pointer flex-col items-stretch gap-2 border-t border-l border-border px-4 py-3 text-left transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setTab(candidate);
+                  }}
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold">
+                      {WORK_TAB_LABELS[candidate]}
                     </span>
-                  ))}
-                </span>
-              </button>
-            ))}
+                    <span className="ml-auto font-mono text-lg font-semibold tracking-tight tabular-nums">
+                      {tabCounts[candidate] ?? '—'}
+                    </span>
+                  </span>
+                  <span className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                    {relatedState === 'ready' ? (
+                      (summaryLines[candidate] ?? []).map((line) => (
+                        <span className="flex items-baseline gap-2" key={line.label}>
+                          {line.label}
+                          <span className="ml-auto font-mono text-secondary-foreground tabular-nums">
+                            {line.value}
+                          </span>
+                        </span>
+                      ))
+                    ) : (
+                      <span>
+                        {relatedState === 'loading' ? 'Loading…' : 'Unavailable'}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <section aria-labelledby="work-completion-heading">
@@ -805,7 +1072,7 @@ export function WorkDetail({
           workItems={workItems}
           pendingRemovals={pendingRemovals}
           setDetail={setDetail}
-          canModify={canModify}
+          canModify={canModify && relatedStateFor([RELATED.amendments]) === 'ready'}
           pending={pending}
           act={act}
         />
@@ -819,9 +1086,12 @@ export function WorkDetail({
           work={work}
           workItems={workItems}
           challans={challans}
+          challansState={relatedStateFor([RELATED.challans])}
           correctionNotices={correctionNotices}
+          correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
           setCorrectionNotices={setCorrectionNotices}
           serials={serials}
+          serialsState={relatedStateFor([RELATED.serials])}
           setSerials={setSerials}
           canCreateDocuments={canCreateDocuments}
           canRecordSiteEvidence={canRecordSiteEvidence}
@@ -833,30 +1103,42 @@ export function WorkDetail({
       )}
 
       {tab === 'procurement' && (
-        <WorkPurchaseOrders
-          api={api}
-          organisationId={organisationId}
-          workId={workId}
-          workItems={workItems}
-          purchaseOrders={purchaseOrders}
-          setPurchaseOrders={setPurchaseOrders}
-          canModify={canModify}
-          canCreateDocuments={canCreateDocuments}
-          canIssue={canIssueDocuments}
-          canCancel={canCancel}
-          pending={pending}
-          act={act}
-        />
+        <RelatedSectionGate
+          labels={[RELATED.purchaseOrders]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkPurchaseOrders
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            workItems={workItems}
+            purchaseOrders={purchaseOrders}
+            setPurchaseOrders={setPurchaseOrders}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
       )}
 
       {tab === 'issues' && (
-        <WorkIssueChallans
-          workId={workId}
-          issueChallans={issueChallans}
-          canCreateDocuments={canCreateDocuments}
-          onNewIssueChallan={onNewIssueChallan}
-          onOpenIssueChallan={onOpenIssueChallan}
-        />
+        <RelatedSectionGate
+          labels={[RELATED.issueChallans]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkIssueChallans
+            workId={workId}
+            issueChallans={issueChallans}
+            canCreateDocuments={canCreateDocuments}
+            onNewIssueChallan={onNewIssueChallan}
+            onOpenIssueChallan={onOpenIssueChallan}
+          />
+        </RelatedSectionGate>
       )}
 
       {tab === 'measurement' && (
@@ -866,10 +1148,13 @@ export function WorkDetail({
           workId={workId}
           workItems={workItems}
           mbEntries={mbEntries}
+          mbEntriesState={relatedStateFor([RELATED.measurements])}
           setMbEntries={setMbEntries}
           issuedChallans={issuedChallans}
           challanNumberById={challanNumberById}
+          challansState={relatedStateFor([RELATED.challans])}
           setBills={setBills}
+          billsState={relatedStateFor([RELATED.bills])}
           canRecordSiteEvidence={canRecordSiteEvidence}
           canCreateDocuments={canCreateDocuments}
           canIssue={canIssue}
@@ -881,15 +1166,21 @@ export function WorkDetail({
 
       {tab === 'bills' && (
         <>
-          <WorkBills
-            api={api}
-            organisationId={organisationId}
-            bills={bills}
-            setBills={setBills}
-            canIssue={canIssue}
-            pending={pending}
-            act={act}
-          />
+          <RelatedSectionGate
+            labels={[RELATED.bills]}
+            pending={relatedPending}
+            failures={relatedFailures}
+          >
+            <WorkBills
+              api={api}
+              organisationId={organisationId}
+              bills={bills}
+              setBills={setBills}
+              canIssue={canIssue}
+              pending={pending}
+              act={act}
+            />
+          </RelatedSectionGate>
           {/* The GST document sits with the money it bills: the bill is
               what the contract owes, the tax invoice is what the law
               requires for it. */}
@@ -908,35 +1199,47 @@ export function WorkDetail({
       )}
 
       {tab === 'instruments' && (
-        <WorkInstruments
-          api={api}
-          organisationId={organisationId}
-          workId={workId}
-          work={work}
-          workItems={workItems}
-          instruments={instruments}
-          setInstruments={setInstruments}
-          canModify={canModify}
-          canCreateDocuments={canCreateDocuments}
-          pending={pending}
-          act={act}
-        />
+        <RelatedSectionGate
+          labels={[RELATED.instruments]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkInstruments
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            work={work}
+            workItems={workItems}
+            instruments={instruments}
+            setInstruments={setInstruments}
+            canModify={canModify}
+            canCreateDocuments={canCreateDocuments}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
       )}
 
       {tab === 'amendments' && (
-        <WorkAmendments
-          api={api}
-          organisationId={organisationId}
-          workId={workId}
-          amendments={amendments}
-          setAmendments={setAmendments}
-          setDetail={setDetail}
-          schedules={schedules}
-          workItems={workItems}
-          canCreateDocuments={canCreateDocuments}
-          pending={pending}
-          act={act}
-        />
+        <RelatedSectionGate
+          labels={[RELATED.amendments]}
+          pending={relatedPending}
+          failures={relatedFailures}
+        >
+          <WorkAmendments
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            amendments={amendments}
+            setAmendments={setAmendments}
+            setDetail={setDetail}
+            schedules={schedules}
+            workItems={workItems}
+            canCreateDocuments={canCreateDocuments}
+            pending={pending}
+            act={act}
+          />
+        </RelatedSectionGate>
       )}
 
       {tab === 'timeline' && (

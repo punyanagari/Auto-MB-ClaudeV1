@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import type {
+  ConfirmPaymentMatrixRow,
   ConfirmWorkRequest,
+  ContractSourceContext,
   LoaDocumentDetail,
   WorkDetailResponse,
   WorkItemPaymentCategory,
@@ -18,6 +27,7 @@ import {
   FormError,
   FieldError,
 } from '../ui/form.js';
+import { TenderTermsReview } from './TenderTermsReview.js';
 import {
   asExtractionPayload,
   exactRowsTotal,
@@ -160,6 +170,14 @@ export function ReviewLoa({
   onBack,
 }: ReviewLoaProps) {
   const [document, setDocument] = useState<LoaDocumentDetail | null>(null);
+  const [contractContext, setContractContext] = useState<ContractSourceContext | null>(
+    null,
+  );
+  const [contractContextError, setContractContextError] = useState<string | null>(null);
+  const [initialPaymentMatrix, setInitialPaymentMatrix] = useState<
+    readonly ConfirmPaymentMatrixRow[]
+  >([]);
+  const [paymentMatrixProblem, setPaymentMatrixProblem] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [header, setHeader] = useState<HeaderDraft | null>(null);
   const [items, setItems] = useState<ItemDraft[] | null>(null);
@@ -208,6 +226,36 @@ export function ReviewLoa({
     };
   }, [api, organisationId, documentId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setContractContext(null);
+    setContractContextError(null);
+    api
+      .getLoaContractSourceContext(organisationId, documentId)
+      .then((loaded) => {
+        if (!cancelled) setContractContext(loaded);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setContractContextError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The matched tender evidence could not be loaded.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, documentId]);
+
+  const handlePaymentMatrixChange = useCallback(
+    (rows: readonly ConfirmPaymentMatrixRow[], problem: string | null) => {
+      setInitialPaymentMatrix(rows);
+      setPaymentMatrixProblem(problem);
+    },
+    [],
+  );
+
   const payload = useMemo(
     () => (document === null ? null : asExtractionPayload(document.extractionPayload)),
     [document],
@@ -229,19 +277,37 @@ export function ReviewLoa({
     () => (items === null ? null : exactRowsTotal(items)),
     [items],
   );
-  const totalsDifference = useMemo(() => {
+  const advertisedDifference = useMemo(() => {
     if (rowsTotal === null || header === null) return null;
     // Both sides are read at the row total's own scale — quantity (3 dp) ×
     // rate (6 dp) lands on 9. Parsing narrower silently dropped the whole
     // comparison whenever a rate carried more than a paisa of decimals.
     const totalMinor = parseDecimalMinorUnits(rowsTotal, 9);
-    const contractMinor = parseDecimalMinorUnits(header.contractValue, 9);
-    if (totalMinor === null || contractMinor === null) return null;
-    const diff = totalMinor - contractMinor;
+    const advertisedMinor = parseDecimalMinorUnits(header.advertisedValue, 9);
+    if (totalMinor === null || advertisedMinor === null) return null;
+    const diff = totalMinor - advertisedMinor;
     const negative = diff < 0n;
     const magnitude = negative ? -diff : diff;
     return `${negative ? '-' : ''}₹${formatMinorUnits(magnitude, 9)}`;
   }, [rowsTotal, header]);
+
+  const contractValueContext = useMemo(() => {
+    if (header === null || header.contractValue.trim() === '') return '';
+    if (header.pricingShape === 'per_schedule') {
+      return ` Contract value ₹${header.contractValue} comes from the accepted schedule totals.`;
+    }
+    if (header.letterPercentageDirection === 'at_par') {
+      return ` Contract value ₹${header.contractValue} is accepted at par.`;
+    }
+    if (
+      header.letterPercentage.trim() !== '' &&
+      (header.letterPercentageDirection === 'above' ||
+        header.letterPercentageDirection === 'below')
+    ) {
+      return ` Contract value ₹${header.contractValue} reflects ${header.letterPercentage}% ${header.letterPercentageDirection} the advertised value.`;
+    }
+    return ` Contract value ₹${header.contractValue} uses the letter-level adjustment.`;
+  }, [header]);
 
   // The same exact-integer path, one schedule at a time: reconciling a
   // letter is done schedule by schedule, so each table carries its own
@@ -331,6 +397,16 @@ export function ReviewLoa({
 
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (contractContextError !== null) {
+      setConfirmError(
+        'Matched tender evidence could not be loaded. Reload the page before confirming so no contract clause is silently omitted.',
+      );
+      return;
+    }
+    if (paymentMatrixProblem !== null) {
+      setConfirmError(`Correct the initial payment matrix. ${paymentMatrixProblem}`);
+      return;
+    }
     if (header === null || items === null || pbg === null) return;
     const withPercentage = header.pricingShape === 'letter_percentage';
     // Every rule is checked in one pass. Answering one failure at a time
@@ -428,6 +504,9 @@ export function ReviewLoa({
             },
           }
         : {}),
+      ...(initialPaymentMatrix.length > 0
+        ? { paymentMatrix: [...initialPaymentMatrix] }
+        : {}),
       schedules: scheduleIds.map((scheduleId) => ({
         scheduleCode: scheduleId,
         title: `Schedule ${scheduleId}`,
@@ -455,7 +534,7 @@ export function ReviewLoa({
     } catch (cause) {
       setConfirmError(
         cause instanceof RequestFailedError
-          ? cause.message
+          ? `${cause.message}${cause.requestId === null ? '' : ` Reference: ${cause.requestId}.`}`
           : 'The Work could not be created. Nothing was saved.',
       );
       setPending(false);
@@ -525,7 +604,8 @@ export function ReviewLoa({
           aria-labelledby="flags-title"
         >
           <h2 id="flags-title">
-            {flagged} item{flagged === 1 ? '' : 's'} need attention
+            {flagged} review issue{flagged === 1 ? '' : 's'}{' '}
+            {flagged === 1 ? 'needs' : 'need'} attention
           </h2>
           <ul className="mt-2 flex flex-col gap-2 pl-[1.125rem]">
             {payload.review.flags.map((flag, index) => (
@@ -542,6 +622,25 @@ export function ReviewLoa({
           </ul>
         </div>
       )}
+
+      {contractContextError !== null && (
+        <FormError>
+          {contractContextError} Reload before confirming so tender evidence is not
+          omitted silently.
+        </FormError>
+      )}
+      {contractContext === null && contractContextError === null ? (
+        <p className="my-4 text-sm text-muted-foreground" role="status">
+          Loading matched tender evidence…
+        </p>
+      ) : contractContext !== null ? (
+        <TenderTermsReview
+          context={contractContext}
+          itemNumbers={items.map((item) => item.itemNumber)}
+          canModify={canModify}
+          onPaymentMatrixChange={handlePaymentMatrixChange}
+        />
+      ) : null}
 
       {/* noValidate: the checks in confirm() replace the native ones so that
           every failure names its field, binds a message, and moves focus. */}
@@ -1084,10 +1183,10 @@ export function ReviewLoa({
           {rowsTotal === null
             ? 'Row totals will appear when every quantity and rate is a plain decimal number.'
             : `Entered rows total ₹${rowsTotal} across ${String(items.length)} row${items.length === 1 ? '' : 's'}${
-                totalsDifference === null
+                advertisedDifference === null
                   ? ''
-                  : ` — contract value ₹${header.contractValue} (difference ${totalsDifference})`
-              }.`}
+                  : ` — advertised value ₹${header.advertisedValue} (difference ${advertisedDifference})`
+              }.${contractValueContext}`}
         </p>
 
         {confirmError !== null && <FormError>{confirmError}</FormError>}

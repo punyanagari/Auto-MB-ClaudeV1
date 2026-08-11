@@ -50,6 +50,15 @@ function sumBidAmountPaise(items: readonly ParsedItem[]): bigint {
 
 describe('item-row parsing (DC-25)', () => {
   describe('anchors on the par token — 281-item regression bar', () => {
+    it('parses the Windows CRLF form of PL281 identically to the LF corpus fixture', () => {
+      const lf = loadLetter('PL281-BB').text;
+      const crlf = lf.replace(/\n/g, '\r\n');
+
+      expect(parseItems(crlf)).toEqual(parseItems(lf));
+      expect(parseItems(crlf)).toHaveLength(54);
+      expect(parseItems(crlf).every((item) => item.qtyUnit !== null)).toBe(true);
+    });
+
     it('parses without throwing for every letter in the corpus', () => {
       for (const { text } of loadCorpus()) {
         expect(() => parseItems(text)).not.toThrow();

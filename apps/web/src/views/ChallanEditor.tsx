@@ -29,6 +29,7 @@ interface ChallanEditorProps {
   readonly challanId: string | null;
   readonly onSaved: (challanId: string) => void;
   readonly onCancel: () => void;
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface EditorState {
@@ -149,6 +150,7 @@ export function ChallanEditor({
   challanId,
   onSaved,
   onCancel,
+  onDirtyChange,
 }: ChallanEditorProps) {
   const [balance, setBalance] = useState<WorkBalanceResponse | null>(null);
   const [state, setState] = useState<EditorState | null>(null);
@@ -168,7 +170,12 @@ export function ChallanEditor({
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const discardRef = useRef<HTMLButtonElement>(null);
+  const edited =
+    state !== null &&
+    loadedState !== null &&
+    comparableContent(state) !== comparableContent(loadedState);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,8 +230,7 @@ export function ChallanEditor({
             }
           }
           const loaded: EditorState = {
-            challanDate:
-              existing?.challan.challanDate ?? new Date().toISOString().slice(0, 10),
+            challanDate: existing?.challan.challanDate ?? loadedBalance.today,
             prefix: existing?.challan.prefix ?? workCode,
             name: existing?.challan.consignee.name ?? '',
             address: existing?.challan.consignee.address ?? '',
@@ -263,9 +269,25 @@ export function ChallanEditor({
   // make, so focus moves into it rather than leaving a keyboard user parked
   // on a button whose meaning just changed.
   useEffect(() => {
-    if (!confirmingDiscard) return;
+    if (!confirmingDiscard) {
+      // Declining unmounts the button that held focus, so hand it back to
+      // Cancel rather than dropping the operator at the top of the document.
+      cancelRef.current?.focus();
+      return;
+    }
     discardRef.current?.focus();
   }, [confirmingDiscard]);
+
+  useEffect(() => {
+    onDirtyChange?.(edited);
+  }, [edited, onDirtyChange]);
+
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
 
   function registerField(field: string, node: HTMLElement | null) {
     if (node === null) {
@@ -433,12 +455,6 @@ export function ChallanEditor({
       </Card>
     );
   }
-
-  // Nothing typed here is stored anywhere until the draft is saved, and a
-  // challan can carry a hundred typed quantities, so Cancel asks before
-  // throwing an edited form away and leaves a pristine one alone.
-  const edited =
-    loadedState !== null && comparableContent(state) !== comparableContent(loadedState);
 
   // A retired contact stops being OFFERED, on this Work as everywhere
   // else. The Work list returns every linked row, retired or not — the
@@ -662,7 +678,7 @@ export function ChallanEditor({
         </Field>
 
         <h2>Items</h2>
-        <DataTable className="[&_input]:w-28">
+        <DataTable scroll className="[&_input]:w-28">
           <caption className="sr-only">
             Work items with awarded, delivered, and remaining quantities; enter a
             quantity to include an item on this challan
@@ -798,6 +814,7 @@ export function ChallanEditor({
           </Button>
           <Button
             variant="outline"
+            ref={cancelRef}
             onClick={() => {
               if (edited) {
                 setConfirmingDiscard(true);

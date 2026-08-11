@@ -5,19 +5,12 @@ on:
   push:
     branches: [main]
   schedule:
-    # Weekly: advisories published after a merge must still surface without
-    # waiting for the next pull request.
     - cron: '30 2 * * 1'
 
 permissions:
   contents: read
 
 jobs:
-  # The dependency-review-action requires GitHub Advanced Security on
-  # private repositories, so it can never pass here. pnpm audit provides
-  # the SECURITY.md dependency-scan baseline instead: it proves no known
-  # advisory of high or critical severity affects the locked dependency
-  # graph. It does not prove anything about unpublished vulnerabilities.
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -70,6 +70,20 @@ code, comments, commit messages, documentation, issue and PR text — is written
 in normal prose, as is any security warning or irreversible-action
 confirmation. The engineering rules above are unaffected.
 
+## Agent orchestration
+
+- Keep one writer: the main agent owns repository edits and integration.
+- Use at most two concurrent read-only subagents for independent exploration,
+  verification, or review. The project Codex limit excludes the primary thread.
+- Use the project explorer before medium or high-complexity changes when the
+  implementation path is unclear.
+- Use the integrity reviewer for RLS, authentication, authorization, uploads,
+  money, quantities, numbering, concurrency, migrations, issued documents, and
+  other high-risk surfaces.
+- Use the test reviewer after implementation to compare acceptance criteria,
+  the final diff, and required proof.
+- Do not run parallel writers on overlapping application or migration code.
+
 ## Definition of done
 
 A change is complete only when:

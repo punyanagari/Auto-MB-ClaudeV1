@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Auto-MB Release Review'
+  short_description: 'Check security and release readiness'
+  default_prompt: 'Use $auto-mb-release-review to assess this Auto-MB release candidate and report blockers.'

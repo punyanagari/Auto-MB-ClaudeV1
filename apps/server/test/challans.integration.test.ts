@@ -433,6 +433,53 @@ describe('Delivery Challan lifecycle', () => {
     expect(Number(itemA?.remainingQuantity)).toBe(2);
   });
 
+  it('returns the Organisation-local legal date in the Work balance', async () => {
+    const [original] = await admin<{ timezone: string }[]>`
+      select timezone
+      from organisations
+      where id = ${organisationId}
+    `;
+    expect(original).toBeDefined();
+
+    try {
+      await admin`
+        update organisations
+        set timezone = case
+          when (now() at time zone 'Etc/GMT+12')::date <>
+               (now() at time zone 'UTC')::date
+            then 'Etc/GMT+12'
+          else 'Pacific/Kiritimati'
+        end
+        where id = ${organisationId}
+      `;
+      const [clock] = await admin<{ today: string; utcToday: string }[]>`
+        select
+          (now() at time zone timezone)::date::text as today,
+          (now() at time zone 'UTC')::date::text as "utcToday"
+        from organisations
+        where id = ${organisationId}
+      `;
+      expect(clock).toBeDefined();
+      expect(clock?.today).not.toBe(clock?.utcToday);
+
+      const response = await authed(viewer, {
+        method: 'GET',
+        url: `/api/works/${workId}/balance`,
+        organisationId,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<WorkBalanceResponse>().today).toBe(clock?.today);
+    } finally {
+      if (original !== undefined) {
+        await admin`
+          update organisations
+          set timezone = ${original.timezone}
+          where id = ${organisationId}
+        `;
+      }
+    }
+  });
+
   it('keeps issued challans immutable through the API', async () => {
     const edit = await authed(owner, {
       method: 'PUT',

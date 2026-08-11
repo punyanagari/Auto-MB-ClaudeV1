@@ -55,6 +55,7 @@ export type FlagCode =
   | 'prose_unit_correction'
   | 'prose_qty_decomposition'
   | 'prose_payment_terms'
+  | 'unresolved_item_description'
   | 'unresolved_unit'
   | 'item_code_namespace_mismatch'
   | 'layout_junk'
@@ -124,6 +125,11 @@ export interface LoaReviewPayload {
   readonly pricingShape: PricingShapeResult;
   readonly flags: readonly ReviewFlag[];
   readonly needsReview: NeedsReviewRollup;
+}
+
+export interface ReviewLoaOptions {
+  /** Poppler `pdftotext -raw` output from the same PDF as `rawText`. */
+  readonly rawItemText?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,10 +297,10 @@ const QTY_DECOMPOSITION_RE =
   /\(Qty\s*=\s*(\d+)\s+([A-Za-z]+)\s*x\s*(\d+)\s+([A-Za-z]+)\s*=\s*(\d+)\s+([A-Za-z]+)\)/gi;
 
 /**
- * Criterion 2. Uses the LAST match in `item.description`, never the first —
- * items.ts's own module doc (`ParsedItem.description`, "ADJACENT ITEMS'
- * DESCRIPTIONS INTENTIONALLY OVERLAP") records that adjacent items'
- * descriptions intentionally OVERLAP (`description` is assembled as
+ * Criterion 2. Uses the LAST match in `item.description`, never the first.
+ * Production `raw-exact` descriptions normally contain only their own
+ * clause. The conservative layout-only fallback still intentionally
+ * OVERLAPS adjacent descriptions (`description` is assembled as
  * `aboveLines + descOnLine + belowLines`, and the physical lines between two
  * anchors are shared: item N's `belowLines` and item N+1's `aboveLines`
  * cover the identical range, pinned by `test/item-anchor.test.ts`'s
@@ -474,7 +480,7 @@ export function detectUnresolvedUnits(
       scope: 'item',
       targetId: itemTargetId(item),
       rawBlock: item.raw.anchorLine,
-      message: `Printed unit ${JSON.stringify(item.qtyUnit)} does not exactly match a DC-45 canonical unit-column spelling -- resolve via the units master (packages/db/src/units.ts's resolveUnit) or confirm at review.`,
+      message: `Printed unit ${JSON.stringify(item.qtyUnit)} does not exactly match a canonical unit spelling -- select the intended unit from your organisation's Units master or confirm it during review.`,
       detail: { printedUnit: item.qtyUnit },
     });
   }
@@ -819,6 +825,30 @@ function letterTargetIdOf(header: LoaHeader): string {
   return header.letterNumber.value ?? 'UNKNOWN_LETTER';
 }
 
+function detectUnresolvedItemDescription(
+  items: readonly ParsedItem[],
+  rawItemTextWasProvided: boolean,
+  letterTargetId: string,
+): readonly ReviewFlag[] {
+  if (
+    !rawItemTextWasProvided ||
+    items.length === 0 ||
+    items.every((item) => item.descriptionSource === 'raw-exact')
+  ) {
+    return [];
+  }
+  return [
+    {
+      code: 'unresolved_item_description',
+      scope: 'letter',
+      targetId: letterTargetId,
+      rawBlock: items.map((item) => item.raw.anchorLine).join('\n'),
+      message:
+        'Exact per-item description boundaries could not be verified from the PDF reading order. Conservative layout text was retained; review item descriptions before confirmation.',
+    },
+  ];
+}
+
 /**
  * The single public entry point (ticket: "the parser's public API returns a
  * review payload"). Composes `extractHeader`, `parseItems` and
@@ -827,9 +857,15 @@ function letterTargetIdOf(header: LoaHeader): string {
  * the raw text triggers need for their own text-scans. Pure: no I/O, no
  * database, no work ever written (module doc above).
  */
-export function reviewLoaLetter(rawText: string): LoaReviewPayload {
+export function reviewLoaLetter(
+  rawText: string,
+  options: ReviewLoaOptions = {},
+): LoaReviewPayload {
   const header = extractHeader(rawText);
-  const items = parseItems(rawText);
+  const items =
+    options.rawItemText === undefined
+      ? parseItems(rawText)
+      : parseItems(rawText, { rawItemText: options.rawItemText });
   const pricingShape = classifyPricingShape(rawText);
   const letterTargetId = letterTargetIdOf(header);
 
@@ -838,6 +874,11 @@ export function reviewLoaLetter(rawText: string): LoaReviewPayload {
     ...detectCorrigendumItemUnitCorrections(rawText, items),
     ...detectQtyDecomposition(items),
     ...detectPaymentTermsProse(items),
+    ...detectUnresolvedItemDescription(
+      items,
+      options.rawItemText !== undefined,
+      letterTargetId,
+    ),
     ...detectUnresolvedUnits(items),
     ...detectItemCodeNamespaceMismatch(items),
     ...detectLayoutJunk(items),

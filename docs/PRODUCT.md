@@ -62,17 +62,19 @@ The system must prevent issue above the awarded quantity unless the Work explici
 
 ## 3. Domain glossary
 
-| Term         | Meaning                                                                  |
-| ------------ | ------------------------------------------------------------------------ |
-| Organisation | A tenant/legal entity using Auto-MB                                      |
-| LOA          | Railway Letter of Acceptance defining the awarded contract               |
-| Work         | One awarded contract created from one confirmed LOA                      |
-| Schedule     | A grouping of awarded lines inside a Work                                |
-| Work item    | One awarded description, unit, quantity, and effective rate              |
-| DC           | Delivery Challan accompanying delivered material                         |
-| Consignee    | Railway/site party receiving material                                    |
-| MB           | Measurement Book used for staged/partial billing; later milestone        |
-| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records; later milestone |
+| Term         | Meaning                                                                 |
+| ------------ | ----------------------------------------------------------------------- |
+| Organisation | A tenant/legal entity using Auto-MB                                     |
+| LOA          | Railway Letter of Acceptance defining the awarded contract              |
+| Work         | One awarded contract created from one confirmed LOA                     |
+| Schedule     | A grouping of awarded lines inside a Work                               |
+| Work item    | One awarded description, unit, quantity, and effective rate             |
+| DC           | Delivery Challan accompanying delivered material                        |
+| Consignee    | Railway/site party receiving material                                   |
+| MB           | Record, on-account, or final Measurement Book used for staged billing   |
+| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records                 |
+| GST invoice  | Direct or MB-backed tax invoice; locally issued before IRP registration |
+| E-way bill   | Statutory movement record associated with a submitted tax invoice       |
 
 ## 4. Initial roles
 
@@ -126,15 +128,37 @@ A design partner can:
 - inspect an audit timeline;
 - remain isolated from every other organisation.
 
-## 8. Explicit non-goals for the first release
+## 8. Implemented expansion beyond the first release
 
-- ~~Measurement Books and RA bills~~ — delivered ahead of plan in
-  Milestone 5: MB entries capped to delivered quantities and
-  measured-quantity bills (prepared → submitted → paid) are live, backend
-  and UI. Richer bill maths (security deposit deductions, price
-  variation) still wait for a design partner's real bill format;
-- GST IRN or e-way-bill integration;
-- procurement, POs, and quotations;
+The current product also includes:
+
+- completion extensions, approval-gated baseline amendments, item omission,
+  correction notices, Work completion/reopen, and per-Work activity history;
+- Issue Challans, receipts, serial traceability, quantity installations,
+  warranty certificates, instruments, and PAC certificates;
+- record, on-account, and final Measurement Books with category payment
+  matrices, stage-wise billing, immutable snapshots, and generated documents;
+- vendor contacts, purchase orders, and budgetary quotations;
+- MB-backed and direct GST invoices with configurable numbering, exact GST
+  split and whole-rupee rounding, immutable supplier/buyer/ship-to snapshots,
+  render-ready document data, IRP payloads, and recorded IRP responses;
+- draft/generated/cancelled e-way-bill records with NIC payloads and recorded
+  NIC responses;
+- optional contract-source PDFs accepted only after tender-number and
+  name-of-work identity checks match their parent LOA.
+
+External GSP transport is not yet automatic. A locally submitted invoice is
+not presented as IRP-registered, and a draft e-way bill is not presented as
+generated, until an authenticated external response has been recorded.
+
+## 9. Current non-goals and release boundaries
+
+- security-deposit deductions, price variation, and other bill maths not
+  defined by current design-partner evidence;
+- provider-specific GSP transport until the Whitebooks adapter and production
+  credential controls are complete;
+- automatic filing without an operator-visible request, response, and audit
+  trail;
 - broad reporting;
 - mobile-native apps;
 - offline sync;

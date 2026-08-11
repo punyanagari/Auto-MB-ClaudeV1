@@ -7,6 +7,12 @@ const ORG = {
   slug: 'sharma',
 };
 
+const SECOND_ORG = {
+  id: '11111111-1111-4111-8111-222222222222',
+  name: 'Patil Engineering',
+  slug: 'patil',
+};
+
 const ME = {
   user: { id: 'user-a', email: 'owner@example.test' },
   memberships: [
@@ -18,6 +24,18 @@ const ME = {
       canIssueDocuments: true,
       canCancelDocuments: true,
       status: 'active',
+    },
+  ],
+};
+
+const PICKER_ME = {
+  ...ME,
+  memberships: [
+    ...ME.memberships,
+    {
+      ...ME.memberships[0]!,
+      organisationId: SECOND_ORG.id,
+      role: 'member',
     },
   ],
 };
@@ -159,13 +177,38 @@ const PROFILE = {
   hasLogo: false,
 };
 
-async function mockWorkspace(page: Page) {
-  await page.route('**/api/me', (route) => route.fulfill(json(ME)));
+async function mockWorkspace(
+  page: Page,
+  me = ME,
+  organisations: readonly (typeof ORG)[] = [ORG],
+) {
+  await page.route('**/api/me', (route) => route.fulfill(json(me)));
   await page.route('**/api/organisations', (route) =>
-    route.fulfill(json({ organisations: [ORG] })),
+    route.fulfill(json({ organisations })),
   );
   await page.route('**/api/organisations/current/members', (route) =>
-    route.fulfill(json({ members: ME.memberships })),
+    route.fulfill(
+      json({
+        members: me.memberships.filter(
+          (membership) => membership.organisationId === ORG.id,
+        ),
+      }),
+    ),
+  );
+  await page.route('**/api/organisations/current/members/*/assignments', (route) =>
+    route.fulfill(json({ userId: ME.user.id, workIds: [] })),
+  );
+  await page.route('**/api/approvals*', (route) =>
+    route.fulfill(json({ approvals: [] })),
+  );
+  await page.route('**/api/masters/contacts*', (route) =>
+    route.fulfill(json({ contacts: [] })),
+  );
+  await page.route('**/api/masters/locations*', (route) =>
+    route.fulfill(json({ locations: [] })),
+  );
+  await page.route('**/api/organisation/number-series', (route) =>
+    route.fulfill(json({ series: [] })),
   );
   await page.route('**/api/dashboard', (route) => route.fulfill(json(DASHBOARD)));
   await page.route('**/api/organisation/profile', (route) =>
@@ -182,6 +225,17 @@ async function mockWorkspace(page: Page) {
   );
   await page.route(`**/api/loa-documents/${DOC_ID}`, (route) =>
     route.fulfill(json(REVIEW_DOCUMENT)),
+  );
+  await page.route(`**/api/loa-documents/${DOC_ID}/contract-source-context`, (route) =>
+    route.fulfill(
+      json({
+        documents: [],
+        paymentMatrix: [],
+        periods: [],
+        releaseClauses: [],
+        itemSpecifications: [],
+      }),
+    ),
   );
 }
 
@@ -204,7 +258,7 @@ test('sign-in screen is keyboard-labelled and passes the axe scan', async ({
 test('organisation picker and members workspace pass the axe scan', async ({
   page,
 }) => {
-  await mockWorkspace(page);
+  await mockWorkspace(page, PICKER_ME, [ORG, SECOND_ORG]);
 
   await page.goto('/');
   await expect(
@@ -212,7 +266,11 @@ test('organisation picker and members workspace pass the axe scan', async ({
   ).toBeVisible();
   await expectNoSeriousViolations(page, 'organisation picker');
 
-  await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await page
+    .getByRole('article')
+    .filter({ hasText: 'Sharma Constructions' })
+    .getByRole('button', { name: 'Open workspace' })
+    .click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeVisible();
   await expectNoSeriousViolations(page, 'dashboard');
@@ -251,13 +309,13 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
 
   await page.goto('/');
-  await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
 
   await page.getByRole('main').getByRole('button', { name: 'Upload LOA' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Upload Letter of Acceptance' }),
+    page.getByRole('heading', { name: 'Upload contract documents' }),
   ).toBeVisible();
   await expectNoSeriousViolations(page, 'upload');
 
@@ -350,6 +408,17 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   );
   await page.route(`**/api/works/${WORK_ID}/completion-readiness`, (route) =>
     route.fulfill(json({ ready: true, unfinished: [], blockers: [] })),
+  );
+  await page.route(`**/api/works/${WORK_ID}/contract-source-context`, (route) =>
+    route.fulfill(
+      json({
+        documents: [],
+        paymentMatrix: [],
+        periods: [],
+        releaseClauses: [],
+        itemSpecifications: [],
+      }),
+    ),
   );
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
     route.fulfill(json({ challans: [CHALLAN] })),
@@ -583,6 +652,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     route.fulfill(
       json({
         allowExcessDelivery: false,
+        today: '2026-08-11',
         items: [
           {
             workItemId: ITEM_ID,
@@ -686,9 +756,12 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route(`**/api/challans/${CHALLAN_ID}/correction-notices`, (route) =>
     route.fulfill(json({ notices: [] })),
   );
+  await page.route(`**/api/audit/entity/delivery_challans/${CHALLAN_ID}*`, (route) =>
+    route.fulfill(json({ events: [], nextCursor: null })),
+  );
 
   await page.goto('/');
-  await page.getByRole('button', { name: /Sharma Constructions/ }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await page.getByRole('button', { name: 'DCW-1' }).click();
   await expect(
@@ -804,12 +877,16 @@ test('the workspace keeps the tenant header on every scoped request', async ({
     scopedHeaders.push(route.request().headers()['x-organisation-id']);
     return route.fulfill(json({ documents: [] }));
   });
+  await page.route('**/api/approvals*', (route) => {
+    scopedHeaders.push(route.request().headers()['x-organisation-id']);
+    return route.fulfill(json({ approvals: [] }));
+  });
 
   await page.goto('/');
-  await page.getByRole('button', { name: /Sharma Constructions/ }).click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByText(/No Works yet/)).toBeVisible();
 
-  expect(scopedHeaders).toEqual([ORG.id, ORG.id, ORG.id]);
+  expect(scopedHeaders.length).toBeGreaterThanOrEqual(4);
+  expect(scopedHeaders.every((header) => header === ORG.id)).toBe(true);
 });

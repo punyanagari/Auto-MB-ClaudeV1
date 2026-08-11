@@ -14,6 +14,9 @@ import type {
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
+  ContractSourceContext,
+  ContractSourceDocumentKind,
+  ContractSourceUploadResponse,
   Contact,
   CreateOrganisationRequest,
   DashboardResponse,
@@ -145,12 +148,20 @@ export class RequestFailedError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: unknown;
+  readonly requestId: string | null;
 
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details?: unknown,
+    requestId?: string,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details ?? null;
+    this.requestId = requestId ?? null;
   }
 }
 
@@ -206,6 +217,25 @@ export interface ApiClient {
     file: Blob,
     filename: string,
   ) => Promise<LoaDocumentDetail>;
+  readonly uploadContractSource: (
+    organisationId: string,
+    loaDocumentId: string,
+    kind: ContractSourceDocumentKind,
+    file: Blob,
+    filename: string,
+  ) => Promise<ContractSourceUploadResponse>;
+  readonly getLoaContractSourceContext: (
+    organisationId: string,
+    loaDocumentId: string,
+  ) => Promise<ContractSourceContext>;
+  readonly getWorkContractSourceContext: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<ContractSourceContext>;
+  readonly downloadContractSourceFile: (
+    organisationId: string,
+    documentId: string,
+  ) => Promise<Blob>;
   readonly confirmLoa: (
     organisationId: string,
     documentId: string,
@@ -994,15 +1024,17 @@ async function parseError(response: Response): Promise<RequestFailedError> {
   let code = 'REQUEST_ERROR';
   let message = `The server answered ${String(response.status)}.`;
   let details: unknown;
+  let requestId: string | undefined;
   try {
     const body = (await response.json()) as Partial<ApiError>;
     if (typeof body.code === 'string') code = body.code;
     if (typeof body.message === 'string') message = body.message;
+    if (typeof body.requestId === 'string') requestId = body.requestId;
     details = body.details;
   } catch {
     // Non-JSON error body: keep the status-based message.
   }
-  return new RequestFailedError(response.status, code, message, details);
+  return new RequestFailedError(response.status, code, message, details, requestId);
 }
 
 /**
@@ -1134,6 +1166,46 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return (await response.json()) as LoaDocumentDetail;
+    },
+    async uploadContractSource(organisationId, loaDocumentId, kind, file, filename) {
+      const query = new URLSearchParams({ kind, filename });
+      const response = await fetchImpl(
+        `/api/loa-documents/${loaDocumentId}/contract-sources?${query.toString()}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ContractSourceUploadResponse;
+    },
+    async getLoaContractSourceContext(organisationId, loaDocumentId) {
+      return request<ContractSourceContext>(
+        `/api/loa-documents/${loaDocumentId}/contract-source-context`,
+        { organisationId },
+      );
+    },
+    async getWorkContractSourceContext(organisationId, workId) {
+      return request<ContractSourceContext>(
+        `/api/works/${workId}/contract-source-context`,
+        { organisationId },
+      );
+    },
+    async downloadContractSourceFile(organisationId, documentId) {
+      const response = await fetchImpl(
+        `/api/contract-source-documents/${documentId}/file`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async confirmLoa(organisationId, documentId, body) {
       return request<WorkDetailResponse>(`/api/loa-documents/${documentId}/confirm`, {

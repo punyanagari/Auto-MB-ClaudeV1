@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
+  ContractSourceContext,
   PaymentMatrixCategory,
   PaymentMatrixRow,
   WorkItem,
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
+import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -78,6 +80,65 @@ function draftFrom(row: PaymentMatrixRow | undefined): RowDraft {
   };
 }
 
+function samePercent(left: string, right: string): boolean {
+  return percentHundredths(left) === percentHundredths(right);
+}
+
+function matrixEvidenceWarnings(
+  context: ContractSourceContext,
+  drafts: Record<string, RowDraft>,
+): readonly string[] {
+  const warnings: string[] = [];
+  for (const category of PAYMENT_MATRIX_CATEGORIES) {
+    const evidence = context.paymentMatrix.filter(
+      (candidate) =>
+        candidate.category === category &&
+        candidate.pctSupply !== null &&
+        candidate.pctInstallation !== null &&
+        candidate.pctPac !== null &&
+        candidate.pctFinalBill !== null,
+    );
+    if (evidence.length === 0) continue;
+    const signatures = new Set(
+      evidence.map((candidate) =>
+        [
+          candidate.pctSupply,
+          candidate.pctInstallation,
+          candidate.pctPac,
+          candidate.pctFinalBill,
+        ].join('|'),
+      ),
+    );
+    if (signatures.size > 1) {
+      warnings.push(
+        `${CATEGORY_LABELS[category]} has conflicting percentages across tender documents.`,
+      );
+      continue;
+    }
+    const proposed = evidence[0];
+    const draft = drafts[category];
+    if (proposed === undefined || draft === undefined) continue;
+    const empty = STAGE_FIELDS.every(([field]) => draft[field].trim() === '');
+    if (empty) {
+      warnings.push(
+        `${CATEGORY_LABELS[category]} is present in tender evidence but has no manual matrix row.`,
+      );
+      continue;
+    }
+    if (
+      !samePercent(draft.pctSupply, proposed.pctSupply as string) ||
+      !samePercent(draft.pctInstallation, proposed.pctInstallation as string) ||
+      !samePercent(draft.pctPac, proposed.pctPac as string) ||
+      !samePercent(draft.pctFinalBill, proposed.pctFinalBill as string)
+    ) {
+      warnings.push(
+        `${CATEGORY_LABELS[category]} differs from the percentages extracted from ${proposed.sourceFilename}.`,
+      );
+    }
+  }
+  return warnings;
+}
+
 interface PaymentMatrixProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -102,6 +163,10 @@ export function PaymentMatrix({
 }: PaymentMatrixProps) {
   const [rows, setRows] = useState<readonly PaymentMatrixRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
+  const [tenderContext, setTenderContext] = useState<ContractSourceContext | null>(
+    null,
+  );
+  const [tenderContextError, setTenderContextError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -136,6 +201,33 @@ export function PaymentMatrix({
       cancelled = true;
     };
   }, [api, organisationId, workId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTenderContext(null);
+    setTenderContextError(null);
+    api
+      .getWorkContractSourceContext(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setTenderContext(loaded);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setTenderContextError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'Tender evidence could not be loaded.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, workId]);
+
+  const tenderWarnings = useMemo(
+    () => (tenderContext === null ? [] : matrixEvidenceWarnings(tenderContext, drafts)),
+    [tenderContext, drafts],
+  );
 
   async function act(work: () => Promise<void>, done: string) {
     setPending(true);
@@ -195,6 +287,89 @@ export function PaymentMatrix({
         R10); finalised Measurement Books snapshot the percentages they billed with, so
         later matrix edits never change a raised MB.
       </p>
+      {tenderContextError !== null && (
+        <div
+          className="my-4 rounded-xl border border-warning/35 bg-warning/[0.06] p-4"
+          role="note"
+        >
+          <p className="flex items-center gap-2 text-sm font-semibold text-warning-foreground">
+            <AlertTriangle className="size-4" aria-hidden="true" />
+            Tender comparison unavailable
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{tenderContextError}</p>
+        </div>
+      )}
+      {tenderContext !== null && tenderContext.documents.length > 0 && (
+        <div
+          className={`my-4 rounded-xl border p-4 ${
+            tenderWarnings.length > 0
+              ? 'border-warning/35 bg-warning/[0.06]'
+              : 'border-success/25 bg-success/[0.045]'
+          }`}
+          role="note"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p
+                className={`flex items-center gap-2 text-sm font-semibold ${
+                  tenderWarnings.length > 0 ? 'text-warning-foreground' : 'text-success'
+                }`}
+              >
+                {tenderWarnings.length > 0 ? (
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="size-4" aria-hidden="true" />
+                )}
+                {tenderWarnings.length > 0
+                  ? 'Manual matrix differs from tender evidence'
+                  : 'Manual matrix matches the extracted tender percentages'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The manual matrix remains authoritative. This comparison never
+                overwrites a saved value.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1.5 text-xs text-muted-foreground">
+              <FileText className="size-3.5" aria-hidden="true" />
+              {tenderContext.documents.length} matched document
+              {tenderContext.documents.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          {tenderWarnings.length > 0 && (
+            <ul className="mt-3 space-y-1 pl-5 text-xs text-muted-foreground">
+              {tenderWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+          {tenderContext.paymentMatrix.length > 0 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-primary">
+                Show extracted payment clauses
+              </summary>
+              <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                {tenderContext.paymentMatrix.map((entry) => (
+                  <div
+                    key={`${entry.sourceDocumentId}-${entry.category}-${entry.rawBlock}`}
+                    className="rounded-lg border border-border bg-card p-3 text-xs"
+                  >
+                    <strong>{CATEGORY_LABELS[entry.category]}</strong>
+                    <span className="ml-2 font-mono text-muted-foreground">
+                      {entry.pctSupply ?? '—'} / {entry.pctInstallation ?? '—'} /{' '}
+                      {entry.pctPac ?? '—'} / {entry.pctFinalBill ?? '—'}
+                    </span>
+                    <p className="mt-2 text-muted-foreground">{entry.rawBlock}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {entry.sourceFilename}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
       <DataTable scroll>
         <caption className="sr-only">
           Payment matrix rows: four stage percentages per item category

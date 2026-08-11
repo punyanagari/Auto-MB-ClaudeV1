@@ -19,6 +19,7 @@ No production secret, database dump, or customer document belongs in local devel
 - PostgreSQL;
 - private object storage;
 - private Gotenberg;
+- outbound Whitebooks GSP adapter when statutory submission is enabled;
 - edge/WAF and TLS termination;
 - central logs, metrics, traces, and alerting.
 
@@ -71,12 +72,19 @@ Minimum signals:
 - PDF generation failures;
 - authentication failures and suspicious access;
 - object-storage errors;
+- statutory-provider request failures, latency, authentication expiry, and
+  locally issued documents awaiting external registration;
 - tenant-boundary denial events;
 - backup recency: age of the last fully verified backup, exposed as a
   metric and alerted on before it exceeds one missed backup cycle;
 - deployment and migration status.
 
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.
+
+Provider telemetry records operation name, internal document id, correlation
+id, status class, latency, and redacted provider error code only. It never logs
+GSP credentials, auth tokens, encrypted/decrypted session material, signed QR
+payloads, full invoice JSON, GSTIN-bearing bodies, or provider responses.
 
 ## 7. Incident response
 

@@ -52,6 +52,7 @@ describe('api client', () => {
     ).rejects.toMatchObject({
       status: 403,
       code: 'NOT_A_MEMBER',
+      requestId: 'req-1',
     });
   });
 

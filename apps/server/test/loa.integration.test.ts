@@ -6,7 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { ConfirmWorkRequest, WorkDetailResponse } from '@auto-mb/contracts';
+import type {
+  ConfirmWorkRequest,
+  ContractSourceContext,
+  WorkDetailResponse,
+} from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
 import {
@@ -105,6 +109,43 @@ function buildTestPdf(text: string): Buffer {
     pdf += `${String(index)} 0 obj\n${objects[index] ?? ''}\nendobj\n`;
   }
   const xrefStart = pdf.length;
+  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  for (let index = 1; index <= 5; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${String(xrefStart)}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+/** A text-layer PDF with one positioned text object per input line.
+ * Supporting-document identity and clause extraction is line-sensitive, so
+ * this fixture preserves the same line boundaries pdftotext sees in real
+ * searchable tender documents. */
+function buildMultilineTestPdf(lines: readonly string[]): Buffer {
+  const escape = (line: string) =>
+    line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+  const commands = lines
+    .map((line, index) =>
+      index === 0
+        ? `BT /F1 9 Tf 48 748 Td (${escape(line)}) Tj`
+        : `0 -14 Td (${escape(line)}) Tj`,
+    )
+    .join('\n');
+  const content = `${commands}\nET`;
+  const objects: Record<number, string> = {
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    4: `<< /Length ${String(Buffer.byteLength(content, 'latin1'))} >>\nstream\n${content}\nendstream`,
+    5: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  };
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (let index = 1; index <= 5; index += 1) {
+    offsets[index] = Buffer.byteLength(pdf, 'latin1');
+    pdf += `${String(index)} 0 obj\n${objects[index] ?? ''}\nendobj\n`;
+  }
+  const xrefStart = Buffer.byteLength(pdf, 'latin1');
   pdf += 'xref\n0 6\n0000000000 65535 f \n';
   for (let index = 1; index <= 5; index += 1) {
     pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
@@ -308,6 +349,7 @@ afterAll(async () => {
     if (organisationId) {
       for (const table of [
         'audit_events',
+        'payment_matrices',
         'work_items',
         'work_schedules',
         'loa_documents',
@@ -358,11 +400,18 @@ describe('LOA upload and extraction', () => {
       id: string;
       extractionStatus: string;
       sha256: string;
-      extractionPayload: { sourceText: string; review: { items: unknown[] } };
+      extractionPayload: {
+        sourceText: string;
+        rawSourceText: string;
+        review: { items: unknown[] };
+      };
     }>();
     expect(body.extractionStatus).toBe('review');
     expect(body.sha256).toBe(createHash('sha256').update(pdf).digest('hex'));
     expect(body.extractionPayload.sourceText).toContain(
+      'Auto-MB extraction smoke line',
+    );
+    expect(body.extractionPayload.rawSourceText).toContain(
       'Auto-MB extraction smoke line',
     );
 
@@ -545,6 +594,314 @@ describe('review and confirm across the legacy corpus', () => {
       where organisation_id = ${organisationId} and action = 'work.created'
     `;
     expect(events.length).toBeGreaterThanOrEqual(corpus.length);
+  });
+});
+
+describe('matched tender and contract-source package', () => {
+  async function seedParentLoa(): Promise<string> {
+    const id = randomUUID();
+    const payload = {
+      sourceText: 'synthetic parent identity',
+      review: {
+        header: {
+          tenderNumber: { value: 'NCR-SNT-2026-0042' },
+          workDescription: {
+            value:
+              'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+          },
+        },
+      },
+    };
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, extraction_status, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
+        'matched-parent-loa.pdf', ${createHash('sha256').update(id).digest('hex')},
+        'application/pdf', 1, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+      )
+    `;
+    return id;
+  }
+
+  function matchingTenderPdf(): Buffer {
+    return buildMultilineTestPdf([
+      'Tender No.: NCR-SNT-2026-0042',
+      'Name of Work: Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+      'Payment terms Supply and Installation category:',
+      '60% on supply, 25% on successful installation, 10% on issue of PAC and 5% on final acceptance.',
+      'Warranty period: 36 months for Item ITM-001 from commissioning.',
+      'Maintenance period: 5 years for the complete work after warranty.',
+      'The Performance Bank Guarantee PBG shall be released after final acceptance and expiry of warranty obligations.',
+      'The Security Deposit shall be returned after issue of the completion certificate and settlement of dues.',
+      'Item ITM-001 technical specification: Router shall conform to TEC GR No TEC-GR-TX-IPM-001 and support MPLS-TE.',
+    ]);
+  }
+
+  function matchingWrappedTenderPdf(): Buffer {
+    return buildMultilineTestPdf([
+      'Tender No.: NCR-SNT-2026-0042',
+      'Name of Work: Supply installation and',
+      'commissioning of IP MPLS equipment at',
+      'Jhansi division',
+      'Tender Document Cost: Rs. 0.00',
+    ]);
+  }
+
+  it('accepts only a matching source, extracts the tender context and records the immutable relationship', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=tender-spec.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingTenderPdf(),
+    });
+    expect(upload.statusCode, upload.body).toBe(201);
+    const response = upload.json<{ context: ContractSourceContext }>();
+    expect(response.context.documents).toHaveLength(1);
+    expect(response.context.paymentMatrix[0]).toMatchObject({
+      category: 'SUPPLY_AND_INSTALLATION',
+      pctSupply: '60',
+      pctInstallation: '25',
+      pctPac: '10',
+      pctFinalBill: '5',
+    });
+    expect(response.context.periods.map((period) => period.kind).sort()).toEqual([
+      'maintenance',
+      'warranty',
+    ]);
+    expect(response.context.releaseClauses.map((clause) => clause.kind).sort()).toEqual(
+      ['pbg', 'security_deposit'],
+    );
+    expect(response.context.itemSpecifications[0]?.itemReferences).toContain('ITM-001');
+
+    const [stored] = await admin<
+      {
+        document_kind: string;
+        parent_loa_document_id: string;
+        match_status: string;
+      }[]
+    >`
+      select document_kind, parent_loa_document_id, match_status
+      from loa_documents
+      where parent_loa_document_id = ${parentId}
+    `;
+    expect(stored).toEqual({
+      document_kind: 'tender_specification',
+      parent_loa_document_id: parentId,
+      match_status: 'matched',
+    });
+  });
+
+  it('accepts a matching name of work wrapped across PDF lines', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=nit&filename=wrapped-nit.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingWrappedTenderPdf(),
+    });
+
+    expect(upload.statusCode, upload.body).toBe(201);
+    expect(
+      upload.json<{
+        document: {
+          identityMatch: {
+            extractedWorkDescription: string;
+            workDescriptionMatched: boolean;
+          };
+        };
+      }>().document.identityMatch,
+    ).toMatchObject({
+      extractedWorkDescription:
+        'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+      workDescriptionMatched: true,
+    });
+  });
+
+  it('rejects a foreign tender before object metadata is stored and audits only the refusal', async () => {
+    const parentId = await seedParentLoa();
+    const foreign = buildMultilineTestPdf([
+      'Tender No.: FOREIGN-009',
+      'Name of Work: Construction of a station building at Agra',
+      'Payment terms: 80% on supply and 20% on installation.',
+    ]);
+    const sha = createHash('sha256').update(foreign).digest('hex');
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=nit&filename=foreign.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: foreign,
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'CONTRACT_SOURCE_IDENTITY_MISMATCH',
+      details: {
+        matched: false,
+        tenderNumberMatched: false,
+        workDescriptionMatched: false,
+      },
+    });
+    const [stored] = await admin<{ count: string }[]>`
+      select count(*)::text as count from loa_documents
+      where organisation_id = ${organisationId} and sha256 = ${sha}
+    `;
+    expect(stored?.count).toBe('0');
+    const [audit] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'contract_source.rejected'
+        and entity_id = ${parentId}
+    `;
+    expect(audit?.count).toBe('1');
+  });
+
+  it('confirms the reviewer-entered initial matrix atomically and links supporting evidence to the Work', async () => {
+    const parentId = await seedParentLoa();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=tender-spec-confirm.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingTenderPdf(),
+    });
+    expect(upload.statusCode, upload.body).toBe(201);
+
+    const confirm = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `TENDER-${runId}`.toUpperCase().slice(0, 20),
+        letterNumber: `LOA-TENDER-${runId}`,
+        letterDate: '2025-01-01',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        advertisedValue: '100000',
+        contractValue: '90000',
+        pricingShape: 'per_schedule',
+        paymentMatrix: [
+          {
+            category: 'SUPPLY_AND_INSTALLATION',
+            pctSupply: '55',
+            pctInstallation: '30',
+            pctPac: '10',
+            pctFinalBill: '5',
+          },
+        ],
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'ITM-001',
+                description: 'IP MPLS edge router',
+                unitCode: 'NOS',
+                awardedQuantity: '10',
+                effectiveRate: '9000',
+                paymentCategory: 'SUPPLY_AND_INSTALLATION',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      } satisfies ConfirmWorkRequest,
+    });
+    expect(confirm.statusCode, confirm.body).toBe(201);
+    const work = confirm.json<WorkDetailResponse>().work;
+
+    const [matrix] = await admin<
+      {
+        pct_supply: string;
+        pct_installation: string;
+        pct_pac: string;
+        pct_final_bill: string;
+      }[]
+    >`
+      select pct_supply::text, pct_installation::text, pct_pac::text,
+             pct_final_bill::text
+      from payment_matrices where work_id = ${work.id}
+    `;
+    expect(matrix).toEqual({
+      pct_supply: '55.00',
+      pct_installation: '30.00',
+      pct_pac: '10.00',
+      pct_final_bill: '5.00',
+    });
+    const [linked] = await admin<{ confirmed_work_id: string }[]>`
+      select confirmed_work_id from loa_documents
+      where parent_loa_document_id = ${parentId}
+    `;
+    expect(linked?.confirmed_work_id).toBe(work.id);
+
+    const context = await authed(viewer, {
+      method: 'GET',
+      url: `/api/works/${work.id}/contract-source-context`,
+      organisationId,
+    });
+    expect(context.statusCode, context.body).toBe(200);
+    expect(
+      context.json<ContractSourceContext>().itemSpecifications[0]?.mappedWorkItemIds,
+    ).toHaveLength(1);
+  });
+
+  it('refuses malformed initial payment rows without creating the Work', async () => {
+    const parentId = await seedParentLoa();
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `BADMAT-${runId}`.toUpperCase().slice(0, 20),
+        letterNumber: `LOA-BAD-MATRIX-${runId}`,
+        letterDate: '2025-01-01',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        advertisedValue: '1000',
+        contractValue: '1000',
+        pricingShape: 'per_schedule',
+        paymentMatrix: [
+          {
+            category: 'SUPPLY',
+            pctSupply: '80',
+            pctInstallation: '10',
+            pctPac: '5',
+            pctFinalBill: '4',
+          },
+        ],
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'ITM-001',
+                description: 'Test item',
+                unitCode: 'NOS',
+                awardedQuantity: '1',
+                effectiveRate: '1000',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'PAYMENT_MATRIX_SUM_INVALID' });
+    const [work] = await admin<{ count: string }[]>`
+      select count(*)::text as count from works
+      where organisation_id = ${organisationId}
+        and letter_number = ${`LOA-BAD-MATRIX-${runId}`}
+    `;
+    expect(work?.count).toBe('0');
   });
 });
 

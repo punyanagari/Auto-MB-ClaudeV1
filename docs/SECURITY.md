@@ -172,6 +172,26 @@ Activated with Milestone 4 (pilot engineering):
   dump→restore→verify test; the operational drill cadence lives in
   docs/RUNBOOK.md.
 
+Activated with contract administration, procurement, and tax documents:
+
+- high-risk baseline changes use immutable proposals, structured before/after
+  evidence, authority revalidation at decision time, row-lock serialisation,
+  and database floors that refuse reductions below delivered, installed, or
+  PAC-certified evidence;
+- purchase orders, quotations, number-series settings, tax invoices, and
+  e-way bills are tenant-owned, forced-RLS records with live cross-tenant
+  endpoint tests;
+- authoritative quantities and money use PostgreSQL numeric arithmetic;
+  submitted invoices freeze supplier, buyer, ship-to, tax split, rounding,
+  totals, numbering inputs, and rendering data;
+- IRN, acknowledgement, signed QR, e-way-bill number, and validity are never
+  minted locally. External registration is displayed only after a response is
+  recorded, and local document status stays distinct from provider status;
+- provider credentials belong only in server-side secret configuration.
+  Browser payloads, application logs, audit details, and committed fixtures
+  must never contain GSP passwords, app keys, auth tokens, decrypted session
+  material, or production GST data.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 
@@ -186,6 +206,9 @@ Before paid production:
 - incident and rollback exercise;
 - key rotation procedure;
 - threat model review.
+- direct GSP adapter review covering credential storage, TLS validation,
+  request timeouts, replay/idempotency, redaction, provider outages, and
+  cancellation authority before production Whitebooks credentials are used.
 
 Before a government/STQC-mandated deployment:
 

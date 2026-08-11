@@ -7,22 +7,32 @@ A clean-sheet implementation of Auto-MB: the post-award works-contract execution
 The first sellable workflow is deliberately narrow:
 
 ```text
-LOA PDF → reviewed Work → Delivery Challan → issued PDF → quantity ledger → audit trail
+LOA PDF → reviewed Work → execution evidence → Measurement Book → billing and tax documents → audit trail
 ```
 
 The repository is not an ERP framework, an AI-agent platform, or a rewrite of every historical Auto-MB plan. It preserves proven domain assets and rebuilds the application around a small, executable, shared multi-tenant SaaS.
 
 ## Status
 
-**In production with the pilot workflow complete** (docs/ROADMAP.md is the
-authoritative ledger). The repository contains:
+**Pilot workflow implemented; paid-production gates remain**
+(`docs/ROADMAP.md` is the authoritative ledger). The repository contains:
 
 - the full LOA-to-DC workflow: LOA PDF upload → parser-assisted review →
   confirmed Work → Delivery Challan drafting → issue with gapless
   numbering → branded PDF → signed-copy evidence;
-- the retention workflow, backend and UI: delivery receipts, serial
-  traceability with installation, PBG/PAC/DOC instruments, Measurement
-  Book entries, and measured-quantity bills (prepared → submitted → paid);
+- the retention and contract-administration workflows: delivery receipts,
+  serial traceability, installations, PBG/PAC/DOC instruments, extensions,
+  amendments, approvals, completion/reopen, correction chains, and a
+  Work-scoped audit timeline;
+- record, on-account, and final Measurement Books with stage-wise payment
+  matrices, PAC evidence, immutable finalisation, bill preparation, and
+  generated MB documents;
+- procurement and tax-document foundations: contacts, purchase orders,
+  budgetary quotations, direct or MB-backed GST invoices, configurable
+  numbering, immutable invoice snapshots, IRP/NIC payloads, and e-way-bill
+  lifecycle records. External GSP submission is not yet automatic;
+- optional NIT, Contract Agreement, and tender/specification uploads tied to
+  an LOA only after deterministic tender-number and work-name matching;
 - a dashboard, organisation settings/branding, member roles, per-member
   work assignments, and issue/cancel authorities;
 - multi-tenant PostgreSQL with forced RLS, an idempotent production
@@ -34,9 +44,9 @@ authoritative ledger). The repository contains:
 - concise product, architecture, security, operations, and roadmap
   contracts; agent instructions and CI.
 
-Owner MFA enforcement, external monitoring, DAST, and a follow-up
-security review remain before paid production (docs/ROADMAP.md). No STQC
-certification is claimed.
+Owner MFA enforcement, external monitoring, DAST, direct GSP integration,
+and a follow-up security review remain before paid production
+(`docs/ROADMAP.md`). No STQC certification is claimed.
 
 ## Local start
 

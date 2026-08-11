@@ -538,9 +538,12 @@ export function registerChallanRoutes(
       const { id: workId } = request.params as { id: string };
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
-        const [work] = await tx<{ allow_excess_delivery: boolean }[]>`
-          select allow_excess_delivery from works
-          where id = ${workId} and deleted_at is null
+        const [work] = await tx<{ allow_excess_delivery: boolean; today: string }[]>`
+          select w.allow_excess_delivery,
+                 (now() at time zone o.timezone)::date::text as today
+          from works w
+          join organisations o on o.id = w.organisation_id
+          where w.id = ${workId} and w.deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         // The delivery ceiling is COALESCE(effective_quantity,
@@ -578,6 +581,7 @@ export function registerChallanRoutes(
         `;
         return {
           allowExcessDelivery: work.allow_excess_delivery,
+          today: work.today,
           items: rows.map((row) => ({
             workItemId: row.work_item_id,
             itemNumber: row.item_number,

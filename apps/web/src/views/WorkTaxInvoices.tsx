@@ -12,7 +12,7 @@ import { formatInr, formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
-import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
+import { Field, FieldRow, Actions, Hint, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface WorkTaxInvoicesProps {
@@ -78,16 +78,20 @@ export function WorkTaxInvoices({
   const [cancelNote, setCancelNote] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [ewayMode, setEwayMode] = useState<TransportMode>('road');
+  const [loadError, setLoadError] = useState(false);
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setInvoices(null);
+    setLoadError(false);
     api
       .listWorkTaxInvoices(organisationId, workId)
       .then((loaded) => {
         if (!cancelled) setInvoices(loaded);
       })
       .catch(() => {
-        if (!cancelled) setInvoices([]);
+        if (!cancelled) setLoadError(true);
       });
     // The pickers are conveniences: neither an unavailable Measurement
     // Book list nor an unavailable contact master must stop the invoices
@@ -111,7 +115,7 @@ export function WorkTaxInvoices({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
 
   async function refreshList() {
     setInvoices(await api.listWorkTaxInvoices(organisationId, workId));
@@ -136,6 +140,26 @@ export function WorkTaxInvoices({
     void act(async () => {
       await openInvoiceDetail(invoiceId);
     }, `Tax invoice ${label} opened below.`);
+  }
+
+  if (loadError) {
+    return (
+      <>
+        <h2>Tax Invoices</h2>
+        <FormError>
+          Tax invoices could not be loaded. Existing invoices remain unknown, so
+          drafting is paused.
+        </FormError>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setLoadVersion((current) => current + 1);
+          }}
+        >
+          Retry tax invoices
+        </Button>
+      </>
+    );
   }
 
   if (invoices === null) {

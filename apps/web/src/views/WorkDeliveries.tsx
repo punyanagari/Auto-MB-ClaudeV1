@@ -10,6 +10,7 @@ import type { ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
+import { FormError } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Installations } from './Installations.js';
 
@@ -21,9 +22,12 @@ interface WorkDeliveriesProps {
   readonly workItems: readonly WorkItem[];
   /** Null while the list is still loading — distinct from "none yet". */
   readonly challans: readonly Challan[] | null;
+  readonly challansState: 'loading' | 'unavailable' | 'ready';
   readonly correctionNotices: readonly CorrectionNotice[];
+  readonly correctionNoticesState: 'loading' | 'unavailable' | 'ready';
   readonly setCorrectionNotices: Dispatch<SetStateAction<readonly CorrectionNotice[]>>;
   readonly serials: readonly Serial[];
+  readonly serialsState: 'loading' | 'unavailable' | 'ready';
   readonly setSerials: Dispatch<SetStateAction<readonly Serial[]>>;
   readonly canCreateDocuments: boolean;
   readonly canRecordSiteEvidence: boolean;
@@ -45,9 +49,12 @@ export function WorkDeliveries({
   work,
   workItems,
   challans,
+  challansState,
   correctionNotices,
+  correctionNoticesState,
   setCorrectionNotices,
   serials,
+  serialsState,
   setSerials,
   canCreateDocuments,
   canRecordSiteEvidence,
@@ -60,7 +67,9 @@ export function WorkDeliveries({
     <>
       <CardHeader>
         <h2>Delivery Challans</h2>
-        {canCreateDocuments &&
+        {challansState === 'ready' &&
+          challans !== null &&
+          canCreateDocuments &&
           (challans?.some((challan) => challan.status === 'draft') === true ? (
             <Button
               onClick={() => {
@@ -80,7 +89,16 @@ export function WorkDeliveries({
             </Button>
           ))}
       </CardHeader>
-      {challans !== null && challans.length > 0 ? (
+      {challansState === 'unavailable' ? (
+        <FormError>
+          Delivery Challans could not be loaded. Installation and serial information
+          remain available below.
+        </FormError>
+      ) : challansState === 'loading' || challans === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading Delivery Challans…
+        </p>
+      ) : challans.length > 0 ? (
         <DataTable>
           <caption className="sr-only">Delivery Challans for this Work</caption>
           <thead>
@@ -117,7 +135,21 @@ export function WorkDeliveries({
         <p className="text-muted-foreground">No Delivery Challans yet.</p>
       )}
 
-      {correctionNotices.length > 0 && (
+      {correctionNoticesState === 'loading' ? (
+        <>
+          <h2>Correction notices</h2>
+          <p className="text-muted-foreground" role="status">
+            Loading correction notices…
+          </p>
+        </>
+      ) : correctionNoticesState === 'unavailable' ? (
+        <>
+          <h2>Correction notices</h2>
+          <FormError>
+            Correction notices could not be loaded. Try again later.
+          </FormError>
+        </>
+      ) : correctionNotices.length > 0 ? (
         <>
           <h2>Correction notices</h2>
           <DataTable>
@@ -191,20 +223,29 @@ export function WorkDeliveries({
             </tbody>
           </DataTable>
         </>
-      )}
+      ) : null}
 
       <Installations
         api={api}
         organisationId={organisationId}
         workId={workId}
-        canRecordEvidence={canRecordSiteEvidence}
+        canRecordEvidence={canRecordSiteEvidence && serialsState === 'ready'}
         workItems={workItems}
         serials={serials}
         onSerialsChanged={setSerials}
       />
 
       <h2>Serial trace</h2>
-      {serials.length > 0 ? (
+      {serialsState === 'loading' ? (
+        <p className="text-muted-foreground" role="status">
+          Loading serial trace…
+        </p>
+      ) : serialsState === 'unavailable' ? (
+        <FormError>
+          The serial trace could not be loaded. Installation recording remains read-only
+          until it is available.
+        </FormError>
+      ) : serials.length > 0 ? (
         <DataTable>
           <caption className="sr-only">
             Every serial number delivered under this Work

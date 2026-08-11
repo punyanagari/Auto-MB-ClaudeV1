@@ -49,6 +49,7 @@ export {
   type ParTokenDirection,
   type ItemScheduleBinding,
   type ItemReconciliation,
+  type ParseItemsOptions,
 } from './items.js';
 export { parseDecimalToMinorUnits, formatMinorUnits } from './decimal.js';
 // DC-24 — pricing-shape classifier (Shape A letter-level percentage vs
@@ -68,6 +69,21 @@ export {
   type ScheduleTotalEntry,
   type TotalsRoundingDivergence,
 } from './pricing-shape.js';
+export {
+  reviewTenderDocument,
+  matchTenderIdentity,
+  type TenderDocumentKind,
+  type TenderPeriodKind,
+  type TenderReleaseKind,
+  type TenderMatrixCategory,
+  type TenderField,
+  type TenderPaymentMatrixSuggestion,
+  type TenderPeriodSuggestion,
+  type TenderReleaseClauseSuggestion,
+  type TenderItemSpecificationSuggestion,
+  type TenderReviewPayload,
+  type TenderIdentityMatch,
+} from './tender-document.js';
 // DC-26 — the needsReview trigger set (six proven traps, additive review
 // flags, never a work-writing function). Re-exported for the same "coherent
 // public surface" reason as DC-23's, DC-24's and DC-25's exports above; this
@@ -98,6 +114,7 @@ export {
   type QtyDecomposition,
   type NeedsReviewRollup,
   type LoaReviewPayload,
+  type ReviewLoaOptions,
   type BannedBlockSpelling,
   type BannedItemsBlockDetection,
 } from './needs-review.js';

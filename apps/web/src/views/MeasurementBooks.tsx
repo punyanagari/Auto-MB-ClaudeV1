@@ -34,6 +34,8 @@ interface MeasurementBooksProps {
    * authority — the server is the arbiter, this only decides what to
    * offer. */
   readonly canIssue: boolean;
+  /** Existing bills must be known before offering another financial record. */
+  readonly canPrepareBill: boolean;
   /** Cancelling a finalized MB runs under the cancel authority
    * (membership.canCancelDocuments), matching the challan detail
    * screens. */
@@ -90,6 +92,7 @@ export function MeasurementBooks({
   workId,
   canModify,
   canIssue,
+  canPrepareBill,
   canCancel,
   onBillPrepared,
 }: MeasurementBooksProps) {
@@ -920,21 +923,24 @@ export function MeasurementBooks({
                   Unmerge record drafts…
                 </Button>
               )}
-            {book.status === 'finalized' && canIssue && book.billId === null && (
-              <Button
-                disabled={pending}
-                onClick={() => {
-                  tryAct(async () => {
-                    await api.prepareBillFromMeasurementBook(organisationId, book.id);
-                    await openBook(book.id);
-                    await refreshList();
-                    onBillPrepared();
-                  }, 'Bill prepared from this Measurement Book — see the Bills section.');
-                }}
-              >
-                Prepare bill
-              </Button>
-            )}
+            {book.status === 'finalized' &&
+              canIssue &&
+              canPrepareBill &&
+              book.billId === null && (
+                <Button
+                  disabled={pending}
+                  onClick={() => {
+                    tryAct(async () => {
+                      await api.prepareBillFromMeasurementBook(organisationId, book.id);
+                      await openBook(book.id);
+                      await refreshList();
+                      onBillPrepared();
+                    }, 'Bill prepared from this Measurement Book — see the Bills section.');
+                  }}
+                >
+                  Prepare bill
+                </Button>
+              )}
             {book.status === 'finalized' && canModify && (
               <Button
                 variant="outline"

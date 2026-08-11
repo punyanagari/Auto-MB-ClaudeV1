@@ -39,6 +39,14 @@ it('sanity: the corpus is six letters', () => {
 // ---------------------------------------------------------------------------
 
 describe('print-furniture stripping', () => {
+  it('normalises Windows CRLF before stripping or structural parsing', () => {
+    const lf = loadLetter('PL281-BB').text;
+    const crlf = lf.replace(/\n/g, '\r\n');
+
+    expect(stripPrintFurniture(crlf)).toBe(stripPrintFurniture(lf));
+    expect(extractHeader(crlf)).toEqual(extractHeader(lf));
+  });
+
   it('recognises both observed furniture forms on all six fixtures', () => {
     for (const id of ALL_LETTER_IDS) {
       const { text } = loadLetter(id);

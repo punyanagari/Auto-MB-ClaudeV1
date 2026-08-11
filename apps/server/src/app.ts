@@ -27,6 +27,7 @@ import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
 import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerCorrectionRoutes } from './routes/corrections.js';
+import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -97,6 +98,53 @@ function userIdFromAuthBody(text: string): string | null {
   } catch {
     return null;
   }
+}
+
+const DATABASE_UNAVAILABLE_CODES = new Set([
+  'CONNECT_TIMEOUT',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+  '53300', // too_many_connections
+  '57P01', // admin_shutdown
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now
+]);
+
+/** postgres.js and node-postgres may expose a connection failure directly,
+ * through `cause`, or inside an AggregateError. Recognise only stable network
+ * and PostgreSQL availability codes; messages may contain credentials and
+ * must never be used for classification or returned to the client. */
+function isDatabaseUnavailableError(error: unknown): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== 'object' || seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    if ('code' in current && typeof current.code === 'string') {
+      if (
+        current.code.startsWith('08') ||
+        DATABASE_UNAVAILABLE_CODES.has(current.code)
+      ) {
+        return true;
+      }
+    }
+    if ('cause' in current) pending.push(current.cause);
+    if ('errors' in current && Array.isArray(current.errors)) {
+      for (const nestedError of current.errors as unknown[]) {
+        pending.push(nestedError);
+      }
+    }
+  }
+  return false;
 }
 
 export async function buildApp(
@@ -178,38 +226,49 @@ export async function buildApp(
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error, requestId: request.id }, 'request failed');
-    const statusCode =
+    const declaredStatusCode =
       error instanceof Error &&
       'statusCode' in error &&
       typeof error.statusCode === 'number' &&
       error.statusCode >= 400 &&
       error.statusCode <= 599
         ? error.statusCode
-        : 500;
+        : null;
+    const databaseUnavailable =
+      (declaredStatusCode === null || declaredStatusCode >= 500) &&
+      isDatabaseUnavailableError(error);
+    const statusCode = databaseUnavailable ? 503 : (declaredStatusCode ?? 500);
     void reply.status(statusCode).send(
-      statusCode >= 500
+      databaseUnavailable
         ? {
-            code: 'INTERNAL_ERROR',
-            message: 'The request could not be completed.',
+            code: 'DATABASE_UNAVAILABLE',
+            message:
+              'The database is temporarily unavailable. Nothing was saved. Try again.',
             requestId: request.id,
           }
-        : {
-            code:
-              error instanceof Error &&
-              'code' in error &&
-              typeof error.code === 'string'
-                ? error.code
-                : 'REQUEST_ERROR',
-            message: error instanceof Error ? error.message : 'Request failed.',
-            requestId: request.id,
-            // Structured conflict payloads (e.g. the one-draft 409s'
-            // { existingRecordId }) ride along verbatim.
-            ...(error instanceof Error &&
-            'details' in error &&
-            error.details !== undefined
-              ? { details: error.details }
-              : {}),
-          },
+        : statusCode >= 500
+          ? {
+              code: 'INTERNAL_ERROR',
+              message: 'The request could not be completed.',
+              requestId: request.id,
+            }
+          : {
+              code:
+                error instanceof Error &&
+                'code' in error &&
+                typeof error.code === 'string'
+                  ? error.code
+                  : 'REQUEST_ERROR',
+              message: error instanceof Error ? error.message : 'Request failed.',
+              requestId: request.id,
+              // Structured conflict payloads (e.g. the one-draft 409s'
+              // { existingRecordId }) ride along verbatim.
+              ...(error instanceof Error &&
+              'details' in error &&
+              error.details !== undefined
+                ? { details: error.details }
+                : {}),
+            },
     );
   });
 
@@ -275,6 +334,8 @@ export async function buildApp(
     const isUpload =
       (request.method === 'POST' || request.method === 'PUT') &&
       (path === '/api/loa-documents' ||
+        (path.startsWith('/api/loa-documents/') &&
+          path.endsWith('/contract-sources')) ||
         path === '/api/organisation/logo' ||
         path.endsWith('/signed-copy') ||
         // PAC scanned-certificate and extension railway-response uploads:
@@ -420,6 +481,7 @@ export async function buildApp(
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
+    registerContractSourceRoutes(app, authInstance, database, storage, scanner);
     registerChallanRoutes(
       app,
       authInstance,

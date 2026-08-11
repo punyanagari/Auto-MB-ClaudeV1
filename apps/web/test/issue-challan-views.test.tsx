@@ -53,6 +53,22 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listLoaDocuments: vi.fn().mockResolvedValue([]),
     getLoaDocument: vi.fn(),
     uploadLoa: vi.fn(),
+    uploadContractSource: vi.fn(),
+    getLoaContractSourceContext: vi.fn().mockResolvedValue({
+      documents: [],
+      paymentMatrix: [],
+      periods: [],
+      releaseClauses: [],
+      itemSpecifications: [],
+    }),
+    getWorkContractSourceContext: vi.fn().mockResolvedValue({
+      documents: [],
+      paymentMatrix: [],
+      periods: [],
+      releaseClauses: [],
+      itemSpecifications: [],
+    }),
+    downloadContractSourceFile: vi.fn().mockResolvedValue(new Blob()),
     confirmLoa: vi.fn(),
     listWorks: vi.fn().mockResolvedValue([]),
     getWork: vi.fn(),
@@ -240,6 +256,7 @@ const SCHEDULE_ID = '77777777-7777-4777-8777-777777777777';
 
 const BALANCE = {
   allowExcessDelivery: false,
+  today: '2026-08-11',
   items: [
     {
       workItemId: ITEM_A,
@@ -305,6 +322,49 @@ function issueChallanDetail(
 }
 
 describe('IssueChallanEditor', () => {
+  it('binds header validation messages and focuses fields in reading order', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('Main switchboard');
+    const date = screen.getByLabelText<HTMLInputElement>('Challan date');
+    expect(date.value).toBe(BALANCE.today);
+    fireEvent.change(date, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const dateMessage = screen.getByText('Enter the challan date.');
+    expect(date.getAttribute('aria-invalid')).toBe('true');
+    expect(date.getAttribute('aria-describedby')).toBe(dateMessage.id);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Enter a challan date before saving.',
+    );
+    expect(document.activeElement).toBe(date);
+
+    fireEvent.change(date, { target: { value: '2026-08-11' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const recipient = screen.getByLabelText('Issued to (name)');
+    const recipientMessage = screen.getByText(
+      'Enter who the material goes to, in at least 2 characters.',
+    );
+    expect(recipient.getAttribute('aria-invalid')).toBe('true');
+    expect(recipient.getAttribute('aria-describedby')).toBe(recipientMessage.id);
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Enter who the material goes to before saving.',
+    );
+    expect(document.activeElement).toBe(recipient);
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+  });
+
   it('saves a draft with an item quantity and a manual line', async () => {
     const createIssueChallan = vi.fn().mockResolvedValue(issueChallanDetail());
     const api = stubApi({

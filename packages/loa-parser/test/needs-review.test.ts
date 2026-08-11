@@ -977,6 +977,17 @@ describe('needs-review.ts purity', () => {
 // ---------------------------------------------------------------------------
 
 describe('reviewLoaLetter over the whole corpus', () => {
+  it('keeps PL281 at its one genuine review flag when pdftotext emits CRLF', () => {
+    const crlf = loadLetter('PL281-BB').text.replace(/\n/g, '\r\n');
+    const payload = reviewLoaLetter(crlf);
+
+    expect(payload.items).toHaveLength(54);
+    expect(payload.needsReview).toMatchObject({
+      total: 1,
+      byCode: { banned_items_block: 1 },
+    });
+  });
+
   it("never throws, and every letter's flag count/byCode matches the measured baseline exactly", () => {
     const expected: Record<string, { total: number; byCode: Record<string, number> }> =
       {

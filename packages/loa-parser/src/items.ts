@@ -51,6 +51,10 @@
  */
 import { formatMinorUnits, parseDecimalToMinorUnits } from './decimal.js';
 import { stripPrintFurniture } from './furniture.js';
+import {
+  recoverRawItemDescriptions,
+  type RawItemExpectation,
+} from './raw-item-descriptions.js';
 
 const ITEM_TABLE_MARKER = 'Awarded Quantities And Rates';
 
@@ -191,8 +195,17 @@ export interface ParsedItem {
    * must read the LAST matching occurrence in a multi-line-wrapped clause
    * like this one, never the first, since a neighbour's leaked text always
    * sits in `aboveLines`, which this module always joins BEFORE
-   * `belowLines`. */
+   * `belowLines`.
+   *
+   * Production PDF parsing also supplies Poppler's `-raw` reading-order
+   * view. When its complete row set and every numeric tuple match this
+   * layout parse, that view replaces the conservative overlap with one
+   * exact, non-overlapping description per row. The replacement is
+   * all-or-nothing; any ambiguity retains this fallback and raises review. */
   readonly description: string;
+  /** Whether `description` is the exact row-owned `pdftotext -raw` value or
+   * the conservative, intentionally over-inclusive `-layout` fallback. */
+  readonly descriptionSource: 'raw-exact' | 'layout-overinclusive';
   /** Printed quantity, verbatim numeric text (no unit). */
   readonly qty: string;
   /** Printed unit-column text, verbatim. `null` when the anchor line's
@@ -230,7 +243,14 @@ export interface ParsedItem {
      * schedule header/`Schedule Totals`, in original (untrimmed) form,
      * including blanks. */
     readonly belowLines: readonly string[];
+    /** Populated only after the all-or-nothing raw quality gate succeeds. */
+    readonly exactDescriptionLines?: readonly string[];
   };
+}
+
+export interface ParseItemsOptions {
+  /** Poppler `pdftotext -raw` output from the same PDF as `rawText`. */
+  readonly rawItemText?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,7 +583,10 @@ function nonBlankTrimmed(lines: readonly string[]): string[] {
  * "281 total, never more, never fewer, never silently dropped" regression
  * bar this ticket exists to hold.
  */
-export function parseItems(rawText: string): readonly ParsedItem[] {
+export function parseItems(
+  rawText: string,
+  options: ParseItemsOptions = {},
+): readonly ParsedItem[] {
   const stripped = stripPrintFurniture(rawText);
   const markerIdx = stripped.indexOf(ITEM_TABLE_MARKER);
   const itemRegionText = markerIdx === -1 ? '' : stripped.slice(markerIdx);
@@ -607,7 +630,7 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
     return found;
   }
 
-  return anchorIdxs.map((a, ai) => {
+  const parsedItems = anchorIdxs.map((a, ai): ParsedItem => {
     const anchorLine = lines[a] ?? '';
     const schedule = scheduleFor(a);
     const scheduleBinding: ItemScheduleBinding | null =
@@ -696,6 +719,7 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
       itemSno,
       itemCode: peeled.itemCode,
       description,
+      descriptionSource: 'layout-overinclusive',
       qty: peeled.qty,
       qtyUnit,
       qtyUnitWrapped,
@@ -711,6 +735,39 @@ export function parseItems(rawText: string): readonly ParsedItem[] {
       },
     };
   });
+
+  if (options.rawItemText === undefined || parsedItems.length === 0) {
+    return parsedItems;
+  }
+  const expectations: RawItemExpectation[] = parsedItems.map((item) => ({
+    scheduleId: item.schedule?.id ?? null,
+    itemSno: item.itemSno,
+    itemCode: item.itemCode,
+    qty: item.qty,
+    qtyUnit: item.qtyUnit,
+    qtyUnitWrapped: item.qtyUnitWrapped,
+    unitRate: item.unitRate,
+    parToken: item.parToken,
+    bidAmount: item.bidAmount,
+  }));
+  const recovery = recoverRawItemDescriptions(options.rawItemText, expectations);
+  if (!recovery.ok) return parsedItems;
+  const exactItems: ParsedItem[] = [];
+  for (let index = 0; index < parsedItems.length; index += 1) {
+    const item = parsedItems[index];
+    const exact = recovery.descriptions[index];
+    if (item === undefined || exact === undefined) return parsedItems;
+    exactItems.push({
+      ...item,
+      description: exact.description,
+      descriptionSource: 'raw-exact',
+      raw: {
+        ...item.raw,
+        exactDescriptionLines: exact.sourceLines,
+      },
+    });
+  }
+  return exactItems;
 }
 
 /**
@@ -746,6 +803,7 @@ function malformedItem(
     description: nonBlankTrimmed([...rawAboveLines, anchorLine, ...rawBelowLines]).join(
       ' ',
     ),
+    descriptionSource: 'layout-overinclusive',
     qty: '',
     qtyUnit: null,
     qtyUnitWrapped: false,

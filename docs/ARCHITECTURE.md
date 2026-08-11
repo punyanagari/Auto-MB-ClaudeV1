@@ -44,6 +44,8 @@ loa/
 delivery/
 installation/
 measurement/
+procurement/
+tax-documents/
 documents/
 audit/
 ```
@@ -73,8 +75,14 @@ PostgreSQL is the source of truth. Use SQL constraints for durable invariants an
 Critical operations are atomic:
 
 - confirm LOA → create Work/schedules/items;
-- issue DC → authorise, validate quantity, allocate number, snapshot, audit, queue PDF;
+- issue DC → authorise, validate quantity, allocate number, snapshot, and audit;
 - cancel DC → authorise, validate downstream state, mark cancelled, audit.
+- finalise MB → lock sources, compute exact staged values, allocate number,
+  snapshot, audit;
+- submit tax invoice → lock its value source, allocate the configured number,
+  freeze parties and exact GST values, close the MB when applicable, audit;
+- generate or cancel an e-way bill → lock the invoice and movement row,
+  preserve the external response, and audit every lifecycle transition.
 
 Money uses `numeric`. Dates use `date`. IDs use opaque UUIDs. Indexes begin with `organisation_id` when serving tenant-scoped access paths.
 
@@ -96,6 +104,12 @@ Issued documents store:
 - issue/cancel metadata;
 - signed-copy attachment metadata.
 
+Tax invoices follow the same legal-document posture: supplier, buyer,
+ship-to, line, tax, rounding, words, numbering inputs, and template version
+are frozen before rendering. IRP acknowledgements and signed QR data arrive
+after local issue and are append-only external evidence; they do not rewrite
+the issued snapshot.
+
 PDF generation is asynchronous but issue-state correctness does not depend on the renderer being available. A failed PDF job retries without reallocating the number.
 
 ## 7. LOA extraction
@@ -112,9 +126,11 @@ private PDF
 
 The existing six-letter / 281-item corpus is a regression baseline. AI output is untrusted proposal data until reviewed.
 
-As delivered in Milestone 2: extraction is `pdftotext -layout` (poppler,
-a system dependency — the same extraction the corpus fixtures were
-produced with), run inline at upload because it is sub-second; the first
+As delivered in Milestone 2: extraction runs complementary Poppler views from
+the same PDF: `pdftotext -layout` remains authoritative for headers,
+schedules, and numeric columns, while `pdftotext -raw` supplies exact item-row
+description ownership behind a strict whole-letter tuple gate. Both run in
+parallel inline at upload because extraction is sub-second; the first
 genuinely asynchronous job remains Milestone 3's PDF rendering (§9). The
 parser's review payload — per-field value plus printed raw source plus
 needsReview, item rows with exact-decimal reconciliation, pricing-shape
@@ -122,8 +138,8 @@ classification, and the trap flags — is stored verbatim on the document
 row. Confirmation is one transaction: Work + schedules + items, each item
 carrying `source_evidence` that links back to its parsed source block,
 and the document keeps the full payload after confirmation. The
-model/OCR fallback step remains unbuilt until a real letter defeats the
-deterministic parser.
+model/OCR fallback step remains unbuilt until a real letter defeats both
+deterministic views.
 
 ## 8. API contracts
 
@@ -147,7 +163,20 @@ depends on it, a failure is a clean 502 with the challan unaffected, and a
 retry re-renders from the immutable snapshot. That keeps pg-boss at its
 trigger: the first workflow that must retry unattended.
 
-## 10. Scale target
+## 10. Statutory provider boundary
+
+Tax invoice and e-way-bill domain records do not depend on one GSP. The server
+currently builds deterministic IRP and NIC payloads from stored snapshots and
+records verified external responses without inventing IRN, acknowledgement,
+or e-way-bill values locally.
+
+Direct Whitebooks transport belongs behind a server-side adapter. Browser code
+never receives provider credentials. The adapter must use bounded timeouts,
+idempotency/correlation identifiers, redacted logs, stable internal errors, and
+an auditable request/response summary while keeping full sensitive payloads out
+of request logs. Local issue and external registration remain distinct states.
+
+## 11. Scale target
 
 Initial capacity validation target:
 
@@ -160,6 +189,6 @@ Initial capacity validation target:
 
 This is a test target, not a claim until the k6 and database benchmark passes.
 
-## 11. Deliberate exclusions
+## 12. Deliberate exclusions
 
 No Redis, Kafka, microservices, Kubernetes, read replicas, search cluster, policy service, or multi-region database until a measured production constraint requires it.

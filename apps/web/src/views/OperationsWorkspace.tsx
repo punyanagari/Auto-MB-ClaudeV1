@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { Organisation, Work } from '@auto-mb/contracts';
 import {
   ArrowLeftRight,
@@ -35,6 +35,7 @@ import { Quotations } from './Quotations.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
 import { Settings } from './Settings.js';
+import { OrganisationAccessSettings } from './OrganisationAccessSettings.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail, type WorkTab } from './WorkDetail.js';
 import { Works } from './Works.js';
@@ -43,7 +44,9 @@ interface OperationsWorkspaceProps {
   readonly api: ApiClient;
   readonly me: MeResponse;
   readonly organisation: Organisation;
+  readonly organisations: readonly Organisation[];
   readonly onSwitchOrganisation: () => void;
+  readonly onOrganisationCreated: (organisation: Organisation) => void;
   readonly onSignOut: () => void;
 }
 
@@ -65,6 +68,10 @@ type WorkspaceView =
   | { name: 'serials' }
   | { name: 'members' }
   | { name: 'settings' };
+
+interface PendingDeparture {
+  readonly action: () => void;
+}
 
 type ModuleKey =
   | 'dashboard'
@@ -202,7 +209,9 @@ export function OperationsWorkspace({
   api,
   me,
   organisation,
+  organisations,
   onSwitchOrganisation,
+  onOrganisationCreated,
   onSignOut,
 }: OperationsWorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
@@ -216,8 +225,19 @@ export function OperationsWorkspace({
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [headerQuickActionsOpen, setHeaderQuickActionsOpen] = useState(false);
+  const [mobileRecordOpen, setMobileRecordOpen] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [pendingDeparture, setPendingDeparture] = useState<PendingDeparture | null>(
+    null,
+  );
   const containerRef = useRef<HTMLDivElement>(null);
+  const mobileMenuDialogRef = useRef<HTMLDivElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const discardAndLeaveRef = useRef<HTMLButtonElement>(null);
+  const departureRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const transientMenuTriggerRef = useRef<HTMLElement | null>(null);
 
   const membership = me.memberships.find(
     (candidate) =>
@@ -229,7 +249,12 @@ export function OperationsWorkspace({
   const canCancel = membership?.canCancelDocuments ?? false;
   const canApprove = membership?.canApproveAmendments ?? false;
   const isOwner = membership?.role === 'owner';
+  const canSwitchOrganisation = organisations.length > 1;
   const activeModule = activeModuleOf(view);
+  const recordWorkId =
+    view.name === 'work' || view.name === 'challan' || view.name === 'issue-challan'
+      ? view.workId
+      : null;
 
   const refreshPendingApprovals = useCallback(() => {
     api
@@ -275,8 +300,133 @@ export function OperationsWorkspace({
     containerRef.current?.querySelector('h1')?.focus();
     setMobileMenuOpen(false);
     setMobileMoreOpen(false);
-    setQuickActionsOpen(false);
+    setHeaderQuickActionsOpen(false);
+    setMobileRecordOpen(false);
   }, [view]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const restoreTarget =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    mobileMenuCloseRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (restoreTarget?.isConnected === true) restoreTarget.focus();
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (!editorDirty) return;
+    function warnBeforeUnload(event: BeforeUnloadEvent): void {
+      event.preventDefault();
+      event.returnValue = true;
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', warnBeforeUnload);
+    };
+  }, [editorDirty]);
+
+  useEffect(() => {
+    if (pendingDeparture === null) return;
+    const restoreTarget = departureRestoreFocusRef.current;
+    keepEditingRef.current?.focus();
+    return () => {
+      if (restoreTarget?.isConnected === true) restoreTarget.focus();
+    };
+  }, [pendingDeparture]);
+
+  function requestDeparture(action: () => void): void {
+    if (!editorDirty) {
+      action();
+      return;
+    }
+    const activeElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    departureRestoreFocusRef.current =
+      mobileMenuOpen || headerQuickActionsOpen || mobileRecordOpen || mobileMoreOpen
+        ? (transientMenuTriggerRef.current ?? activeElement)
+        : activeElement;
+    setHeaderQuickActionsOpen(false);
+    setMobileRecordOpen(false);
+    setMobileMoreOpen(false);
+    setMobileMenuOpen(false);
+    setPendingDeparture({ action });
+  }
+
+  function navigate(next: WorkspaceView): void {
+    requestDeparture(() => {
+      setView(next);
+    });
+  }
+
+  function keepEditing(): void {
+    setPendingDeparture(null);
+  }
+
+  function discardAndLeave(): void {
+    const departure = pendingDeparture;
+    if (departure === null) return;
+    setEditorDirty(false);
+    setPendingDeparture(null);
+    departure.action();
+  }
+
+  function handleDepartureKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      keepEditing();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const keep = keepEditingRef.current;
+    const discard = discardAndLeaveRef.current;
+    if (keep === null || discard === null) return;
+    if (event.shiftKey && document.activeElement === keep) {
+      event.preventDefault();
+      discard.focus();
+    } else if (!event.shiftKey && document.activeElement === discard) {
+      event.preventDefault();
+      keep.focus();
+    }
+  }
+
+  function handleMobileMenuKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setMobileMenuOpen(false);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      mobileMenuDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), ' +
+          'select:not([disabled]), textarea:not([disabled]), ' +
+          '[tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (first === undefined || last === undefined) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function openRecordTab(workId: string, tab: 'deliveries' | 'measurement'): void {
+    requestDeparture(() => {
+      setTabbedWorkId(workId);
+      setWorkTab(tab);
+      setMobileRecordOpen(false);
+      setView({ name: 'work', workId });
+    });
+  }
 
   const subItems: Partial<
     Record<
@@ -292,7 +442,7 @@ export function OperationsWorkspace({
       {
         label: 'All Works',
         open: () => {
-          setView({ name: 'works' });
+          navigate({ name: 'works' });
         },
         current: view.name === 'works',
       },
@@ -301,7 +451,7 @@ export function OperationsWorkspace({
             {
               label: 'Upload LOA',
               open: () => {
-                setView({ name: 'upload' });
+                navigate({ name: 'upload' });
               },
               current: view.name === 'upload',
             },
@@ -312,14 +462,14 @@ export function OperationsWorkspace({
       label: category.label,
       open: () => {
         setMastersTab(category.key);
-        setView({ name: 'masters' });
+        navigate({ name: 'masters' });
       },
       current: view.name === 'masters' && mastersTab === category.key,
     })),
   };
 
   function openModule(key: ModuleKey): void {
-    setView(defaultViewOf(key));
+    navigate(defaultViewOf(key));
   }
 
   function renderNavigation(closeAfterSelection = false) {
@@ -397,7 +547,10 @@ export function OperationsWorkspace({
 
   return (
     <div className="min-h-screen bg-background lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-screen flex-col border-r border-border bg-card lg:flex print:hidden">
+      <aside
+        className="sticky top-0 hidden h-screen flex-col border-r border-border bg-card lg:flex print:hidden"
+        inert={mobileMenuOpen || pendingDeparture !== null}
+      >
         <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-5">
           <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
             <Building2 className="size-5" aria-hidden="true" />
@@ -428,7 +581,7 @@ export function OperationsWorkspace({
                   type="button"
                   className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
                   onClick={() => {
-                    setView({ name: 'upload' });
+                    navigate({ name: 'upload' });
                   }}
                 >
                   <Upload className="size-3.5 text-primary" aria-hidden="true" />
@@ -439,7 +592,7 @@ export function OperationsWorkspace({
                 type="button"
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
                 onClick={() => {
-                  setView({ name: 'works' });
+                  navigate({ name: 'works' });
                 }}
               >
                 <Search className="size-3.5 text-primary" aria-hidden="true" />
@@ -449,7 +602,7 @@ export function OperationsWorkspace({
                 type="button"
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
                 onClick={() => {
-                  setView({ name: 'approvals' });
+                  navigate({ name: 'approvals' });
                 }}
               >
                 <CheckCircle className="size-3.5 text-primary" aria-hidden="true" />
@@ -458,29 +611,45 @@ export function OperationsWorkspace({
             </div>
           </div>
 
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted"
-            onClick={onSwitchOrganisation}
-          >
-            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
-              {organisation.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong className="block truncate text-xs">{organisation.name}</strong>
-              <span className="block truncate text-[11px] text-muted-foreground">
-                Switch organisation
+          {canSwitchOrganisation ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted"
+              onClick={() => {
+                requestDeparture(onSwitchOrganisation);
+              }}
+            >
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+                {organisation.name.slice(0, 1).toUpperCase()}
               </span>
-            </span>
-            <ArrowLeftRight
-              className="size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-          </button>
+              <span className="min-w-0 flex-1">
+                <strong className="block truncate text-xs">{organisation.name}</strong>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  Switch organisation
+                </span>
+              </span>
+              <ArrowLeftRight
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </button>
+          ) : (
+            <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+                {organisation.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong className="block truncate text-xs">{organisation.name}</strong>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  Current organisation
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       </aside>
 
-      <div className="min-w-0">
+      <div className="min-w-0" inert={mobileMenuOpen || pendingDeparture !== null}>
         <header className="sticky top-0 z-30 flex h-[4.5rem] items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur lg:px-7 print:hidden">
           <Button
             variant="ghost"
@@ -488,7 +657,13 @@ export function OperationsWorkspace({
             className="lg:hidden"
             aria-label="Open navigation"
             aria-expanded={mobileMenuOpen}
-            onClick={() => {
+            aria-controls="mobile-navigation-dialog"
+            aria-haspopup="dialog"
+            onClick={(event) => {
+              transientMenuTriggerRef.current = event.currentTarget;
+              setHeaderQuickActionsOpen(false);
+              setMobileRecordOpen(false);
+              setMobileMoreOpen(false);
               setMobileMenuOpen(true);
             }}
           >
@@ -506,7 +681,7 @@ export function OperationsWorkspace({
             type="button"
             className="hidden min-w-56 max-w-md flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/35 hover:bg-card md:flex"
             onClick={() => {
-              setView({ name: 'works' });
+              navigate({ name: 'works' });
             }}
           >
             <Search className="size-4" aria-hidden="true" />
@@ -519,23 +694,35 @@ export function OperationsWorkspace({
           <div className="relative">
             <Button
               size="sm"
-              aria-expanded={quickActionsOpen}
-              onClick={() => {
-                setQuickActionsOpen((current) => !current);
+              aria-label={
+                headerQuickActionsOpen ? 'Close quick actions' : 'Open quick actions'
+              }
+              aria-expanded={headerQuickActionsOpen}
+              aria-controls="header-quick-actions"
+              onClick={(event) => {
+                transientMenuTriggerRef.current = event.currentTarget;
+                setMobileRecordOpen(false);
+                setMobileMoreOpen(false);
+                setHeaderQuickActionsOpen((current) => !current);
               }}
             >
               <Plus aria-hidden="true" />
               <span className="hidden sm:inline">Quick action</span>
               <ChevronDown className="hidden size-3.5 sm:block" aria-hidden="true" />
             </Button>
-            {quickActionsOpen && (
-              <div className="absolute top-[calc(100%+0.5rem)] right-0 z-40 w-64 rounded-2xl border border-border bg-card p-2 shadow-xl">
+            {headerQuickActionsOpen && (
+              <div
+                id="header-quick-actions"
+                className="absolute top-[calc(100%+0.5rem)] right-0 z-40 w-64 rounded-2xl border border-border bg-card p-2 shadow-xl"
+                role="group"
+                aria-label="Quick actions"
+              >
                 {canModify && (
                   <button
                     type="button"
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
                     onClick={() => {
-                      setView({ name: 'upload' });
+                      navigate({ name: 'upload' });
                     }}
                   >
                     <Upload className="size-4 text-primary" aria-hidden="true" />
@@ -551,7 +738,7 @@ export function OperationsWorkspace({
                   type="button"
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
                   onClick={() => {
-                    setView({ name: 'works' });
+                    navigate({ name: 'works' });
                   }}
                 >
                   <BriefcaseBusiness
@@ -569,7 +756,7 @@ export function OperationsWorkspace({
                   type="button"
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
                   onClick={() => {
-                    setView({ name: 'approvals' });
+                    navigate({ name: 'approvals' });
                   }}
                 >
                   <CheckCircle className="size-4 text-primary" aria-hidden="true" />
@@ -595,7 +782,7 @@ export function OperationsWorkspace({
                 : 'No pending approvals'
             }
             onClick={() => {
-              setView({ name: 'approvals' });
+              navigate({ name: 'approvals' });
             }}
           >
             <span className="relative">
@@ -617,7 +804,9 @@ export function OperationsWorkspace({
               variant="ghost"
               size="icon"
               aria-label="Sign out"
-              onClick={onSignOut}
+              onClick={() => {
+                requestDeparture(onSignOut);
+              }}
             >
               <LogOut aria-hidden="true" />
             </Button>
@@ -649,11 +838,20 @@ export function OperationsWorkspace({
           )}
 
           {view.name === 'settings' && (
-            <Settings
-              api={api}
-              organisationId={organisation.id}
-              isOwner={membership?.role === 'owner'}
-            />
+            <>
+              <Settings
+                api={api}
+                organisationId={organisation.id}
+                isOwner={membership?.role === 'owner'}
+              />
+              <OrganisationAccessSettings
+                api={api}
+                currentOrganisation={organisation}
+                organisations={organisations}
+                canCreate={isOwner}
+                onCreated={onOrganisationCreated}
+              />
+            </>
           )}
 
           {view.name === 'works' && (
@@ -799,6 +997,7 @@ export function OperationsWorkspace({
                 onCancel={() => {
                   setView({ name: 'work', workId: view.workId });
                 }}
+                onDirtyChange={setEditorDirty}
               />
             </div>
           )}
@@ -853,6 +1052,7 @@ export function OperationsWorkspace({
               onCancel={() => {
                 setView({ name: 'work', workId: view.workId });
               }}
+              onDirtyChange={setEditorDirty}
             />
           )}
 
@@ -906,19 +1106,21 @@ export function OperationsWorkspace({
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden print:hidden">
-          <button
-            type="button"
+          <div
             className="absolute inset-0 bg-foreground/25 backdrop-blur-sm"
-            aria-label="Close navigation"
+            aria-hidden="true"
             onClick={() => {
               setMobileMenuOpen(false);
             }}
           />
           <div
+            id="mobile-navigation-dialog"
+            ref={mobileMenuDialogRef}
             className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] flex-col border-r border-border bg-card shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-label="Application navigation"
+            onKeyDown={handleMobileMenuKeyDown}
           >
             <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-4">
               <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -926,6 +1128,7 @@ export function OperationsWorkspace({
               </span>
               <strong className="flex-1">Auto-MB</strong>
               <Button
+                ref={mobileMenuCloseRef}
                 variant="ghost"
                 size="icon"
                 aria-label="Close menu"
@@ -940,15 +1143,25 @@ export function OperationsWorkspace({
               {renderNavigation(true)}
             </nav>
             <div className="border-t border-border p-3">
+              {canSwitchOrganisation && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    requestDeparture(onSwitchOrganisation);
+                  }}
+                >
+                  <ArrowLeftRight aria-hidden="true" />
+                  Switch organisation
+                </Button>
+              )}
               <Button
-                variant="outline"
-                className="w-full"
-                onClick={onSwitchOrganisation}
+                variant="ghost"
+                className="mt-1 w-full"
+                onClick={() => {
+                  requestDeparture(onSignOut);
+                }}
               >
-                <ArrowLeftRight aria-hidden="true" />
-                Switch organisation
-              </Button>
-              <Button variant="ghost" className="mt-1 w-full" onClick={onSignOut}>
                 <LogOut aria-hidden="true" />
                 Sign out
               </Button>
@@ -960,6 +1173,7 @@ export function OperationsWorkspace({
       <nav
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 px-2 py-1.5 backdrop-blur lg:hidden print:hidden"
         aria-label="Mobile navigation"
+        inert={mobileMenuOpen || pendingDeparture !== null}
       >
         <button
           type="button"
@@ -967,7 +1181,7 @@ export function OperationsWorkspace({
             activeModule === 'dashboard' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
-            setView({ name: 'dashboard' });
+            navigate({ name: 'dashboard' });
           }}
         >
           <LayoutDashboard className="size-5" aria-hidden="true" />
@@ -979,7 +1193,7 @@ export function OperationsWorkspace({
             activeModule === 'works' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
-            setView({ name: 'works' });
+            navigate({ name: 'works' });
           }}
         >
           <BriefcaseBusiness className="size-5" aria-hidden="true" />
@@ -988,9 +1202,14 @@ export function OperationsWorkspace({
         <button
           type="button"
           className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium text-primary"
-          aria-expanded={quickActionsOpen}
-          onClick={() => {
-            setQuickActionsOpen((current) => !current);
+          aria-label={mobileRecordOpen ? 'Close record actions' : 'Open record actions'}
+          aria-expanded={mobileRecordOpen}
+          aria-controls="mobile-record-actions"
+          onClick={(event) => {
+            transientMenuTriggerRef.current = event.currentTarget;
+            setHeaderQuickActionsOpen(false);
+            setMobileMoreOpen(false);
+            setMobileRecordOpen((current) => !current);
           }}
         >
           <span className="-mt-5 inline-flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg ring-4 ring-background">
@@ -1002,7 +1221,10 @@ export function OperationsWorkspace({
           type="button"
           className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium text-muted-foreground"
           aria-expanded={mobileMoreOpen}
-          onClick={() => {
+          onClick={(event) => {
+            transientMenuTriggerRef.current = event.currentTarget;
+            setHeaderQuickActionsOpen(false);
+            setMobileRecordOpen(false);
             setMobileMoreOpen((current) => !current);
           }}
         >
@@ -1010,6 +1232,59 @@ export function OperationsWorkspace({
           More
         </button>
       </nav>
+
+      {mobileRecordOpen && (
+        <div
+          id="mobile-record-actions"
+          className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-3 shadow-2xl lg:hidden print:hidden"
+          role="group"
+          aria-label="Record actions"
+        >
+          {recordWorkId !== null && canRecordEvidence ? (
+            <>
+              <p className="px-2 pb-2 text-xs text-muted-foreground">
+                Record site evidence against the open Work.
+              </p>
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  openRecordTab(recordWorkId, 'deliveries');
+                }}
+              >
+                <BriefcaseBusiness className="size-4 text-primary" aria-hidden="true" />
+                Delivery evidence
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  openRecordTab(recordWorkId, 'measurement');
+                }}
+              >
+                <FileText className="size-4 text-primary" aria-hidden="true" />
+                Measurements
+              </button>
+            </>
+          ) : (
+            <p className="px-2 pb-2 text-xs text-muted-foreground">
+              {canRecordEvidence
+                ? 'Choose a Work before recording site evidence.'
+                : 'Your access is read-only; choose a Work to view its records.'}
+            </p>
+          )}
+          <button
+            type="button"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+            onClick={() => {
+              navigate({ name: 'works' });
+            }}
+          >
+            <Search className="size-4 text-primary" aria-hidden="true" />
+            Open Works
+          </button>
+        </div>
+      )}
 
       {mobileMoreOpen && (
         <div className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden">
@@ -1037,11 +1312,52 @@ export function OperationsWorkspace({
           <button
             type="button"
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/5"
-            onClick={onSignOut}
+            onClick={() => {
+              requestDeparture(onSignOut);
+            }}
           >
             <LogOut className="size-4" aria-hidden="true" />
             Sign out
           </button>
+        </div>
+      )}
+
+      {pendingDeparture !== null && (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center p-4 print:hidden"
+          onKeyDown={handleDepartureKeyDown}
+        >
+          <div
+            className="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
+            aria-hidden="true"
+            onClick={keepEditing}
+          />
+          <section
+            className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-draft-title"
+            aria-describedby="unsaved-draft-description"
+          >
+            <h2 id="unsaved-draft-title" className="mt-0">
+              Unsaved draft changes
+            </h2>
+            <p id="unsaved-draft-description" className="text-sm text-muted-foreground">
+              Leaving this editor will discard the changes you have not saved.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button ref={keepEditingRef} variant="outline" onClick={keepEditing}>
+                Keep editing
+              </Button>
+              <Button
+                ref={discardAndLeaveRef}
+                variant="destructive"
+                onClick={discardAndLeave}
+              >
+                Discard and leave
+              </Button>
+            </div>
+          </section>
         </div>
       )}
     </div>

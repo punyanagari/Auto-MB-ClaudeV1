@@ -577,7 +577,12 @@ async function storedObjects(): Promise<string[]> {
   const entries = await readdir(storageDir, { recursive: true, withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile())
-    .map((entry) => path.join(entry.parentPath, entry.name))
+    .map((entry) =>
+      path
+        .relative(storageDir, path.join(entry.parentPath, entry.name))
+        .split(path.sep)
+        .join('/'),
+    )
     .sort();
 }
 
@@ -1542,9 +1547,9 @@ describe('the MB document (phase 3): persisted render, streaming, draft preview'
     });
     expect(again.statusCode, again.body).toBe(200);
     const objects = await storedObjects();
-    expect(objects.filter((file) => file.endsWith(`mb/${finalMbId}.pdf`))).toHaveLength(
-      1,
-    );
+    expect(
+      objects.filter((file) => file === `${organisationId}/mb/${finalMbId}.pdf`),
+    ).toHaveLength(1);
     const [auditRow] = await admin<{ count: string }[]>`
       select count(*)::text as count from audit_events
       where organisation_id = ${organisationId}

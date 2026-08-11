@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChallanDetailResponse,
   ConfirmWorkRequest,
+  LoaDocumentDetail,
   Membership,
   PurchaseOrder,
   PurchaseOrderDetailResponse,
@@ -27,6 +28,9 @@ import { CompletionExtensions } from '../src/views/CompletionExtensions.js';
 import { Installations } from '../src/views/Installations.js';
 import { MeasurementBooks } from '../src/views/MeasurementBooks.js';
 import { Members } from '../src/views/Members.js';
+import { OperationsDashboard } from '../src/views/OperationsDashboard.js';
+import { OperationsWorkspace } from '../src/views/OperationsWorkspace.js';
+import { OrganisationOnboarding } from '../src/views/OrganisationOnboarding.js';
 import { OrgPicker } from '../src/views/OrgPicker.js';
 import { PaymentMatrix } from '../src/views/PaymentMatrix.js';
 import { PacCertificates } from '../src/views/PacCertificates.js';
@@ -75,6 +79,22 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listLoaDocuments: vi.fn().mockResolvedValue([]),
     getLoaDocument: vi.fn(),
     uploadLoa: vi.fn(),
+    uploadContractSource: vi.fn(),
+    getLoaContractSourceContext: vi.fn().mockResolvedValue({
+      documents: [],
+      paymentMatrix: [],
+      periods: [],
+      releaseClauses: [],
+      itemSpecifications: [],
+    }),
+    getWorkContractSourceContext: vi.fn().mockResolvedValue({
+      documents: [],
+      paymentMatrix: [],
+      periods: [],
+      releaseClauses: [],
+      itemSpecifications: [],
+    }),
+    downloadContractSourceFile: vi.fn().mockResolvedValue(new Blob()),
     confirmLoa: vi.fn(),
     listWorks: vi.fn().mockResolvedValue([]),
     getWork: vi.fn(),
@@ -409,28 +429,40 @@ describe('SignIn', () => {
 });
 
 describe('OrgPicker', () => {
-  it('lists organisations and reports the selection', async () => {
-    const api = stubApi({
-      listOrganisations: vi
-        .fn()
-        .mockResolvedValue([
-          { id: ORG_ID, name: 'Sharma Constructions', slug: 'sharma' },
-        ]),
-    });
-    const onSelect = vi.fn();
-    render(<OrgPicker api={api} onSelect={onSelect} onCreated={vi.fn()} />);
-
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Sharma Constructions/ }),
-    );
-    expect(onSelect).toHaveBeenCalledWith({
+  it('lists organisations and reports the selection', () => {
+    const organisation = {
       id: ORG_ID,
       name: 'Sharma Constructions',
       slug: 'sharma',
-    });
+    };
+    const onSelect = vi.fn();
+    render(
+      <OrgPicker
+        organisations={[organisation]}
+        memberships={[membership({})]}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }));
+    expect(onSelect).toHaveBeenCalledWith(organisation);
   });
 
-  it('creates an organisation and surfaces slug collisions', async () => {
+  it('does not offer organisations without an active membership', () => {
+    render(
+      <OrgPicker
+        organisations={[{ id: ORG_ID, name: 'Sharma Constructions', slug: 'sharma' }]}
+        memberships={[membership({ status: 'disabled' })]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Open workspace' })).toBeNull();
+  });
+});
+
+describe('OrganisationOnboarding', () => {
+  it('surfaces organisation slug collisions', async () => {
     const api = stubApi({
       createOrganisation: vi
         .fn()
@@ -438,12 +470,12 @@ describe('OrgPicker', () => {
           new RequestFailedError(409, 'SLUG_TAKEN', 'Slug already exists.'),
         ),
     });
-    render(<OrgPicker api={api} onSelect={vi.fn()} onCreated={vi.fn()} />);
+    render(<OrganisationOnboarding api={api} onCreated={vi.fn()} />);
 
-    fireEvent.change(await screen.findByLabelText('Organisation name'), {
+    fireEvent.change(screen.getByLabelText('Legal organisation name'), {
       target: { value: 'Sharma Constructions' },
     });
-    fireEvent.change(screen.getByLabelText('Short identifier'), {
+    fireEvent.change(screen.getByLabelText('Workspace identifier'), {
       target: { value: 'sharma' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Create organisation' }));
@@ -587,7 +619,7 @@ describe('UploadLoa', () => {
     );
 
     fireEvent.submit(
-      screen.getByRole('button', { name: 'Upload and extract' }).closest('form') ??
+      screen.getByRole('button', { name: 'Upload and analyse' }).closest('form') ??
         (() => {
           throw new Error('form missing');
         })(),
@@ -623,6 +655,9 @@ describe('ReviewLoa', () => {
     // Parsed values arrive as editable prefills with their provenance.
     const letterNumber = await screen.findByLabelText('Letter number');
     expect((letterNumber as HTMLInputElement).value).toBe('L-42/2025');
+    expect(
+      screen.getByRole('heading', { name: '1 review issue needs attention' }),
+    ).toBeTruthy();
     expect(screen.getByText('The printed unit could not be resolved.')).toBeTruthy();
     expect(screen.getByText('Route Kilo Meter (RKM)')).toBeTruthy();
 
@@ -683,6 +718,7 @@ const ITEM_A = '55555555-5555-4555-8555-555555555555';
 
 const BALANCE = {
   allowExcessDelivery: false,
+  today: '2026-08-11',
   items: [
     {
       workItemId: ITEM_A,
@@ -810,6 +846,9 @@ describe('ChallanEditor', () => {
       />,
     );
     await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      BALANCE.today,
+    );
     // Consignee name and address carry `required`, so before the form took
     // validation over the browser aborted the submit and save() never ran —
     // these two branches were unreachable in every browser and in jsdom.
@@ -1080,24 +1119,26 @@ describe('ChallanEditor', () => {
     await screen.findByText('2.000');
 
     // Nothing typed yet: Cancel leaves without asking.
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    fireEvent.click(cancel);
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
       target: { value: '2' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(cancel);
     expect(onCancel).toHaveBeenCalledTimes(1);
     const discard = screen.getByRole('button', { name: 'Discard and leave' });
     expect(document.activeElement).toBe(discard);
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
     expect(screen.queryByRole('button', { name: 'Discard and leave' })).toBeNull();
+    expect(document.activeElement).toBe(cancel);
     expect(
       screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
     ).toBe('2');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(cancel);
     fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
@@ -1626,6 +1667,99 @@ describe('WorkDetail retention', () => {
       ...overrides,
     });
   }
+
+  it('keeps the Work open when one supporting register fails', async () => {
+    const listBills = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Bills unavailable.'))
+      .mockResolvedValue([BILL]);
+    const api = retentionApi({
+      listBills,
+    });
+    renderWorkDetail(api);
+
+    expect(
+      await screen.findByRole('heading', {
+        name: /DCW-1.*Supply of switchboards/,
+      }),
+    ).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Some Work sections could not be loaded: bills.',
+    );
+    expect(screen.getByText('L-42/2025', { exact: false })).toBeTruthy();
+
+    await openWorkTab('Bills');
+    expect(
+      await screen.findByText(
+        /This section is unavailable because bills could not be loaded/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('No bills prepared yet.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark submitted' })).toBeNull();
+
+    await openWorkTab('Measurement');
+    expect(await screen.findByText('MB-12/34')).toBeTruthy();
+    await openWorkTab('Bills');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry supporting sections' }));
+    expect(await screen.findByRole('heading', { name: /Bill #1/ })).toBeTruthy();
+    expect(listBills).toHaveBeenCalledTimes(2);
+    expect(api.getWork).toHaveBeenCalledTimes(1);
+    expect(api.listInstruments).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps loaded Challans open when correction notices fail', async () => {
+    const api = retentionApi({
+      listWorkCorrectionNotices: vi
+        .fn()
+        .mockRejectedValue(new Error('Correction notices unavailable.')),
+    });
+    renderWorkDetail(api);
+
+    await openWorkTab('Deliveries');
+
+    expect(await screen.findByRole('button', { name: 'DC/1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New Delivery Challan' })).toBeTruthy();
+    expect(
+      screen.getByText('Correction notices could not be loaded. Try again later.'),
+    ).toBeTruthy();
+  });
+
+  it('does not turn an unavailable Challan register into an empty, creatable list', async () => {
+    const api = retentionApi({
+      listChallans: vi.fn().mockRejectedValue(new Error('Challans unavailable.')),
+    });
+    renderWorkDetail(api);
+
+    expect(
+      await screen.findByRole('heading', {
+        name: /DCW-1.*Supply of switchboards/,
+      }),
+    ).toBeTruthy();
+    await openWorkTab('Deliveries');
+
+    expect(
+      await screen.findByText(/Delivery Challans could not be loaded/),
+    ).toBeTruthy();
+    expect(screen.queryByText('No Delivery Challans yet.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Installations' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Serial trace' })).toBeTruthy();
+  });
+
+  it('keeps stage-wise Measurement Books open when loose entries fail', async () => {
+    const api = retentionApi({
+      listMbEntries: vi.fn().mockRejectedValue(new Error('Entries unavailable.')),
+    });
+    renderWorkDetail(api);
+
+    await openWorkTab('Measurement');
+
+    expect(
+      await screen.findByText(/Measurement Book entries could not be loaded/),
+    ).toBeTruthy();
+    expect(screen.queryByText('No measurements recorded yet.')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Measurement Books' })).toBeTruthy();
+  });
 
   it('offers Generate PDF for an unrendered correction notice on the Work page', async () => {
     const NOTICE_ID = 'bbbb4444-4444-4444-8444-444444444444';
@@ -2424,7 +2558,7 @@ describe('CompletionExtensions', () => {
   });
 });
 
-describe('Dashboard', () => {
+describe('OperationsDashboard', () => {
   it('shows totals, alerts with severity, and routes work opens', async () => {
     const dashboard = vi.fn().mockResolvedValue({
       totals: {
@@ -2464,15 +2598,39 @@ describe('Dashboard', () => {
           billedValue: '300.00',
           issuedChallans: 3,
         },
+        {
+          workId: '22222222-2222-4222-8222-222222222222',
+          workCode: 'VALUE-9',
+          title: 'Nine rupee comparison work',
+          status: 'active',
+          contractValue: '9.00',
+          deliveredValue: '0.00',
+          billedValue: '0.00',
+          issuedChallans: 0,
+        },
+        {
+          workId: '44444444-4444-4444-8444-444444444445',
+          workCode: 'VALUE-100',
+          title: 'One hundred rupee comparison work',
+          status: 'active',
+          contractValue: '100.00',
+          deliveredValue: '0.00',
+          billedValue: '0.00',
+          issuedChallans: 0,
+        },
       ],
     });
     const onOpenWork = vi.fn();
-    const { Dashboard } = await import('../src/views/Dashboard.js');
+    const onOpenWorks = vi.fn();
     render(
-      <Dashboard
+      <OperationsDashboard
         api={stubApi({ dashboard })}
         organisationId={ORG_ID}
+        canModify
         onOpenWork={onOpenWork}
+        onOpenWorks={onOpenWorks}
+        onUploadLoa={vi.fn()}
+        onOpenApprovals={vi.fn()}
       />,
     );
 
@@ -2487,6 +2645,193 @@ describe('Dashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open PL270-CRB' }));
     expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+
+    const portfolio = screen.getByRole('table', {
+      name: 'Work execution and billing progress',
+    });
+    expect(
+      within(portfolio)
+        .getAllByRole('rowheader')
+        .map((header) => header.textContent),
+    ).toEqual([
+      expect.stringContaining('PL270-CRB'),
+      expect.stringContaining('VALUE-100'),
+      expect.stringContaining('VALUE-9'),
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review LOAs' }));
+    expect(onOpenWorks).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OperationsWorkspace mobile shell', () => {
+  const organisation = {
+    id: ORG_ID,
+    name: 'Sharma Constructions',
+    slug: 'sharma',
+  };
+
+  function renderWorkspace(overrides: Partial<ApiClient> = {}) {
+    const api = stubApi({
+      dashboard: vi.fn().mockResolvedValue({
+        totals: {
+          works: 0,
+          contractValue: '0.00',
+          deliveredValue: '0.00',
+          billedValue: '0.00',
+          openDrafts: 0,
+          loaAwaitingReview: 0,
+        },
+        alerts: [],
+        works: [],
+      }),
+      ...overrides,
+    });
+    const result = render(
+      <OperationsWorkspace
+        api={api}
+        me={{
+          user: { id: 'user-a', email: 'owner@example.test' },
+          memberships: [membership({})],
+        }}
+        organisation={organisation}
+        organisations={[organisation]}
+        onSwitchOrganisation={vi.fn()}
+        onOrganisationCreated={vi.fn()}
+        onSignOut={vi.fn()}
+      />,
+    );
+    return { api, ...result };
+  }
+
+  it('keeps header quick actions separate from mobile Record actions', async () => {
+    renderWorkspace();
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    const headerTrigger = screen.getByRole('button', {
+      name: 'Open quick actions',
+    });
+    const recordTrigger = screen.getByRole('button', {
+      name: 'Open record actions',
+    });
+
+    fireEvent.click(recordTrigger);
+    expect(screen.getByRole('group', { name: 'Record actions' })).toBeTruthy();
+    expect(
+      screen.getByText('Choose a Work before recording site evidence.'),
+    ).toBeTruthy();
+    expect(headerTrigger.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(headerTrigger);
+    expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'Quick actions' })).toBeTruthy();
+    expect(recordTrigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('traps focus in the mobile drawer, closes on Escape, and restores focus', async () => {
+    renderWorkspace();
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    const opener = screen.getByRole('button', { name: 'Open navigation' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const dialog = screen.getByRole('dialog', { name: 'Application navigation' });
+    const close = screen.getByRole('button', { name: 'Close menu' });
+    const signOut = within(dialog).getByRole('button', { name: 'Sign out' });
+    expect(document.activeElement).toBe(close);
+    expect(opener.closest('[inert]')).toBeTruthy();
+
+    signOut.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(signOut);
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Application navigation' })).toBeNull();
+    expect(opener.closest('[inert]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('routes Record through Works when no Work is selected', async () => {
+    renderWorkspace();
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
+
+    expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
+  });
+
+  it('protects an edited challan from shell navigation', async () => {
+    renderWorkspace({
+      dashboard: vi.fn().mockResolvedValue({
+        totals: {
+          works: 1,
+          contractValue: '900.00',
+          deliveredValue: '0.00',
+          billedValue: '0.00',
+          openDrafts: 0,
+          loaAwaitingReview: 0,
+        },
+        alerts: [],
+        works: [
+          {
+            workId: WORK_ID,
+            workCode: 'DCW-1',
+            title: 'Supply of switchboards',
+            status: 'active',
+            contractValue: '900.00',
+            deliveredValue: '0.00',
+            billedValue: '0.00',
+            issuedChallans: 0,
+          },
+        ],
+      }),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1' }));
+    const workTabs = await screen.findByRole('navigation', {
+      name: 'Work sections',
+    });
+    fireEvent.click(
+      within(workTabs).getByRole('button', {
+        name: (name: string) => name.startsWith('Deliveries'),
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'New Delivery Challan' }),
+    );
+    await screen.findByRole('heading', { name: 'New Delivery Challan' });
+    const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
+    fireEvent.change(quantity, { target: { value: '1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+    expect(screen.getByRole('dialog', { name: 'Unsaved draft changes' })).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Keep editing' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('dialog', { name: 'Unsaved draft changes' })).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('1');
+
+    const recordTrigger = screen.getByRole('button', { name: 'Open record actions' });
+    fireEvent.click(recordTrigger);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(document.activeElement).toBe(recordTrigger);
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('1');
+
+    fireEvent.click(recordTrigger);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+    expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
   });
 });
 
@@ -4142,9 +4487,12 @@ describe('ReviewLoa PBG requirement and row editing', () => {
   };
   const PBG_DOCUMENT = { ...REVIEW_DOCUMENT, extractionPayload: PBG_PAYLOAD };
 
-  function renderReview(confirmLoa = vi.fn()) {
+  function renderReview(
+    confirmLoa = vi.fn(),
+    reviewDocument: LoaDocumentDetail = PBG_DOCUMENT,
+  ) {
     const api = stubApi({
-      getLoaDocument: vi.fn().mockResolvedValue(PBG_DOCUMENT),
+      getLoaDocument: vi.fn().mockResolvedValue(reviewDocument),
       confirmLoa: confirmLoa.mockResolvedValue({
         work: { id: WORK_ID },
         schedules: [],
@@ -4249,9 +4597,11 @@ describe('ReviewLoa PBG requirement and row editing', () => {
         .value,
     ).toBe('A/M1');
     expect(screen.getByText('manual row')).toBeTruthy();
-    // 900 + 100 + 2×50 against a contract value of 900.00.
+    // 900 + 100 + 2×50 against the advertised value of 1000.00. The
+    // percentage-adjusted contract value is related context, not the row target.
     expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
-      'Entered rows total ₹1100.00 across 3 rows — contract value ₹900.00 (difference ₹200.00)',
+      'Entered rows total ₹1100.00 across 3 rows — advertised value ₹1000.00 (difference ₹100.00). ' +
+        'Contract value ₹900.00 reflects 10.000% below the advertised value.',
     );
 
     fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
@@ -4295,7 +4645,7 @@ describe('ReviewLoa PBG requirement and row editing', () => {
 
     expect(screen.queryByLabelText('Rate for row 2 in schedule A')).toBeNull();
     expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
-      'Entered rows total ₹900.00 across 1 row — contract value ₹900.00 (difference ₹0.00)',
+      'Entered rows total ₹900.00 across 1 row — advertised value ₹1000.00 (difference -₹100.00)',
     );
 
     fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
@@ -4422,19 +4772,119 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     );
   });
 
-  it('keeps the contract-value difference exact for six-decimal rates', async () => {
+  it('keeps the advertised-value difference exact for six-decimal rates', async () => {
     renderReview();
 
     fireEvent.change(await screen.findByLabelText('Rate for row 1 in schedule A'), {
       target: { value: '450.000001' },
     });
-    // 2 × 450.000001 plus 1 × 100 against a contract value of 900.00: the
+    // 2 × 450.000001 plus 1 × 100 against an advertised value of 1000.00: the
     // comparison survives at the row total's own nine-digit scale.
     expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe('₹1000.000002');
     expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
-      'Entered rows total ₹1000.000002 across 2 rows — contract value ₹900.00 ' +
-        '(difference ₹100.000002)',
+      'Entered rows total ₹1000.000002 across 2 rows — advertised value ₹1000.00 ' +
+        '(difference ₹0.000002)',
     );
+  });
+
+  it('explains the PL281 above-par contract without reporting its premium as missing rows', async () => {
+    const pl281Document = {
+      ...PBG_DOCUMENT,
+      extractionPayload: {
+        ...PBG_PAYLOAD,
+        review: {
+          ...PBG_PAYLOAD.review,
+          pricingShape: {
+            advertised_value: 118502769.36,
+            contract_value: 147535947.85,
+            pricing_shape: 'letter_percentage',
+            letter_percentage: 24.5,
+            letter_percentage_direction: 'above',
+            needsReview: false,
+          },
+          items: [
+            {
+              ...PBG_PAYLOAD.review.items[0],
+              qty: '1.000',
+              unitRate: '118502769.36',
+              bidAmount: '118502769.36',
+            },
+          ],
+        },
+      },
+    };
+    renderReview(vi.fn(), pl281Document);
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    const totals = screen.getByTestId('reconciliation-totals').textContent;
+    expect(totals).toContain(
+      'Entered rows total ₹118502769.36 across 1 row — advertised value ₹118502769.36 (difference ₹0.00).',
+    );
+    expect(totals).toContain(
+      'Contract value ₹147535947.85 reflects 24.500% above the advertised value.',
+    );
+    expect(totals).not.toContain('-₹29033178.49');
+  });
+
+  it('keeps Shape B item rows tied to advertised value and explains schedule pricing', async () => {
+    const perScheduleDocument = {
+      ...PBG_DOCUMENT,
+      extractionPayload: {
+        ...PBG_PAYLOAD,
+        review: {
+          ...PBG_PAYLOAD.review,
+          pricingShape: {
+            advertised_value: 1000,
+            contract_value: 875,
+            pricing_shape: 'per_schedule',
+            letter_percentage: null,
+            letter_percentage_direction: null,
+            needsReview: false,
+          },
+        },
+      },
+    };
+    renderReview(vi.fn(), perScheduleDocument);
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
+      'Entered rows total ₹1000.00 across 2 rows — advertised value ₹1000.00 (difference ₹0.00). ' +
+        'Contract value ₹875.00 comes from the accepted schedule totals.',
+    );
+  });
+
+  it('keeps review edits available for retry and shows the server request reference', async () => {
+    const confirmLoa = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new RequestFailedError(
+          503,
+          'DATABASE_UNAVAILABLE',
+          'The database is temporarily unavailable. Nothing was saved. Try again.',
+          undefined,
+          'req-db-1',
+        ),
+      );
+    renderReview(confirmLoa);
+
+    const workCode = await screen.findByLabelText<HTMLInputElement>(
+      'Work code (your reference)',
+    );
+    fireEvent.change(workCode, { target: { value: 'PL281-BB' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'The database is temporarily unavailable. Nothing was saved. Try again. Reference: req-db-1.',
+    );
+    expect(workCode.value).toBe('PL281-BB');
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Rate for row 1 in schedule A').value,
+    ).toBe('450');
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Confirm and create Work',
+      }).disabled,
+    ).toBe(false);
   });
 });
 
@@ -4691,6 +5141,29 @@ describe('Installations', () => {
     expect(screen.getByText('recorded')).toBeTruthy();
   });
 
+  it('keeps installation evidence visible when the location master fails', async () => {
+    const listLocationMasters = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Locations unavailable.'))
+      .mockResolvedValueOnce([LOCATION]);
+    renderInstallations(installationsApi({ listLocationMasters }));
+
+    expect(await screen.findByText('SN-003')).toBeTruthy();
+    expect(screen.getAllByText('Nashik Road station').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Cancel record' })).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /location master could not be loaded/i,
+    );
+    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry locations' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Record installation' }),
+    ).toBeTruthy();
+    expect(listLocationMasters).toHaveBeenCalledTimes(2);
+  });
+
   it('records a plain quantity installation against an existing location', async () => {
     const recordWorkInstallation = vi.fn().mockResolvedValue({
       ...RECORDED,
@@ -4727,6 +5200,29 @@ describe('Installations', () => {
         locationId: LOCATION_ID,
       });
     });
+  });
+
+  it('keeps a successful record successful when the location refresh fails', async () => {
+    const recordWorkInstallation = vi.fn().mockResolvedValue(RECORDED);
+    const listLocationMasters = vi
+      .fn()
+      .mockResolvedValueOnce([LOCATION])
+      .mockRejectedValueOnce(new Error('Locations unavailable.'));
+    const api = installationsApi({ recordWorkInstallation, listLocationMasters });
+    renderInstallations(api);
+
+    await openForm('Record installation');
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+      target: { value: '1' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.click(submitButton('Record installation'));
+
+    expect(await screen.findByText('Installation recorded.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry locations' })).toBeTruthy();
+    expect(screen.queryByText(/nothing was changed/i)).toBeNull();
   });
 
   it('records a serialised installation with tap-selected serials and an inline location', async () => {
@@ -5692,6 +6188,7 @@ describe('MeasurementBooks workspace', () => {
     options: Partial<{
       canModify: boolean;
       canIssue: boolean;
+      canPrepareBill: boolean;
       canCancel: boolean;
       onBillPrepared: () => void;
     }> = {},
@@ -5703,6 +6200,7 @@ describe('MeasurementBooks workspace', () => {
         workId={WORK_ID}
         canModify={options.canModify ?? true}
         canIssue={options.canIssue ?? true}
+        canPrepareBill={options.canPrepareBill ?? true}
         canCancel={options.canCancel ?? true}
         onBillPrepared={options.onBillPrepared ?? vi.fn()}
       />,
@@ -6447,6 +6945,7 @@ describe('IssueChallanEditor awarded-item quantities', () => {
   const ITEM_B = '55555555-5555-4555-8555-555555555556';
   const TWO_ITEM_BALANCE = {
     allowExcessDelivery: false,
+    today: '2026-08-11',
     items: [
       {
         workItemId: ITEM_A,
@@ -7380,6 +7879,21 @@ describe('WorkDetail tax invoices', () => {
     expect(await screen.findByText('TI/2026-27/001')).toBeTruthy();
     expect(screen.getByText('DCW-1-MB-01')).toBeTruthy();
     expect(screen.getByText('₹49,87,852.93')).toBeTruthy();
+  });
+
+  it('does not present a failed tax-invoice register as empty or creatable', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockRejectedValue(new Error('Unavailable.')),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [billableBook()] }),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    expect(await screen.findByText(/Tax invoices could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText(/No tax invoice has been raised/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Draft a tax invoice' })).toBeNull();
   });
 
   it('offers only finalized, unbilled, non-record Measurement Books to bill', async () => {
