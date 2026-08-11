@@ -135,6 +135,16 @@ function decimalText(value: string): string {
   return number.replace(/\.0+$/, '');
 }
 
+function percentageHundredths(value: string | null): bigint | null {
+  if (value === null) return null;
+  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(value);
+  if (match === null) return null;
+  const whole = BigInt(match[1] ?? '0');
+  const fraction = BigInt((match[2] ?? '').padEnd(2, '0') || '0');
+  const result = whole * 100n + fraction;
+  return result <= 10000n ? result : null;
+}
+
 function percentageNear(block: string, expressions: readonly RegExp[]): string | null {
   for (const expression of expressions) {
     const match = expression.exec(block);
@@ -181,9 +191,11 @@ function matrixSuggestions(blocks: readonly string[]): readonly TenderPaymentMat
     ]);
     const values = [pctSupply, pctInstallation, pctPac, pctFinalBill];
     if (values.filter((value) => value !== null).length < 2) continue;
-    const total = values.reduce(
-      (sum, value) => sum + (value === null ? 0 : Number.parseFloat(value)),
-      0,
+    const parsed = values.map(percentageHundredths);
+    const complete = parsed.every((value) => value !== null);
+    const total = parsed.reduce<bigint>(
+      (sum, value) => sum + (value ?? 0n),
+      0n,
     );
     const category = matrixCategory(block);
     byCategory.set(category, {
@@ -193,7 +205,7 @@ function matrixSuggestions(blocks: readonly string[]): readonly TenderPaymentMat
       pctPac,
       pctFinalBill,
       rawBlock: block,
-      needsReview: values.some((value) => value === null) || Math.abs(total - 100) > 0.001,
+      needsReview: !complete || total !== 10000n,
     });
   }
   return [...byCategory.values()];

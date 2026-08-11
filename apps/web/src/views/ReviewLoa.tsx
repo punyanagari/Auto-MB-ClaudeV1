@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import type {
+  ConfirmPaymentMatrixRow,
   ConfirmWorkRequest,
+  ContractSourceContext,
   LoaDocumentDetail,
   WorkDetailResponse,
   WorkItemPaymentCategory,
@@ -18,6 +27,7 @@ import {
   FormError,
   FieldError,
 } from '../ui/form.js';
+import { TenderTermsReview } from './TenderTermsReview.js';
 import {
   asExtractionPayload,
   exactRowsTotal,
@@ -160,6 +170,15 @@ export function ReviewLoa({
   onBack,
 }: ReviewLoaProps) {
   const [document, setDocument] = useState<LoaDocumentDetail | null>(null);
+  const [contractContext, setContractContext] =
+    useState<ContractSourceContext | null>(null);
+  const [contractContextError, setContractContextError] = useState<string | null>(null);
+  const [initialPaymentMatrix, setInitialPaymentMatrix] = useState<
+    readonly ConfirmPaymentMatrixRow[]
+  >([]);
+  const [paymentMatrixProblem, setPaymentMatrixProblem] = useState<string | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [header, setHeader] = useState<HeaderDraft | null>(null);
   const [items, setItems] = useState<ItemDraft[] | null>(null);
@@ -207,6 +226,36 @@ export function ReviewLoa({
       cancelled = true;
     };
   }, [api, organisationId, documentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setContractContext(null);
+    setContractContextError(null);
+    api
+      .getLoaContractSourceContext(organisationId, documentId)
+      .then((loaded) => {
+        if (!cancelled) setContractContext(loaded);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setContractContextError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The matched tender evidence could not be loaded.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, documentId]);
+
+  const handlePaymentMatrixChange = useCallback(
+    (rows: readonly ConfirmPaymentMatrixRow[], problem: string | null) => {
+      setInitialPaymentMatrix(rows);
+      setPaymentMatrixProblem(problem);
+    },
+    [],
+  );
 
   const payload = useMemo(
     () => (document === null ? null : asExtractionPayload(document.extractionPayload)),
@@ -331,6 +380,16 @@ export function ReviewLoa({
 
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (contractContextError !== null) {
+      setConfirmError(
+        'Matched tender evidence could not be loaded. Reload the page before confirming so no contract clause is silently omitted.',
+      );
+      return;
+    }
+    if (paymentMatrixProblem !== null) {
+      setConfirmError(`Correct the initial payment matrix. ${paymentMatrixProblem}`);
+      return;
+    }
     if (header === null || items === null || pbg === null) return;
     const withPercentage = header.pricingShape === 'letter_percentage';
     // Every rule is checked in one pass. Answering one failure at a time
@@ -427,6 +486,9 @@ export function ReviewLoa({
                 : {}),
             },
           }
+        : {}),
+      ...(initialPaymentMatrix.length > 0
+        ? { paymentMatrix: [...initialPaymentMatrix] }
         : {}),
       schedules: scheduleIds.map((scheduleId) => ({
         scheduleCode: scheduleId,
@@ -542,6 +604,25 @@ export function ReviewLoa({
           </ul>
         </div>
       )}
+
+      {contractContextError !== null && (
+        <FormError>
+          {contractContextError} Reload before confirming so tender evidence is not
+          omitted silently.
+        </FormError>
+      )}
+      {contractContext === null && contractContextError === null ? (
+        <p className="my-4 text-sm text-muted-foreground" role="status">
+          Loading matched tender evidence…
+        </p>
+      ) : contractContext !== null ? (
+        <TenderTermsReview
+          context={contractContext}
+          itemNumbers={items.map((item) => item.itemNumber)}
+          canModify={canModify}
+          onPaymentMatrixChange={handlePaymentMatrixChange}
+        />
+      ) : null}
 
       {/* noValidate: the checks in confirm() replace the native ones so that
           every failure names its field, binds a message, and moves focus. */}

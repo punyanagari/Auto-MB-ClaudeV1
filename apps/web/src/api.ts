@@ -14,6 +14,9 @@ import type {
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
+  ContractSourceContext,
+  ContractSourceDocumentKind,
+  ContractSourceUploadResponse,
   Contact,
   CreateOrganisationRequest,
   DashboardResponse,
@@ -206,6 +209,25 @@ export interface ApiClient {
     file: Blob,
     filename: string,
   ) => Promise<LoaDocumentDetail>;
+  readonly uploadContractSource: (
+    organisationId: string,
+    loaDocumentId: string,
+    kind: ContractSourceDocumentKind,
+    file: Blob,
+    filename: string,
+  ) => Promise<ContractSourceUploadResponse>;
+  readonly getLoaContractSourceContext: (
+    organisationId: string,
+    loaDocumentId: string,
+  ) => Promise<ContractSourceContext>;
+  readonly getWorkContractSourceContext: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<ContractSourceContext>;
+  readonly downloadContractSourceFile: (
+    organisationId: string,
+    documentId: string,
+  ) => Promise<Blob>;
   readonly confirmLoa: (
     organisationId: string,
     documentId: string,
@@ -1134,6 +1156,52 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       if (!response.ok) throw await parseError(response);
       return (await response.json()) as LoaDocumentDetail;
+    },
+    async uploadContractSource(
+      organisationId,
+      loaDocumentId,
+      kind,
+      file,
+      filename,
+    ) {
+      const query = new URLSearchParams({ kind, filename });
+      const response = await fetchImpl(
+        `/api/loa-documents/${loaDocumentId}/contract-sources?${query.toString()}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ContractSourceUploadResponse;
+    },
+    async getLoaContractSourceContext(organisationId, loaDocumentId) {
+      return request<ContractSourceContext>(
+        `/api/loa-documents/${loaDocumentId}/contract-source-context`,
+        { organisationId },
+      );
+    },
+    async getWorkContractSourceContext(organisationId, workId) {
+      return request<ContractSourceContext>(
+        `/api/works/${workId}/contract-source-context`,
+        { organisationId },
+      );
+    },
+    async downloadContractSourceFile(organisationId, documentId) {
+      const response = await fetchImpl(
+        `/api/contract-source-documents/${documentId}/file`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async confirmLoa(organisationId, documentId, body) {
       return request<WorkDetailResponse>(`/api/loa-documents/${documentId}/confirm`, {

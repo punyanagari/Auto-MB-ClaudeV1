@@ -11,7 +11,10 @@ import {
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
-import { WorkItemPaymentCategorySchema } from './payment.js';
+import {
+  PaymentMatrixCategorySchema,
+  WorkItemPaymentCategorySchema,
+} from './payment.js';
 
 export const PricingShapeSchema = Type.Union([
   Type.Literal('letter_percentage'),
@@ -108,6 +111,22 @@ export const ConfirmPbgRequirementSchema = Type.Object(
 );
 export type ConfirmPbgRequirement = Static<typeof ConfirmPbgRequirementSchema>;
 
+/** Optional initial per-Work payment matrix entered by the reviewer.
+ * Tender extraction may prefill the editor, but these values are the human
+ * confirmation and remain manually editable later. The server validates
+ * uniqueness, 0–100 bounds and the exact sum of 100 for every row. */
+export const ConfirmPaymentMatrixRowSchema = Type.Object(
+  {
+    category: PaymentMatrixCategorySchema,
+    pctSupply: DecimalStringSchema,
+    pctInstallation: DecimalStringSchema,
+    pctPac: DecimalStringSchema,
+    pctFinalBill: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type ConfirmPaymentMatrixRow = Static<typeof ConfirmPaymentMatrixRowSchema>;
+
 export const ConfirmWorkRequestSchema = Type.Object(
   {
     workCode: WorkCodeSchema,
@@ -120,6 +139,9 @@ export const ConfirmWorkRequestSchema = Type.Object(
     letterPercentage: Type.Optional(LetterPercentageSchema),
     letterPercentageDirection: Type.Optional(LetterPercentageDirectionSchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
+    paymentMatrix: Type.Optional(
+      Type.Array(ConfirmPaymentMatrixRowSchema, { minItems: 1, maxItems: 5 }),
+    ),
     schedules: Type.Array(ConfirmWorkScheduleSchema, { minItems: 1 }),
   },
   { additionalProperties: false },

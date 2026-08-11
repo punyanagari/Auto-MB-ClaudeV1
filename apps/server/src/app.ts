@@ -27,6 +27,7 @@ import { registerOrganisationRoutes } from './routes/organisation.js';
 import { registerChallanRoutes } from './routes/challans.js';
 import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerCorrectionRoutes } from './routes/corrections.js';
+import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -275,6 +276,8 @@ export async function buildApp(
     const isUpload =
       (request.method === 'POST' || request.method === 'PUT') &&
       (path === '/api/loa-documents' ||
+        (path.startsWith('/api/loa-documents/') &&
+          path.endsWith('/contract-sources')) ||
         path === '/api/organisation/logo' ||
         path.endsWith('/signed-copy') ||
         // PAC scanned-certificate and extension railway-response uploads:
@@ -420,6 +423,13 @@ export async function buildApp(
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerLoaRoutes(app, authInstance, database, storage, scanner);
+    registerContractSourceRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      scanner,
+    );
     registerChallanRoutes(
       app,
       authInstance,

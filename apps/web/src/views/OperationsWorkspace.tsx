@@ -35,6 +35,7 @@ import { Quotations } from './Quotations.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
 import { Settings } from './Settings.js';
+import { OrganisationAccessSettings } from './OrganisationAccessSettings.js';
 import { UploadLoa } from './UploadLoa.js';
 import { WorkDetail, type WorkTab } from './WorkDetail.js';
 import { Works } from './Works.js';
@@ -43,7 +44,9 @@ interface OperationsWorkspaceProps {
   readonly api: ApiClient;
   readonly me: MeResponse;
   readonly organisation: Organisation;
+  readonly organisations: readonly Organisation[];
   readonly onSwitchOrganisation: () => void;
+  readonly onOrganisationCreated: (organisation: Organisation) => void;
   readonly onSignOut: () => void;
 }
 
@@ -202,7 +205,9 @@ export function OperationsWorkspace({
   api,
   me,
   organisation,
+  organisations,
   onSwitchOrganisation,
+  onOrganisationCreated,
   onSignOut,
 }: OperationsWorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
@@ -229,6 +234,7 @@ export function OperationsWorkspace({
   const canCancel = membership?.canCancelDocuments ?? false;
   const canApprove = membership?.canApproveAmendments ?? false;
   const isOwner = membership?.role === 'owner';
+  const canSwitchOrganisation = organisations.length > 1;
   const activeModule = activeModuleOf(view);
 
   const refreshPendingApprovals = useCallback(() => {
@@ -458,25 +464,39 @@ export function OperationsWorkspace({
             </div>
           </div>
 
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted"
-            onClick={onSwitchOrganisation}
-          >
-            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
-              {organisation.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong className="block truncate text-xs">{organisation.name}</strong>
-              <span className="block truncate text-[11px] text-muted-foreground">
-                Switch organisation
+          {canSwitchOrganisation ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted"
+              onClick={onSwitchOrganisation}
+            >
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+                {organisation.name.slice(0, 1).toUpperCase()}
               </span>
-            </span>
-            <ArrowLeftRight
-              className="size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-          </button>
+              <span className="min-w-0 flex-1">
+                <strong className="block truncate text-xs">{organisation.name}</strong>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  Switch organisation
+                </span>
+              </span>
+              <ArrowLeftRight
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </button>
+          ) : (
+            <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+                {organisation.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong className="block truncate text-xs">{organisation.name}</strong>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  Current organisation
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -649,11 +669,20 @@ export function OperationsWorkspace({
           )}
 
           {view.name === 'settings' && (
-            <Settings
-              api={api}
-              organisationId={organisation.id}
-              isOwner={membership?.role === 'owner'}
-            />
+            <>
+              <Settings
+                api={api}
+                organisationId={organisation.id}
+                isOwner={membership?.role === 'owner'}
+              />
+              <OrganisationAccessSettings
+                api={api}
+                currentOrganisation={organisation}
+                organisations={organisations}
+                canCreate={isOwner}
+                onCreated={onOrganisationCreated}
+              />
+            </>
           )}
 
           {view.name === 'works' && (
@@ -940,14 +969,16 @@ export function OperationsWorkspace({
               {renderNavigation(true)}
             </nav>
             <div className="border-t border-border p-3">
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={onSwitchOrganisation}
-              >
-                <ArrowLeftRight aria-hidden="true" />
-                Switch organisation
-              </Button>
+              {canSwitchOrganisation && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={onSwitchOrganisation}
+                >
+                  <ArrowLeftRight aria-hidden="true" />
+                  Switch organisation
+                </Button>
+              )}
               <Button variant="ghost" className="mt-1 w-full" onClick={onSignOut}>
                 <LogOut aria-hidden="true" />
                 Sign out
