@@ -1,0 +1,197 @@
+name: Apply product experience patch
+
+on:
+  push:
+    branches:
+      - agent/product-experience-rebuild
+    paths:
+      - .github/workflows/apply-product-experience-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: agent/product-experience-rebuild
+          persist-credentials: true
+      - name: Patch organisation-aware workspace
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/web/src/views/OperationsWorkspace.tsx')
+          text = path.read_text()
+
+          def replace_once(before: str, after: str, label: str) -> None:
+              global text
+              if before not in text:
+                  raise SystemExit(f'{label}: expected source block not found')
+              if text.count(before) != 1:
+                  raise SystemExit(f'{label}: expected one source block, found {text.count(before)}')
+              text = text.replace(before, after, 1)
+
+          replace_once(
+              "import { Settings } from './Settings.js';\n",
+              "import { Settings } from './Settings.js';\nimport { OrganisationAccessSettings } from './OrganisationAccessSettings.js';\n",
+              'settings import',
+          )
+
+          replace_once(
+              "  readonly organisation: Organisation;\n  readonly onSwitchOrganisation: () => void;\n  readonly onSignOut: () => void;\n",
+              "  readonly organisation: Organisation;\n  readonly organisations: readonly Organisation[];\n  readonly onSwitchOrganisation: () => void;\n  readonly onOrganisationCreated: (organisation: Organisation) => void;\n  readonly onSignOut: () => void;\n",
+              'workspace props',
+          )
+
+          replace_once(
+              "  organisation,\n  onSwitchOrganisation,\n  onSignOut,\n",
+              "  organisation,\n  organisations,\n  onSwitchOrganisation,\n  onOrganisationCreated,\n  onSignOut,\n",
+              'workspace arguments',
+          )
+
+          replace_once(
+              "  const isOwner = membership?.role === 'owner';\n  const activeModule = activeModuleOf(view);\n",
+              "  const isOwner = membership?.role === 'owner';\n  const canSwitchOrganisation = organisations.length > 1;\n  const activeModule = activeModuleOf(view);\n",
+              'switch capability',
+          )
+
+          replace_once(
+              """          <button
+            type=\"button\"
+            className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted\"
+            onClick={onSwitchOrganisation}
+          >
+            <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
+              {organisation.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className=\"min-w-0 flex-1\">
+              <strong className=\"block truncate text-xs\">{organisation.name}</strong>
+              <span className=\"block truncate text-[11px] text-muted-foreground\">
+                Switch organisation
+              </span>
+            </span>
+            <ArrowLeftRight
+              className=\"size-4 text-muted-foreground\"
+              aria-hidden=\"true\"
+            />
+          </button>
+""",
+              """          {canSwitchOrganisation ? (
+            <button
+              type=\"button\"
+              className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted\"
+              onClick={onSwitchOrganisation}
+            >
+              <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
+                {organisation.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className=\"min-w-0 flex-1\">
+                <strong className=\"block truncate text-xs\">{organisation.name}</strong>
+                <span className=\"block truncate text-[11px] text-muted-foreground\">
+                  Switch organisation
+                </span>
+              </span>
+              <ArrowLeftRight
+                className=\"size-4 text-muted-foreground\"
+                aria-hidden=\"true\"
+              />
+            </button>
+          ) : (
+            <div className=\"flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3\">
+              <span className=\"inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary\">
+                {organisation.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className=\"min-w-0 flex-1\">
+                <strong className=\"block truncate text-xs\">{organisation.name}</strong>
+                <span className=\"block truncate text-[11px] text-muted-foreground\">
+                  Current organisation
+                </span>
+              </span>
+            </div>
+          )}
+""",
+              'desktop organisation control',
+          )
+
+          replace_once(
+              """          {view.name === 'settings' && (
+            <Settings
+              api={api}
+              organisationId={organisation.id}
+              isOwner={membership?.role === 'owner'}
+            />
+          )}
+""",
+              """          {view.name === 'settings' && (
+            <>
+              <Settings
+                api={api}
+                organisationId={organisation.id}
+                isOwner={membership?.role === 'owner'}
+              />
+              <OrganisationAccessSettings
+                api={api}
+                currentOrganisation={organisation}
+                organisations={organisations}
+                canCreate={isOwner}
+                onCreated={onOrganisationCreated}
+              />
+            </>
+          )}
+""",
+              'settings organisation management',
+          )
+
+          replace_once(
+              """              <Button
+                variant=\"outline\"
+                className=\"w-full\"
+                onClick={onSwitchOrganisation}
+              >
+                <ArrowLeftRight aria-hidden=\"true\" />
+                Switch organisation
+              </Button>
+              <Button variant=\"ghost\" className=\"mt-1 w-full\" onClick={onSignOut}>
+""",
+              """              {canSwitchOrganisation && (
+                <Button
+                  variant=\"outline\"
+                  className=\"w-full\"
+                  onClick={onSwitchOrganisation}
+                >
+                  <ArrowLeftRight aria-hidden=\"true\" />
+                  Switch organisation
+                </Button>
+              )}
+              <Button variant=\"ghost\" className=\"mt-1 w-full\" onClick={onSignOut}>
+""",
+              'mobile organisation control',
+          )
+
+          path.write_text(text)
+          PY
+      - name: Format and type-check web
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.17.0 --activate
+          pnpm install --frozen-lockfile
+          pnpm exec prettier --write \
+            apps/web/src/App.tsx \
+            apps/web/src/views/OrganisationCreateForm.tsx \
+            apps/web/src/views/OrganisationOnboarding.tsx \
+            apps/web/src/views/OrganisationAccessSettings.tsx \
+            apps/web/src/views/OrgPicker.tsx \
+            apps/web/src/views/OperationsWorkspace.tsx
+          pnpm --filter @auto-mb/web typecheck
+          pnpm --filter @auto-mb/web test
+      - name: Commit patched workspace
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/App.tsx apps/web/src/views
+          git commit -m "feat(web): complete organisation-aware entry flow"
+          git push origin HEAD:agent/product-experience-rebuild
