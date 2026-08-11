@@ -45,7 +45,7 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.17.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Format the changed product sources
+      - name: Format the changed TypeScript and Markdown sources
         run: |
           pnpm exec prettier --write \
             adr/0006-organisation-entry-and-contract-source-pack.md \
@@ -67,7 +67,6 @@ jobs:
             packages/contracts/src/contract-sources.ts \
             packages/contracts/src/index.ts \
             packages/contracts/src/works.ts \
-            packages/db/migrations/0040_contract_source_documents.sql \
             packages/loa-parser/src/index.ts \
             packages/loa-parser/src/tender-document.test.ts \
             packages/loa-parser/src/tender-document.ts
