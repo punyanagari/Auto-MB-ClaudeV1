@@ -1,130 +1,101 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import type { Organisation } from '@auto-mb/contracts';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import type { Membership, Organisation } from '@auto-mb/contracts';
+import { ArrowRight, BriefcaseBusiness, Building2, ShieldCheck } from 'lucide-react';
+import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
-import { Card } from '../ui/card.js';
-import { Field, Actions, FormError, Hint } from '../ui/form.js';
 
 interface OrgPickerProps {
-  readonly api: ApiClient;
+  readonly organisations: readonly Organisation[];
+  readonly memberships: readonly Membership[];
   readonly onSelect: (organisation: Organisation) => void;
-  readonly onCreated: (organisation: Organisation) => void;
 }
 
-export function OrgPicker({ api, onSelect, onCreated }: OrgPickerProps) {
-  const [organisations, setOrganisations] = useState<readonly Organisation[] | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+const ROLE_LABELS: Record<Membership['role'], string> = {
+  owner: 'Owner',
+  office: 'Office',
+  site: 'Site',
+  viewer: 'Viewer',
+};
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listOrganisations()
-      .then((loaded) => {
-        if (!cancelled) setOrganisations(loaded);
-      })
-      .catch(() => {
-        if (!cancelled) setOrganisations([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const name = formValue(data, 'name');
-    const slug = formValue(data, 'slug');
-
-    setPending(true);
-    setError(null);
-    try {
-      const organisation = await api.createOrganisation({ name, slug });
-      onCreated(organisation);
-    } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }
-
+/** Only rendered for two or more active Organisations. Creation belongs to
+ * zero-state onboarding or the deliberate Settings action, never every login. */
+export function OrgPicker({ organisations, memberships, onSelect }: OrgPickerProps) {
   return (
-    <Card className="mx-auto mt-[10vh] mb-8 max-w-[26rem]" aria-labelledby="orgs-title">
-      <h1 id="orgs-title" tabIndex={-1}>
-        Select an organisation
-      </h1>
-
-      {organisations === null ? (
-        <p className="text-muted-foreground" role="status">
-          Loading organisations…
+    <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+      <header className="mb-8 max-w-2xl">
+        <p className="mb-2 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
+          Choose tenant
         </p>
-      ) : organisations.length > 0 ? (
-        <ul className="my-3 flex list-none flex-col gap-2 p-0">
-          {organisations.map((organisation) => (
-            <li key={organisation.id}>
+        <h1 id="orgs-title" tabIndex={-1}>
+          Select an organisation
+        </h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Each organisation is a separate legal entity and data boundary. Your role,
+          Work scope and explicit authorities are revalidated after selection and on
+          every request.
+        </p>
+      </header>
+
+      <section aria-labelledby="orgs-title" className="grid gap-4 md:grid-cols-2">
+        {organisations.map((organisation) => {
+          const membership = memberships.find(
+            (candidate) =>
+              candidate.organisationId === organisation.id &&
+              candidate.status === 'active',
+          );
+          if (membership === undefined) return null;
+          return (
+            <article
+              key={organisation.id}
+              className="group flex min-h-52 flex-col rounded-2xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(16,24,40,0.03)] transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <span className="inline-flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Building2 className="size-5" aria-hidden="true" />
+                </span>
+                <Badge variant={membership.role === 'owner' ? 'info' : 'neutral'}>
+                  {ROLE_LABELS[membership.role]}
+                </Badge>
+              </div>
+
+              <div className="mt-5 min-w-0 flex-1">
+                <h2 className="m-0 truncate text-base font-semibold">
+                  {organisation.name}
+                </h2>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  {organisation.slug}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
+                    <BriefcaseBusiness className="size-3.5" aria-hidden="true" />
+                    {membership.workScope === 'all' ? 'All Works' : 'Assigned Works'}
+                  </span>
+                  {(membership.canIssueDocuments || membership.canCancelDocuments) && (
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
+                      <ShieldCheck className="size-3.5" aria-hidden="true" />
+                      Sensitive authority
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <Button
-                variant="outline"
-                className="w-full justify-start px-4 py-3"
+                className="mt-5 w-full justify-between"
                 onClick={() => {
                   onSelect(organisation);
                 }}
               >
-                <span className="font-semibold">{organisation.name}</span>
-                <span className="text-muted-foreground">{organisation.slug}</span>
+                Open workspace
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-muted-foreground">
-          You are not a member of any organisation yet. Create one, or ask an owner to
-          add you by your account email.
-        </p>
-      )}
+            </article>
+          );
+        })}
+      </section>
 
-      <h2>Create an organisation</h2>
-      <form onSubmit={(event) => void create(event)}>
-        <Field>
-          <label htmlFor="org-name">Organisation name</label>
-          <input
-            id="org-name"
-            name="name"
-            type="text"
-            required
-            minLength={2}
-            maxLength={200}
-          />
-        </Field>
-        <Field>
-          <label htmlFor="org-slug">Short identifier</label>
-          <input
-            id="org-slug"
-            name="slug"
-            type="text"
-            required
-            pattern="[a-z0-9][a-z0-9-]{1,62}"
-            aria-describedby="org-slug-hint"
-          />
-          <Hint id="org-slug-hint">
-            Lowercase letters, digits, and hyphens; for example “sharma-constructions”.
-          </Hint>
-        </Field>
-
-        {error !== null && <FormError>{error}</FormError>}
-
-        <Actions>
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Creating…' : 'Create organisation'}
-          </Button>
-        </Actions>
-      </form>
-    </Card>
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        Only active memberships are shown. Selecting an organisation never bypasses its
+        server-side permissions or PostgreSQL tenant boundary.
+      </p>
+    </div>
   );
 }
