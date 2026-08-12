@@ -27,3 +27,6 @@ fixtures-raw/
 # silences .claude/hooks/caveman-activate.sh for one working tree without
 # changing the committed default for everyone else.
 .claude/hooks/.caveman-off
+
+# Agent worktrees are session-local working copies, never content.
+.claude/worktrees/
