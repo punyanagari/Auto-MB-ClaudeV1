@@ -213,9 +213,10 @@ interface InvoiceRow {
   line_value: string | null;
 }
 
-/** `buyer_contact_id` is the submit-time snapshot's contactId once
- * submitted, and the newest audit event's buyerContactId while draft —
- * see the module note on where the draft's buyer lives. */
+/** `buyer_contact_id` is a real column on the invoice row (migration
+ * 0041), read directly in both draft and submitted states. It was once
+ * resolved from the newest audit event while draft; that made the audit
+ * trail operational state and is no longer how this works. */
 const TI_COLUMNS = `
   ti.id, ti.work_id, ti.measurement_book_id, mb.mb_number,
   ti.status, ti.invoice_number, ti.sequence_number, ti.fy_label,
@@ -522,8 +523,9 @@ function documentFields(body: CreateTaxInvoiceRequest | UpdateTaxInvoiceRequest)
 }
 
 /** Billing cannot precede measurement: the invoice date floors at the
- * billed MB's date. (There is deliberately no not-in-the-future bound —
- * see the module note.) */
+ * billed MB's date. The upper bound is enforced separately by
+ * `assertInvoiceDateNotFuture` below, against today in the
+ * organisation's own timezone. */
 function assertInvoiceDate(invoiceDate: string, book: InvoiceableBook): void {
   // ISO dates compare correctly as strings.
   if (invoiceDate < book.mb_date) {

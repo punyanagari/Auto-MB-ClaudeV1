@@ -182,12 +182,23 @@ function required(
 }
 
 /**
- * Prove a template before it is stored, so a bad one is a 400 on the
- * settings screen rather than a failure at the moment a document is
+ * Check a template before it is stored, so a malformed one is a 400 on
+ * the settings screen rather than a failure at the moment a document is
  * issued — by which point the operator has a finished document and no
  * number to put on it.
  *
  * `allowed` is the token set this document type can actually supply.
+ *
+ * This validates the template's SHAPE only; it does not prove the
+ * template can mint unique numbers. Counters are narrower than the
+ * uniqueness key — delivery and issue challans count per Work, tax
+ * invoices per financial year, while the unique constraint is
+ * organisation-wide — so a scope-free template such as `{SEQ}` or
+ * `TI/{SEQ}` is accepted here and then collides on the second Work or
+ * the second financial year. Because the counter update rolls back with
+ * the failed transaction, the series stays wedged until the template is
+ * changed. Making this validation scope-aware is finding 8 in
+ * `docs/AUDIT-DISPOSITION-2026-08-10.md`.
  */
 export function assertValidTemplate(
   template: string,

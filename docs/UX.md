@@ -102,7 +102,7 @@ site evidence
   → payment receipt/reconciliation
 ```
 
-The older site `mb_entries` surface is labelled as measurement evidence rather than being presented as the formal Measurement Book itself.
+The older site `mb_entries` surface should be labelled as measurement evidence rather than presented as the formal Measurement Book itself. It is not yet: the interface still heads that register "Measurement Book" and still shows the retired billed/unbilled chips, directly above the formal Measurement Books panel. Recorded as finding 30 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.
 
 External statutory registration status is shown separately from local invoice status. A locally issued invoice is never represented as IRP-registered without verified provider evidence.
 
