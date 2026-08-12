@@ -363,6 +363,11 @@ describe('1 — LOA to Work', () => {
         // The house number series. Invoice numbers are composed from it,
         // the financial year's opening year, and one gapless serial.
         invoiceNumberPrefix: 'P10',
+        // The e-invoicing declaration (finding 20): applicable with no
+        // reporting window, so the IRP evidence routes stay reachable
+        // and no deadline is stamped on this fixture's invoices.
+        einvoiceApplicability: 'applicable',
+        einvoiceApplicableFrom: '2017-07-01',
       },
     });
     expect(profile.statusCode, profile.body).toBe(200);

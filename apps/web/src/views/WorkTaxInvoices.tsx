@@ -237,6 +237,20 @@ export function WorkTaxInvoices({
                         : 'manual IRP evidence · unverified'}
                     </StatusChip>
                   )}
+                  {/* The frozen reporting window (migration 0049): amber
+                      while it is open, red once it has lawfully closed.
+                      A signal only — local validity never changes. */}
+                  {row.status === 'submitted' &&
+                    (row.irpReportingOverdue ? (
+                      <StatusChip status="expired">IRP overdue</StatusChip>
+                    ) : (
+                      row.irpReportingDeadline !== null &&
+                      row.irpProviderState !== 'registered' && (
+                        <StatusChip status="review">
+                          IRP due {formatDate(row.irpReportingDeadline)}
+                        </StatusChip>
+                      )
+                    ))}
                 </td>
                 <td className={numericCell}>
                   {row.totalAmount === null ? '—' : formatInr(row.totalAmount)}
@@ -480,7 +494,36 @@ export function WorkTaxInvoices({
           <h3>
             {invoice.invoiceNumber ?? 'Draft tax invoice'}{' '}
             <StatusChip status={invoice.status}>{invoice.status}</StatusChip>
+            {invoice.status === 'submitted' &&
+              (invoice.irpReportingOverdue ? (
+                <>
+                  {' '}
+                  <StatusChip status="expired">IRP overdue</StatusChip>
+                </>
+              ) : (
+                invoice.irpReportingDeadline !== null &&
+                invoice.irpProviderState !== 'registered' && (
+                  <>
+                    {' '}
+                    <StatusChip status="review">
+                      IRP due {formatDate(invoice.irpReportingDeadline)}
+                    </StatusChip>
+                  </>
+                )
+              ))}
           </h3>
+
+          {invoice.status === 'submitted' && invoice.irpReportingOverdue && (
+            <p className="text-muted-foreground">
+              The IRP reporting window closed on{' '}
+              {invoice.irpReportingDeadline === null
+                ? '—'
+                : formatDate(invoice.irpReportingDeadline)}{' '}
+              with the invoice unregistered. It remains valid locally; a fresh IRP
+              registration is refused. Cancel it with a note and raise a corrected
+              invoice if it must be reported.
+            </p>
+          )}
 
           <dl>
             <dt>Measurement Book</dt>
@@ -517,6 +560,12 @@ export function WorkTaxInvoices({
               <>
                 <dt>Financial year</dt>
                 <dd>{invoice.fyLabel}</dd>
+              </>
+            )}
+            {invoice.irpReportingDeadline !== null && (
+              <>
+                <dt>IRP reporting deadline</dt>
+                <dd>{formatDate(invoice.irpReportingDeadline)}</dd>
               </>
             )}
           </dl>

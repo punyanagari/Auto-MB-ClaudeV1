@@ -365,6 +365,17 @@ export const TaxInvoiceSchema = Type.Object(
     irpCancelledAtText: Type.Union([Type.String(), Type.Null()]),
     irpCancelReasonCode: Type.Union([Type.String(), Type.Null()]),
     irpCancelRemark: Type.Union([Type.String(), Type.Null()]),
+    /** The last date this invoice could lawfully be reported to the IRP,
+     * frozen at submit from the organisation's e-invoicing declaration
+     * then in force (migration 0049). NULL when no window applied — the
+     * organisation had no declared window, or the invoice predates its
+     * applicable-from date or this column. */
+    irpReportingDeadline: Type.Union([DateOnlySchema, Type.Null()]),
+    /** Derived, never stored: the frozen deadline has passed (in the
+     * organisation's own timezone) and the invoice is still not
+     * registered at the IRP. Local validity is untouched — this is a
+     * signal, not a state. */
+    irpReportingOverdue: Type.Boolean(),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),

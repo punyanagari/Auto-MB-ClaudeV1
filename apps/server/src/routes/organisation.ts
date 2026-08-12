@@ -7,6 +7,7 @@ import {
   OrganisationProfileSchema,
   SaveNumberSeriesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
+  type EinvoiceApplicability,
   type NumberSeries,
   type NumberedDocumentType,
   type OrganisationProfile,
@@ -106,6 +107,9 @@ interface ProfileRow extends Record<string, unknown> {
   msme_number: string | null;
   invoice_number_prefix: string | null;
   invoice_notes: string | null;
+  einvoice_applicability: EinvoiceApplicability;
+  einvoice_applicable_from: string | null;
+  irp_reporting_window_days: number | null;
 }
 
 function toProfile(row: ProfileRow): OrganisationProfile {
@@ -126,16 +130,26 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     invoiceNumberPrefix: row.invoice_number_prefix,
     invoiceNotes: row.invoice_notes,
     warrantyTemplateText: row.warranty_template_text,
+    einvoiceApplicability: row.einvoice_applicability,
+    einvoiceApplicableFrom: row.einvoice_applicable_from,
+    irpReportingWindowDays: row.irp_reporting_window_days,
   };
 }
 
 async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
+  // Pinned to the BOUND organisation explicitly: the 0004 org-picker
+  // policy also lets a member SELECT every organisation they belong to,
+  // so an unqualified read under a user with two organisations can hand
+  // back the other one's row — and this row seeds the PATCH merge.
   const [row] = await tx<ProfileRow[]>`
     select id, name, slug, address, gstin, contact_phone,
            contact_email, logo_object_key, warranty_template_text, state_code,
            pincode, locality, trade_name, msme_number, invoice_number_prefix,
-           invoice_notes
+           invoice_notes, einvoice_applicability,
+           einvoice_applicable_from::text as einvoice_applicable_from,
+           irp_reporting_window_days
     from organisations
+    where id = app_private.current_organisation_id()
   `;
   if (!row) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
   return row;
@@ -170,6 +184,43 @@ function assertStateCodeMatchesGstin(
       400,
       'STATE_CODE_GSTIN_MISMATCH',
       `The GST state code ${stateCode} contradicts the GSTIN ${gstin}, which is registered in state ${registered}. The state code decides CGST+SGST against IGST on every invoice, so correct whichever of the two is wrong.`,
+    );
+  }
+}
+
+/**
+ * The e-invoicing declaration must be coherent as it will STAND after
+ * the request (migration 0049) — same posture as the state-code/GSTIN
+ * check above, and for the same reason: each field can be edited alone
+ * into contradicting the others.
+ *
+ * `applicable` requires the date it became so, because the mandate is
+ * permanent from a date, not a mood; anything else forbids that date,
+ * so a stale from-date cannot linger under a withdrawn declaration; and
+ * a reporting window exists only while applicable, because the window
+ * is a consequence of the mandate, not a standalone preference. The
+ * refusals are 400s here so the operator gets a sentence; the 0049
+ * CHECK binds the same rule against direct SQL.
+ */
+function assertEinvoiceDeclarationCoherent(
+  applicability: EinvoiceApplicability,
+  applicableFrom: string | null,
+  reportingWindowDays: number | null,
+): void {
+  if ((applicability === 'applicable') !== (applicableFrom !== null)) {
+    throw httpError(
+      400,
+      'E_INVOICE_DECLARATION_INCOHERENT',
+      applicability === 'applicable'
+        ? 'Declaring e-invoicing applicable requires the date it became so — the mandate runs from a date, permanently.'
+        : 'An applicable-from date can only stand under an applicable declaration; clear it or declare e-invoicing applicable.',
+    );
+  }
+  if (reportingWindowDays !== null && applicability !== 'applicable') {
+    throw httpError(
+      400,
+      'E_INVOICE_DECLARATION_INCOHERENT',
+      'An IRP reporting window can only stand under an applicable declaration; clear it or declare e-invoicing applicable.',
     );
   }
 }
@@ -291,10 +342,30 @@ export function registerOrganisationRoutes(
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText
               : current.warranty_template_text,
+          // The e-invoicing declaration (migration 0049). Owner-only
+          // like the rest of this route; the coherence of the three is
+          // asserted below against the values as they will stand.
+          einvoice_applicability:
+            body.einvoiceApplicability !== undefined
+              ? body.einvoiceApplicability
+              : current.einvoice_applicability,
+          einvoice_applicable_from:
+            body.einvoiceApplicableFrom !== undefined
+              ? body.einvoiceApplicableFrom
+              : current.einvoice_applicable_from,
+          irp_reporting_window_days:
+            body.irpReportingWindowDays !== undefined
+              ? body.irpReportingWindowDays
+              : current.irp_reporting_window_days,
         };
         // Against the values as they will stand, so neither field can be
         // edited into contradicting the other.
         assertStateCodeMatchesGstin(next.state_code, next.gstin);
+        assertEinvoiceDeclarationCoherent(
+          next.einvoice_applicability,
+          next.einvoice_applicable_from,
+          next.irp_reporting_window_days,
+        );
         const [updated] = await tx<ProfileRow[]>`
           update organisations set
             name = ${next.name},
@@ -310,12 +381,18 @@ export function registerOrganisationRoutes(
             invoice_number_prefix = ${next.invoice_number_prefix},
             invoice_notes = ${next.invoice_notes},
             warranty_template_text = ${next.warranty_template_text},
+            einvoice_applicability = ${next.einvoice_applicability},
+            einvoice_applicable_from = ${next.einvoice_applicable_from},
+            irp_reporting_window_days = ${next.irp_reporting_window_days},
             updated_at = now()
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
                     contact_email, logo_object_key, warranty_template_text,
                     state_code, pincode, locality, trade_name, msme_number,
-                    invoice_number_prefix, invoice_notes
+                    invoice_number_prefix, invoice_notes,
+                    einvoice_applicability,
+                    einvoice_applicable_from::text as einvoice_applicable_from,
+                    irp_reporting_window_days
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
         // Milestone 6: record each changed field's old and new value —
@@ -334,6 +411,9 @@ export function registerOrganisationRoutes(
             msmeNumber: current.msme_number,
             invoiceNumberPrefix: current.invoice_number_prefix,
             invoiceNotes: current.invoice_notes,
+            einvoiceApplicability: current.einvoice_applicability,
+            einvoiceApplicableFrom: current.einvoice_applicable_from,
+            irpReportingWindowDays: current.irp_reporting_window_days,
           },
           {
             name: next.name,
@@ -348,6 +428,9 @@ export function registerOrganisationRoutes(
             msmeNumber: next.msme_number,
             invoiceNumberPrefix: next.invoice_number_prefix,
             invoiceNotes: next.invoice_notes,
+            einvoiceApplicability: next.einvoice_applicability,
+            einvoiceApplicableFrom: next.einvoice_applicable_from,
+            irpReportingWindowDays: next.irp_reporting_window_days,
           },
         );
         await tx`

@@ -129,12 +129,40 @@ export function registerDashboardRoutes(
           order by w.created_at desc
         `;
 
-        const [counts] = await tx<{ open_drafts: string; loa_review: string }[]>`
+        // The IRP reporting window (migration 0049): submitted invoices
+        // whose frozen deadline exists and which are still unregistered,
+        // split by whether the window is open or closed in the
+        // organisation's own timezone. Counts, like the draft count —
+        // the invoice screens carry the per-document signal.
+        const [counts] = await tx<
+          {
+            open_drafts: string;
+            loa_review: string;
+            irp_due: string;
+            irp_overdue: string;
+          }[]
+        >`
           select
             (select count(*) from delivery_challans where status = 'draft')::text
               as open_drafts,
             (select count(*) from loa_documents where extraction_status = 'review')::text
-              as loa_review
+              as loa_review,
+            (select count(*) from tax_invoices ti
+              where ti.status = 'submitted'
+                and ti.irp_provider_state <> 'registered'
+                and ti.irp_reporting_deadline is not null
+                and ti.irp_reporting_deadline >=
+                  (select (now() at time zone o.timezone)::date
+                   from organisations o
+                   where o.id = ti.organisation_id))::text as irp_due,
+            (select count(*) from tax_invoices ti
+              where ti.status = 'submitted'
+                and ti.irp_provider_state <> 'registered'
+                and ti.irp_reporting_deadline is not null
+                and ti.irp_reporting_deadline <
+                  (select (now() at time zone o.timezone)::date
+                   from organisations o
+                   where o.id = ti.organisation_id))::text as irp_overdue
         `;
 
         const instruments = await tx<InstrumentRow[]>`
@@ -267,6 +295,38 @@ export function registerDashboardRoutes(
             dueInDays: null,
           });
         }
+        // The reporting-window signals. Overdue is danger — the window
+        // has lawfully closed and only a local cancel-and-reissue can
+        // move the document — while an open window is a caution with
+        // time still on the clock. Neither blocks anything locally.
+        const irpReportingDue = Number(counts?.irp_due ?? '0');
+        const irpReportingOverdue = Number(counts?.irp_overdue ?? '0');
+        if (irpReportingOverdue > 0) {
+          alerts.push({
+            kind: 'irp_reporting_overdue',
+            severity: 'danger',
+            message:
+              irpReportingOverdue === 1
+                ? '1 submitted tax invoice passed its IRP reporting deadline unregistered.'
+                : `${String(irpReportingOverdue)} submitted tax invoices passed their IRP reporting deadlines unregistered.`,
+            workId: null,
+            workCode: null,
+            dueInDays: null,
+          });
+        }
+        if (irpReportingDue > 0) {
+          alerts.push({
+            kind: 'irp_reporting_due',
+            severity: 'warning',
+            message:
+              irpReportingDue === 1
+                ? '1 submitted tax invoice awaits IRP registration inside its reporting window.'
+                : `${String(irpReportingDue)} submitted tax invoices await IRP registration inside their reporting windows.`,
+            workId: null,
+            workCode: null,
+            dueInDays: null,
+          });
+        }
         const openDrafts = Number(counts?.open_drafts ?? '0');
         if (openDrafts > 0) {
           alerts.push({
@@ -361,6 +421,8 @@ export function registerDashboardRoutes(
             billedValue: sumDecimal(works.map((row) => row.billed_value)),
             openDrafts,
             loaAwaitingReview,
+            irpReportingDue,
+            irpReportingOverdue,
           },
           alerts,
           works: works.map((row) => ({

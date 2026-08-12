@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
+  EinvoiceApplicability,
   NumberSeries,
   NumberedDocumentType,
   OrganisationProfile,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
+import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
@@ -41,6 +43,10 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
    * server reports as four rows carrying the product defaults. */
   const [series, setSeries] = useState<readonly NumberSeries[] | null>(null);
   const [seriesType, setSeriesType] = useState<NumberedDocumentType>('tax_invoice');
+  /** Drives which declaration fields the e-invoicing form shows; the
+   * applicable-from date and the window exist only while applicable. */
+  const [einvoiceChoice, setEinvoiceChoice] =
+    useState<EinvoiceApplicability>('undeclared');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   async function saveSeries(documentType: NumberedDocumentType, template: string) {
@@ -118,6 +124,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       .then(([loaded, blob]) => {
         if (cancelled) return;
         setProfile(loaded);
+        setEinvoiceChoice(loaded.einvoiceApplicability ?? 'undeclared');
         if (blob !== null) {
           objectUrl = URL.createObjectURL(blob);
           setLogoUrl(objectUrl);
@@ -178,6 +185,53 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             : 'Saving the company details failed.',
         );
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The e-invoicing declaration travels as three profile fields; a
+   * non-applicable declaration clears the date and window with it, so
+   * the stored trio always matches what the 0049 CHECK accepts. */
+  async function saveEinvoiceDeclaration(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const applicability = formValue(
+      data,
+      'einvoice-applicability',
+    ) as EinvoiceApplicability;
+    const applicableFrom = formValue(data, 'einvoice-applicable-from').trim();
+    const windowDays = formValue(data, 'einvoice-window-days').trim();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api.updateOrganisationProfile(organisationId, {
+        einvoiceApplicability: applicability,
+        einvoiceApplicableFrom:
+          applicability === 'applicable' && applicableFrom !== ''
+            ? applicableFrom
+            : null,
+        irpReportingWindowDays:
+          applicability === 'applicable' && windowDays !== ''
+            ? Number(windowDays)
+            : null,
+      });
+      setProfile(updated);
+      setEinvoiceChoice(updated.einvoiceApplicability ?? 'undeclared');
+      setNotice(
+        applicability === 'applicable'
+          ? 'E-invoicing declared applicable. New invoices freeze their IRP reporting deadline at submit; nothing already issued changes.'
+          : applicability === 'not_applicable'
+            ? 'E-invoicing declared not applicable. The IRP transport is refused until the declaration changes.'
+            : 'E-invoicing declaration cleared. The IRP transport stays refused until it is declared.',
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The e-invoicing declaration was not saved.',
+      );
     } finally {
       setBusy(false);
     }
@@ -517,6 +571,104 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             <dd>{profile.warrantyTemplateText ?? '—'}</dd>
           </div>
         </dl>
+      )}
+
+      <h2>E-invoicing</h2>
+      <p className="text-muted-foreground">
+        Whether invoices must be reported to the IRP. E-invoicing is mandatory once
+        aggregate turnover has ever crossed ₹5 crore, permanently; from 1 April 2025,
+        taxpayers at ₹10 crore or more cannot report an invoice more than 30 days after
+        its date. Each invoice freezes its reporting deadline when it is submitted, and
+        nothing is ever sent automatically.
+      </p>
+      {isOwner ? (
+        <form onSubmit={(event) => void saveEinvoiceDeclaration(event)}>
+          <Field>
+            <label htmlFor="einvoice-applicability">Declaration</label>
+            <select
+              id="einvoice-applicability"
+              name="einvoice-applicability"
+              value={einvoiceChoice}
+              onChange={(event) => {
+                setEinvoiceChoice(event.target.value as EinvoiceApplicability);
+              }}
+            >
+              <option value="undeclared">Not yet declared</option>
+              <option value="not_applicable">
+                Not applicable — turnover has never crossed ₹5 crore
+              </option>
+              <option value="applicable">
+                Applicable — turnover has crossed ₹5 crore
+              </option>
+            </select>
+            <Hint>
+              The IRP transport is refused until this is declared, and refused under
+              “not applicable” — voluntary registration below the mandate is not
+              provided for.
+            </Hint>
+          </Field>
+          {einvoiceChoice === 'applicable' && (
+            <FieldRow>
+              <Field>
+                <label htmlFor="einvoice-applicable-from">Applicable from</label>
+                <input
+                  id="einvoice-applicable-from"
+                  name="einvoice-applicable-from"
+                  type="date"
+                  required
+                  defaultValue={profile.einvoiceApplicableFrom ?? ''}
+                />
+                <Hint>
+                  The date e-invoicing became mandatory for you. Invoices dated before
+                  it carry no reporting deadline.
+                </Hint>
+              </Field>
+              <Field>
+                <label htmlFor="einvoice-window-days">
+                  IRP reporting window (days)
+                </label>
+                <input
+                  id="einvoice-window-days"
+                  name="einvoice-window-days"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={365}
+                  defaultValue={profile.irpReportingWindowDays ?? ''}
+                />
+                <Hint>
+                  30 where turnover is ₹10 crore or more (since 1 April 2025). Leave
+                  blank when no window binds you.
+                </Hint>
+              </Field>
+            </FieldRow>
+          )}
+          <Actions>
+            <Button type="submit" disabled={busy}>
+              Save declaration
+            </Button>
+          </Actions>
+        </form>
+      ) : (
+        <p>
+          {(profile.einvoiceApplicability ?? 'undeclared') === 'applicable' ? (
+            <>
+              Applicable from{' '}
+              {profile.einvoiceApplicableFrom !== null &&
+              profile.einvoiceApplicableFrom !== undefined
+                ? formatDate(profile.einvoiceApplicableFrom)
+                : '—'}
+              {profile.irpReportingWindowDays !== null &&
+              profile.irpReportingWindowDays !== undefined
+                ? ` · ${String(profile.irpReportingWindowDays)}-day IRP reporting window`
+                : ' · no reporting window declared'}
+            </>
+          ) : (profile.einvoiceApplicability ?? 'undeclared') === 'not_applicable' ? (
+            'Declared not applicable — the IRP transport is refused.'
+          ) : (
+            'Not yet declared — the IRP transport is refused until the owner declares it.'
+          )}
+        </p>
       )}
 
       <h2>Number series</h2>

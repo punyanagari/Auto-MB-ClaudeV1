@@ -7860,6 +7860,8 @@ function taxInvoice(overrides: Record<string, unknown> = {}) {
     irpCancelledAtText: null,
     irpCancelReasonCode: null,
     irpCancelRemark: null,
+    irpReportingDeadline: null,
+    irpReportingOverdue: false,
     cancellationNote: null,
     createdAt: '2026-07-30T00:00:00.000Z',
     submittedAt: null,
@@ -7950,6 +7952,31 @@ describe('WorkDetail tax invoices', () => {
     expect(await screen.findByText('TI/2026-27/001')).toBeTruthy();
     expect(screen.getByText('DCW-1-MB-01')).toBeTruthy();
     expect(screen.getByText('₹49,87,852.93')).toBeTruthy();
+  });
+
+  it('signals the frozen IRP reporting window: amber while open, red once closed', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([
+        taxInvoice({
+          ...SUBMITTED_INVOICE,
+          irpReportingDeadline: '2099-01-30',
+          irpReportingOverdue: false,
+        }),
+        taxInvoice({
+          ...SUBMITTED_INVOICE,
+          id: 'eeee8888-8888-4888-8888-eeeeeeeeee88',
+          invoiceNumber: 'TI/2026-27/002',
+          irpReportingDeadline: '2026-03-17',
+          irpReportingOverdue: true,
+        }),
+      ]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    expect(await screen.findByText('IRP due 30 Jan 2099')).toBeTruthy();
+    expect(screen.getByText('IRP overdue')).toBeTruthy();
   });
 
   it('does not present a failed tax-invoice register as empty or creatable', async () => {
