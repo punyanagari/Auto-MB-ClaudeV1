@@ -175,14 +175,16 @@ jobs:
           # not seconds. The gate is full readiness: HTTP 200 with every
           # configured component ok.
           for attempt in $(seq 1 90); do
-            body=$(curl -sk https://localhost/api/ready || true)
+            body=$(curl -sk --connect-timeout 2 --max-time 5 \
+              https://localhost/api/ready || true)
             echo "attempt $attempt: $body"
             case "$body" in
               *'"status":"ready"'*) break ;;
             esac
             sleep 10
           done
-          body=$(curl -fsk https://localhost/api/ready)
+          body=$(curl -fsk --connect-timeout 2 --max-time 5 \
+            https://localhost/api/ready)
           echo "$body"
           echo "$body" | grep -q '"status":"ready"'
           echo "$body" | grep -q '"database":"ok"'
