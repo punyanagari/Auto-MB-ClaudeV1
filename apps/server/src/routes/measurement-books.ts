@@ -784,6 +784,7 @@ async function readBranding(tx: TransactionSql): Promise<BrandingRow | undefined
     select name, address, gstin, contact_phone, contact_email,
            logo_object_key, logo_media_type
     from organisations
+    where id = app_private.current_organisation_id()
   `;
   return organisation;
 }

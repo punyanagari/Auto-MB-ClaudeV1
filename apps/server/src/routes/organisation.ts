@@ -136,6 +136,7 @@ async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
            pincode, locality, trade_name, msme_number, invoice_number_prefix,
            invoice_notes
     from organisations
+    where id = app_private.current_organisation_id()
   `;
   if (!row) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
   return row;
@@ -450,6 +451,7 @@ export function registerOrganisationRoutes(
             { logo_object_key: string | null; logo_media_type: string | null }[]
           >`
             select logo_object_key, logo_media_type from organisations
+            where id = app_private.current_organisation_id()
           `;
           return organisation ?? null;
         },
