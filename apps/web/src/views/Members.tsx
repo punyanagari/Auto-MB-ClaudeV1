@@ -224,6 +224,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
               <th scope="col">Can issue</th>
               <th scope="col">Can cancel</th>
               <th scope="col">Can approve</th>
+              <th scope="col">Two-factor</th>
               <th scope="col">Status</th>
             </tr>
           </thead>
@@ -239,6 +240,13 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                     <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
                     <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
                     <td>{member.canApproveAmendments ? 'Yes' : 'No'}</td>
+                    <td>
+                      <StatusChip
+                        status={member.twoFactorEnabled ? 'active' : 'review'}
+                      >
+                        {member.twoFactorEnabled ? 'Enrolled' : 'Not enrolled'}
+                      </StatusChip>
+                    </td>
                     <td>{member.status}</td>
                   </tr>
                 );
@@ -340,6 +348,14 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                         );
                       }}
                     />
+                  </td>
+                  <td>
+                    {/* Enrolment before authority: an unenrolled member who
+                        is granted issue/cancel/approve walls themselves out
+                        of the workspace until they enrol (finding 36). */}
+                    <StatusChip status={member.twoFactorEnabled ? 'active' : 'review'}>
+                      {member.twoFactorEnabled ? 'Enrolled' : 'Not enrolled'}
+                    </StatusChip>
                   </td>
                   <td>
                     <StatusChip

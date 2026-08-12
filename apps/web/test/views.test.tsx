@@ -68,8 +68,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     me: vi.fn().mockResolvedValue(null),
     signUp: vi.fn().mockResolvedValue(undefined),
-    signIn: vi.fn().mockResolvedValue(undefined),
+    signIn: vi.fn().mockResolvedValue({ twoFactorRequired: false }),
     signOut: vi.fn().mockResolvedValue(undefined),
+    verifyTotp: vi.fn().mockResolvedValue(undefined),
+    verifyBackupCode: vi.fn().mockResolvedValue(undefined),
+    enableTwoFactor: vi.fn(),
+    disableTwoFactor: vi.fn().mockResolvedValue(undefined),
+    regenerateBackupCodes: vi.fn(),
     listOrganisations: vi.fn().mockResolvedValue([]),
     createOrganisation: vi.fn(),
     listMembers: vi.fn().mockResolvedValue([]),
@@ -365,6 +370,7 @@ function membership(overrides: Partial<Membership>): Membership {
     canIssueDocuments: true,
     canCancelDocuments: true,
     canApproveAmendments: false,
+    twoFactorEnabled: false,
     status: 'active',
     ...overrides,
   };
@@ -411,6 +417,77 @@ describe('SignIn', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('Wrong password.');
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it('switches to the TOTP step when sign-in answers twoFactorRequired', async () => {
+    const api = stubApi({
+      signIn: vi.fn().mockResolvedValue({ twoFactorRequired: true }),
+    });
+    const onSignedIn = vi.fn();
+    render(<SignIn api={api} onSignedIn={onSignedIn} />);
+
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'owner@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'password-123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // No session exists yet: the challenge form renders and the app is
+    // NOT told the sign-in finished (the dead-loop the discarded response
+    // body used to cause).
+    await screen.findByRole('heading', { name: 'Two-factor check' });
+    expect(onSignedIn).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Authenticator code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
+
+    await waitFor(() => {
+      expect(onSignedIn).toHaveBeenCalledOnce();
+    });
+    expect(api.verifyTotp).toHaveBeenCalledWith('123456');
+  });
+
+  it('offers backup-code entry and keeps verification errors inline', async () => {
+    const api = stubApi({
+      signIn: vi.fn().mockResolvedValue({ twoFactorRequired: true }),
+      verifyBackupCode: vi
+        .fn()
+        .mockRejectedValue(
+          new RequestFailedError(
+            429,
+            'RATE_LIMITED',
+            'Too many attempts; wait a few minutes and try again.',
+          ),
+        ),
+    });
+    const onSignedIn = vi.fn();
+    render(<SignIn api={api} onSignedIn={onSignedIn} />);
+
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'owner@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'password-123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('heading', { name: 'Two-factor check' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use a backup code instead' }));
+    fireEvent.change(screen.getByLabelText('Backup code'), {
+      target: { value: 'abcde-12345' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(
+      'Too many attempts; wait a few minutes and try again.',
+    );
+    expect(api.verifyBackupCode).toHaveBeenCalledWith('abcde-12345');
     expect(onSignedIn).not.toHaveBeenCalled();
   });
 
@@ -2707,6 +2784,9 @@ describe('OperationsWorkspace mobile shell', () => {
         me={{
           user: { id: 'user-a', email: 'owner@example.test' },
           memberships: [membership({})],
+          twoFactorEnabled: true,
+          mfaRequired: true,
+          mfaEnforced: false,
         }}
         organisation={organisation}
         organisations={[organisation]}

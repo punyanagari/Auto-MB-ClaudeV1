@@ -41,7 +41,20 @@ Primary risks:
   state, so this protection is single-instance only — the current
   single-host topology; scaling to multiple API instances requires
   moving this state into PostgreSQL or a shared store first;
-- MFA before general availability for owners/admins;
+- MFA for privilege holders: any user holding, in any organisation, an
+  active owner membership or a document authority (issue, cancel, approve
+  amendments) must have TOTP two-factor enabled. The requirement is
+  computed on every tenant-scoped request after the membership floor
+  binds and refused with 403 `MFA_ENROLMENT_REQUIRED` until enrolment;
+  two-factor disable is refused for such users (`MFA_REQUIRED_BY_POLICY`);
+  enabling or disabling the second factor revokes the account's other
+  sessions; enable-completion, verification, backup-code use, disable,
+  and the verification lockout are appended to `identity_audit_events`.
+  There is no grace period and no in-app reset — operator recovery is the
+  out-of-band procedure in docs/RUNBOOK.md. The refusals deploy dark
+  behind `MFA_ENFORCE=true` (the gate itself always computes and is
+  reported by `/api/me`); production compose defaults it to true, and it
+  must be on before the first design-partner account exists;
 - sensitive issue/cancel actions require explicit authority;
 - every membership read that runs inside a bound-tenant transaction
   filters on `app_private.current_organisation_id()` as well as the user.
@@ -60,7 +73,12 @@ Primary risks:
   `id = app_private.current_organisation_id()` — an unqualified read
   resolves a planner-chosen row for a multi-organisation user and can
   print another tenant's name, warranty text, or branding onto an issued
-  document. No other tenant-owned table carries a second SELECT policy;
+  document. No other tenant-owned table carries a second SELECT policy.
+  One deliberate exception to the membership predicate: the MFA gate (`mfa-policy.ts`) reads the
+  caller's memberships across every organisation on purpose, because the
+  MFA obligation is user-level — authority held anywhere makes the
+  account worth protecting — and the read answers no authority question
+  for the bound organisation;
 - the authentication secret is rejected when it is absent, shorter than 32
   characters, or the documented placeholder, unless `NODE_ENV` is
   explicitly `development` or `test`. An unset `NODE_ENV` is treated as
@@ -133,10 +151,17 @@ Activated with Milestone 1 (authenticated endpoints exist):
   rules, not the absence of logic-level vulnerabilities;
 - the database membership floor — `current_organisation_id()` binds only
   for an active membership of the session user, proven by live tests;
-- identity audit trail — sign-up/sign-in/sign-out are appended to the
-  user-scoped `identity_audit_events` table (INSERT/SELECT grants only, so
-  the trail is append-only even for the service role), proven by live
-  tests.
+- identity audit trail — sign-up/sign-in/sign-out and the two-factor
+  lifecycle (enable-completion, verification, backup-code use, disable,
+  verification lockout) are appended to the user-scoped
+  `identity_audit_events` table (INSERT/SELECT grants only, so the trail
+  is append-only even for the service role), proven by live tests;
+- MFA enforcement for privilege holders — the tenant-transaction wall,
+  the disable refusal, per-address rate limiting on the two-factor
+  endpoints, other-session revocation on enable/disable, and the
+  no-session `twoFactorRedirect` sign-in answer are proven by live HTTP
+  tests against a real TOTP implementation
+  (`apps/server/test/two-factor.integration.test.ts`).
 
 Activated with the first browser workflow (the Milestone 1 screens):
 

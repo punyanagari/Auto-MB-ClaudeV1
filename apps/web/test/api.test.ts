@@ -76,6 +76,96 @@ describe('api client', () => {
     await expect(api.me()).rejects.toBeInstanceOf(RequestFailedError);
   });
 
+  it('reads the sign-in body and reports a completed session', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        user: { id: 'user-a', email: 'owner@example.test' },
+        token: 'session-token',
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    await expect(api.signIn('owner@example.test', 'password-123')).resolves.toEqual({
+      twoFactorRequired: false,
+    });
+  });
+
+  it('reads the sign-in body and reports a pending two-factor challenge', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(200, { twoFactorRedirect: true, twoFactorMethods: ['totp'] }),
+      );
+    const api = createApiClient(fetchImpl);
+
+    await expect(api.signIn('owner@example.test', 'password-123')).resolves.toEqual({
+      twoFactorRequired: true,
+    });
+  });
+
+  it('verifies a TOTP code against the two-factor endpoint', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { token: 't', user: { id: 'user-a' } }));
+    const api = createApiClient(fetchImpl);
+
+    await api.verifyTotp('123456');
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/two-factor/verify-totp');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ code: '123456' });
+  });
+
+  it('starts enrolment and returns the one-time TOTP URI and backup codes', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        totpURI: 'otpauth://totp/Auto-MB:owner@example.test?secret=ABC234',
+        backupCodes: ['aaaaa-bbbbb', 'ccccc-ddddd'],
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    const start = await api.enableTwoFactor('password-123');
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/two-factor/enable');
+    expect(JSON.parse(init.body as string)).toEqual({ password: 'password-123' });
+    expect(start.backupCodes).toHaveLength(2);
+    expect(start.totpURI).toContain('secret=');
+  });
+
+  it('surfaces the MFA_REQUIRED_BY_POLICY refusal from disable as a typed error', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(403, {
+        code: 'MFA_REQUIRED_BY_POLICY',
+        message: 'Two-factor authentication is required for this account.',
+        requestId: 'req-3',
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    await expect(api.disableTwoFactor('password-123')).rejects.toMatchObject({
+      status: 403,
+      code: 'MFA_REQUIRED_BY_POLICY',
+    });
+  });
+
+  it('regenerates backup codes and returns only the fresh set', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(200, { status: true, backupCodes: ['eeeee-fffff'] }),
+      );
+    const api = createApiClient(fetchImpl);
+
+    await expect(api.regenerateBackupCodes('password-123')).resolves.toEqual([
+      'eeeee-fffff',
+    ]);
+    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/two-factor/generate-backup-codes');
+  });
+
   it('uploads a LOA as a raw PDF body with the tenant header', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse(201, {

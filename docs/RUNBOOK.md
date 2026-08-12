@@ -172,13 +172,60 @@ Security-relevant events (suspected breach, spiking malware-upload
 rejections, auth anomalies in `identity_audit_events`) additionally follow
 docs/SECURITY.md and India's CERT-In reporting expectations.
 
+## 7a. Two-factor reset (operator recovery)
+
+There is deliberately **no in-app reset endpoint**: an application path
+that removes a second factor is exactly what an attacker who has stolen a
+password needs, so recovery runs out-of-band over the same administrative
+channel as migrations (host SSH, owner database credentials — §2), never
+through the API.
+
+When a user reports a lost authenticator AND exhausted backup codes:
+
+1. **Verify identity out-of-band.** Call back on the phone number agreed
+   at onboarding (§8) — never a number supplied in the request itself —
+   and have the partner's owner confirm the request when the locked-out
+   user is not the owner. Note the verification in the ops log.
+2. **Reset on the host**, in one transaction, with the user's account
+   email in place of the placeholder:
+
+   ```sql
+   BEGIN;
+   DELETE FROM auth_two_factors
+     WHERE "userId" = (SELECT "id" FROM auth_users WHERE "email" = '<email>');
+   UPDATE auth_users SET "twoFactorEnabled" = false
+     WHERE "email" = '<email>';
+   DELETE FROM auth_sessions
+     WHERE "userId" = (SELECT "id" FROM auth_users WHERE "email" = '<email>');
+   INSERT INTO identity_audit_events (user_id, action, request_id, details)
+     VALUES (
+       (SELECT "id" FROM auth_users WHERE "email" = '<email>'),
+       'two_factor_reset',
+       'operator-manual',
+       '{"procedure": "RUNBOOK 7a", "verifiedBy": "<operator>"}'::jsonb
+     );
+   COMMIT;
+   ```
+
+   Deleting the sessions signs every device out; the `two_factor_reset`
+   audit row is mandatory — the application never writes that action, so
+   its presence always means this procedure ran.
+
+3. **The user signs back in and re-enrols immediately.** While
+   `MFA_ENFORCE=true` a privilege-holding user is walled into enrolment
+   on their next sign-in, so the reset window closes itself. Confirm the
+   new enrolment (`two_factor_enabled` audit row) before closing the
+   ticket.
+
 ## 8. Design-partner onboarding checklist
 
 Per partner (3–5 for the pilot):
 
 - [ ] owner signs up; organisation created; slug/name confirmed;
-- [ ] owner enrols MFA (release blocker: MFA enforcement for owners ships
-      before the first partner account exists — docs/ROADMAP.md);
+- [ ] owner enrols MFA — with `MFA_ENFORCE=true` (the production default,
+      required before the first partner account exists) the product walls
+      the owner into TOTP enrolment on first sign-in; confirm the backup
+      codes were stored and record the §7a callback phone number;
 - [ ] members added with the right roles; issue/cancel authority granted
       to the specific people who sign documents (not by default);
 - [ ] walkthrough completed: LOA upload → review → confirm → challan

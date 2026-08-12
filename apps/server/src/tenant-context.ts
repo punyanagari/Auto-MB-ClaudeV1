@@ -1,6 +1,11 @@
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { withTenant, withTenantSnapshot } from '@auto-mb/db';
 import { httpError } from './http.js';
+import {
+  mfaEnforcementEnabled,
+  mfaEnrolmentRequiredError,
+  mfaGate,
+} from './mfa-policy.js';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -69,6 +74,17 @@ async function assertBoundThen<T>(
       'NOT_A_MEMBER',
       'The authenticated user holds no active membership in this organisation.',
     );
+  }
+  // Finding 36: after the membership floor binds, the MFA wall stands in the
+  // same place, so every tenant-scoped route is covered without any route
+  // opting in. The gate is computed unconditionally (an authority granted a
+  // minute ago must count on the very next request); only the refusal is
+  // behind the enforcement flag so the control can deploy dark. Identity
+  // endpoints (/api/me, /api/organisations, /api/auth/*) never pass through
+  // here, which is what keeps enrolment itself reachable.
+  const gate = await mfaGate(tx);
+  if (gate.required && !gate.enabled && mfaEnforcementEnabled()) {
+    throw mfaEnrolmentRequiredError();
   }
   return work(tx);
 }

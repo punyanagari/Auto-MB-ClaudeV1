@@ -58,6 +58,10 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
   const [mode, setMode] = useState<Mode>('sign-in');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** A pending two-factor challenge: the password was right, and the
+   * session exists only after a code proves the second factor. */
+  const [totpStep, setTotpStep] = useState(false);
+  const [useBackupCode, setUseBackupCode] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,10 +76,42 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
       if (mode === 'sign-up') {
         await api.signUp(email, name, password);
       } else {
-        await api.signIn(email, password);
+        const outcome = await api.signIn(email, password);
+        if (outcome.twoFactorRequired) {
+          setTotpStep(true);
+          setUseBackupCode(false);
+          return;
+        }
       }
       onSignedIn();
     } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The server could not be reached. Try again.',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function submitCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const code = formValue(new FormData(event.currentTarget), 'code').trim();
+
+    setPending(true);
+    setError(null);
+    try {
+      if (useBackupCode) {
+        await api.verifyBackupCode(code);
+      } else {
+        await api.verifyTotp(code);
+      }
+      onSignedIn();
+    } catch (cause) {
+      // Errors persist inline until a correct code lands — including the
+      // 429 lockout message, which tells the operator to wait rather than
+      // burn more attempts.
       setError(
         cause instanceof RequestFailedError
           ? cause.message
@@ -123,77 +159,144 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
 
       {/* Paper, and the only thing on it is the form. */}
       <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-10">
-        <div className="w-full max-w-sm">
-          <h1 id="signin-title" tabIndex={-1}>
-            {mode === 'sign-in' ? 'Sign in' : 'Create your account'}
-          </h1>
-          <p className="text-sm text-muted-foreground text-pretty">
-            {mode === 'sign-in'
-              ? 'Use the email your organisation was invited with.'
-              : 'Create the account first; an organisation is chosen or created next.'}
-          </p>
+        {totpStep ? (
+          <div className="w-full max-w-sm">
+            <h1 id="signin-title" tabIndex={-1}>
+              Two-factor check
+            </h1>
+            <p className="text-sm text-muted-foreground text-pretty">
+              {useBackupCode
+                ? 'Enter one of the backup codes you stored when enrolling. Each code works once.'
+                : 'Enter the 6-digit code from your authenticator app.'}
+            </p>
 
-          <form onSubmit={(event) => void submit(event)}>
-            {mode === 'sign-up' && (
+            <form onSubmit={(event) => void submitCode(event)}>
               <Field>
-                <label htmlFor="signin-name">Full name</label>
+                <label htmlFor="signin-code">
+                  {useBackupCode ? 'Backup code' : 'Authenticator code'}
+                </label>
                 <input
-                  id="signin-name"
-                  name="name"
+                  id="signin-code"
+                  name="code"
                   type="text"
-                  autoComplete="name"
+                  className="font-mono tracking-[0.2em] tabular-nums"
+                  inputMode={useBackupCode ? 'text' : 'numeric'}
+                  autoComplete="one-time-code"
+                  autoFocus
                   required
-                  minLength={2}
+                  minLength={useBackupCode ? 6 : 6}
+                  maxLength={useBackupCode ? 20 : 6}
+                  key={useBackupCode ? 'backup' : 'totp'}
                 />
               </Field>
-            )}
-            <Field>
-              <label htmlFor="signin-email">Email</label>
-              <input
-                id="signin-email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-              />
-            </Field>
-            <Field>
-              <label htmlFor="signin-password">Password</label>
-              <input
-                id="signin-password"
-                name="password"
-                type="password"
-                autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-                required
-                minLength={8}
-              />
-            </Field>
 
-            {error !== null && <FormError>{error}</FormError>}
+              {error !== null && <FormError>{error}</FormError>}
 
-            <Actions className="flex-col items-stretch gap-3">
-              <Button type="submit" disabled={pending} className="w-full">
-                {pending
-                  ? 'Working…'
-                  : mode === 'sign-in'
-                    ? 'Sign in'
-                    : 'Create account'}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in');
-                  setError(null);
-                }}
-              >
-                {mode === 'sign-in'
-                  ? 'New here? Create an account'
-                  : 'Have an account? Sign in'}
-              </Button>
-            </Actions>
-          </form>
-        </div>
+              <Actions className="flex-col items-stretch gap-3">
+                <Button type="submit" disabled={pending} className="w-full">
+                  {pending ? 'Checking…' : 'Verify and sign in'}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setUseBackupCode(!useBackupCode);
+                    setError(null);
+                  }}
+                >
+                  {useBackupCode
+                    ? 'Use your authenticator instead'
+                    : 'Use a backup code instead'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => {
+                    setTotpStep(false);
+                    setUseBackupCode(false);
+                    setError(null);
+                  }}
+                >
+                  Back to sign in
+                </Button>
+              </Actions>
+            </form>
+          </div>
+        ) : (
+          <div className="w-full max-w-sm">
+            <h1 id="signin-title" tabIndex={-1}>
+              {mode === 'sign-in' ? 'Sign in' : 'Create your account'}
+            </h1>
+            <p className="text-sm text-muted-foreground text-pretty">
+              {mode === 'sign-in'
+                ? 'Use the email your organisation was invited with.'
+                : 'Create the account first; an organisation is chosen or created next.'}
+            </p>
+
+            <form onSubmit={(event) => void submit(event)}>
+              {mode === 'sign-up' && (
+                <Field>
+                  <label htmlFor="signin-name">Full name</label>
+                  <input
+                    id="signin-name"
+                    name="name"
+                    type="text"
+                    autoComplete="name"
+                    required
+                    minLength={2}
+                  />
+                </Field>
+              )}
+              <Field>
+                <label htmlFor="signin-email">Email</label>
+                <input
+                  id="signin-email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                />
+              </Field>
+              <Field>
+                <label htmlFor="signin-password">Password</label>
+                <input
+                  id="signin-password"
+                  name="password"
+                  type="password"
+                  autoComplete={
+                    mode === 'sign-up' ? 'new-password' : 'current-password'
+                  }
+                  required
+                  minLength={8}
+                />
+              </Field>
+
+              {error !== null && <FormError>{error}</FormError>}
+
+              <Actions className="flex-col items-stretch gap-3">
+                <Button type="submit" disabled={pending} className="w-full">
+                  {pending
+                    ? 'Working…'
+                    : mode === 'sign-in'
+                      ? 'Sign in'
+                      : 'Create account'}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in');
+                    setError(null);
+                  }}
+                >
+                  {mode === 'sign-in'
+                    ? 'New here? Create an account'
+                    : 'Have an account? Sign in'}
+                </Button>
+              </Actions>
+            </form>
+          </div>
+        )}
       </section>
     </div>
   );

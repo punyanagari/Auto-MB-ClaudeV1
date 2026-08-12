@@ -62,7 +62,7 @@ Tenant isolation is enforced by:
 
 A user may belong to multiple organisations through memberships. The client names its selected organisation with the `x-organisation-id` header, but the database membership floor decides whether that selection binds; a client-supplied organisation id is never trusted by itself. Organisation creation goes through `app_private.create_organisation_with_owner`, the atomic SECURITY DEFINER bootstrap owned by the non-login `auto_mb_definer` role.
 
-Identity lives in Better Auth (email/password, server-side sessions, two-factor path) over its own `auth_*` tables; those tables are identity-level rather than tenant-owned and carry explicit service RLS policies.
+Identity lives in Better Auth (email/password, server-side sessions, TOTP two-factor with one-time backup codes) over its own `auth_*` tables; those tables are identity-level rather than tenant-owned and carry explicit service RLS policies. The MFA policy (`apps/server/src/mfa-policy.ts`) is user-level: a user holding an owner role or any document authority in any organisation is refused tenant-scoped requests — the check runs inside the tenant transaction right after the membership floor binds — until TOTP is enrolled, and is refused two-factor disable. Refusals are gated by `MFA_ENFORCE`; the gate itself always computes and is reported by `/api/me`.
 
 ## 5. Database and transactions
 

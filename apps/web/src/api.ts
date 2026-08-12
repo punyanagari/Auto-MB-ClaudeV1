@@ -124,6 +124,29 @@ import type {
 export interface MeResponse {
   readonly user: { readonly id: string; readonly email: string };
   readonly memberships: readonly Membership[];
+  /** Finding 36: whether this account has completed TOTP enrolment. */
+  readonly twoFactorEnabled: boolean;
+  /** True when the account holds authority (owner role or a document
+   * authority in any organisation) and therefore falls under the MFA
+   * policy. Computed even while enforcement is dark. */
+  readonly mfaRequired: boolean;
+  /** True when the server refuses tenant requests to required, unenrolled
+   * accounts — the client renders the enrolment wall only then. */
+  readonly mfaEnforced: boolean;
+}
+
+/** What sign-in produced: a session, or a pending two-factor challenge
+ * that verifyTotp / verifyBackupCode must complete. */
+export interface SignInResult {
+  readonly twoFactorRequired: boolean;
+}
+
+/** The one-time enrolment material from enableTwoFactor. The secret only
+ * ever exists inside the returned otpauth URI; backup codes are shown once
+ * and never retrievable again through this client. */
+export interface TwoFactorEnrolmentStart {
+  readonly totpURI: string;
+  readonly backupCodes: readonly string[];
 }
 
 /** PATCH /api/work-items/:id/tax-facts body. The route owns these shapes
@@ -185,8 +208,22 @@ export function existingRecordIdOf(error: unknown): string | null {
 export interface ApiClient {
   readonly me: () => Promise<MeResponse | null>;
   readonly signUp: (email: string, name: string, password: string) => Promise<void>;
-  readonly signIn: (email: string, password: string) => Promise<void>;
+  readonly signIn: (email: string, password: string) => Promise<SignInResult>;
   readonly signOut: () => Promise<void>;
+  /** Completes a pending two-factor sign-in challenge with an
+   * authenticator code. */
+  readonly verifyTotp: (code: string, trustDevice?: boolean) => Promise<void>;
+  /** Completes a pending two-factor sign-in challenge with a one-time
+   * backup code, consuming it. */
+  readonly verifyBackupCode: (code: string) => Promise<void>;
+  /** Starts TOTP enrolment (password re-confirmation required); the
+   * returned URI must then be verified with verifyTotp to finish. */
+  readonly enableTwoFactor: (password: string) => Promise<TwoFactorEnrolmentStart>;
+  /** Refused with 403 MFA_REQUIRED_BY_POLICY for accounts the policy
+   * covers, regardless of what the client shows. */
+  readonly disableTwoFactor: (password: string) => Promise<void>;
+  /** Replaces every backup code; the previous set stops working. */
+  readonly regenerateBackupCodes: (password: string) => Promise<readonly string[]>;
   readonly listOrganisations: () => Promise<readonly Organisation[]>;
   readonly createOrganisation: (
     body: CreateOrganisationRequest,
@@ -1160,13 +1197,49 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async signIn(email, password) {
-      await request('/api/auth/sign-in/email', {
-        method: 'POST',
-        body: { email, password },
-      });
+      // The response body decides what happened: a two-factor account
+      // answers 200 with { twoFactorRedirect: true } and NO session —
+      // discarding the body here would loop the operator back to the
+      // password form forever.
+      const outcome = await request<{ twoFactorRedirect?: boolean } | undefined>(
+        '/api/auth/sign-in/email',
+        { method: 'POST', body: { email, password } },
+      );
+      return { twoFactorRequired: outcome?.twoFactorRedirect === true };
     },
     async signOut() {
       await request('/api/auth/sign-out', { method: 'POST', body: {} });
+    },
+    async verifyTotp(code, trustDevice) {
+      await request('/api/auth/two-factor/verify-totp', {
+        method: 'POST',
+        body: { code, ...(trustDevice !== undefined ? { trustDevice } : {}) },
+      });
+    },
+    async verifyBackupCode(code) {
+      await request('/api/auth/two-factor/verify-backup-code', {
+        method: 'POST',
+        body: { code },
+      });
+    },
+    async enableTwoFactor(password) {
+      return request<TwoFactorEnrolmentStart>('/api/auth/two-factor/enable', {
+        method: 'POST',
+        body: { password },
+      });
+    },
+    async disableTwoFactor(password) {
+      await request('/api/auth/two-factor/disable', {
+        method: 'POST',
+        body: { password },
+      });
+    },
+    async regenerateBackupCodes(password) {
+      const payload = await request<{ backupCodes: readonly string[] }>(
+        '/api/auth/two-factor/generate-backup-codes',
+        { method: 'POST', body: { password } },
+      );
+      return payload.backupCodes;
     },
     async listOrganisations() {
       const payload = await request<{ organisations: Organisation[] }>(

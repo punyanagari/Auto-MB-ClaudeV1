@@ -46,7 +46,9 @@ export interface Auth {
   handler(request: Request): Promise<Response>;
   api: {
     getSession(input: { headers: Headers }): Promise<{
-      session: unknown;
+      /** The auth_sessions row; `token` is the raw value the row stores
+       * (the cookie carries `${token}.${signature}`). */
+      session: { token: string };
       user: { id: string; email: string; name: string };
     } | null>;
   };

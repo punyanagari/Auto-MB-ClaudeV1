@@ -40,7 +40,8 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
 - optional NIT, Contract Agreement, and tender/specification uploads tied to
   an LOA only after deterministic tender-number and work-name matching;
 - a dashboard, organisation settings/branding, member roles, per-member
-  work assignments, and issue/cancel authorities;
+  work assignments, issue/cancel authorities, and TOTP two-factor
+  authentication enforced for every account holding such authority;
 - multi-tenant PostgreSQL with forced RLS, an idempotent production
   bootstrap, malware-scanned uploads, rate limiting, component-aware
   readiness, backups with a CI-proven fresh-cluster restore, and a
@@ -50,10 +51,12 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
 - concise product, architecture, security, operations, and roadmap
   contracts; agent instructions and CI.
 
-Owner MFA enforcement, external monitoring, DAST, live Whitebooks
-certification, provider-specific monitoring, and a follow-up security review
-remain before paid production (`docs/ROADMAP.md`). No STQC certification is
-claimed.
+External monitoring, DAST, live Whitebooks certification,
+provider-specific monitoring, and a follow-up security review remain
+before paid production (`docs/ROADMAP.md`). MFA enforcement for privilege
+holders is implemented (TOTP + backup codes, hard wall, audited lifecycle)
+and gated by `MFA_ENFORCE`, which production defaults to on. No STQC
+certification is claimed.
 
 ## Local start
 

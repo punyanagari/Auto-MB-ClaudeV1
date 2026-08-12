@@ -1,18 +1,46 @@
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 
-export type IdentityAction = 'sign_up' | 'sign_in' | 'sign_out';
+export type IdentityAction =
+  | 'sign_up'
+  | 'sign_in'
+  | 'sign_out'
+  | 'two_factor_enabled'
+  | 'two_factor_disabled'
+  | 'two_factor_verified'
+  | 'two_factor_backup_code_used'
+  | 'two_factor_locked';
 
 /**
  * Maps a Better Auth endpoint path to the identity-audit action it
  * represents, or null for paths that are not auditable identity events
  * (session reads, verification callbacks, and so on).
+ *
+ * Two-factor mappings carry the SUCCESS action for the path; the auth proxy
+ * refines two of them from request context, which a path alone cannot see:
+ * a 2xx verify-totp that completed enrolment is recorded as
+ * 'two_factor_enabled' rather than 'two_factor_verified', and a 429 from
+ * the built-in verification lockout is recorded as 'two_factor_locked'.
+ * /two-factor/enable itself is deliberately unmapped — it only stages a
+ * secret, and enrolment is not an audit fact until a code proves the
+ * authenticator holds it.
  */
 export function identityActionForPath(pathname: string): IdentityAction | null {
   if (pathname.startsWith('/api/auth/sign-up/')) return 'sign_up';
   if (pathname.startsWith('/api/auth/sign-in/')) return 'sign_in';
   if (pathname === '/api/auth/sign-out') return 'sign_out';
+  if (pathname === '/api/auth/two-factor/verify-totp') return 'two_factor_verified';
+  if (pathname === '/api/auth/two-factor/verify-backup-code') {
+    return 'two_factor_backup_code_used';
+  }
+  if (pathname === '/api/auth/two-factor/disable') return 'two_factor_disabled';
   return null;
+}
+
+/** The two-factor endpoints the proxy audits and, for enable/disable,
+ * follows with a revocation of the user's other sessions. */
+export function isTwoFactorPath(pathname: string): boolean {
+  return pathname.startsWith('/api/auth/two-factor/');
 }
 
 /**
