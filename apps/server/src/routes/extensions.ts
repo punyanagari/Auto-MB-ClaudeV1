@@ -37,6 +37,7 @@ import {
 } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -880,26 +881,13 @@ export function registerExtensionRoutes(
         contactPhone: branding?.contact_phone ?? null,
         contactEmail: branding?.contact_email ?? null,
       });
-      const form = new FormData();
-      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-      let pdf: Buffer;
-      try {
-        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-          method: 'POST',
-          body: form,
-        });
-        if (!response.ok) {
-          throw new Error(`Gotenberg answered ${String(response.status)}`);
-        }
-        pdf = Buffer.from(await response.arrayBuffer());
-      } catch (error) {
-        request.log.error({ err: error }, 'extension render failed');
-        throw httpError(
-          502,
-          'RENDER_FAILED',
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
           'The PDF service is unavailable; the finalised request is unaffected — retry later.',
-        );
-      }
+        logError: (error) => {
+          request.log.error({ err: error }, 'extension render failed');
+        },
+      });
       const sha256 = createHash('sha256').update(pdf).digest('hex');
       const objectKey = `${organisationId}/ext/${id}.pdf`;
       await storage.put(objectKey, pdf);
@@ -1033,26 +1021,13 @@ export function registerExtensionRoutes(
         },
         { draftWatermark: true },
       );
-      const form = new FormData();
-      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-      let pdf: Buffer;
-      try {
-        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-          method: 'POST',
-          body: form,
-        });
-        if (!response.ok) {
-          throw new Error(`Gotenberg answered ${String(response.status)}`);
-        }
-        pdf = Buffer.from(await response.arrayBuffer());
-      } catch (error) {
-        request.log.error({ err: error }, 'extension draft preview failed');
-        throw httpError(
-          502,
-          'RENDER_FAILED',
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
           'The PDF service is unavailable; the draft is unaffected — retry later.',
-        );
-      }
+        logError: (error) => {
+          request.log.error({ err: error }, 'extension draft preview failed');
+        },
+      });
       void reply.type('application/pdf');
       void reply.header(
         'content-disposition',

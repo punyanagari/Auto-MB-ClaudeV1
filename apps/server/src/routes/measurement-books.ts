@@ -54,6 +54,7 @@ import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 
 /**
  * Milestone 8 phase 2: the stage-wise Measurement Book lifecycle engine
@@ -837,32 +838,18 @@ async function brandingWithLogo(
   };
 }
 
-/** HTML -> PDF through Gotenberg; failures surface as a clean 502 that
- * leaves the Measurement Book untouched. */
+/** HTML -> PDF through the shared hardened renderer; failures surface as
+ * a clean 502 that leaves the Measurement Book untouched. */
 async function convertToPdf(
   gotenbergUrl: string,
   html: string,
   logError: (error: unknown) => void,
 ): Promise<Buffer> {
-  const form = new FormData();
-  form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-  try {
-    const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-      method: 'POST',
-      body: form,
-    });
-    if (!response.ok) {
-      throw new Error(`Gotenberg answered ${String(response.status)}`);
-    }
-    return Buffer.from(await response.arrayBuffer());
-  } catch (error) {
-    logError(error);
-    throw httpError(
-      502,
-      'RENDER_FAILED',
+  return renderPdfViaGotenberg(gotenbergUrl, html, {
+    failureMessage:
       'The PDF service is unavailable; the Measurement Book is unaffected — retry later.',
-    );
-  }
+    logError,
+  });
 }
 
 // --- Routes -----------------------------------------------------------------

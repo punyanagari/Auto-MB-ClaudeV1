@@ -65,6 +65,7 @@ import {
 } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 
 /**
  * The GST tax invoice (migration 0035): CUMULATIVE, one service line at
@@ -98,44 +99,6 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * column. Submit resolves and freezes the buyer snapshot; audit events prove
  * the change but are never operational state.
  */
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
-const TAX_INVOICE_RENDER_TIMEOUT_MS = 45_000;
-
-async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
-  const declaredLength = Number(response.headers.get('content-length') ?? '0');
-  if (
-    (Number.isFinite(declaredLength) && declaredLength > MAX_RENDERED_PDF_BYTES) ||
-    declaredLength < 0
-  ) {
-    throw new Error('Gotenberg response exceeds the PDF size limit');
-  }
-  if (response.body === null) throw new Error('Gotenberg response has no body');
-
-  const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value === undefined) continue;
-    total += value.byteLength;
-    if (total > MAX_RENDERED_PDF_BYTES) {
-      await reader.cancel('PDF size limit exceeded');
-      throw new Error('Gotenberg response exceeds the PDF size limit');
-    }
-    chunks.push(Buffer.from(value));
-  }
-  const pdf = Buffer.concat(chunks, total);
-  if (
-    pdf.length < PDF_MAGIC.length ||
-    !pdf.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)
-  ) {
-    throw new Error('Gotenberg response is not an accepted PDF');
-  }
-  return pdf;
-}
 
 // --- Row shapes -------------------------------------------------------------
 
@@ -1017,31 +980,13 @@ export function registerTaxInvoiceRoutes(
         );
       }
 
-      const form = new FormData();
-      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-      let pdf: Buffer;
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), TAX_INVOICE_RENDER_TIMEOUT_MS);
-      try {
-        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-          method: 'POST',
-          body: form,
-          signal: abort.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Gotenberg answered ${String(response.status)}`);
-        }
-        pdf = await readBoundedPdfResponse(response);
-      } catch (error) {
-        request.log.error({ err: error }, 'tax invoice render failed');
-        throw httpError(
-          502,
-          'RENDER_FAILED',
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
           'The PDF service is unavailable; the submitted invoice is unaffected — retry later.',
-        );
-      } finally {
-        clearTimeout(timeout);
-      }
+        logError: (error) => {
+          request.log.error({ err: error }, 'tax invoice render failed');
+        },
+      });
 
       const sha256 = createHash('sha256').update(pdf).digest('hex');
       const objectKey = `${organisationId}/ti/${id}-${sha256.slice(0, 16)}.pdf`;
