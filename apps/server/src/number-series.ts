@@ -25,6 +25,7 @@ export const NUMBERED_DOCUMENT_TYPES = [
   'issue_challan',
   'tax_invoice',
   'budgetary_quotation',
+  'credit_note',
 ] as const;
 
 export type NumberedDocumentType = (typeof NUMBERED_DOCUMENT_TYPES)[number];
@@ -39,6 +40,7 @@ export const DEFAULT_TEMPLATES: Readonly<Record<NumberedDocumentType, string>> =
     issue_challan: '{PREFIX}/{SEQ}',
     tax_invoice: 'TI/{FY}/{SEQ:3}',
     budgetary_quotation: 'BQ-{SEQ:2}',
+    credit_note: 'CN/{FY}/{SEQ:3}',
   });
 
 /** The values a template may draw on. Absent ones make their token
@@ -271,6 +273,10 @@ export const ALLOWED_TOKENS: Readonly<
   issue_challan: new Set(['WORK', 'PREFIX', 'SEQ', 'YYYY', 'YY']),
   tax_invoice: new Set(['PREFIX', 'DIV', 'FY', 'FY2', 'YYYY', 'YY', 'SEQ']),
   budgetary_quotation: new Set(['SEQ', 'YYYY', 'YY']),
+  // The credit note numbers exactly like the invoice it supersedes: the
+  // prefix and buyer division come from the invoice, the financial year
+  // from the note's own date.
+  credit_note: new Set(['PREFIX', 'DIV', 'FY', 'FY2', 'YYYY', 'YY', 'SEQ']),
 });
 
 /** The tokens that widen a template to its counter's scope, per document
@@ -307,6 +313,10 @@ const SCOPE_TOKENS: Readonly<
     why: 'tax invoices count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — and {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary',
   },
   budgetary_quotation: { tokens: [], why: '' },
+  credit_note: {
+    tokens: ['FY', 'FY2'],
+    why: 'credit notes count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — and {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary',
+  },
 });
 
 /**

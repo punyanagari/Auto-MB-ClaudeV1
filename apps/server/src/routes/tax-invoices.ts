@@ -210,6 +210,13 @@ interface InvoiceRow {
    * the organisation's own timezone and the invoice is still not
    * registered at the IRP. */
   irp_reporting_overdue: boolean;
+  /** ack_date + 24 hours (NIC's IRN cancellation window), derived in
+   * SQL. NULL until registered; rows with irp_legacy_evidence_missing
+   * have no provable ack instant and are treated as window-CLOSED. */
+  irp_cancel_window_closes_at: Date | null;
+  /** Derived: registered, ack instant provable, and now() is still
+   * inside the 24-hour window. */
+  irp_cancel_window_open: boolean;
   /** A DIRECT invoice's taxable value — the one raised against a private
    * customer, which has no Measurement Book to take a total from.
    * Exactly one of this and measurement_book_id is ever set (0039). */
@@ -251,6 +258,14 @@ const TI_COLUMNS = `
        (select (now() at time zone o.timezone)::date from organisations o
         where o.id = ti.organisation_id))
     as irp_reporting_overdue,
+  case when ti.ack_date is null or ti.irp_legacy_evidence_missing
+    then null else ti.ack_date + interval '24 hours' end
+    as irp_cancel_window_closes_at,
+  (ti.irp_provider_state = 'registered'
+     and not ti.irp_legacy_evidence_missing
+     and ti.ack_date is not null
+     and now() < ti.ack_date + interval '24 hours')
+    as irp_cancel_window_open,
   ti.stated_taxable_value::text as stated_taxable_value,
   ti.irn, ti.ack_number, ti.ack_date, ti.cancellation_note,
   ti.created_at, ti.submitted_at, ti.cancelled_at
@@ -307,6 +322,8 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     irpCancelRemark: row.irp_cancel_remark,
     irpReportingDeadline: row.irp_reporting_deadline,
     irpReportingOverdue: row.irp_reporting_overdue,
+    irpCancelWindowClosesAt: row.irp_cancel_window_closes_at?.toISOString() ?? null,
+    irpCancelWindowOpen: row.irp_cancel_window_open,
     cancellationNote: row.cancellation_note,
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
@@ -580,9 +597,12 @@ async function assertBookUninvoiced(
   tx: TransactionSql,
   measurementBookId: string,
 ): Promise<void> {
+  // superseded behaves like cancelled here (0051): an issued credit note
+  // released the MB for a corrected invoice.
   const [live] = await tx<{ id: string; invoice_number: string | null }[]>`
     select id, invoice_number from tax_invoices
-    where measurement_book_id = ${measurementBookId} and status <> 'cancelled'
+    where measurement_book_id = ${measurementBookId}
+      and status not in ('cancelled', 'superseded')
   `;
   if (live) {
     throw draftConflictError(
@@ -605,7 +625,7 @@ async function assertBookUninvoiced(
  * Returns today in the organisation's own timezone, for the window gate
  * below — one read serves both.
  */
-async function requireEinvoiceDeclared(tx: TransactionSql): Promise<string> {
+export async function requireEinvoiceDeclared(tx: TransactionSql): Promise<string> {
   const [row] = await tx<
     {
       einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
@@ -654,6 +674,31 @@ function assertReportingWindowOpen(invoice: InvoiceRow, today: string): void {
       `The IRP reporting window for this invoice closed on ${invoice.irp_reporting_deadline}; the IRP no longer accepts a fresh report of it. The invoice remains valid locally. The lawful remedy is to cancel it locally with a note and raise a corrected invoice dated within its reporting window.`,
     );
   }
+}
+
+/** The lawful instrument once NIC's window has closed — named in every
+ * window refusal so the operator is told the way out, not just the wall. */
+export const IRP_CANCEL_WINDOW_REMEDY =
+  'Issue a credit note against this invoice instead; it supersedes the invoice and releases its Measurement Book.';
+
+/**
+ * NIC's own contract: "You can cancel only past 24 hours of invoices"
+ * from IRN generation. Checked BEFORE any provider operation is opened,
+ * so a cancellation that cannot succeed never consumes the single-flight
+ * ledger. Rows with irp_legacy_evidence_missing have no provable
+ * acknowledgement instant and are treated as window-CLOSED, never
+ * unknown-open (stage 1 of finding 5's residue).
+ */
+function assertIrpCancelWindowOpen(invoice: InvoiceRow): void {
+  if (invoice.irp_cancel_window_open) return;
+  const closesAt = invoice.irp_cancel_window_closes_at;
+  throw httpError(
+    409,
+    'IRP_CANCEL_WINDOW_CLOSED',
+    closesAt === null
+      ? `The acknowledgement instant of this IRN cannot be proven from the retained evidence, so NIC's 24-hour cancellation window is treated as closed. ${IRP_CANCEL_WINDOW_REMEDY}`
+      : `NIC's 24-hour IRN cancellation window for this invoice closed at ${closesAt.toISOString()}. ${IRP_CANCEL_WINDOW_REMEDY}`,
+  );
 }
 
 async function auditInvoice(
@@ -830,7 +875,7 @@ export function registerTaxInvoiceRoutes(
             const [row] = await tx<{ id: string }[]>`
               select id from tax_invoices
               where measurement_book_id = ${body.measurementBookId}
-                and status <> 'cancelled'
+                and status not in ('cancelled', 'superseded')
             `;
             return row?.id ?? null;
           }),
@@ -1825,7 +1870,10 @@ export function registerTaxInvoiceRoutes(
           throw httpError(
             409,
             'IRP_CANCELLATION_REQUIRED',
-            'Resolve any pending/unknown registration and cancel confirmed IRP evidence before cancelling the local invoice.',
+            invoice.irp_provider_state === 'registered' &&
+              !invoice.irp_cancel_window_open
+              ? `This invoice is registered at the IRP and NIC's 24-hour cancellation window has closed, so the IRN can no longer be cancelled. ${IRP_CANCEL_WINDOW_REMEDY}`
+              : 'Resolve any pending/unknown registration and cancel confirmed IRP evidence before cancelling the local invoice.',
           );
         }
         // An e-way bill moves THIS invoice; cancelling the invoice under
@@ -2250,6 +2298,10 @@ export function registerTaxInvoiceRoutes(
                 : 'Only a Whitebooks-registered IRN can be cancelled through this action.',
             );
           }
+          // Window honesty BEFORE a provider operation is opened: past
+          // NIC's 24 hours the cancellation cannot lawfully succeed, and
+          // the refusal names the credit-note remedy.
+          assertIrpCancelWindowOpen(invoice);
           const [liveEwayBill] = await tx<{ id: string; ewb_number: string | null }[]>`
             select id, ewb_number from eway_bills
             where tax_invoice_id = ${id} and status <> 'cancelled'
@@ -2316,7 +2368,7 @@ export function registerTaxInvoiceRoutes(
         failure = providerFailure(error);
       }
 
-      const detail = await withBoundTenant(
+      const outcome = await withBoundTenant(
         database,
         organisationId,
         user.id,
@@ -2327,6 +2379,12 @@ export function registerTaxInvoiceRoutes(
           if (invoice.irp_provider_state !== 'cancelling') {
             throw new Error(`tax invoice ${id} left the cancelling state`);
           }
+          // For mapping a provider window-expired refusal below: the row
+          // is mid-cancel here, so the derived open flag is unusable —
+          // judge by the frozen closing instant itself.
+          const windowClosed =
+            invoice.irp_cancel_window_closes_at === null ||
+            invoice.irp_cancel_window_closes_at.getTime() <= Date.now();
           if (cancelled !== null) {
             await tx`
               update tax_invoices
@@ -2375,18 +2433,29 @@ export function registerTaxInvoiceRoutes(
               operationId: prepared.operationId,
             },
           );
-          return readDetail(tx, id);
+          return { detail: await readDetail(tx, id), windowClosed };
         },
       );
-      if (cancelled !== null) return reply.status(200).send(detail);
+      if (cancelled !== null) return reply.status(200).send(outcome.detail);
       if (failure?.status === 'failed') {
+        // The pre-check refuses before the window closes by OUR clock;
+        // a definitive provider refusal after which the window has (by
+        // now) closed is the provider's own window-expired failure —
+        // name the lawful remedy instead of a bare 502.
+        if (outcome.windowClosed) {
+          throw httpError(
+            409,
+            'IRP_CANCEL_WINDOW_CLOSED',
+            `Whitebooks/NIC refused the IRN cancellation and the 24-hour window has closed. The IRN remains registered. ${IRP_CANCEL_WINDOW_REMEDY}`,
+          );
+        }
         throw httpError(
           502,
           failure.publicCode,
           'Whitebooks rejected the IRP cancellation. The IRN remains registered.',
         );
       }
-      return reply.status(202).send(detail);
+      return reply.status(202).send(outcome.detail);
     },
   );
 
