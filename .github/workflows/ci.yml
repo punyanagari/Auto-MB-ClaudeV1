@@ -199,6 +199,7 @@ jobs:
           status=$(curl -skS --connect-timeout 2 --max-time 10 \
             -o /tmp/signup.json -w '%{http_code}' \
             -X POST https://localhost/api/auth/sign-up/email \
+            -H 'Origin: https://localhost' \
             -H 'content-type: application/json' \
             -d '{"email":"smoke@example.test","password":"smoke-password-123","name":"Smoke Test"}')
           cat /tmp/signup.json
