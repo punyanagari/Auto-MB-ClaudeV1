@@ -144,6 +144,12 @@ The current product also includes:
   explicit NIC locality and forward-charge confirmation, deterministic IRP
   payloads, and append-only downloadable PDF versions rendered from frozen
   invoice facts, frozen branding, and append-only IRP evidence;
+- an org-editable GST rate master of Government-notified rates with
+  effective-date windows: invoices, quotation lines, and stated purchase-order
+  line rates must carry a rate the master notifies on the document date
+  (re-checked when the invoice is submitted, and enforced again by a database
+  trigger); rates retire by end-dating only, and changes are owner-only and
+  audited;
 - optional, operator-triggered Whitebooks B2B IRP registration, document-detail
   lookup, and cancellation, with a durable provider-operation ledger and
   explicit failed, unknown, and recovery states;

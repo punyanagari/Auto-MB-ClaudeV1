@@ -24,6 +24,7 @@ import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
+import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
@@ -421,12 +422,19 @@ function isNumericOverflow(error: unknown): boolean {
  * (HSN/SAC and GST rate, migration 0033) stand in when the request omits
  * them — the invoice slice reads those. A consumable the LOA never named
  * carries no item link and stands on its own description.
+ *
+ * A line's GST rate, when STATED on the request, must be one the
+ * Government had notified on the order date (gst_rates master, finding
+ * 19). Nullable-tolerant: an omitted rate passes — it either stays NULL
+ * or is inherited from the Work item, whose tax facts are contract data
+ * rather than a fresh keystroke.
  */
 async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   purchaseOrderId: string,
   workId: string,
+  poDate: string,
   lines: readonly PurchaseOrderLineInput[],
 ): Promise<void> {
   await tx`
@@ -451,6 +459,9 @@ async function writeLines(
     );
     const hsnCode = line.hsnCode ?? null;
     const gstRate = line.gstRate ?? null;
+    if (gstRate !== null) {
+      await assertGstRateNotified(tx, gstRate, poDate, label);
+    }
     const inserted = await (
       line.workItemId === undefined
         ? tx<{ id: string }[]>`
@@ -885,7 +896,14 @@ export function registerPurchaseOrderRoutes(
         await assertWorkAccess(tx, user.id, order.work_id);
         requireStatus(order, 'draft');
         const linesBefore = await readLineInputs(tx, id);
-        await writeLines(tx, organisationId, id, order.work_id, body.lines);
+        await writeLines(
+          tx,
+          organisationId,
+          id,
+          order.work_id,
+          order.po_date,
+          body.lines,
+        );
         const changes = auditDiff(
           { lines: linesBefore },
           { lines: await readLineInputs(tx, id) },

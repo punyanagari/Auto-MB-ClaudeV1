@@ -724,6 +724,7 @@ export function registerIssueChallanRoutes(
 
           const [organisation] = await tx<{ name: string }[]>`
             select name from organisations
+            where id = app_private.current_organisation_id()
           `;
           const lines = await tx<IssueChallanLineRow[]>`
             select icl.id, icl.work_item_id, wi.item_number,
@@ -903,6 +904,7 @@ export function registerIssueChallanRoutes(
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           return {
             snapshot: parseJsonbColumn(row?.issued_snapshot) as IssueChallanSnapshot,

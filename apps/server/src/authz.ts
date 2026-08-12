@@ -36,6 +36,23 @@ export async function requireWriterRole(
   }
 }
 
+/** Statutory configuration — the GST rate master and anything else that
+ * decides what a legal document may say — is the owner's alone; office
+ * members draft documents against it but do not change it. */
+export async function requireOwnerRole(
+  tx: TransactionSql,
+  userId: string,
+): Promise<void> {
+  const membership = await membershipOf(tx, userId);
+  if (membership?.role !== 'owner') {
+    throw httpError(
+      403,
+      'OWNER_REQUIRED',
+      'Only an organisation owner may change this configuration.',
+    );
+  }
+}
+
 /** Delivery evidence — receipts, serials, installations, Measurement
  * Book entries — is the site staff's job; owner and office may record it
  * too. Viewers may not. */

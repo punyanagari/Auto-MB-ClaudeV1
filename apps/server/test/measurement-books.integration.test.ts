@@ -538,6 +538,7 @@ afterAll(async () => {
           'work_items',
           'work_schedules',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -1363,7 +1364,7 @@ describe('tenancy and scope', () => {
 });
 
 describe('export and timeline', () => {
-  it('exports the measurement book sections under export-v8', async () => {
+  it('exports the measurement book sections under export-v9', async () => {
     const response = await authed(owner, {
       method: 'GET',
       url: '/api/export',
@@ -1371,7 +1372,7 @@ describe('export and timeline', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v8');
+    expect(exported.formatVersion).toBe('export-v9');
     expect(exported.measurementBooks?.length).toBeGreaterThanOrEqual(6);
     expect(exported.measurementBookLines?.length).toBeGreaterThanOrEqual(5);
     expect(exported.mbSources?.length).toBeGreaterThanOrEqual(5);

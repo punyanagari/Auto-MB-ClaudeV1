@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { UuidSchema } from './primitives.js';
+import { DateOnlySchema, GstRateSchema, UuidSchema } from './primitives.js';
 
 /**
  * Master data is PICKERS ONLY: documents snapshot the chosen values into
@@ -177,6 +177,56 @@ export const UnitMasterListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type UnitMasterListResponse = Static<typeof UnitMasterListResponseSchema>;
+
+// --- GST rate master (migration 0048, audit finding 19) ---------------------
+//
+// The Government-notified GST rates with the date range each was in
+// force. Documents must carry a (rate, date) pair a row here covers; the
+// server refuses anything else and the 0048 trigger backstops tax
+// invoices in the database. Unlike the flag-retired masters above, a
+// rate leaves force by END-DATING (effectiveTo) — deleting or editing a
+// referenced rate would rewrite the meaning of stored invoices, so
+// neither exists. Reads are for every member (pickers); mutations are
+// owner-only.
+
+export const GstRateMasterSchema = Type.Object(
+  {
+    id: UuidSchema,
+    /** numeric(5,2)-normalised text, e.g. '18.00'. */
+    rate: GstRateSchema,
+    label: Type.String({ minLength: 2, maxLength: 100 }),
+    effectiveFrom: DateOnlySchema,
+    /** null: in force with no announced end. */
+    effectiveTo: Type.Union([DateOnlySchema, Type.Null()]),
+    createdAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+export type GstRateMaster = Static<typeof GstRateMasterSchema>;
+
+export const CreateGstRateRequestSchema = Type.Object(
+  {
+    rate: GstRateSchema,
+    label: Type.String({ minLength: 2, maxLength: 100 }),
+    effectiveFrom: DateOnlySchema,
+    /** Omitted: open-ended. A past notification may arrive already closed. */
+    effectiveTo: Type.Optional(DateOnlySchema),
+  },
+  { additionalProperties: false },
+);
+export type CreateGstRateRequest = Static<typeof CreateGstRateRequestSchema>;
+
+export const EndDateGstRateRequestSchema = Type.Object(
+  { effectiveTo: DateOnlySchema },
+  { additionalProperties: false },
+);
+export type EndDateGstRateRequest = Static<typeof EndDateGstRateRequestSchema>;
+
+export const GstRateListResponseSchema = Type.Object(
+  { gstRates: Type.Array(GstRateMasterSchema) },
+  { additionalProperties: false },
+);
+export type GstRateListResponse = Static<typeof GstRateListResponseSchema>;
 
 // --- Organisation signatories -----------------------------------------------
 

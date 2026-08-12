@@ -533,6 +533,7 @@ export function registerOrganisationRoutes(
             { logo_object_key: string | null; logo_media_type: string | null }[]
           >`
             select logo_object_key, logo_media_type from organisations
+            where id = app_private.current_organisation_id()
           `;
           return organisation ?? null;
         },

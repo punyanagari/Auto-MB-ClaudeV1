@@ -546,6 +546,7 @@ export function registerExtensionRoutes(
 
           const [organisation] = await tx<{ name: string }[]>`
             select name from organisations
+            where id = app_private.current_organisation_id()
           `;
           const finalisedAt = new Date().toISOString();
           // The snapshot preserves what was transcribed; the PAPER letter
@@ -833,6 +834,7 @@ export function registerExtensionRoutes(
 
           const [organisation] = await tx<{ name: string }[]>`
             select name from organisations
+            where id = app_private.current_organisation_id()
           `;
           const finalisedAt = new Date().toISOString();
           const snapshot: ExtensionSnapshot = {
@@ -937,6 +939,7 @@ export function registerExtensionRoutes(
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           return {
             snapshot: parseJsonbColumn(row?.finalised_snapshot) as ExtensionSnapshot,
@@ -1078,6 +1081,7 @@ export function registerExtensionRoutes(
             select name, address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           const preview: ExtensionSnapshot = {
             templateVersion: EXTENSION_TEMPLATE_VERSION,

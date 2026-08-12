@@ -210,6 +210,7 @@ afterAll(async () => {
       for (const table of [
         'audit_events',
         'work_assignments',
+        'gst_rates',
         'organisation_memberships',
         'organisations',
       ]) {

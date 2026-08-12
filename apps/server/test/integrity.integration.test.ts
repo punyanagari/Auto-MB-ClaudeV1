@@ -202,6 +202,7 @@ afterAll(async () => {
         'work_items',
         'work_schedules',
         'works',
+        'gst_rates',
         'organisation_memberships',
         'organisations',
       ]) {
@@ -465,7 +466,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v8');
+    expect(exported.formatVersion).toBe('export-v9');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -504,12 +505,14 @@ describe('export completeness', () => {
     // Work<->consignee association — additive sections, still export-v5.
     expect(Array.isArray(exported.contacts)).toBe(true);
     expect(Array.isArray(exported.workConsignees)).toBe(true);
-    // export-v8: current masters, procurement, statutory documents,
+    // export-v9: current masters, procurement, statutory documents,
     // cutover provenance, retained invoice renders, provider-operation
     // history, and recovery-critical number counters.
     for (const section of [
       'locationMasters',
       'unitMasters',
+      // export-v9: the GST rate master (0048).
+      'gstRates',
       'organisationSignatories',
       'purchaseOrders',
       'purchaseOrderLines',

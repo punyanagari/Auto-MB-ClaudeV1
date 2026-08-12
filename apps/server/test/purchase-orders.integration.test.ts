@@ -337,6 +337,7 @@ afterAll(async () => {
           'work_schedules',
           'works',
           'contacts',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -495,7 +496,9 @@ describe('Purchase order lifecycle', () => {
             unitCode: 'Set',
             quantity: '2.5',
             rate: '40',
-            gstRate: '12',
+            // A rate the gst_rates master (0048) still notifies on the
+            // order date — 12% ended with the 22 Sep 2025 reform.
+            gstRate: '5',
           },
         ],
       },
@@ -524,7 +527,7 @@ describe('Purchase order lifecycle', () => {
       lineNumber: 2,
       workItemId: null,
       hsnCode: '732690',
-      gstRate: '12.00',
+      gstRate: '5.00',
       quantity: '2.500',
       lineAmount: '100.00',
       pendingQuantity: '2.500',
@@ -533,6 +536,32 @@ describe('Purchase order lifecycle', () => {
     // record itself, which is issue-written.
     expect(detail.previewTotal).toBe('700.00');
     expect(detail.purchaseOrder.totalAmount).toBeNull();
+  });
+
+  it('refuses a stated line GST rate the master does not notify on the order date', async () => {
+    // 12% ended 21 Sep 2025 (GST 2.0); this order is dated 2026-08-08.
+    // Only a STATED rate is checked — an omitted one stays null or
+    // inherits the Work item's tax facts (nullable-tolerant by design).
+    const response = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            description: 'Line carrying an abolished rate',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '100',
+            gstRate: '12',
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ code: string; message: string }>();
+    expect(body.code).toBe('GST_RATE_NOT_NOTIFIED');
+    expect(body.message).toContain('Line 1');
   });
 
   it('refuses a line naming an item of another Work, writing nothing', async () => {

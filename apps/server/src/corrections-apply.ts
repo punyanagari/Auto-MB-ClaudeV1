@@ -498,6 +498,7 @@ export async function applyCorrectionNotice(
 
   const [organisation] = await tx<{ name: string }[]>`
     select name from organisations
+    where id = app_private.current_organisation_id()
   `;
   const challanSnapshot = parseJsonbColumn(challan.issued_snapshot) as ChallanSnapshot;
   const issuedAt = new Date().toISOString();
