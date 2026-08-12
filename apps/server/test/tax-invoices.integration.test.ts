@@ -510,6 +510,8 @@ afterAll(async () => {
           'statutory_provider_operations',
           'tax_invoice_renders',
           'eway_bills',
+          'credit_notes',
+          'credit_note_counters',
           'tax_invoices',
           'tax_invoice_counters',
           'document_number_series',

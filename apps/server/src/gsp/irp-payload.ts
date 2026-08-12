@@ -38,7 +38,14 @@ export interface IrpBuyer {
 
 export type IrpShipTo = IrpBuyer;
 
+/** INV-01 document type: the tax invoice or the Section 34 credit note.
+ * A CRN rides the SAME schema with POSITIVE values — NIC's convention
+ * is that the document type, not a sign, marks the credit. */
+export type IrpDocumentType = 'INV' | 'CRN';
+
 export interface IrpInvoiceInput {
+  /** 'INV' (default) or 'CRN'. */
+  documentType?: IrpDocumentType;
   invoiceNumber: string;
   /** Date-only YYYY-MM-DD, converted to DD/MM/YYYY on the wire. */
   invoiceDate: string;
@@ -85,7 +92,7 @@ interface WirePartyAddress {
 export interface IrpPayload {
   Version: '1.1';
   TranDtls: { TaxSch: 'GST'; SupTyp: 'B2B'; RegRev: 'Y' | 'N' };
-  DocDtls: { Typ: 'INV'; No: string; Dt: string };
+  DocDtls: { Typ: IrpDocumentType; No: string; Dt: string };
   SellerDtls: WirePartyAddress & { Gstin: string; TrdNm?: string };
   BuyerDtls: WirePartyAddress & { Gstin: string; Pos: string };
   ShipDtls?: WirePartyAddress & { Gstin: string };
@@ -149,7 +156,7 @@ export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
       RegRev: input.reverseChargeApplicable ? 'Y' : 'N',
     },
     DocDtls: {
-      Typ: 'INV',
+      Typ: input.documentType ?? 'INV',
       No: input.invoiceNumber,
       Dt: formatNicDate(input.invoiceDate),
     },
