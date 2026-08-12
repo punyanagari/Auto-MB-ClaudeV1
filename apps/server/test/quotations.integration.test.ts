@@ -127,7 +127,9 @@ const LINES = {
       unitCode: 'Job',
       quantity: '1',
       rate: '2500',
-      gstRate: '18.5',
+      // A notified rate: the gst_rates master (0048) refuses anything the
+      // Government had not notified on the quotation date.
+      gstRate: '5',
     },
   ],
 };
@@ -304,6 +306,7 @@ afterAll(async () => {
           'budgetary_quotation_counters',
           'budgetary_quotations',
           'contacts',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -411,7 +414,7 @@ describe('budgetary quotation lifecycle', () => {
       hsnCode: null,
       quantity: '1.000',
       rate: '2500.00',
-      gstRate: '18.50',
+      gstRate: '5.00',
       lineAmount: LINE_TWO_AMOUNT,
     });
     // The draft screen reads its value from the server, not from
@@ -432,6 +435,38 @@ describe('budgetary quotation lifecycle', () => {
         .json<BudgetaryQuotationDetailResponse>()
         .lines.map((line) => line.lineNumber),
     ).toEqual([1, 2]);
+  });
+
+  it('refuses a line GST rate the master does not notify on the quotation date', async () => {
+    // 12% ended 21 Sep 2025 (GST 2.0) and this quotation is dated
+    // 2026-08-01; a rate-less line stays legal (the second line here).
+    const response = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${freeTextId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            description: 'Line carrying an abolished rate',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '100',
+            gstRate: '12',
+          },
+          {
+            description: 'Line with no GST rate at all',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ code: string; message: string }>();
+    expect(body.code).toBe('GST_RATE_NOT_NOTIFIED');
+    expect(body.message).toContain('Line 1');
+    expect(body.message).toContain('12%');
   });
 
   it('refuses a line whose unit code is blank once the database trims it', async () => {

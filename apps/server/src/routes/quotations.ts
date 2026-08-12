@@ -20,6 +20,7 @@ import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { requireAuthority, requireWriterRole } from '../authz.js';
+import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -417,11 +418,17 @@ function requireStatus(row: QuotationRow, status: BudgetaryQuotation['status']):
 /** REPLACES the draft's lines wholesale; `line_number` follows array
  * order. Line money is computed here, in exact SQL numeric arithmetic,
  * from the quantity and rate the client sent — a client-supplied amount
- * would be a second, disagreeing (and floating-point) authority. */
+ * would be a second, disagreeing (and floating-point) authority.
+ *
+ * A line's GST rate, when stated, must be one the Government had
+ * notified on the quotation date (gst_rates master, finding 19).
+ * Nullable-tolerant: a line with no rate passes — the quotation is a
+ * budgetary offer and the rate is optional on it. */
 async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   quotationId: string,
+  bqDate: string,
   lines: readonly BudgetaryQuotationLineInput[],
 ): Promise<void> {
   await tx`
@@ -442,6 +449,14 @@ async function writeLines(
       'LINE_UNIT_REQUIRED',
       `Line ${String(lineNumber)}: the unit code must not be blank.`,
     );
+    if (line.gstRate !== undefined) {
+      await assertGstRateNotified(
+        tx,
+        line.gstRate,
+        bqDate,
+        `Line ${String(lineNumber)}`,
+      );
+    }
     await tx`
       insert into budgetary_quotation_lines (
         organisation_id, budgetary_quotation_id, line_number, description,
@@ -707,7 +722,7 @@ export function registerQuotationRoutes(
         // in it rather than a raw plpgsql message as a 500.
         requireStatus(quotation, 'draft');
         const before = await readLineInputs(tx, id);
-        await writeLines(tx, organisationId, id, body.lines);
+        await writeLines(tx, organisationId, id, quotation.bq_date, body.lines);
         const changes = auditDiff(
           { lines: before },
           { lines: await readLineInputs(tx, id) },

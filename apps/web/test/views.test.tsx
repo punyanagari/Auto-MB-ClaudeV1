@@ -158,6 +158,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listSignatories: vi.fn().mockResolvedValue([]),
     saveSignatory: vi.fn(),
     setSignatoryActive: vi.fn(),
+    listGstRates: vi.fn().mockResolvedValue([]),
+    createGstRate: vi.fn(),
+    endDateGstRate: vi.fn(),
     getWorkCompletion: vi.fn().mockResolvedValue({
       completion: { originalCompletionDate: null, currentCompletionDate: null },
       extensionRequests: [],

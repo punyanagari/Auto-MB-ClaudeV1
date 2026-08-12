@@ -126,6 +126,9 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     saveUnitMaster: vi.fn(),
     setUnitMasterActive: vi.fn(),
     listSignatories: vi.fn().mockResolvedValue([]),
+    listGstRates: vi.fn().mockResolvedValue([]),
+    createGstRate: vi.fn(),
+    endDateGstRate: vi.fn(),
     saveSignatory: vi.fn(),
     setSignatoryActive: vi.fn(),
     getWorkCompletion: vi.fn().mockResolvedValue({

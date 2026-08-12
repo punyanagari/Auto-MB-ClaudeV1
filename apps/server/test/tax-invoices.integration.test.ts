@@ -513,6 +513,7 @@ afterAll(async () => {
           'work_items',
           'work_schedules',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -679,6 +680,9 @@ describe('drafting against a Measurement Book', () => {
     });
     expect(blank.statusCode).toBe(400);
 
+    // 5% here, not 12%: the invoice is dated after the 22 Sep 2025 GST 2.0
+    // reform, so 12% is no longer a notified rate on that date (the master
+    // refusal has its own tests below).
     const edited = await authed(owner, {
       method: 'PUT',
       url: `/api/tax-invoices/${invoice1Id}`,
@@ -687,7 +691,7 @@ describe('drafting against a Measurement Book', () => {
         invoiceDate: '2026-03-15',
         sacCode: '995422',
         serviceDescription: `  ${SERVICE_DESCRIPTION}  `,
-        gstRate: '12',
+        gstRate: '5',
         placeOfSupply: '09',
         reverseChargeApplicable: false,
         buyerContactId,
@@ -696,7 +700,7 @@ describe('drafting against a Measurement Book', () => {
     expect(edited.statusCode, edited.body).toBe(200);
     const detail = edited.json<TaxInvoiceDetailResponse>();
     expect(detail.invoice.sacCode).toBe('995422');
-    expect(detail.invoice.gstRate).toBe('12.00');
+    expect(detail.invoice.gstRate).toBe('5.00');
     expect(detail.invoice.placeOfSupply).toBe('09');
     // Stored trimmed, exactly as the column measures it.
     expect(detail.invoice.serviceDescription).toBe(SERVICE_DESCRIPTION);
@@ -2338,5 +2342,125 @@ describe('numbering scope across financial years (finding 8)', () => {
       numbers.push(number ?? '');
     }
     expect(new Set(numbers).size).toBe(2);
+  });
+});
+
+describe('GST rate master enforcement (finding 19)', () => {
+  /* The org-editable gst_rates master (migration 0048) decides which
+   * (rate, date) pairs an invoice may carry: rates are notifications with
+   * effective windows, not free numbers. What has to hold: a live rate is
+   * accepted today; an abolished rate is accepted only inside its window;
+   * a rate outside its window — or a 1.8-instead-of-18 typo — is a named
+   * 400; and the check runs AGAIN at submit, because both the invoice
+   * date and the master itself can change between drafting and the money
+   * moment. */
+
+  async function draftDirect(overrides: Record<string, unknown> = {}) {
+    return authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-15',
+        sacCode: '998734',
+        serviceDescription: 'GST rate master proof invoice.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        taxableValue: '500.00',
+        ...overrides,
+      },
+    });
+  }
+
+  it('accepts a live rate today and an abolished rate inside its window', async () => {
+    const live = await draftDirect();
+    expect(live.statusCode, live.body).toBe(201);
+    expect(live.json<TaxInvoiceDetailResponse>().invoice.gstRate).toBe('18.00');
+
+    // 12% ended 21 Sep 2025 (GST 2.0); an invoice dated before that is
+    // still legitimate history and must keep working.
+    const historic = await draftDirect({ invoiceDate: '2025-09-01', gstRate: '12' });
+    expect(historic.statusCode, historic.body).toBe(201);
+    expect(historic.json<TaxInvoiceDetailResponse>().invoice.gstRate).toBe('12.00');
+  });
+
+  it('refuses an abolished rate after its window, naming rate, date, and the live rates', async () => {
+    const refused = await draftDirect({ gstRate: '12' });
+    expect(refused.statusCode).toBe(400);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('GST_RATE_NOT_NOTIFIED');
+    expect(body.message).toContain('12%');
+    expect(body.message).toContain('2026-02-15');
+    expect(body.message).toContain('18.00%');
+  });
+
+  it('refuses the 1.8-instead-of-18 typo as a named 400', async () => {
+    const refused = await draftDirect({ gstRate: '1.8' });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+  });
+
+  it('refuses a date edit that carries the rate out of its window', async () => {
+    const created = await draftDirect({ invoiceDate: '2025-09-01', gstRate: '12' });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+    const moved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/tax-invoices/${invoiceId}`,
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-15',
+        sacCode: '998734',
+        serviceDescription: 'GST rate master proof invoice.',
+        gstRate: '12',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+      },
+    });
+    expect(moved.statusCode).toBe(400);
+    expect(moved.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+  });
+
+  it('re-checks at submit, so an end-dated rate is never monetised', async () => {
+    // The owner records a bespoke open-ended rate, drafts against it,
+    // then ends it BEFORE submitting: the draft passed every write-time
+    // check, so only a submit-time re-check can stop the money.
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '7.5',
+        label: 'Transitional 7.5% (proof rate)',
+        effectiveFrom: '2017-07-01',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const rateId = recorded.json<{ id: string }>().id;
+
+    const created = await draftDirect({ gstRate: '7.5' });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const ended = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${rateId}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2025-12-31' },
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+
+    const submitted = await submitInvoice(invoiceId);
+    expect(submitted.statusCode).toBe(400);
+    expect(submitted.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+
+    // The draft survives the refusal, un-numbered and un-monetised.
+    const [row] = await admin<{ status: string; invoice_number: string | null }[]>`
+      select status, invoice_number from tax_invoices where id = ${invoiceId}
+    `;
+    expect(row).toEqual({ status: 'draft', invoice_number: null });
   });
 });

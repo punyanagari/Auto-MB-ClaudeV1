@@ -106,6 +106,11 @@ describe('production bootstrap', () => {
       ['tax_invoice_renders', 'UPDATE', false],
       ['tax_invoice_renders', 'DELETE', false],
       ['tax_invoice_renders', 'TRUNCATE', false],
+      // The GST rate master (0048): retire-by-end-dating, so no DELETE.
+      ['gst_rates', 'SELECT', true],
+      ['gst_rates', 'INSERT', true],
+      ['gst_rates', 'UPDATE', true],
+      ['gst_rates', 'DELETE', false],
       ['auth_users', 'DELETE', true],
     ];
     for (const [table, privilege, expected] of expectations) {

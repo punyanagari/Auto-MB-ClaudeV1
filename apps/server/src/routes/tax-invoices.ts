@@ -44,6 +44,7 @@ import type {
   IrpRegistrationEvidence,
   StatutoryProvider,
 } from '../gsp/statutory-provider.js';
+import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -678,6 +679,11 @@ export function registerTaxInvoiceRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+          // The rate must be one the Government had notified on the
+          // invoice date (gst_rates master, finding 19) — checked here so
+          // a 1.8-instead-of-18 typo is a named 400, and re-checked at
+          // submit because the date can change until then.
+          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
           await assertWorkAccess(tx, user.id, workId);
           const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
           assertInvoiceDate(body.invoiceDate, book);
@@ -783,6 +789,7 @@ export function registerTaxInvoiceRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
           await requireBuyer(tx, body.buyerContactId);
           const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
@@ -1171,6 +1178,7 @@ export function registerTaxInvoiceRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'draft');
@@ -1305,6 +1313,12 @@ export function registerTaxInvoiceRoutes(
           await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
           requireStatus(invoice, 'draft');
           await assertInvoiceDateNotFuture(tx, invoice.invoice_date);
+          // Re-checked at the money moment: the rate and the date were
+          // both checked when the draft was written, but either may have
+          // been edited since, and the rate master itself may have been
+          // end-dated between drafting and submit. Nothing is computed
+          // from a rate the Government had not notified on this date.
+          await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
 
           if (invoice.reverse_charge_applicable === null) {
             throw httpError(

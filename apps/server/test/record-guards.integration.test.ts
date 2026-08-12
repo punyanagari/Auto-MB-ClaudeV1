@@ -375,6 +375,7 @@ afterAll(async () => {
           'work_items',
           'work_schedules',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
