@@ -313,6 +313,7 @@ function irpEvidence(seed: string) {
     ackDate: '2026-08-12T09:00:00.000Z',
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
+    rawResponse: `{"status_cd":"1","seed":"${seed}"}`,
   };
 }
 
@@ -1375,6 +1376,10 @@ describe('the IRP payload and response', () => {
     expect(detail.invoice.ackNumber).toBe('112010036563');
     expect(detail.invoice.ackDate).toBe('2026-03-16T10:30:00.000Z');
     expect(detail.signedQr).toBe('signed-qr-jws-payload');
+    // Manually typed evidence lands in its own state (migration 0053):
+    // never the provider-verified 'registered'.
+    expect(detail.invoice.irpProvider).toBe('manual');
+    expect(detail.invoice.irpProviderState).toBe('registered_unverified');
 
     const again = await authed(owner, {
       method: 'POST',
@@ -1759,6 +1764,7 @@ describe('Whitebooks IRP provider routes', () => {
     cancelInvoiceProvider.mockResolvedValueOnce({
       cancelledAtText: '12/08/2026 15:00:00',
       cancelledAt: '2026-08-12T09:30:00.000Z',
+      rawResponse: '{"status_cd":"1","CancelDate":"12/08/2026 15:00:00"}',
     });
 
     const registered = await authedOn(providerApp, owner, {
@@ -1809,17 +1815,58 @@ describe('Whitebooks IRP provider routes', () => {
     });
 
     const operations = await admin<
-      { operation: string; status: string; provider: string }[]
+      {
+        id: string;
+        operation: string;
+        status: string;
+        provider: string;
+        request_body: string | null;
+        request_body_truncated: boolean;
+        response_body: string | null;
+        response_body_truncated: boolean;
+        request_sha256: string;
+      }[]
     >`
-      select operation, status, provider
+      select id, operation, status, provider,
+             request_body, request_body_truncated,
+             response_body, response_body_truncated, request_sha256
       from statutory_provider_operations
       where tax_invoice_id = ${invoice.invoice.id}
       order by started_at
     `;
-    expect(operations).toEqual([
+    expect(operations).toMatchObject([
       { operation: 'register_irp', status: 'succeeded', provider: 'whitebooks' },
       { operation: 'cancel_irp', status: 'succeeded', provider: 'whitebooks' },
     ]);
+    // Migration 0053: the ledger holds the raw bodies beside the hash —
+    // the request is exactly the bytes request_sha256 hashes, and the
+    // response is what the provider stub returned, verbatim.
+    const registerOp = operations[0];
+    expect(registerOp?.request_body).toBe(payloadJson);
+    expect(registerOp?.request_sha256).toBe(
+      createHash('sha256')
+        .update(payloadJson ?? '', 'utf8')
+        .digest('hex'),
+    );
+    expect(registerOp?.request_body_truncated).toBe(false);
+    expect(registerOp?.response_body).toBe(evidence.rawResponse);
+    expect(registerOp?.response_body_truncated).toBe(false);
+    expect(operations[1]?.response_body).toBe(
+      '{"status_cd":"1","CancelDate":"12/08/2026 15:00:00"}',
+    );
+
+    // Append-once: completed rows refuse any rewrite of either body.
+    for (const [column, operationId] of [
+      ['request_body', registerOp?.id],
+      ['response_body', registerOp?.id],
+    ] as const) {
+      await expect(
+        admin.unsafe(
+          `update statutory_provider_operations set ${column} = '{"forged":true}' where id = $1`,
+          [operationId ?? ''],
+        ),
+      ).rejects.toThrow(/immutable/);
+    }
   });
 
   it('never repeats an unknown registration mutation and reconciles by lookup', async () => {
@@ -2844,5 +2891,127 @@ describe('e-invoice applicability and the IRP reporting window (finding 20)', ()
     expect(refusal?.message).toContain(
       'submitted tax invoice business facts are immutable',
     );
+  });
+});
+
+describe('manual IRP evidence truth (migration 0053)', () => {
+  it('walks the registered_unverified lifecycle: record, interlock, cancel', async () => {
+    const detail = await submittedDirectInvoice('manual truth lifecycle');
+    const invoiceId = detail.invoice.id;
+    const irn = 'ab12'.repeat(16);
+
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/irp-response`,
+      organisationId,
+      payload: {
+        irn,
+        ackNumber: '112010099001',
+        ackDate: '2026-08-01T10:30:00.000Z',
+        ackDateText: '01/08/2026 16:00:00',
+        signedQr: 'manual-signed-qr',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      irn,
+      irpProvider: 'manual',
+      irpProviderState: 'registered_unverified',
+    });
+
+    // Behaves as registered for the local-cancel interlock: the invoice
+    // cannot be cancelled locally while the (unverified) IRN stands.
+    const blocked = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { note: 'attempt while IRN stands' },
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json<{ code: string }>().code).toBe('IRP_CANCELLATION_REQUIRED');
+
+    // Excluded from the provider-verified surface: the Whitebooks cancel
+    // path refuses a manual record even where transport is configured.
+    const providerCancel = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/cancel-irp`,
+      organisationId,
+      payload: { reasonCode: '2', remark: 'not a provider record' },
+    });
+    expect(providerCancel.statusCode).toBe(409);
+    expect(providerCancel.json<{ code: string }>().code).toBe('IRP_STATE_CONFLICT');
+
+    // Externally confirmed cancellation evidence closes the manual record…
+    const externalCancel = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/irp-cancel-response`,
+      organisationId,
+      payload: {
+        reasonCode: '2',
+        remark: 'Cancelled on the portal',
+        cancelledAt: '2026-08-02T09:00:00.000Z',
+        cancelledAtText: '02/08/2026 14:30:00',
+      },
+    });
+    expect(externalCancel.statusCode, externalCancel.body).toBe(200);
+    expect(externalCancel.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      irpProviderState: 'cancelled',
+      irpCancelledAtText: '02/08/2026 14:30:00',
+    });
+
+    // …and only then may the local invoice be cancelled.
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { note: 'corrected invoice follows' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+  });
+
+  it('refuses raw SQL promoting manual evidence to the provider-verified state', async () => {
+    const detail = await submittedDirectInvoice('manual truth raw sql');
+    const invoiceId = detail.invoice.id;
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/irp-response`,
+      organisationId,
+      payload: {
+        irn: 'cd34'.repeat(16),
+        ackNumber: '112010099002',
+        ackDate: '2026-08-01T11:30:00.000Z',
+        ackDateText: '01/08/2026 17:00:00',
+        signedQr: 'manual-signed-qr-2',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+
+    // The state machine refuses the transition outright…
+    const guarded = await admin`
+      update tax_invoices set irp_provider_state = 'registered'
+      where id = ${invoiceId}
+    `
+      .then(() => null)
+      .catch((error: unknown) => error as { code?: string; message: string });
+    expect(guarded).not.toBeNull();
+    expect(guarded?.code).toBe('23514');
+    expect(guarded?.message).toContain('invalid IRP provider-state transition');
+
+    // …and even with every trigger suspended, the 0053 CHECK constraint
+    // still refuses a manual row claiming the provider-verified state.
+    await admin.unsafe(`set session_replication_role = 'replica'`);
+    try {
+      const floored = await admin`
+        update tax_invoices set irp_provider_state = 'registered'
+        where id = ${invoiceId}
+      `
+        .then(() => null)
+        .catch((error: unknown) => error as { code?: string; message: string });
+      expect(floored).not.toBeNull();
+      expect(floored?.code).toBe('23514');
+      expect(floored?.message).toContain('tax_invoices_manual_unverified_shape');
+    } finally {
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
   });
 });

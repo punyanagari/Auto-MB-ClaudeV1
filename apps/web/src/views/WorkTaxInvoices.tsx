@@ -258,10 +258,16 @@ export function WorkTaxInvoices({
                 <td>
                   <StatusChip status={row.status}>{row.status}</StatusChip>
                   {row.irn !== null && (
-                    <StatusChip status="issued">
+                    <StatusChip
+                      status={
+                        row.irpProvider === 'whitebooks'
+                          ? 'issued'
+                          : 'registered_unverified'
+                      }
+                    >
                       {row.irpProvider === 'whitebooks'
                         ? 'IRP registered'
-                        : 'manual IRP evidence · unverified'}
+                        : 'manual — unverified'}
                     </StatusChip>
                   )}
                   {/* The frozen reporting window (migration 0049): amber
@@ -272,7 +278,8 @@ export function WorkTaxInvoices({
                       <StatusChip status="expired">IRP overdue</StatusChip>
                     ) : (
                       row.irpReportingDeadline !== null &&
-                      row.irpProviderState !== 'registered' && (
+                      row.irpProviderState !== 'registered' &&
+                      row.irpProviderState !== 'registered_unverified' && (
                         <StatusChip status="review">
                           IRP due {formatDate(row.irpReportingDeadline)}
                         </StatusChip>
@@ -546,7 +553,8 @@ export function WorkTaxInvoices({
                 </>
               ) : (
                 invoice.irpReportingDeadline !== null &&
-                invoice.irpProviderState !== 'registered' && (
+                invoice.irpProviderState !== 'registered' &&
+                invoice.irpProviderState !== 'registered_unverified' && (
                   <>
                     {' '}
                     <StatusChip status="review">
@@ -1175,7 +1183,9 @@ export function WorkTaxInvoices({
                     <StatusChip status={invoice.irpProviderState}>
                       {invoice.irpProvider === 'whitebooks'
                         ? `Whitebooks · ${invoice.irpProviderState}`
-                        : `Manual evidence · ${invoice.irpProviderState} · unverified`}
+                        : invoice.irpProviderState === 'registered_unverified'
+                          ? 'manual — unverified'
+                          : `manual — ${invoice.irpProviderState} · unverified`}
                     </StatusChip>
                   </p>
                   <dl>
@@ -1264,7 +1274,7 @@ export function WorkTaxInvoices({
                     )}
                   {canCancel &&
                     ((invoice.irpProvider === 'manual' &&
-                      invoice.irpProviderState === 'registered') ||
+                      invoice.irpProviderState === 'registered_unverified') ||
                       invoice.irpProviderState === 'cancellation_unknown') && (
                       <Disclosure label="Record externally confirmed IRP cancellation (unverified)">
                         <form

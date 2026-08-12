@@ -22,6 +22,9 @@ const CHIP_TONES = {
   review: 'warning',
   prepared: 'warning',
   processing: 'warning',
+  // A manually-recorded IRP registration: real evidence, no provider
+  // verification — caution, not success (migration 0053).
+  registered_unverified: 'warning',
 
   failed: 'destructive',
   cancelled: 'destructive',
