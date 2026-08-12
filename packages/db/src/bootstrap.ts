@@ -96,6 +96,9 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   budgetary_quotation_counters: 'SELECT, INSERT, UPDATE',
   tax_invoices: 'SELECT, INSERT, UPDATE, DELETE',
   tax_invoice_counters: 'SELECT, INSERT, UPDATE',
+  // The GST rate master (0048): rates retire via end-dating, so like
+  // every master there is no DELETE.
+  gst_rates: 'SELECT, INSERT, UPDATE',
   tax_invoice_renders: 'SELECT, INSERT',
   eway_bills: 'SELECT, INSERT, UPDATE, DELETE',
   document_number_series: 'SELECT, INSERT, UPDATE, DELETE',
