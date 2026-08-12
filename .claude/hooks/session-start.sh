@@ -13,9 +13,10 @@
 #
 #   1. PostgreSQL 16 is installed but the cluster is DOWN, and nothing
 #      has created the roles or the database. The Docker Compose path the
-#      repo uses locally (scripts/bootstrap.sh) is not available — there
-#      is no Docker daemon here — but the native cluster is, and it is
-#      lighter anyway.
+#      repo uses locally (scripts/bootstrap.sh) is not usable here: the
+#      daemon ships stopped (section 2b starts it) and pulling the
+#      postgres image can be denied by the session's egress policy. The
+#      native cluster needs neither, and it is lighter anyway.
 #   2. The database URLs live in .env, which the repo does not commit, so
 #      `pnpm db:migrate` fails with "DATABASE_ADMIN_URL is required"
 #      until something exports them.
@@ -76,6 +77,30 @@ if ! command -v pdftotext >/dev/null 2>&1; then
   log "installing poppler-utils"
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils
+fi
+
+# ---------------------------------------------------------------------
+# 2b. Docker daemon. dockerd and containerd are installed in this image but
+# nothing starts them — PID 1 is not an init system — so `docker compose`
+# fails with a bare "cannot connect to the Docker socket" that reads like
+# Docker is unavailable rather than merely stopped. Start it so the CLI
+# works and failures name their real cause.
+#
+# This does NOT make docker-compose.yml usable on its own: pulling images
+# reaches Docker Hub's blob CDN (production.cloudfront.docker.com), which
+# the session's egress policy may deny with a 403. When it does, the pull
+# is the thing to report — never work around the policy. The database is
+# provisioned natively below, so nothing in the test suite depends on this.
+
+if command -v dockerd >/dev/null 2>&1 && ! docker info >/dev/null 2>&1; then
+  log "starting the Docker daemon"
+  nohup dockerd >/var/log/dockerd.log 2>&1 &
+  for _ in $(seq 1 20); do
+    docker info >/dev/null 2>&1 && break
+    sleep 1
+  done
+  docker info >/dev/null 2>&1 ||
+    log "Docker daemon did not start; see /var/log/dockerd.log (non-fatal)"
 fi
 
 # ---------------------------------------------------------------------
