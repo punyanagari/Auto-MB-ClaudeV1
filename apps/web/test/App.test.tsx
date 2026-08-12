@@ -14,6 +14,9 @@ import { App } from '../src/App.js';
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  // The workspace serializes its view into location.hash (finding 28);
+  // clear it so one test's navigation cannot leak into the next.
+  window.history.replaceState(null, '', window.location.pathname);
 });
 
 function deferred<T>() {

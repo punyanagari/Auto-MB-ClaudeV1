@@ -19,6 +19,7 @@ import {
 } from '../format.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Card } from '../ui/card.js';
 import { ProgressBar } from '../ui/progress.js';
 import { FormError } from '../ui/form.js';
@@ -428,15 +429,17 @@ export function OperationsDashboard({
                       className="transition-colors hover:bg-muted/35"
                     >
                       <th scope="row" className="px-5 py-4 text-left font-normal">
-                        <button
-                          type="button"
-                          className="font-semibold text-primary hover:underline"
-                          onClick={() => {
+                        {/* A real link so a Work can be middle-clicked
+                            into its own tab; a left click stays in-app. */}
+                        <a
+                          href={workHash(work.workId)}
+                          className="font-semibold text-primary no-underline hover:underline"
+                          onClick={navigateOnClick(() => {
                             onOpenWork(work.workId);
-                          }}
+                          })}
                         >
                           {work.workCode}
-                        </button>
+                        </a>
                         <p className="mt-0.5 max-w-lg text-xs text-muted-foreground">
                           {work.title}
                         </p>

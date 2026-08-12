@@ -44,7 +44,13 @@ import { UploadLoa } from '../src/views/UploadLoa.js';
 import { WorkDetail } from '../src/views/WorkDetail.js';
 import { Works } from '../src/views/Works.js';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // The workspace serializes its view into location.hash (finding 28);
+  // clear it so one test's navigation cannot become the next test's
+  // restored deep link.
+  window.history.replaceState(null, '', window.location.pathname);
+});
 
 /** A create-and-record form sits behind a Disclosure labelled with the
  * verb on its own submit button, so a detail page reads as records first
@@ -126,7 +132,26 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadIssueChallanSignedCopy: vi.fn(),
     downloadIssueChallanPdf: vi.fn(),
     dashboard: vi.fn(),
-    organisationProfile: vi.fn(),
+    // Complete GST facts by default, so the billing-readiness panel
+    // reads "ready" unless a test arranges otherwise.
+    organisationProfile: vi.fn().mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Sharma Constructions',
+      slug: 'sharma',
+      address: '1 Depot Road, Jhansi',
+      gstin: '09AAACS1111A1Z5',
+      contactPhone: null,
+      contactEmail: null,
+      hasLogo: false,
+      stateCode: '09',
+      pincode: '284001',
+      locality: 'Jhansi',
+      tradeName: null,
+      msmeNumber: null,
+      invoiceNumberPrefix: null,
+      invoiceNotes: null,
+      warrantyTemplateText: null,
+    }),
     updateOrganisationProfile: vi.fn(),
     uploadLogo: vi.fn(),
     removeLogo: vi.fn().mockResolvedValue(undefined),
@@ -688,10 +713,16 @@ describe('Works', () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    // Register rows are real links (finding 28): the href works in a new
+    // tab, a left click routes in-app through the callback.
+    const review = await screen.findByRole('link', { name: 'Review' });
+    expect(review.getAttribute('href')).toBe(`#/loa/${DOC_ID}`);
+    fireEvent.click(review);
     expect(onReview).toHaveBeenCalledWith(DOC_ID);
 
-    fireEvent.click(screen.getByRole('button', { name: 'PL270-CRB' }));
+    const workLink = screen.getByRole('link', { name: 'PL270-CRB' });
+    expect(workLink.getAttribute('href')).toBe(`#/works/${WORK_ID}`);
+    fireEvent.click(workLink);
     expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
   });
 
@@ -1823,7 +1854,7 @@ describe('WorkDetail retention', () => {
 
     await openWorkTab('Deliveries');
 
-    expect(await screen.findByRole('button', { name: 'DC/1' })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'DC/1' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New Delivery Challan' })).toBeTruthy();
     expect(
       screen.getByText('Correction notices could not be loaded. Try again later.'),
@@ -1861,7 +1892,7 @@ describe('WorkDetail retention', () => {
     await openWorkTab('Measurement');
 
     expect(
-      await screen.findByText(/Measurement Book entries could not be loaded/),
+      await screen.findByText(/Measurement evidence could not be loaded/),
     ).toBeTruthy();
     expect(screen.queryByText('No measurements recorded yet.')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Measurement Books' })).toBeTruthy();
@@ -2027,7 +2058,7 @@ describe('WorkDetail retention', () => {
     // Clicking the card selects the matching tab rather than opening a
     // separate surface — one architecture, not two.
     await screen.findByRole('heading', {
-      name: (accessibleName: string) => accessibleName === 'Measurement Book',
+      name: (accessibleName: string) => accessibleName === 'Measurement evidence',
     });
     const active = within(tabs)
       .getAllByRole('button')
@@ -2900,7 +2931,7 @@ describe('OperationsWorkspace mobile shell', () => {
       workBalance: vi.fn().mockResolvedValue(BALANCE),
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
     const workTabs = await screen.findByRole('navigation', {
       name: 'Work sections',
     });
@@ -4512,9 +4543,15 @@ describe('SerialLookup', () => {
     expect(screen.getByText('received')).toBeTruthy();
     expect(screen.getByText('not installed')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'DCW-1' }));
+    const workLink = screen.getByRole('link', { name: 'DCW-1' });
+    expect(workLink.getAttribute('href')).toBe(`#/works/${WORK_ID}`);
+    fireEvent.click(workLink);
     expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
-    fireEvent.click(screen.getByRole('button', { name: 'DC/1' }));
+    const challanLink = screen.getByRole('link', { name: 'DC/1' });
+    expect(challanLink.getAttribute('href')).toBe(
+      `#/works/${WORK_ID}/challans/${CHALLAN_ID}`,
+    );
+    fireEvent.click(challanLink);
     expect(onOpenChallan).toHaveBeenCalledWith(WORK_ID, CHALLAN_ID);
   });
 
@@ -6503,7 +6540,7 @@ describe('MeasurementBooks workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
     await screen.findByText(/cannot price every selected item/);
     const link = screen.getByRole('link', { name: 'payment matrix' });
-    expect(link.getAttribute('href')).toBe('#payment-matrix');
+    expect(link.getAttribute('href')).toBe(`#/works/${WORK_ID}/schedules`);
     expect(screen.getByText(/A\/1:/)).toBeTruthy();
 
     // The warnings are part of the view as it opens, so they are a status
@@ -8476,5 +8513,362 @@ describe('WorkDetail tax invoices', () => {
         note: 'Wrong place of supply.',
       });
     });
+  });
+});
+
+describe('WorkDetail billing readiness panel', () => {
+  function renderBillsTab(api: ApiClient) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  const MATRIX_ROW = {
+    id: 'dddd1111-1111-4111-8111-dddddddddd11',
+    workId: WORK_ID,
+    category: 'UNCATEGORISED',
+    pctSupply: '70.00',
+    pctInstallation: '20.00',
+    pctPac: '5.00',
+    pctFinalBill: '5.00',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+  };
+
+  const COMPLETE_CLIENT = { ...CLIENT_CONTACT, locality: 'Mumbai' };
+
+  it('reports every prerequisite ready when matrix, client and profile are complete', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      getPaymentMatrix: vi.fn().mockResolvedValue([MATRIX_ROW]),
+      listContacts: vi.fn().mockResolvedValue([COMPLETE_CLIENT]),
+    });
+    renderBillsTab(api);
+    await openWorkTab('Bills');
+
+    expect(
+      await screen.findByText('Every invoice prerequisite is in place.'),
+    ).toBeTruthy();
+    // Ready items carry no fix links.
+    expect(
+      screen.queryByRole('link', { name: 'Open organisation settings' }),
+    ).toBeNull();
+  });
+
+  it('links each unmet prerequisite to the screen that fixes it', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      // No matrix rows, no contacts at all.
+      getPaymentMatrix: vi.fn().mockResolvedValue([]),
+      listContacts: vi.fn().mockResolvedValue([]),
+      organisationProfile: vi.fn().mockResolvedValue({
+        id: ORG_ID,
+        name: 'Sharma Constructions',
+        slug: 'sharma',
+        address: null,
+        gstin: null,
+        contactPhone: null,
+        contactEmail: null,
+        hasLogo: false,
+        stateCode: null,
+        pincode: null,
+        locality: null,
+        warrantyTemplateText: null,
+      }),
+    });
+    renderBillsTab(api);
+    await openWorkTab('Bills');
+
+    expect(
+      await screen.findByText(/4 of 4 prerequisites still need attention/),
+    ).toBeTruthy();
+    const matrixLink = screen.getByRole('link', { name: 'Open the payment matrix' });
+    expect(matrixLink.getAttribute('href')).toBe(`#/works/${WORK_ID}/schedules`);
+    const contactsLink = screen.getByRole('link', { name: 'Open Masters → Contacts' });
+    expect(contactsLink.getAttribute('href')).toBe('#/masters');
+    const settingsLink = screen.getByRole('link', {
+      name: 'Open organisation settings',
+    });
+    expect(settingsLink.getAttribute('href')).toBe('#/settings');
+  });
+
+  it('shows a retryable failure without pretending readiness is known', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      getPaymentMatrix: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Matrix unavailable.'))
+        .mockResolvedValue([MATRIX_ROW]),
+      listContacts: vi.fn().mockResolvedValue([COMPLETE_CLIENT]),
+    });
+    renderBillsTab(api);
+    await openWorkTab('Bills');
+
+    expect(
+      await screen.findByText(/billing prerequisites could not be checked/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry readiness check' }));
+    expect(
+      await screen.findByText('Every invoice prerequisite is in place.'),
+    ).toBeTruthy();
+  });
+});
+
+describe('WorkBills line rendering', () => {
+  // Regression for the empty "Lines of bill N" table: bills prepared
+  // from a finalized Measurement Book snapshot MB lines (stage deltas,
+  // effective rate, line total), which the old renderer silently
+  // filtered out because it only recognised the Milestone 5 sweep
+  // shape. Both generations must render rows.
+  const MB_SHAPE_BILL = {
+    id: 'cccc2222-2222-4ccc-8ccc-cccccccccc22',
+    workId: WORK_ID,
+    billNumber: 2,
+    status: 'prepared' as const,
+    totalAmount: '4226994.01',
+    mbId: BILLABLE_MB_ID,
+    linesSnapshot: [
+      {
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unitCode: 'Nos',
+        paymentCategory: null,
+        resolvedCategory: 'UNCATEGORISED',
+        pctSupply: '70.00',
+        pctInstallation: '20.00',
+        pctPac: '5.00',
+        pctFinalBill: '5.00',
+        effectiveRate: '100.00',
+        deltaSupplied: '2.000',
+        deltaInstalled: '1.000',
+        deltaPac: '0.000',
+        deltaFinalBill: '0.000',
+        priorSupplied: '0.000',
+        priorInstalled: '0.000',
+        priorPac: '0.000',
+        priorFinalBill: '0.000',
+        amountSupply: '140.00',
+        amountInstallation: '20.00',
+        amountPac: '0.00',
+        amountFinalBill: '0.00',
+        lineTotal: '160.00',
+        remark: 'Supplied 2, installed 1',
+      },
+    ],
+    createdAt: '2026-08-02T00:00:00.000Z',
+    submittedAt: null,
+    paidAt: null,
+  };
+
+  it('renders the MB-snapshot line rows, not just headers and total', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listBills: vi.fn().mockResolvedValue([MB_SHAPE_BILL]),
+    });
+    render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    await openWorkTab('Bills');
+
+    expect(await screen.findByRole('heading', { name: /Bill #2/ })).toBeTruthy();
+    // The line row itself: item number, deltas and the line amount.
+    const row = (await screen.findByRole('rowheader', { name: 'A/1' })).closest('tr');
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain('2.000');
+    expect(row?.textContent).toContain('1.000');
+    expect(row?.textContent).toContain('₹160.00');
+    // And the bill total still stands apart from the lines.
+    expect(screen.getByText('₹42,26,994.01')).toBeTruthy();
+  });
+});
+
+describe('Tax invoice draft gating and wayfinding', () => {
+  function renderBills(api: ApiClient) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows a disabled draft action with the way to Contacts when no client exists', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [billableBook()] }),
+      listContacts: vi.fn().mockResolvedValue([]),
+    });
+    renderBills(api);
+    await openWorkTab('Bills');
+
+    const action = await screen.findByRole('button', { name: 'Draft a tax invoice' });
+    expect(action.hasAttribute('disabled')).toBe(true);
+    expect(
+      screen.getByText(/needs a client contact to name as the buyer/),
+    ).toBeTruthy();
+    const link = screen.getByRole('link', {
+      name: 'Add one under Masters → Contacts',
+    });
+    expect(link.getAttribute('href')).toBe('#/masters');
+  });
+
+  it('turns a submit refusal that names the organisation profile into a link there', async () => {
+    const draft = taxInvoice();
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([draft]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: draft,
+        buyerSnapshot: null,
+        signedQr: null,
+      }),
+      submitTaxInvoice: vi
+        .fn()
+        .mockRejectedValue(
+          new RequestFailedError(
+            400,
+            'ORG_STATE_REQUIRED',
+            'The organisation profile has no GST state code, so the CGST+SGST/IGST split is undecidable — set it and retry.',
+          ),
+        ),
+    });
+    renderBills(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit invoice' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('no GST state code');
+    const link = within(alert).getByRole('link', {
+      name: 'Open organisation settings',
+    });
+    expect(link.getAttribute('href')).toBe('#/settings');
+  });
+});
+
+describe('OperationsWorkspace hash routing', () => {
+  const organisation = {
+    id: ORG_ID,
+    name: 'Sharma Constructions',
+    slug: 'sharma',
+  };
+
+  function renderWorkspaceAt(hash: string, overrides: Partial<ApiClient> = {}) {
+    window.history.replaceState(null, '', hash);
+    const api = stubApi({
+      dashboard: vi.fn().mockResolvedValue({
+        totals: {
+          works: 0,
+          contractValue: '0.00',
+          deliveredValue: '0.00',
+          billedValue: '0.00',
+          openDrafts: 0,
+          loaAwaitingReview: 0,
+        },
+        alerts: [],
+        works: [],
+      }),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      ...overrides,
+    });
+    const result = render(
+      <OperationsWorkspace
+        api={api}
+        me={{
+          user: { id: 'user-a', email: 'owner@example.test' },
+          memberships: [membership({})],
+          twoFactorEnabled: true,
+          mfaRequired: true,
+          mfaEnforced: false,
+        }}
+        organisation={organisation}
+        organisations={[organisation]}
+        onSwitchOrganisation={vi.fn()}
+        onOrganisationCreated={vi.fn()}
+        onSignOut={vi.fn()}
+      />,
+    );
+    return { api, ...result };
+  }
+
+  it('restores a Work section deep link on mount — a refresh keeps the exact view', async () => {
+    renderWorkspaceAt(`#/works/${WORK_ID}/bills`);
+
+    // The Work page opens directly on its Bills section.
+    await screen.findByRole('heading', { name: /DCW-1/ });
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    const active = within(tabs)
+      .getAllByRole('button')
+      .find((candidate) => candidate.getAttribute('aria-current') === 'page');
+    expect(active?.textContent).toMatch(/^Bills/);
+    expect(window.location.hash).toBe(`#/works/${WORK_ID}/bills`);
+  });
+
+  it('falls back to the Dashboard for an unknown fragment', async () => {
+    renderWorkspaceAt('#/no-such-screen');
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeTruthy();
+    expect(window.location.hash).toBe('#/');
+  });
+
+  it('keeps the address bar in step with in-app navigation and honours hash changes', async () => {
+    renderWorkspaceAt('#/');
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    expect(window.location.hash).toBe('#/');
+
+    // In-app navigation writes the hash…
+    fireEvent.click(screen.getAllByRole('button', { name: 'Works' })[0] as HTMLElement);
+    expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
+    expect(window.location.hash).toBe('#/works');
+
+    // …and an external hash change (Back/Forward, a pasted link, a
+    // middle-clicked row) navigates the workspace.
+    window.location.hash = '#/settings';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
   });
 });

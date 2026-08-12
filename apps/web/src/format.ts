@@ -118,6 +118,15 @@ export function formatRate(decimal: string): string {
   return rupeeRates.format(value);
 }
 
+/** The viewer's local calendar date as a date-input value (YYYY-MM-DD).
+ * A form-prefill convenience only — document editors that have a server
+ * read available prefer its organisation-timezone `today`, and the
+ * server revalidates every legal date it is sent. en-CA formats as
+ * YYYY-MM-DD without any UTC round-trip of the local day. */
+export function todayIso(): string {
+  return new Intl.DateTimeFormat('en-CA').format(new Date());
+}
+
 /** Whole-percent progress, clamped to 0–100 for display. */
 export function progressPercent(part: string, whole: string): number {
   const partValue = Number(part);

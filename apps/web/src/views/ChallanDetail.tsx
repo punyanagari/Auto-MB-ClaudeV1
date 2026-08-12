@@ -8,7 +8,7 @@ import type {
   Serial,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatRate, formatTimestampDate } from '../format.js';
+import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
@@ -773,7 +773,13 @@ export function ChallanDetail({
                 </Field>
                 <Field>
                   <label htmlFor="install-date">Installed on</label>
-                  <input id="install-date" name="install-date" type="date" required />
+                  <input
+                    id="install-date"
+                    name="install-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                 </Field>
                 <Field>
                   <label htmlFor="install-remarks">Remarks (optional)</label>

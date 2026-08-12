@@ -21,6 +21,12 @@ import {
   X,
 } from 'lucide-react';
 import type { ApiClient, MeResponse } from '../api.js';
+import {
+  parseWorkspaceHash,
+  workspaceHashOf,
+  type WorkspaceRoute,
+  type WorkspaceView,
+} from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Approvals } from './Approvals.js';
@@ -50,25 +56,6 @@ interface OperationsWorkspaceProps {
   readonly onOrganisationCreated: (organisation: Organisation) => void;
   readonly onSignOut: () => void;
 }
-
-type WorkspaceView =
-  | { name: 'dashboard' }
-  | { name: 'works' }
-  | { name: 'upload' }
-  | { name: 'review'; documentId: string }
-  | { name: 'work'; workId: string }
-  | { name: 'challan-new'; workId: string; workCode: string }
-  | { name: 'challan-edit'; workId: string; workCode: string; challanId: string }
-  | { name: 'challan'; workId: string; workCode: string; challanId: string }
-  | { name: 'masters' }
-  | { name: 'issue-challan-new'; workId: string }
-  | { name: 'issue-challan-edit'; workId: string; challanId: string }
-  | { name: 'issue-challan'; workId: string; challanId: string }
-  | { name: 'quotations' }
-  | { name: 'approvals' }
-  | { name: 'serials' }
-  | { name: 'members' }
-  | { name: 'settings' };
 
 interface PendingDeparture {
   readonly action: () => void;
@@ -216,14 +203,33 @@ export function OperationsWorkspace({
   onOrganisationCreated,
   onSignOut,
 }: OperationsWorkspaceProps) {
-  const [view, setView] = useState<WorkspaceView>({ name: 'dashboard' });
+  /** Finding 28: the view state is serialized into location.hash, so a
+   * refresh restores the exact screen, the browser's back/forward walk
+   * the view history, and every register row can carry a real link. The
+   * hash is read once here; afterwards React state stays authoritative
+   * and the two are kept in step below. */
+  const initialRouteRef = useRef<WorkspaceRoute | null>(null);
+  if (initialRouteRef.current === null) {
+    initialRouteRef.current = parseWorkspaceHash(window.location.hash) ?? {
+      view: { name: 'dashboard' },
+    };
+  }
+  const initialRoute = initialRouteRef.current;
+  const [view, setView] = useState<WorkspaceView>(initialRoute.view);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [workTab, setWorkTab] = useState<WorkTab>('overview');
-  const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(null);
-  const [mastersTab, setMastersTab] = useState<MastersTab>('contacts');
+  const [workTab, setWorkTab] = useState<WorkTab>(initialRoute.workTab ?? 'overview');
+  const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(
+    initialRoute.view.name === 'work' && initialRoute.workTab !== undefined
+      ? initialRoute.view.workId
+      : null,
+  );
+  const [mastersTab, setMastersTab] = useState<MastersTab>(
+    initialRoute.mastersTab ?? 'contacts',
+  );
   const [challanWork, setChallanWork] = useState<{
     readonly workId: string;
     readonly status: Work['status'];
+    readonly workCode: string;
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -273,8 +279,16 @@ export function OperationsWorkspace({
     refreshPendingApprovals();
   }, [refreshPendingApprovals, view.name]);
 
+  // The Work behind any challan screen: its status closes create/record
+  // surfaces, and its code fills the editor's prefix when the view was
+  // restored from a hash (which carries no work code).
   const openedChallanWorkId =
-    view.name === 'challan' || view.name === 'issue-challan' ? view.workId : null;
+    view.name === 'challan' ||
+    view.name === 'issue-challan' ||
+    view.name === 'challan-new' ||
+    view.name === 'challan-edit'
+      ? view.workId
+      : null;
   useEffect(() => {
     if (openedChallanWorkId === null) return;
     let cancelled = false;
@@ -282,7 +296,11 @@ export function OperationsWorkspace({
       .getWork(organisation.id, openedChallanWorkId)
       .then((loaded) => {
         if (!cancelled) {
-          setChallanWork({ workId: openedChallanWorkId, status: loaded.work.status });
+          setChallanWork({
+            workId: openedChallanWorkId,
+            status: loaded.work.status,
+            workCode: loaded.work.workCode,
+          });
         }
       })
       .catch(() => {
@@ -297,6 +315,10 @@ export function OperationsWorkspace({
     challanWork === null ||
     challanWork.workId !== openedChallanWorkId ||
     challanWork.status === 'active';
+  const challanWorkCode =
+    challanWork !== null && challanWork.workId === openedChallanWorkId
+      ? challanWork.workCode
+      : '';
 
   useEffect(() => {
     containerRef.current?.querySelector('h1')?.focus();
@@ -363,6 +385,81 @@ export function OperationsWorkspace({
       setView(next);
     });
   }
+
+  /** The current navigation state as its canonical fragment. */
+  const currentHash = workspaceHashOf({
+    view,
+    workTab:
+      view.name === 'work' && view.workId === tabbedWorkId ? workTab : 'overview',
+    ...(view.name === 'masters' ? { mastersTab } : {}),
+  });
+
+  // State → address bar. In-app navigation pushes so Back retraces the
+  // operator's steps; the very first sync only normalises the fragment
+  // it restored from, so it replaces instead of stacking an entry.
+  const hashSyncedRef = useRef(false);
+  useEffect(() => {
+    if (window.location.hash === currentHash) {
+      hashSyncedRef.current = true;
+      return;
+    }
+    if (hashSyncedRef.current) {
+      window.history.pushState(null, '', currentHash);
+    } else {
+      window.history.replaceState(null, '', currentHash);
+    }
+    hashSyncedRef.current = true;
+  }, [currentHash]);
+
+  // Address bar → state: browser Back/Forward, a middle-clicked register
+  // link, or a hand-edited fragment. The listener is mounted once and
+  // reads the live values through refs. A dirty editor gets the same
+  // departure confirmation an in-app navigation would show — the hash is
+  // put back first, so declining leaves both the screen and the address
+  // untouched.
+  const currentHashRef = useRef(currentHash);
+  currentHashRef.current = currentHash;
+  const applyRoute = useCallback((route: WorkspaceRoute) => {
+    setView(route.view);
+    if (route.view.name === 'work') {
+      setTabbedWorkId(route.view.workId);
+      setWorkTab(route.workTab ?? 'overview');
+    }
+    if (route.view.name === 'masters' && route.mastersTab !== undefined) {
+      setMastersTab(route.mastersTab);
+    }
+  }, []);
+  const requestDepartureRef = useRef(requestDeparture);
+  requestDepartureRef.current = requestDeparture;
+  const editorDirtyRef = useRef(editorDirty);
+  editorDirtyRef.current = editorDirty;
+  useEffect(() => {
+    function onHashChange(): void {
+      const fragment = window.location.hash;
+      if (fragment === currentHashRef.current) return;
+      const parsed = parseWorkspaceHash(fragment);
+      const route: WorkspaceRoute = parsed ?? { view: { name: 'dashboard' } };
+      if (editorDirtyRef.current) {
+        // The address bar must keep describing the editor while the
+        // confirmation is open; declining then changes nothing at all.
+        window.history.replaceState(null, '', currentHashRef.current);
+        requestDepartureRef.current(() => {
+          applyRoute(route);
+        });
+        return;
+      }
+      if (parsed === null) {
+        // Unknown or stale fragment: land on the Dashboard and
+        // normalise the address instead of showing a dead screen.
+        window.history.replaceState(null, '', workspaceHashOf(route));
+      }
+      applyRoute(route);
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  }, [applyRoute]);
 
   function keepEditing(): void {
     setPendingDeparture(null);
@@ -965,44 +1062,28 @@ export function OperationsWorkspace({
             />
           )}
 
+          {/* The decorative 1-2-3 stepper that used to sit here never
+              advanced; the editor's own sections carry the order. */}
           {(view.name === 'challan-new' || view.name === 'challan-edit') && (
-            <div className="flex flex-col gap-4">
-              <div className="rounded-2xl border border-primary/15 bg-primary/[0.035] p-4">
-                <p className="text-xs font-semibold text-primary">
-                  Delivery Challan workflow
-                </p>
-                <ol className="mt-3 grid list-none gap-2 p-0 text-xs sm:grid-cols-3">
-                  <li className="rounded-xl bg-card px-3 py-2 font-medium shadow-sm">
-                    1. Work &amp; consignee
-                  </li>
-                  <li className="rounded-xl bg-card px-3 py-2 font-medium shadow-sm">
-                    2. Items &amp; PO links
-                  </li>
-                  <li className="rounded-xl bg-card px-3 py-2 font-medium shadow-sm">
-                    3. Review &amp; save draft
-                  </li>
-                </ol>
-              </div>
-              <ChallanEditor
-                api={api}
-                organisationId={organisation.id}
-                workId={view.workId}
-                workCode={view.workCode}
-                challanId={view.name === 'challan-edit' ? view.challanId : null}
-                onSaved={(challanId) => {
-                  setView({
-                    name: 'challan',
-                    workId: view.workId,
-                    workCode: view.workCode,
-                    challanId,
-                  });
-                }}
-                onCancel={() => {
-                  setView({ name: 'work', workId: view.workId });
-                }}
-                onDirtyChange={setEditorDirty}
-              />
-            </div>
+            <ChallanEditor
+              api={api}
+              organisationId={organisation.id}
+              workId={view.workId}
+              workCode={view.workCode === '' ? challanWorkCode : view.workCode}
+              challanId={view.name === 'challan-edit' ? view.challanId : null}
+              onSaved={(challanId) => {
+                setView({
+                  name: 'challan',
+                  workId: view.workId,
+                  workCode: view.workCode,
+                  challanId,
+                });
+              }}
+              onCancel={() => {
+                setView({ name: 'work', workId: view.workId });
+              }}
+              onDirtyChange={setEditorDirty}
+            />
           )}
 
           {view.name === 'challan' && (

@@ -16,6 +16,7 @@ import {
   formatTimestamp,
   formatTimestampDate,
 } from '../format.js';
+import { mastersHash } from '../lib/workspace-routes.js';
 import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -228,6 +229,11 @@ export function WorkTaxInvoices({
   );
   const canDraft =
     canModify && canCreateDocuments && billableBooks.length > 0 && clients.length > 0;
+  // The one prerequisite an operator can fix elsewhere right now: a
+  // billable MB exists but no client contact does. Shown as a disabled
+  // action with the way there, instead of silently hiding the workflow.
+  const draftBlockedByMissingClient =
+    canModify && canCreateDocuments && billableBooks.length > 0 && clients.length === 0;
 
   return (
     <>
@@ -306,6 +312,20 @@ export function WorkTaxInvoices({
         <p className="text-muted-foreground">
           No tax invoice has been raised for this Work yet.
         </p>
+      )}
+
+      {draftBlockedByMissingClient && (
+        <>
+          <Button disabled aria-disabled="true">
+            Draft a tax invoice
+          </Button>
+          <p className="text-muted-foreground">
+            Drafting needs a client contact to name as the buyer, and this organisation
+            has none yet.{' '}
+            <a href={mastersHash('contacts')}>Add one under Masters → Contacts</a>, then
+            return here.
+          </p>
+        </>
       )}
 
       {canDraft && (

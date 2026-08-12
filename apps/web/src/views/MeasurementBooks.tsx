@@ -18,6 +18,8 @@ import {
 } from '../api.js';
 import { formatInr } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
+import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
+import { workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -111,7 +113,11 @@ export function MeasurementBooks({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{
+    readonly message: string;
+    /** Where the refusal is actually fixed, when it names another screen. */
+    readonly wayfind: Wayfind | null;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -148,24 +154,29 @@ export function MeasurementBooks({
     };
   }, [api, organisationId, workId]);
 
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-      throw cause;
-    } finally {
-      setPending(false);
-    }
-  }, []);
+  const act = useCallback(
+    async (work: () => Promise<void>, done: string) => {
+      setPending(true);
+      setActionError(null);
+      setNotice(null);
+      try {
+        await work();
+        setNotice(done);
+      } catch (cause) {
+        setActionError({
+          message:
+            cause instanceof RequestFailedError
+              ? cause.message
+              : 'The action failed; nothing was changed.',
+          wayfind: wayfindingOf(cause, { workId }),
+        });
+        throw cause;
+      } finally {
+        setPending(false);
+      }
+    },
+    [workId],
+  );
 
   /** act() variant for handlers that follow up after success only. */
   const tryAct = useCallback(
@@ -297,7 +308,17 @@ export function MeasurementBooks({
         draft recomputes from live state; finalizing assigns the next gap-free MB number
         and freezes the snapshot; the bill is prepared from the finalized MB.
       </p>
-      {actionError !== null && <FormError>{actionError}</FormError>}
+      {actionError !== null && (
+        <FormError>
+          {actionError.message}
+          {actionError.wayfind !== null && (
+            <>
+              {' '}
+              <a href={actionError.wayfind.hash}>{actionError.wayfind.label}</a>
+            </>
+          )}
+        </FormError>
+      )}
       {notice !== null && (
         <p className="text-muted-foreground" role="status">
           {notice}
@@ -770,7 +791,7 @@ export function MeasurementBooks({
                 {detail.warnings.map((warning) => (
                   <li key={warning.workItemId}>
                     {warning.itemNumber}: no{' '}
-                    <a href="#payment-matrix">payment matrix</a> row for{' '}
+                    <a href={workHash(workId, 'schedules')}>payment matrix</a> row for{' '}
                     {warning.missingCategory}
                   </li>
                 ))}

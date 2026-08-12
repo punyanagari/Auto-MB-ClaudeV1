@@ -102,7 +102,7 @@ site evidence
   → payment receipt/reconciliation
 ```
 
-The older site `mb_entries` surface should be labelled as measurement evidence rather than presented as the formal Measurement Book itself. It is not yet: the interface still heads that register "Measurement Book" and still shows the retired billed/unbilled chips, directly above the formal Measurement Books panel. Recorded as finding 30 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.
+The older site `mb_entries` surface is labelled **Measurement evidence** rather than presented as the formal Measurement Book itself: the register heads itself with measurement-evidence language, states that billing runs through the formal Measurement Books below, and no longer shows the retired billed/unbilled chips. (Resolved finding 30 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.)
 
 External statutory registration status is shown separately from local invoice status. A locally issued invoice is never represented as IRP-registered without verified provider evidence.
 
@@ -178,6 +178,15 @@ delivery/issue documents, installation, Measurement Book, billing, tax invoice,
 and e-way-bill surfaces are implemented. Shared loading, empty, retry,
 read-only, permission, and blocked-action states cover the primary paths, with
 component and Playwright/axe regression coverage.
+
+Workspace navigation is serialized into `location.hash` (hand-rolled, no
+router library): a refresh restores the exact view including the Work
+workspace section, browser Back/Forward walk the view history, register rows
+render real links so middle-click works, and unknown or stale fragments fall
+back to the Dashboard. Blocked actions whose remedy lives on another screen
+(payment matrix rows, organisation GST profile, buyer contact facts) link
+directly to that screen, and each Work's Bills section opens with a billing
+readiness checklist deriving the same prerequisites from existing reads.
 
 When Whitebooks is configured, the billing UI performs explicit IRP register,
 reconcile, and cancel actions directly through the server adapter. Local and

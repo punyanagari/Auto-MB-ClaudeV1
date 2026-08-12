@@ -4,6 +4,7 @@ import type { LoaDocument, Work } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatCompactInr, formatDate, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { navigateOnClick, workHash, workspaceHashOf } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 
@@ -229,15 +230,17 @@ export function Works({
                         className="group transition-colors hover:bg-muted/40"
                       >
                         <th scope="row" className="px-4 py-3 text-left font-normal">
-                          <button
-                            type="button"
-                            onClick={() => {
+                          {/* A real link: middle-click opens the Work in
+                              its own tab, a left click stays in-app. */}
+                          <a
+                            href={workHash(work.id)}
+                            onClick={navigateOnClick(() => {
                               onOpenWork(work.id);
-                            }}
-                            className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-primary"
+                            })}
+                            className="inline-block rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-primary no-underline"
                           >
                             {work.workCode}
-                          </button>
+                          </a>
                           <p className="mt-1 line-clamp-2 max-w-md text-[13px] leading-snug font-medium text-foreground group-hover:text-primary">
                             {work.title}
                           </p>
@@ -330,29 +333,29 @@ export function Works({
                       </td>
                       <td className="px-4 py-3">
                         {document.extractionStatus === 'review' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
+                          <a
+                            href={workspaceHashOf({
+                              view: { name: 'review', documentId: document.id },
+                            })}
+                            onClick={navigateOnClick(() => {
                               onReview(document.id);
-                            }}
+                            })}
                           >
                             Review
-                          </Button>
+                          </a>
                         )}
                         {document.extractionStatus === 'confirmed' &&
                           document.confirmedWorkId !== null && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
+                            <a
+                              href={workHash(document.confirmedWorkId)}
+                              onClick={navigateOnClick(() => {
                                 if (document.confirmedWorkId !== null) {
                                   onOpenWork(document.confirmedWorkId);
                                 }
-                              }}
+                              })}
                             >
                               Open Work
-                            </Button>
+                            </a>
                           )}
                       </td>
                     </tr>
