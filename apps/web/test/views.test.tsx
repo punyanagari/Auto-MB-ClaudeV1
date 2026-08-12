@@ -2896,8 +2896,14 @@ describe('Settings', () => {
         address: 'Plot 4, MIDC, Nashik',
         gstin: '27ABCDE1234F1Z5',
         stateCode: '27',
+        tradeName: null,
+        locality: null,
+        pincode: null,
         contactPhone: null,
         contactEmail: null,
+        msmeNumber: null,
+        invoiceNumberPrefix: null,
+        invoiceNotes: null,
         warrantyTemplateText: null,
       });
     });
