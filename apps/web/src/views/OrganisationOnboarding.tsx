@@ -19,7 +19,7 @@ export function OrganisationOnboarding({
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,0.8fr)] lg:px-8 lg:py-16">
       <section className="flex flex-col justify-center">
-        <p className="mb-2 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
+        <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-primary uppercase">
           Organisation access
         </p>
         <h1 tabIndex={-1}>Start your first workspace</h1>

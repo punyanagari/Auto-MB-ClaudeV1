@@ -173,7 +173,7 @@ export function UploadLoa({
     <div className="mx-auto w-full max-w-6xl">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="mb-1 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
+          <p className="mb-1 text-xs font-semibold tracking-[0.16em] text-primary uppercase">
             Contract intake
           </p>
           <h1 id="upload-loa-title" tabIndex={-1}>
@@ -334,7 +334,7 @@ export function UploadLoa({
                   {state.status === 'accepted' ? (
                     <div className="mt-4 rounded-lg border border-success/25 bg-success/5 px-3 py-2.5">
                       <p className="truncate text-xs font-medium">{state.filename}</p>
-                      <p className="mt-1 text-[11px] text-success">
+                      <p className="mt-1 text-xs text-success">
                         Tender identity matched and evidence extracted.
                       </p>
                     </div>

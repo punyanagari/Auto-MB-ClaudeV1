@@ -27,7 +27,7 @@ export function OrganisationAccessSettings({
     <Card aria-labelledby="organisation-access-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
+          <p className="mb-1 text-xs font-semibold tracking-[0.14em] text-primary uppercase">
             Account-level access
           </p>
           <h2 id="organisation-access-title" className="m-0 text-lg">
@@ -58,7 +58,7 @@ export function OrganisationAccessSettings({
               </span>
               <span className="min-w-0 flex-1">
                 <strong className="block truncate text-sm">{organisation.name}</strong>
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                <span className="block truncate font-mono text-xs text-muted-foreground">
                   {organisation.slug}
                 </span>
               </span>

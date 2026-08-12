@@ -18,6 +18,30 @@ The interface is operational, calm and document-oriented. Tables remain first-cl
 8. **Accessibility is part of the workflow.** Every action is keyboard reachable, headings and regions are ordered, focus follows navigation, and status is not conveyed by colour alone.
 9. **The server remains authoritative.** Browser calculations are explanatory only; money, quantities, numbering, permissions and lifecycle transitions remain server/database concerns.
 
+## Visual system
+
+Owner decision, 2026-08-12: the shipped quiet light system is the blessed
+design contract, and the earlier "Signal Cabin" amber/dark-default language is
+retired.
+
+- **Light system (default identity).** Cool white surfaces, one dependable
+  blue action colour (`#155eef`), restrained status tones, tabular numerals.
+- **Dark palette (added).** A complete dark theme is defined purely by the
+  semantic tokens in `apps/web/src/globals.css` — surfaces, text, borders,
+  sidebar, status tints, focus ring and selection all have light/dark pairs
+  via `light-dark()`. No component carries theme-specific colours.
+- **Three-state theming.** The default follows the operating system
+  (`prefers-color-scheme`); the Appearance card under Settings persists an
+  explicit choice in `localStorage` and applies `data-theme` on `<html>`,
+  which pins `color-scheme` and wins over the media query. Native controls
+  follow the same `color-scheme`. Print always renders light.
+- **Type.** IBM Plex is the only family — Sans for UI, Mono for figures; no
+  second display face. The scale is 26px/650 display (h1), 16px/600 section
+  (h2), 13px/600 subsection (h3), 14px body, with a 12px floor for
+  persistent UI text (labels, meta lines, table headings, keyboard chips).
+- **Contrast.** Text/tint pairings, including 12px status chips, must hold
+  WCAG AA 4.5:1 in both themes; the live axe/contrast gate is the proof.
+
 ## Organisation entry
 
 ```text
