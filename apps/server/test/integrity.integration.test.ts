@@ -188,6 +188,8 @@ afterAll(async () => {
       await admin.unsafe(`set session_replication_role = 'replica'`);
       for (const table of [
         'audit_events',
+        'import_records',
+        'import_batches',
         'mb_entries',
         'bills',
         'bill_counters',
