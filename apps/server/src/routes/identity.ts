@@ -19,6 +19,7 @@ import type { Sql } from '@auto-mb/db';
 import { jsonb, withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
+import { seedDefaultGstRates } from '../gst-rates.js';
 import { httpError } from './../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
@@ -121,6 +122,24 @@ export function registerIdentityRoutes(
           select app_private.create_organisation_with_owner(${body.name}, ${body.slug}) as id
         `;
         if (!row) throw new Error('organisation bootstrap returned no row');
+        // Seed the notified GST rate history (migration 0048 seeded
+        // organisations that already existed; this seeds the new one) in
+        // the SAME transaction, so no organisation ever exists whose
+        // invoices every rate check would refuse. Binding the tenant here
+        // is legitimate: the owner membership the definer function just
+        // created is visible to this transaction, so
+        // current_organisation_id() proves it like any other request.
+        await tx`select set_config('app.organisation_id', ${row.id}, true)`;
+        const seeded = await seedDefaultGstRates(tx, row.id);
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, details
+          )
+          values (
+            ${row.id}, ${user.id}, 'gst_rate.defaults_seeded', 'gst_rates',
+            ${jsonb(tx, { count: seeded, source: 'notified GST rate history (0048)' })}
+          )
+        `;
         return row.id;
       }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {

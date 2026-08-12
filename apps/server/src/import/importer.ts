@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { CHALLAN_TEMPLATE_VERSION, type ChallanSnapshot } from '../challan-html.js';
+import { seedDefaultGstRates } from '../gst-rates.js';
 import { canonicalRateText } from '../rate-text.js';
 import { fingerprintOf } from './canonical.js';
 import { quantize } from './decimal.js';
@@ -462,6 +463,11 @@ async function importOrganisation(
               'organisations', ${organisationId},
               ${jsonb(tx, { slug: sources.slug, sourceSystem: SOURCE_SYSTEM })})
     `;
+    // The notified GST rate history every organisation carries (0048):
+    // migration seeding only reached organisations that existed when it
+    // ran, and an imported organisation must be able to raise invoices
+    // the rate guard accepts. Idempotent, like the rest of the importer.
+    await seedDefaultGstRates(tx, organisationId);
   }
 
   // 2. Open the batch.

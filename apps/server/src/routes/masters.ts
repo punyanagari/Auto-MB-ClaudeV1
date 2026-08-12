@@ -2,6 +2,10 @@ import {
   ApiErrorSchema,
   ContactListResponseSchema,
   ContactSchema,
+  CreateGstRateRequestSchema,
+  EndDateGstRateRequestSchema,
+  GstRateListResponseSchema,
+  GstRateMasterSchema,
   LinkWorkConsigneeRequestSchema,
   LocationMasterListResponseSchema,
   LocationMasterSchema,
@@ -15,6 +19,9 @@ import {
   UnitMasterSchema,
   WorkConsigneeListResponseSchema,
   type Contact,
+  type CreateGstRateRequest,
+  type EndDateGstRateRequest,
+  type GstRateMaster,
   type LinkWorkConsigneeRequest,
   type LocationMaster,
   type SaveContactRequest,
@@ -30,7 +37,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireOwnerRole, requireWriterRole } from '../authz.js';
 import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
@@ -255,6 +262,28 @@ async function ensureDefaultUnits(
       { count: inserted.count, source: 'loa-parser canonical unit list' },
     );
   }
+}
+
+// --- GST rate master (0048) -------------------------------------------------
+
+interface GstRateRow {
+  id: string;
+  rate: string;
+  label: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: Date;
+}
+
+function toGstRate(row: GstRateRow): GstRateMaster {
+  return {
+    id: row.id,
+    rate: row.rate,
+    label: row.label,
+    effectiveFrom: row.effective_from,
+    effectiveTo: row.effective_to,
+    createdAt: row.created_at.toISOString(),
+  };
 }
 
 // --- Signatories ------------------------------------------------------------
@@ -1244,4 +1273,190 @@ export function registerMasterRoutes(
     map: toSignatory,
     responseSchema: SignatorySchema,
   });
+
+  // --- GST rate master (migration 0048, audit finding 19) -------------------
+  //
+  // Unlike the flag-retired masters above, a GST rate leaves force by
+  // END-DATING: a destructive edit or delete would change what a stored
+  // invoice's (rate, date) pair meant, so neither exists. Every member
+  // may read (the invoice and quotation forms are pickers over this
+  // list); mutations are OWNER-only — the master decides what a legal
+  // document may say, which is statutory configuration rather than
+  // drafting.
+
+  app.get(
+    '/api/masters/gst-rates',
+    {
+      schema: {
+        response: { 200: GstRateListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => tx<GstRateRow[]>`
+          select id, rate::text as rate, label,
+                 effective_from::text as effective_from,
+                 effective_to::text as effective_to, created_at
+          from gst_rates
+          order by rate, effective_from
+        `,
+      );
+      return { gstRates: rows.map(toGstRate) };
+    },
+  );
+
+  app.post(
+    '/api/masters/gst-rates',
+    {
+      schema: {
+        body: CreateGstRateRequestSchema,
+        response: { 201: GstRateMasterSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const body = request.body as CreateGstRateRequest;
+      const label = body.label.trim();
+      if (label.length < 2 || label.length > 100) {
+        throw httpError(
+          400,
+          'GST_RATE_LABEL_INVALID',
+          'The label must be between 2 and 100 characters that are not blank.',
+        );
+      }
+      // ISO dates compare correctly as strings.
+      if (body.effectiveTo !== undefined && body.effectiveTo < body.effectiveFrom) {
+        throw httpError(
+          400,
+          'GST_RATE_WINDOW_INVALID',
+          `The end date ${body.effectiveTo} precedes the start date ${body.effectiveFrom}, so the window would cover nothing.`,
+        );
+      }
+      const created = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireOwnerRole(tx, user.id);
+          const [row] = await tx<GstRateRow[]>`
+            insert into gst_rates (
+              organisation_id, rate, label, effective_from, effective_to,
+              created_by_user_id
+            )
+            values (
+              ${organisationId}, ${body.rate}, ${label}, ${body.effectiveFrom},
+              ${body.effectiveTo ?? null}, ${user.id}
+            )
+            returning id, rate::text as rate, label,
+                      effective_from::text as effective_from,
+                      effective_to::text as effective_to, created_at
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'GST_RATE_EXISTS',
+                'This rate already has a row starting on this date.',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('gst rate insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'gst_rate.created',
+            'gst_rates',
+            row.id,
+            {
+              rate: row.rate,
+              label,
+              effectiveFrom: row.effective_from,
+              effectiveTo: row.effective_to,
+            },
+          );
+          return toGstRate(row);
+        },
+      );
+      return reply.status(201).send(created);
+    },
+  );
+
+  app.post(
+    '/api/masters/gst-rates/:id/end-date',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: EndDateGstRateRequestSchema,
+        response: { 200: GstRateMasterSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as EndDateGstRateRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireOwnerRole(tx, user.id);
+        const [current] = await tx<GstRateRow[]>`
+          select id, rate::text as rate, label,
+                 effective_from::text as effective_from,
+                 effective_to::text as effective_to, created_at
+          from gst_rates where id = ${id}
+          for update
+        `;
+        if (!current) {
+          throw httpError(404, 'GST_RATE_NOT_FOUND', 'No such GST rate.');
+        }
+        if (current.effective_to !== null) {
+          throw httpError(
+            409,
+            'GST_RATE_ALREADY_ENDED',
+            `This rate already ended on ${current.effective_to}. History is never rewritten — add a new row if the rate was notified again.`,
+          );
+        }
+        if (body.effectiveTo < current.effective_from) {
+          throw httpError(
+            400,
+            'GST_RATE_WINDOW_INVALID',
+            `The end date ${body.effectiveTo} precedes the start date ${current.effective_from}, so the window would cover nothing.`,
+          );
+        }
+        const [row] = await tx<GstRateRow[]>`
+          update gst_rates set effective_to = ${body.effectiveTo}
+          where id = ${id}
+          returning id, rate::text as rate, label,
+                    effective_from::text as effective_from,
+                    effective_to::text as effective_to, created_at
+        `;
+        if (!row) throw new Error('gst rate end-date returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'gst_rate.end_dated',
+          'gst_rates',
+          id,
+          {
+            rate: row.rate,
+            before: { effectiveTo: null },
+            after: { effectiveTo: row.effective_to },
+          },
+        );
+        return toGstRate(row);
+      });
+    },
+  );
 }
