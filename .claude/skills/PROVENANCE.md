@@ -1,7 +1,8 @@
 # Third-party agent skills — provenance
 
-Three design skills back UI work in `apps/web`: two vendored into this
-directory, one consumed from npm. A fourth, Anthropic's `frontend-design`, is
+Three design skills back UI work in `apps/web`: two fetched on setup into
+git-ignored paths in this directory, one consumed from npm. A fourth,
+Anthropic's `frontend-design`, is
 used but deliberately not committed — see below. A fifth skill, `caveman`, is
 unrelated to design and governs agent prose style rather than the product.
 Nothing here is authored by this project
@@ -9,10 +10,29 @@ except `ux-ui-agent-skills/SKILL.md`, which is a thin wrapper, and this file.
 
 | Skill | Source | Pinned at | Licence | How it arrives |
 | --- | --- | --- | --- | --- |
-| `impeccable` | `pbakaus/impeccable`, `.claude/skills/impeccable` | `1cbee026c319` | Apache-2.0 | vendored |
-| `ux-designer` | `szilu/ux-designer-skill` | `28b24d5a9511` | MIT | vendored |
+| `impeccable` | `pbakaus/impeccable`, `.claude/skills/impeccable` | `1cbee026c319` | Apache-2.0 | fetched on setup |
+| `ux-designer` | `szilu/ux-designer-skill` | `28b24d5a9511` | MIT | fetched on setup |
 | `ux-ui-agent-skills` | `plugin87/ux-ui-agent-skills` | npm `^2.4.0` | MIT | devDependency |
 | `caveman` | `JuliusBrussee/caveman`, `skills/caveman` | `309834233183` | MIT | vendored |
+
+## Fetched on setup, not vendored
+
+`impeccable` (~70k lines) and `ux-designer` (~12k lines) used to be
+vendored here; together they dwarfed the product source in every clone,
+diff and review. They are now git-ignored and arrive by
+
+```
+node scripts/fetch-skills.mjs
+```
+
+(also run by `scripts/bootstrap.sh`), which clones each upstream at the
+exact commit pinned in the table above and installs the same file set the
+vendored copies carried, byte for byte — `impeccable` from the upstream
+`.claude/skills/impeccable` tree plus its repo-root LICENSE, `ux-designer`
+from the upstream root minus its README. The pin lives in this file and in
+the script together; change them in the same commit or not at all. The
+small `caveman` skill stays vendored (it is wired into a SessionStart
+hook and must exist before any network is available).
 
 ## `frontend-design` is deliberately not vendored
 
@@ -92,6 +112,8 @@ the tree. Its reference library is read on demand from
 
 ## Maintenance
 
-These are pinned copies, not submodules; they do not update themselves. Re-vendor
-deliberately, and re-read the craft floor and detector rules after doing so,
-since a bump can change what the gates enforce.
+Everything is pinned — the fetched skills to upstream commits, the npm
+skill to a version range, `caveman` as a vendored copy; nothing updates
+itself. Bump a pin deliberately (in this file and `scripts/fetch-skills.mjs`
+together for the fetched pair), and re-read the craft floor and detector
+rules after doing so, since a bump can change what the gates enforce.
