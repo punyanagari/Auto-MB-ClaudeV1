@@ -466,7 +466,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v9');
+    expect(exported.formatVersion).toBe('export-v10');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -520,6 +520,8 @@ describe('export completeness', () => {
       'budgetaryQuotationLines',
       'taxInvoices',
       'taxInvoiceRenders',
+      // export-v10: the Section 34 credit note register (0051).
+      'creditNotes',
       'measurementBookMergeProvenance',
       'ewayBills',
       'importBatches',
@@ -535,6 +537,8 @@ describe('export completeness', () => {
       'purchaseOrderCounters',
       'budgetaryQuotationCounters',
       'taxInvoiceCounters',
+      // export-v10: gap-free credit-note numbering state (0051).
+      'creditNoteCounters',
     ]) {
       expect(Array.isArray(exported[section])).toBe(true);
     }

@@ -249,6 +249,12 @@ export function registerExportRoutes(
         const ewayBills = await tx<Record<string, unknown>[]>`
           select * from eway_bills order by created_at, id
         `;
+        const creditNotes = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from credit_notes order by created_at, id
+          `,
+          ['issued_snapshot'],
+        );
         const documentNumberSeries = await tx<Record<string, unknown>[]>`
           select * from document_number_series order by document_type
         `;
@@ -281,6 +287,9 @@ export function registerExportRoutes(
         `;
         const taxInvoiceCounters = await tx<Record<string, unknown>[]>`
           select * from tax_invoice_counters order by fy_label
+        `;
+        const creditNoteCounters = await tx<Record<string, unknown>[]>`
+          select * from credit_note_counters order by fy_label
         `;
         // Recorded first so the export contains its own audit record.
         await tx`
@@ -411,6 +420,17 @@ export function registerExportRoutes(
                 ]
               : [],
           ),
+          ...creditNotes.flatMap((note) =>
+            note.rendered_object_key !== null
+              ? [
+                  {
+                    kind: 'credit-note-rendered-pdf',
+                    objectKey: note.rendered_object_key,
+                    sha256: note.rendered_sha256 ?? null,
+                  },
+                ]
+              : [],
+          ),
           ...taxInvoiceRenders.flatMap((render) => [
             {
               kind: 'tax-invoice-rendered-pdf-version',
@@ -431,8 +451,9 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
-          // export-v9: the GST rate master (0048) joins the record.
-          formatVersion: 'export-v9',
+          // export-v10: credit notes and their counters (0051) join the
+          // record.
+          formatVersion: 'export-v10',
           organisation,
           members,
           workAssignments: assignments,
@@ -478,6 +499,7 @@ export function registerExportRoutes(
           budgetaryQuotationLines,
           taxInvoices,
           taxInvoiceRenders,
+          creditNotes,
           ewayBills,
           documentNumberSeries,
           statutoryProviderOperations,
@@ -490,6 +512,7 @@ export function registerExportRoutes(
           purchaseOrderCounters,
           budgetaryQuotationCounters,
           taxInvoiceCounters,
+          creditNoteCounters,
           objectManifest,
           auditEvents,
         };

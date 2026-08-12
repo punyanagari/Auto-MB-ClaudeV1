@@ -130,13 +130,14 @@ export const IrpReportingWindowDaysSchema = Type.Integer({
 });
 export type IrpReportingWindowDays = Static<typeof IrpReportingWindowDaysSchema>;
 
-/** The four documents whose number format an organisation may define.
+/** The five documents whose number format an organisation may define.
  * Every other numbered document keeps its fixed format. */
 export const NUMBERED_DOCUMENT_TYPES = [
   'delivery_challan',
   'issue_challan',
   'tax_invoice',
   'budgetary_quotation',
+  'credit_note',
 ] as const;
 export const NumberedDocumentTypeSchema = Type.Union(
   NUMBERED_DOCUMENT_TYPES.map((value) => Type.Literal(value)),

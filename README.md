@@ -84,6 +84,14 @@ pnpm dev
 
 Or run `bash scripts/bootstrap.sh`, which performs the same steps.
 
+For UI/design work, additionally fetch the two heavy third-party design
+skills (git-ignored, pinned in `.claude/skills/PROVENANCE.md`; also run by
+`scripts/bootstrap.sh`):
+
+```bash
+node scripts/fetch-skills.mjs
+```
+
 Then open:
 
 - Web: `http://localhost:5173`

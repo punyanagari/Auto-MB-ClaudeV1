@@ -179,6 +179,45 @@ earlier attempt with an unknown outcome stays allowed, and local submit and
 local cancellation are never blocked by any of this — the invoice screens
 and the dashboard signal due and overdue reporting windows instead.
 
+NIC accepts an IRN cancellation only within 24 hours of acknowledgement, and
+the product is honest about that wall: each registered document exposes the
+closing instant of its cancellation window, a provider cancellation past the
+window is refused before any provider operation opens (rows migrated with
+manual evidence and no provable acknowledgement instant are treated as
+window-closed, never unknown-open), and the refusal names the lawful remedy —
+the Section 34 credit note.
+
+The credit note is that remedy, modelled as a first-class document:
+
+- it is drafted against exactly one SUBMITTED tax invoice (any submitted
+  invoice — the closed window is only when it is the ONLY remedy), carries the
+  Section 34 reason on its face, and at issue takes the next gap-free number
+  per organisation per financial year from its own counter under the same
+  template rules as invoice numbering (default `CN/{FY}/{SEQ:3}`; a saved
+  template must carry `{FY}` or `{FY2}`);
+- it is FULL VALUE: its money columns are copies of the superseded invoice's
+  frozen ones, proven equal by a database trigger, and its issued snapshot
+  embeds the invoice's issued snapshot verbatim — nothing is recomputed;
+- issuing it SUPERSEDES the invoice in the same transaction: superseded is a
+  terminal invoice state alongside cancelled that releases the invoice's
+  Measurement Book for a corrected invoice while every issued fact and every
+  byte of IRN evidence stays frozen and is never cleared;
+- it is an IRN document of its own (DocTyp CRN on the same INV-01 schema,
+  positive values — the document type, not a sign, marks the credit) with the
+  invoice's exact provider posture: the 0049 applicability and frozen
+  reporting-deadline gates apply identically at issue and registration, the
+  provider ledger is single-flight per note, and the note has its own 24-hour
+  IRN cancellation window;
+- local cancellation of an issued note is allowed only while its IRP state is
+  not_requested or cancelled AND the invoice's Measurement Book has not been
+  re-invoiced; it reverts the invoice superseded → submitted in the same
+  transaction (a direct, MB-less invoice supersedes and reverts with no MB
+  logic). One live credit note exists per invoice, ever; cancelled notes keep
+  their numbers forever;
+- Section 34(2) as amended (effective October 2025) conditions the supplier's
+  tax reduction on the recipient reversing ITC: the note records that fact
+  (not applicable / pending / reversal confirmed) without enforcing it.
+
 The current invoice model is one cumulative SAC service line. The UI does not
 offer fresh e-way-bill generation, and the provider-generation and NIC-payload
 endpoints reject it until goods/HSN delivery facts exist. Historical records

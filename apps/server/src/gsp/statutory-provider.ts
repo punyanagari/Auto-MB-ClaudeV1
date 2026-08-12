@@ -18,6 +18,9 @@ export interface IrpDocumentIdentity {
   readonly documentNumber: string;
   /** Date-only YYYY-MM-DD. */
   readonly documentDate: string;
+  /** INV-01 document type for lookup and payload identity: 'INV'
+   * (default) or 'CRN' for a Section 34 credit note. */
+  readonly documentType?: 'INV' | 'CRN';
 }
 
 export interface IrpRegistrationEvidence {

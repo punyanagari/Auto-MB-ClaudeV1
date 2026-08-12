@@ -77,14 +77,19 @@ export function formatTimestampDate(iso: string): string {
   });
 }
 
-/** First letters of the first two words — the avatar monogram. */
-export function initials(nameOrEmail: string): string {
-  return nameOrEmail
-    .split(/[\s@._-]+/)
-    .filter((part) => part.length > 0)
-    .slice(0, 2)
-    .map((part) => (part[0] ?? '').toUpperCase())
-    .join('');
+/** Instant with wall-clock time in the viewer's zone — used where a
+ * deadline is a moment, not a day (NIC's 24-hour IRN cancellation
+ * window). Anything unparseable passes through. */
+export function formatTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /** Rupee display for RATES, which carry up to six fraction digits
