@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   CancelStatutoryDocumentRequestSchema,
   CancelTaxInvoiceRequestSchema,
   CreateDirectTaxInvoiceRequestSchema,
@@ -9,12 +8,7 @@ import {
   TaxInvoiceDetailResponseSchema,
   TaxInvoiceListResponseSchema,
   UpdateTaxInvoiceRequestSchema,
-  type CancelTaxInvoiceRequest,
-  type CancelStatutoryDocumentRequest,
-  type CreateDirectTaxInvoiceRequest,
   type CreateTaxInvoiceRequest,
-  type RecordIrpResponseRequest,
-  type RecordManualStatutoryCancellationRequest,
   type IrpProviderState,
   type TaxInvoice,
   type TaxInvoiceDetailResponse,
@@ -23,7 +17,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import { createHash } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -67,6 +60,12 @@ import {
 } from '../tax-invoice-snapshot.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * The GST tax invoice (migration 0035): CUMULATIVE, one service line at
@@ -100,24 +99,6 @@ import { cancellationNote } from './challans.js';
  * column. Submit resolves and freezes the buyer snapshot; audit events prove
  * the change but are never operational state.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
@@ -701,25 +682,6 @@ function assertIrpCancelWindowOpen(invoice: InvoiceRow): void {
   );
 }
 
-async function auditInvoice(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  invoiceId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'tax_invoices', ${invoiceId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 function invoiceRenderSourceHash(
   snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>,
   evidence: TaxInvoiceIrpRenderEvidence,
@@ -734,7 +696,7 @@ function invoiceRenderSourceHash(
 // --- Routes -----------------------------------------------------------------
 
 export function registerTaxInvoiceRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -754,7 +716,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -791,8 +753,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CreateTaxInvoiceRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
 
@@ -849,11 +811,12 @@ export function registerTaxInvoiceRoutes(
 
           // `buyerContactId` in the details is the draft's buyer store —
           // see the module note. Always written, never diffed away.
-          await auditInvoice(
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.created',
+            'tax_invoices',
             created.id,
             {
               workId,
@@ -902,7 +865,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as CreateDirectTaxInvoiceRequest;
+      const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
 
@@ -935,11 +898,12 @@ export function registerTaxInvoiceRoutes(
             returning id
           `;
           if (!created) throw new Error('direct tax invoice insert returned no row');
-          await auditInvoice(
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.created',
+            'tax_invoices',
             created.id,
             {
               direct: true,
@@ -968,7 +932,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from tax_invoices where id = ${id}
@@ -993,7 +957,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Read immutable render inputs in one short transaction. Gotenberg and
       // object storage run without a database lock; a second transaction
@@ -1192,14 +1156,22 @@ export function registerTaxInvoiceRoutes(
               rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
           where id = ${id}
         `;
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.rendered', id, {
-          sha256,
-          renderVersion: nextRender.version,
-          sourceSha256: renderSourceHash,
-          logoSha256,
-          templateVersion: TAX_INVOICE_PDF_TEMPLATE_VERSION,
-          irpEvidenceIncluded: currentEvidence.irn !== null,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.rendered',
+          'tax_invoices',
+          id,
+          {
+            sha256,
+            renderVersion: nextRender.version,
+            sourceSha256: renderSourceHash,
+            logoSha256,
+            templateVersion: TAX_INVOICE_PDF_TEMPLATE_VERSION,
+            irpEvidenceIncluded: currentEvidence.irn !== null,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -1213,7 +1185,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const rendered = await withBoundTenant(
         database,
         organisationId,
@@ -1295,8 +1267,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateTaxInvoiceRequest;
+      const { id } = request.params;
+      const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
@@ -1369,11 +1341,19 @@ export function registerTaxInvoiceRoutes(
         );
         // buyerContactId rides top-level on EVERY update event — it is
         // the draft's buyer store, not a diff (see the module note).
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.updated', id, {
-          before: changes.before,
-          after: changes.after,
-          buyerContactId: body.buyerContactId,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.updated',
+          'tax_invoices',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+            buyerContactId: body.buyerContactId,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -1392,7 +1372,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const invoice = await lockInvoice(tx, id);
@@ -1402,12 +1382,20 @@ export function registerTaxInvoiceRoutes(
         // and the 0035 MB-cancel guard both stop seeing it).
         requireStatus(invoice, 'draft');
         await tx`delete from tax_invoices where id = ${id}`;
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.deleted', id, {
-          workId: invoice.work_id,
-          measurementBookId: invoice.measurement_book_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.deleted',
+          'tax_invoices',
+          id,
+          {
+            workId: invoice.work_id,
+            measurementBookId: invoice.measurement_book_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -1424,7 +1412,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1810,23 +1798,31 @@ export function registerTaxInvoiceRoutes(
             throw error;
           });
 
-          await auditInvoice(tx, organisationId, user.id, 'tax_invoice.submitted', id, {
-            invoiceNumber,
-            fyLabel,
-            sequence,
-            measurementBookId: invoice.measurement_book_id,
-            mbNumber: book?.mb_number ?? null,
-            buyerContactId: buyer.id,
-            taxableValue: money.taxable,
-            cgstAmount: money.cgst,
-            sgstAmount: money.sgst,
-            igstAmount: money.igst,
-            totalAmount: money.total,
-            placeOfSupply: invoice.place_of_supply,
-            reverseChargeApplicable: invoice.reverse_charge_applicable,
-            intraState,
-            irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'tax_invoice.submitted',
+            'tax_invoices',
+            id,
+            {
+              invoiceNumber,
+              fyLabel,
+              sequence,
+              measurementBookId: invoice.measurement_book_id,
+              mbNumber: book?.mb_number ?? null,
+              buyerContactId: buyer.id,
+              taxableValue: money.taxable,
+              cgstAmount: money.cgst,
+              sgstAmount: money.sgst,
+              igstAmount: money.igst,
+              totalAmount: money.total,
+              placeOfSupply: invoice.place_of_supply,
+              reverseChargeApplicable: invoice.reverse_charge_applicable,
+              intraState,
+              irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
+            },
+          );
           return readDetail(tx, id);
         },
       );
@@ -1848,8 +1844,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelTaxInvoiceRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
@@ -1899,11 +1895,19 @@ export function registerTaxInvoiceRoutes(
         // Cancelling releases the MB: the one-live index and the 0035
         // MB-cancel guard both ignore cancelled invoices, so a corrected
         // invoice can be raised and the MB can again be cancelled.
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.cancelled', id, {
-          invoiceNumber: invoice.invoice_number,
-          measurementBookId: invoice.measurement_book_id,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.cancelled',
+          'tax_invoices',
+          id,
+          {
+            invoiceNumber: invoice.invoice_number,
+            measurementBookId: invoice.measurement_book_id,
+            note,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -1922,7 +1926,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1951,11 +1955,12 @@ export function registerTaxInvoiceRoutes(
               'The provider operation is still within its two-minute lease.',
             );
           }
-          await auditInvoice(
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.provider_operation_recovered',
+            'tax_invoices',
             id,
             { operations: recovered },
           );
@@ -1983,7 +1988,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       const prepared = await withBoundTenant(
         database,
@@ -2165,11 +2170,12 @@ export function registerTaxInvoiceRoutes(
             await finishStatutoryOperation(tx, prepared.operationId, {
               status: 'succeeded',
             });
-            await auditInvoice(
+            await audit(
               tx,
               organisationId,
               user.id,
               'tax_invoice.irp_registered',
+              'tax_invoices',
               id,
               {
                 invoiceNumber: invoice.invoice_number,
@@ -2201,11 +2207,12 @@ export function registerTaxInvoiceRoutes(
               providerCode: result.providerCode,
               httpStatus: result.httpStatus,
             });
-            await auditInvoice(
+            await audit(
               tx,
               organisationId,
               user.id,
               'tax_invoice.irp_registration_unresolved',
+              'tax_invoices',
               id,
               {
                 invoiceNumber: invoice.invoice_number,
@@ -2254,8 +2261,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelStatutoryDocumentRequest;
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
       const prepared = await withBoundTenant(
         database,
@@ -2417,13 +2424,14 @@ export function registerTaxInvoiceRoutes(
               httpStatus: result.httpStatus,
             });
           }
-          await auditInvoice(
+          await audit(
             tx,
             organisationId,
             user.id,
             cancelled === null
               ? 'tax_invoice.irp_cancellation_unresolved'
               : 'tax_invoice.irp_cancelled',
+            'tax_invoices',
             id,
             {
               irn: prepared.irn,
@@ -2473,8 +2481,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as RecordIrpResponseRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // Compatibility import only. Manually typed evidence is labelled
         // unverified and requires the same authority as provider registration.
@@ -2525,11 +2533,12 @@ export function registerTaxInvoiceRoutes(
               irp_provider = 'manual', irp_provider_state = 'registered'
           where id = ${id}
         `;
-        await auditInvoice(
+        await audit(
           tx,
           organisationId,
           user.id,
           'tax_invoice.irp_recorded',
+          'tax_invoices',
           id,
           {
             invoiceNumber: invoice.invoice_number,
@@ -2558,8 +2567,8 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as RecordManualStatutoryCancellationRequest;
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
@@ -2607,11 +2616,12 @@ export function registerTaxInvoiceRoutes(
               irp_cancel_remark = ${remark}
           where id = ${id}
         `;
-        await auditInvoice(
+        await audit(
           tx,
           organisationId,
           user.id,
           'tax_invoice.irp_cancellation_recorded',
+          'tax_invoices',
           id,
           {
             irn: invoice.irn,
@@ -2633,7 +2643,7 @@ export function registerTaxInvoiceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const payload = await withBoundTenant(
         database,
         organisationId,

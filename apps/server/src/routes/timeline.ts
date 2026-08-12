@@ -4,14 +4,11 @@ import {
   TIMELINE_ENTITY_TYPES,
   TimelineQuerySchema,
   TimelineResponseSchema,
-  type EntityTimelineQuery,
   type TimelineEntityType,
   type TimelineEvent,
-  type TimelineQuery,
   type TimelineResponse,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
@@ -19,6 +16,8 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -26,15 +25,6 @@ const errorResponses = {
   403: ApiErrorSchema,
   404: ApiErrorSchema,
 } as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 const EntityParamsSchema = Type.Object(
   {
@@ -130,7 +120,7 @@ function paginate(rows: EventRow[], limit: number): TimelineResponse {
  * actor-wide queries.
  */
 export function registerTimelineRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -148,8 +138,8 @@ export function registerTimelineRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const query = request.query as TimelineQuery;
+      const { id: workId } = request.params;
+      const query = request.query;
       const limit = query.limit ?? DEFAULT_PAGE_SIZE;
       const entityTypes = parseEntityTypes(query.entityTypes);
 
@@ -232,11 +222,8 @@ export function registerTimelineRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { entityType, entityId } = request.params as {
-        entityType: string;
-        entityId: string;
-      };
-      const query = request.query as EntityTimelineQuery;
+      const { entityType, entityId } = request.params;
+      const query = request.query;
       const limit = query.limit ?? DEFAULT_PAGE_SIZE;
 
       return withBoundTenant(database, organisationId, user.id, async (tx) => {

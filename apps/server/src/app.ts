@@ -1,7 +1,9 @@
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
-import Fastify, { type FastifyInstance } from 'fastify';
+import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
+import Fastify from 'fastify';
 import pg from 'pg';
+import type { AppInstance } from './app-instance.js';
 import { createDatabasePool, withUserContext } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
@@ -205,15 +207,15 @@ function isDatabaseUnavailableError(error: unknown): boolean {
   return false;
 }
 
-export async function buildApp(
-  options: BuildAppOptions = {},
-): Promise<FastifyInstance> {
+export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstance> {
   // Explicit only: an omitted option must not overwrite the process-wide
   // default (or another instance's explicit choice) with `false`.
   if (options.mfaEnforce !== undefined) {
     configureMfaEnforcement(options.mfaEnforce);
   }
 
+  // The type provider is compile-time only (see app-instance.ts): route
+  // schemas type request.params/body/query instead of `as` casts.
   const app = Fastify({
     logger: options.logger ?? false,
     requestIdHeader: 'x-request-id',
@@ -226,7 +228,7 @@ export async function buildApp(
     ...(options.trustProxyHops !== undefined
       ? { trustProxy: options.trustProxyHops }
       : {}),
-  });
+  }).withTypeProvider<TypeBoxTypeProvider>();
 
   const database = options.databaseUrl
     ? createDatabasePool({

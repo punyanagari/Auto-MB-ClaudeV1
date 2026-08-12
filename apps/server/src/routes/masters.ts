@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   ContactListResponseSchema,
   ContactSchema,
   CreateGstRateRequestSchema,
@@ -19,29 +18,22 @@ import {
   UnitMasterSchema,
   WorkConsigneeListResponseSchema,
   type Contact,
-  type CreateGstRateRequest,
-  type EndDateGstRateRequest,
   type GstRateMaster,
-  type LinkWorkConsigneeRequest,
   type LocationMaster,
-  type SaveContactRequest,
-  type SaveLocationMasterRequest,
-  type SaveSignatoryRequest,
-  type SaveUnitMasterRequest,
   type Signatory,
   type UnitMaster,
 } from '@auto-mb/contracts';
 import { CANONICAL_UNIT_NAMES } from '@auto-mb/loa-parser';
 import { Type, type TSchema } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireOwnerRole, requireWriterRole } from '../authz.js';
 import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Contract-domain master data: the unified Contacts master (consignee,
@@ -63,48 +55,11 @@ import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js
  * owner/office. Every mutation is audited.
  */
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
 /** Retired masters stay out of pickers unless explicitly requested. */
 const ListQuerySchema = Type.Object(
   { includeRetired: Type.Optional(Type.Boolean()) },
   { additionalProperties: false },
 );
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string | null,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === '23505';
@@ -307,7 +262,7 @@ function toSignatory(row: SignatoryRow): Signatory {
 }
 
 export function registerMasterRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -344,7 +299,7 @@ export function registerMasterRoutes(
           const organisationId = requireOrganisationHeader(
             request.headers['x-organisation-id'],
           );
-          const { id } = request.params as { id: string };
+          const { id } = request.params;
           return withBoundTenant(database, organisationId, user.id, async (tx) => {
             await requireWriterRole(tx, user.id);
             const row = await options.update(tx, id, active);
@@ -400,10 +355,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { includeRetired = false, role } = request.query as {
-        includeRetired?: boolean;
-        role?: 'consignee' | 'vendor' | 'client';
-      };
+      const { includeRetired = false, role } = request.query;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -435,7 +387,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as SaveContactRequest;
+      const body = request.body;
       // Role resolution: a create that names neither vendor nor client is
       // a consignee, exactly as every create was before the procurement
       // wave; naming a role makes a vendor/client that is NOT a consignee
@@ -526,8 +478,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveContactRequest;
+      const { id } = request.params;
+      const body = request.body;
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
       const locality = body.locality?.trim() ?? null;
@@ -663,7 +615,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -703,8 +655,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as LinkWorkConsigneeRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const contact = await withBoundTenant(
         database,
         organisationId,
@@ -781,10 +733,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId, contactId } = request.params as {
-        id: string;
-        contactId: string;
-      };
+      const { id: workId, contactId } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertWorkAccess(tx, user.id, workId);
@@ -809,7 +758,7 @@ export function registerMasterRoutes(
           { contactId },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -828,9 +777,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
+      const { includeRetired = false } = request.query;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -859,7 +806,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as SaveLocationMasterRequest;
+      const body = request.body;
       const location = await withBoundTenant(
         database,
         organisationId,
@@ -913,8 +860,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveLocationMasterRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [row] = await tx<LocationRow[]>`
@@ -982,9 +929,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
+      const { includeRetired = false } = request.query;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -1019,7 +964,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as SaveUnitMasterRequest;
+      const body = request.body;
       const unit = await withBoundTenant(
         database,
         organisationId,
@@ -1071,8 +1016,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveUnitMasterRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [row] = await tx<UnitRow[]>`
@@ -1137,9 +1082,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
+      const { includeRetired = false } = request.query;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -1168,7 +1111,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as SaveSignatoryRequest;
+      const body = request.body;
       const signatory = await withBoundTenant(
         database,
         organisationId,
@@ -1222,8 +1165,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveSignatoryRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [row] = await tx<SignatoryRow[]>`
@@ -1325,7 +1268,7 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as CreateGstRateRequest;
+      const body = request.body;
       const label = body.label.trim();
       if (label.length < 2 || label.length > 100) {
         throw httpError(
@@ -1406,8 +1349,8 @@ export function registerMasterRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as EndDateGstRateRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireOwnerRole(tx, user.id);
         const [current] = await tx<GstRateRow[]>`

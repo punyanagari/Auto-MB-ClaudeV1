@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   BackfillExtensionRequestSchema,
   BackfillExtensionResponseSchema,
   ExtensionRequestDetailResponseSchema,
@@ -8,16 +7,11 @@ import {
   SaveExtensionRequestSchema,
   SetCompletionDateRequestSchema,
   WorkCompletionResponseSchema,
-  type BackfillExtensionRequest,
   type ExtensionRequest,
   type ExtensionRequestDetailResponse,
-  type RespondExtensionRequest,
-  type SaveExtensionRequest,
-  type SetCompletionDateRequest,
   type WorkCompletionResponse,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -38,24 +32,12 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -283,28 +265,8 @@ function assertProposedExtends(
   }
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerExtensionRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -325,7 +287,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         return readCompletion(tx, workId);
@@ -347,8 +309,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SetCompletionDateRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertWorkAccess(tx, user.id, workId);
@@ -405,8 +367,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SaveExtensionRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -490,8 +452,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as BackfillExtensionRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const result = await withBoundTenant(
         database,
         organisationId,
@@ -629,7 +591,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from extension_requests where id = ${id}
@@ -657,8 +619,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveExtensionRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const extension = await lockExtension(tx, id);
@@ -703,7 +665,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const extension = await lockExtension(tx, id);
@@ -773,7 +735,7 @@ export function registerExtensionRoutes(
           { workId: extension.work_id },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -790,7 +752,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -899,7 +861,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
@@ -1035,7 +997,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const { snapshot, branding } = await withBoundTenant(
         database,
         organisationId,
@@ -1170,7 +1132,7 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -1232,8 +1194,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as RespondExtensionRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const extension = await lockExtension(tx, id);
@@ -1348,10 +1310,8 @@ export function registerExtensionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const { kind = 'rendered' } = request.query as {
-        kind?: 'rendered' | 'response';
-      };
+      const { id } = request.params;
+      const { kind = 'rendered' } = request.query;
       const key = await withBoundTenant(
         database,
         organisationId,

@@ -1,23 +1,18 @@
 import {
-  ApiErrorSchema,
   CancelPurchaseOrderRequestSchema,
   CreatePurchaseOrderRequestSchema,
   PURCHASE_ORDER_STATUSES,
   PurchaseOrderDetailResponseSchema,
   PurchaseOrderListResponseSchema,
   SavePurchaseOrderLinesRequestSchema,
-  type CancelPurchaseOrderRequest,
-  type CreatePurchaseOrderRequest,
   type PurchaseOrder,
   type PurchaseOrderDetailResponse,
   type PurchaseOrderLine,
   type PurchaseOrderLineInput,
   type PurchaseOrderNotFullyReceivedDetails,
   type PurchaseOrderStatus,
-  type SavePurchaseOrderLinesRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -32,6 +27,8 @@ import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { cancellationNote } from './challans.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Purchase orders (migration 0033; legacy spec §5.8): what the contractor
@@ -57,23 +54,6 @@ import { cancellationNote } from './challans.js';
  * as closed. The status records a transition that was true when it was
  * made; the balance is always the truth of now.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 /** `status=open` is the challan editor's filter: the orders a delivery
  * challan can still receive against — issued, and with at least one line
@@ -555,29 +535,10 @@ async function readLineInputs(
   }));
 }
 
-async function auditPurchaseOrder(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  purchaseOrderId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'purchase_orders',
-      ${purchaseOrderId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 // --- Routes -----------------------------------------------------------------
 
 export function registerPurchaseOrderRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -595,8 +556,8 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const { status } = request.query as { status?: 'open' | PurchaseOrderStatus };
+      const { id: workId } = request.params;
+      const { status } = request.query;
       // 'open' is issued PLUS the derived "still owed something" test; a
       // literal status filters literally; no filter lists everything.
       const statusFilter = status === 'open' ? 'issued' : (status ?? null);
@@ -649,8 +610,8 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CreatePurchaseOrderRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const terms =
         body.terms === undefined
           ? null
@@ -717,11 +678,12 @@ export function registerPurchaseOrderRoutes(
           });
           if (!created) throw new Error('purchase order insert returned no row');
 
-          await auditPurchaseOrder(
+          await audit(
             tx,
             organisationId,
             user.id,
             'purchase_order.created',
+            'purchase_orders',
             created.id,
             {
               workId,
@@ -761,7 +723,7 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from purchase_orders where id = ${id}
@@ -789,8 +751,8 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CreatePurchaseOrderRequest;
+      const { id } = request.params;
+      const body = request.body;
       const terms =
         body.terms === undefined
           ? null
@@ -847,11 +809,12 @@ export function registerPurchaseOrderRoutes(
             terms,
           },
         );
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.updated',
+          'purchase_orders',
           id,
           { before: changes.before, after: changes.after, vendor: vendor.designation },
         );
@@ -888,8 +851,8 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SavePurchaseOrderLinesRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const order = await lockPurchaseOrder(tx, id);
@@ -908,11 +871,12 @@ export function registerPurchaseOrderRoutes(
           { lines: linesBefore },
           { lines: await readLineInputs(tx, id) },
         );
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.lines_saved',
+          'purchase_orders',
           id,
           {
             before: changes.before,
@@ -938,7 +902,7 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const order = await lockPurchaseOrder(tx, id);
@@ -951,16 +915,17 @@ export function registerPurchaseOrderRoutes(
         // find no parent row and raise.
         await tx`delete from purchase_order_lines where purchase_order_id = ${id}`;
         await tx`delete from purchase_orders where id = ${id}`;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.deleted',
+          'purchase_orders',
           id,
           { workId: order.work_id },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -977,7 +942,7 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1055,11 +1020,12 @@ export function registerPurchaseOrderRoutes(
             throw error;
           });
 
-          await auditPurchaseOrder(
+          await audit(
             tx,
             organisationId,
             user.id,
             'purchase_order.issued',
+            'purchase_orders',
             id,
             {
               poNumber,
@@ -1089,8 +1055,8 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelPurchaseOrderRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
@@ -1109,11 +1075,12 @@ export function registerPurchaseOrderRoutes(
               cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.cancelled',
+          'purchase_orders',
           id,
           { poNumber: order.po_number, note },
         );
@@ -1135,7 +1102,7 @@ export function registerPurchaseOrderRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // Closing asserts nothing an operator could invent: it succeeds
         // only when the receipts already say the order is complete, so it
@@ -1197,11 +1164,12 @@ export function registerPurchaseOrderRoutes(
           set status = 'closed', closed_at = now()
           where id = ${id}
         `;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.closed',
+          'purchase_orders',
           id,
           { poNumber: order.po_number, lineCount: lines.length },
         );

@@ -1,25 +1,18 @@
 import {
-  ApiErrorSchema,
   CancelCreditNoteRequestSchema,
   CancelStatutoryDocumentRequestSchema,
   CreateCreditNoteRequestSchema,
   CreditNoteDetailResponseSchema,
   CreditNoteListResponseSchema,
   UpdateRecipientItcRequestSchema,
-  type CancelCreditNoteRequest,
-  type CancelStatutoryDocumentRequest,
-  type CreateCreditNoteRequest,
   type CreditNote,
   type CreditNoteDetailResponse,
   type CreditNoteStatus,
   type IrpProviderState,
   type RecipientItcStatus,
-  type UpdateCreditNoteRequest,
-  type UpdateRecipientItcRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import { createHash } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -70,6 +63,12 @@ import {
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
 import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices.js';
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * The CGST Section 34 credit note (migration 0051): finding 5's residue.
@@ -97,24 +96,6 @@ import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices.js';
  * trigger arm. Direct (MB-less) invoices supersede and revert with no
  * MB logic at all.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
@@ -403,44 +384,6 @@ function assertNoteIrpCancelWindowOpen(note: CreditNoteRow): void {
   );
 }
 
-async function auditCreditNote(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  creditNoteId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'credit_notes', ${creditNoteId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
-async function auditInvoiceEvent(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  taxInvoiceId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'tax_invoices', ${taxInvoiceId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 function noteRenderSourceHash(
   snapshot: ReturnType<typeof parseCreditNoteIssuedSnapshot>,
   evidence: TaxInvoiceIrpRenderEvidence,
@@ -484,7 +427,7 @@ async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
 // --- Routes -----------------------------------------------------------------
 
 export function registerCreditNoteRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -541,7 +484,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: invoiceId } = request.params as { id: string };
+      const { id: invoiceId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -580,8 +523,8 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: invoiceId } = request.params as { id: string };
-      const body = request.body as CreateCreditNoteRequest;
+      const { id: invoiceId } = request.params;
+      const body = request.body;
       const reason = body.reason.trim();
 
       const detail = await withBoundTenant(
@@ -636,11 +579,12 @@ export function registerCreditNoteRoutes(
             throw error;
           });
           if (!created) throw new Error('credit note insert returned no row');
-          await auditCreditNote(
+          await audit(
             tx,
             organisationId,
             user.id,
             'credit_note.created',
+            'credit_notes',
             created.id,
             {
               taxInvoiceId: invoiceId,
@@ -668,7 +612,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from credit_notes where id = ${id}
@@ -694,8 +638,8 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateCreditNoteRequest;
+      const { id } = request.params;
+      const body = request.body;
       const reason = body.reason.trim();
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
@@ -711,10 +655,18 @@ export function registerCreditNoteRoutes(
               number_prefix = ${body.numberPrefix ?? null}
           where id = ${id}
         `;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.updated', id, {
-          before: { noteDate: note.note_date, reason: note.reason },
-          after: { noteDate: body.noteDate, reason },
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.updated',
+          'credit_notes',
+          id,
+          {
+            before: { noteDate: note.note_date, reason: note.reason },
+            after: { noteDate: body.noteDate, reason },
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -733,7 +685,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const note = await lockCreditNote(tx, id);
@@ -741,11 +693,19 @@ export function registerCreditNoteRoutes(
         // Rule 8: a draft is not yet a document, so it deletes.
         requireStatus(note, 'draft');
         await tx`delete from credit_notes where id = ${id}`;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.deleted', id, {
-          taxInvoiceId: note.tax_invoice_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.deleted',
+          'credit_notes',
+          id,
+          {
+            taxInvoiceId: note.tax_invoice_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -762,7 +722,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -939,20 +899,29 @@ export function registerCreditNoteRoutes(
             where id = ${invoice.id}
           `;
 
-          await auditCreditNote(tx, organisationId, user.id, 'credit_note.issued', id, {
-            noteNumber,
-            fyLabel,
-            sequence,
-            taxInvoiceId: invoice.id,
-            invoiceNumber: invoice.invoice_number,
-            totalAmount: invoice.total_amount,
-            irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
-          });
-          await auditInvoiceEvent(
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'credit_note.issued',
+            'credit_notes',
+            id,
+            {
+              noteNumber,
+              fyLabel,
+              sequence,
+              taxInvoiceId: invoice.id,
+              invoiceNumber: invoice.invoice_number,
+              totalAmount: invoice.total_amount,
+              irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
+            },
+          );
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.superseded',
+            'tax_invoices',
             invoice.id,
             {
               invoiceNumber: invoice.invoice_number,
@@ -982,8 +951,8 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelCreditNoteRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
@@ -1054,11 +1023,12 @@ export function registerCreditNoteRoutes(
             }
             throw error;
           });
-          await auditInvoiceEvent(
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.supersession_reverted',
+            'tax_invoices',
             invoice.id,
             {
               invoiceNumber: invoice.invoice_number,
@@ -1067,11 +1037,12 @@ export function registerCreditNoteRoutes(
             },
           );
         }
-        await auditCreditNote(
+        await audit(
           tx,
           organisationId,
           user.id,
           'credit_note.cancelled',
+          'credit_notes',
           id,
           {
             noteNumber: creditNote.note_number,
@@ -1098,8 +1069,8 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateRecipientItcRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const note = await lockCreditNote(tx, id);
@@ -1110,11 +1081,12 @@ export function registerCreditNoteRoutes(
           set recipient_itc_status = ${body.recipientItcStatus}
           where id = ${id}
         `;
-        await auditCreditNote(
+        await audit(
           tx,
           organisationId,
           user.id,
           'credit_note.recipient_itc_recorded',
+          'credit_notes',
           id,
           {
             before: note.recipient_itc_status,
@@ -1139,7 +1111,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1168,11 +1140,12 @@ export function registerCreditNoteRoutes(
               'The provider operation is still within its two-minute lease.',
             );
           }
-          await auditCreditNote(
+          await audit(
             tx,
             organisationId,
             user.id,
             'credit_note.provider_operation_recovered',
+            'credit_notes',
             id,
             { operations: recovered },
           );
@@ -1200,7 +1173,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       const prepared = await withBoundTenant(
         database,
@@ -1373,11 +1346,12 @@ export function registerCreditNoteRoutes(
             await finishStatutoryOperation(tx, prepared.operationId, {
               status: 'succeeded',
             });
-            await auditCreditNote(
+            await audit(
               tx,
               organisationId,
               user.id,
               'credit_note.irp_registered',
+              'credit_notes',
               id,
               {
                 noteNumber: note.note_number,
@@ -1409,11 +1383,12 @@ export function registerCreditNoteRoutes(
               providerCode: result.providerCode,
               httpStatus: result.httpStatus,
             });
-            await auditCreditNote(
+            await audit(
               tx,
               organisationId,
               user.id,
               'credit_note.irp_registration_unresolved',
+              'credit_notes',
               id,
               {
                 noteNumber: note.note_number,
@@ -1462,8 +1437,8 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelStatutoryDocumentRequest;
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
       const prepared = await withBoundTenant(
         database,
@@ -1609,13 +1584,14 @@ export function registerCreditNoteRoutes(
               httpStatus: result.httpStatus,
             });
           }
-          await auditCreditNote(
+          await audit(
             tx,
             organisationId,
             user.id,
             cancelled === null
               ? 'credit_note.irp_cancellation_unresolved'
               : 'credit_note.irp_cancelled',
+            'credit_notes',
             id,
             {
               irn: prepared.irn,
@@ -1655,7 +1631,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const payload = await withBoundTenant(
         database,
         organisationId,
@@ -1717,7 +1693,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Immutable render inputs in one short transaction; Gotenberg and
       // object storage run without a database lock; a second transaction
@@ -1844,12 +1820,20 @@ export function registerCreditNoteRoutes(
               rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
           where id = ${id}
         `;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.rendered', id, {
-          sha256,
-          sourceSha256: renderSourceHash,
-          templateVersion: CREDIT_NOTE_PDF_TEMPLATE_VERSION,
-          irpEvidenceIncluded: currentEvidence.irn !== null,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.rendered',
+          'credit_notes',
+          id,
+          {
+            sha256,
+            sourceSha256: renderSourceHash,
+            templateVersion: CREDIT_NOTE_PDF_TEMPLATE_VERSION,
+            irpEvidenceIncluded: currentEvidence.irn !== null,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -1863,7 +1847,7 @@ export function registerCreditNoteRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const rendered = await withBoundTenant(
         database,
         organisationId,

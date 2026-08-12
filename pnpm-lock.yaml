@@ -74,6 +74,9 @@ importers:
       '@fastify/swagger-ui':
         specifier: 6.1.0
         version: 6.1.0
+      '@fastify/type-provider-typebox':
+        specifier: 5.2.0
+        version: 5.2.0(@sinclair/typebox@0.34.52)(fastify@5.10.0)
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52
@@ -582,6 +585,12 @@ packages:
 
   '@fastify/swagger@9.8.1':
     resolution: {integrity: sha512-VpHMnqZTY8iBZYJE8WWkbKPrXIYWy2rDfIf5qLr6DzZSpQYZ+KxQVcJFiq/AMlvNwI4gCBd66++iUlxXXGT0IQ==}
+
+  '@fastify/type-provider-typebox@5.2.0':
+    resolution: {integrity: sha512-RoUFTQNYlaVM/gXosFqlrUAD/JHC+OXLcj4DxNoMOag2GI7OydfCt+3vdT+6D2daJwhGAdkpxB0wLNqS7gf4CQ==}
+    peerDependencies:
+      '@sinclair/typebox': '>=0.26 <=0.34'
+      fastify: ^5.0.0
 
   '@fontsource-variable/ibm-plex-sans@5.3.0':
     resolution: {integrity: sha512-agG8tXFEo0hD9+J7npa4vbbWult52eMLVaQ6WQRlhs/iCAojrMAoejru85W9HTVXHfyUj96KM7gp/KGAS87XaQ==}
@@ -2882,6 +2891,11 @@ snapshots:
       yaml: 2.9.0
     transitivePeerDependencies:
       - supports-color
+
+  '@fastify/type-provider-typebox@5.2.0(@sinclair/typebox@0.34.52)(fastify@5.10.0)':
+    dependencies:
+      '@sinclair/typebox': 0.34.52
+      fastify: 5.10.0
 
   '@fontsource-variable/ibm-plex-sans@5.3.0': {}
 

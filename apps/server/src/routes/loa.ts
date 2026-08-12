@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ConfirmWorkRequestSchema,
   LoaDocumentDetailSchema,
   PAYMENT_MATRIX_CATEGORIES,
@@ -15,7 +14,6 @@ import {
   type LoaDocument,
   type LoaDocumentDetail,
   type PaymentMatrixCategory,
-  type UploadLoaQuery,
   type Work,
   type WorkSchedule,
 } from '@auto-mb/contracts';
@@ -26,7 +24,6 @@ import {
   type PerformanceGuaranteeField,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -46,6 +43,8 @@ import { assertNotMalware } from '../upload-guards.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { upstreamErrorResponses as errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /** What loa_documents.extraction_payload holds for a parsed document:
  * both extracted text views plus the parser's review payload, all verbatim.
@@ -55,15 +54,6 @@ interface ExtractionPayload {
   readonly rawSourceText: string;
   readonly review: LoaReviewPayload;
 }
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
 
 // Params are validated with a pattern rather than the uuid format so the
 // check does not depend on the ajv instance's format registry.
@@ -418,7 +408,7 @@ function assertInitialPaymentMatrix(
 }
 
 export function registerLoaRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -438,7 +428,7 @@ export function registerLoaRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { filename } = request.query as UploadLoaQuery;
+      const { filename } = request.query;
 
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
@@ -595,7 +585,7 @@ export function registerLoaRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const row = await withBoundTenant(
         database,
         organisationId,
@@ -654,8 +644,8 @@ export function registerLoaRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: documentId } = request.params as { id: string };
-      const body = request.body as ConfirmWorkRequest;
+      const { id: documentId } = request.params;
+      const body = request.body;
       assertPricingShapeCoherent(body);
       assertPbgRequirementCoherent(body);
       assertInitialPaymentMatrix(body.paymentMatrix);
@@ -978,7 +968,7 @@ export function registerLoaRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, id);
         const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`

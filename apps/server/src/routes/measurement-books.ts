@@ -9,8 +9,6 @@ import {
   MergeMeasurementBooksRequestSchema,
   SetMbSourcesRequestSchema,
   type Bill,
-  type CancelMeasurementBookRequest,
-  type CreateMeasurementBookRequest,
   type MbFinalSweepDetails,
   type MbHasMergedRecordsDetails,
   type MbNotNewestDetails,
@@ -23,14 +21,11 @@ import {
   type MeasurementBookKind,
   type MeasurementBookLine,
   type MeasurementBookSource,
-  type MergeMeasurementBooksRequest,
-  type SetMbSourcesRequest,
   type WorkCompletionBlocker,
   type WorkItemPaymentCategory,
   type WorkNotCleanDetails,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -57,6 +52,8 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Milestone 8 phase 2: the stage-wise Measurement Book lifecycle engine
@@ -81,42 +78,6 @@ import { assertWorkOperable } from '../work-status.js';
  * way to take an absorbing draft apart: it restores the records and
  * their claims from normalized merge provenance, then deletes the draft.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'measurement_books', ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 // --- Row shapes -------------------------------------------------------------
 
@@ -907,7 +868,7 @@ async function convertToPdf(
 // --- Routes -----------------------------------------------------------------
 
 export function registerMeasurementBookRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -926,7 +887,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
@@ -957,7 +918,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const book = await readBook(tx, id);
         if (!book) {
@@ -987,8 +948,8 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CreateMeasurementBookRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       // `kind` is the request truth (0034); `isFinal` stays accepted as
       // the pre-0034 alias (true = final, false/absent = on_account). A
       // body naming both must agree with itself.
@@ -1192,15 +1153,23 @@ export function registerMeasurementBookRoutes(
             throw error;
           });
           if (!row) throw new Error('measurement book insert returned no row');
-          await audit(tx, organisationId, user.id, 'measurement_book.created', row.id, {
-            workId,
-            mbDate: body.mbDate,
-            kind,
-            isFinal: kind === 'final',
-            ...(kind === 'record'
-              ? { consigneeContactId: body.consigneeContactId }
-              : {}),
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'measurement_book.created',
+            'measurement_books',
+            row.id,
+            {
+              workId,
+              mbDate: body.mbDate,
+              kind,
+              isFinal: kind === 'final',
+              ...(kind === 'record'
+                ? { consigneeContactId: body.consigneeContactId }
+                : {}),
+            },
+          );
           return readDetail(tx, row.id);
         },
       ).catch(async (error: unknown) => {
@@ -1253,8 +1222,8 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as MergeMeasurementBooksRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       if (new Set(body.recordMbIds).size !== body.recordMbIds.length) {
         throw httpError(
           400,
@@ -1504,6 +1473,7 @@ export function registerMeasurementBookRoutes(
             organisationId,
             user.id,
             'measurement_book.merged',
+            'measurement_books',
             target.id,
             {
               workId,
@@ -1561,7 +1531,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
@@ -1733,13 +1703,21 @@ export function registerMeasurementBookRoutes(
         }
         // The emptied target draft goes, like any deleted draft.
         await tx`delete from measurement_books where id = ${id}`;
-        await audit(tx, organisationId, user.id, 'measurement_book.unmerged', id, {
-          workId: book.work_id,
-          recordMbIds: absorbed.map((record) => record.id),
-          restoredSourceCount: restored.length,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.unmerged',
+          'measurement_books',
+          id,
+          {
+            workId: book.work_id,
+            recordMbIds: absorbed.map((record) => record.id),
+            restoredSourceCount: restored.length,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -1757,8 +1735,8 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SetMbSourcesRequest;
+      const { id } = request.params;
+      const body = request.body;
       const keys = body.sources.map((s) => `${s.sourceType}:${s.sourceId}`);
       if (new Set(keys).size !== keys.length) {
         throw httpError(
@@ -1829,6 +1807,7 @@ export function registerMeasurementBookRoutes(
           organisationId,
           user.id,
           'measurement_book.sources_updated',
+          'measurement_books',
           id,
           {
             workId: book.work_id,
@@ -1866,7 +1845,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // Finalizing assigns a legal number and freezes a financial
         // snapshot: issue authority required, like bill preparation.
@@ -2125,17 +2104,25 @@ export function registerMeasurementBookRoutes(
               finalized_by_user_id = ${user.id}, finalized_at = now()
           where id = ${id}
         `;
-        await audit(tx, organisationId, user.id, 'measurement_book.finalized', id, {
-          before: { status: 'draft' },
-          after: { status: 'finalized' },
-          workId: book.work_id,
-          mbNumber,
-          sequence,
-          totalAmount: computation.totalAmount,
-          isFinal: book.is_final,
-          lineCount: computation.lines.length,
-          remarkTemplateVersion: MB_REMARK_TEMPLATE_VERSION,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.finalized',
+          'measurement_books',
+          id,
+          {
+            before: { status: 'draft' },
+            after: { status: 'finalized' },
+            workId: book.work_id,
+            mbNumber,
+            sequence,
+            totalAmount: computation.totalAmount,
+            isFinal: book.is_final,
+            lineCount: computation.lines.length,
+            remarkTemplateVersion: MB_REMARK_TEMPLATE_VERSION,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -2155,8 +2142,8 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelMeasurementBookRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const [book] = await tx<
@@ -2274,14 +2261,22 @@ export function registerMeasurementBookRoutes(
           where measurement_book_id = ${id} and released_at is null
           returning id
         `;
-        await audit(tx, organisationId, user.id, 'measurement_book.cancelled', id, {
-          before: { status: 'finalized' },
-          after: { status: 'cancelled' },
-          workId: book.work_id,
-          mbNumber: book.mb_number,
-          note: body.note,
-          releasedSourceCount: released.length,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.cancelled',
+          'measurement_books',
+          id,
+          {
+            before: { status: 'finalized' },
+            after: { status: 'cancelled' },
+            workId: book.work_id,
+            mbNumber: book.mb_number,
+            note: body.note,
+            releasedSourceCount: released.length,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -2300,7 +2295,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
@@ -2349,11 +2344,19 @@ export function registerMeasurementBookRoutes(
         // return to the open pool with no residue.
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
         await tx`delete from measurement_books where id = ${id}`;
-        await audit(tx, organisationId, user.id, 'measurement_book.deleted', id, {
-          workId: book.work_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.deleted',
+          'measurement_books',
+          id,
+          {
+            workId: book.work_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -2374,7 +2377,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const bill = await withBoundTenant(
         database,
         organisationId,
@@ -2532,7 +2535,7 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       const { snapshot, branding } = await withBoundTenant(
         database,
@@ -2602,10 +2605,18 @@ export function registerMeasurementBookRoutes(
             'The Measurement Book is no longer finalized; the render was discarded.',
           );
         }
-        await audit(tx, organisationId, user.id, 'measurement_book.rendered', id, {
-          sha256,
-          templateVersion: MB_TEMPLATE_VERSION,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.rendered',
+          'measurement_books',
+          id,
+          {
+            sha256,
+            templateVersion: MB_TEMPLATE_VERSION,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -2633,8 +2644,8 @@ export function registerMeasurementBookRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const { preview } = request.query as { preview?: '1' };
+      const { id } = request.params;
+      const { preview } = request.query;
 
       if (preview === '1') {
         const { snapshot, branding } = await withBoundTenant(

@@ -1,17 +1,12 @@
 import {
-  ApiErrorSchema,
   SerialSearchQuerySchema,
   SerialSearchResponseSchema,
   UpdateWorkItemSerialsRequestSchema,
   WorkItemSerialsResponseSchema,
   type SerialSearchMatch,
-  type SerialSearchQuery,
-  type UpdateWorkItemSerialsRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
-import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
+import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import {
   assertWorkAccess,
@@ -22,23 +17,8 @@ import {
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /** Result cap for the tenant-wide lookup; one extra row is fetched to
  * detect truncation without a second count query. */
@@ -51,28 +31,8 @@ function escapeLikePattern(text: string): string {
   return text.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerSerialRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -91,8 +51,8 @@ export function registerSerialRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workItemId } = request.params as { id: string };
-      const body = request.body as UpdateWorkItemSerialsRequest;
+      const { id: workItemId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         // The item row lock serialises the toggle against a concurrent
@@ -222,7 +182,7 @@ export function registerSerialRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { q } = request.query as SerialSearchQuery;
+      const { q } = request.query;
       const pattern = `%${escapeLikePattern(q)}%`;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // 'assigned'-scoped memberships search only their Works (same
@@ -313,7 +273,7 @@ export function registerSerialRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireEvidenceRole(tx, user.id);
         // The challan row lock serialises deletion against a concurrent
@@ -362,7 +322,7 @@ export function registerSerialRoutes(
           },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 }

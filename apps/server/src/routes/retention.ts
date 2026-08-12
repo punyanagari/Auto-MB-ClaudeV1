@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   BillListResponseSchema,
   BillSchema,
   InstallSerialRequestSchema,
@@ -16,21 +15,11 @@ import {
   UpdateBillStatusRequestSchema,
   UpdateInstrumentRequestSchema,
   type Bill,
-  type InstallSerialRequest,
   type Instrument,
   type MbEntry,
   type Receipt,
-  type RecordMbEntryRequest,
-  type RecordReceiptRequest,
-  type RecordSerialsRequest,
-  type SaveInstrumentRequest,
-  type UpdateBillStatusRequest,
-  type UpdateInstrumentRequest,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
@@ -43,43 +32,8 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 interface InstrumentRow {
   id: string;
@@ -174,7 +128,7 @@ function toBill(row: BillRow): Bill {
 }
 
 export function registerRetentionRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -193,8 +147,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: challanId } = request.params as { id: string };
-      const body = request.body as RecordReceiptRequest;
+      const { id: challanId } = request.params;
+      const body = request.body;
       const receipt = await withBoundTenant(
         database,
         organisationId,
@@ -290,7 +244,7 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: challanId } = request.params as { id: string };
+      const { id: challanId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${challanId}
@@ -342,8 +296,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: challanId } = request.params as { id: string };
-      const body = request.body as RecordSerialsRequest;
+      const { id: challanId } = request.params;
+      const body = request.body;
       const serials = await withBoundTenant(
         database,
         organisationId,
@@ -441,8 +395,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as InstallSerialRequest;
+      const { id } = request.params;
+      const body = request.body;
       const serials = await withBoundTenant(
         database,
         organisationId,
@@ -530,7 +484,7 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const serials = await withBoundTenant(
         database,
         organisationId,
@@ -558,7 +512,7 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -593,8 +547,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SaveInstrumentRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const instrument = await withBoundTenant(
         database,
         organisationId,
@@ -715,8 +669,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateInstrumentRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         // The row lock serialises concurrent status edits, and the locked
@@ -810,7 +764,7 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -847,8 +801,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as RecordMbEntryRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const entry = await withBoundTenant(
         database,
         organisationId,
@@ -997,7 +951,7 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -1039,8 +993,8 @@ export function registerRetentionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateBillStatusRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'issue');
         const [current] = await tx<{ status: Bill['status']; work_id: string }[]>`

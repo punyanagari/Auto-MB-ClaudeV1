@@ -1,17 +1,12 @@
 import {
-  ApiErrorSchema,
   CancelInstallationRequestSchema,
   InstallationListResponseSchema,
   InstallationSchema,
   RecordInstallationRequestSchema,
-  type CancelInstallationRequest,
   type Installation,
   type RecordInstallationRequest,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireEvidenceRole } from '../authz.js';
 import { httpError } from '../http.js';
@@ -20,6 +15,8 @@ import { assertSourceNotBilled } from './measurement-books.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Milestone 7: quantity-level installation records (legacy spec §5.4,
@@ -30,43 +27,6 @@ import { assertWorkOperable } from '../work-status.js';
  * from the delivered-but-uninstalled pool. Recorded documents cancel with
  * a note and release their serials; they are never edited or deleted.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 interface InstallationRow {
   id: string;
@@ -155,7 +115,7 @@ async function readInstallation(
 }
 
 export function registerInstallationRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -172,7 +132,7 @@ export function registerInstallationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
@@ -230,8 +190,8 @@ export function registerInstallationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as RecordInstallationRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       if ((body.locationId === undefined) === (body.newLocation === undefined)) {
         throw httpError(
           400,
@@ -564,8 +524,8 @@ export function registerInstallationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelInstallationRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireEvidenceRole(tx, user.id);
         // The row lock serialises cancellation against a concurrent

@@ -1,12 +1,9 @@
 import {
   AddMemberRequestSchema,
-  ApiErrorSchema,
   CreateOrganisationRequestSchema,
   MemberListResponseSchema,
   OrganisationListResponseSchema,
   OrganisationSchema,
-  type AddMemberRequest,
-  type CreateOrganisationRequest,
   type Membership,
   type SetAssignmentsRequest,
   type UpdateMemberRequest,
@@ -14,16 +11,17 @@ import {
   SetAssignmentsRequestSchema,
   UpdateMemberRequestSchema,
 } from '@auto-mb/contracts';
-import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { jsonb, withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
-import { httpError } from './../http.js';
+import { httpError } from '../http.js';
 import { mfaEnforcementEnabled, mfaGate } from '../mfa-policy.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 interface MembershipRow {
   organisation_id: string;
@@ -55,20 +53,14 @@ function toMembership(row: MembershipRow): Membership {
   };
 }
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
 export function registerIdentityRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
+  // No 200 schema is declared, so the reply stays plain JSON; the explicit
+  // Reply generic stands in for the success type the provider cannot infer.
+  app.get<{ Reply: Record<string, unknown> }>(
     '/api/me',
     { schema: { response: { ...errorResponses } } },
     async (request) => {
@@ -135,7 +127,7 @@ export function registerIdentityRoutes(
     },
     async (request, reply) => {
       const user = await requireUser(auth, request);
-      const body = request.body as CreateOrganisationRequest;
+      const body = request.body;
       const created = await withUserContext(database, user.id, async (tx) => {
         const [row] = await tx<{ id: string }[]>`
           select app_private.create_organisation_with_owner(${body.name}, ${body.slug}) as id
@@ -220,7 +212,7 @@ export function registerIdentityRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const body = request.body as AddMemberRequest;
+      const body = request.body;
 
       const members = await withBoundTenant(
         database,
@@ -304,7 +296,7 @@ export function registerIdentityRoutes(
     },
   );
 
-  app.patch<{ Body: UpdateMemberRequest }>(
+  app.patch<{ Body: UpdateMemberRequest; Params: { userId: string } }>(
     '/api/organisations/current/members/:userId',
     {
       schema: {
@@ -317,7 +309,7 @@ export function registerIdentityRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { userId: memberUserId } = request.params as { userId: string };
+      const { userId: memberUserId } = request.params;
       const body = request.body;
       const members = await withBoundTenant(
         database,
@@ -447,7 +439,7 @@ export function registerIdentityRoutes(
     },
   );
 
-  app.get(
+  app.get<{ Params: { userId: string } }>(
     '/api/organisations/current/members/:userId/assignments',
     {
       schema: {
@@ -459,7 +451,7 @@ export function registerIdentityRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { userId: memberUserId } = request.params as { userId: string };
+      const { userId: memberUserId } = request.params;
       const workIds = await withBoundTenant(
         database,
         organisationId,
@@ -489,7 +481,7 @@ export function registerIdentityRoutes(
     },
   );
 
-  app.put<{ Body: SetAssignmentsRequest }>(
+  app.put<{ Body: SetAssignmentsRequest; Params: { userId: string } }>(
     '/api/organisations/current/members/:userId/assignments',
     {
       schema: {
@@ -502,7 +494,7 @@ export function registerIdentityRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { userId: memberUserId } = request.params as { userId: string };
+      const { userId: memberUserId } = request.params;
       const body = request.body;
       const workIds = await withBoundTenant(
         database,

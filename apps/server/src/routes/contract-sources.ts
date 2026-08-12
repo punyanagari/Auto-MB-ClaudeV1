@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ContractSourceContextSchema,
   ContractSourceUploadQuerySchema,
   ContractSourceUploadResponseSchema,
@@ -9,7 +8,6 @@ import {
   type ContractSourceDocument,
   type ContractSourceDocumentKind,
   type ContractSourceIdentityMatch,
-  type ContractSourceUploadQuery,
   type TenderItemSpecificationEvidence,
   type TenderPaymentMatrixEvidence,
   type TenderPeriodEvidence,
@@ -21,7 +19,6 @@ import {
   type TenderReviewPayload,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -34,18 +31,11 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { upstreamErrorResponses as errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
 
 const IdParamsSchema = Type.Object({ id: UuidSchema }, { additionalProperties: false });
 
@@ -330,7 +320,7 @@ async function parentLoaForWriter(
 }
 
 export function registerContractSourceRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -351,8 +341,8 @@ export function registerContractSourceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: parentId } = request.params as { id: string };
-      const { kind, filename } = request.query as ContractSourceUploadQuery;
+      const { id: parentId } = request.params;
+      const { kind, filename } = request.query;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -507,7 +497,7 @@ export function registerContractSourceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const { parent } = await parentLoaForWriter(tx, user.id, id, false);
         return contextForParent(tx, id, parent.confirmed_work_id);
@@ -528,7 +518,7 @@ export function registerContractSourceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [parent] = await tx<{ id: string }[]>`
@@ -564,7 +554,7 @@ export function registerContractSourceRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const row = await withBoundTenant(
         database,
         organisationId,

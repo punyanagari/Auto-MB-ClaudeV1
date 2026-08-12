@@ -1,5 +1,4 @@
 import { ApiErrorSchema } from '@auto-mb/contracts';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
@@ -9,6 +8,7 @@ import {
   requireOrganisationHeader,
   withBoundTenantSnapshot,
 } from '../tenant-context.js';
+import type { AppInstance } from '../app-instance.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -37,11 +37,14 @@ function parseColumns<T extends Record<string, unknown>>(
  * names the organisation id in SQL.
  */
 export function registerExportRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
+  // No 200 schema is declared (the package shape is versioned by its own
+  // formatVersion field, not by the API contract), so the explicit Reply
+  // generic stands in for the success type the provider cannot infer.
+  app.get<{ Reply: Record<string, unknown> }>(
     '/api/export',
     { schema: { response: { ...errorResponses } } },
     async (request) => {

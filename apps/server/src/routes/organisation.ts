@@ -15,7 +15,6 @@ import {
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
@@ -32,6 +31,8 @@ import {
 } from '../number-series.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { audit } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -50,29 +51,6 @@ function detectImageType(bytes: Buffer): 'image/png' | 'image/jpeg' | null {
   if (bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return 'image/png';
   if (bytes.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)) return 'image/jpeg';
   return null;
-}
-
-/** One audit row. The profile routes below write their own inline (they
- * carry before/after diffs); the number-series routes state a fact, so
- * they share this. */
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string | null,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
 }
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
@@ -232,7 +210,7 @@ function assertEinvoiceDeclarationCoherent(
  * scanned like every other upload, and stored under the tenant prefix.
  */
 export function registerOrganisationRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -516,7 +494,9 @@ export function registerOrganisationRoutes(
     },
   );
 
-  app.get(
+  // The success payload is the raw image bytes, which no response schema
+  // describes; the explicit Reply generic says so to the type provider.
+  app.get<{ Reply: Buffer }>(
     '/api/organisation/logo',
     { schema: { response: { ...errorResponses } } },
     async (request, reply) => {

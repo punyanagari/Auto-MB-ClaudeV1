@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   CancelChallanRequestSchema,
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
   SaveChallanRequestSchema,
   WorkBalanceResponseSchema,
-  type CancelChallanRequest,
   type Challan,
   type ChallanDetailResponse,
   type ChallanItem,
@@ -15,7 +13,6 @@ import {
   type SaveChallanRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -43,24 +40,12 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -626,27 +611,8 @@ async function readLineInputs(
   }));
 }
 
-async function auditChallan(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  challanId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'delivery_challans',
-      ${challanId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerChallanRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -666,7 +632,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ allow_excess_delivery: boolean; today: string }[]>`
@@ -742,7 +708,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -775,8 +741,8 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SaveChallanRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const consignee = normaliseConsignee(body.consignee);
 
       const detail = await withBoundTenant(
@@ -840,11 +806,12 @@ export function registerChallanRoutes(
           if (!created) throw new Error('challan insert returned no row');
 
           await writeLines(tx, organisationId, created.id, workId, body);
-          await auditChallan(
+          await audit(
             tx,
             organisationId,
             user.id,
             'challan.created',
+            'delivery_challans',
             created.id,
             {
               workId,
@@ -883,7 +850,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${id}
@@ -911,8 +878,8 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveChallanRequest;
+      const { id } = request.params;
+      const body = request.body;
       const consignee = normaliseConsignee(body.consignee);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
@@ -945,10 +912,18 @@ export function registerChallanRoutes(
             items: await readLineInputs(tx, id),
           },
         );
-        await auditChallan(tx, organisationId, user.id, 'challan.updated', id, {
-          before: changes.before,
-          after: changes.after,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.updated',
+          'delivery_challans',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -967,7 +942,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
@@ -978,11 +953,19 @@ export function registerChallanRoutes(
         await tx`delete from challan_item_serials where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challans where id = ${id}`;
-        await auditChallan(tx, organisationId, user.id, 'challan.deleted', id, {
-          workId: challan.work_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.deleted',
+          'delivery_challans',
+          id,
+          {
+            workId: challan.work_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -999,7 +982,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -1353,11 +1336,19 @@ export function registerChallanRoutes(
             throw error;
           });
 
-          await auditChallan(tx, organisationId, user.id, 'challan.issued', id, {
-            challanNumber,
-            sequence,
-            totalAmount: snapshot.totalAmount,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'challan.issued',
+            'delivery_challans',
+            id,
+            {
+              challanNumber,
+              sequence,
+              totalAmount: snapshot.totalAmount,
+            },
+          );
           return readDetail(tx, id);
         },
       );
@@ -1379,8 +1370,8 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelChallanRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
@@ -1450,10 +1441,18 @@ export function registerChallanRoutes(
               cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
-        await auditChallan(tx, organisationId, user.id, 'challan.cancelled', id, {
-          challanNumber: challan.challan_number,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.cancelled',
+          'delivery_challans',
+          id,
+          {
+            challanNumber: challan.challan_number,
+            note,
+          },
+        );
         // A closed PO whose receipt was just released must become receivable
         // again. Otherwise its live balance shows pending material while the
         // challan editor refuses the replacement receipt as PO_NOT_ISSUED.
@@ -1483,7 +1482,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
@@ -1580,9 +1579,17 @@ export function registerChallanRoutes(
             'The challan is no longer issued; the render was discarded.',
           );
         }
-        await auditChallan(tx, organisationId, user.id, 'challan.rendered', id, {
-          sha256,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.rendered',
+          'delivery_challans',
+          id,
+          {
+            sha256,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -1602,7 +1609,7 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -1637,11 +1644,12 @@ export function registerChallanRoutes(
               signed_copy_sha256 = ${signedSha256}
           where id = ${id}
         `;
-        await auditChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'challan.signed_copy_uploaded',
+          'delivery_challans',
           id,
           { sizeBytes: body.length, sha256: signedSha256 },
         );
@@ -1660,8 +1668,8 @@ export function registerChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const { kind = 'rendered' } = request.query as { kind?: 'rendered' | 'signed' };
+      const { id } = request.params;
+      const { kind = 'rendered' } = request.query;
       const key = await withBoundTenant(
         database,
         organisationId,

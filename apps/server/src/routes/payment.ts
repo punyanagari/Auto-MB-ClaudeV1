@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   GstRateSchema,
   HsnCodeSchema,
   PAYMENT_MATRIX_CATEGORIES,
@@ -15,10 +14,8 @@ import {
   type UpsertPaymentMatrixRowRequest,
 } from '@auto-mb/contracts';
 import { parseDecimalToMinorUnits } from '@auto-mb/loa-parser';
-import { Type, type Static } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
+import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { auditDiff } from '../audit-diff.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
@@ -26,6 +23,8 @@ import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix and item category
@@ -44,23 +43,6 @@ import { assertWorkOperable } from '../work-status.js';
  * engine, with a full before/after audit trail.
  */
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
 const MatrixParamsSchema = Type.Object(
   {
     id: Type.String({
@@ -70,26 +52,6 @@ const MatrixParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 interface MatrixRowRecord {
   id: string;
@@ -272,7 +234,6 @@ const SetWorkItemTaxFactsRequestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type SetWorkItemTaxFactsRequest = Static<typeof SetWorkItemTaxFactsRequestSchema>;
 
 const WorkItemTaxFactsResponseSchema = Type.Object(
   {
@@ -295,7 +256,7 @@ interface TaxFactsRow {
 }
 
 export function registerPaymentRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -312,7 +273,7 @@ export function registerPaymentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
@@ -344,12 +305,9 @@ export function registerPaymentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId, category: rawCategory } = request.params as {
-        id: string;
-        category: string;
-      };
+      const { id: workId, category: rawCategory } = request.params;
       const category = assertMatrixCategory(rawCategory);
-      const body = request.body as UpsertPaymentMatrixRowRequest;
+      const body = request.body;
       assertPercentagesSumTo100(body);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
@@ -457,10 +415,7 @@ export function registerPaymentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId, category: rawCategory } = request.params as {
-        id: string;
-        category: string;
-      };
+      const { id: workId, category: rawCategory } = request.params;
       const category = assertMatrixCategory(rawCategory);
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
@@ -512,7 +467,7 @@ export function registerPaymentRoutes(
           },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -530,8 +485,8 @@ export function registerPaymentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workItemId } = request.params as { id: string };
-      const body = request.body as SetWorkItemPaymentCategoryRequest;
+      const { id: workItemId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         // Row lock: serialises concurrent category edits so the
@@ -616,8 +571,8 @@ export function registerPaymentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workItemId } = request.params as { id: string };
-      const body = request.body as SetWorkItemTaxFactsRequest;
+      const { id: workItemId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
 

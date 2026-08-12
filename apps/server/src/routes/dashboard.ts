@@ -4,12 +4,12 @@ import {
   type DashboardAlert,
   type DashboardResponse,
 } from '@auto-mb/contracts';
-import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import type { AppInstance } from '../app-instance.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -78,7 +78,7 @@ interface PbgRequirementRow extends Record<string, unknown> {
  * numeric arithmetic; RLS scopes every query to the bound tenant.
  */
 export function registerDashboardRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {

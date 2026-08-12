@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   BudgetaryQuotationDetailResponseSchema,
   BudgetaryQuotationListResponseSchema,
   CreateBudgetaryQuotationRequestSchema,
@@ -10,11 +9,8 @@ import {
   type BudgetaryQuotationLine,
   type BudgetaryQuotationLineInput,
   type CreateBudgetaryQuotationRequest,
-  type SaveBudgetaryQuotationLinesRequest,
-  type SetBudgetaryQuotationOutcomeRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
@@ -31,6 +27,8 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Budgetary quotations (migration 0033; legacy spec §5.8).
@@ -61,23 +59,6 @@ import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js
  * document total is their SQL sum — never JavaScript floating point
  * (engineering rule 5).
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 const NOT_FOUND_CODE = 'BUDGETARY_QUOTATION_NOT_FOUND';
 const NOT_FOUND_MESSAGE = 'No such budgetary quotation.';
@@ -509,27 +490,8 @@ async function readLineInputs(
   }));
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  quotationId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'budgetary_quotations',
-      ${quotationId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerQuotationRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -574,7 +536,7 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const header = normaliseHeader(request.body as CreateBudgetaryQuotationRequest);
+      const header = normaliseHeader(request.body);
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -607,6 +569,7 @@ export function registerQuotationRoutes(
             organisationId,
             user.id,
             'budgetary_quotation.created',
+            'budgetary_quotations',
             created.id,
             { addressedTo: header.addressedTo, subject: header.subject },
           );
@@ -630,7 +593,7 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) =>
         readDetail(tx, id),
       );
@@ -651,8 +614,8 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const header = normaliseHeader(request.body as CreateBudgetaryQuotationRequest);
+      const { id } = request.params;
+      const header = normaliseHeader(request.body);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertBqDateNotFuture(tx, header.bqDate);
@@ -689,10 +652,18 @@ export function registerQuotationRoutes(
             notes: header.notes,
           },
         );
-        await audit(tx, organisationId, user.id, 'budgetary_quotation.updated', id, {
-          before: changes.before,
-          after: changes.after,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'budgetary_quotation.updated',
+          'budgetary_quotations',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+          },
+        );
         return readDetail(tx, id);
       });
     },
@@ -712,8 +683,8 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveBudgetaryQuotationLinesRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const quotation = await lockQuotation(tx, id);
@@ -732,6 +703,7 @@ export function registerQuotationRoutes(
           organisationId,
           user.id,
           'budgetary_quotation.lines_saved',
+          'budgetary_quotations',
           id,
           { before: changes.before, after: changes.after },
         );
@@ -753,7 +725,7 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const quotation = await lockQuotation(tx, id);
@@ -765,12 +737,20 @@ export function registerQuotationRoutes(
           where budgetary_quotation_id = ${id}
         `;
         await tx`delete from budgetary_quotations where id = ${id}`;
-        await audit(tx, organisationId, user.id, 'budgetary_quotation.deleted', id, {
-          addressedTo: quotation.addressed_to,
-          subject: quotation.subject,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'budgetary_quotation.deleted',
+          'budgetary_quotations',
+          id,
+          {
+            addressedTo: quotation.addressed_to,
+            subject: quotation.subject,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -787,7 +767,7 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -873,11 +853,19 @@ export function registerQuotationRoutes(
             throw error;
           });
 
-          await audit(tx, organisationId, user.id, 'budgetary_quotation.issued', id, {
-            bqNumber,
-            sequence,
-            totalAmount,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'budgetary_quotation.issued',
+            'budgetary_quotations',
+            id,
+            {
+              bqNumber,
+              sequence,
+              totalAmount,
+            },
+          );
           return readDetail(tx, id);
         },
       );
@@ -899,8 +887,8 @@ export function registerQuotationRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const { outcome } = request.body as SetBudgetaryQuotationOutcomeRequest;
+      const { id } = request.params;
+      const { outcome } = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // WITHDRAWING is the contractor taking back a document that left
         // the building — the same act the cancel authority exists for
@@ -921,11 +909,19 @@ export function registerQuotationRoutes(
         await tx`
           update budgetary_quotations set status = ${outcome} where id = ${id}
         `;
-        await audit(tx, organisationId, user.id, `budgetary_quotation.${outcome}`, id, {
-          bqNumber: quotation.bq_number,
-          before: 'issued',
-          after: outcome,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          `budgetary_quotation.${outcome}`,
+          'budgetary_quotations',
+          id,
+          {
+            bqNumber: quotation.bq_number,
+            before: 'issued',
+            after: outcome,
+          },
+        );
         return readDetail(tx, id);
       });
     },

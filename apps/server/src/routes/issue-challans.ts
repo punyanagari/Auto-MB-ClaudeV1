@@ -1,18 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   CancelIssueChallanRequestSchema,
   IssueChallanDetailResponseSchema,
   IssueChallanListResponseSchema,
   SaveIssueChallanRequestSchema,
-  type CancelIssueChallanRequest,
   type IssueChallan,
   type IssueChallanDetailResponse,
   type IssueChallanLine,
   type SaveIssueChallanRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -37,24 +34,12 @@ import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { isPositiveDecimal } from './challans.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -352,27 +337,8 @@ export async function writeLines(
   }
 }
 
-async function auditIssueChallan(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  challanId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'issue_challans',
-      ${challanId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerIssueChallanRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -392,7 +358,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -425,8 +391,8 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SaveIssueChallanRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const header = normaliseHeader(body);
 
       const detail = await withBoundTenant(
@@ -496,11 +462,12 @@ export function registerIssueChallanRoutes(
           if (!created) throw new Error('issue challan insert returned no row');
 
           await writeLines(tx, organisationId, created.id, workId, body);
-          await auditIssueChallan(
+          await audit(
             tx,
             organisationId,
             user.id,
             'issue_challan.created',
+            'issue_challans',
             created.id,
             {
               workId,
@@ -540,7 +507,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from issue_challans where id = ${id}
@@ -568,8 +535,8 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveIssueChallanRequest;
+      const { id } = request.params;
+      const body = request.body;
       const header = normaliseHeader(body);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
@@ -588,11 +555,12 @@ export function registerIssueChallanRoutes(
           where id = ${id}
         `;
         await writeLines(tx, organisationId, id, challan.work_id, body);
-        await auditIssueChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'issue_challan.updated',
+          'issue_challans',
           id,
           {
             movementType: body.movementType,
@@ -617,7 +585,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       await withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockIssueChallan(tx, id);
@@ -625,16 +593,17 @@ export function registerIssueChallanRoutes(
         requireStatus(challan, 'draft');
         await tx`delete from issue_challan_lines where issue_challan_id = ${id}`;
         await tx`delete from issue_challans where id = ${id}`;
-        await auditIssueChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'issue_challan.deleted',
+          'issue_challans',
           id,
           { workId: challan.work_id },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
@@ -651,7 +620,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const detail = await withBoundTenant(
         database,
         organisationId,
@@ -784,11 +753,12 @@ export function registerIssueChallanRoutes(
             throw error;
           });
 
-          await auditIssueChallan(
+          await audit(
             tx,
             organisationId,
             user.id,
             'issue_challan.issued',
+            'issue_challans',
             id,
             {
               challanNumber,
@@ -817,8 +787,8 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelIssueChallanRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
         const challan = await lockIssueChallan(tx, id);
@@ -843,11 +813,12 @@ export function registerIssueChallanRoutes(
               cancelled_at = now(), cancellation_note = ${body.note}
           where id = ${id}
         `;
-        await auditIssueChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'issue_challan.cancelled',
+          'issue_challans',
           id,
           {
             challanNumber: challan.challan_number,
@@ -872,7 +843,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
@@ -969,11 +940,12 @@ export function registerIssueChallanRoutes(
             'The Issue Challan is no longer issued; the render was discarded.',
           );
         }
-        await auditIssueChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'issue_challan.rendered',
+          'issue_challans',
           id,
           { sha256 },
         );
@@ -996,7 +968,7 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -1031,11 +1003,12 @@ export function registerIssueChallanRoutes(
               signed_copy_sha256 = ${signedSha256}
           where id = ${id}
         `;
-        await auditIssueChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'issue_challan.signed_copy_uploaded',
+          'issue_challans',
           id,
           { sizeBytes: body.length, sha256: signedSha256 },
         );
@@ -1054,8 +1027,8 @@ export function registerIssueChallanRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const { kind = 'rendered' } = request.query as { kind?: 'rendered' | 'signed' };
+      const { id } = request.params;
+      const { kind = 'rendered' } = request.query;
       const key = await withBoundTenant(
         database,
         organisationId,

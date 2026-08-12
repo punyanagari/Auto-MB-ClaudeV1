@@ -26,45 +26,24 @@
  */
 
 import {
-  ApiErrorSchema,
   CompleteWorkRequestSchema,
   ReopenWorkRequestSchema,
   WorkCompletionReadinessSchema,
   WorkStatusResponseSchema,
-  type CompleteWorkRequest,
-  type ReopenWorkRequest,
   type UnfinishedWorkItem,
   type WorkCompletionBlocker,
   type WorkNotCleanDetails,
   type WorkCompletionReadiness,
   type WorkNotFullyExecutedDetails,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
+import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
 
 interface WorkStatusRow {
   id: string;
@@ -349,27 +328,8 @@ async function completionBlockers(
   }));
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  workId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'works', ${workId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerWorkCompletionRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -395,7 +355,7 @@ export function registerWorkCompletionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const work = await readWork(tx, workId);
@@ -433,8 +393,8 @@ export function registerWorkCompletionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CompleteWorkRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertWorkAccess(tx, user.id, workId);
@@ -487,7 +447,7 @@ export function registerWorkCompletionRoutes(
               reopen_note = null
           where id = ${workId}
         `;
-        await audit(tx, organisationId, user.id, 'work.completed', workId, {
+        await audit(tx, organisationId, user.id, 'work.completed', 'works', workId, {
           before: { status: work.status },
           after: { status: 'completed' },
           note: body.note,
@@ -511,8 +471,8 @@ export function registerWorkCompletionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ReopenWorkRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertWorkAccess(tx, user.id, workId);
@@ -538,7 +498,7 @@ export function registerWorkCompletionRoutes(
               reopen_note = ${body.note}
           where id = ${workId}
         `;
-        await audit(tx, organisationId, user.id, 'work.reopened', workId, {
+        await audit(tx, organisationId, user.id, 'work.reopened', 'works', workId, {
           before: { status: 'completed', completionNote: work.completion_note },
           after: { status: 'active' },
           note: body.note,

@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ApprovalRequestSchema,
   CancelCorrectionNoticeRequestSchema,
   CorrectionEligibilityResponseSchema,
@@ -10,18 +9,12 @@ import {
   ProposeCorrectionNoticeRequestSchema,
   ProposeIssueChallanCancelReplaceRequestSchema,
   type AmendmentDiffEntry,
-  type CancelCorrectionNoticeRequest,
   type CorrectionEligibilityResponse,
   type CorrectionNotice,
   type CorrectionNoticeDetailResponse,
   type CorrectionNoticeEntry,
   type Consignee,
-  type ProposeChallanCancelReplaceRequest,
-  type ProposeCorrectionNoticeRequest,
-  type ProposeIssueChallanCancelReplaceRequest,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -52,24 +45,12 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 interface NoticeRow {
   id: string;
@@ -171,26 +152,6 @@ async function requireActiveWork(tx: TransactionSql, workId: string): Promise<vo
   assertWorkOperable(work.status, 'proposing a correction');
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 function summariseItems(items: readonly { label: string; quantity: string }[]): string {
   return items.map((item) => `${item.label} ×${item.quantity}`).join('; ');
 }
@@ -241,7 +202,7 @@ async function insertCorrectionRequest(
 }
 
 export function registerCorrectionRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -261,7 +222,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(
         database,
         organisationId,
@@ -314,8 +275,8 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as ProposeChallanCancelReplaceRequest;
+      const { id } = request.params;
+      const body = request.body;
       // The replacement becomes a real draft challan on apply, so its
       // consignee is held to what the challan routes hold theirs to: not
       // blank once trimmed, and stored trimmed.
@@ -554,8 +515,8 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as ProposeIssueChallanCancelReplaceRequest;
+      const { id } = request.params;
+      const body = request.body;
       const header = normaliseHeader(body.replacement);
 
       const approval = await withBoundTenant(
@@ -760,8 +721,8 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as ProposeCorrectionNoticeRequest;
+      const { id } = request.params;
+      const body = request.body;
       const corrections: CorrectionNoticeEntry[] = (body.corrections ?? []).map(
         (entry) => ({ field: entry.field.trim(), corrected: entry.corrected.trim() }),
       );
@@ -891,7 +852,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -927,7 +888,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -965,7 +926,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from correction_notices where id = ${id}
@@ -992,7 +953,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
@@ -1120,7 +1081,7 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const key = await withBoundTenant(
         database,
         organisationId,
@@ -1171,8 +1132,8 @@ export function registerCorrectionRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelCorrectionNoticeRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');

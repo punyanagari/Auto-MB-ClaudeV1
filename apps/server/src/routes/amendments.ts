@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ApprovalListQuerySchema,
   ApprovalListResponseSchema,
   ApprovalRequestSchema,
@@ -12,17 +11,8 @@ import {
   UpdateWorkSettingsRequestSchema,
   WorkSettingsResponseSchema,
   type AmendmentDiffEntry,
-  type ApprovalListQuery,
   type ApprovalRequest,
-  type ApproveAmendmentRequest,
-  type ProposeAddItemRequest,
-  type ProposeAmendmentRequest,
-  type ProposeRemoveItemRequest,
-  type RejectAmendmentRequest,
-  type UpdateWorkSettingsRequest,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -47,23 +37,8 @@ import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { isPositiveDecimal } from './challans.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 interface ChangeSet {
   quantity?: string;
@@ -185,25 +160,6 @@ async function requireApprover(tx: TransactionSql, userId: string): Promise<void
       'Your membership does not carry the amendment-approval authority.',
     );
   }
-}
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'approval_requests',
-      ${entityId}, ${jsonb(tx, details)}
-    )
-  `;
 }
 
 /**
@@ -530,16 +486,24 @@ export async function applyApproval(
     proposed.kind === 'remove_item'
       ? 'amendment.approved'
       : 'correction.approved';
-  await audit(tx, organisationId, userId, approvedAction, request.id, {
-    workId: request.work_id,
-    entityId: boundEntityId,
-    kind: proposed.kind,
-    diff: parseJsonbColumn(request.diff),
-  });
+  await audit(
+    tx,
+    organisationId,
+    userId,
+    approvedAction,
+    'approval_requests',
+    request.id,
+    {
+      workId: request.work_id,
+      entityId: boundEntityId,
+      kind: proposed.kind,
+      diff: parseJsonbColumn(request.diff),
+    },
+  );
 }
 
 export function registerAmendmentRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
@@ -559,8 +523,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeAmendmentRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       const changed = Object.keys(body.changes);
       if (changed.length === 0) {
         throw httpError(
@@ -701,13 +665,21 @@ export function registerAmendmentRoutes(
             throw error;
           });
           if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
-            workId,
-            workItemId: item.id,
-            itemNumber: item.item_number,
-            diff,
-            reason: body.reason,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'amendment.proposed',
+            'approval_requests',
+            created.id,
+            {
+              workId,
+              workItemId: item.id,
+              itemNumber: item.item_number,
+              diff,
+              reason: body.reason,
+            },
+          );
 
           // Direct-apply: an approval-authority holder's proposal applies
           // immediately, auto-recording the approved request with
@@ -743,8 +715,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeAddItemRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       assertNonNegative(body.rate, 'rate');
       if (!isPositiveDecimal(body.quantity)) {
         throw httpError(
@@ -832,12 +804,20 @@ export function registerAmendmentRoutes(
             returning id, entity_id, work_id
           `;
           if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
-            workId,
-            itemNumber: body.itemNumber,
-            diff,
-            reason: body.reason,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'amendment.proposed',
+            'approval_requests',
+            created.id,
+            {
+              workId,
+              itemNumber: body.itemNumber,
+              diff,
+              reason: body.reason,
+            },
+          );
           if (await isApprover(tx, user.id)) {
             await applyApproval(
               tx,
@@ -873,8 +853,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeRemoveItemRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
 
       const approval = await withBoundTenant(
         database,
@@ -956,13 +936,21 @@ export function registerAmendmentRoutes(
             throw error;
           });
           if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
-            workId,
-            workItemId: item.id,
-            itemNumber: item.item_number,
-            diff,
-            reason: body.reason,
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'amendment.proposed',
+            'approval_requests',
+            created.id,
+            {
+              workId,
+              workItemId: item.id,
+              itemNumber: item.item_number,
+              diff,
+              reason: body.reason,
+            },
+          );
           if (await isApprover(tx, user.id)) {
             await applyApproval(
               tx,
@@ -993,7 +981,7 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -1029,7 +1017,7 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { status } = request.query as ApprovalListQuery;
+      const { status } = request.query;
       const rows = await withBoundTenant(
         database,
         organisationId,
@@ -1067,8 +1055,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as ApproveAmendmentRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // Authority is validated HERE, at apply time, in the same
         // transaction that applies — not merely at submission.
@@ -1118,8 +1106,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as RejectAmendmentRequest;
+      const { id } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireApprover(tx, user.id);
         const [row] = await tx<
@@ -1152,9 +1140,17 @@ export function registerAmendmentRoutes(
           row.entity_type === 'work_item_amendment'
             ? 'amendment.rejected'
             : 'correction.rejected';
-        await audit(tx, organisationId, user.id, rejectedAction, id, {
-          note: body.note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          rejectedAction,
+          'approval_requests',
+          id,
+          {
+            note: body.note,
+          },
+        );
         return readApproval(tx, id);
       });
     },
@@ -1173,7 +1169,7 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [row] = await tx<
           {
@@ -1216,7 +1212,15 @@ export function registerAmendmentRoutes(
           row.entity_type === 'work_item_amendment'
             ? 'amendment.withdrawn'
             : 'correction.withdrawn';
-        await audit(tx, organisationId, user.id, withdrawnAction, id, {});
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          withdrawnAction,
+          'approval_requests',
+          id,
+          {},
+        );
         return readApproval(tx, id);
       });
     },
@@ -1237,8 +1241,8 @@ export function registerAmendmentRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as UpdateWorkSettingsRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [membership] = await tx<{ role: string }[]>`
           select role from organisation_memberships

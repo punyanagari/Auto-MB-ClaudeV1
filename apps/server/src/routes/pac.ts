@@ -1,21 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   CancelPacCertificateRequestSchema,
   PacCertificateListResponseSchema,
   PacCertificateSchema,
   RecordPacCertificateRequestSchema,
-  type CancelPacCertificateRequest,
   type PacCapExceededDetails,
   type PacCertificate,
   type PacItemSummary,
-  type RecordPacCertificateRequest,
   type WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import { cancellationNote } from './challans.js';
@@ -34,6 +28,8 @@ import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
 
 /**
  * Milestone 8 phase 1: PAC certificate lifecycle (legacy spec §5.5, rule
@@ -49,44 +45,8 @@ import { assertNotMalware } from '../upload-guards.js';
  * quantity-bearing certificate.
  */
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'pac_certificates', ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 interface CertificateRow {
   id: string;
@@ -301,7 +261,7 @@ async function readItemSummaries(
 }
 
 export function registerPacRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
@@ -320,7 +280,7 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
+      const { id: workId } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
@@ -356,7 +316,7 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const row = await readCertificate(tx, id);
         if (!row) {
@@ -382,8 +342,8 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as RecordPacCertificateRequest;
+      const { id: workId } = request.params;
+      const body = request.body;
 
       const itemIds = body.items.map((item) => item.workItemId);
       if (new Set(itemIds).size !== itemIds.length) {
@@ -613,17 +573,25 @@ export function registerPacRoutes(
 
           const full = await readCertificate(tx, row.id);
           if (!full) throw new Error('PAC certificate read-back returned no row');
-          await audit(tx, organisationId, user.id, 'pac_certificate.recorded', row.id, {
-            workId,
-            reference: body.reference,
-            issueDate: body.issueDate,
-            consigneeMasterId: consignee.id,
-            consigneeDesignation: consignee.designation,
-            items: body.items.map((item) => ({
-              workItemId: item.workItemId,
-              certifiedQuantity: item.certifiedQuantity,
-            })),
-          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'pac_certificate.recorded',
+            'pac_certificates',
+            row.id,
+            {
+              workId,
+              reference: body.reference,
+              issueDate: body.issueDate,
+              consigneeMasterId: consignee.id,
+              consigneeDesignation: consignee.designation,
+              items: body.items.map((item) => ({
+                workItemId: item.workItemId,
+                certifiedQuantity: item.certifiedQuantity,
+              })),
+            },
+          );
           return toCertificate(full, await loadReleasedValueContext(tx, workId));
         },
       );
@@ -645,8 +613,8 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelPacCertificateRequest;
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         // PACs stay an office document, so the writer role still gates
@@ -712,12 +680,20 @@ export function registerPacRoutes(
         // Cancelling releases the certified quantities: the R18 cap sums
         // only non-cancelled certificates, so the freed amounts are
         // certifiable again immediately.
-        await audit(tx, organisationId, user.id, 'pac_certificate.cancelled', id, {
-          before: { status: 'recorded' },
-          after: { status: 'cancelled' },
-          reference: existing.reference,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'pac_certificate.cancelled',
+          'pac_certificates',
+          id,
+          {
+            before: { status: 'recorded' },
+            after: { status: 'cancelled' },
+            reference: existing.reference,
+            note,
+          },
+        );
         return toCertificate(full, await loadReleasedValueContext(tx, full.work_id));
       });
     },
@@ -737,7 +713,7 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -788,6 +764,7 @@ export function registerPacRoutes(
           organisationId,
           user.id,
           'pac_certificate.document_uploaded',
+          'pac_certificates',
           id,
           {
             sizeBytes: body.length,
@@ -811,7 +788,7 @@ export function registerPacRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const key = await withBoundTenant(
         database,
         organisationId,
