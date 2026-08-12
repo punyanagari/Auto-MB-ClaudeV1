@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.js';
 import { createMutationOriginGuard } from '../src/origin-guard.js';
 
 describe('mutation Origin guard', () => {
@@ -37,5 +38,28 @@ describe('mutation Origin guard', () => {
     expect(() => createMutationOriginGuard(['https://example.com/path'])).toThrow(
       'Trusted origin must be an origin only',
     );
+  });
+
+  it('advances the Fastify hook lifecycle for allowed requests', async () => {
+    const app = await buildApp({ trustedOrigins: ['https://auto-mb.example'] });
+    try {
+      app.post('/test-origin-hook', () => ({ ok: true }));
+
+      const health = await app.inject({ method: 'GET', url: '/api/health' });
+      expect(health.statusCode).toBe(200);
+
+      const allowed = await app.inject({
+        method: 'POST',
+        url: '/test-origin-hook',
+        headers: { origin: 'https://auto-mb.example' },
+      });
+      expect(allowed.statusCode, allowed.body).toBe(200);
+      expect(allowed.json()).toEqual({ ok: true });
+
+      const denied = await app.inject({ method: 'POST', url: '/test-origin-hook' });
+      expect(denied.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
   });
 });

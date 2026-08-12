@@ -284,8 +284,13 @@ export async function buildApp(
 
   if (options.trustedOrigins !== undefined) {
     const guardMutationOrigin = createMutationOriginGuard(options.trustedOrigins);
-    app.addHook('onRequest', (request) => {
-      guardMutationOrigin(request.method, request.headers.origin);
+    app.addHook('onRequest', (request, _reply, done) => {
+      try {
+        guardMutationOrigin(request.method, request.headers.origin);
+        done();
+      } catch (error) {
+        done(error as Error);
+      }
     });
   }
 
