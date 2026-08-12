@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALLOWED_TOKENS,
   DEFAULT_TEMPLATES,
+  NUMBERED_DOCUMENT_TYPES,
   NumberTemplateError,
   assertValidTemplate,
   divisionToken,
@@ -97,28 +97,37 @@ describe("the owner's own series", () => {
 });
 
 describe('assertValidTemplate', () => {
-  const invoice = ALLOWED_TOKENS.tax_invoice;
-
   it('accepts the owner’s series and the product default', () => {
     expect(() => {
-      assertValidTemplate('P{DIV}{FY2}{SEQ:3}', invoice);
+      assertValidTemplate('P{DIV}{FY2}{SEQ:3}', 'tax_invoice');
     }).not.toThrow();
     expect(() => {
-      assertValidTemplate(DEFAULT_TEMPLATES.tax_invoice, invoice);
+      assertValidTemplate(DEFAULT_TEMPLATES.tax_invoice, 'tax_invoice');
     }).not.toThrow();
+  });
+
+  it('accepts every product default for its own document type', () => {
+    // The defaults are the compatibility contract: an organisation that
+    // configures nothing keeps its numbers, so the validator must never
+    // refuse what the product itself would apply.
+    for (const documentType of NUMBERED_DOCUMENT_TYPES) {
+      expect(() => {
+        assertValidTemplate(DEFAULT_TEMPLATES[documentType], documentType);
+      }).not.toThrow();
+    }
   });
 
   it('refuses a template that never consumes the counter', () => {
     // Without {SEQ} every document would take the same string and the
     // second one would collide on an index the operator cannot act on.
     expect(() => {
-      assertValidTemplate('P{DIV}{FY2}', invoice);
+      assertValidTemplate('P{DIV}{FY2}', 'tax_invoice');
     }).toThrow(/must use \{SEQ\}/);
   });
 
   it('names a misspelled token instead of minting it', () => {
     expect(() => {
-      assertValidTemplate('P{DIVISON}{SEQ:3}', invoice);
+      assertValidTemplate('P{DIVISON}{SEQ:3}', 'tax_invoice');
     }).toThrow(/\{DIVISON\} is not a number template token/);
   });
 
@@ -126,22 +135,72 @@ describe('assertValidTemplate', () => {
     // A budgetary quotation belongs to no Work, so {WORK} would be
     // unfillable every time — better refused on the settings screen.
     expect(() => {
-      assertValidTemplate('{WORK}-BQ-{SEQ:2}', ALLOWED_TOKENS.budgetary_quotation);
+      assertValidTemplate('{WORK}-BQ-{SEQ:2}', 'budgetary_quotation');
     }).toThrow(/not available on this document/);
   });
 
   it('refuses malformed braces and absurd widths', () => {
     expect(() => {
-      assertValidTemplate('P{DIV{SEQ:3}', invoice);
+      assertValidTemplate('P{DIV{SEQ:3}', 'tax_invoice');
     }).toThrow(/unclosed or malformed/);
     expect(() => {
-      assertValidTemplate('P{SEQ:99}', invoice);
+      assertValidTemplate('P{SEQ:99}', 'tax_invoice');
     }).toThrow(/between 1 and 12/);
   });
 
   it('refuses a blank template', () => {
     expect(() => {
-      assertValidTemplate('   ', invoice);
+      assertValidTemplate('   ', 'tax_invoice');
     }).toThrow(/cannot be blank/);
+  });
+});
+
+describe('counter scope (finding 8) — a template must be as wide as the uniqueness key', () => {
+  /* Challan counters run per Work and the invoice counter per financial
+   * year, while every number is unique across the organisation. A
+   * scope-free template mints the same number again from the second
+   * Work or second financial year onward, and because the counter rolls
+   * back with the failed issue, every retry requests the same number —
+   * the series wedges at issue time. These templates must die on the
+   * settings screen. */
+
+  it('refuses a challan template with no per-Work mark', () => {
+    expect(() => {
+      assertValidTemplate('{SEQ}', 'delivery_challan');
+    }).toThrow(/\{WORK\} or \{PREFIX\}/);
+    expect(() => {
+      assertValidTemplate('DC/{YYYY}/{SEQ:3}', 'issue_challan');
+    }).toThrow(/\{WORK\} or \{PREFIX\}/);
+  });
+
+  it('accepts a challan template scoped by {WORK} or {PREFIX}', () => {
+    expect(() => {
+      assertValidTemplate('{WORK}/DC/{SEQ}', 'delivery_challan');
+    }).not.toThrow();
+    expect(() => {
+      assertValidTemplate('{PREFIX}/{YYYY}/{SEQ:2}', 'issue_challan');
+    }).not.toThrow();
+  });
+
+  it('refuses an invoice template with no financial year', () => {
+    expect(() => {
+      assertValidTemplate('TI/{SEQ}', 'tax_invoice');
+    }).toThrow(/\{FY\} or \{FY2\}/);
+  });
+
+  it('refuses the calendar year as an invoice scope', () => {
+    // FY 2026-27 dated January 2027 and FY 2027-28 dated May 2027 both
+    // render {YYYY} as 2027 — with a restarted counter, they collide.
+    expect(() => {
+      assertValidTemplate('TI/{YYYY}/{SEQ:3}', 'tax_invoice');
+    }).toThrow(/\{FY\} or \{FY2\}/);
+  });
+
+  it('needs no scope mark on a budgetary quotation', () => {
+    // The BQ counter runs per organisation — exactly as wide as the
+    // uniqueness key — so a bare serial is already collision-free.
+    expect(() => {
+      assertValidTemplate('BQ-{SEQ:2}', 'budgetary_quotation');
+    }).not.toThrow();
   });
 });

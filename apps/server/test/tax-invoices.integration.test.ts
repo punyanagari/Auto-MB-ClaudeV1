@@ -2268,3 +2268,76 @@ describe('render-ledger and submit hardening', () => {
     expect(after?.count).toBeGreaterThan(0);
   });
 });
+
+describe('numbering scope across financial years (finding 8)', () => {
+  /* The invoice counter restarts each financial year while the number
+   * is unique per organisation. A template with no financial year would
+   * repeat this year's numbers next year — and because the counter
+   * rolls back with the failed submit, every retry would request the
+   * same number again: a wedged series with a finished invoice in hand.
+   * The calendar-year tokens do not qualify either: FY 2026-27 dated
+   * January 2027 and FY 2027-28 dated May 2027 both render {YYYY} as
+   * 2027 over a restarted counter. */
+
+  it('refuses an invoice template with no financial year when it is saved', async () => {
+    for (const template of ['TI/{SEQ}', 'TI/{YYYY}/{SEQ:3}']) {
+      const saved = await authed(owner, {
+        method: 'PUT',
+        url: '/api/organisation/number-series/tax_invoice',
+        organisationId,
+        payload: { template },
+      });
+      expect(saved.statusCode, `${template}: ${saved.body}`).toBe(400);
+      expect(saved.json()).toMatchObject({ code: 'NUMBER_TEMPLATE_INVALID' });
+      expect(saved.json<{ message: string }>().message).toMatch(
+        /\{FY\} or \{FY2\}/,
+      );
+    }
+  });
+
+  it('keeps two financial years collision-free under an {FY}-scoped series', async () => {
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/tax_invoice',
+      organisationId,
+      payload: { template: '{PREFIX}/{FY}/{SEQ}' },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+
+    // One invoice on each side of the 1 April boundary; each series
+    // carries its own financial year, so the restarted counter cannot
+    // collide across years.
+    const numbers: string[] = [];
+    for (const [invoiceDate, fyLabel] of [
+      ['2026-03-20', '2025-26'],
+      ['2026-04-20', '2026-27'],
+    ] as const) {
+      const created = await authed(owner, {
+        method: 'POST',
+        url: '/api/tax-invoices',
+        organisationId,
+        payload: {
+          invoiceDate,
+          sacCode: '998734',
+          serviceDescription: `Numbering scope proof for FY ${fyLabel}.`,
+          gstRate: '18',
+          placeOfSupply: '07',
+          reverseChargeApplicable: false,
+          buyerContactId,
+          taxableValue: '1000.00',
+        },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      const submitted = await authed(owner, {
+        method: 'POST',
+        url: `/api/tax-invoices/${created.json<TaxInvoiceDetailResponse>().invoice.id}/submit`,
+        organisationId,
+      });
+      expect(submitted.statusCode, submitted.body).toBe(201);
+      const number = submitted.json<TaxInvoiceDetailResponse>().invoice.invoiceNumber;
+      expect(number).toMatch(new RegExp(`^P10/${fyLabel}/\\d+$`));
+      numbers.push(number ?? '');
+    }
+    expect(new Set(numbers).size).toBe(2);
+  });
+});

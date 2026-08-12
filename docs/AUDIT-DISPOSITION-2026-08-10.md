@@ -36,9 +36,9 @@ passes on this tree with 46 migrations validated, reported separately in
 
 | Status          | Count | Meaning                                        |
 | --------------- | ----- | ---------------------------------------------- |
-| Fixed           | 17    | Resolved; evidence cited                       |
+| Fixed           | 18    | Resolved; evidence cited                       |
 | Partial         | 11    | Materially addressed; a named sub-item remains |
-| Still open      | 15    | Not addressed                                  |
+| Still open      | 14    | Not addressed                                  |
 | Owner-dismissed | 1     | Decided not applicable by the owner            |
 
 Most of what is fixed was fixed by the 0041–0045 checkpoint, which was
@@ -87,7 +87,7 @@ remains a live requirement and is dispositioned on its merits.
 
 | #   | Finding                                                         | Status         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | --- | --------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8   | Organisation-defined numbering can deadlock a series            | **Still open** | `number-series.ts:192-238` validates only brace balance, token names and the presence of `{SEQ}`; it has no scope requirement. Counters are narrower than the uniqueness key: delivery challans count per Work (`routes/challans.ts:1234-1240`) against `UNIQUE (organisation_id, challan_number)` (`0001:168`); tax invoices count per financial year (`routes/tax-invoices.ts:1438-1444`) against `UNIQUE (organisation_id, invoice_number)` (`0035:72`) |
+| 8   | Organisation-defined numbering can deadlock a series            | Fixed (12 August follow-up) | `assertValidTemplate` now requires the counter's scope token: challan templates must carry `{WORK}` or `{PREFIX}`, tax-invoice templates `{FY}` or `{FY2}` — the calendar-year tokens deliberately do not qualify, since a financial year straddles the calendar boundary. Migration `0047` binds the same rule as a CHECK constraint with an actionable preflight over stored rows. Proven by unit scope cases, a two-Works challan proof (`challans.integration.test.ts`) and a two-financial-years invoice proof (`tax-invoices.integration.test.ts`). `{PREFIX}` scope remains operator-remediable rather than structural — two Works CAN share a prefix — but the draft's prefix is editable and the issue-time 409 names that way out, so the series no longer wedges |
 | 9   | New legal-document parent rows lack database-level immutability | Fixed          | Parent guards for tax invoices (`0041:375-491`), e-way bills (`0041:493-588`), purchase orders (`0045:39-99`) and quotations (`0045:101-145`): issued facts frozen, only named lifecycle columns mutable, terminal states final, provider evidence append-once, official identifiers never cleared                                                                                                                                                         |
 | 10  | Bootstrap privilege matrix stale                                | Partial        | The matrix now declares every table created by any migration — verified by diffing all 55 `CREATE TABLE` statements against `bootstrap.ts:21-116`, zero missing. But no catalog-driven test enforces it, so a new table can land undeclared with CI green                                                                                                                                                                                                  |
 | 11  | Export is no longer the complete business record                | Partial        | All 55 tenant tables are exported, with an object manifest and snapshot isolation (`routes/export.ts`, `formatVersion: 'export-v8'`). The completeness test is a hand-maintained list (`test/integrity.integration.test.ts:510-537`), which is precisely what the audit said not to rely on                                                                                                                                                                |
@@ -125,7 +125,7 @@ remains a live requirement and is dispositioned on its merits.
 | 36  | Owner MFA remains an open gate                             | **Still open**                                 | `auth.ts:69-75` registers the plugin; there is no enrolment flow in the web client and no enforcement policy                                                                                                                                                                                                                                                                                                                                |
 | 37  | Observability is far narrower than the contract            | **Still open**                                 | `metrics.ts` exposes three series against the list at `docs/OPERATIONS.md:78-93`                                                                                                                                                                                                                                                                                                                                                            |
 | 38  | Rate limiting is single-process                            | **Still open**, not a live defect              | `rate-limit.ts:22,92` use in-process maps, correct for the current single-container topology and a gate on the first replica                                                                                                                                                                                                                                                                                                                |
-| 47  | Important negative tests are missing                       | Partial — 3 of 17 present, 5 partial, 9 absent | Present: e-way-bill number retained after cancellation, hostile-origin rejection, purchase-order reopen after closure. Absent include: payload byte-stability after a profile change, local cancellation with an active IRN (guarded but untested), numbering templates across two Works and two financial years, maximum money serialisation, and backup during a document write. The importer proof exists but is skipped in CI by design |
+| 47  | Important negative tests are missing                       | Partial — 3 of 17 present, 5 partial, 9 absent | Present: e-way-bill number retained after cancellation, hostile-origin rejection, purchase-order reopen after closure. Absent include: payload byte-stability after a profile change, local cancellation with an active IRN (guarded but untested), maximum money serialisation, and backup during a document write. The numbering-templates case (two Works, two financial years) was added with the finding-8 fix. The importer proof exists but is skipped in CI by design |
 | 48  | Production smoke does not exercise the new surfaces        | **Still open**                                 | `ci.yml:145-213` proves readiness, web delivery and sign-up only. The separate fresh-cluster restore job is stronger but proves record survival only by counting organisations                                                                                                                                                                                                                                                              |
 
 ## Release-blocking set
@@ -133,15 +133,12 @@ remains a live requirement and is dispositioned on its merits.
 Consolidated from all four verification passes, in the order they should
 be taken:
 
-1. **Finding 8 — numbering template scope.** The only structural
-   integrity defect left entirely untouched. An owner can still save
-   `{SEQ}` for challans or `TI/{SEQ}` for tax invoices; the first Work or
-   the first invoice of a second financial year then collides with the
-   organisation-wide unique constraint, and because the counter rolls
-   back with the failed transaction, every retry requests the same
-   number. The series wedges at issue time, when the operator already has
-   a finished document. The named 409 makes this legible but does not
-   clear it.
+1. **Finding 8 — numbering template scope.** _Fixed in the 12 August
+   follow-up._ A scope-free template (`{SEQ}` for challans, `TI/{SEQ}`
+   for tax invoices) is now refused when it is saved — challan templates
+   must carry `{WORK}` or `{PREFIX}`, invoice templates `{FY}` or
+   `{FY2}` — and migration `0047` binds the same rule in the database,
+   so the wedge can no longer be configured into existence.
 2. **Finding 19 — unbounded GST rate.** The only place where a locally
    finalised, gap-free numbered, immutably snapshotted document can carry
    a value the government will reject. The correction path afterwards is
@@ -199,11 +196,11 @@ original gap it describes.
   and leaves the new containers running (finding 32).
 - `routes/tax-invoices.ts:216-218` still describes the draft buyer as
   resolved from the newest audit event. The code immediately beneath it
-  reads a column (finding 16). `number-series.ts:184-190` similarly still
-  claims a template is "proved when it is saved" (finding 8), and
-  `routes/tax-invoices.ts:522-523` claims there is deliberately no
-  future-date bound fifteen lines above the guard that enforces one
-  (finding 21).
+  reads a column (finding 16). `routes/tax-invoices.ts:522-523` claims
+  there is deliberately no future-date bound fifteen lines above the
+  guard that enforces one (finding 21). The `number-series.ts` claim
+  that a template is "proved when it is saved" was the third entry
+  here; the finding-8 fix made it true.
 
 For findings 33, 36 and 37 the documentation was instead updated to
 concede the gap honestly. That is an improvement, but it is not

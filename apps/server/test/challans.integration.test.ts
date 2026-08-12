@@ -1621,3 +1621,80 @@ describe('challan lines received against purchase-order lines (0033 receipt link
     ]);
   });
 });
+
+describe('numbering scope across Works (finding 8)', () => {
+  /* The delivery challan counter runs per Work while the number is
+   * unique per organisation. A template with no per-Work mark would
+   * mint the same number from two Works — and because the counter rolls
+   * back with the failed issue, every retry would request the same
+   * number again: a wedged series with a finished document in hand.
+   * The fix is refusal at save time; these tests prove the refusal and
+   * that a {WORK}-scoped series really does keep two Works apart at the
+   * same counter value. */
+
+  afterAll(async () => {
+    // Restore the default series so no later suite inherits the
+    // {WORK}-scoped template this one saves.
+    const restored = await authed(owner, {
+      method: 'DELETE',
+      url: '/api/organisation/number-series/delivery_challan',
+      organisationId,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+  });
+
+  it('refuses a challan template with no per-Work mark when it is saved', async () => {
+    for (const template of ['{SEQ}', 'DC/{YYYY}/{SEQ:3}']) {
+      const saved = await authed(owner, {
+        method: 'PUT',
+        url: '/api/organisation/number-series/delivery_challan',
+        organisationId,
+        payload: { template },
+      });
+      expect(saved.statusCode, `${template}: ${saved.body}`).toBe(400);
+      expect(saved.json()).toMatchObject({ code: 'NUMBER_TEMPLATE_INVALID' });
+      expect(saved.json<{ message: string }>().message).toMatch(
+        /\{WORK\} or \{PREFIX\}/,
+      );
+    }
+  });
+
+  it('keeps two Works collision-free at the same counter value under {WORK}', async () => {
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/delivery_challan',
+      organisationId,
+      payload: { template: '{WORK}/DC/{SEQ}' },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+
+    const numbers: string[] = [];
+    for (const label of ['N1', 'N2']) {
+      const { workId: scopedWorkId, workItemId } = await freshWork(label, {
+        description: `Numbering scope ${label}`,
+        unit: 'Nos',
+        quantity: '5.000',
+        rate: '100.00',
+      });
+      const draft = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${scopedWorkId}/challans`,
+        organisationId,
+        payload: draftBody([{ workItemId, quantity: '1' }]),
+      });
+      expect(draft.statusCode, draft.body).toBe(201);
+      const issued = await authed(owner, {
+        method: 'POST',
+        url: `/api/challans/${draft.json<ChallanDetailResponse>().challan.id}/issue`,
+        organisationId,
+      });
+      expect(issued.statusCode, issued.body).toBe(201);
+      const number = issued.json<ChallanDetailResponse>().challan.challanNumber;
+      expect(number).toBe(`DC${label}-${runId.toUpperCase()}/DC/1`);
+      numbers.push(number ?? '');
+    }
+    // Both Works sit at counter value 1; the Work code is what keeps the
+    // organisation-wide numbers distinct.
+    expect(new Set(numbers).size).toBe(2);
+  });
+});
