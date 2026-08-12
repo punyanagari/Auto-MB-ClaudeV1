@@ -15,6 +15,8 @@ export const DashboardAlertSchema = Type.Object(
       Type.Literal('pbg_missing'),
       Type.Literal('pbg_undervalue'),
       Type.Literal('pbg_window_missed'),
+      Type.Literal('irp_reporting_due'),
+      Type.Literal('irp_reporting_overdue'),
     ]),
     severity: Type.Union([
       Type.Literal('danger'),
@@ -62,6 +64,13 @@ export const DashboardResponseSchema = Type.Object(
         billedValue: DecimalStringSchema,
         openDrafts: Type.Integer({ minimum: 0 }),
         loaAwaitingReview: Type.Integer({ minimum: 0 }),
+        /** Submitted invoices carrying a frozen IRP reporting deadline
+         * (migration 0049) that are not yet registered: `Due` counts
+         * those whose window is still open in the organisation's own
+         * timezone, `Overdue` those whose window has closed. Local
+         * validity is untouched either way. */
+        irpReportingDue: Type.Integer({ minimum: 0 }),
+        irpReportingOverdue: Type.Integer({ minimum: 0 }),
       },
       { additionalProperties: false },
     ),

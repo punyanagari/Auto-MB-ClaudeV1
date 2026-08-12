@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { GstStateCodeSchema, UuidSchema } from './primitives.js';
+import { DateOnlySchema, GstStateCodeSchema, UuidSchema } from './primitives.js';
 
 export const MembershipRoleSchema = Type.Union([
   Type.Literal('owner'),
@@ -100,6 +100,31 @@ export const InvoiceNumberPrefixSchema = Type.String({
   description: 'Tax invoice number prefix, e.g. P10.',
 });
 export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
+
+/** The owner's declaration of whether e-invoicing (IRP reporting)
+ * applies to the organisation (migration 0049). The system cannot know
+ * the turnover, so the owner asserts the legal fact and the system
+ * enforces its consequence: `undeclared` blocks the IRP transport until
+ * a declaration exists, `not_applicable` refuses it because voluntary
+ * registration below the mandate is not provided for, and `applicable`
+ * (with the date it became so) permits it — the mandate is permanent
+ * once aggregate annual turnover has ever crossed ₹5 crore. */
+export const EinvoiceApplicabilitySchema = Type.Union([
+  Type.Literal('undeclared'),
+  Type.Literal('not_applicable'),
+  Type.Literal('applicable'),
+]);
+export type EinvoiceApplicability = Static<typeof EinvoiceApplicabilitySchema>;
+
+/** Days after its date within which an invoice may still be reported to
+ * the IRP — 30 under the rule binding AATO ≥ ₹10 crore since 1 April
+ * 2025. Bounded so a typo cannot declare a window the law does not
+ * offer. */
+export const IrpReportingWindowDaysSchema = Type.Integer({
+  minimum: 1,
+  maximum: 365,
+});
+export type IrpReportingWindowDays = Static<typeof IrpReportingWindowDaysSchema>;
 
 /** The four documents whose number format an organisation may define.
  * Every other numbered document keeps its fixed format. */
@@ -211,6 +236,16 @@ export const OrganisationProfileSchema = Type.Object(
       Type.String({ minLength: 1, maxLength: 20000 }),
       Type.Null(),
     ]),
+    /** The e-invoicing declaration (migration 0049). Optional on the
+     * wire like the other later tax facts, so a reader that predates
+     * them omits rather than invents them. The three travel together:
+     * `applicable` carries the from-date, and a reporting window exists
+     * only while applicable. */
+    einvoiceApplicability: Type.Optional(EinvoiceApplicabilitySchema),
+    einvoiceApplicableFrom: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+    irpReportingWindowDays: Type.Optional(
+      Type.Union([IrpReportingWindowDaysSchema, Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -252,6 +287,15 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     ),
     warrantyTemplateText: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),
+    ),
+    /** The e-invoicing declaration. The server holds the three to the
+     * same coherence the 0049 CHECK binds: `applicable` requires the
+     * from-date, anything else forbids it, and a window may exist only
+     * while applicable. */
+    einvoiceApplicability: Type.Optional(EinvoiceApplicabilitySchema),
+    einvoiceApplicableFrom: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+    irpReportingWindowDays: Type.Optional(
+      Type.Union([IrpReportingWindowDaysSchema, Type.Null()]),
     ),
   },
   { additionalProperties: false },
