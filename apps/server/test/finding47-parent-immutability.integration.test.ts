@@ -113,13 +113,9 @@ async function rawWriteRefusal(
   statement: (tx: Sql) => Promise<unknown>,
 ): Promise<string> {
   try {
-    await withTenant(
-      appDb,
-      { organisationId, userId: ownerUserId },
-      async (tx) => {
-        await statement(tx as unknown as Sql);
-      },
-    );
+    await withTenant(appDb, { organisationId, userId: ownerUserId }, async (tx) => {
+      await statement(tx as unknown as Sql);
+    });
   } catch (error) {
     return String(error);
   }
@@ -311,8 +307,7 @@ beforeAll(async () => {
     organisationId,
   });
   expect(poIssued.statusCode, poIssued.body).toBe(201);
-  poNumber =
-    poIssued.json<PurchaseOrderDetailResponse>().purchaseOrder.poNumber ?? '';
+  poNumber = poIssued.json<PurchaseOrderDetailResponse>().purchaseOrder.poNumber ?? '';
   expect(poNumber).not.toBe('');
 
   // Issued budgetary quotation through the routes.
@@ -353,8 +348,7 @@ beforeAll(async () => {
   });
   expect(bqIssued.statusCode, bqIssued.body).toBe(201);
   bqNumber =
-    bqIssued.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation
-      .bqNumber ?? '';
+    bqIssued.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.bqNumber ?? '';
   expect(bqNumber).not.toBe('');
 }, 90_000);
 
@@ -438,9 +432,7 @@ describe('finding 47(c) — issued tax invoice parent facts are immutable to raw
     );
     expect(replaced).toMatch(/submitted tax invoice business facts are immutable/);
 
-    const [row] = await admin<
-      { invoice_number: string; taxable_value: string }[]
-    >`
+    const [row] = await admin<{ invoice_number: string; taxable_value: string }[]>`
       select invoice_number, taxable_value::text as taxable_value
       from tax_invoices where id = ${invoiceId}
     `;
@@ -482,20 +474,29 @@ describe('finding 47(c) — generated e-way bill facts are immutable to raw SQL'
 describe('finding 47(c) — issued purchase order parent facts are immutable to raw SQL', () => {
   it('refuses to move the money, the number or the date', async () => {
     for (const [label, statement] of [
-      ['total', (tx: Sql) => tx`
+      [
+        'total',
+        (tx: Sql) => tx`
         update purchase_orders set total_amount = '1.00'
         where id = ${purchaseOrderId}
-      `],
-      ['number', (tx: Sql) => tx`
+      `,
+      ],
+      [
+        'number',
+        (tx: Sql) => tx`
         update purchase_orders set po_number = 'FORGED-PO-1'
         where id = ${purchaseOrderId}
-      `],
+      `,
+      ],
       // A date still inside the Work's legal window, so the immutability
       // guard is what refuses it, not the LOA date-window trigger.
-      ['date', (tx: Sql) => tx`
+      [
+        'date',
+        (tx: Sql) => tx`
         update purchase_orders set po_date = '2026-03-01'
         where id = ${purchaseOrderId}
-      `],
+      `,
+      ],
     ] as const) {
       const refusal = await rawWriteRefusal(statement);
       expect(refusal, label).toMatch(
@@ -541,9 +542,7 @@ describe('finding 47(c) — issued budgetary quotation parent facts are immutabl
         where id = ${quotationId}
       `,
     );
-    expect(renamed).toMatch(
-      /issued budgetary quotation business data is immutable/,
-    );
+    expect(renamed).toMatch(/issued budgetary quotation business data is immutable/);
   });
 
   it('refuses to slide an issued quotation back to draft', async () => {

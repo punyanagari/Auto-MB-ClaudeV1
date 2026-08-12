@@ -111,11 +111,15 @@ for (const skill of SKILLS) {
       );
     }
     skill.copy(checkout, target);
-    console.log(`${skill.name}: installed at .claude/skills/${skill.name} (${skill.licence})`);
+    console.log(
+      `${skill.name}: installed at .claude/skills/${skill.name} (${skill.licence})`,
+    );
   } catch (error) {
     failures += 1;
     rmSync(target, { recursive: true, force: true });
-    console.error(`${skill.name}: FAILED — ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `${skill.name}: FAILED — ${error instanceof Error ? error.message : String(error)}`,
+    );
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }

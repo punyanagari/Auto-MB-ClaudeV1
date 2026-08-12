@@ -139,13 +139,9 @@ async function rawWriteRefusal(
   statement: (tx: Sql) => Promise<unknown>,
 ): Promise<string> {
   try {
-    await withTenant(
-      appDb,
-      { organisationId, userId: ownerUserId },
-      async (tx) => {
-        await statement(tx as unknown as Sql);
-      },
-    );
+    await withTenant(appDb, { organisationId, userId: ownerUserId }, async (tx) => {
+      await statement(tx as unknown as Sql);
+    });
   } catch (error) {
     return String(error);
   }
@@ -285,9 +281,9 @@ beforeAll(async () => {
       },
     });
     expect(recorded.statusCode, recorded.body).toBe(200);
-    expect(
-      recorded.json<TaxInvoiceDetailResponse>().invoice.irpProviderState,
-    ).toBe('registered');
+    expect(recorded.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
+      'registered',
+    );
   }
 
   // A generated manual e-way bill, seeded with complete NIC evidence —
@@ -361,9 +357,7 @@ describe('finding 47(a) — local cancellation with an active IRN', () => {
       payload: { note: 'Attempted local cancel under an active IRN.' },
     });
     expect(refused.statusCode, refused.body).toBe(409);
-    expect(refused.json<{ code: string }>().code).toBe(
-      'IRP_CANCELLATION_REQUIRED',
-    );
+    expect(refused.json<{ code: string }>().code).toBe('IRP_CANCELLATION_REQUIRED');
     expect((await invoiceState(registeredInvoiceId)).status).toBe('submitted');
   });
 

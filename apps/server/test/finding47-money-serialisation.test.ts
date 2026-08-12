@@ -78,9 +78,7 @@ describe('finding 47(d) — largest representable money values are byte-exact', 
 describe('finding 47(d) — unsafe bare integers are refused, not rounded', () => {
   it('accepts safe literal integers up to Number.MAX_SAFE_INTEGER', () => {
     expect(stringifyStatutoryJson(Number.MAX_SAFE_INTEGER)).toBe('9007199254740991');
-    expect(stringifyStatutoryJson(-Number.MAX_SAFE_INTEGER)).toBe(
-      '-9007199254740991',
-    );
+    expect(stringifyStatutoryJson(-Number.MAX_SAFE_INTEGER)).toBe('-9007199254740991');
     expect(stringifyStatutoryJson(0)).toBe('0');
   });
 
