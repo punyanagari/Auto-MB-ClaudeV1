@@ -11,11 +11,10 @@ name: Deploy
 # revoking it is one line out of authorized_keys.
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  # Manual redeploys of current main, without a code push.
+  # Deploys are a deliberate operator action (Run workflow), never a side
+  # effect of a merge: audit finding 32 flagged auto-deploy-on-main, and
+  # per-merge AWS deploys were never the intent. Run CI on the commit you
+  # intend to ship before dispatching.
   workflow_dispatch:
 
 # contents:read lets the job mint the ephemeral token the host uses to
