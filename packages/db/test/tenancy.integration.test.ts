@@ -276,6 +276,12 @@ async function seedTenantGraph(
     await tx`
       select app_private.create_organisation_with_owner(${name}, ${slug}, ${organisationId})
     `;
+    // The 0052 split guard judges every money-carrying invoice against the
+    // organisation's own state; the seeded invoice below is an intra-state
+    // (27 -> 27) CGST/SGST split, so the organisation must carry state 27.
+    await tx`
+      update organisations set state_code = '27' where id = ${organisationId}
+    `;
     const [work] = await tx<{ id: string }[]>`
       insert into works (
         organisation_id, work_code, letter_number, letter_date, title,
