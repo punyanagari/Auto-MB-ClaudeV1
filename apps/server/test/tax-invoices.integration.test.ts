@@ -2289,9 +2289,7 @@ describe('numbering scope across financial years (finding 8)', () => {
       });
       expect(saved.statusCode, `${template}: ${saved.body}`).toBe(400);
       expect(saved.json()).toMatchObject({ code: 'NUMBER_TEMPLATE_INVALID' });
-      expect(saved.json<{ message: string }>().message).toMatch(
-        /\{FY\} or \{FY2\}/,
-      );
+      expect(saved.json<{ message: string }>().message).toMatch(/\{FY\} or \{FY2\}/);
     }
   });
 
