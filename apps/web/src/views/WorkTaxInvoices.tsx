@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type {
   Contact,
   EwayBill,
+  GstRateMaster,
   MeasurementBook,
   TaxInvoice,
   TaxInvoiceDetailResponse,
@@ -37,6 +38,22 @@ const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   ship: 'Ship',
 };
 
+/** One option per master row, so a historic invoice date can still pick a
+ * rate that has since been end-dated — the SERVER decides validity
+ * against the invoice date; this list is a picker convenience. */
+function GstRateOptions({ rates }: { readonly rates: readonly GstRateMaster[] }) {
+  return (
+    <>
+      {rates.map((row) => (
+        <option key={row.id} value={row.rate}>
+          {row.rate}% · {row.label}
+          {row.effectiveTo === null ? '' : ` (until ${formatDate(row.effectiveTo)})`}
+        </option>
+      ))}
+    </>
+  );
+}
+
 /**
  * The GST tax invoice raised against a finalized Measurement Book, and
  * the e-way bill that moves it.
@@ -68,6 +85,7 @@ export function WorkTaxInvoices({
   const [books, setBooks] = useState<readonly MeasurementBook[]>([]);
   const [clients, setClients] = useState<readonly Contact[]>([]);
   const [shipToContacts, setShipToContacts] = useState<readonly Contact[]>([]);
+  const [gstRates, setGstRates] = useState<readonly GstRateMaster[]>([]);
   const [detail, setDetail] = useState<TaxInvoiceDetailResponse | null>(null);
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
   const [cancelNote, setCancelNote] = useState('');
@@ -108,6 +126,15 @@ export function WorkTaxInvoices({
       })
       .catch(() => {
         // Likewise: no buyer picker, no create form.
+      });
+    api
+      .listGstRates(organisationId)
+      .then((rates) => {
+        if (!cancelled) setGstRates(rates);
+      })
+      .catch(() => {
+        // The rate picker degrades to a plain input; the server still
+        // refuses a rate the master does not cover.
       });
     return () => {
       cancelled = true;
@@ -368,14 +395,31 @@ export function WorkTaxInvoices({
             <FieldRow>
               <Field>
                 <label htmlFor="invoice-gst-rate">GST rate (%)</label>
-                <input
-                  id="invoice-gst-rate"
-                  name="invoice-gst-rate"
-                  inputMode="decimal"
-                  required
-                  placeholder="18"
-                />
-                <Hint>The total rate; the CGST/SGST split is half each.</Hint>
+                {gstRates.length > 0 ? (
+                  <select
+                    id="invoice-gst-rate"
+                    name="invoice-gst-rate"
+                    required
+                    defaultValue=""
+                  >
+                    <option value="" disabled>
+                      Pick a notified rate
+                    </option>
+                    <GstRateOptions rates={gstRates} />
+                  </select>
+                ) : (
+                  <input
+                    id="invoice-gst-rate"
+                    name="invoice-gst-rate"
+                    inputMode="decimal"
+                    required
+                    placeholder="18"
+                  />
+                )}
+                <Hint>
+                  Only rates the GST rate master lists for the invoice date are
+                  accepted. The CGST/SGST split is half each.
+                </Hint>
               </Field>
               <Field>
                 <label htmlFor="invoice-place-of-supply">Place of supply</label>
@@ -687,13 +731,24 @@ export function WorkTaxInvoices({
                 <FieldRow>
                   <Field>
                     <label htmlFor="edit-invoice-gst-rate">GST rate (%)</label>
-                    <input
-                      id="edit-invoice-gst-rate"
-                      name="edit-invoice-gst-rate"
-                      inputMode="decimal"
-                      required
-                      defaultValue={invoice.gstRate}
-                    />
+                    {gstRates.length > 0 ? (
+                      <select
+                        id="edit-invoice-gst-rate"
+                        name="edit-invoice-gst-rate"
+                        required
+                        defaultValue={invoice.gstRate}
+                      >
+                        <GstRateOptions rates={gstRates} />
+                      </select>
+                    ) : (
+                      <input
+                        id="edit-invoice-gst-rate"
+                        name="edit-invoice-gst-rate"
+                        inputMode="decimal"
+                        required
+                        defaultValue={invoice.gstRate}
+                      />
+                    )}
                   </Field>
                   <Field>
                     <label htmlFor="edit-invoice-place-of-supply">

@@ -5,6 +5,7 @@ import type {
   BudgetaryQuotationLineInput,
   Contact,
   CreateBudgetaryQuotationRequest,
+  GstRateMaster,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr, formatRate } from '../format.js';
@@ -345,6 +346,7 @@ export function Quotations({
     null,
   );
   const [clients, setClients] = useState<readonly Contact[]>([]);
+  const [gstRates, setGstRates] = useState<readonly GstRateMaster[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [detail, setDetail] = useState<BudgetaryQuotationDetailResponse | null>(null);
   const [createState, setCreateState] = useState<HeaderState>(EMPTY_HEADER);
@@ -364,16 +366,19 @@ export function Quotations({
     setLoadError(null);
     Promise.all([
       api.listBudgetaryQuotations(organisationId),
-      // The picker is a convenience: an unavailable master list must not
-      // block free-text quoting.
+      // The pickers are conveniences: an unavailable master list must not
+      // block free-text quoting, and the rate picker degrades to a plain
+      // input (the server refuses off-master rates either way).
       api.listContacts(organisationId).catch((): readonly Contact[] => []),
+      api.listGstRates(organisationId).catch((): readonly GstRateMaster[] => []),
     ])
-      .then(([loadedQuotations, contacts]) => {
+      .then(([loadedQuotations, contacts, rates]) => {
         if (cancelled) return;
         setQuotations(loadedQuotations);
         setClients(
           contacts.filter((candidate) => candidate.isClient && candidate.active),
         );
+        setGstRates(rates);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -795,14 +800,34 @@ export function Quotations({
                               />
                             </td>
                             <td>
-                              <input
-                                aria-label={`Line ${String(lineNumber)} GST rate (optional)`}
-                                inputMode="decimal"
-                                value={line.gstRate}
-                                onChange={(event) => {
-                                  set({ gstRate: event.target.value });
-                                }}
-                              />
+                              {gstRates.length > 0 ? (
+                                <select
+                                  aria-label={`Line ${String(lineNumber)} GST rate (optional)`}
+                                  value={line.gstRate}
+                                  onChange={(event) => {
+                                    set({ gstRate: event.target.value });
+                                  }}
+                                >
+                                  <option value="">No GST rate</option>
+                                  {gstRates.map((row) => (
+                                    <option key={row.id} value={row.rate}>
+                                      {row.rate}%
+                                      {row.effectiveTo === null
+                                        ? ''
+                                        : ` (until ${row.effectiveTo})`}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  aria-label={`Line ${String(lineNumber)} GST rate (optional)`}
+                                  inputMode="decimal"
+                                  value={line.gstRate}
+                                  onChange={(event) => {
+                                    set({ gstRate: event.target.value });
+                                  }}
+                                />
+                              )}
                             </td>
                             <td>
                               <Button

@@ -45,6 +45,9 @@ import type {
   RespondExtensionRequest,
   BackfillExtensionRequest,
   BackfillExtensionResponse,
+  CreateGstRateRequest,
+  EndDateGstRateRequest,
+  GstRateMaster,
   SaveChallanRequest,
   SaveContactRequest,
   SaveExtensionRequest,
@@ -492,6 +495,16 @@ export interface ApiClient {
     id: string,
     active: boolean,
   ) => Promise<UnitMaster>;
+  readonly listGstRates: (organisationId: string) => Promise<readonly GstRateMaster[]>;
+  readonly createGstRate: (
+    organisationId: string,
+    body: CreateGstRateRequest,
+  ) => Promise<GstRateMaster>;
+  readonly endDateGstRate: (
+    organisationId: string,
+    id: string,
+    body: EndDateGstRateRequest,
+  ) => Promise<GstRateMaster>;
   readonly listSignatories: (
     organisationId: string,
     includeRetired?: boolean,
@@ -1701,6 +1714,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/masters/units/${id}/${active ? 'reactivate' : 'retire'}`,
         { method: 'POST', organisationId },
       );
+    },
+    async listGstRates(organisationId) {
+      const payload = await request<{ gstRates: GstRateMaster[] }>(
+        '/api/masters/gst-rates',
+        { organisationId },
+      );
+      return payload.gstRates;
+    },
+    async createGstRate(organisationId, body) {
+      return request<GstRateMaster>('/api/masters/gst-rates', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async endDateGstRate(organisationId, id, body) {
+      return request<GstRateMaster>(`/api/masters/gst-rates/${id}/end-date`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
     async listSignatories(organisationId, includeRetired = false) {
       const payload = await request<{ signatories: Signatory[] }>(

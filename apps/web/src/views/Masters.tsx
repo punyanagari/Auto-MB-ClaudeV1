@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type {
   Contact,
+  GstRateMaster,
   LocationKind,
   LocationMaster,
   Signatory,
@@ -26,6 +27,9 @@ interface MastersProps {
   readonly organisationId: string;
   /** Owner/office may add, edit, retire, and reactivate; others read. */
   readonly canModify: boolean;
+  /** GST rate mutations are OWNER-only server-side — the master decides
+   * what a legal document may say. Omitted means not an owner. */
+  readonly isOwner?: boolean;
   /** Lifted so the sidebar can open a category directly. Omitted, the page
    * keeps its own tab — which is what the component tests rely on. */
   readonly tab?: MastersTab;
@@ -34,13 +38,14 @@ interface MastersProps {
 
 export type { MastersTab };
 
-type MastersTab = 'contacts' | 'locations' | 'units' | 'signatories';
+type MastersTab = 'contacts' | 'locations' | 'units' | 'signatories' | 'gst-rates';
 
 const TABS: readonly { key: MastersTab; label: string }[] = [
   { key: 'contacts', label: 'Contacts' },
   { key: 'locations', label: 'Locations' },
   { key: 'units', label: 'Units' },
   { key: 'signatories', label: 'Signatories' },
+  { key: 'gst-rates', label: 'GST rates' },
 ];
 
 const LOCATION_KIND_LABELS: Record<LocationKind, string> = {
@@ -1012,6 +1017,204 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
   );
 }
 
+function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [ending, setEnding] = useState<GstRateMaster | null>(null);
+
+  const load = useCallback(
+    () => api.listGstRates(organisationId),
+    [api, organisationId],
+  );
+  const { rows, reload } = useMasterList(load, false, setError);
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const effectiveTo = formValue(data, 'effectiveTo');
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.createGstRate(organisationId, {
+        rate: formValue(data, 'rate').trim(),
+        label: formValue(data, 'label').trim(),
+        effectiveFrom: formValue(data, 'effectiveFrom'),
+        ...(effectiveTo === '' ? {} : { effectiveTo }),
+      });
+      setNotice('GST rate recorded.');
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The GST rate could not be recorded.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function endDate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (ending === null) return;
+    const data = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.endDateGstRate(organisationId, ending.id, {
+        effectiveTo: formValue(data, 'endingEffectiveTo'),
+      });
+      setNotice(`${ending.rate}% end-dated. History stays covered for old invoices.`);
+      setEnding(null);
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The GST rate could not be end-dated.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-muted-foreground">
+        The Government-notified GST rates, each with the dates it was in force. Invoices
+        and quotations only accept a rate this list covers on the document date. A rate
+        leaves force by end-dating — rows are never edited or deleted, so old invoices
+        stay explainable. Changes are owner-only.
+      </p>
+      {rows === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading GST rates…
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="text-muted-foreground">No GST rates yet.</p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Notified GST rates and their windows</caption>
+          <thead>
+            <tr>
+              <th scope="col">Rate</th>
+              <th scope="col">Label</th>
+              <th scope="col">In force from</th>
+              <th scope="col">In force until</th>
+              {isOwner && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.rate}%</th>
+                <td className={wrapCell}>{row.label}</td>
+                <td>{row.effectiveFrom}</td>
+                <td>{row.effectiveTo ?? 'open'}</td>
+                {isOwner && (
+                  <td>
+                    {row.effectiveTo === null ? (
+                      <Button
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => {
+                          setEnding(row);
+                        }}
+                      >
+                        End-date
+                      </Button>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {isOwner && ending !== null && (
+        <form onSubmit={(event) => void endDate(event)}>
+          <Field>
+            <label htmlFor="gst-rate-ending">
+              Last date {ending.rate}% is in force
+            </label>
+            <input id="gst-rate-ending" name="endingEffectiveTo" type="date" required />
+            <Hint>
+              Invoices dated on or before this date keep accepting {ending.rate}%; later
+              ones refuse it.
+            </Hint>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
+              End-date {ending.rate}%
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEnding(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </Actions>
+        </form>
+      )}
+
+      {isOwner && rows !== null && ending === null && (
+        <MasterForm
+          label="Record a notified rate"
+          editingTitle={null}
+          startOpen={rows.length === 0}
+        >
+          <form onSubmit={(event) => void create(event)}>
+            <FieldRow>
+              <Field>
+                <label htmlFor="gst-rate-rate">Rate (%)</label>
+                <input
+                  id="gst-rate-rate"
+                  name="rate"
+                  inputMode="decimal"
+                  required
+                  placeholder="18"
+                />
+              </Field>
+              <Field>
+                <label htmlFor="gst-rate-label">Label</label>
+                <input
+                  id="gst-rate-label"
+                  name="label"
+                  required
+                  minLength={2}
+                  maxLength={100}
+                  placeholder="Standard 18%"
+                />
+              </Field>
+            </FieldRow>
+            <FieldRow>
+              <Field>
+                <label htmlFor="gst-rate-from">In force from</label>
+                <input id="gst-rate-from" name="effectiveFrom" type="date" required />
+              </Field>
+              <Field>
+                <label htmlFor="gst-rate-to">In force until (optional)</label>
+                <input id="gst-rate-to" name="effectiveTo" type="date" />
+                <Hint>Leave empty while the notification has no announced end.</Hint>
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                Record rate
+              </Button>
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
 /** Master data: the reusable pick-lists behind document forms. Everything
  * here is a picker only — documents snapshot what was chosen, so master
  * edits never rewrite history; rows retire instead of being deleted. */
@@ -1019,6 +1222,7 @@ export function Masters({
   api,
   organisationId,
   canModify,
+  isOwner = false,
   tab: controlledTab,
   onTabChange,
 }: MastersProps) {
@@ -1069,6 +1273,14 @@ export function Masters({
           api={api}
           organisationId={organisationId}
           canModify={canModify}
+        />
+      )}
+      {tab === 'gst-rates' && (
+        <GstRatesTab
+          api={api}
+          organisationId={organisationId}
+          canModify={canModify}
+          isOwner={isOwner}
         />
       )}
     </Card>
