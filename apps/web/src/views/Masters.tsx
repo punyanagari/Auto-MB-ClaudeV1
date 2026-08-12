@@ -14,6 +14,7 @@ import type {
   UnitMaster,
 } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formatDate } from '../format.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -1106,8 +1107,10 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
               <tr key={row.id}>
                 <th scope="row">{row.rate}%</th>
                 <td className={wrapCell}>{row.label}</td>
-                <td>{row.effectiveFrom}</td>
-                <td>{row.effectiveTo ?? 'open'}</td>
+                <td>{formatDate(row.effectiveFrom)}</td>
+                <td>
+                  {row.effectiveTo === null ? 'open' : formatDate(row.effectiveTo)}
+                </td>
                 {isOwner && (
                   <td>
                     {row.effectiveTo === null ? (

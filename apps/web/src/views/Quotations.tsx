@@ -8,7 +8,7 @@ import type {
   GstRateMaster,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatRate } from '../format.js';
+import { formatDate, formatInr, formatRate } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -814,7 +814,7 @@ export function Quotations({
                                       {row.rate}%
                                       {row.effectiveTo === null
                                         ? ''
-                                        : ` (until ${row.effectiveTo})`}
+                                        : ` (until ${formatDate(row.effectiveTo)})`}
                                     </option>
                                   ))}
                                 </select>
