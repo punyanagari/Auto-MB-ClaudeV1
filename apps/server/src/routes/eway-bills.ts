@@ -697,13 +697,14 @@ export function registerEwayBillRoutes(
           }
           throw error;
         }
-        const requestSha256 = sha256Hex(stringifyStatutoryJson({ Irn: invoice.irn }));
+        const requestJson = stringifyStatutoryJson({ Irn: invoice.irn });
         const operationId = await startStatutoryOperation(tx, {
           organisationId,
           userId: user.id,
           provider,
           operation: 'reconcile_eway_bill',
-          requestSha256,
+          requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
           ewayBillId: id,
         });
         await tx`
@@ -732,6 +733,7 @@ export function registerEwayBillRoutes(
             providerCode: null,
             httpStatus: null,
             publicCode: 'WHITEBOOKS_EWB_NOT_FOUND',
+            rawResponse: null,
           };
         }
       } catch (error) {
@@ -761,6 +763,7 @@ export function registerEwayBillRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: evidence.rawResponse,
           });
           await audit(
             tx,
@@ -781,6 +784,7 @@ export function registerEwayBillRoutes(
             status: 'unknown' as const,
             providerCode: null,
             httpStatus: null,
+            rawResponse: null,
           };
           await tx`
               update eway_bills
@@ -796,6 +800,7 @@ export function registerEwayBillRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
           await audit(
             tx,
@@ -1076,6 +1081,7 @@ export function registerEwayBillRoutes(
           provider,
           operation: 'cancel_eway_bill',
           requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
           ewayBillId: id,
         });
         await tx`
@@ -1098,6 +1104,7 @@ export function registerEwayBillRoutes(
       let cancelled: {
         readonly cancelledAtText: string;
         readonly cancelledAt: string;
+        readonly rawResponse: string;
       } | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
       try {
@@ -1129,12 +1136,14 @@ export function registerEwayBillRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: cancelled.rawResponse,
           });
         } else {
           const result = failure ?? {
             status: 'unknown' as const,
             providerCode: null,
             httpStatus: null,
+            rawResponse: null,
           };
           await tx`
               update eway_bills
@@ -1147,6 +1156,7 @@ export function registerEwayBillRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
         }
         await audit(

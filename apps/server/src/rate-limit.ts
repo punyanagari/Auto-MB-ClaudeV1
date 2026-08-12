@@ -1,12 +1,18 @@
 /**
- * Dependency-free sliding-window rate limiter (ops batch: login and
- * upload throttling) and the account-scoped login lockout that rides
- * beside it. Per-process state is the right scope for the single-host
- * pilot topology; a multi-instance deployment would move this into
- * PostgreSQL or a shared store.
+ * Sliding-window rate limiter (ops batch: login and upload throttling)
+ * and the account-scoped login lockout that rides beside it.
+ *
+ * Two implementations share each interface. The PostgreSQL-backed ones
+ * (finding 38, migration 0054) are what a database-configured server
+ * runs: every API instance counts the same attempts, so adding a replica
+ * no longer divides the windows. The in-process Map implementations
+ * remain for database-less instances (a bare buildApp() in tests exposes
+ * no login or upload surface to protect) and as the reference semantics
+ * the PostgreSQL versions replicate.
  */
 
 import { createHash } from 'node:crypto';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 
 export interface RateLimitRule {
   readonly windowMs: number;
@@ -14,8 +20,10 @@ export interface RateLimitRule {
 }
 
 export interface RateLimiter {
-  /** Records an attempt for the key and reports whether it is allowed. */
-  allow(key: string): boolean;
+  /** Records an attempt for the key and reports whether it is allowed.
+   * Synchronous for the in-process implementation, a promise for the
+   * PostgreSQL-backed one; callers await either. */
+  allow(key: string): boolean | Promise<boolean>;
 }
 
 export function createRateLimiter(rule: RateLimitRule): RateLimiter {
@@ -58,15 +66,15 @@ export interface AccountLockoutRule {
 
 export interface AccountLockout {
   /** True while the key is inside an active lock. */
-  isLocked(key: string): boolean;
+  isLocked(key: string): boolean | Promise<boolean>;
   /**
    * Records one failed attempt. Returns true exactly when this failure
    * transitions the key into the locked state (so the caller can audit
    * the lockout once, not once per rejected attempt).
    */
-  recordFailure(key: string): boolean;
+  recordFailure(key: string): boolean | Promise<boolean>;
   /** Clears the failure history and any active lock (successful login). */
-  clear(key: string): void;
+  clear(key: string): void | Promise<void>;
 }
 
 /**
@@ -125,6 +133,169 @@ export function createAccountLockout(rule: AccountLockoutRule): AccountLockout {
     },
     clear(key: string): void {
       failures.delete(key);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PostgreSQL-backed implementations (finding 38, migration 0054).
+//
+// Same windows, same thresholds, same refusal semantics as the Map
+// versions above — the state just lives in the shared `rate_limit_attempts`
+// and `account_lockout_locks` tables (UNLOGGED: reconstructible, no WAL on
+// the sign-in path) so a second API instance divides nothing. Per-key
+// mutations serialise on a transaction-scoped advisory lock, which keeps
+// the count-then-record step exact under concurrency exactly as the
+// single-threaded Maps were. A database failure fails CLOSED for the
+// pre-request checks: the hook's thrown error becomes the standard 503,
+// and the endpoints these limits protect could not have served the
+// request without the database anyway.
+
+/** Hashes a limiter key (a client address, or the account lockout's
+ * already-hashed email) together with the throttle namespace, so no raw
+ * address rests in the database. The namespace scopes the shared tables:
+ * every production replica passes the same deployment namespace and
+ * therefore counts the same attempts; a test instance without explicit
+ * configuration gets an instance-scoped namespace (see buildApp), which
+ * reproduces the per-process semantics the Map implementations had. */
+function limiterKeyHash(namespace: string, key: string): string {
+  return createHash('sha256').update(`${namespace}:${key}`).digest('hex');
+}
+
+type ThrottleScope = 'auth' | 'upload' | 'account_lockout';
+
+/** Serialises this statement's transaction against every other mutation of
+ * the same (scope, key) pair. hashtextextended gives a stable 64-bit key;
+ * collisions across different keys merely serialise two unrelated attempts. */
+async function lockThrottleKey(
+  tx: Sql | TransactionSql,
+  scope: ThrottleScope,
+  keyHash: string,
+): Promise<void> {
+  await tx`
+    select pg_advisory_xact_lock(hashtextextended(${`${scope}:${keyHash}`}, 0))
+  `;
+}
+
+export function createPgRateLimiter(
+  sql: Sql,
+  scope: 'auth' | 'upload',
+  rule: RateLimitRule,
+  namespace: string,
+): RateLimiter {
+  // The sweep cadence is per-process, like the Map version's; the DELETE
+  // itself acts on the shared table, so any one instance sweeping is
+  // enough and two sweeping concurrently just both delete dead rows.
+  let lastSweep = 0;
+
+  return {
+    async allow(key: string): Promise<boolean> {
+      const keyHash = limiterKeyHash(namespace, key);
+      const now = Date.now();
+      if (now - lastSweep > rule.windowMs) {
+        lastSweep = now;
+        await sql`
+          delete from rate_limit_attempts
+          where scope = ${scope}
+            and occurred_at <= now() - make_interval(secs => ${rule.windowMs / 1000})
+        `;
+      }
+      return sql.begin(async (tx) => {
+        await lockThrottleKey(tx, scope, keyHash);
+        const inserted = await tx<{ recorded: number }[]>`
+          insert into rate_limit_attempts (scope, key_hash)
+          select ${scope}, ${keyHash}
+          where (
+            select count(*) from rate_limit_attempts
+            where scope = ${scope} and key_hash = ${keyHash}
+              and occurred_at > now() - make_interval(secs => ${rule.windowMs / 1000})
+          ) < ${rule.max}
+          returning 1 as recorded
+        `;
+        return inserted.length === 1;
+      });
+    },
+  };
+}
+
+export function createPgAccountLockout(
+  sql: Sql,
+  rule: AccountLockoutRule,
+  namespace: string,
+): AccountLockout {
+  const scope: ThrottleScope = 'account_lockout';
+  let lastSweep = 0;
+
+  async function sweep(): Promise<void> {
+    const now = Date.now();
+    if (now - lastSweep <= rule.windowMs) return;
+    lastSweep = now;
+    await sql`
+      delete from rate_limit_attempts
+      where scope = ${scope}
+        and occurred_at <= now() - make_interval(secs => ${rule.windowMs / 1000})
+    `;
+    await sql`delete from account_lockout_locks where locked_until <= now()`;
+  }
+
+  async function activeLock(
+    tx: Sql | TransactionSql,
+    keyHash: string,
+  ): Promise<boolean> {
+    const rows = await tx<{ locked: number }[]>`
+      select 1 as locked from account_lockout_locks
+      where key_hash = ${keyHash} and locked_until > now()
+    `;
+    return rows.length === 1;
+  }
+
+  return {
+    async isLocked(key: string): Promise<boolean> {
+      await sweep();
+      return activeLock(sql, limiterKeyHash(namespace, key));
+    },
+    async recordFailure(key: string): Promise<boolean> {
+      await sweep();
+      const keyHash = limiterKeyHash(namespace, key);
+      return sql.begin(async (tx) => {
+        await lockThrottleKey(tx, scope, keyHash);
+        // Same shape as the Map version: a failure while already locked
+        // never re-reports the lock, expired failures decay, and the
+        // window filling up (again) engages the lock (again).
+        const wasLocked = await activeLock(tx, keyHash);
+        await tx`
+          delete from rate_limit_attempts
+          where scope = ${scope} and key_hash = ${keyHash}
+            and occurred_at <= now() - make_interval(secs => ${rule.windowMs / 1000})
+        `;
+        await tx`
+          insert into rate_limit_attempts (scope, key_hash)
+          values (${scope}, ${keyHash})
+        `;
+        const [counted] = await tx<{ failures: number }[]>`
+          select count(*)::int as failures from rate_limit_attempts
+          where scope = ${scope} and key_hash = ${keyHash}
+            and occurred_at > now() - make_interval(secs => ${rule.windowMs / 1000})
+        `;
+        const justLocked = !wasLocked && (counted?.failures ?? 0) >= rule.maxFailures;
+        if (justLocked) {
+          await tx`
+            insert into account_lockout_locks (key_hash, locked_until)
+            values (${keyHash}, now() + make_interval(secs => ${rule.lockMs / 1000}))
+            on conflict (key_hash)
+              do update set locked_until = excluded.locked_until
+          `;
+        }
+        return justLocked;
+      });
+    },
+    async clear(key: string): Promise<void> {
+      const keyHash = limiterKeyHash(namespace, key);
+      await sql`
+        delete from rate_limit_attempts
+        where scope = ${scope} and key_hash = ${keyHash}
+      `;
+      await sql`delete from account_lockout_locks where key_hash = ${keyHash}`;
     },
   };
 }

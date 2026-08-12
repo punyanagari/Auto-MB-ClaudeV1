@@ -9,6 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import { createPgRateLimiter } from '../src/rate-limit.js';
 
 /**
  * Ops-batch behaviours: rate limiting on authentication attempts, the
@@ -471,6 +472,169 @@ describe('account-scoped login lockout', () => {
       expect(recovered.statusCode, recovered.body).toBe(200);
     } finally {
       await expiring.close();
+    }
+  });
+});
+
+describe('shared PostgreSQL throttle state (finding 38)', () => {
+  // Two app instances over one database and one explicit shared
+  // namespace stand in for two production replicas: the windows and the
+  // account lock must count attempts ACROSS instances, where the old
+  // in-process maps each counted their own.
+  const runId = randomBytes(5).toString('hex');
+  const namespace = `finding38-${runId}`;
+  const password = `ops-shared-password-${runId}`;
+  const sharedEmail = `shared-lock-${runId}@integration.test`;
+
+  let admin: Sql;
+  let replicaA: FastifyInstance;
+  let replicaB: FastifyInstance;
+
+  const buildReplica = () =>
+    buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      trustProxyHops: 1,
+      throttleNamespace: namespace,
+      rateLimits: {
+        auth: { windowMs: 60_000, max: 4 },
+        accountLockout: { windowMs: 60_000, maxFailures: 3, lockMs: 60_000 },
+      },
+    });
+
+  const signInOn = (
+    instance: FastifyInstance,
+    email: string,
+    attemptPassword: string,
+    clientIp: string,
+  ) =>
+    instance.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      headers: { 'x-forwarded-for': clientIp },
+      payload: { email, password: attemptPassword },
+    });
+
+  beforeAll(async () => {
+    admin = createDatabasePool({
+      url: adminUrl,
+      max: 1,
+      applicationName: 'auto-mb-ops-shared-admin',
+    });
+    await runMigrations(admin, migrationsDirectory);
+    replicaA = await buildReplica();
+    replicaB = await buildReplica();
+    const signedUp = await replicaA.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: { email: sharedEmail, password, name: 'Shared Lock Fixture' },
+    });
+    expect(signedUp.statusCode, signedUp.body).toBe(200);
+  });
+
+  afterAll(async () => {
+    if (admin) {
+      await admin`
+        delete from identity_audit_events
+        where user_id in (
+          select "id" from auth_users
+          where "email" = ${sharedEmail}
+        )
+      `;
+      await admin`
+        delete from identity_audit_events
+        where user_id = ${`email-sha256:${createHash('sha256')
+          .update(sharedEmail.trim().toLowerCase())
+          .digest('hex')}`}
+      `;
+      await admin`delete from auth_users where "email" = ${sharedEmail}`;
+    }
+    await replicaA?.close();
+    await replicaB?.close();
+    await admin?.end();
+  });
+
+  it('exhausts one per-address window across two instances', async () => {
+    // The sign-up in beforeAll keyed on the loopback socket address; the
+    // forwarded client below has a fresh window. Four attempts split 2/2
+    // across the instances fill it — with the old per-process maps each
+    // instance would have allowed four of its own.
+    const clientIp = '198.51.100.60';
+    expect(
+      (await signInOn(replicaA, sharedEmail, 'wrong-guess', clientIp)).statusCode,
+    ).toBe(401);
+    expect((await signInOn(replicaB, sharedEmail, password, clientIp)).statusCode).toBe(
+      200,
+    );
+    expect((await signInOn(replicaA, sharedEmail, password, clientIp)).statusCode).toBe(
+      200,
+    );
+    expect((await signInOn(replicaB, sharedEmail, password, clientIp)).statusCode).toBe(
+      200,
+    );
+    // Fifth attempt: EITHER instance refuses, because the count is shared.
+    const limitedOnB = await signInOn(replicaB, sharedEmail, password, clientIp);
+    expect(limitedOnB.statusCode).toBe(429);
+    expect(limitedOnB.json<{ code: string }>().code).toBe('RATE_LIMITED');
+    const limitedOnA = await signInOn(replicaA, sharedEmail, password, clientIp);
+    expect(limitedOnA.statusCode).toBe(429);
+  });
+
+  it('locks an account across instances and clears it on success anywhere', async () => {
+    // Three failures spread over BOTH instances and rotating addresses:
+    // the shared account dimension slams shut on every replica.
+    expect(
+      (await signInOn(replicaA, sharedEmail, 'wrong-guess', '198.51.100.61'))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await signInOn(replicaB, sharedEmail, 'wrong-guess', '198.51.100.62'))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await signInOn(replicaA, sharedEmail, 'wrong-guess', '198.51.100.63'))
+        .statusCode,
+    ).toBe(401);
+    const lockedOnB = await signInOn(replicaB, sharedEmail, password, '198.51.100.64');
+    expect(lockedOnB.statusCode).toBe(429);
+    const lockedOnA = await signInOn(replicaA, sharedEmail, password, '198.51.100.65');
+    expect(lockedOnA.statusCode).toBe(429);
+  });
+
+  it('measures the per-attempt cost of the shared limiter', async () => {
+    // The number the PR reports: sequential allow() round-trips through
+    // the application pool, warm connection, local PostgreSQL. The
+    // assertion bound is deliberately loose (CI machines vary); the
+    // measurement itself is the deliverable.
+    const pool = createDatabasePool({
+      url: appUrl,
+      max: 1,
+      applicationName: 'auto-mb-throttle-cost',
+    });
+    try {
+      const limiter = createPgRateLimiter(
+        pool,
+        'auth',
+        { windowMs: 60_000, max: 1_000_000 },
+        `cost-${runId}`,
+      );
+      // Warm-up establishes the connection outside the measurement.
+      await limiter.allow('warm-up');
+      const attempts = 100;
+      const startedAt = performance.now();
+      for (let index = 0; index < attempts; index += 1) {
+        await limiter.allow('203.0.113.99');
+      }
+      const totalMs = performance.now() - startedAt;
+      const perAttemptMs = totalMs / attempts;
+      console.info(
+        `[finding 38] shared limiter cost: ${perAttemptMs.toFixed(2)} ms/attempt over ${String(attempts)} sequential attempts`,
+      );
+      expect(perAttemptMs).toBeLessThan(100);
+    } finally {
+      await pool.end({ timeout: 5 });
     }
   });
 });

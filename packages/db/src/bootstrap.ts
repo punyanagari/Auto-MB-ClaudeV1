@@ -107,6 +107,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   eway_bills: 'SELECT, INSERT, UPDATE, DELETE',
   document_number_series: 'SELECT, INSERT, UPDATE, DELETE',
   statutory_provider_operations: 'SELECT, INSERT, UPDATE',
+  // Shared throttle state (0054): windows decay and clear by DELETE; the
+  // lock row upserts (INSERT ... ON CONFLICT UPDATE) and clears by DELETE.
+  rate_limit_attempts: 'SELECT, INSERT, DELETE',
+  account_lockout_locks: 'SELECT, INSERT, UPDATE, DELETE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

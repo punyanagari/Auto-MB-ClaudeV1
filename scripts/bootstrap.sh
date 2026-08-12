@@ -26,6 +26,11 @@ corepack enable
 corepack prepare pnpm@11.17.0 --activate
 pnpm install --frozen-lockfile
 
+# The two heavy third-party design skills are git-ignored and fetched at
+# the commits pinned in .claude/skills/PROVENANCE.md. Optional for running
+# the product; needed for design work. Failure is non-fatal offline.
+node scripts/fetch-skills.mjs || echo "fetch-skills failed (offline?); design skills can be fetched later with: node scripts/fetch-skills.mjs" >&2
+
 docker compose up -d postgres gotenberg
 pnpm db:migrate
 

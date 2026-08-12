@@ -264,7 +264,7 @@ export function App({ api: providedApi }: AppProps) {
           </span>
           <span>
             <strong className="block text-base tracking-tight">Auto-MB</strong>
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-xs text-muted-foreground">
               Contract operations
             </span>
           </span>

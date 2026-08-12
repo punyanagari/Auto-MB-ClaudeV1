@@ -1,5 +1,6 @@
 import { assertProductionSecret, buildApp } from './app.js';
 import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
+import { assertProductionMfaEnforcement } from './mfa-policy.js';
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? '3000');
@@ -21,14 +22,21 @@ if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
   throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
 }
 
+// Production config gates, beside the auth-secret gate below: a process
+// that is not explicitly development or test refuses to boot with the
+// finding-36 MFA refusals resolved off. mfa-policy.ts reads the same
+// variable with the same `=== 'true'` rule, so the value asserted here is
+// exactly the value the refusals will run with.
+const mfaEnforceResolved = assertProductionMfaEnforcement(
+  process.env.MFA_ENFORCE === 'true',
+);
+
 const app = await buildApp({
   logger: true,
   // Finding 36: MFA refusals for privilege holders deploy dark and are
   // switched on with MFA_ENFORCE=true. Passed only when the variable is
   // set so the mfa-policy default (also read from MFA_ENFORCE) stands.
-  ...(process.env.MFA_ENFORCE !== undefined
-    ? { mfaEnforce: process.env.MFA_ENFORCE === 'true' }
-    : {}),
+  ...(process.env.MFA_ENFORCE !== undefined ? { mfaEnforce: mfaEnforceResolved } : {}),
   ...(trustProxyHops > 0 ? { trustProxyHops } : {}),
   ...(process.env.METRICS_TOKEN ? { metricsToken: process.env.METRICS_TOKEN } : {}),
   ...(process.env.BACKUP_MARKER_PATH

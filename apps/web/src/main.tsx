@@ -9,7 +9,12 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import { App } from './App.js';
+import { initTheme } from './lib/theme.js';
 import './globals.css';
+
+// Apply any stored explicit theme choice before the first render so the
+// workspace does not flash the system theme first.
+initTheme();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element not found');

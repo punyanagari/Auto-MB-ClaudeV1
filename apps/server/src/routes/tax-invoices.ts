@@ -233,7 +233,7 @@ const TI_COLUMNS = `
   ti.irp_cancelled_at_text, ti.irp_cancel_reason_code, ti.irp_cancel_remark,
   ti.irp_reporting_deadline::text as irp_reporting_deadline,
   (ti.irp_reporting_deadline is not null
-     and ti.irp_provider_state <> 'registered'
+     and ti.irp_provider_state not in ('registered', 'registered_unverified')
      and ti.irp_reporting_deadline <
        (select (now() at time zone o.timezone)::date from organisations o
         where o.id = ti.organisation_id))
@@ -1807,7 +1807,9 @@ export function registerTaxInvoiceRoutes(
             invoice.irp_provider_state === 'registered' &&
               !invoice.irp_cancel_window_open
               ? `This invoice is registered at the IRP and NIC's 24-hour cancellation window has closed, so the IRN can no longer be cancelled. ${IRP_CANCEL_WINDOW_REMEDY}`
-              : 'Resolve any pending/unknown registration and cancel confirmed IRP evidence before cancelling the local invoice.',
+              : invoice.irp_provider_state === 'registered_unverified'
+                ? `This invoice carries manually recorded (unverified) IRP registration evidence. Record the externally confirmed IRP cancellation if the IRN was cancelled on the portal within its window; otherwise: ${IRP_CANCEL_WINDOW_REMEDY}`
+                : 'Resolve any pending/unknown registration and cancel confirmed IRP evidence before cancelling the local invoice.',
           );
         }
         // An e-way bill moves THIS invoice; cancelling the invoice under
@@ -1993,6 +1995,9 @@ export function registerTaxInvoiceRoutes(
           documentDate: snapshot.invoiceDate,
         };
         const reconcileOnly = invoice.irp_provider_state === 'registration_unknown';
+        const requestBody = reconcileOnly
+          ? stringifyStatutoryJson(identity)
+          : payloadJson;
         // The applicability and window gates (finding 20), before any
         // provider operation is opened: undeclared and not-applicable
         // organisations never reach the transport at all, and a fresh
@@ -2002,15 +2007,13 @@ export function registerTaxInvoiceRoutes(
         // report.
         const today = await requireEinvoiceDeclared(tx);
         if (!reconcileOnly) assertReportingWindowOpen(invoice, today);
-        const requestSha256 = sha256Hex(
-          reconcileOnly ? stringifyStatutoryJson(identity) : payloadJson,
-        );
         const operationId = await startStatutoryOperation(tx, {
           organisationId,
           userId: user.id,
           provider,
           operation: reconcileOnly ? 'reconcile_irp' : 'register_irp',
-          requestSha256,
+          requestSha256: sha256Hex(requestBody),
+          requestBody,
           taxInvoiceId: id,
         });
         await tx`
@@ -2032,6 +2035,7 @@ export function registerTaxInvoiceRoutes(
               providerCode: null,
               httpStatus: null,
               publicCode: 'WHITEBOOKS_IRP_NOT_FOUND',
+              rawResponse: null,
             };
           }
         } catch (error) {
@@ -2085,6 +2089,7 @@ export function registerTaxInvoiceRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: evidence.rawResponse,
           });
           await audit(
             tx,
@@ -2107,6 +2112,7 @@ export function registerTaxInvoiceRoutes(
             providerCode: null,
             httpStatus: null,
             publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+            rawResponse: null,
           };
           await tx`
               update tax_invoices
@@ -2122,6 +2128,7 @@ export function registerTaxInvoiceRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
           await audit(
             tx,
@@ -2247,6 +2254,7 @@ export function registerTaxInvoiceRoutes(
           provider,
           operation: 'cancel_irp',
           requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
           taxInvoiceId: id,
         });
         await tx`
@@ -2269,6 +2277,7 @@ export function registerTaxInvoiceRoutes(
       let cancelled: {
         readonly cancelledAtText: string;
         readonly cancelledAt: string;
+        readonly rawResponse: string;
       } | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
       try {
@@ -2306,12 +2315,14 @@ export function registerTaxInvoiceRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: cancelled.rawResponse,
           });
         } else {
           const result = failure ?? {
             status: 'unknown' as const,
             providerCode: null,
             httpStatus: null,
+            rawResponse: null,
           };
           await tx`
               update tax_invoices
@@ -2324,6 +2335,7 @@ export function registerTaxInvoiceRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
         }
         await audit(
@@ -2421,13 +2433,16 @@ export function registerTaxInvoiceRoutes(
         // unconditional here.
         const today = await requireEinvoiceDeclared(tx);
         assertReportingWindowOpen(invoice, today);
+        // The distinct manually-recorded state (migration 0053): behaves
+        // as registered for local rules but is excluded from every
+        // provider-verified claim and renders as unverified.
         await tx`
           update tax_invoices
           set irn = ${body.irn}, ack_number = ${body.ackNumber.trim()},
               ack_date = ${body.ackDate}, ack_date_text = ${body.ackDateText.trim()},
               signed_qr = ${body.signedQr},
               signed_invoice = ${body.signedInvoice ?? null},
-              irp_provider = 'manual', irp_provider_state = 'registered'
+              irp_provider = 'manual', irp_provider_state = 'registered_unverified'
           where id = ${id}
         `;
         await audit(
@@ -2477,7 +2492,7 @@ export function registerTaxInvoiceRoutes(
         }
         const manualActive =
           invoice.irp_provider === 'manual' &&
-          (invoice.irp_provider_state === 'registered' ||
+          (invoice.irp_provider_state === 'registered_unverified' ||
             invoice.irp_provider_state === 'cancellation_unknown');
         const whitebooksUnknown =
           invoice.irp_provider === 'whitebooks' &&

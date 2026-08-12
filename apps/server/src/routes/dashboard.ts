@@ -146,7 +146,7 @@ export function registerDashboardRoutes(
               as loa_review,
             (select count(*) from tax_invoices ti
               where ti.status = 'submitted'
-                and ti.irp_provider_state <> 'registered'
+                and ti.irp_provider_state not in ('registered', 'registered_unverified')
                 and ti.irp_reporting_deadline is not null
                 and ti.irp_reporting_deadline >=
                   (select (now() at time zone o.timezone)::date
@@ -154,7 +154,7 @@ export function registerDashboardRoutes(
                    where o.id = ti.organisation_id))::text as irp_due,
             (select count(*) from tax_invoices ti
               where ti.status = 'submitted'
-                and ti.irp_provider_state <> 'registered'
+                and ti.irp_provider_state not in ('registered', 'registered_unverified')
                 and ti.irp_reporting_deadline is not null
                 and ti.irp_reporting_deadline <
                   (select (now() at time zone o.timezone)::date

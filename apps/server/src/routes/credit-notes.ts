@@ -1190,15 +1190,16 @@ export function registerCreditNoteRoutes(
         // — reconcile-by-lookup is not a new report.
         const today = await requireEinvoiceDeclared(tx);
         if (!reconcileOnly) assertNoteReportingWindowOpen(note, today);
-        const requestSha256 = sha256Hex(
-          reconcileOnly ? stringifyStatutoryJson(identity) : payloadJson,
-        );
+        const requestBody = reconcileOnly
+          ? stringifyStatutoryJson(identity)
+          : payloadJson;
         const operationId = await startStatutoryOperation(tx, {
           organisationId,
           userId: user.id,
           provider,
           operation: reconcileOnly ? 'reconcile_crn' : 'register_crn',
-          requestSha256,
+          requestSha256: sha256Hex(requestBody),
+          requestBody,
           creditNoteId: id,
         });
         await tx`
@@ -1220,6 +1221,7 @@ export function registerCreditNoteRoutes(
               providerCode: null,
               httpStatus: null,
               publicCode: 'WHITEBOOKS_IRP_NOT_FOUND',
+              rawResponse: null,
             };
           }
         } catch (error) {
@@ -1273,6 +1275,7 @@ export function registerCreditNoteRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: evidence.rawResponse,
           });
           await audit(
             tx,
@@ -1295,6 +1298,7 @@ export function registerCreditNoteRoutes(
             providerCode: null,
             httpStatus: null,
             publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+            rawResponse: null,
           };
           await tx`
               update credit_notes
@@ -1310,6 +1314,7 @@ export function registerCreditNoteRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
           await audit(
             tx,
@@ -1422,6 +1427,7 @@ export function registerCreditNoteRoutes(
           provider,
           operation: 'cancel_crn',
           requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
           creditNoteId: id,
         });
         await tx`
@@ -1444,6 +1450,7 @@ export function registerCreditNoteRoutes(
       let cancelled: {
         readonly cancelledAtText: string;
         readonly cancelledAt: string;
+        readonly rawResponse: string;
       } | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
       try {
@@ -1478,12 +1485,14 @@ export function registerCreditNoteRoutes(
             `;
           await finishStatutoryOperation(tx, prepared.operationId, {
             status: 'succeeded',
+            responseBody: cancelled.rawResponse,
           });
         } else {
           const result = failure ?? {
             status: 'unknown' as const,
             providerCode: null,
             httpStatus: null,
+            rawResponse: null,
           };
           await tx`
               update credit_notes
@@ -1496,6 +1505,7 @@ export function registerCreditNoteRoutes(
             status: result.status,
             providerCode: result.providerCode,
             httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
           });
         }
         await audit(

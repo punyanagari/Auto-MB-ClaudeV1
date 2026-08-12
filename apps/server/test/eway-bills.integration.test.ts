@@ -1015,6 +1015,7 @@ describe('Whitebooks e-way bill provider cancellation', () => {
     cancelEwayBillProvider.mockResolvedValueOnce({
       cancelledAtText: '08/08/2026 16:00:00',
       cancelledAt: '2026-08-08T10:30:00.000Z',
+      rawResponse: '{"status_cd":"1","cancelDate":"08/08/2026 16:00:00"}',
     });
 
     const response = await authedOn(providerApp, owner, {
@@ -1161,6 +1162,7 @@ describe('concurrency', () => {
       Promise.resolve({
         cancelledAtText: '12/08/2026 17:00:00',
         cancelledAt: '2026-08-12T11:30:00.000Z',
+        rawResponse: '{"status_cd":"1","cancelDate":"12/08/2026 17:00:00"}',
       }),
     );
 

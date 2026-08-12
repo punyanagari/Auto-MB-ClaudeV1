@@ -35,6 +35,7 @@ import { Quotations } from './Quotations.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
 import { AccountSecurity } from './AccountSecurity.js';
+import { AppearanceSettings } from './AppearanceSettings.js';
 import { Settings } from './Settings.js';
 import { OrganisationAccessSettings } from './OrganisationAccessSettings.js';
 import { UploadLoa } from './UploadLoa.js';
@@ -479,7 +480,7 @@ export function OperationsWorkspace({
       <>
         {NAVIGATION.map((group) => (
           <div key={group.label} className="mb-5 last:mb-0">
-            <p className="mb-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+            <p className="mb-2 px-3 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
               {group.label}
             </p>
             <div className="flex flex-col gap-1">
@@ -559,7 +560,7 @@ export function OperationsWorkspace({
           </span>
           <span className="min-w-0">
             <strong className="block text-base tracking-tight">Auto-MB</strong>
-            <span className="block truncate text-[11px] text-muted-foreground">
+            <span className="block truncate text-xs text-muted-foreground">
               Contract operations
             </span>
           </span>
@@ -574,7 +575,7 @@ export function OperationsWorkspace({
 
         <div className="border-t border-border p-3">
           <div className="mb-3 rounded-xl border border-primary/10 bg-primary/[0.035] p-3">
-            <p className="text-[10px] font-semibold tracking-[0.14em] text-primary uppercase">
+            <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
               Quick actions
             </p>
             <div className="mt-2 flex flex-col gap-1">
@@ -621,12 +622,12 @@ export function OperationsWorkspace({
                 requestDeparture(onSwitchOrganisation);
               }}
             >
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent font-semibold text-accent-foreground">
                 {organisation.name.slice(0, 1).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1">
                 <strong className="block truncate text-xs">{organisation.name}</strong>
-                <span className="block truncate text-[11px] text-muted-foreground">
+                <span className="block truncate text-xs text-muted-foreground">
                   Switch organisation
                 </span>
               </span>
@@ -637,12 +638,12 @@ export function OperationsWorkspace({
             </button>
           ) : (
             <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3">
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-semibold text-primary">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent font-semibold text-accent-foreground">
                 {organisation.name.slice(0, 1).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1">
                 <strong className="block truncate text-xs">{organisation.name}</strong>
-                <span className="block truncate text-[11px] text-muted-foreground">
+                <span className="block truncate text-xs text-muted-foreground">
                   Current organisation
                 </span>
               </span>
@@ -673,7 +674,7 @@ export function OperationsWorkspace({
           </Button>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {organisation.name}
             </p>
             <p className="truncate text-sm font-semibold">{pageTitleOf(view)}</p>
@@ -688,7 +689,7 @@ export function OperationsWorkspace({
           >
             <Search className="size-4" aria-hidden="true" />
             Search Works and records
-            <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px]">
+            <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 font-mono text-xs">
               /
             </kbd>
           </button>
@@ -730,7 +731,7 @@ export function OperationsWorkspace({
                     <Upload className="size-4 text-primary" aria-hidden="true" />
                     <span>
                       <strong className="block text-xs">Upload LOA</strong>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         Start a new awarded Work
                       </span>
                     </span>
@@ -749,7 +750,7 @@ export function OperationsWorkspace({
                   />
                   <span>
                     <strong className="block text-xs">Open Works</strong>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       Find a contract or document
                     </span>
                   </span>
@@ -764,7 +765,7 @@ export function OperationsWorkspace({
                   <CheckCircle className="size-4 text-primary" aria-hidden="true" />
                   <span>
                     <strong className="block text-xs">Approval queue</strong>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {pendingApprovals > 0
                         ? `${String(pendingApprovals)} decisions waiting`
                         : 'No pending decisions'}
@@ -796,7 +797,7 @@ export function OperationsWorkspace({
           </Button>
 
           <div className="hidden items-center gap-2 border-l border-border pl-3 xl:flex">
-            <span className="inline-flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            <span className="inline-flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
               {me.user.email.slice(0, 1).toUpperCase()}
             </span>
             <span className="max-w-48 truncate text-xs text-muted-foreground">
@@ -846,6 +847,7 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 isOwner={membership?.role === 'owner'}
               />
+              <AppearanceSettings />
               <AccountSecurity api={api} />
               <OrganisationAccessSettings
                 api={api}
@@ -1181,7 +1183,7 @@ export function OperationsWorkspace({
       >
         <button
           type="button"
-          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium ${
+          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium ${
             activeModule === 'dashboard' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
@@ -1193,7 +1195,7 @@ export function OperationsWorkspace({
         </button>
         <button
           type="button"
-          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium ${
+          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium ${
             activeModule === 'works' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
@@ -1205,7 +1207,7 @@ export function OperationsWorkspace({
         </button>
         <button
           type="button"
-          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium text-primary"
+          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium text-primary"
           aria-label={mobileRecordOpen ? 'Close record actions' : 'Open record actions'}
           aria-expanded={mobileRecordOpen}
           aria-controls="mobile-record-actions"
@@ -1223,7 +1225,7 @@ export function OperationsWorkspace({
         </button>
         <button
           type="button"
-          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[10px] font-medium text-muted-foreground"
+          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium text-muted-foreground"
           aria-expanded={mobileMoreOpen}
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;

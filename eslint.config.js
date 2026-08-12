@@ -58,8 +58,12 @@ export default tseslint.config(
   {
     // The parser's corpus-tested extraction regexes trip the static ReDoS
     // heuristic, and its value comparisons trip the timing-attack heuristic;
-    // neither guards secrets. Re-evaluate this exemption before untrusted
-    // LOA text (uploads) reaches the parser — today only pinned fixtures do.
+    // neither guards secrets. Text from uploaded LOA PDFs DOES reach these
+    // regexes (routes/loa.ts runs reviewLoaLetter on extracted upload text
+    // after magic-byte, size, and malware validation), so this exemption
+    // rests on review of the regexes and the corpus tests, not on input
+    // provenance. Disclosed in docs/SECURITY.md ("Narrowed lint ruleset");
+    // re-audit the regexes if the extraction grammar grows.
     files: ['packages/loa-parser/**'],
     rules: {
       'security/detect-unsafe-regex': 'off',

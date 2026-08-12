@@ -21,7 +21,7 @@ function LedgerBoard() {
   return (
     <div
       aria-hidden="true"
-      className="rounded-lg border border-sidebar-border bg-sidebar-accent p-4 font-mono text-[11px] select-none sm:p-5 sm:text-xs"
+      className="rounded-lg border border-sidebar-border bg-sidebar-accent p-4 font-mono text-xs select-none sm:p-5"
     >
       <div className="mb-3 flex items-baseline justify-between border-b border-sidebar-border pb-2 tracking-[0.18em] text-sidebar-faint uppercase">
         <span>Quantity ledger</span>
@@ -139,7 +139,7 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
         </div>
 
         <div className="max-w-xl">
-          <p className="mb-3 text-[11px] font-semibold tracking-[0.18em] text-sidebar-primary uppercase">
+          <p className="mb-3 text-xs font-semibold tracking-[0.18em] text-sidebar-primary uppercase">
             Post-award works execution
           </p>
           {/* Deliberately not a heading: the page's one h1 belongs to the form,

@@ -33,6 +33,39 @@ export function configureMfaEnforcement(enabled: boolean): void {
   enforceMfaRefusals = enabled;
 }
 
+/** The named boot refusal for a production process whose MFA refusals are
+ * off. Carrying its own name lets operators and tests recognise the exact
+ * hazard rather than a generic startup failure. */
+export class MfaEnforcementDisabledInProductionError extends Error {
+  constructor() {
+    super(
+      'MFA_ENFORCE must be exactly "true" outside development and test. ' +
+        'The finding-36 MFA wall deploys dark behind this single variable: ' +
+        'an unset, mistyped, or false value silently turns the refusals off ' +
+        'for every privilege-holding account, so a production boot refuses ' +
+        'to start one environment variable away from an open gate. Set ' +
+        'MFA_ENFORCE=true (or run with NODE_ENV=development/test).',
+    );
+    this.name = 'MfaEnforcementDisabledInProductionError';
+  }
+}
+
+/**
+ * Boot assertion mirroring assertProductionSecret (auth.ts): anything that
+ * is not an explicit development or test run counts as production, and a
+ * production process must not come up with the MFA refusals resolved off.
+ * `enforce` is the resolved value of the MFA_ENFORCE flag (exactly the
+ * `=== 'true'` read above — any other spelling already resolves false).
+ */
+export function assertProductionMfaEnforcement(enforce: boolean): boolean {
+  const isNonProduction =
+    process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+  if (!isNonProduction && !enforce) {
+    throw new MfaEnforcementDisabledInProductionError();
+  }
+  return enforce;
+}
+
 export function mfaEnforcementEnabled(): boolean {
   return enforceMfaRefusals;
 }

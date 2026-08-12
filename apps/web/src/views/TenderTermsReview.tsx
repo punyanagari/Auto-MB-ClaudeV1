@@ -295,7 +295,7 @@ export function TenderTermsReview({
               <p className="mt-1 text-xs text-muted-foreground">
                 {document.kind.replaceAll('_', ' ')}
               </p>
-              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-success">
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-success">
                 <CheckCircle2 className="size-3.5" aria-hidden="true" />
                 Tender identity matched
               </p>
@@ -399,7 +399,7 @@ export function TenderTermsReview({
                           {evidence.map((entry) => (
                             <div
                               key={`${entry.sourceDocumentId}-${entry.rawBlock}`}
-                              className="rounded-lg bg-muted p-2 text-[11px]"
+                              className="rounded-lg bg-muted p-2 text-xs"
                             >
                               <strong className="block">{entry.sourceFilename}</strong>
                               <span>
@@ -502,7 +502,7 @@ export function TenderTermsReview({
                     {clause.kind === 'pbg' ? 'PBG release' : 'Security Deposit release'}
                   </Badge>
                   <p className="mt-2 text-xs leading-relaxed">{clause.rawBlock}</p>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
+                  <p className="mt-2 text-xs text-muted-foreground">
                     Source: {clause.sourceFilename}
                   </p>
                 </li>
