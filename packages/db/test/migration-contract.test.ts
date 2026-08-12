@@ -116,6 +116,22 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('AND organisation_id = NEW.organisation_id');
   });
 
+  it('binds number-template counter scope in 0047', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0047_number_template_scope.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // Challan templates need a per-Work mark, invoice templates the
+    // financial year; the preflight names offenders before the
+    // constraint's generic violation could.
+    expect(sql).toContain('document_number_series_scope');
+    expect(sql).toMatch(/template LIKE '%\{WORK%' OR template LIKE '%\{PREFIX%'/);
+    expect(sql).toMatch(/WHEN 'tax_invoice' THEN\s+template LIKE '%\{FY%'/);
+    expect(sql).toContain('RAISE EXCEPTION');
+  });
+
   it('normalizes merge provenance and narrows PO draft scope in 0045', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0045_audit_integrity_followup.sql'),

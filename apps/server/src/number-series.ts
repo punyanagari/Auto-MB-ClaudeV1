@@ -187,23 +187,25 @@ function required(
  * issued — by which point the operator has a finished document and no
  * number to put on it.
  *
- * `allowed` is the token set this document type can actually supply.
- *
- * This validates the template's SHAPE only; it does not prove the
- * template can mint unique numbers. Counters are narrower than the
- * uniqueness key — delivery and issue challans count per Work, tax
- * invoices per financial year, while the unique constraint is
- * organisation-wide — so a scope-free template such as `{SEQ}` or
- * `TI/{SEQ}` is accepted here and then collides on the second Work or
- * the second financial year. Because the counter update rolls back with
- * the failed transaction, the series stays wedged until the template is
- * changed. Making this validation scope-aware is finding 8 in
- * `docs/AUDIT-DISPOSITION-2026-08-10.md`.
+ * Beyond shape, the template must carry its counter's SCOPE. Counters
+ * are narrower than the uniqueness key — delivery and issue challans
+ * count per Work, tax invoices per financial year, while the unique
+ * constraint is organisation-wide — so a scope-free template such as
+ * `{SEQ}` or `TI/{SEQ}` would mint the same number again from the
+ * second Work or the second financial year onward. Because the counter
+ * update rolls back with the failed issue, every retry then requests
+ * the same number: the series wedges at issue time, with a finished
+ * document in hand and only a settings change able to clear it.
+ * Refusing the template here, where the fix IS a settings change, is
+ * the remediation of finding 8 in
+ * `docs/AUDIT-DISPOSITION-2026-08-10.md`; migration 0047 binds the same
+ * rule against direct SQL.
  */
 export function assertValidTemplate(
   template: string,
-  allowed: ReadonlySet<string>,
+  documentType: NumberedDocumentType,
 ): void {
+  const allowed = ALLOWED_TOKENS[documentType];
   const trimmed = template.trim();
   if (trimmed.length === 0) {
     throw new NumberTemplateError('A number template cannot be blank.');
@@ -215,6 +217,7 @@ export function assertValidTemplate(
     );
   }
   let usesSequence = false;
+  const used = new Set<string>();
   for (const match of trimmed.matchAll(TOKEN_PATTERN)) {
     const { name, width } = splitToken(match[1] ?? '');
     if (!KNOWN_TOKENS.has(name)) {
@@ -229,6 +232,7 @@ export function assertValidTemplate(
         `{${name}} is not available on this document — it has no such value to fill in.`,
       );
     }
+    used.add(name);
     if (name === 'SEQ') {
       usesSequence = true;
       if (
@@ -246,6 +250,14 @@ export function assertValidTemplate(
       'A number template must use {SEQ}, or every document would take the same number.',
     );
   }
+  const scope = SCOPE_TOKENS[documentType];
+  if (scope.tokens.length > 0 && !scope.tokens.some((token) => used.has(token))) {
+    throw new NumberTemplateError(
+      `This template must include ${scope.tokens
+        .map((token) => `{${token}}`)
+        .join(' or ')}: ${scope.why}.`,
+    );
+  }
 }
 
 /** What each document type can fill in. The delivery and issue challans
@@ -259,6 +271,42 @@ export const ALLOWED_TOKENS: Readonly<
   issue_challan: new Set(['WORK', 'PREFIX', 'SEQ', 'YYYY', 'YY']),
   tax_invoice: new Set(['PREFIX', 'DIV', 'FY', 'FY2', 'YYYY', 'YY', 'SEQ']),
   budgetary_quotation: new Set(['SEQ', 'YYYY', 'YY']),
+});
+
+/** The tokens that widen a template to its counter's scope, per document
+ * type. A template must use at least one of them (finding 8).
+ *
+ * Challans: the counter runs per Work, so the template needs a per-Work
+ * mark. {WORK} is structural — work codes are unique per organisation.
+ * {PREFIX} is the historical default's mark: the prefix is operator
+ * text, so two Works CAN share one, but the draft's prefix is editable
+ * and the issue-time 409 names that way out — the series never wedges.
+ *
+ * Tax invoices: the counter restarts each financial year, so the
+ * template needs the year. {YYYY}/{YY} deliberately do not qualify:
+ * they follow the document date's CALENDAR year, which straddles the
+ * financial-year boundary — an invoice of FY 2026-27 dated January 2027
+ * and one of FY 2027-28 dated May 2027 would both render 2027 with a
+ * restarted counter, and collide.
+ *
+ * Budgetary quotations count per organisation, exactly as wide as their
+ * uniqueness key, so any template that consumes {SEQ} is safe. */
+const SCOPE_TOKENS: Readonly<
+  Record<NumberedDocumentType, { tokens: readonly string[]; why: string }>
+> = Object.freeze({
+  delivery_challan: {
+    tokens: ['WORK', 'PREFIX'],
+    why: 'delivery challans count per Work while their numbers are unique across the organisation, so without a per-Work mark a second Work would repeat the first one’s numbers and the series would jam at issue time',
+  },
+  issue_challan: {
+    tokens: ['WORK', 'PREFIX'],
+    why: 'issue challans count per Work while their numbers are unique across the organisation, so without a per-Work mark a second Work would repeat the first one’s numbers and the series would jam at issue time',
+  },
+  tax_invoice: {
+    tokens: ['FY', 'FY2'],
+    why: 'tax invoices count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — and {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary',
+  },
+  budgetary_quotation: { tokens: [], why: '' },
 });
 
 /**

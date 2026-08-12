@@ -566,7 +566,7 @@ export function registerOrganisationRoutes(
       // must fail on this screen, not at the moment an operator has a
       // finished document and nowhere to put its number.
       try {
-        assertValidTemplate(template, ALLOWED_TOKENS[documentType]);
+        assertValidTemplate(template, documentType);
       } catch (cause) {
         if (cause instanceof NumberTemplateError) {
           throw httpError(400, 'NUMBER_TEMPLATE_INVALID', cause.message);
