@@ -63,6 +63,7 @@ export function registerExportRoutes(
 
         const [organisation] = await tx<Record<string, unknown>[]>`
           select * from organisations
+          where id = app_private.current_organisation_id()
         `;
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,

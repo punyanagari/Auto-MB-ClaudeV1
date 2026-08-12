@@ -289,6 +289,7 @@ async function assertBqDateNotFuture(
   const [row] = await tx<{ today: string }[]>`
     select (now() at time zone timezone)::date::text as today
     from organisations
+    where id = app_private.current_organisation_id()
   `;
   if (!row) throw new Error('bound organisation disappeared');
   if (bqDate > row.today) {
