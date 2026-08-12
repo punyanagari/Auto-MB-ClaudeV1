@@ -62,6 +62,11 @@ Requirements:
 - Node.js 22.13+
 - pnpm 11+
 - Docker with Compose
+- poppler-utils, for the `pdftotext` binary (Debian/Ubuntu:
+  `apt-get install poppler-utils`; macOS: `brew install poppler`). LOA and
+  contract-source extraction shell out to it (`docs/DEPENDENCIES.md`), so
+  without it those uploads are rejected at runtime and five server tests
+  fail with `spawn pdftotext ENOENT`.
 
 ```bash
 cp .env.example .env

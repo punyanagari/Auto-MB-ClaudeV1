@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The LOA and contract-source extraction paths invoke `pdftotext` directly
+# (docs/DEPENDENCIES.md). A missing binary surfaces late and confusingly —
+# as rejected uploads at runtime and ENOENT failures in the server suite —
+# so refuse to bootstrap an environment that cannot run them.
+if ! command -v pdftotext >/dev/null 2>&1; then
+  echo "pdftotext not found: install poppler-utils (Debian/Ubuntu: apt-get install poppler-utils; macOS: brew install poppler)." >&2
+  exit 1
+fi
+
 if [[ ! -f .env ]]; then
   cp .env.example .env
   echo "Created .env from .env.example; replace local placeholder secrets before shared use."
