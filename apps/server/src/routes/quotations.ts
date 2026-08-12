@@ -281,6 +281,24 @@ function normaliseHeader(body: CreateBudgetaryQuotationRequest): QuotationHeader
   };
 }
 
+async function assertBqDateNotFuture(
+  tx: TransactionSql,
+  bqDate: string,
+): Promise<void> {
+  const [row] = await tx<{ today: string }[]>`
+    select (now() at time zone timezone)::date::text as today
+    from organisations
+  `;
+  if (!row) throw new Error('bound organisation disappeared');
+  if (bqDate > row.today) {
+    throw httpError(
+      400,
+      'BQ_DATE_IN_FUTURE',
+      `The quotation date cannot be after today (${row.today}) in the organisation timezone.`,
+    );
+  }
+}
+
 /** The picked customer, if one was picked. Masters are PICKERS: the role
  * and lifecycle are checked HERE, where the operator chooses, and never
  * again at issue â€” a contact retired between drafting and issue must not
@@ -436,75 +454,7 @@ async function writeLines(
       )
     `.catch((error: unknown) => {
       // quantity and rate each fit their own column (the contract's
-      // bounded primitives hold that), but their PRODUCT need not fit
-      // numeric(18,2) â€” a 22003 carries no HTTP status, so it would
-      // otherwise reach the operator as a bare 500.
-      if (isNumericOverflow(error)) {
-        throw httpError(
-          400,
-          'LINE_AMOUNT_TOO_LARGE',
-          `Line ${String(lineNumber)}: ${line.quantity} x ${line.rate} is too large to record â€” check for a mistyped digit.`,
-        );
-      }
-      throw error;
-    });
-  }
-}
-
-/** The draft's lines in request-input shape for audit diffing; the
- * numbers come back normalised from their numeric columns so before and
- * after compare like for like. */
-async function readLineInputs(
-  tx: TransactionSql,
-  quotationId: string,
-): Promise<Record<string, unknown>[]> {
-  const rows = await tx<QuotationLineRow[]>`
-    select ${tx.unsafe(LINE_COLUMNS)}
-    from budgetary_quotation_lines
-    where budgetary_quotation_id = ${quotationId}
-    order by line_number
-  `;
-  return rows.map((row) => ({
-    description: row.description,
-    hsnCode: row.hsn_code,
-    unitCode: row.unit_code,
-    quantity: row.quantity,
-    rate: row.rate,
-    gstRate: row.gst_rate,
-    lineAmount: row.line_amount,
-  }));
-}
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  quotationId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'budgetary_quotations',
-      ${quotationId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
-export function registerQuotationRoutes(
-  app: FastifyInstance,
-  auth: Auth,
-  database: Sql,
-): void {
-  app.get(
-    '/api/budgetary-quotations',
-    {
-      schema: {
-        response: { 200: BudgetaryQuotationListResponseSchema, ...errorResponses },
-      },
+      ëm¢G§²ÚîÆ­yÐ    },
     },
     async (request) => {
       const user = await requireUser(auth, request);
@@ -547,6 +497,7 @@ export function registerQuotationRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          await assertBqDateNotFuture(tx, header.bqDate);
           if (header.customerContactId !== null) {
             await requireCustomerContact(tx, header.customerContactId);
           }
@@ -620,6 +571,7 @@ export function registerQuotationRoutes(
       const header = normaliseHeader(request.body as CreateBudgetaryQuotationRequest);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
+        await assertBqDateNotFuture(tx, header.bqDate);
         const quotation = await lockQuotation(tx, id);
         // An issued offer is a document that left the building: it takes
         // no edits at all, header or lines (engineering rule 7).
@@ -760,6 +712,7 @@ export function registerQuotationRoutes(
           await requireAuthority(tx, user.id, 'issue');
           const quotation = await lockQuotation(tx, id);
           requireStatus(quotation, 'draft');
+          await assertBqDateNotFuture(tx, quotation.bq_date);
 
           const lines = await readLines(tx, id);
           if (lines.length === 0) {

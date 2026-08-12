@@ -1,7 +1,8 @@
 import type { FastifyRequest } from 'fastify';
 
-/** An Error carrying an HTTP status and stable code; the app-level error
- * handler forwards both into the ApiError envelope. Optional `details`
+/** An Error carrying a curated public HTTP status, stable code, and message;
+ * the app-level handler may expose these even for a dependency 5xx while
+ * continuing to mask unexpected errors. Optional `details`
  * carry a structured payload (e.g. one-draft 409s answer with
  * `{ existingRecordId }` — see DraftConflictDetails in @auto-mb/contracts). */
 export function httpError(
@@ -12,7 +13,9 @@ export function httpError(
 ): Error {
   return Object.assign(
     new Error(message),
-    details === undefined ? { statusCode, code } : { statusCode, code, details },
+    details === undefined
+      ? { statusCode, code, expose: true }
+      : { statusCode, code, expose: true, details },
   );
 }
 

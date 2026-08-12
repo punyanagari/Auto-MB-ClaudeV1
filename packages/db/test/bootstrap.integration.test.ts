@@ -97,6 +97,15 @@ describe('production bootstrap', () => {
       ['audit_events', 'UPDATE', false],
       ['work_assignments', 'DELETE', true],
       ['work_assignments', 'UPDATE', false],
+      ['measurement_book_merge_provenance', 'SELECT', true],
+      ['measurement_book_merge_provenance', 'INSERT', true],
+      ['measurement_book_merge_provenance', 'UPDATE', false],
+      ['measurement_book_merge_provenance', 'DELETE', false],
+      ['tax_invoice_renders', 'SELECT', true],
+      ['tax_invoice_renders', 'INSERT', true],
+      ['tax_invoice_renders', 'UPDATE', false],
+      ['tax_invoice_renders', 'DELETE', false],
+      ['tax_invoice_renders', 'TRUNCATE', false],
       ['auth_users', 'DELETE', true],
     ];
     for (const [table, privilege, expected] of expectations) {

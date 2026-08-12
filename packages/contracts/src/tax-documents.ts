@@ -55,6 +55,21 @@ export const IrnSchema = Type.String({
 });
 export type Irn = Static<typeof IrnSchema>;
 
+export const IRP_PROVIDER_STATES = [
+  'not_requested',
+  'registering',
+  'registered',
+  'registration_failed',
+  'registration_unknown',
+  'cancelling',
+  'cancelled',
+  'cancellation_unknown',
+] as const;
+export const IrpProviderStateSchema = Type.Union(
+  IRP_PROVIDER_STATES.map((state) => Type.Literal(state)),
+);
+export type IrpProviderState = Static<typeof IrpProviderStateSchema>;
+
 // --- Tax invoice requests ----------------------------------------------------
 
 /** POST /api/works/:id/tax-invoices — drafts the invoice against a
@@ -72,6 +87,10 @@ export const CreateTaxInvoiceRequestSchema = Type.Object(
      * organisation's own state it decides CGST+SGST (intra) vs IGST
      * (inter) at submit. */
     placeOfSupply: GstStateCodeSchema,
+    /** Explicit GST liability confirmation. Reverse-charge invoices are
+     * retained as drafts but issuance is refused until that calculation and
+     * statutory flow are implemented. Omitted means not yet confirmed. */
+    reverseChargeApplicable: Type.Optional(Type.Boolean()),
     buyerContactId: UuidSchema,
     /** The BUYER's own order reference, printed on the face of the
      * invoice and verbatim: the paying division matches the bill against
@@ -122,6 +141,8 @@ export const CreateDirectTaxInvoiceRequestSchema = Type.Object(
     serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
     gstRate: GstRateSchema,
     placeOfSupply: GstStateCodeSchema,
+    /** See the MB-backed request. Omitted means not yet confirmed. */
+    reverseChargeApplicable: Type.Optional(Type.Boolean()),
     buyerContactId: UuidSchema,
     /** What the supply is worth before tax. Stated, because there is no
      * Measurement Book to measure it. */
@@ -157,6 +178,8 @@ export const UpdateTaxInvoiceRequestSchema = Type.Object(
     serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
     gstRate: GstRateSchema,
     placeOfSupply: GstStateCodeSchema,
+    /** See the create request. Omitted means not yet confirmed. */
+    reverseChargeApplicable: Type.Optional(Type.Boolean()),
     buyerContactId: UuidSchema,
     /** The BUYER's own order reference, printed on the face of the
      * invoice and verbatim: the paying division matches the bill against
@@ -195,12 +218,57 @@ export const UpdateTaxInvoiceRequestSchema = Type.Object(
 );
 export type UpdateTaxInvoiceRequest = Static<typeof UpdateTaxInvoiceRequestSchema>;
 
+const ProviderTimestampTextSchema = Type.String({
+  minLength: 19,
+  maxLength: 25,
+  pattern:
+    '^([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}([zZ]|[+-][0-9]{2}:[0-9]{2})?|[0-9]{2}/[0-9]{2}/[0-9]{4}[ T][0-9]{2}:[0-9]{2}:[0-9]{2})$',
+});
+
 /** The cancellation note column measures TRIMMED length 3..2000. */
 export const CancelTaxInvoiceRequestSchema = Type.Object(
   { note: nonBlankString({ minLength: 3, maxLength: 2000 }) },
   { additionalProperties: false },
 );
 export type CancelTaxInvoiceRequest = Static<typeof CancelTaxInvoiceRequestSchema>;
+
+/** Provider-side statutory cancellation. NIC/IRP reason codes are kept as
+ * strings so no caller can silently coerce or truncate the provider value. */
+export const CancelStatutoryDocumentRequestSchema = Type.Object(
+  {
+    reasonCode: Type.Union([
+      Type.Literal('1'),
+      Type.Literal('2'),
+      Type.Literal('3'),
+      Type.Literal('4'),
+    ]),
+    remark: nonBlankString({ minLength: 3, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+export type CancelStatutoryDocumentRequest = Static<
+  typeof CancelStatutoryDocumentRequestSchema
+>;
+
+/** Compatibility import for a cancellation already completed outside the
+ * app. It never claims provider verification; exact portal text is retained. */
+export const RecordManualStatutoryCancellationRequestSchema = Type.Object(
+  {
+    reasonCode: Type.Union([
+      Type.Literal('1'),
+      Type.Literal('2'),
+      Type.Literal('3'),
+      Type.Literal('4'),
+    ]),
+    remark: nonBlankString({ minLength: 3, maxLength: 2000 }),
+    cancelledAt: Type.String({ format: 'date-time' }),
+    cancelledAtText: ProviderTimestampTextSchema,
+  },
+  { additionalProperties: false },
+);
+export type RecordManualStatutoryCancellationRequest = Static<
+  typeof RecordManualStatutoryCancellationRequestSchema
+>;
 
 /** POST /api/tax-invoices/:id/irp-response — what the GSP brought back
  * from the IRP. Recorded once, on a submitted invoice, verbatim. */
@@ -209,7 +277,10 @@ export const RecordIrpResponseRequestSchema = Type.Object(
     irn: IrnSchema,
     ackNumber: nonBlankString({ minLength: 2, maxLength: 100 }),
     ackDate: Type.String({ format: 'date-time' }),
+    /** Portal wall clock exactly as displayed; no browser timezone rewrite. */
+    ackDateText: ProviderTimestampTextSchema,
     signedQr: Type.String({ minLength: 1, maxLength: 65536 }),
+    signedInvoice: Type.Optional(Type.String({ minLength: 1, maxLength: 1048576 })),
   },
   { additionalProperties: false },
 );
@@ -245,8 +316,11 @@ export const TaxInvoiceSchema = Type.Object(
     serviceDescription: Type.String(),
     gstRate: DecimalStringSchema,
     placeOfSupply: GstStateCodeSchema,
+    /** Explicit submit-time GST liability fact; null only on an unconfirmed
+     * draft or a historical issued invoice that predates capture. */
+    reverseChargeApplicable: Type.Union([Type.Boolean(), Type.Null()]),
     /** The buyer contact the draft names (snapshotted at submit). */
-    buyerContactId: Type.Union([UuidSchema, Type.Null()]),
+    buyerContactId: UuidSchema,
     /** Submit-written, frozen; all null while draft. */
     taxableValue: Type.Union([DecimalStringSchema, Type.Null()]),
     cgstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
@@ -268,12 +342,29 @@ export const TaxInvoiceSchema = Type.Object(
     numberPrefix: Type.Union([Type.String(), Type.Null()]),
     /** What the IRP handed back through the GSP; null until recorded. */
     irn: Type.Union([IrnSchema, Type.Null()]),
+    irpProvider: Type.Union([
+      Type.Literal('manual'),
+      Type.Literal('whitebooks'),
+      Type.Null(),
+    ]),
+    irpProviderState: IrpProviderStateSchema,
     ackNumber: Type.Union([Type.String(), Type.Null()]),
     ackDate: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     /** The acknowledgement's wall clock exactly as the portal wrote it
      * ('2026-07-30 12:09:00'). ackDate above is the same moment as an
      * instant, for querying; this is what prints. */
     ackDateText: Type.Union([Type.String(), Type.Null()]),
+    signedInvoiceAvailable: Type.Boolean(),
+    /** True once the immutable invoice has been converted to a stored PDF. */
+    renderedAvailable: Type.Boolean(),
+    irpLegacyEvidenceMissing: Type.Boolean(),
+    irpCancelledAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    irpCancelledAtText: Type.Union([Type.String(), Type.Null()]),
+    irpCancelReasonCode: Type.Union([Type.String(), Type.Null()]),
+    irpCancelRemark: Type.Union([Type.String(), Type.Null()]),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
@@ -316,6 +407,21 @@ export const EwayBillStatusSchema = Type.Union(
   EWAY_BILL_STATUSES.map((status) => Type.Literal(status)),
 );
 export type EwayBillStatus = Static<typeof EwayBillStatusSchema>;
+
+export const EWAY_PROVIDER_STATES = [
+  'not_requested',
+  'generating',
+  'generated',
+  'generation_failed',
+  'generation_unknown',
+  'cancelling',
+  'cancelled',
+  'cancellation_unknown',
+] as const;
+export const EwayProviderStateSchema = Type.Union(
+  EWAY_PROVIDER_STATES.map((state) => Type.Literal(state)),
+);
+export type EwayProviderState = Static<typeof EwayProviderStateSchema>;
 
 export const TRANSPORT_MODES = ['road', 'rail', 'air', 'ship'] as const;
 export const TransportModeSchema = Type.Union(
@@ -380,6 +486,8 @@ export const RecordEwayNicResponseRequestSchema = Type.Object(
     }),
     ewbDate: Type.String({ format: 'date-time' }),
     validUntil: Type.String({ format: 'date-time' }),
+    ewbDateText: ProviderTimestampTextSchema,
+    validUntilText: ProviderTimestampTextSchema,
   },
   { additionalProperties: false },
 );
@@ -414,8 +522,24 @@ export const EwayBillSchema = Type.Object(
     toPincode: PincodeSchema,
     /** From NIC through the GSP; null until generated. */
     ewbNumber: Type.Union([Type.String(), Type.Null()]),
+    provider: Type.Union([
+      Type.Literal('manual'),
+      Type.Literal('whitebooks'),
+      Type.Null(),
+    ]),
+    providerState: EwayProviderStateSchema,
     ewbDate: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     validUntil: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    ewbDateText: Type.Union([Type.String(), Type.Null()]),
+    validUntilText: Type.Union([Type.String(), Type.Null()]),
+    legacyEvidenceMissing: Type.Boolean(),
+    providerCancelledAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    providerCancelledAtText: Type.Union([Type.String(), Type.Null()]),
+    providerCancelReasonCode: Type.Union([Type.String(), Type.Null()]),
+    providerCancelRemark: Type.Union([Type.String(), Type.Null()]),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     generatedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),

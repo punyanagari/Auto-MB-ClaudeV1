@@ -96,8 +96,8 @@ export const PurchaseOrderStatusSchema = Type.Union(
 );
 export type PurchaseOrderStatus = Static<typeof PurchaseOrderStatusSchema>;
 
-/** POST — creates the Work's one open draft. The same body serves the
- * draft PUT, exactly as the delivery challan's does; an issued order
+/** POST — creates one open draft per Work/vendor pair. The same body serves
+ * the draft PUT, exactly as the delivery challan's does; an issued order
  * takes no edits at all (the 0033 line trigger enforces it in the
  * database). `expectedOn` is advisory: nothing refuses a late receipt,
  * the date is there so an operator can chase it. */

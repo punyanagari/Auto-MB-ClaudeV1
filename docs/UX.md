@@ -179,11 +179,23 @@ and e-way-bill surfaces are implemented. Shared loading, empty, retry,
 read-only, permission, and blocked-action states cover the primary paths, with
 component and Playwright/axe regression coverage.
 
-Current statutory registration remains operator-assisted: the product creates
-and displays deterministic IRP/NIC payloads and records verified responses, but
-does not yet send them directly to Whitebooks. Provider submission will keep
-the same local/external state split and add progress, retry, and redacted error
-states rather than presenting a local issue as government registration.
+When Whitebooks is configured, the billing UI performs explicit IRP register,
+reconcile, and cancel actions directly through the server adapter. Local and
+provider states remain separate. A 202 unknown result is displayed as unknown,
+stale in-progress operations expose a recovery action, and registration or
+generation is never repeated blindly. Manual compatibility evidence is labelled
+unverified and cannot overwrite a provider attempt.
+
+Invoice drafting requires an explicit forward-charge or reverse-charge choice;
+submit explains that reverse charge is not yet supported instead of inventing
+the printed answer. Submitted tax invoices can be rendered from frozen invoice
+facts, regenerated after IRP evidence arrives to embed the signed QR, and
+downloaded through an authenticated tenant-bound request. Every render retains
+its own PDF, source digest, and frozen logo; the current version remains readable
+after local cancellation and all versions are included in the owner export.
+Fresh e-way-bill generation is unavailable for the current cumulative SAC
+service invoice. Historical records remain visible, reconcilable, and
+cancellable.
 
 ## Definition of UX completion
 

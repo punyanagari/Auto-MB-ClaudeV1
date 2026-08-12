@@ -99,6 +99,7 @@ interface ProfileRow extends Record<string, unknown> {
   warranty_template_text: string | null;
   state_code: string | null;
   pincode: string | null;
+  locality: string | null;
   trade_name: string | null;
   msme_number: string | null;
   invoice_number_prefix: string | null;
@@ -117,6 +118,7 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     hasLogo: row.logo_object_key !== null,
     stateCode: row.state_code,
     pincode: row.pincode,
+    locality: row.locality,
     tradeName: row.trade_name,
     msmeNumber: row.msme_number,
     invoiceNumberPrefix: row.invoice_number_prefix,
@@ -129,7 +131,7 @@ async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
   const [row] = await tx<ProfileRow[]>`
     select id, name, slug, address, gstin, contact_phone,
            contact_email, logo_object_key, warranty_template_text, state_code,
-           pincode, trade_name, msme_number, invoice_number_prefix,
+           pincode, locality, trade_name, msme_number, invoice_number_prefix,
            invoice_notes
     from organisations
   `;
@@ -238,6 +240,19 @@ export function registerOrganisationRoutes(
       const gstin = body.gstin !== undefined ? normaliseGstin(body.gstin) : undefined;
       const contactEmail =
         body.contactEmail !== undefined ? normaliseEmail(body.contactEmail) : undefined;
+      const locality =
+        body.locality === undefined
+          ? undefined
+          : body.locality === null
+            ? null
+            : body.locality.trim();
+      if (locality !== undefined && locality !== null && locality.length < 2) {
+        throw httpError(
+          400,
+          'LOCALITY_INVALID',
+          'Locality must contain at least two non-space characters.',
+        );
+      }
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireOwner(tx, user.id);
         const current = await loadProfile(tx);
@@ -259,6 +274,7 @@ export function registerOrganisationRoutes(
           // own right, and an address line is not required to contain
           // one — the sample invoice's does not.
           pincode: body.pincode !== undefined ? body.pincode : current.pincode,
+          locality: locality !== undefined ? locality : current.locality,
           trade_name:
             body.tradeName !== undefined ? body.tradeName : current.trade_name,
           msme_number:
@@ -286,6 +302,7 @@ export function registerOrganisationRoutes(
             contact_email = ${next.contact_email},
             state_code = ${next.state_code},
             pincode = ${next.pincode},
+            locality = ${next.locality},
             trade_name = ${next.trade_name},
             msme_number = ${next.msme_number},
             invoice_number_prefix = ${next.invoice_number_prefix},
@@ -295,7 +312,7 @@ export function registerOrganisationRoutes(
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
                     contact_email, logo_object_key, warranty_template_text,
-                    state_code, pincode, trade_name, msme_number,
+                    state_code, pincode, locality, trade_name, msme_number,
                     invoice_number_prefix, invoice_notes
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
@@ -310,6 +327,7 @@ export function registerOrganisationRoutes(
             contactEmail: current.contact_email,
             stateCode: current.state_code,
             pincode: current.pincode,
+            locality: current.locality,
             tradeName: current.trade_name,
             msmeNumber: current.msme_number,
             invoiceNumberPrefix: current.invoice_number_prefix,
@@ -323,6 +341,7 @@ export function registerOrganisationRoutes(
             contactEmail: next.contact_email,
             stateCode: next.state_code,
             pincode: next.pincode,
+            locality: next.locality,
             tradeName: next.trade_name,
             msmeNumber: next.msme_number,
             invoiceNumberPrefix: next.invoice_number_prefix,

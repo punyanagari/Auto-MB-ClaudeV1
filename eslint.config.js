@@ -16,6 +16,9 @@ export default tseslint.config(
       // linting them double-lints foreign checkouts and fails on files
       // outside the project service.
       '.claude/**',
+      // Local render/test artefacts and the Windows runtime shim are
+      // intentionally outside the product TypeScript projects.
+      'tmp/**',
     ],
   },
   eslint.configs.recommended,

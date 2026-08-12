@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -95,6 +95,258 @@ async function appliedLedger(pool: Sql): Promise<{ id: string; file_name: string
 }
 
 describe('concurrent migration execution', () => {
+  it('classifies legacy statutory rows and backfills render evidence without weakening guards', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-migrations-'));
+    try {
+      const names = (await readdir(realMigrationsDirectory))
+        .filter((name) => name.endsWith('.sql'))
+        .sort();
+      for (const name of names.filter((name) => name.slice(0, 4) <= '0042')) {
+        await copyFile(
+          path.join(realMigrationsDirectory, name),
+          path.join(directory, name),
+        );
+      }
+
+      await withTemporaryDatabase(async (pool) => {
+        await runMigrations(pool, directory);
+        const [organisation] = await pool<{ id: string }[]>`
+            insert into organisations (name, slug)
+            values ('Legacy migration proof', ${`legacy-proof-${randomBytes(4).toString('hex')}`})
+            returning id
+          `;
+        if (!organisation) throw new Error('organisation seed failed');
+        const [buyer] = await pool<{ id: string }[]>`
+            insert into contacts (
+              organisation_id, designation, address, gstin, pincode,
+              state_code, locality, is_client, created_by_user_id
+            )
+            values (
+              ${organisation.id}, 'Legacy Buyer', 'Legacy address',
+              '27AAAGM0289C1ZL', '400001', '27', 'Mumbai', true, 'migration-test'
+            )
+            returning id
+          `;
+        if (!buyer) throw new Error('buyer seed failed');
+        const invoiceId = randomUUID();
+        const legacyTemplateVersion = `legacy-template-${'x'.repeat(60)}`;
+        const [invoice] = await pool<{ id: string }[]>`
+            insert into tax_invoices (
+              id, organisation_id, status, invoice_number, sequence_number,
+              fy_label, invoice_date, sac_code, service_description, gst_rate,
+              place_of_supply, buyer_contact_id, buyer_snapshot,
+              stated_taxable_value, taxable_value, cgst_amount, sgst_amount,
+              igst_amount, round_off, total_amount, issued_snapshot,
+              irn, ack_number, ack_date, ack_date_text, signed_qr,
+              irp_provider, irp_provider_state, irp_legacy_evidence_missing,
+              template_version, rendered_object_key, rendered_sha256,
+              submitted_at, submitted_by_user_id, created_by_user_id
+            )
+            values (
+              ${invoiceId}, ${organisation.id}, 'submitted', 'LEGACY/2025-26/001', 1,
+              '2025-26', '2026-01-01', '998734', 'Legacy service invoice',
+              '18.00', '27', ${buyer.id}, '{}'::jsonb,
+              '100.00', '100.00', '9.00', '9.00', '0.00', '0.00',
+              '118.00', '{}'::jsonb, ${'a'.repeat(64)}, '112233445566778',
+               '2026-01-01T04:30:00Z', '01/01/2026 10:00:00', 'signed-qr',
+              'manual', 'registered', false, ${legacyTemplateVersion},
+              'legacy/render-proof.pdf',
+              ${'c'.repeat(64)},
+              now(), 'migration-test', 'migration-test'
+            )
+            returning id
+          `;
+        if (!invoice) throw new Error('invoice seed failed');
+        const [ewayBill] = await pool<{ id: string }[]>`
+            insert into eway_bills (
+              organisation_id, tax_invoice_id, status, transport_mode,
+              vehicle_number, distance_km, from_pincode, to_pincode,
+              ewb_number, ewb_date, valid_until, ewb_date_text,
+              valid_until_text, provider, provider_state,
+              legacy_evidence_missing, generated_at, generated_by_user_id,
+              created_by_user_id
+            )
+            values (
+              ${organisation.id}, ${invoice.id}, 'generated', 'road',
+              'MH01AB1234', 120, '400001', '400002', '123456789012',
+              '2026-01-01T05:30:00Z', '2026-01-02T05:30:00Z',
+              '01/01/2026 11:00:00', '02/01/2026 11:00:00',
+              'manual', 'generated', false, now(), 'migration-test',
+              'migration-test'
+            )
+            returning id
+          `;
+        if (!ewayBill) throw new Error('e-way bill seed failed');
+
+        await copyFile(
+          path.join(
+            realMigrationsDirectory,
+            '0043_legacy_statutory_evidence_truth.sql',
+          ),
+          path.join(directory, '0043_legacy_statutory_evidence_truth.sql'),
+        );
+        await runMigrations(pool, directory);
+
+        const [classifiedInvoice] = await pool<
+          { irp_legacy_evidence_missing: boolean }[]
+        >`
+            select irp_legacy_evidence_missing from tax_invoices
+            where id = ${invoice.id}
+          `;
+        const [classifiedEwayBill] = await pool<{ legacy_evidence_missing: boolean }[]>`
+            select legacy_evidence_missing from eway_bills
+            where id = ${ewayBill.id}
+          `;
+        expect(classifiedInvoice?.irp_legacy_evidence_missing).toBe(true);
+        expect(classifiedEwayBill?.legacy_evidence_missing).toBe(true);
+
+        const triggers = await pool<{ tgname: string; tgenabled: string }[]>`
+            select tgname, tgenabled from pg_trigger
+            where tgname in (
+              'tax_invoices_issued_update_guard',
+              'eway_bills_issued_update_guard'
+            )
+            order by tgname
+          `;
+        expect(triggers).toEqual([
+          { tgname: 'eway_bills_issued_update_guard', tgenabled: 'O' },
+          { tgname: 'tax_invoices_issued_update_guard', tgenabled: 'O' },
+        ]);
+        await expect(
+          pool`
+              update tax_invoices set irp_legacy_evidence_missing = false
+              where id = ${invoice.id}
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          pool`
+              update eway_bills set legacy_evidence_missing = false
+              where id = ${ewayBill.id}
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+
+        await copyFile(
+          path.join(
+            realMigrationsDirectory,
+            '0044_tax_invoice_truth_and_render_history.sql',
+          ),
+          path.join(directory, '0044_tax_invoice_truth_and_render_history.sql'),
+        );
+        await runMigrations(pool, directory);
+
+        const [historicalInvoice] = await pool<
+          { reverse_charge_applicable: boolean | null }[]
+        >`
+            select reverse_charge_applicable from tax_invoices
+            where id = ${invoice.id}
+          `;
+        expect(historicalInvoice?.reverse_charge_applicable).toBeNull();
+        const [backfilledRender] = await pool<
+          {
+            version: number;
+            template_version: string;
+            object_key: string;
+            pdf_sha256: string;
+            source_sha256: string | null;
+            source_evidence_missing: boolean;
+            template_contract_legacy: boolean;
+            object_key_scope_missing: boolean;
+            logo_evidence_missing: boolean;
+          }[]
+        >`
+            select version, template_version, object_key, pdf_sha256,
+                   source_sha256, source_evidence_missing,
+                   template_contract_legacy, object_key_scope_missing,
+                   logo_evidence_missing
+            from tax_invoice_renders where tax_invoice_id = ${invoice.id}
+          `;
+        expect(backfilledRender).toEqual({
+          version: 1,
+          template_version: legacyTemplateVersion,
+          object_key: 'legacy/render-proof.pdf',
+          pdf_sha256: 'c'.repeat(64),
+          source_sha256: null,
+          source_evidence_missing: true,
+          template_contract_legacy: true,
+          object_key_scope_missing: true,
+          logo_evidence_missing: true,
+        });
+        await pool`
+            insert into tax_invoice_renders (
+              organisation_id, tax_invoice_id, version, template_version,
+              source_sha256, object_key, pdf_sha256, created_by_user_id
+            ) values (
+              ${organisation.id}, ${invoice.id}, 2, 'ti-v1', ${'d'.repeat(64)},
+              ${`${organisation.id}/ti/${invoice.id}-current.pdf`},
+              ${'e'.repeat(64)},
+              'migration-test'
+            )
+          `;
+        const [advancedPointer] = await pool<
+          {
+            template_version: string | null;
+            rendered_object_key: string | null;
+            rendered_sha256: string | null;
+          }[]
+        >`
+            select template_version, rendered_object_key, rendered_sha256
+            from tax_invoices where id = ${invoice.id}
+          `;
+        expect(advancedPointer).toEqual({
+          template_version: 'ti-v1',
+          rendered_object_key: `${organisation.id}/ti/${invoice.id}-current.pdf`,
+          rendered_sha256: 'e'.repeat(64),
+        });
+        await expect(
+          pool`
+              insert into tax_invoice_renders (
+                organisation_id, tax_invoice_id, version, template_version,
+                source_sha256, source_evidence_missing,
+                object_key, pdf_sha256, created_by_user_id
+              ) values (
+                ${organisation.id}, ${invoice.id}, 3, 'ti-v1', NULL, true,
+                ${`${organisation.id}/ti/${invoice.id}-missing-source.pdf`},
+                ${'f'.repeat(64)},
+                'migration-test'
+              )
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          pool`
+              insert into tax_invoice_renders (
+                organisation_id, tax_invoice_id, version, template_version,
+                source_sha256, object_key, pdf_sha256, created_by_user_id
+              ) values (
+                ${organisation.id}, ${invoice.id}, 3, 'ti-v1', ${'f'.repeat(64)},
+                ${`00000000-0000-0000-0000-000000000000/ti/${invoice.id}-foreign.pdf`},
+                ${'1'.repeat(64)}, 'migration-test'
+              )
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          pool`
+              update tax_invoices
+              set rendered_object_key = 'untracked.pdf'
+              where id = ${invoice.id}
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          pool`
+              update tax_invoice_renders set object_key = 'rewritten.pdf'
+              where tax_invoice_id = ${invoice.id}
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          pool`
+              delete from tax_invoice_renders where tax_invoice_id = ${invoice.id}
+            `,
+        ).rejects.toMatchObject({ code: '23514' });
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it(
     'lets two simultaneous runners bootstrap a fresh database exactly once',
     async () => {

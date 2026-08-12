@@ -41,6 +41,24 @@ and ClamAV is active (upload the EICAR test file — it must be rejected
 with `MALWARE_DETECTED`; give the clamav container a few minutes on first
 boot to download signatures).
 
+### Optional Whitebooks transport
+
+Whitebooks is disabled by default. Enable it first in sandbox by setting
+`WHITEBOOKS_ENABLED=true` and supplying the e-invoice email, username,
+password, client id, client secret, authorised public IP, exact GSTIN, IRP, and
+timeout values from the deployment secret store. The process supports exactly
+that configured GSTIN and refuses every mismatch.
+
+`WHITEBOOKS_EWAY_CLIENT_ID` and `WHITEBOOKS_EWAY_CLIENT_SECRET` are a separate
+pair used only by standalone EWB cancellation and must be supplied together.
+Do not reuse or substitute the e-invoice pair. Keep EWB cancellation disabled
+when the separate pair is unavailable.
+
+Do not enable production transport until sandbox requests, IP allowlisting,
+credential rotation, redacted failure handling, unknown-outcome recovery, and
+provider-specific monitoring have been reviewed. Fresh EWB generation remains
+blocked for the current cumulative SAC service-invoice model.
+
 ## 3. Upgrades
 
 ```bash
@@ -172,11 +190,14 @@ Per partner (3–5 for the pilot):
       record/on-account/final Measurement Book → bill preparation and status
       progression;
 - [ ] procurement and tax walkthrough completed where enabled: vendor →
-      purchase order → receipt, and submitted GST invoice → operator-assisted
-      IRP/NIC response recording;
+      purchase order → receipt, and submitted GST invoice → PDF → explicit
+      Whitebooks IRP registration or reconciliation → provider cancellation
+      before local cancellation. Confirm that an unknown result is shown as
+      unknown and is never blindly resubmitted;
 - [ ] partner told, in writing, what the pilot does NOT yet include
-      (automatic Whitebooks submission, security-deposit/price-variation bill
-      maths, offline sync — docs/ROADMAP.md).
+      (unattended statutory filing, fresh e-way-bill generation for the current
+      SAC service invoice, security-deposit/price-variation bill maths, offline
+      sync — docs/ROADMAP.md).
 
 ## 9. External items before paid production
 

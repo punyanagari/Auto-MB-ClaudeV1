@@ -63,6 +63,7 @@ let workCode: string;
 let itemAId: string;
 let itemBId: string;
 let vendorId: string;
+let secondVendorId: string;
 let notVendorId: string;
 let retiredVendorId: string;
 
@@ -256,6 +257,7 @@ beforeAll(async () => {
   // Vendor contacts. `is_vendor` has been a dormant column since 0028 and
   // no route sets it yet, so the fixtures are written directly.
   vendorId = randomUUID();
+  secondVendorId = randomUUID();
   notVendorId = randomUUID();
   retiredVendorId = randomUUID();
   await admin`
@@ -268,6 +270,9 @@ beforeAll(async () => {
       (${vendorId}, ${organisationId}, ${`Bharat Cables Pvt Ltd ${runId}`},
        'R. Nair', 'Plot 12, MIDC, Pune', '02012345678', 'sales@bharat.example',
        '27AABCB1234C1ZP', '411019', '27', false, true, true, ${ownerUserId}),
+      (${secondVendorId}, ${organisationId}, ${`Konkan Switchgear ${runId}`},
+       null, 'TTC Industrial Area, Navi Mumbai', null, null,
+       '27AABCK1234C1ZQ', '400705', '27', false, true, true, ${ownerUserId}),
       (${notVendorId}, ${organisationId}, ${`Sr. DEE (G) NR ${runId}`},
        null, 'Delhi Division, New Delhi', null, null, null, null, '07',
        true, false, true, ${ownerUserId}),
@@ -418,647 +423,4 @@ describe('Purchase order lifecycle', () => {
       workId,
       status: 'draft',
       poNumber: null,
-      sequenceNumber: null,
-      totalAmount: null,
-      poDate: '2026-08-08',
-      expectedOn: '2026-09-15',
-      // Stored trimmed, exactly as the column's CHECK measures it.
-      terms: '30 days credit; delivery at site.',
-      vendorDesignation: `Bharat Cables Pvt Ltd ${runId}`,
-    });
-    expect(detail.lines).toEqual([]);
-    expect(detail.vendorSnapshot).toBeNull();
-    expect(detail.previewTotal).toBe('0.00');
-  });
-
-  it('enforces one draft per Work, naming the existing draft in the 409', async () => {
-    const response = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/purchase-orders`,
-      organisationId,
-      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
-    });
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({
-      code: 'PO_DRAFT_EXISTS',
-      details: { existingRecordId: purchaseOrderId },
-    });
-  });
-
-  it('refuses line edits to read-only roles and accepts them from office', async () => {
-    const denied = await authed(viewer, {
-      method: 'PUT',
-      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
-      organisationId,
-      payload: { lines: [CONSUMABLE_LINE] },
-    });
-    expect(denied.statusCode).toBe(403);
-    expect(denied.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
-
-    const saved = await authed(clerk, {
-      method: 'PUT',
-      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
-      organisationId,
-      payload: {
-        lines: [
-          {
-            workItemId: itemAId,
-            description: 'Copper cable 240 sq mm, ISI marked',
-            unitCode: 'Mtr',
-            quantity: '6',
-            rate: '100',
-          },
-          {
-            description: 'Cable lugs and glands',
-            hsnCode: '732690',
-            unitCode: 'Set',
-            quantity: '2.5',
-            rate: '40',
-            gstRate: '12',
-          },
-        ],
-      },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
-    const detail = saved.json<PurchaseOrderDetailResponse>();
-    expect(detail.lines).toHaveLength(2);
-    lineOneId = detail.lines[0]?.id ?? '';
-    lineTwoId = detail.lines[1]?.id ?? '';
-    // Line 1 inherits the Work item's tax facts (migration 0033), which is
-    // what the invoice slice will read.
-    expect(detail.lines[0]).toMatchObject({
-      lineNumber: 1,
-      workItemId: itemAId,
-      hsnCode: '854449',
-      gstRate: '18.00',
-      quantity: '6.000',
-      rate: '100.00',
-      lineAmount: '600.00',
-      receivedQuantity: '0.000',
-      pendingQuantity: '6.000',
-    });
-    // Line 2 is a consumable the LOA never named: no item link, and its
-    // own tax facts.
-    expect(detail.lines[1]).toMatchObject({
-      lineNumber: 2,
-      workItemId: null,
-      hsnCode: '732690',
-      gstRate: '12.00',
-      quantity: '2.500',
-      lineAmount: '100.00',
-      pendingQuantity: '2.500',
-    });
-    // Money summed server-side as exact decimals; still no total on the
-    // record itself, which is issue-written.
-    expect(detail.previewTotal).toBe('700.00');
-    expect(detail.purchaseOrder.totalAmount).toBeNull();
-  });
-
-  it('refuses a line naming an item of another Work, writing nothing', async () => {
-    const other = await freshWork('X');
-    const response = await authed(owner, {
-      method: 'PUT',
-      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
-      organisationId,
-      payload: {
-        lines: [
-          {
-            workItemId: other.itemId,
-            description: 'Item from a different Work',
-            unitCode: 'Nos',
-            quantity: '1',
-            rate: '5',
-          },
-        ],
-      },
-    });
-    expect(response.statusCode, response.body).toBe(404);
-    expect(response.json()).toMatchObject({ code: 'WORK_ITEM_NOT_FOUND' });
-    // The replacement rolled back whole: the saved lines are untouched.
-    const reread = await authed(owner, {
-      method: 'GET',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    expect(reread.json<PurchaseOrderDetailResponse>().lines).toHaveLength(2);
-  });
-
-  it('requires explicit issue authority', async () => {
-    const response = await authed(clerk, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/issue`,
-      organisationId,
-    });
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
-  });
-
-  it('issues with a gapless number, a vendor snapshot, and a frozen total', async () => {
-    const response = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/issue`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(201);
-    const detail = response.json<PurchaseOrderDetailResponse>();
-    expect(detail.purchaseOrder).toMatchObject({
-      status: 'issued',
-      poNumber: `${workCode}-PO-01`,
-      sequenceNumber: 1,
-      totalAmount: '700.00',
-    });
-    expect(detail.purchaseOrder.issuedAt).not.toBeNull();
-    expect(detail.previewTotal).toBe('700.00');
-    expect(detail.vendorSnapshot).toMatchObject({
-      contactId: vendorId,
-      designation: `Bharat Cables Pvt Ltd ${runId}`,
-      gstin: '27AABCB1234C1ZP',
-      stateCode: '27',
-      address: 'Plot 12, MIDC, Pune',
-    });
-  });
-
-  it('keeps the issued order immutable through the API and in the database', async () => {
-    const header = await authed(owner, {
-      method: 'PUT',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-      payload: { vendorContactId: vendorId, poDate: '2026-08-09' },
-    });
-    expect(header.statusCode).toBe(409);
-    expect(header.json()).toMatchObject({ code: 'PO_STATUS_CONFLICT' });
-
-    const lines = await authed(owner, {
-      method: 'PUT',
-      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
-      organisationId,
-      payload: { lines: [CONSUMABLE_LINE] },
-    });
-    expect(lines.statusCode).toBe(409);
-    expect(lines.json()).toMatchObject({ code: 'PO_STATUS_CONFLICT' });
-
-    const removed = await authed(owner, {
-      method: 'DELETE',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    expect(removed.statusCode).toBe(409);
-
-    // â€¦and the 0033 trigger holds the same rule against raw SQL.
-    await expect(
-      admin`
-        insert into purchase_order_lines (
-          organisation_id, purchase_order_id, line_number, description,
-          unit_code, quantity, rate, line_amount
-        )
-        values (
-          ${organisationId}, ${purchaseOrderId}, 99, 'Sneaked in after issue',
-          'Nos', 1, 1, 1
-        )
-      `,
-    ).rejects.toThrowError(/lines are fixed once it is issued/);
-
-    // The vendor master may still be edited; the issued document does not
-    // change, because it reads its own snapshot (rule 7).
-    await admin`
-      update contacts set designation = ${`Bharat Cables (renamed) ${runId}`}
-      where id = ${vendorId}
-    `;
-    const reread = await authed(owner, {
-      method: 'GET',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    expect(
-      reread.json<PurchaseOrderDetailResponse>().purchaseOrder.vendorDesignation,
-    ).toBe(`Bharat Cables Pvt Ltd ${runId}`);
-    await admin`
-      update contacts set designation = ${`Bharat Cables Pvt Ltd ${runId}`}
-      where id = ${vendorId}
-    `;
-  });
-
-  it('offers the issued order to a challan editor as an open order', async () => {
-    const response = await authed(viewer, {
-      method: 'GET',
-      url: `/api/works/${workId}/purchase-orders?status=open`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(200);
-    const list = response.json<PurchaseOrderListResponse>();
-    expect(list.purchaseOrders.map((order) => order.id)).toEqual([purchaseOrderId]);
-    expect(list.purchaseOrders[0]?.poNumber).toBe(`${workCode}-PO-01`);
-  });
-
-  it('refuses to close an order whose lines are still owed material', async () => {
-    const response = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/close`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(409);
-    const body = response.json<{
-      code: string;
-      details: {
-        outstandingLines: {
-          purchaseOrderLineId: string;
-          pendingQuantity: string;
-          receivedQuantity: string;
-        }[];
-      };
-    }>();
-    expect(body.code).toBe('PO_NOT_FULLY_RECEIVED');
-    expect(body.details.outstandingLines).toHaveLength(2);
-    expect(body.details.outstandingLines[0]).toMatchObject({
-      purchaseOrderLineId: lineOneId,
-      orderedQuantity: '6.000',
-      receivedQuantity: '0.000',
-      pendingQuantity: '6.000',
-    });
-  });
-
-  /** Records a delivery challan for the fixture Work and points its lines
-   * at the purchase order lines they fulfil. The link column is written
-   * with admin SQL â€” see the file header. */
-  async function receive(
-    items: { workItemId: string; quantity: string; purchaseOrderLineId: string }[],
-    options: { issue: boolean } = { issue: true },
-  ): Promise<string> {
-    const created = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/challans`,
-      organisationId,
-      payload: {
-        challanDate: '2026-08-09',
-        prefix: `POR${runId.slice(0, 3).toUpperCase()}`,
-        consignee: { name: 'Site store', address: 'Site stores, Pune' },
-        items: items.map((item) => ({
-          workItemId: item.workItemId,
-          quantity: item.quantity,
-        })),
-      },
-    });
-    expect(created.statusCode, created.body).toBe(201);
-    const challan = created.json<ChallanDetailResponse>();
-    for (const item of items) {
-      await admin`
-        update delivery_challan_items
-        set purchase_order_line_id = ${item.purchaseOrderLineId}
-        where delivery_challan_id = ${challan.challan.id}
-          and work_item_id = ${item.workItemId}
-      `;
-    }
-    if (options.issue) {
-      const issued = await authed(owner, {
-        method: 'POST',
-        url: `/api/challans/${challan.challan.id}/issue`,
-        organisationId,
-      });
-      expect(issued.statusCode, issued.body).toBe(201);
-    }
-    return challan.challan.id;
-  }
-
-  let secondChallanId: string;
-
-  it('counts only issued challans towards the received balance', async () => {
-    const draftChallanId = await receive(
-      [{ workItemId: itemAId, quantity: '6', purchaseOrderLineId: lineOneId }],
-      { issue: false },
-    );
-    const whileDraft = await authed(owner, {
-      method: 'GET',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    // A draft challan has delivered nothing.
-    expect(whileDraft.json<PurchaseOrderDetailResponse>().lines[0]).toMatchObject({
-      receivedQuantity: '0.000',
-      pendingQuantity: '6.000',
-    });
-
-    const issued = await authed(owner, {
-      method: 'POST',
-      url: `/api/challans/${draftChallanId}/issue`,
-      organisationId,
-    });
-    expect(issued.statusCode, issued.body).toBe(201);
-
-    const afterIssue = await authed(owner, {
-      method: 'GET',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    const detail = afterIssue.json<PurchaseOrderDetailResponse>();
-    expect(detail.lines[0]).toMatchObject({
-      receivedQuantity: '6.000',
-      pendingQuantity: '0.000',
-    });
-    expect(detail.lines[1]).toMatchObject({
-      receivedQuantity: '0.000',
-      pendingQuantity: '2.500',
-    });
-  });
-
-  it('sums receipts across challans and names only the line still open', async () => {
-    await receive([
-      { workItemId: itemBId, quantity: '1', purchaseOrderLineId: lineTwoId },
-    ]);
-    const partial = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/close`,
-      organisationId,
-    });
-    expect(partial.statusCode).toBe(409);
-    const details = partial.json<{
-      details: { outstandingLines: { purchaseOrderLineId: string }[] };
-    }>().details;
-    expect(details.outstandingLines).toHaveLength(1);
-    expect(details.outstandingLines[0]).toMatchObject({
-      purchaseOrderLineId: lineTwoId,
-      receivedQuantity: '1.000',
-      pendingQuantity: '1.500',
-    });
-
-    secondChallanId = await receive([
-      { workItemId: itemBId, quantity: '1.5', purchaseOrderLineId: lineTwoId },
-    ]);
-  });
-
-  it('closes once every line has been fully received', async () => {
-    const closed = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/close`,
-      organisationId,
-    });
-    expect(closed.statusCode, closed.body).toBe(200);
-    const detail = closed.json<PurchaseOrderDetailResponse>();
-    expect(detail.purchaseOrder.status).toBe('closed');
-    expect(detail.purchaseOrder.closedAt).not.toBeNull();
-    // The number and the total survive the transition untouched.
-    expect(detail.purchaseOrder.poNumber).toBe(`${workCode}-PO-01`);
-    expect(detail.purchaseOrder.totalAmount).toBe('700.00');
-    expect(detail.lines.map((line) => line.pendingQuantity)).toEqual([
-      '0.000',
-      '0.000',
-    ]);
-
-    // A closed order is no longer offered to the challan editor, and a
-    // second close is refused.
-    const open = await authed(owner, {
-      method: 'GET',
-      url: `/api/works/${workId}/purchase-orders?status=open`,
-      organisationId,
-    });
-    expect(open.json<PurchaseOrderListResponse>().purchaseOrders).toEqual([]);
-    const again = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${purchaseOrderId}/close`,
-      organisationId,
-    });
-    expect(again.statusCode).toBe(409);
-    expect(again.json()).toMatchObject({ code: 'PO_STATUS_CONFLICT' });
-  });
-
-  it('shows the balance live, so a released receipt reappears as pending', async () => {
-    // Cancelling the challan that fed line 2 gives the material back; the
-    // closed order keeps its recorded transition, and the derived balance
-    // tells the truth of now rather than of the day it was closed.
-    const cancelled = await authed(owner, {
-      method: 'POST',
-      url: `/api/challans/${secondChallanId}/cancel`,
-      organisationId,
-      payload: { note: 'Material returned to the vendor as defective.' },
-    });
-    expect(cancelled.statusCode, cancelled.body).toBe(200);
-
-    const detail = await authed(owner, {
-      method: 'GET',
-      url: `/api/purchase-orders/${purchaseOrderId}`,
-      organisationId,
-    });
-    const body = detail.json<PurchaseOrderDetailResponse>();
-    expect(body.purchaseOrder.status).toBe('closed');
-    expect(body.lines[1]).toMatchObject({
-      receivedQuantity: '1.000',
-      pendingQuantity: '1.500',
-    });
-  });
-
-  it('writes the full audit timeline', async () => {
-    const events = await admin<{ action: string }[]>`
-      select action from audit_events
-      where organisation_id = ${organisationId} and entity_id = ${purchaseOrderId}
-      order by occurred_at, action
-    `;
-    expect(events.map((event) => event.action)).toEqual([
-      'purchase_order.created',
-      'purchase_order.lines_saved',
-      'purchase_order.issued',
-      'purchase_order.closed',
-    ]);
-  });
-});
-
-describe('numbering is gapless under the counter row lock', () => {
-  let numberingWorkId: string;
-  let numberingWorkCode: string;
-
-  beforeAll(async () => {
-    const created = await freshWork('N');
-    numberingWorkId = created.workId;
-    numberingWorkCode = created.workCode;
-  }, 30_000);
-
-  async function issue(id: string): Promise<string> {
-    const response = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${id}/issue`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(201);
-    return response.json<PurchaseOrderDetailResponse>().purchaseOrder.poNumber ?? '';
-  }
-
-  it('refuses to issue an order with no lines at all', async () => {
-    const created = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${numberingWorkId}/purchase-orders`,
-      organisationId,
-      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
-    });
-    expect(created.statusCode, created.body).toBe(201);
-    const emptyId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
-    const refused = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${emptyId}/issue`,
-      organisationId,
-    });
-    expect(refused.statusCode, refused.body).toBe(409);
-    expect(refused.json()).toMatchObject({ code: 'PO_EMPTY' });
-
-    // A draft is deleted, not cancelled, and consumes no number.
-    const removed = await authed(owner, {
-      method: 'DELETE',
-      url: `/api/purchase-orders/${emptyId}`,
-      organisationId,
-    });
-    expect(removed.statusCode, removed.body).toBe(204);
-    const [counter] = await admin<{ next_value: number }[]>`
-      select next_value from purchase_order_counters
-      where work_id = ${numberingWorkId}
-    `;
-    expect(counter).toBeUndefined();
-  });
-
-  it('numbers consecutively, and a cancelled order keeps its number forever', async () => {
-    expect(await issue(await draftReadyToIssue(numberingWorkId))).toBe(
-      `${numberingWorkCode}-PO-01`,
-    );
-    expect(await issue(await draftReadyToIssue(numberingWorkId))).toBe(
-      `${numberingWorkCode}-PO-02`,
-    );
-
-    const cancelledId = await draftReadyToIssue(numberingWorkId);
-    expect(await issue(cancelledId)).toBe(`${numberingWorkCode}-PO-03`);
-    const deniedCancel = await authed(clerk, {
-      method: 'POST',
-      url: `/api/purchase-orders/${cancelledId}/cancel`,
-      organisationId,
-      payload: { note: 'clerk cannot cancel' },
-    });
-    expect(deniedCancel.statusCode).toBe(403);
-    expect(deniedCancel.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
-
-    const cancelled = await authed(owner, {
-      method: 'POST',
-      url: `/api/purchase-orders/${cancelledId}/cancel`,
-      organisationId,
-      payload: { note: '  Vendor withdrew the quotation.  ' },
-    });
-    expect(cancelled.statusCode, cancelled.body).toBe(200);
-    const detail = cancelled.json<PurchaseOrderDetailResponse>();
-    expect(detail.purchaseOrder).toMatchObject({
-      status: 'cancelled',
-      poNumber: `${numberingWorkCode}-PO-03`,
-      // Stored trimmed, exactly as the column's CHECK measures it.
-      cancellationNote: 'Vendor withdrew the quotation.',
-    });
-    expect(detail.purchaseOrder.cancelledAt).not.toBeNull();
-
-    // A note that says nothing is refused as a 400 at whichever layer sees
-    // it first â€” never as a CHECK violation surfacing as a 500. The
-    // contract's own shape catches spaces; the route's guard catches the
-    // whitespace `btrim` would have kept.
-    const nextId = await draftReadyToIssue(numberingWorkId);
-    const blankNotes: [string, string][] = [
-      ['   ', 'FST_ERR_VALIDATION'],
-      ['\n\n\n', 'CANCELLATION_NOTE_REQUIRED'],
-    ];
-    for (const [note, code] of blankNotes) {
-      const blank = await authed(owner, {
-        method: 'POST',
-        url: `/api/purchase-orders/${nextId}/cancel`,
-        organisationId,
-        payload: { note },
-      });
-      expect(blank.statusCode, `${JSON.stringify(note)}: ${blank.body}`).toBe(400);
-      expect(blank.json()).toMatchObject({ code });
-    }
-
-    // The cancelled number is never reissued: the next order takes 04.
-    expect(await issue(nextId)).toBe(`${numberingWorkCode}-PO-04`);
-
-    const numbers = await admin<{ po_number: string }[]>`
-      select po_number from purchase_orders
-      where work_id = ${numberingWorkId} and po_number is not null
-      order by sequence_number
-    `;
-    expect(numbers.map((row) => row.po_number)).toEqual([
-      `${numberingWorkCode}-PO-01`,
-      `${numberingWorkCode}-PO-02`,
-      `${numberingWorkCode}-PO-03`,
-      `${numberingWorkCode}-PO-04`,
-    ]);
-  });
-
-  it('lets simultaneous issue attempts produce exactly one issued order', async () => {
-    const race = await freshWork('R');
-    const raceId = await draftReadyToIssue(race.workId);
-
-    const [first, second] = await Promise.all([
-      authed(owner, {
-        method: 'POST',
-        url: `/api/purchase-orders/${raceId}/issue`,
-        organisationId,
-      }),
-      authed(owner, {
-        method: 'POST',
-        url: `/api/purchase-orders/${raceId}/issue`,
-        organisationId,
-      }),
-    ]);
-    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 409]);
-
-    // One issued row, one number, and the counter advanced exactly once â€”
-    // the loser's transaction rolled its increment back with it.
-    const [row] = await admin<{ count: string; max_seq: number }[]>`
-      select count(*)::text as count, max(sequence_number) as max_seq
-      from purchase_orders where id = ${raceId} and status = 'issued'
-    `;
-    expect(row?.count).toBe('1');
-    expect(row?.max_seq).toBe(1);
-    const [counter] = await admin<{ next_value: number }[]>`
-      select next_value from purchase_order_counters where work_id = ${race.workId}
-    `;
-    expect(counter?.next_value).toBe(1);
-  });
-});
-
-describe('tenant isolation', () => {
-  it('answers 404 for another tenant and 403 for a foreign organisation header', async () => {
-    const [order] = await admin<{ id: string }[]>`
-      select id from purchase_orders where work_id = ${workId} limit 1
-    `;
-    expect(order).toBeDefined();
-
-    // A caller in another organisation, using their OWN header: the row is
-    // invisible under RLS and answers exactly like an unknown id.
-    const hidden = await authed(outsider, {
-      method: 'GET',
-      url: `/api/purchase-orders/${order?.id ?? ''}`,
-      organisationId: outsiderOrganisationId,
-    });
-    expect(hidden.statusCode, hidden.body).toBe(404);
-    expect(hidden.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_FOUND' });
-
-    // The same caller borrowing OUR header never binds the tenant at all.
-    const borrowed = await authed(outsider, {
-      method: 'GET',
-      url: `/api/purchase-orders/${order?.id ?? ''}`,
-      organisationId,
-    });
-    expect(borrowed.statusCode).toBe(403);
-    expect(borrowed.json()).toMatchObject({ code: 'NOT_A_MEMBER' });
-
-    // And the Work-scoped list shows a foreign tenant nothing.
-    const list = await authed(outsider, {
-      method: 'GET',
-      url: `/api/works/${workId}/purchase-orders`,
-      organisationId: outsiderOrganisationId,
-    });
-    expect(list.statusCode, list.body).toBe(200);
-    expect(list.json<PurchaseOrderListResponse>().purchaseOrders).toEqual([]);
-  });
-
-  it('refuses every write to an unauthenticated caller', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/works/${workId}/purchase-orders`,
-      headers: { 'x-organisation-id': organisationId },
-      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
-    });
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
-  });
-});
+      sequenß^õ¶‰Ëkºwµç@É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œÀ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œØ¸ÀÀÀœ°(€€€ô¤ì(€ô¤ì((€€¼¨¨I•½É‘Ì„‘•±¥Ù•Éä¡…±±…¸™½ÈÑ¡”™¥áÑÕÉ”]½É¬…¹Á½¥¹ÑÌ¥ÑÌ±¥¹•Ì(€€€¨…ĞÑ¡”ÁÕÉ¡…Í”½É‘•È±¥¹•ÌÑ¡•ä™Õ±™¥°¸Q¡”±¥¹¬½±Õµ¸¥ÌİÉ¥ÑÑ•¸(€€€¨İ¥Ñ …‘µ¥¸ME0ƒŠPÍ•”Ñ¡”™¥±”¡•…‘•È¸€¨¼(€…Íå¹Œ™Õ¹Ñ¥½¸É••¥Ù” (€€€¥Ñ•µÌèìİ½É­%Ñ•µ%èÍÑÉ¥¹œìÅÕ…¹Ñ¥ÑäèÍÑÉ¥¹œìÁÕÉ¡…Í•=É‘•É1¥¹•%èÍÑÉ¥¹œõmt°(€€€½ÁÑ¥½¹Ìèì¥ÍÍÕ”è‰½½±•…¸ô€ôì¥ÍÍÕ”èÑÉÕ”ô°(€€¤èAÉ½µ¥Í”ñÍÑÉ¥¹œøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½¡…±±…¹Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€¡…±±…¹…Ñ”è€œÈÀÈØ´Àà´Àäœ°(€€€€€€€ÁÉ•™¥àèA=H‘íÉÕ¹%¹Í±¥” À°€Ì¤¹Ñ½UÁÁ•É…Í” ¥õ€°(€€€€€€€½¹Í¥¹•”èì¹…µ”è€M¥Ñ”ÍÑ½É”œ°…‘‘É•ÍÌè€M¥Ñ”ÍÑ½É•Ì°AÕ¹”œô°(€€€€€€€¥Ñ•µÌè¥Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôø€¡ì(€€€€€€€€€İ½É­%Ñ•µ%è¥Ñ•´¹İ½É­%Ñ•µ%°(€€€€€€€€€ÅÕ…¹Ñ¥Ñäè¥Ñ•´¹ÅÕ…¹Ñ¥Ñä°(€€€€€€€ô¤¤°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ¡…±±…¸€ôÉ•…Ñ•¹©Í½¸ñ¡…±±…¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€™½È€¡½¹ÍĞ¥Ñ•´½˜¥Ñ•µÌ¤ì(€€€€€…İ…¥Ğ…‘µ¥¹€(€€€€€€€ÕÁ‘…Ñ”‘•±¥Ù•Éå}¡…±±…¹}¥Ñ•µÌ(€€€€€€€Í•ĞÁÕÉ¡…Í•}½É‘•É}±¥¹•}¥€ô€‘í¥Ñ•´¹ÁÕÉ¡…Í•=É‘•É1¥¹•%‘ô(€€€€€€€İ¡•É”‘•±¥Ù•Éå}¡…±±…¹}¥€ô€‘í¡…±±…¸¹¡…±±…¸¹¥‘ô(€€€€€€€€€…¹İ½É­}¥Ñ•µ}¥€ô€‘í¥Ñ•´¹İ½É­%Ñ•µ%‘ô(€€€€€€ì(€€€ô(€€€¥˜€¡½ÁÑ¥½¹Ì¹¥ÍÍÕ”¤ì(€€€€€½¹ÍĞ¥ÍÍÕ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½¡…±±…¹Ì¼‘í¡…±±…¸¹¡…±±…¸¹¥‘ô½¥ÍÍÕ•€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤ì(€€€€€•áÁ•Ğ¡¥ÍÍÕ•¹ÍÑ…ÑÕÍ½‘”°¥ÍÍÕ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€ô(€€€É•ÑÕÉ¸¡…±±…¸¹¡…±±…¸¹¥ì(€ô((€±•ĞÍ•½¹‘¡…±±…¹%èÍÑÉ¥¹œì((€¥Ğ ½Õ¹ÑÌ½¹±ä¥ÍÍÕ•¡…±±…¹ÌÑ½İ…É‘ÌÑ¡”É••¥Ù•‰…±…¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ‘É…™Ñ¡…±±…¹%€ô…İ…¥ĞÉ••¥Ù” (€€€€€mìİ½É­%Ñ•µ%è¥Ñ•µ%°ÅÕ…¹Ñ¥Ñäè€œØœ°ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹•=¹•%õt°(€€€€€ì¥ÍÍÕ”è™…±Í”ô°(€€€€¤ì(€€€½¹ÍĞİ¡¥±•É…™Ğ€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€€¼¼‘É…™Ğ¡…±±…¸¡…Ì‘•±¥Ù•É•¹½Ñ¡¥¹œ¸(€€€•áÁ•Ğ¡İ¡¥±•É…™Ğ¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹±¥¹•ÍlÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œÀ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œØ¸ÀÀÀœ°(€€€ô¤ì((€€€½¹ÍĞ¥ÍÍÕ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½¡…±±…¹Ì¼‘í‘É…™Ñ¡…±±…¹%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¥ÍÍÕ•¹ÍÑ…ÑÕÍ½‘”°¥ÍÍÕ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì((€€€½¹ÍĞ…™Ñ•É%ÍÍÕ”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ô…™Ñ•É%ÍÍÕ”¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•ÍlÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œØ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œÀ¸ÀÀÀœ°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•ÍlÅt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œÀ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œÈ¸ÔÀÀœ°(€€€ô¤ì(€ô¤ì((€¥Ğ ÍÕµÌÉ••¥ÁÑÌ…É½ÍÌ¡…±±…¹Ì…¹¹…µ•Ì½¹±äÑ¡”±¥¹”ÍÑ¥±°½Á•¸œ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥ĞÉ••¥Ù”¡l(€€€€€ìİ½É­%Ñ•µ%è¥Ñ•µ	%°ÅÕ…¹Ñ¥Ñäè€œÄœ°ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹•Qİ½%ô°(€€€t¤ì(€€€½¹ÍĞÁ…ÉÑ¥…°€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘ô½±½Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡Á…ÉÑ¥…°¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€½¹ÍĞ‘•Ñ…¥±Ì€ôÁ…ÉÑ¥…°¹©Í½¸ñì(€€€€€‘•Ñ…¥±Ìèì½ÕÑÍÑ…¹‘¥¹1¥¹•ÌèìÁÕÉ¡…Í•=É‘•É1¥¹•%èÍÑÉ¥¹œõmtôì(€€€ôø ¤¹‘•Ñ…¥±Ìì(€€€•áÁ•Ğ¡‘•Ñ…¥±Ì¹½ÕÑÍÑ…¹‘¥¹1¥¹•Ì¤¹Ñ½!…Ù•1•¹Ñ  Ä¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥±Ì¹½ÕÑÍÑ…¹‘¥¹1¥¹•ÍlÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹•Qİ½%°(€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œÄ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œÄ¸ÔÀÀœ°(€€€ô¤ì((€€€Í•½¹‘¡…±±…¹%€ô…İ…¥ĞÉ••¥Ù”¡l(€€€€€ìİ½É­%Ñ•µ%è¥Ñ•µ	%°ÅÕ…¹Ñ¥Ñäè€œÄ¸Ôœ°ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹•Qİ½%ô°(€€€t¤ì(€ô¤ì((€¥Ğ ±½Í•Ì½¹”•Ù•Éä±¥¹”¡…Ì‰••¸™Õ±±äÉ••¥Ù•œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ±½Í•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘ô½±½Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡±½Í•¹ÍÑ…ÑÕÍ½‘”°±½Í•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ô±½Í•¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¹ÍÑ…ÑÕÌ¤¹Ñ½	” ±½Í•œ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¹±½Í•‘Ğ¤¹¹½Ğ¹Ñ½	•9Õ±° ¤ì(€€€€¼¼Q¡”¹Õµ‰•È…¹Ñ¡”Ñ½Ñ…°ÍÕÉÙ¥Ù”Ñ¡”ÑÉ…¹Í¥Ñ¥½¸Õ¹Ñ½Õ¡•¸(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¹Á½9Õµ‰•È¤¹Ñ½	”¡€‘íİ½É­½‘•ôµA<´ÀÅ€¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¹Ñ½Ñ…±µ½Õ¹Ğ¤¹Ñ½	” œÜÀÀ¸ÀÀœ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•Ì¹µ…À ¡±¥¹”¤€ôø±¥¹”¹Á•¹‘¥¹EÕ…¹Ñ¥Ñä¤¤¹Ñ½ÅÕ…°¡l(€€€€€€œÀ¸ÀÀÀœ°(€€€€€€œÀ¸ÀÀÀœ°(€€€t¤ì((€€€€¼¼±½Í•½É‘•È¥Ì¹¼±½¹•È½™™•É•Ñ¼Ñ¡”¡…±±…¸•‘¥Ñ½È°…¹„(€€€€¼¼Í•½¹±½Í”¥ÌÉ•™ÕÍ•¸(€€€½¹ÍĞ½Á•¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½ÁÕÉ¡…Í”µ½É‘•ÉÌıÍÑ…ÑÕÌõ½Á•¹€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡½Á•¸¹©Í½¸ñAÕÉ¡…Í•=É‘•É1¥ÍÑI•ÍÁ½¹Í”ø ¤¹ÁÕÉ¡…Í•=É‘•ÉÌ¤¹Ñ½ÅÕ…°¡mt¤ì(€€€½¹ÍĞ……¥¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘ô½±½Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡……¥¸¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡……¥¸¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€A=}MQQUM}=91%Pœô¤ì(€ô¤ì((€¥Ğ É•½Á•¹Ì„±½Í•½É‘•Èİ¡•¸…¹•±±…Ñ¥½¸É•±•…Í•Ì„É••¥ÁĞœ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼…¹•±±¥¹œÑ¡”¡…±±…¸Ñ¡…Ğ™•±¥¹”€È¥Ù•ÌÑ¡”µ…Ñ•É¥…°‰…¬ìÑ¡”(€€€€¼¼½É‘•ÈÉ•ÑÕÉ¹ÌÑ¼¥ÍÍÕ•Í¼„½ÉÉ•Ñ•É••¥ÁĞ…¸‰”±¥¹­•¸(€€€½¹ÍĞ…¹•±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½¡…±±…¹Ì¼‘íÍ•½¹‘¡…±±…¹%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€5…Ñ•É¥…°É•ÑÕÉ¹•Ñ¼Ñ¡”Ù•¹‘½È…Ì‘•™•Ñ¥Ù”¸œô°(€€€ô¤ì(€€€•áÁ•Ğ¡…¹•±±•¹ÍÑ…ÑÕÍ½‘”°…¹•±±•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞ‘•Ñ…¥°€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€½¹ÍĞ‰½‘ä€ô‘•Ñ…¥°¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‰½‘ä¹ÁÕÉ¡…Í•=É‘•È¹ÍÑ…ÑÕÌ¤¹Ñ½	” ¥ÍÍÕ•œ¤ì(€€€•áÁ•Ğ¡‰½‘ä¹ÁÕÉ¡…Í•=É‘•È¹±½Í•‘Ğ¤¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ğ¡‰½‘ä¹±¥¹•ÍlÅt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè€œÄ¸ÀÀÀœ°(€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè€œÄ¸ÔÀÀœ°(€€€ô¤ì((€€€½¹ÍĞ½Á•¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½ÁÕÉ¡…Í”µ½É‘•ÉÌıÍÑ…ÑÕÌõ½Á•¹€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ (€€€€€½Á•¸¹©Í½¸ñAÕÉ¡…Í•=É‘•É1¥ÍÑI•ÍÁ½¹Í”ø ¤¹ÁÕÉ¡…Í•=É‘•ÉÌ¹µ…À ¡½É‘•È¤€ôø½É‘•È¹¥¤°(€€€€¤¹Ñ½½¹Ñ…¥¸¡ÁÕÉ¡…Í•=É‘•É%¤ì((€€€…İ…¥ĞÉ••¥Ù”¡l(€€€€€ìİ½É­%Ñ•µ%è¥Ñ•µ	%°ÅÕ…¹Ñ¥Ñäè€œÄ¸Ôœ°ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹•Qİ½%ô°(€€€t¤ì(€€€½¹ÍĞ½ÉÉ•Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÁÕÉ¡…Í•=É‘•É%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ (€€€€€½ÉÉ•Ñ•¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹±¥¹•ÍlÅtü¹Á•¹‘¥¹EÕ…¹Ñ¥Ñä°(€€€€¤¹Ñ½	” œÀ¸ÀÀÀœ¤ì(€ô¤ì((€¥Ğ İÉ¥Ñ•ÌÑ¡”™Õ±°…Õ‘¥ĞÑ¥µ•±¥¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ•Ù•¹ÑÌ€ô…İ…¥Ğ…‘µ¥¸ñì…Ñ¥½¸èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ğ…Ñ¥½¸™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹•¹Ñ¥Ñå}¥€ô€‘íÁÕÉ¡…Í•=É‘•É%‘ô(€€€€€½É‘•È‰ä½ÕÉÉ•‘}…Ğ°…Ñ¥½¸(€€€€ì(€€€•áÁ•Ğ¡•Ù•¹ÑÌ¹µ…À ¡•Ù•¹Ğ¤€ôø•Ù•¹Ğ¹…Ñ¥½¸¤¤¹Ñ½ÅÕ…°¡l(€€€€€€ÁÕÉ¡…Í•}½É‘•È¹É•…Ñ•œ°(€€€€€€ÁÕÉ¡…Í•}½É‘•È¹±¥¹•Í}Í…Ù•œ°(€€€€€€ÁÕÉ¡…Í•}½É‘•È¹¥ÍÍÕ•œ°(€€€€€€ÁÕÉ¡…Í•}½É‘•È¹±½Í•œ°(€€€€€€ÁÕÉ¡…Í•}½É‘•È¹É•½Á•¹•‘}…™Ñ•É}¡…±±…¹}…¹•±±…Ñ¥½¸œ°(€€€t¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” ¹Õµ‰•É¥¹œ¥Ì…Á±•ÍÌÕ¹‘•ÈÑ¡”½Õ¹Ñ•ÈÉ½Ü±½¬œ°€ ¤€ôøì(€±•Ğ¹Õµ‰•É¥¹]½É­%èÍÑÉ¥¹œì(€±•Ğ¹Õµ‰•É¥¹]½É­½‘”èÍÑÉ¥¹œì((€‰•™½É•±°¡…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ™É•Í¡]½É¬ 8œ¤ì(€€€¹Õµ‰•É¥¹]½É­%€ôÉ•…Ñ•¹İ½É­%ì(€€€¹Õµ‰•É¥¹]½É­½‘”€ôÉ•…Ñ•¹İ½É­½‘”ì(€ô°€ÌÁ|ÀÀÀ¤ì((€…Íå¹Œ™Õ¹Ñ¥½¸¥ÍÍÕ”¡¥èÍÑÉ¥¹œ¤èAÉ½µ¥Í”ñÍÑÉ¥¹œøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í¥‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€É•ÑÕÉ¸É•ÍÁ½¹Í”¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹ÁÕÉ¡…Í•=É‘•È¹Á½9Õµ‰•È€üü€œœì(€ô((€¥Ğ É•™ÕÍ•ÌÑ¼¥ÍÍÕ”…¸½É‘•Èİ¥Ñ ¹¼±¥¹•Ì…Ğ…±°œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘í¹Õµ‰•É¥¹]½É­%‘ô½ÁÕÉ¡…Í”µ½É‘•ÉÍ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìÙ•¹‘½É½¹Ñ…Ñ%èÙ•¹‘½É%°Á½…Ñ”è€œÈÀÈØ´Àà´Ààœô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ•µÁÑå%€ôÉ•…Ñ•¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹ÁÕÉ¡…Í•=É‘•È¹¥ì(€€€½¹ÍĞÉ•™ÕÍ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í•µÁÑå%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹ÍÑ…ÑÕÍ½‘”°É•™ÕÍ•¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€A=}5AQdœô¤ì((€€€€¼¼‘É…™Ğ¥Ì‘•±•Ñ•°¹½Ğ…¹•±±•°…¹½¹ÍÕµ•Ì¹¼¹Õµ‰•È¸(€€€½¹ÍĞÉ•µ½Ù•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€1Qœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í•µÁÑå%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•µ½Ù•¹ÍÑ…ÑÕÍ½‘”°É•µ½Ù•¹‰½‘ä¤¹Ñ½	” ÈÀĞ¤ì(€€€½¹ÍĞm½Õ¹Ñ•Ét€ô…İ…¥Ğ…‘µ¥¸ñì¹•áÑ}Ù…±Õ”è¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ¹•áÑ}Ù…±Õ”™É½´ÁÕÉ¡…Í•}½É‘•É}½Õ¹Ñ•ÉÌ(€€€€€İ¡•É”İ½É­}¥€ô€‘í¹Õµ‰•É¥¹]½É­%‘ô(€€€€ì(€€€•áÁ•Ğ¡½Õ¹Ñ•È¤¹Ñ½	•U¹‘•™¥¹• ¤ì(€ô¤ì((€¥Ğ ¹Õµ‰•ÉÌ½¹Í•ÕÑ¥Ù•±ä°…¹„…¹•±±•½É‘•È­••ÁÌ¥ÑÌ¹Õµ‰•È™½É•Ù•Èœ°…Íå¹Œ€ ¤€ôøì(€€€•áÁ•Ğ¡…İ…¥Ğ¥ÍÍÕ”¡…İ…¥Ğ‘É…™ÑI•…‘åQ½%ÍÍÕ”¡¹Õµ‰•É¥¹]½É­%¤¤¤¹Ñ½	” (€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÅ€°(€€€€¤ì(€€€•áÁ•Ğ¡…İ…¥Ğ¥ÍÍÕ”¡…İ…¥Ğ‘É…™ÑI•…‘åQ½%ÍÍÕ”¡¹Õµ‰•É¥¹]½É­%¤¤¤¹Ñ½	” (€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÉ€°(€€€€¤ì((€€€½¹ÍĞ…¹•±±•‘%€ô…İ…¥Ğ‘É…™ÑI•…‘åQ½%ÍÍÕ”¡¹Õµ‰•É¥¹]½É­%¤ì(€€€•áÁ•Ğ¡…İ…¥Ğ¥ÍÍÕ”¡…¹•±±•‘%¤¤¹Ñ½	”¡€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÍ€¤ì(€€€½¹ÍĞ‘•¹¥•‘…¹•°€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í…¹•±±•‘%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€±•É¬…¹¹½Ğ…¹•°œô°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•¹¥•‘…¹•°¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡‘•¹¥•‘…¹•°¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€UQ!=I%Qe}IEU%Iœô¤ì((€€€½¹ÍĞ…¹•±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í…¹•±±•‘%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€œ€Y•¹‘½Èİ¥Ñ¡‘É•ÜÑ¡”ÅÕ½Ñ…Ñ¥½¸¸€€œô°(€€€ô¤ì(€€€•áÁ•Ğ¡…¹•±±•¹ÍÑ…ÑÕÍ½‘”°…¹•±±•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ô…¹•±±•¹©Í½¸ñAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€…¹•±±•œ°(€€€€€Á½9Õµ‰•Èè€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÍ€°(€€€€€€¼¼MÑ½É•ÑÉ¥µµ•°•á…Ñ±ä…ÌÑ¡”½±Õµ¸Ì!,µ•…ÍÕÉ•Ì¥Ğ¸(€€€€€…¹•±±…Ñ¥½¹9½Ñ”è€Y•¹‘½Èİ¥Ñ¡‘É•ÜÑ¡”ÅÕ½Ñ…Ñ¥½¸¸œ°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÕÉ¡…Í•=É‘•È¹…¹•±±•‘Ğ¤¹¹½Ğ¹Ñ½	•9Õ±° ¤ì((€€€€¼¼¹½Ñ”Ñ¡…ĞÍ…åÌ¹½Ñ¡¥¹œ¥ÌÉ•™ÕÍ•…Ì„€ĞÀÀ…Ğİ¡¥¡•Ù•È±…å•ÈÍ••Ì(€€€€¼¼¥Ğ™¥ÉÍĞƒŠP¹•Ù•È…Ì„!,Ù¥½±…Ñ¥½¸ÍÕÉ™…¥¹œ…Ì„€ÔÀÀ¸Q¡”(€€€€¼¼½¹ÑÉ…ĞÌ½İ¸Í¡…Á”…Ñ¡•ÌÍÁ…•ÌìÑ¡”É½ÕÑ”ÌÕ…É…Ñ¡•ÌÑ¡”(€€€€¼¼İ¡¥Ñ•ÍÁ…”‰ÑÉ¥µ€İ½Õ±¡…Ù”­•ÁĞ¸(€€€½¹ÍĞ¹•áÑ%€ô…İ…¥Ğ‘É…™ÑI•…‘åQ½%ÍÍÕ”¡¹Õµ‰•É¥¹]½É­%¤ì(€€€½¹ÍĞ‰±…¹­9½Ñ•ÌèmÍÑÉ¥¹œ°ÍÑÉ¥¹umt€ôl(€€€€€lœ€€€œ°€MQ}II}Y1%Q%=8t°(€€€€€lq¹q¹q¸œ°€911Q%=9}9=Q}IEU%It°(€€€tì(€€€™½È€¡½¹ÍĞm¹½Ñ”°½‘•t½˜‰±…¹­9½Ñ•Ì¤ì(€€€€€½¹ÍĞ‰±…¹¬€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í¹•áÑ%‘ô½…¹•±€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€Á…å±½…èì¹½Ñ”ô°(€€€€€ô¤ì(€€€€€•áÁ•Ğ¡‰±…¹¬¹ÍÑ…ÑÕÍ½‘”°€‘í)M=8¹ÍÑÉ¥¹¥™ä¡¹½Ñ”¥ôè€‘í‰±…¹¬¹‰½‘åõ€¤¹Ñ½	” ĞÀÀ¤ì(€€€€€•áÁ•Ğ¡‰±…¹¬¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”ô¤ì(€€€ô((€€€€¼¼Q¡”…¹•±±•¹Õµ‰•È¥Ì¹•Ù•ÈÉ•¥ÍÍÕ•èÑ¡”¹•áĞ½É‘•ÈÑ…­•Ì€ÀĞ¸(€€€•áÁ•Ğ¡…İ…¥Ğ¥ÍÍÕ”¡¹•áÑ%¤¤¹Ñ½	”¡€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÑ€¤ì((€€€½¹ÍĞ¹Õµ‰•ÉÌ€ô…İ…¥Ğ…‘µ¥¸ñìÁ½}¹Õµ‰•ÈèÍÑÉ¥¹œõmtù€(€€€€€Í•±•ĞÁ½}¹Õµ‰•È™É½´ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€İ¡•É”İ½É­}¥€ô€‘í¹Õµ‰•É¥¹]½É­%‘ô…¹Á½}¹Õµ‰•È¥Ì¹½Ğ¹Õ±°(€€€€€½É‘•È‰äÍ•ÅÕ•¹•}¹Õµ‰•È(€€€€ì(€€€•áÁ•Ğ¡¹Õµ‰•ÉÌ¹µ…À ¡É½Ü¤€ôøÉ½Ü¹Á½}¹Õµ‰•È¤¤¹Ñ½ÅÕ…°¡l(€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÅ€°(€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÉ€°(€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÍ€°(€€€€€€‘í¹Õµ‰•É¥¹]½É­½‘•ôµA<´ÀÑ€°(€€€t¤ì(€ô¤ì((€¥Ğ ±•ÑÌÍ¥µÕ±Ñ…¹•½ÕÌ¥ÍÍÕ”…ÑÑ•µÁÑÌÁÉ½‘Õ”•á…Ñ±ä½¹”¥ÍÍÕ•½É‘•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ…”€ô…İ…¥Ğ™É•Í¡]½É¬ Hœ¤ì(€€€½¹ÍĞÉ…•%€ô…İ…¥Ğ‘É…™ÑI•…‘åQ½%ÍÍÕ”¡É…”¹İ½É­%¤ì((€€€½¹ÍĞm™¥ÉÍĞ°Í•½¹‘t€ô…İ…¥ĞAÉ½µ¥Í”¹…±°¡l(€€€€€…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÉ…•%‘ô½¥ÍÍÕ•€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤°(€€€€€…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘íÉ…•%‘ô½¥ÍÍÕ•€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤°(€€€t¤ì(€€€•áÁ•Ğ¡m™¥ÉÍĞ¹ÍÑ…ÑÕÍ½‘”°Í•½¹¹ÍÑ…ÑÕÍ½‘•t¹Í½ÉĞ ¤¤¹Ñ½ÅÕ…°¡lÈÀÄ°€ĞÀåt¤ì((€€€€¼¼=¹”¥ÍÍÕ•É½Ü°½¹”¹Õµ‰•È°…¹Ñ¡”½Õ¹Ñ•È…‘Ù…¹••á…Ñ±ä½¹”ƒŠP(€€€€¼¼Ñ¡”±½Í•ÈÌÑÉ…¹Í…Ñ¥½¸É½±±•¥ÑÌ¥¹É•µ•¹Ğ‰…¬İ¥Ñ ¥Ğ¸(€€€½¹ÍĞmÉ½İt€ô…İ…¥Ğ…‘µ¥¸ñì½Õ¹ĞèÍÑÉ¥¹œìµ…á}Í•Äè¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ½Õ¹Ğ ¨¤èéÑ•áĞ…Ì½Õ¹Ğ°µ…à¡Í•ÅÕ•¹•}¹Õµ‰•È¤…Ìµ…á}Í•Ä(€€€€€™É½´ÁÕÉ¡…Í•}½É‘•ÉÌİ¡•É”¥€ô€‘íÉ…•%‘ô…¹ÍÑ…ÑÕÌ€ô€¥ÍÍÕ•œ(€€€€ì(€€€•áÁ•Ğ¡É½Üü¹½Õ¹Ğ¤¹Ñ½	” œÄœ¤ì(€€€•áÁ•Ğ¡É½Üü¹µ…á}Í•Ä¤¹Ñ½	” Ä¤ì(€€€½¹ÍĞm½Õ¹Ñ•Ét€ô…İ…¥Ğ…‘µ¥¸ñì¹•áÑ}Ù…±Õ”è¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ¹•áÑ}Ù…±Õ”™É½´ÁÕÉ¡…Í•}½É‘•É}½Õ¹Ñ•ÉÌİ¡•É”İ½É­}¥€ô€‘íÉ…”¹İ½É­%‘ô(€€€€ì(€€€•áÁ•Ğ¡½Õ¹Ñ•Èü¹¹•áÑ}Ù…±Õ”¤¹Ñ½	” Ä¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” Ñ•¹…¹Ğ¥Í½±…Ñ¥½¸œ°€ ¤€ôøì(€¥Ğ …¹Íİ•ÉÌ€ĞÀĞ™½È…¹½Ñ¡•ÈÑ•¹…¹Ğ…¹€ĞÀÌ™½È„™½É•¥¸½É…¹¥Í…Ñ¥½¸¡•…‘•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞm½É‘•Ét€ô…İ…¥Ğ…‘µ¥¸ñì¥èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ğ¥™É½´ÁÕÉ¡…Í•}½É‘•ÉÌİ¡•É”İ½É­}¥€ô€‘íİ½É­%‘ô±¥µ¥Ğ€Ä(€€€€ì(€€€•áÁ•Ğ¡½É‘•È¤¹Ñ½	••™¥¹• ¤ì((€€€€¼¼…±±•È¥¸…¹½Ñ¡•È½É…¹¥Í…Ñ¥½¸°ÕÍ¥¹œÑ¡•¥È=]8¡•…‘•ÈèÑ¡”É½Ü¥Ì(€€€€¼¼¥¹Ù¥Í¥‰±”Õ¹‘•ÈI1L…¹…¹Íİ•ÉÌ•á…Ñ±ä±¥­”…¸Õ¹­¹½İ¸¥¸(€€€½¹ÍĞ¡¥‘‘•¸€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í½É‘•Èü¹¥€üü€œõ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¡¥‘‘•¸¹ÍÑ…ÑÕÍ½‘”°¡¥‘‘•¸¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì(€€€•áÁ•Ğ¡¡¥‘‘•¸¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€AUI!M}=II}9=Q}=U9œô¤ì((€€€€¼¼Q¡”Í…µ”…±±•È‰½ÉÉ½İ¥¹œ=UH¡•…‘•È¹•Ù•È‰¥¹‘ÌÑ¡”Ñ•¹…¹Ğ…Ğ…±°¸(€€€½¹ÍĞ‰½ÉÉ½İ•€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼‘í½É‘•Èü¹¥€üü€œõ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡‰½ÉÉ½İ•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡‰½ÉÉ½İ•¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€9=Q}}55	Hœô¤ì((€€€€¼¼¹Ñ¡”]½É¬µÍ½Á•±¥ÍĞÍ¡½İÌ„™½É•¥¸Ñ•¹…¹Ğ¹½Ñ¡¥¹œ¸(€€€½¹ÍĞ±¥ÍĞ€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½ÁÕÉ¡…Í”µ½É‘•ÉÍ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡±¥ÍĞ¹ÍÑ…ÑÕÍ½‘”°±¥ÍĞ¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡±¥ÍĞ¹©Í½¸ñAÕÉ¡…Í•=É‘•É1¥ÍÑI•ÍÁ½¹Í”ø ¤¹ÁÕÉ¡…Í•=É‘•ÉÌ¤¹Ñ½ÅÕ…°¡mt¤ì(€ô¤ì((€¥Ğ É•™ÕÍ•Ì•Ù•ÉäİÉ¥Ñ”Ñ¼…¸Õ¹…ÕÑ¡•¹Ñ¥…Ñ•…±±•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÁÀ¹¥¹©•Ğ¡ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½ÁÕÉ¡…Í”µ½É‘•ÉÍ€°(€€€€€¡•…‘•ÉÌèì€àµ½É…¹¥Í…Ñ¥½¸µ¥œè½É…¹¥Í…Ñ¥½¹%ô°(€€€€€Á…å±½…èìÙ•¹‘½É½¹Ñ…Ñ%èÙ•¹‘½É%°Á½…Ñ”è€œÈÀÈØ´Àà´Ààœô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÄ¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€U9UQ!9Q%Qœô¤ì(€ô¤ì)ô¤ì(

@@ -151,6 +151,12 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         address: optional('address'),
         gstin: optional('gstin'),
         stateCode: optional('stateCode'),
+        pincode: optional('pincode'),
+        locality: optional('locality'),
+        tradeName: optional('tradeName'),
+        msmeNumber: optional('msmeNumber'),
+        invoiceNumberPrefix: optional('invoiceNumberPrefix'),
+        invoiceNotes: optional('invoiceNotes'),
         contactPhone: optional('contactPhone'),
         contactEmail: optional('contactEmail'),
         warrantyTemplateText: optional('warrantyTemplateText'),
@@ -357,6 +363,72 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
           </FieldRow>
           <FieldRow>
             <Field>
+              <label htmlFor="org-pincode">PIN code</label>
+              <input
+                id="org-pincode"
+                name="pincode"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                defaultValue={profile.pincode ?? ''}
+              />
+              <Hint>Six digits, stored separately for statutory payloads.</Hint>
+            </Field>
+            <Field>
+              <label htmlFor="org-locality">Locality / city</label>
+              <input
+                id="org-locality"
+                name="locality"
+                minLength={2}
+                maxLength={100}
+                defaultValue={profile.locality ?? ''}
+              />
+              <Hint>Exact NIC seller locality. Never guessed from the address.</Hint>
+            </Field>
+          </FieldRow>
+          <FieldRow>
+            <Field>
+              <label htmlFor="org-trade-name">Trade name</label>
+              <input
+                id="org-trade-name"
+                name="tradeName"
+                minLength={2}
+                maxLength={200}
+                defaultValue={profile.tradeName ?? ''}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="org-msme-number">Udyam / MSME number</label>
+              <input
+                id="org-msme-number"
+                name="msmeNumber"
+                defaultValue={profile.msmeNumber ?? ''}
+              />
+            </Field>
+          </FieldRow>
+          <FieldRow>
+            <Field>
+              <label htmlFor="org-invoice-prefix">Tax invoice prefix</label>
+              <input
+                id="org-invoice-prefix"
+                name="invoiceNumberPrefix"
+                maxLength={20}
+                defaultValue={profile.invoiceNumberPrefix ?? ''}
+              />
+            </Field>
+            <Field>
+              <label htmlFor="org-invoice-notes">Default invoice notes</label>
+              <textarea
+                id="org-invoice-notes"
+                name="invoiceNotes"
+                rows={2}
+                maxLength={4000}
+                defaultValue={profile.invoiceNotes ?? ''}
+              />
+            </Field>
+          </FieldRow>
+          <FieldRow>
+            <Field>
               <label htmlFor="org-phone">Phone</label>
               <input
                 id="org-phone"
@@ -413,6 +485,24 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
           <div>
             <dt>GST state code</dt>
             <dd>{profile.stateCode ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>PIN / locality</dt>
+            <dd>
+              {[profile.pincode, profile.locality].filter(Boolean).join(' · ') || '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Trade name</dt>
+            <dd>{profile.tradeName ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>MSME number</dt>
+            <dd>{profile.msmeNumber ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Invoice prefix</dt>
+            <dd>{profile.invoiceNumberPrefix ?? '—'}</dd>
           </div>
           <div>
             <dt>Phone</dt>

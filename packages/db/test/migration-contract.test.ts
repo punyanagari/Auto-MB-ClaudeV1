@@ -28,6 +28,30 @@ beforeAll(async () => {
 });
 
 describe('tenant migration contract', () => {
+  it('bounds and serialises the one-time legacy statutory classification', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0043_legacy_statutory_evidence_truth.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain(
+      'LOCK TABLE tax_invoices, eway_bills IN ACCESS EXCLUSIVE MODE;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE tax_invoices DISABLE TRIGGER tax_invoices_issued_update_guard;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE tax_invoices ENABLE TRIGGER tax_invoices_issued_update_guard;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE eway_bills DISABLE TRIGGER eway_bills_issued_update_guard;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE eway_bills ENABLE TRIGGER eway_bills_issued_update_guard;',
+    );
+  });
+
   it('enables and forces RLS on every table any migration creates', () => {
     expect(createdTables.length).toBeGreaterThanOrEqual(15);
     for (const table of createdTables) {
@@ -66,5 +90,19 @@ describe('tenant migration contract', () => {
     expect(allSql).toMatch(
       /CREATE UNIQUE INDEX delivery_challans_sequence_per_work\s+ON delivery_challans \(organisation_id, work_id, sequence_number\)\s+WHERE sequence_number IS NOT NULL;/,
     );
+  });
+
+  it('normalizes merge provenance and narrows PO draft scope in 0045', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0045_audit_integrity_followup.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain('CREATE TABLE measurement_book_merge_provenance');
+    expect(sql).toContain('measurement_book_merge_provenance_source_owner');
+    expect(sql).toContain('measurement_book_merge_provenance_truncate_guard');
+    expect(sql).toContain('purchase_orders_one_draft_per_work_vendor');
+    expect(sql).toContain('purchase_orders_update_guard');
+    expect(sql).toContain('budgetary_quotations_update_guard');
   });
 });

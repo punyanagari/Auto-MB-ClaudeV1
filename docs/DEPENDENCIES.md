@@ -14,6 +14,7 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 | Testing     | Vitest                   | Shared TypeScript test runner                                                                                                                                |
 | PDF service | Gotenberg                | Isolated, repeatable Chromium rendering                                                                                                                      |
 | PDF text    | poppler-utils            | Parallel `pdftotext -layout` + `-raw`: layout-authoritative fields and exact item-description ownership; system binary, argument-vector invocation, no shell |
+| Invoice QR  | qrcode                   | Standards-compliant SVG encoding of the exact IRP signed-QR payload for a self-contained tax-invoice PDF                                                    |
 
 ## Adopt with the relevant milestone
 
@@ -28,11 +29,9 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 
 Already adopted: Renovate (pin strategy with cooldown), secretlint (secret scan in `pnpm verify`), eslint-plugin-security (static security lint), Better Auth + node-postgres (identity; the `pg` pool serves Better Auth only, the application keeps postgres.js), Semgrep (pinned, CI SAST job), Playwright + axe + Testing Library + jsdom (browser accessibility smoke and component tests, adopted with the first UI workflow), ClamAV (upload scanning as a service container; the clamd INSTREAM client is ~80 lines of stdlib, deliberately not an npm package), Caddy (production TLS termination and static serving, deploy/ only).
 
-The statutory-integration boundary follows the same policy: prefer the
-platform HTTP and cryptography APIs for the Whitebooks adapter unless the
-provider contract requires a maintained dependency that removes meaningful,
-security-sensitive commodity work. Provider schemas remain translated at the
-server boundary rather than leaking into domain tables or browser contracts.
+The Whitebooks adapter uses platform HTTP and cryptography APIs and translates
+provider schemas only at the server boundary rather than leaking them into
+domain tables or browser contracts.
 
 ## Explicit non-defaults
 

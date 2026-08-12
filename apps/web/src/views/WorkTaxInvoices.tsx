@@ -36,11 +36,12 @@ const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   ship: 'Ship',
 };
 
-/** Road moves on a vehicle number; every other mode moves on a transport
- * document (railway receipt, airway bill, bill of lading). The 0035 CHECK
- * says the same thing at the database, and NIC refuses the other shape. */
-function movesOnVehicle(mode: TransportMode): boolean {
-  return mode === 'road';
+function openPdf(blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 60_000);
 }
 
 /**
@@ -73,11 +74,11 @@ export function WorkTaxInvoices({
   const [invoices, setInvoices] = useState<readonly TaxInvoice[] | null>(null);
   const [books, setBooks] = useState<readonly MeasurementBook[]>([]);
   const [clients, setClients] = useState<readonly Contact[]>([]);
+  const [shipToContacts, setShipToContacts] = useState<readonly Contact[]>([]);
   const [detail, setDetail] = useState<TaxInvoiceDetailResponse | null>(null);
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
   const [cancelNote, setCancelNote] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [ewayMode, setEwayMode] = useState<TransportMode>('road');
   const [loadError, setLoadError] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
 
@@ -107,7 +108,10 @@ export function WorkTaxInvoices({
     api
       .listContacts(organisationId)
       .then((contacts) => {
-        if (!cancelled) setClients(contacts.filter((contact) => contact.isClient));
+        if (!cancelled) {
+          setClients(contacts.filter((contact) => contact.isClient));
+          setShipToContacts(contacts);
+        }
       })
       .catch(() => {
         // Likewise: no buyer picker, no create form.
@@ -126,7 +130,6 @@ export function WorkTaxInvoices({
     setDetail(loaded);
     setCancelNote('');
     setConfirmingDelete(false);
-    setEwayMode('road');
     // E-way bills exist only for a submitted invoice; asking for a
     // draft's would be a guaranteed empty round trip.
     setEwayBills(
@@ -235,7 +238,11 @@ export function WorkTaxInvoices({
                 <td>
                   <StatusChip status={row.status}>{row.status}</StatusChip>
                   {row.irn !== null && (
-                    <StatusChip status="issued">e-invoiced</StatusChip>
+                    <StatusChip status="issued">
+                      {row.irpProvider === 'whitebooks'
+                        ? 'IRP registered'
+                        : 'manual IRP evidence Â· unverified'}
+                    </StatusChip>
                   )}
                 </td>
                 <td className={numericCell}>
@@ -259,6 +266,14 @@ export function WorkTaxInvoices({
               const form = event.currentTarget;
               const data = new FormData(form);
               void act(async () => {
+                const customerPoReference = formValue(
+                  data,
+                  'invoice-customer-po',
+                );
+                const unitLabel = formValue(data, 'invoice-unit-label');
+                const notes = formValue(data, 'invoice-notes');
+                const shipToContactId = formValue(data, 'invoice-ship-to');
+                const numberPrefix = formValue(data, 'invoice-number-prefix');
                 const created = await api.createWorkTaxInvoice(organisationId, workId, {
                   measurementBookId: formValue(data, 'invoice-mb'),
                   invoiceDate: formValue(data, 'invoice-date'),
@@ -266,7 +281,14 @@ export function WorkTaxInvoices({
                   serviceDescription: formValue(data, 'invoice-description'),
                   gstRate: formValue(data, 'invoice-gst-rate'),
                   placeOfSupply: formValue(data, 'invoice-place-of-supply'),
+                  reverseChargeApplicable:
+                    formValue(data, 'invoice-reverse-charge') === 'true',
                   buyerContactId: formValue(data, 'invoice-buyer'),
+                  ...(customerPoReference === '' ? {} : { customerPoReference }),
+                  ...(unitLabel === '' ? {} : { unitLabel }),
+                  ...(notes === '' ? {} : { notes }),
+                  ...(shipToContactId === '' ? {} : { shipToContactId }),
+                  ...(numberPrefix === '' ? {} : { numberPrefix }),
                 });
                 await refreshList();
                 await openInvoiceDetail(created.invoice.id);
@@ -317,6 +339,27 @@ export function WorkTaxInvoices({
               </Field>
             </FieldRow>
             <Field>
+              <label htmlFor="invoice-reverse-charge">Tax payable on reverse charge</label>
+              <select
+                id="invoice-reverse-charge"
+                name="invoice-reverse-charge"
+                required
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Confirm who pays GST
+                </option>
+                <option value="false">No â€” supplier pays GST (forward charge)</option>
+                <option value="true">
+                  Yes â€” recipient pays GST (issuance not supported yet)
+                </option>
+              </select>
+              <Hint>
+                This legal fact is frozen at submit. Reverse-charge invoices stay as
+                drafts because their tax calculation is not implemented.
+              </Hint>
+            </Field>
+            <Field>
               <label htmlFor="invoice-description">Service description</label>
               <textarea
                 id="invoice-description"
@@ -361,657 +404,4 @@ export function WorkTaxInvoices({
             </FieldRow>
             <Field>
               <label htmlFor="invoice-buyer">Buyer</label>
-              <select id="invoice-buyer" name="invoice-buyer" required defaultValue="">
-                <option value="" disabled>
-                  Pick a client contact
-                </option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.designation}
-                  </option>
-                ))}
-              </select>
-              <Hint>
-                Snapshotted at submit, so a correction to the contact before submitting
-                is reflected and one after it is not. The buyer needs an address, state
-                code and PIN by then.
-              </Hint>
-            </Field>
-            <Actions>
-              <Button type="submit" disabled={pending}>
-                Create draft
-              </Button>
-            </Actions>
-          </form>
-        </Disclosure>
-      )}
-
-      {invoice !== null && (
-        <section>
-          <h3>
-            {invoice.invoiceNumber ?? 'Draft tax invoice'}{' '}
-            <StatusChip status={invoice.status}>{invoice.status}</StatusChip>
-          </h3>
-
-          <dl>
-            <dt>Measurement Book</dt>
-            <dd>{invoice.mbNumber ?? 'â€”'}</dd>
-            <dt>Invoice date</dt>
-            <dd>{formatDate(invoice.invoiceDate)}</dd>
-            <dt>SAC</dt>
-            <dd>{invoice.sacCode}</dd>
-            <dt>GST rate</dt>
-            <dd>{invoice.gstRate}%</dd>
-            <dt>Place of supply</dt>
-            <dd>{invoice.placeOfSupply}</dd>
-            {invoice.fyLabel !== null && (
-              <>
-                <dt>Financial year</dt>
-                <dd>{invoice.fyLabel}</dd>
-              </>
-            )}
-          </dl>
-
-          <p className={wrapCell}>{invoice.serviceDescription}</p>
-
-          {invoice.status === 'submitted' || invoice.status === 'cancelled' ? (
-            <DataTable>
-              <caption className="sr-only">
-                The amounts frozen when this invoice was submitted
-              </caption>
-              <tbody>
-                <tr>
-                  <th scope="row">Taxable value</th>
-                  <td className={numericCell}>
-                    {invoice.taxableValue === null
-                      ? 'â€”'
-                      : formatInr(invoice.taxableValue)}
-                  </td>
-                </tr>
-                {/* Exactly one of the two splits is live: CGST+SGST within
-                    the state, IGST across it. Showing the zero half would
-                    only invite the reader to wonder what it means. */}
-                {invoice.igstAmount !== null && Number(invoice.igstAmount) > 0 ? (
-                  <tr>
-                    <th scope="row">IGST</th>
-                    <td className={numericCell}>{formatInr(invoice.igstAmount)}</td>
-                  </tr>
-                ) : (
-                  <>
-                    <tr>
-                      <th scope="row">CGST</th>
-                      <td className={numericCell}>
-                        {invoice.cgstAmount === null
-                          ? 'â€”'
-                          : formatInr(invoice.cgstAmount)}
-                      </td>
-                    </tr>
-                    <tr>
-                      <th scope="row">SGST</th>
-                      <td className={numericCell}>
-                        {invoice.sgstAmount === null
-                          ? 'â€”'
-                          : formatInr(invoice.sgstAmount)}
-                      </td>
-                    </tr>
-                  </>
-                )}
-                <tr>
-                  <th scope="row">Total</th>
-                  <td className={numericCell}>
-                    {invoice.totalAmount === null
-                      ? 'â€”'
-                      : formatInr(invoice.totalAmount)}
-                  </td>
-                </tr>
-              </tbody>
-            </DataTable>
-          ) : (
-            <p className="text-muted-foreground">
-              The amounts are computed from the Measurement Book total at submit, so a
-              draft carries none yet.
-            </p>
-          )}
-
-          {invoice.cancellationNote !== null && (
-            <p>
-              <strong>Cancelled:</strong> {invoice.cancellationNote}
-            </p>
-          )}
-
-          {invoice.status === 'draft' && canModify && (
-            <Disclosure label="Edit this draft">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const data = new FormData(event.currentTarget);
-                  void act(async () => {
-                    await api.updateTaxInvoice(organisationId, invoice.id, {
-                      invoiceDate: formValue(data, 'edit-invoice-date'),
-                      sacCode: formValue(data, 'edit-invoice-sac'),
-                      serviceDescription: formValue(data, 'edit-invoice-description'),
-                      gstRate: formValue(data, 'edit-invoice-gst-rate'),
-                      placeOfSupply: formValue(data, 'edit-invoice-place-of-supply'),
-                      buyerContactId: formValue(data, 'edit-invoice-buyer'),
-                    });
-                    await refreshList();
-                    await openInvoiceDetail(invoice.id);
-                  }, 'Draft tax invoice updated.');
-                }}
-              >
-                <FieldRow>
-                  <Field>
-                    <label htmlFor="edit-invoice-date">Invoice date</label>
-                    <input
-                      id="edit-invoice-date"
-                      name="edit-invoice-date"
-                      type="date"
-                      required
-                      defaultValue={invoice.invoiceDate}
-                    />
-                  </Field>
-                  <Field>
-                    <label htmlFor="edit-invoice-sac">SAC code</label>
-                    <input
-                      id="edit-invoice-sac"
-                      name="edit-invoice-sac"
-                      inputMode="numeric"
-                      pattern="[0-9]{6}"
-                      maxLength={6}
-                      required
-                      defaultValue={invoice.sacCode}
-                    />
-                  </Field>
-                </FieldRow>
-                <Field>
-                  <label htmlFor="edit-invoice-description">Service description</label>
-                  <textarea
-                    id="edit-invoice-description"
-                    name="edit-invoice-description"
-                    rows={3}
-                    required
-                    minLength={3}
-                    maxLength={1000}
-                    defaultValue={invoice.serviceDescription}
-                  />
-                </Field>
-                <FieldRow>
-                  <Field>
-                    <label htmlFor="edit-invoice-gst-rate">GST rate (%)</label>
-                    <input
-                      id="edit-invoice-gst-rate"
-                      name="edit-invoice-gst-rate"
-                      inputMode="decimal"
-                      required
-                      defaultValue={invoice.gstRate}
-                    />
-                  </Field>
-                  <Field>
-                    <label htmlFor="edit-invoice-place-of-supply">
-                      Place of supply
-                    </label>
-                    <input
-                      id="edit-invoice-place-of-supply"
-                      name="edit-invoice-place-of-supply"
-                      inputMode="numeric"
-                      pattern="[0-9]{2}"
-                      maxLength={2}
-                      required
-                      defaultValue={invoice.placeOfSupply}
-                    />
-                  </Field>
-                </FieldRow>
-                <Field>
-                  <label htmlFor="edit-invoice-buyer">Buyer</label>
-                  <select
-                    id="edit-invoice-buyer"
-                    name="edit-invoice-buyer"
-                    required
-                    defaultValue={invoice.buyerContactId ?? ''}
-                  >
-                    <option value="" disabled>
-                      Pick a client contact
-                    </option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.designation}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Actions>
-                  <Button type="submit" disabled={pending}>
-                    Save draft
-                  </Button>
-                </Actions>
-              </form>
-            </Disclosure>
-          )}
-
-          <Actions>
-            {invoice.status === 'draft' && canIssue && (
-              <Button
-                onClick={() => {
-                  void act(async () => {
-                    await api.submitTaxInvoice(organisationId, invoice.id);
-                    await refreshList();
-                    await openInvoiceDetail(invoice.id);
-                  }, 'Tax invoice submitted â€” it is numbered, its amounts are frozen, and the Measurement Book it bills is closed.');
-                }}
-                disabled={pending}
-              >
-                Submit invoice
-              </Button>
-            )}
-            {invoice.status === 'draft' && canModify && !confirmingDelete && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setConfirmingDelete(true);
-                }}
-                disabled={pending}
-              >
-                Delete draft
-              </Button>
-            )}
-          </Actions>
-
-          {confirmingDelete && invoice.status === 'draft' && (
-            <Actions>
-              <p role="status">
-                Delete this draft tax invoice? Nothing has been numbered, so nothing is
-                lost but the typing.
-              </p>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  void act(async () => {
-                    await api.deleteTaxInvoice(organisationId, invoice.id);
-                    setDetail(null);
-                    setConfirmingDelete(false);
-                    await refreshList();
-                  }, 'Draft tax invoice deleted.');
-                }}
-                disabled={pending}
-              >
-                Delete it
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setConfirmingDelete(false);
-                }}
-                disabled={pending}
-              >
-                Keep it
-              </Button>
-            </Actions>
-          )}
-
-          {invoice.status === 'submitted' && (
-            <>
-              <h4>Government e-invoicing</h4>
-              {invoice.irn === null ? (
-                <>
-                  <p className="text-muted-foreground">
-                    The invoice is numbered and ready to register. Send the payload to
-                    the GSP, then record exactly what the Invoice Registration Portal
-                    answered â€” the IRN is minted there, never here.
-                  </p>
-                  <Actions>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        void act(async () => {
-                          const payload = await api.taxInvoiceIrpPayload(
-                            organisationId,
-                            invoice.id,
-                          );
-                          await navigator.clipboard.writeText(
-                            JSON.stringify(payload, null, 2),
-                          );
-                        }, 'The e-invoice payload is on the clipboard, ready for the GSP.');
-                      }}
-                      disabled={pending}
-                    >
-                      Copy e-invoice payload
-                    </Button>
-                  </Actions>
-                  {canIssue && (
-                    <Disclosure label="Record the IRP response">
-                      <form
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const data = new FormData(event.currentTarget);
-                          void act(async () => {
-                            await api.recordTaxInvoiceIrpResponse(
-                              organisationId,
-                              invoice.id,
-                              {
-                                irn: formValue(data, 'irp-irn'),
-                                ackNumber: formValue(data, 'irp-ack-number'),
-                                ackDate: new Date(
-                                  formValue(data, 'irp-ack-date'),
-                                ).toISOString(),
-                                signedQr: formValue(data, 'irp-signed-qr'),
-                              },
-                            );
-                            await refreshList();
-                            await openInvoiceDetail(invoice.id);
-                          }, 'IRP response recorded â€” the invoice now carries its IRN.');
-                        }}
-                      >
-                        <Field>
-                          <label htmlFor="irp-irn">IRN</label>
-                          <input
-                            id="irp-irn"
-                            name="irp-irn"
-                            required
-                            pattern="[0-9a-f]{64}"
-                            maxLength={64}
-                          />
-                          <Hint>
-                            Sixty-four hexadecimal characters, exactly as returned.
-                          </Hint>
-                        </Field>
-                        <FieldRow>
-                          <Field>
-                            <label htmlFor="irp-ack-number">
-                              Acknowledgement number
-                            </label>
-                            <input id="irp-ack-number" name="irp-ack-number" required />
-                          </Field>
-                          <Field>
-                            <label htmlFor="irp-ack-date">Acknowledgement date</label>
-                            <input
-                              id="irp-ack-date"
-                              name="irp-ack-date"
-                              type="datetime-local"
-                              required
-                            />
-                          </Field>
-                        </FieldRow>
-                        <Field>
-                          <label htmlFor="irp-signed-qr">Signed QR</label>
-                          <textarea
-                            id="irp-signed-qr"
-                            name="irp-signed-qr"
-                            rows={3}
-                            required
-                          />
-                          <Hint>
-                            The signed payload the portal returned; it prints as the QR
-                            code on the invoice.
-                          </Hint>
-                        </Field>
-                        <Actions>
-                          <Button type="submit" disabled={pending}>
-                            Record response
-                          </Button>
-                        </Actions>
-                      </form>
-                    </Disclosure>
-                  )}
-                </>
-              ) : (
-                <dl>
-                  <dt>IRN</dt>
-                  <dd className={wrapCell}>{invoice.irn}</dd>
-                  <dt>Acknowledgement</dt>
-                  <dd>
-                    {invoice.ackNumber ?? 'â€”'}
-                    {invoice.ackDate !== null && ` Â· ${formatDate(invoice.ackDate)}`}
-                  </dd>
-                </dl>
-              )}
-            </>
-          )}
-
-          {invoice.status === 'submitted' && (
-            <>
-              <h4>E-way bills</h4>
-              {ewayBills.length > 0 ? (
-                <DataTable>
-                  <caption className="sr-only">
-                    E-way bills raised to move this invoice
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">EWB number</th>
-                      <th scope="col">Mode</th>
-                      <th scope="col">Route</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Valid until</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ewayBills.map((bill) => (
-                      <tr key={bill.id}>
-                        <th scope="row">{bill.ewbNumber ?? 'Draft'}</th>
-                        <td>{TRANSPORT_MODE_LABELS[bill.transportMode]}</td>
-                        <td>
-                          {bill.fromPincode} â†’ {bill.toPincode} Â· {bill.distanceKm} km
-                        </td>
-                        <td>
-                          <StatusChip status={bill.status}>{bill.status}</StatusChip>
-                        </td>
-                        <td>
-                          {bill.validUntil === null ? 'â€”' : formatDate(bill.validUntil)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </DataTable>
-              ) : (
-                <p className="text-muted-foreground">
-                  No e-way bill has been raised for this invoice.
-                </p>
-              )}
-
-              {canModify && (
-                <Disclosure label="Draft an e-way bill">
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const form = event.currentTarget;
-                      const data = new FormData(form);
-                      const vehicleNumber = formValue(data, 'eway-vehicle');
-                      const docNumber = formValue(data, 'eway-doc-number');
-                      const docDate = formValue(data, 'eway-doc-date');
-                      const transporterId = formValue(data, 'eway-transporter-id');
-                      const transporterName = formValue(data, 'eway-transporter-name');
-                      void act(async () => {
-                        await api.createInvoiceEwayBill(organisationId, invoice.id, {
-                          transportMode: ewayMode,
-                          distanceKm: Number(formValue(data, 'eway-distance')),
-                          fromPincode: formValue(data, 'eway-from'),
-                          toPincode: formValue(data, 'eway-to'),
-                          // Empty optionals are omitted rather than sent
-                          // blank: the contract's patterns reject '' and a
-                          // draft is allowed to be still filling in.
-                          ...(transporterId !== '' ? { transporterId } : {}),
-                          ...(transporterName !== '' ? { transporterName } : {}),
-                          ...(vehicleNumber !== '' ? { vehicleNumber } : {}),
-                          ...(docNumber !== ''
-                            ? { transportDocNumber: docNumber }
-                            : {}),
-                          ...(docDate !== '' ? { transportDocDate: docDate } : {}),
-                        });
-                        setEwayBills(
-                          await api.listInvoiceEwayBills(organisationId, invoice.id),
-                        );
-                        form.reset();
-                        setEwayMode('road');
-                      }, 'Draft e-way bill created â€” send it to the GSP, then record what NIC answered.');
-                    }}
-                  >
-                    <FieldRow>
-                      <Field>
-                        <label htmlFor="eway-mode">Transport mode</label>
-                        <select
-                          id="eway-mode"
-                          name="eway-mode"
-                          value={ewayMode}
-                          onChange={(event) => {
-                            setEwayMode(event.target.value as TransportMode);
-                          }}
-                        >
-                          {(
-                            Object.keys(
-                              TRANSPORT_MODE_LABELS,
-                            ) as readonly TransportMode[]
-                          ).map((mode) => (
-                            <option key={mode} value={mode}>
-                              {TRANSPORT_MODE_LABELS[mode]}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field>
-                        <label htmlFor="eway-distance">Distance (km)</label>
-                        <input
-                          id="eway-distance"
-                          name="eway-distance"
-                          type="number"
-                          min={0}
-                          max={4000}
-                          required
-                        />
-                      </Field>
-                    </FieldRow>
-                    <FieldRow>
-                      <Field>
-                        <label htmlFor="eway-from">From PIN</label>
-                        <input
-                          id="eway-from"
-                          name="eway-from"
-                          inputMode="numeric"
-                          pattern="[0-9]{6}"
-                          maxLength={6}
-                          required
-                        />
-                      </Field>
-                      <Field>
-                        <label htmlFor="eway-to">To PIN</label>
-                        <input
-                          id="eway-to"
-                          name="eway-to"
-                          inputMode="numeric"
-                          pattern="[0-9]{6}"
-                          maxLength={6}
-                          required
-                        />
-                      </Field>
-                    </FieldRow>
-                    {movesOnVehicle(ewayMode) ? (
-                      <Field>
-                        <label htmlFor="eway-vehicle">Vehicle number</label>
-                        <input
-                          id="eway-vehicle"
-                          name="eway-vehicle"
-                          pattern="[A-Z0-9]{6,12}"
-                          maxLength={12}
-                        />
-                        <Hint>
-                          Uppercase letters and digits, no spaces. A road movement needs
-                          one before NIC will answer.
-                        </Hint>
-                      </Field>
-                    ) : (
-                      <FieldRow>
-                        <Field>
-                          <label htmlFor="eway-doc-number">
-                            Transport document number
-                          </label>
-                          <input
-                            id="eway-doc-number"
-                            name="eway-doc-number"
-                            maxLength={30}
-                          />
-                          <Hint>
-                            The railway receipt, airway bill or bill of lading this
-                            consignment moves on.
-                          </Hint>
-                        </Field>
-                        <Field>
-                          <label htmlFor="eway-doc-date">Transport document date</label>
-                          <input id="eway-doc-date" name="eway-doc-date" type="date" />
-                        </Field>
-                      </FieldRow>
-                    )}
-                    <FieldRow>
-                      <Field>
-                        <label htmlFor="eway-transporter-id">Transporter id</label>
-                        <input
-                          id="eway-transporter-id"
-                          name="eway-transporter-id"
-                          maxLength={15}
-                        />
-                        <Hint>Fifteen characters; your own vehicle needs none.</Hint>
-                      </Field>
-                      <Field>
-                        <label htmlFor="eway-transporter-name">Transporter name</label>
-                        <input
-                          id="eway-transporter-name"
-                          name="eway-transporter-name"
-                        />
-                      </Field>
-                    </FieldRow>
-                    <Actions>
-                      <Button type="submit" disabled={pending}>
-                        Create e-way bill
-                      </Button>
-                    </Actions>
-                  </form>
-                </Disclosure>
-              )}
-            </>
-          )}
-
-          {invoice.status === 'submitted' && canCancel && (
-            <Disclosure label="Cancel this invoice">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void act(async () => {
-                    await api.cancelTaxInvoice(organisationId, invoice.id, {
-                      note: cancelNote,
-                    });
-                    await refreshList();
-                    await openInvoiceDetail(invoice.id);
-                    setCancelNote('');
-                  }, 'Tax invoice cancelled â€” the Measurement Book it billed is released for a corrected invoice.');
-                }}
-              >
-                <Field>
-                  <label htmlFor="invoice-cancel-note">Why it is being cancelled</label>
-                  <textarea
-                    id="invoice-cancel-note"
-                    name="invoice-cancel-note"
-                    rows={2}
-                    required
-                    minLength={3}
-                    maxLength={2000}
-                    value={cancelNote}
-                    onChange={(event) => {
-                      setCancelNote(event.currentTarget.value);
-                    }}
-                  />
-                  <Hint>
-                    A cancelled invoice keeps its number for ever â€” the number is never
-                    reused â€” and this note is the record of why.
-                  </Hint>
-                </Field>
-                <Actions>
-                  <Button type="submit" variant="destructive" disabled={pending}>
-                    Cancel invoice
-                  </Button>
-                </Actions>
-              </form>
-            </Disclosure>
-          )}
-        </section>
-      )}
-    </>
-  );
-}
+             ×~üÒÚ$z{-®éÜj×¶&–ÆÂç&÷f–FW%7FFRÓÓÒvvVæW&F–ærp¢òt6†V6²7FÆÆVB÷W&F–öâp¢¢&–ÆÂç&÷f–FW%7FFRÓÓÒvvVæW&F–öå÷Væ¶æ÷vâp¢òu&V6öæ6–ÆRp¢¢tvVæW&FRBv†—FV&öö·2wĞ¢Âô'WGFöãà¢’¢€¢~(	Bp¢—Ğ¢Â÷FCà¢Â÷G#à¢’—Ğ¢Â÷F&öG“à¢ÂôFFF&ÆSà¢’¢€¢Ç6Æ74æÖSÒ'FW‡BÖ×WFVBÖf÷&Vw&÷VæB#à¢æòR×v’&–ÆÂ†2&VVâ&—6VBf÷"F†—2–çfö–6Rà¢Â÷à¢—Ğ ¢¶6ä6æ6VÂb`¢Wv”&–ÆÇ0¢æf–ÇFW"€¢†&–ÆÂ’Óà¢&–ÆÂç7FGW2ÓÓÒvvVæW&FVBrb`¢&–ÆÂç&÷f–FW"ÓÓÒwv†—FV&öö·2rb`¢†&–ÆÂç&÷f–FW%7FFRÓÓÒvvVæW&FVBrÇÀ¢&–ÆÂç&÷f–FW%7FFRÓÓÒv6æ6VÆÆ–ærr’À¢¢æÖ‚†&–ÆÂ’Óâ€¢ÄF—66Æ÷7W&P¢¶W“×¶&÷f–FW"Ö6æ6VÂÒG¶&–ÆÂæ–GÖĞ¢Æ&VÃ×¶6æ6VÂUt"G¶&–ÆÂæWv$çVÖ&W"óò&–ÆÂæ–GÒBv†—FV&öö·6Ğ¢à¢Æf÷&Ğ¢öå7V&Ö—C×²†WfVçB’Óâ°¢WfVçBç&WfVçDFVfVÇB‚“°¢6öç7BFFÒæWrf÷&ÔFF†WfVçBæ7W'&VçEF&vWB“°¢fö–B7B†7–æ2‚’Óâ°¢–b†&–ÆÂç&÷f–FW%7FFRÓÓÒv6æ6VÆÆ–ærr’°¢v—B’ç&V6÷fW$Wv”&–ÆÅ&÷f–FW$÷W&F–öâ€¢÷&væ—6F–öä–BÀ¢&–ÆÂæ–BÀ¢“°¢ÒVÇ6R°¢v—B’æ6æ6VÄWv”&–ÆÄE&÷f–FW"€¢÷&væ—6F–öä–BÀ¢&–ÆÂæ–BÀ¢°¢&V6öä6öFS¢f÷&ÕfÇVR€¢FFÀ¢Wv’×&÷f–FW"×&V6öâÒG¶&–ÆÂæ–GÖÀ¢’2srÂs"rÂs2rÂsBrÀ¢&VÖ&³¢f÷&ÕfÇVR€¢FFÀ¢Wv’×&÷f–FW"×&VÖ&²ÒG¶&–ÆÂæ–GÖÀ¢’À¢ÒÀ¢“°¢Ğ¢6WDWv”&–ÆÇ2€¢v—B’æÆ—7D–çfö–6TWv”&–ÆÇ2€¢÷&væ—6F–öä–BÀ¢–çfö–6Ræ–BÀ¢’À¢“°¢ÒÂuv†—FV&öö·2Ut"6æ6VÆÆF–öâ6†V6²f–æ—6†VBâ&÷f–FW"7FFR—2&Vg&W6†VB&VÆ÷s²F†RÆö6Â&V6÷&B7F—27F—fRVçF–Â6öæf—&ÖVBâr“°¢×Ğ¢à¢Äf–VÆE&÷sà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’×&÷f–FW"×&V6öâÒG¶&–ÆÂæ–GÖÓà¢&V6öà¢ÂöÆ&VÃà¢Ç6VÆV7@¢–C×¶Wv’×&÷f–FW"×&V6öâÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’×&÷f–FW"×&V6öâÒG¶&–ÆÂæ–GÖĞ¢FVfVÇEfÇVSÒ#" ¢à¢Æ÷F–öâfÇVSÒ##äGWÆ–6FSÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#"#ä÷&FW"6æ6VÆÆVCÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#2#äFFVçG'’Ö—7F¶SÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#B#ä÷F†W#Âö÷F–öãà¢Â÷6VÆV7Cà¢Âôf–VÆCà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’×&÷f–FW"×&VÖ&²ÒG¶&–ÆÂæ–GÖÓà¢&VÖ&°¢ÂöÆ&VÃà¢Æ–çW@¢–C×¶Wv’×&÷f–FW"×&VÖ&²ÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’×&÷f–FW"×&VÖ&²ÒG¶&–ÆÂæ–GÖĞ¢&WV—&V@¢Ö–äÆVæwFƒ×³7Ğ¢Ö„ÆVæwFƒ×³#Ğ¢óà¢Âôf–VÆCà¢Âôf–VÆE&÷sà¢Ä7F–öç3à¢Ä'WGFöâG—SÒ'7V&Ö—B"F—6&ÆVC×·VæF–æwÓà¢¶&–ÆÂç&÷f–FW%7FFRÓÓÒv6æ6VÆÆ–ærp¢òt6†V6²7FÆÆVB6æ6VÆÆF–öâp¢¢t6æ6VÂB&÷f–FW"wĞ¢Âô'WGFöãà¢Âô7F–öç3à¢Âöf÷&Óà¢ÂôF—66Æ÷7W&Sà¢’—Ğ ¢¶6ä6æ6VÂb`¢Wv”&–ÆÇ0¢æf–ÇFW"€¢†&–ÆÂ’Óà¢†&–ÆÂç7FGW2ÓÓÒvvVæW&FVBrÇÂ&–ÆÂç7FGW2ÓÓÒv6æ6VÆÆVBr’b`¢‚†&–ÆÂç&÷f–FW"ÓÓÒvÖçVÂrb`¢&–ÆÂç&÷f–FW%7FFRÓÓÒvvVæW&FVBr’ÇÀ¢&–ÆÂç&÷f–FW%7FFRÓÓÒv6æ6VÆÆF–öå÷Væ¶æ÷vâr’À¢¢æÖ‚†&–ÆÂ’Óâ€¢ÄF—66Æ÷7W&P¢¶W“×¶ÖçVÂ×&÷f–FW"Ö6æ6VÂÒG¶&–ÆÂæ–GÖĞ¢Æ&VÃ×¶&V6÷&BW‡FW&æÆÇ’6öæf—&ÖVB6æ6VÆÆF–öâf÷"Ut"G¶&–ÆÂæWv$çVÖ&W"óò&–ÆÂæ–GÒ‡VçfW&–f–VB–Ğ¢à¢Æf÷&Ğ¢öå7V&Ö—C×²†WfVçB’Óâ°¢WfVçBç&WfVçDFVfVÇB‚“°¢6öç7BFFÒæWrf÷&ÔFF†WfVçBæ7W'&VçEF&vWB“°¢fö–B7B†7–æ2‚’Óâ°¢v—B’ç&V6÷&DWv”&–ÆÄ6æ6VÆÆF–öâ€¢÷&væ—6F–öä–BÀ¢&–ÆÂæ–BÀ¢°¢&V6öä6öFS¢f÷&ÕfÇVR€¢FFÀ¢Wv’ÖÖçVÂ×&V6öâÒG¶&–ÆÂæ–GÖÀ¢’2srÂs"rÂs2rÂsBrÀ¢&VÖ&³¢f÷&ÕfÇVR€¢FFÀ¢Wv’ÖÖçVÂ×&VÖ&²ÒG¶&–ÆÂæ–GÖÀ¢’À¢6æ6VÆÆVDC¢æWrFFR€¢f÷&ÕfÇVR€¢FFÀ¢Wv’ÖÖçVÂÖFFRÒG¶&–ÆÂæ–GÖÀ¢’À¢’çFô•4õ7G&–ær‚’À¢6æ6VÆÆVDEFW‡C¢f÷&ÕfÇVR€¢FFÀ¢Wv’ÖÖçVÂÖFFR×FW‡BÒG¶&–ÆÂæ–GÖÀ¢’À¢ÒÀ¢“°¢6WDWv”&–ÆÇ2€¢v—B’æÆ—7D–çfö–6TWv”&–ÆÇ2€¢÷&væ—6F–öä–BÀ¢–çfö–6Ræ–BÀ¢’À¢“°¢ÒÂtW‡FW&æÂUt"6æ6VÆÆF–öâWf–FVæ6R&V6÷&FVB2ÖçVÆÇ’VçFW&VBæBVçfW&–f–VBâr“°¢×Ğ¢à¢Äf–VÆE&÷sà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’ÖÖçVÂ×&V6öâÒG¶&–ÆÂæ–GÖÓà¢&V6öà¢ÂöÆ&VÃà¢Ç6VÆV7@¢–C×¶Wv’ÖÖçVÂ×&V6öâÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’ÖÖçVÂ×&V6öâÒG¶&–ÆÂæ–GÖĞ¢FVfVÇEfÇVSÒ#" ¢à¢Æ÷F–öâfÇVSÒ##äGWÆ–6FSÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#"#ä÷&FW"6æ6VÆÆVCÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#2#äFFVçG'’Ö—7F¶SÂö÷F–öãà¢Æ÷F–öâfÇVSÒ#B#ä÷F†W#Âö÷F–öãà¢Â÷6VÆV7Cà¢Âôf–VÆCà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’ÖÖçVÂÖFFRÒG¶&–ÆÂæ–GÖÓà¢æ÷&ÖÆ—¦VB–ç7Fç@¢ÂöÆ&VÃà¢Æ–çW@¢–C×¶Wv’ÖÖçVÂÖFFRÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’ÖÖçVÂÖFFRÒG¶&–ÆÂæ–GÖĞ¢G—SÒ&FFWF–ÖRÖÆö6Â ¢&WV—&V@¢óà¢Âôf–VÆCà¢Âôf–VÆE&÷sà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’ÖÖçVÂÖFFR×FW‡BÒG¶&–ÆÂæ–GÖÓà¢÷'FÂ6æ6VÆÆF–öâFW‡B†W†7B¢ÂöÆ&VÃà¢Æ–çW@¢–C×¶Wv’ÖÖçVÂÖFFR×FW‡BÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’ÖÖçVÂÖFFR×FW‡BÒG¶&–ÆÂæ–GÖĞ¢Æ6V†öÆFW#Ò#ó‚ó##b#£3£ ¢&WV—&V@¢óà¢Âôf–VÆCà¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’ÖÖçVÂ×&VÖ&²ÒG¶&–ÆÂæ–GÖÓà¢&VÖ&°¢ÂöÆ&VÃà¢Æ–çW@¢–C×¶Wv’ÖÖçVÂ×&VÖ&²ÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’ÖÖçVÂ×&VÖ&²ÒG¶&–ÆÂæ–GÖĞ¢&WV—&V@¢Ö–äÆVæwFƒ×³7Ğ¢Ö„ÆVæwFƒ×³#Ğ¢óà¢Âôf–VÆCà¢Ä7F–öç3à¢Ä'WGFöâG—SÒ'7V&Ö—B"F—6&ÆVC×·VæF–æwÓà¢&V6÷&BVçfW&–f–VB6æ6VÆÆF–öà¢Âô'WGFöãà¢Âô7F–öç3à¢Âöf÷&Óà¢ÂôF—66Æ÷7W&Sà¢’—Ğ ¢¶6ä6æ6VÂb`¢Wv”&–ÆÇ0¢æf–ÇFW"€¢†&–ÆÂ’Óà¢&–ÆÂç7FGW2ÓÓÒvvVæW&FVBrb`¢&–ÆÂç&÷f–FW%7FFRÓÓÒv6æ6VÆÆVBrÀ¢¢æÖ‚†&–ÆÂ’Óâ€¢ÄF—66Æ÷7W&P¢¶W“×¶Æö6ÂÖ6æ6VÂÒG¶&–ÆÂæ–GÖĞ¢Æ&VÃ×¶6æ6VÂÆö6ÂUt"&V6÷&BG¶&–ÆÂæWv$çVÖ&W"óò&–ÆÂæ–GÖĞ¢à¢Æf÷&Ğ¢öå7V&Ö—C×²†WfVçB’Óâ°¢WfVçBç&WfVçDFVfVÇB‚“°¢6öç7BFFÒæWrf÷&ÔFF†WfVçBæ7W'&VçEF&vWB“°¢fö–B7B†7–æ2‚’Óâ°¢v—B’æ6æ6VÄWv”&–ÆÂ†÷&væ—6F–öä–BÂ&–ÆÂæ–BÂ°¢æ÷FS¢f÷&ÕfÇVR€¢FFÀ¢Wv’ÖÆö6ÂÖ6æ6VÂÖæ÷FRÒG¶&–ÆÂæ–GÖÀ¢’À¢Ò“°¢6WDWv”&–ÆÇ2€¢v—B’æÆ—7D–çfö–6TWv”&–ÆÇ2€¢÷&væ—6F–öä–BÀ¢–çfö–6Ræ–BÀ¢’À¢“°¢ÒÂtÆö6ÂUt"&V6÷&B6æ6VÆÆVC²öff–6–Â–FVçF—G’æBfÆ–F—G’Wf–FVæ6RvW&R&WF–æVBâr“°¢×Ğ¢à¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#×¶Wv’ÖÆö6ÂÖ6æ6VÂÖæ÷FRÒG¶&–ÆÂæ–GÖÓà¢Æö6Â6æ6VÆÆF–öâæ÷FP¢ÂöÆ&VÃà¢ÇFW‡F&V¢–C×¶Wv’ÖÆö6ÂÖ6æ6VÂÖæ÷FRÒG¶&–ÆÂæ–GÖĞ¢æÖS×¶Wv’ÖÆö6ÂÖ6æ6VÂÖæ÷FRÒG¶&–ÆÂæ–GÖĞ¢&WV—&V@¢Ö–äÆVæwFƒ×³7Ğ¢Ö„ÆVæwFƒ×³#Ğ¢&÷w3×³'Ğ¢óà¢Âôf–VÆCà¢Ä7F–öç3à¢Ä'WGFöâG—SÒ'7V&Ö—B"F—6&ÆVC×·VæF–æwÓà¢6æ6VÂÆö6Â&V6÷&@¢Âô'WGFöãà¢Âô7F–öç3à¢Âöf÷&Óà¢ÂôF—66Æ÷7W&Sà¢’—Ğ ¢Âóà¢—Ğ ¢¶–çfö–6Rç7FGW2ÓÓÒw7V&Ö—GFVBrb`¢6ä6æ6VÂb`¢†–çfö–6Ræ—'&÷f–FW%7FFRÓÓÒvæ÷E÷&WVW7FVBrÇÀ¢–çfö–6Ræ—'&÷f–FW%7FFRÓÓÒv6æ6VÆÆVBr’bb€¢ÄF—66Æ÷7W&RÆ&VÃÒ$6æ6VÂF†—2–çfö–6R#à¢Æf÷&Ğ¢öå7V&Ö—C×²†WfVçB’Óâ°¢WfVçBç&WfVçDFVfVÇB‚“°¢fö–B7B†7–æ2‚’Óâ°¢v—B’æ6æ6VÅF„–çfö–6R†÷&væ—6F–öä–BÂ–çfö–6Ræ–BÂ°¢æ÷FS¢6æ6VÄæ÷FRÀ¢Ò“°¢v—B&Vg&W6„Æ—7B‚“°¢v—B÷Vä–çfö–6TFWF–Â†–çfö–6Ræ–B“°¢6WD6æ6VÄæ÷FR‚rr“°¢ÒÂuF‚–çfö–6R6æ6VÆÆVB(	BF†RÖV7W&VÖVçB&öö²—B&–ÆÆVB—2&VÆV6VBf÷"6÷'&V7FVB–çfö–6Râr“°¢×Ğ¢à¢Äf–VÆCà¢ÆÆ&VÂ‡FÖÄf÷#Ò&–çfö–6RÖ6æ6VÂÖæ÷FR#åv‡’—B—2&V–ær6æ6VÆÆVCÂöÆ&VÃà¢ÇFW‡F&V¢–CÒ&–çfö–6RÖ6æ6VÂÖæ÷FR ¢æÖSÒ&–çfö–6RÖ6æ6VÂÖæ÷FR ¢&÷w3×³'Ğ¢&WV—&V@¢Ö–äÆVæwFƒ×³7Ğ¢Ö„ÆVæwFƒ×³#Ğ¢fÇVS×¶6æ6VÄæ÷FWĞ¢öä6†ævS×²†WfVçB’Óâ°¢6WD6æ6VÄæ÷FR†WfVçBæ7W'&VçEF&vWBçfÇVR“°¢×Ğ¢óà¢Ä†–çCà¢6æ6VÆÆVB–çfö–6R¶VW2—G2çVÖ&W"f÷"WfW"(	BF†RçVÖ&W"—2æWfW ¢&WW6VB(	BæBF†—2æ÷FR—2F†R&V6÷&Böbv‡’à¢Âô†–çCà¢Âôf–VÆCà¢Ä7F–öç3à¢Ä'WGFöâG—SÒ'7V&Ö—B"f&–çCÒ&FW7G'V7F—fR"F—6&ÆVC×·VæF–æwÓà¢6æ6VÂ–çfö–6P¢Âô'WGFöãà¢Âô7F–öç3à¢Âöf÷&Óà¢ÂôF—66Æ÷7W&Sà¢—Ğ¢¶–çfö–6Rç7FGW2ÓÓÒw7V&Ö—GFVBrb`¢6ä6æ6VÂb`¢–çfö–6Ræ—'&÷f–FW%7FFRÓÒvæ÷E÷&WVW7FVBrb`¢–çfö–6Ræ—'&÷f–FW%7FFRÓÒv6æ6VÆÆVBrbb€¢Ç6Æ74æÖSÒ'FW‡BÖ×WFVBÖf÷&Vw&÷VæB#à¢Æö6Â–çfö–6R6æ6VÆÆF–öâ—2Æö6¶VBv†–ÆR•%7FFR—7²rwĞ¢Ç7G&öæsç¶–çfö–6Ræ—'&÷f–FW%7FFWÓÂ÷7G&öæsââ&W6öÇfR&Vv—7G&F–öâæ@¢6æ6VÂç’Ut"æB•$âf—'7Bà¢Â÷à¢—Ğ¢Â÷6V7F–öãà¢—Ğ¢Âóà¢“°§Ğ

@@ -141,24 +141,44 @@ The current product also includes:
 - vendor contacts, purchase orders, and budgetary quotations;
 - MB-backed and direct GST invoices with configurable numbering, exact GST
   split and whole-rupee rounding, immutable supplier/buyer/ship-to snapshots,
-  render-ready document data, IRP payloads, and recorded IRP responses;
-- draft/generated/cancelled e-way-bill records with NIC payloads and recorded
-  NIC responses;
+  explicit NIC locality and forward-charge confirmation, deterministic IRP
+  payloads, and append-only downloadable PDF versions rendered from frozen
+  invoice facts, frozen branding, and append-only IRP evidence;
+- optional, operator-triggered Whitebooks B2B IRP registration, document-detail
+  lookup, and cancellation, with a durable provider-operation ledger and
+  explicit failed, unknown, and recovery states;
+- historical and compatibility e-way-bill records with exact external evidence,
+  cancellation handling, and manual evidence clearly labelled unverified;
 - optional contract-source PDFs accepted only after tender-number and
   name-of-work identity checks match their parent LOA.
 
-External GSP transport is not yet automatic. A locally submitted invoice is
-not presented as IRP-registered, and a draft e-way bill is not presented as
-generated, until an authenticated external response has been recorded.
+When Whitebooks is configured, IRP transport is direct but never unattended.
+Unknown registration results become lookup-only and are never blindly
+submitted again. Stale in-progress operations become unknown after their
+two-minute lease and require reconciliation. Manual registration evidence
+cannot overwrite a Whitebooks attempt.
+
+The current invoice model is one cumulative SAC service line. The UI does not
+offer fresh e-way-bill generation, and the provider-generation and NIC-payload
+endpoints reject it until goods/HSN delivery facts exist. Historical records
+remain readable and cancellable, and compatibility imports remain explicitly
+unverified.
+
+Reverse-charge liability is an explicit invoice fact rather than printed from
+a default. The current calculator supports forward charge only: submit requires
+the operator to confirm forward charge, refuses reverse charge, and preserves a
+missing historical value as unknown.
 
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not
   defined by current design-partner evidence;
-- provider-specific GSP transport until the Whitebooks adapter and production
-  credential controls are complete;
-- automatic filing without an operator-visible request, response, and audit
-  trail;
+- unattended or scheduled statutory filing, and blind replay of an uncertain
+  provider mutation;
+- fresh e-way-bill generation for cumulative SAC service invoices until a
+  goods/HSN dispatch model exists;
+- tenant-specific multi-GSTIN provider credential routing; the current adapter
+  is bound to one configured GSTIN and refuses a mismatch;
 - broad reporting;
 - mobile-native apps;
 - offline sync;

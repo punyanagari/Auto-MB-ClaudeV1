@@ -45,6 +45,8 @@ import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
+import type { StatutoryProvider } from './gsp/statutory-provider.js';
+import { createMutationOriginGuard } from './origin-guard.js';
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
@@ -54,6 +56,9 @@ export interface BuildAppOptions {
   readonly authSecret?: string;
   readonly baseUrl?: string;
   readonly trustedOrigins?: readonly string[];
+  /** Optional statutory transport. Credentials live inside the injected
+   * adapter and are never accepted by HTTP routes or persisted. */
+  readonly statutoryProvider?: StatutoryProvider;
   /** Root directory for uploaded objects (LOA PDFs). Defaults to
    * ./local-data/objects (gitignored); tests point it at a disposable
    * directory. */
@@ -238,6 +243,11 @@ export async function buildApp(
       (declaredStatusCode === null || declaredStatusCode >= 500) &&
       isDatabaseUnavailableError(error);
     const statusCode = databaseUnavailable ? 503 : (declaredStatusCode ?? 500);
+    const explicitlyPublic =
+      error instanceof Error &&
+      'expose' in error &&
+      error.expose === true &&
+      declaredStatusCode !== null;
     void reply.status(statusCode).send(
       databaseUnavailable
         ? {
@@ -246,7 +256,7 @@ export async function buildApp(
               'The database is temporarily unavailable. Nothing was saved. Try again.',
             requestId: request.id,
           }
-        : statusCode >= 500
+        : statusCode >= 500 && !explicitlyPublic
           ? {
               code: 'INTERNAL_ERROR',
               message: 'The request could not be completed.',
@@ -271,6 +281,13 @@ export async function buildApp(
             },
     );
   });
+
+  if (options.trustedOrigins !== undefined) {
+    const guardMutationOrigin = createMutationOriginGuard(options.trustedOrigins);
+    app.addHook('onRequest', (request) => {
+      guardMutationOrigin(request.method, request.headers.origin);
+    });
+  }
 
   if (options.metricsToken !== undefined) {
     const registry = createMetricsRegistry(
@@ -521,8 +538,20 @@ export async function buildApp(
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
     );
-    registerTaxInvoiceRoutes(app, authInstance, database);
-    registerEwayBillRoutes(app, authInstance, database);
+    registerTaxInvoiceRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      options.statutoryProvider,
+    );
+    registerEwayBillRoutes(
+      app,
+      authInstance,
+      database,
+      options.statutoryProvider,
+    );
     registerWorkCompletionRoutes(app, authInstance, database);
   }
 

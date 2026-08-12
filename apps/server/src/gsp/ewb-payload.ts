@@ -1,47 +1,23 @@
 /**
- * The canonical NIC e-way bill (EWB-01) generation JSON for a drafted
- * e-way bill and the submitted tax invoice it moves — what the GSP
- * carries to NIC verbatim. Like the IRP payload, nothing here computes
- * money: the values are the invoice's frozen SQL-numeric amounts,
- * re-serialised.
+ * Legacy standalone NIC EWB-01 payload builder.
  *
- * Mappings settled here and pinned by the golden payload test:
- *
- * - supplyType 'O' (outward) with subSupplyType '1' (Supply). NIC's
- *   sub-supply list has no works-contract entry; '3' is Export, which a
- *   domestic railway works contract never is. An invoice-backed works
- *   contract movement is an ordinary outward SUPPLY, so '1' — the
- *   service character of the supply lives in the SAC on the item line,
- *   not in the sub-supply code.
- * - docType 'INV' with the tax invoice's number and DD/MM/YYYY date.
- * - transactionType 1 (Regular): bill-to and ship-to are the same party
- *   in this model — the buyer snapshotted on the invoice.
- * - itemList has EXACTLY ONE line, the invoice's cumulative service
- *   line. The e-way bill carries RATES per line (not amounts): an
- *   intra-state movement splits the GST rate into equal CGST and SGST
- *   halves, an inter-state one carries it whole as IGST — the same
- *   decision the submit froze, read back off which tax amounts are
- *   non-zero-capable (igstAmount decides).
- * - The from/to pincodes are the MOVEMENT's own (the e-way bill row),
- *   which may differ from either party's registered address; the state
- *   codes are the parties' (seller profile, buyer snapshot), because
- *   NIC's act*StateCode wants the state the goods actually move
- *   between and the pincode is the finer fact we hold.
- * - transDistance goes as a string (the NIC sample shape); pincodes and
- *   state codes go as numbers.
- * - Road movements name vehicleNo; rail/air/ship name transDocNo and
- *   transDocDate. The route refuses to assemble a payload for a draft
- *   still missing its carriage — NIC would refuse it later and less
- *   legibly.
+ * The current invoice model is a cumulative service/SAC invoice, so direct
+ * production generation from this payload is deliberately gated by the route.
+ * The builder remains for historical records, sandbox contract testing, and a
+ * future goods/DC model. Exact statutory numbers never use Number().
  */
 
 import { formatNicDate } from './irp-payload.js';
+import {
+  exactJsonInteger,
+  exactJsonNumber,
+  type ExactJsonNumber,
+} from './statutory-json.js';
 
 const TRANS_MODES = { road: '1', rail: '2', air: '3', ship: '4' } as const;
 export type EwbTransportMode = keyof typeof TRANS_MODES;
 
 export interface EwbPartyInput {
-  /** null on the buyer side = unregistered: 'URP' on the wire. */
   gstin: string | null;
   tradeName: string;
   address: string;
@@ -51,11 +27,9 @@ export interface EwbPartyInput {
 
 export interface EwbInput {
   invoiceNumber: string;
-  /** Date-only YYYY-MM-DD. */
   invoiceDate: string;
   sacCode: string;
   serviceDescription: string;
-  /** The invoice's frozen numeric strings, verbatim. */
   gstRate: string;
   taxableValue: string;
   cgstAmount: string;
@@ -69,24 +43,35 @@ export interface EwbInput {
   transporterName: string | null;
   vehicleNumber: string | null;
   transportDocNumber: string | null;
-  /** Date-only YYYY-MM-DD, or null. */
   transportDocDate: string | null;
   distanceKm: number;
   fromPincode: string;
   toPincode: string;
 }
 
-/** Exact halving of a <=2dp rate string via scaled integers — the halves
- * NIC wants (9 from 18, 0.125 from 0.25) come out as clean JSON numbers
- * with no float arithmetic on the decimal itself. */
-function halveRate(rate: string): number {
-  const [whole = '0', fraction = ''] = rate.split('.');
-  const scaled = Number(whole + fraction.padEnd(2, '0').slice(0, 2));
-  return scaled / 200;
+function positiveDecimal(value: string): boolean {
+  // Anchored decimal grammar; input length is bounded by DB numeric columns.
+  // eslint-disable-next-line security/detect-unsafe-regex
+  const match = /^(?:0|([1-9][0-9]*))(?:\.([0-9]+))?$/.exec(value);
+  if (!match) throw new Error(`Invalid non-negative decimal: ${value}`);
+  return BigInt(match[1] ?? '0') > 0n || /[1-9]/.test(match[2] ?? '');
 }
 
-function toAmount(value: string): number {
-  return Number(value);
+/** Exact division of a <=2dp rate by two. 0.25 becomes 0.125. */
+function halfRate(rate: string): string {
+  // Anchored rate grammar with a maximum two-digit fractional part.
+  // eslint-disable-next-line security/detect-unsafe-regex
+  const match = /^(0|[1-9][0-9]*)(?:\.([0-9]{1,2}))?$/.exec(rate);
+  if (!match) throw new Error(`Invalid GST rate: ${rate}`);
+  const hundredths =
+    BigInt(match[1] ?? '0') * 100n + BigInt((match[2] ?? '').padEnd(2, '0'));
+  const thousandths = hundredths * 5n;
+  const whole = thousandths / 1000n;
+  const fraction = (thousandths % 1000n)
+    .toString()
+    .padStart(3, '0')
+    .replace(/0+$/, '');
+  return fraction === '' ? whole.toString() : `${whole}.${fraction}`;
 }
 
 export interface EwbPayload {
@@ -99,37 +84,37 @@ export interface EwbPayload {
   fromTrdName: string;
   fromAddr1: string;
   fromPlace: string;
-  fromPincode: number;
-  fromStateCode: number;
-  actFromStateCode: number;
+  fromPincode: ExactJsonNumber;
+  fromStateCode: ExactJsonNumber;
+  actFromStateCode: ExactJsonNumber;
   toGstin: string;
   toTrdName: string;
   toAddr1: string;
   toPlace: string;
-  toPincode: number;
-  toStateCode: number;
-  actToStateCode: number;
+  toPincode: ExactJsonNumber;
+  toStateCode: ExactJsonNumber;
+  actToStateCode: ExactJsonNumber;
   transactionType: 1;
   itemList: [
     {
       itemNo: 1;
       productDesc: string;
-      hsnCode: number;
-      quantity: 1;
+      hsnCode: ExactJsonNumber;
+      quantity: ExactJsonNumber;
       qtyUnit: 'OTH';
-      taxableAmount: number;
-      cgstRate: number;
-      sgstRate: number;
-      igstRate: number;
-      cessRate: 0;
+      taxableAmount: ExactJsonNumber;
+      cgstRate: ExactJsonNumber;
+      sgstRate: ExactJsonNumber;
+      igstRate: ExactJsonNumber;
+      cessRate: ExactJsonNumber;
     },
   ];
-  totalValue: number;
-  cgstValue: number;
-  sgstValue: number;
-  igstValue: number;
-  cessValue: 0;
-  totInvValue: number;
+  totalValue: ExactJsonNumber;
+  cgstValue: ExactJsonNumber;
+  sgstValue: ExactJsonNumber;
+  igstValue: ExactJsonNumber;
+  cessValue: ExactJsonNumber;
+  totInvValue: ExactJsonNumber;
   transMode: '1' | '2' | '3' | '4';
   transDistance: string;
   transporterId?: string;
@@ -140,12 +125,9 @@ export interface EwbPayload {
 }
 
 export function buildEwbPayload(input: EwbInput): EwbPayload {
-  // The submit froze the split, and the 0035 split-coherence CHECK pins
-  // its shape: IGST above zero IS the inter-state branch. (A nil-rated
-  // inter-state supply reads as intra here, but every rate on the line
-  // is zero then, so the emitted numbers are identical either way.)
-  const interState = toAmount(input.igstAmount) > 0;
-  const half = halveRate(input.gstRate);
+  const interState = positiveDecimal(input.igstAmount);
+  const half = exactJsonNumber(halfRate(input.gstRate));
+  const zero = exactJsonNumber('0');
   return {
     supplyType: 'O',
     subSupplyType: '1',
@@ -156,51 +138,49 @@ export function buildEwbPayload(input: EwbInput): EwbPayload {
     fromTrdName: input.seller.tradeName,
     fromAddr1: input.seller.address,
     fromPlace: input.seller.location,
-    fromPincode: Number(input.fromPincode),
-    fromStateCode: Number(input.seller.stateCode),
-    actFromStateCode: Number(input.seller.stateCode),
+    fromPincode: exactJsonInteger(input.fromPincode),
+    fromStateCode: exactJsonInteger(input.seller.stateCode),
+    actFromStateCode: exactJsonInteger(input.seller.stateCode),
     toGstin: input.buyer.gstin ?? 'URP',
     toTrdName: input.buyer.tradeName,
     toAddr1: input.buyer.address,
     toPlace: input.buyer.location,
-    toPincode: Number(input.toPincode),
-    toStateCode: Number(input.buyer.stateCode),
-    actToStateCode: Number(input.buyer.stateCode),
+    toPincode: exactJsonInteger(input.toPincode),
+    toStateCode: exactJsonInteger(input.buyer.stateCode),
+    actToStateCode: exactJsonInteger(input.buyer.stateCode),
     transactionType: 1,
     itemList: [
       {
         itemNo: 1,
         productDesc: input.serviceDescription,
-        hsnCode: Number(input.sacCode),
-        quantity: 1,
+        hsnCode: exactJsonInteger(input.sacCode),
+        quantity: exactJsonNumber('1'),
         qtyUnit: 'OTH',
-        taxableAmount: toAmount(input.taxableValue),
-        cgstRate: interState ? 0 : half,
-        sgstRate: interState ? 0 : half,
-        igstRate: interState ? toAmount(input.gstRate) : 0,
-        cessRate: 0,
+        taxableAmount: exactJsonNumber(input.taxableValue),
+        cgstRate: interState ? zero : half,
+        sgstRate: interState ? zero : half,
+        igstRate: interState ? exactJsonNumber(input.gstRate) : zero,
+        cessRate: zero,
       },
     ],
-    totalValue: toAmount(input.taxableValue),
-    cgstValue: toAmount(input.cgstAmount),
-    sgstValue: toAmount(input.sgstAmount),
-    igstValue: toAmount(input.igstAmount),
-    cessValue: 0,
-    totInvValue: toAmount(input.totalAmount),
+    totalValue: exactJsonNumber(input.taxableValue),
+    cgstValue: exactJsonNumber(input.cgstAmount),
+    sgstValue: exactJsonNumber(input.sgstAmount),
+    igstValue: exactJsonNumber(input.igstAmount),
+    cessValue: zero,
+    totInvValue: exactJsonNumber(input.totalAmount),
     transMode: TRANS_MODES[input.transportMode],
     transDistance: String(input.distanceKm),
-    ...(input.transporterId !== null ? { transporterId: input.transporterId } : {}),
-    ...(input.transporterName !== null
-      ? { transporterName: input.transporterName }
-      : {}),
+    ...(input.transporterId === null ? {} : { transporterId: input.transporterId }),
+    ...(input.transporterName === null
+      ? {}
+      : { transporterName: input.transporterName }),
     ...(input.transportMode === 'road'
       ? { vehicleNo: input.vehicleNumber ?? '' }
       : {
           transDocNo: input.transportDocNumber ?? '',
           transDocDate:
-            input.transportDocDate === null
-              ? ''
-              : formatNicDate(input.transportDocDate),
+            input.transportDocDate === null ? '' : formatNicDate(input.transportDocDate),
         }),
   };
 }

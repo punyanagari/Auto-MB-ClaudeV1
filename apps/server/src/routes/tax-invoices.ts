@@ -1,34 +1,49 @@
 import {
   ApiErrorSchema,
+  CancelStatutoryDocumentRequestSchema,
   CancelTaxInvoiceRequestSchema,
   CreateDirectTaxInvoiceRequestSchema,
   CreateTaxInvoiceRequestSchema,
   RecordIrpResponseRequestSchema,
+  RecordManualStatutoryCancellationRequestSchema,
   TaxInvoiceDetailResponseSchema,
   TaxInvoiceListResponseSchema,
   UpdateTaxInvoiceRequestSchema,
   type CancelTaxInvoiceRequest,
+  type CancelStatutoryDocumentRequest,
   type CreateDirectTaxInvoiceRequest,
   type CreateTaxInvoiceRequest,
   type RecordIrpResponseRequest,
+  type RecordManualStatutoryCancellationRequest,
+  type IrpProviderState,
   type TaxInvoice,
   type TaxInvoiceDetailResponse,
   type TaxInvoiceStatus,
   type UpdateTaxInvoiceRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
+import { amountInWords } from '../amount-in-words.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
+import { stringifyStatutoryJson } from '../gsp/statutory-json.js';
 import {
-  buildIrpPayload,
-  extractLocation,
-  extractPincode,
-} from '../gsp/irp-payload.js';
+  finishStatutoryOperation,
+  providerFailure,
+  recoverStaleStatutoryOperation,
+  sha256Hex,
+  startStatutoryOperation,
+} from '../gsp/provider-operations.js';
+import type {
+  IrpDocumentIdentity,
+  IrpRegistrationEvidence,
+  StatutoryProvider,
+} from '../gsp/statutory-provider.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -37,6 +52,18 @@ import {
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
+import type { ObjectStorage } from '../storage.js';
+import {
+  renderTaxInvoiceHtml,
+  TAX_INVOICE_PDF_TEMPLATE_VERSION,
+  type TaxInvoiceIrpRenderEvidence,
+} from '../tax-invoice-html.js';
+import {
+  buildFrozenIrpPayload,
+  EInvoiceB2cUnsupportedError,
+  parseTaxInvoiceIssuedSnapshot,
+  TaxInvoiceSnapshotError,
+} from '../tax-invoice-snapshot.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
 
@@ -64,22 +91,13 @@ import { cancellationNote } from './challans.js';
  *   installations, MBs); the invoice bills measurement that is already
  *   frozen, and billing legitimately outlives completion â€” the bill
  *   preparation route (measurement-books.ts) takes the same view.
- * - No not-in-the-future date guard. The invoice date is a filing fact
- *   at the operator's discretion: a 31 March invoice is routinely
- *   recorded in April, and the financial-year counter must accept
- *   either side of the boundary. What IS refused is an invoice dated
- *   before the Measurement Book it bills â€” billing cannot precede
- *   measurement (and the MB date already floors at the LOA letter
- *   date).
+ * - Invoice dates are organisation-local calendar facts. A delayed entry may
+ *   record a past date across a financial-year boundary, but never a future
+ *   date; an MB-backed invoice also cannot predate the Measurement Book.
  *
- * THE DRAFT'S BUYER LIVES IN THE AUDIT TRAIL. 0035 gives the invoice row
- * no buyer_contact_id column, and the draft-shape CHECK keeps
- * buyer_snapshot NULL until submit â€” so the buyer chosen while drafting
- * is carried by the created/updated audit events' `buyerContactId`
- * detail, exactly the way the MB merge carries its un-merge provenance.
- * The read model resolves it from the snapshot once submitted and from
- * the newest audit event while draft; both writers of a draft ALWAYS
- * record the field, so a hole is corruption, not user error.
+ * 0041 stores the draft buyer in the constrained buyer_contact_id business
+ * column. Submit resolves and freezes the buyer snapshot; audit events prove
+ * the change but are never operational state.
  */
 
 const errorResponses = {
@@ -88,6 +106,7 @@ const errorResponses = {
   403: ApiErrorSchema,
   404: ApiErrorSchema,
   409: ApiErrorSchema,
+  502: ApiErrorSchema,
 } as const;
 
 const IdParamsSchema = Type.Object(
@@ -98,6 +117,44 @@ const IdParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+const PDF_MAGIC = Buffer.from('%PDF-');
+const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
+const TAX_INVOICE_RENDER_TIMEOUT_MS = 45_000;
+
+async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
+  const declaredLength = Number(response.headers.get('content-length') ?? '0');
+  if (
+    (Number.isFinite(declaredLength) && declaredLength > MAX_RENDERED_PDF_BYTES) ||
+    declaredLength < 0
+  ) {
+    throw new Error('Gotenberg response exceeds the PDF size limit');
+  }
+  if (response.body === null) throw new Error('Gotenberg response has no body');
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value === undefined) continue;
+    total += value.byteLength;
+    if (total > MAX_RENDERED_PDF_BYTES) {
+      await reader.cancel('PDF size limit exceeded');
+      throw new Error('Gotenberg response exceeds the PDF size limit');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  const pdf = Buffer.concat(chunks, total);
+  if (
+    pdf.length < PDF_MAGIC.length ||
+    !pdf.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)
+  ) {
+    throw new Error('Gotenberg response is not an accepted PDF');
+  }
+  return pdf;
+}
 
 // --- Row shapes -------------------------------------------------------------
 
@@ -115,7 +172,8 @@ interface InvoiceRow {
   service_description: string;
   gst_rate: string;
   place_of_supply: string;
-  buyer_contact_id: string | null;
+  reverse_charge_applicable: boolean | null;
+  buyer_contact_id: string;
   taxable_value: string | null;
   cgst_amount: string | null;
   sgst_amount: string | null;
@@ -135,6 +193,15 @@ interface InvoiceRow {
   ship_to_contact_id: string | null;
   number_prefix: string | null;
   ack_date_text: string | null;
+  irp_provider: 'manual' | 'whitebooks' | null;
+  irp_provider_state: IrpProviderState;
+  signed_invoice_available: boolean;
+  rendered_object_key: string | null;
+  irp_legacy_evidence_missing: boolean;
+  irp_cancelled_at: Date | null;
+  irp_cancelled_at_text: string | null;
+  irp_cancel_reason_code: string | null;
+  irp_cancel_remark: string | null;
   /** A DIRECT invoice's taxable value â€” the one raised against a private
    * customer, which has no Measurement Book to take a total from.
    * Exactly one of this and measurement_book_id is ever set (0039). */
@@ -154,14 +221,8 @@ const TI_COLUMNS = `
   ti.status, ti.invoice_number, ti.sequence_number, ti.fy_label,
   ti.invoice_date::text as invoice_date, ti.sac_code, ti.service_description,
   ti.gst_rate::text as gst_rate, ti.place_of_supply,
-  coalesce(
-    ti.buyer_snapshot->>'contactId',
-    (select ae.details->>'buyerContactId' from audit_events ae
-      where ae.entity_type = 'tax_invoices' and ae.entity_id = ti.id
-        and ae.details ? 'buyerContactId'
-      order by ae.occurred_at desc, ae.id desc
-      limit 1)
-  ) as buyer_contact_id,
+  ti.reverse_charge_applicable,
+  ti.buyer_contact_id,
   ti.taxable_value::text as taxable_value, ti.cgst_amount::text as cgst_amount,
   ti.sgst_amount::text as sgst_amount, ti.igst_amount::text as igst_amount,
   ti.round_off::text as round_off, ti.total_amount::text as total_amount,
@@ -169,6 +230,11 @@ const TI_COLUMNS = `
     ::numeric(18,2)::text as line_value,
   ti.customer_po_reference, ti.unit_label, ti.notes, ti.ship_to_contact_id,
   ti.number_prefix, ti.ack_date_text,
+  ti.irp_provider, ti.irp_provider_state,
+  (ti.signed_invoice is not null) as signed_invoice_available,
+  ti.rendered_object_key,
+  ti.irp_legacy_evidence_missing, ti.irp_cancelled_at,
+  ti.irp_cancelled_at_text, ti.irp_cancel_reason_code, ti.irp_cancel_remark,
   ti.stated_taxable_value::text as stated_taxable_value,
   ti.irn, ti.ack_number, ti.ack_date, ti.cancellation_note,
   ti.created_at, ti.submitted_at, ti.cancelled_at
@@ -197,6 +263,7 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     serviceDescription: row.service_description,
     gstRate: row.gst_rate,
     placeOfSupply: row.place_of_supply,
+    reverseChargeApplicable: row.reverse_charge_applicable,
     buyerContactId: row.buyer_contact_id,
     taxableValue: row.taxable_value,
     cgstAmount: row.cgst_amount,
@@ -210,9 +277,18 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     shipToContactId: row.ship_to_contact_id,
     numberPrefix: row.number_prefix,
     irn: row.irn,
+    irpProvider: row.irp_provider,
+    irpProviderState: row.irp_provider_state,
     ackNumber: row.ack_number,
     ackDate: row.ack_date?.toISOString() ?? null,
     ackDateText: row.ack_date_text,
+    signedInvoiceAvailable: row.signed_invoice_available,
+    renderedAvailable: row.rendered_object_key !== null,
+    irpLegacyEvidenceMissing: row.irp_legacy_evidence_missing,
+    irpCancelledAt: row.irp_cancelled_at?.toISOString() ?? null,
+    irpCancelledAtText: row.irp_cancelled_at_text,
+    irpCancelReasonCode: row.irp_cancel_reason_code,
+    irpCancelRemark: row.irp_cancel_remark,
     cancellationNote: row.cancellation_note,
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
@@ -304,6 +380,7 @@ interface BuyerRow {
   gstin: string | null;
   pincode: string | null;
   state_code: string | null;
+  locality: string | null;
   division_code: string | null;
   active: boolean;
 }
@@ -316,1130 +393,5 @@ interface BuyerRow {
 async function requireBuyer(tx: TransactionSql, contactId: string): Promise<BuyerRow> {
   const [row] = await tx<BuyerRow[]>`
     select id, designation, contact_person, address, gstin, pincode,
-           state_code, division_code, active
-    from contacts where id = ${contactId}
-  `;
-  if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
-  if (!row.active) {
-    throw httpError(
-      409,
-      'CONTACT_RETIRED',
-      'This buyer contact is retired â€” reactivate it or pick another.',
-    );
-  }
-  return row;
-}
-
-/** The ship-to contact, resolved the same way and refused for the same
- * reasons â€” a retired consignee is as wrong to deliver to as it is to
- * bill. Named separately so its refusals say which of the two parties is
- * at fault. */
-/** A direct invoice belongs to no Work, so there is no Work-scope check
- * to make â€” RLS and the organisation header already bound it. An
- * MB-backed one is checked exactly as before. */
-async function assertInvoiceWorkAccess(
-  tx: TransactionSql,
-  userId: string,
-  workId: string | null,
-): Promise<void> {
-  if (workId === null) return;
-  await assertWorkAccess(tx, userId, workId);
-}
-
-async function requireShipTo(tx: TransactionSql, contactId: string): Promise<BuyerRow> {
-  const [row] = await tx<BuyerRow[]>`
-    select id, designation, contact_person, address, gstin, pincode,
-           state_code, division_code, active
-    from contacts where id = ${contactId}
-  `;
-  if (!row) {
-    throw httpError(404, 'SHIP_TO_NOT_FOUND', 'No such ship-to contact.');
-  }
-  if (!row.active) {
-    throw httpError(
-      409,
-      'SHIP_TO_RETIRED',
-      'This ship-to contact is retired â€” reactivate it or pick another.',
-    );
-  }
-  return row;
-}
-
-interface InvoiceableBook {
-  id: string;
-  work_id: string;
-  status: string;
-  kind: string;
-  mb_date: string;
-  mb_number: string | null;
-  total_amount: string | null;
-}
-
-/** Row-locks the Measurement Book (serialising against its cancel) and
- * holds it to the rule the 0035 insert trigger backstops: a finalized,
- * non-record MB of THIS Work. Another Work's or tenant's MB answers
- * exactly like an unknown id. */
-async function lockInvoiceableBook(
-  tx: TransactionSql,
-  workId: string,
-  measurementBookId: string,
-): Promise<InvoiceableBook> {
-  const [book] = await tx<InvoiceableBook[]>`
-    select id, work_id, status, kind, mb_date::text as mb_date, mb_number,
-           total_amount::text as total_amount
-    from measurement_books
-    where id = ${measurementBookId}
-    for update
-  `;
-  if (!book || book.work_id !== workId) {
-    throw httpError(
-      404,
-      'MEASUREMENT_BOOK_NOT_FOUND',
-      'No such Measurement Book in this Work.',
-    );
-  }
-  if (book.kind === 'record') {
-    throw httpError(
-      409,
-      'MB_RECORD_NOT_BILLABLE',
-      'Record Measurement Books are never invoiced â€” merge them into an on-account Measurement Book, finalize it, and invoice that.',
-    );
-  }
-  if (book.status !== 'finalized') {
-    throw httpError(
-      409,
-      'MB_NOT_FINALIZED',
-      `Only a finalized Measurement Book can be invoiced (current status: ${book.status}).`,
-    );
-  }
-  return book;
-}
-
-/** The template this route freezes into issued_snapshot. Bumping it is
- * how a document change becomes visible: an invoice re-renders from the
- * snapshot it was issued under, never from today's template. */
-export const TAX_INVOICE_TEMPLATE_VERSION = 'ti-v1';
-
-/** The unit word when the invoice does not name one. A works-contract
- * invoice bills one whole thing, and 'set' is what the trade writes. */
-const DEFAULT_UNIT_LABEL = 'set';
-
-/** The optional document fields a draft may carry, trimmed to what the
- * columns hold. An omitted field stores NULL â€” these are the invoice's
- * own text, not a PATCH surface, because create and update share one
- * whole-object shape. */
-function documentFields(body: CreateTaxInvoiceRequest | UpdateTaxInvoiceRequest): {
-  customerPoReference: string | null;
-  unitLabel: string | null;
-  notes: string | null;
-  shipToContactId: string | null;
-  numberPrefix: string | null;
-} {
-  return {
-    customerPoReference: body.customerPoReference?.trim() ?? null,
-    unitLabel: body.unitLabel?.trim() ?? null,
-    notes: body.notes?.trim() ?? null,
-    shipToContactId: body.shipToContactId ?? null,
-    numberPrefix: body.numberPrefix ?? null,
-  };
-}
-
-/** Billing cannot precede measurement: the invoice date floors at the
- * billed MB's date. (There is deliberately no not-in-the-future bound â€”
- * see the module note.) */
-function assertInvoiceDate(invoiceDate: string, book: InvoiceableBook): void {
-  // ISO dates compare correctly as strings.
-  if (invoiceDate < book.mb_date) {
-    throw httpError(
-      400,
-      'TAX_INVOICE_DATE_BEFORE_MB',
-      `The invoice date cannot precede Measurement Book ${book.mb_number ?? book.id}, dated ${book.mb_date}.`,
-    );
-  }
-}
-
-/** The friendly half of the 0035 one-live-invoice-per-MB rule: names the
- * live invoice so the client can open it (the partial unique index
- * decides races). */
-async function assertBookUninvoiced(
-  tx: TransactionSql,
-  measurementBookId: string,
-): Promise<void> {
-  const [live] = await tx<{ id: string; invoice_number: string | null }[]>`
-    select id, invoice_number from tax_invoices
-    where measurement_book_id = ${measurementBookId} and status <> 'cancelled'
-  `;
-  if (live) {
-    throw draftConflictError(
-      'TAX_INVOICE_EXISTS',
-      `This Measurement Book already has a live tax invoice${live.invoice_number === null ? '' : ` (${live.invoice_number})`}; cancel or delete it before raising another.`,
-      live.id,
-    );
-  }
-}
-
-async function auditInvoice(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  invoiceId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'tax_invoices', ${invoiceId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
-// --- Routes -----------------------------------------------------------------
-
-export function registerTaxInvoiceRoutes(
-  app: FastifyInstance,
-  auth: Auth,
-  database: Sql,
-): void {
-  app.get(
-    '/api/works/:id/tax-invoices',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 200: TaxInvoiceListResponseSchema, ...errorResponses },
-      },
-    },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<{ id: string }[]>`
-            select id from works where id = ${workId} and deleted_at is null
-          `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          return (await tx.unsafe(
-            `select ${TI_COLUMNS} ${TI_FROM}
-             where ti.work_id = $1
-             order by ti.created_at desc, ti.id`,
-            [workId],
-          )) as unknown as InvoiceRow[];
-        },
-      );
-      return { invoices: rows.map(toInvoice) };
-    },
-  );
-
-  app.post(
-    '/api/works/:id/tax-invoices',
-    {
-      schema: {
-        params: IdParamsSchema,
-        body: CreateTaxInvoiceRequestSchema,
-        response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CreateTaxInvoiceRequest;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
-      const document = documentFields(body);
-
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
-          assertInvoiceDate(body.invoiceDate, book);
-          await requireBuyer(tx, body.buyerContactId);
-          await assertBookUninvoiced(tx, book.id);
-
-          const [created] = await tx<{ id: string }[]>`
-            insert into tax_invoices (
-              organisation_id, work_id, measurement_book_id, invoice_date,
-              sac_code, service_description, gst_rate, place_of_supply,
-              customer_po_reference, unit_label, notes, ship_to_contact_id,
-              number_prefix, created_by_user_id
-            )
-            values (
-              ${organisationId}, ${workId}, ${body.measurementBookId},
-              ${body.invoiceDate}, ${body.sacCode}, ${serviceDescription},
-              ${body.gstRate}, ${body.placeOfSupply},
-              ${document.customerPoReference}, ${document.unitLabel},
-              ${document.notes}, ${document.shipToContactId},
-              ${document.numberPrefix}, ${user.id}
-            )
-            returning id
-          `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              // A concurrent create won the one-live-per-MB index race;
-              // the transaction is aborted, so the route-level catch
-              // names the winner from a fresh read.
-              throw httpError(
-                409,
-                'TAX_INVOICE_EXISTS',
-                'This Measurement Book already has a live tax invoice; cancel or delete it before raising another.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('tax invoice insert returned no row');
-
-          // `buyerContactId` in the details is the draft's buyer store â€”
-          // see the module note. Always written, never diffed away.
-          await auditInvoice(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.created',
-            created.id,
-            {
-              workId,
-              measurementBookId: body.measurementBookId,
-              mbNumber: book?.mb_number ?? null,
-              buyerContactId: body.buyerContactId,
-              invoiceDate: body.invoiceDate,
-              sacCode: body.sacCode,
-              gstRate: body.gstRate,
-              placeOfSupply: body.placeOfSupply,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      ).catch(async (error: unknown) => {
-        throw await nameDraftConflict(error, 'TAX_INVOICE_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
-            const [row] = await tx<{ id: string }[]>`
-              select id from tax_invoices
-              where measurement_book_id = ${body.measurementBookId}
-                and status <> 'cancelled'
-            `;
-            return row?.id ?? null;
-          }),
-        );
-      });
-      return reply.status(201).send(detail);
-    },
-  );
-
-  // A DIRECT invoice: no Work, no Measurement Book, a stated taxable
-  // value. Everything downstream â€” submit, the number, the GST split,
-  // the IRP payload, the e-way bill â€” is the same code path, because the
-  // only thing that differs is where the taxable value came from.
-  app.post(
-    '/api/tax-invoices',
-    {
-      schema: {
-        body: CreateDirectTaxInvoiceRequestSchema,
-        response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as CreateDirectTaxInvoiceRequest;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
-      const document = documentFields(body);
-
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await requireBuyer(tx, body.buyerContactId);
-          const [created] = await tx<{ id: string }[]>`
-            insert into tax_invoices (
-              organisation_id, invoice_date, sac_code, service_description,
-              gst_rate, place_of_supply, stated_taxable_value,
-              customer_po_reference, unit_label, notes, ship_to_contact_id,
-              number_prefix, created_by_user_id
-            )
-            values (
-              ${organisationId}, ${body.invoiceDate}, ${body.sacCode},
-              ${serviceDescription}, ${body.gstRate}, ${body.placeOfSupply},
-              ${body.taxableValue},
-              ${document.customerPoReference}, ${document.unitLabel},
-              ${document.notes}, ${document.shipToContactId},
-              ${document.numberPrefix}, ${user.id}
-            )
-            returning id
-          `;
-          if (!created) throw new Error('direct tax invoice insert returned no row');
-          await auditInvoice(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.created',
-            created.id,
-            {
-              direct: true,
-              taxableValue: body.taxableValue,
-              buyerContactId: body.buyerContactId,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      );
-      return reply.code(201).send(detail);
-    },
-  );
-
-  app.get(
-    '/api/tax-invoices/:id',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        const [ref] = await tx<{ work_id: string }[]>`
-          select work_id from tax_invoices where id = ${id}
-        `;
-        if (!ref) throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-        await assertWorkAccess(tx, user.id, ref.work_id);
-        return readDetail(tx, id);
-      });
-    },
-  );
-
-  app.put(
-    '/api/tax-invoices/:id',
-    {
-      schema: {
-        params: IdParamsSchema,
-        body: UpdateTaxInvoiceRequestSchema,
-        response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateTaxInvoiceRequest;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
-      const document = documentFields(body);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
-        const invoice = await lockInvoice(tx, id);
-        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-        requireStatus(invoice, 'draft');
-        // Billing cannot precede measurement â€” but only where there IS
-        // measurement. A direct invoice has no Measurement Book to floor
-        // its date against.
-        if (invoice.work_id !== null && invoice.measurement_book_id !== null) {
-          const book = await lockInvoiceableBook(
-            tx,
-            invoice.work_id,
-            invoice.measurement_book_id,
-          );
-          assertInvoiceDate(body.invoiceDate, book);
-        }
-        await requireBuyer(tx, body.buyerContactId);
-        await tx`
-          update tax_invoices
-          set invoice_date = ${body.invoiceDate}, sac_code = ${body.sacCode},
-              service_description = ${serviceDescription},
-              gst_rate = ${body.gstRate}, place_of_supply = ${body.placeOfSupply},
-              customer_po_reference = ${document.customerPoReference},
-              unit_label = ${document.unitLabel}, notes = ${document.notes},
-              ship_to_contact_id = ${document.shipToContactId},
-              number_prefix = ${document.numberPrefix}
-          where id = ${id}
-        `;
-        // The after-side re-reads the stored row so numbers compare in
-        // their normalised numeric text ('18' arrives, '18.00' is what
-        // the row â€” and therefore the trail â€” says).
-        const [stored] = await tx<
-          {
-            invoice_date: string;
-            sac_code: string;
-            service_description: string;
-            gst_rate: string;
-            place_of_supply: string;
-          }[]
-        >`
-          select invoice_date::text as invoice_date, sac_code,
-                 service_description, gst_rate::text as gst_rate,
-                 place_of_supply
-          from tax_invoices where id = ${id}
-        `;
-        if (!stored) throw new Error('tax invoice vanished mid-update');
-        const changes = auditDiff(
-          {
-            invoiceDate: invoice.invoice_date,
-            sacCode: invoice.sac_code,
-            serviceDescription: invoice.service_description,
-            gstRate: invoice.gst_rate,
-            placeOfSupply: invoice.place_of_supply,
-            buyerContactId: invoice.buyer_contact_id,
-          },
-          {
-            invoiceDate: stored.invoice_date,
-            sacCode: stored.sac_code,
-            serviceDescription: stored.service_description,
-            gstRate: stored.gst_rate,
-            placeOfSupply: stored.place_of_supply,
-            buyerContactId: body.buyerContactId,
-          },
-        );
-        // buyerContactId rides top-level on EVERY update event â€” it is
-        // the draft's buyer store, not a diff (see the module note).
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.updated', id, {
-          before: changes.before,
-          after: changes.after,
-          buyerContactId: body.buyerContactId,
-        });
-        return readDetail(tx, id);
-      });
-    },
-  );
-
-  app.delete(
-    '/api/tax-invoices/:id',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 204: Type.Null(), ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
-        const invoice = await lockInvoice(tx, id);
-        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-        // Rule 8: a draft is not yet a document, so it deletes â€” which
-        // also releases the MB it would have billed (the one-live index
-        // and the 0035 MB-cancel guard both stop seeing it).
-        requireStatus(invoice, 'draft');
-        await tx`delete from tax_invoices where id = ${id}`;
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.deleted', id, {
-          workId: invoice.work_id,
-          measurementBookId: invoice.measurement_book_id,
-        });
-      });
-      return reply.status(204).send();
-    },
-  );
-
-  app.post(
-    '/api/tax-invoices/:id/submit',
-    {
-      schema: {
-        params: IdParamsSchema,
-        response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Submitting assigns a legal number and freezes money: issue
-          // authority, like challan issue and MB finalize.
-          await requireAuthority(tx, user.id, 'issue');
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          requireStatus(invoice, 'draft');
-
-          // The split is decided by the organisation's state against the
-          // place of supply; without a state it is undecidable, and the
-          // IRP payload cannot name a seller without a GSTIN. Refused
-          // here, not at draft time â€” the profile may well be completed
-          // between drafting and the money moment.
-          const [organisation] = await tx<
-            {
-              name: string;
-              state_code: string | null;
-              gstin: string | null;
-              address: string | null;
-              pincode: string | null;
-              trade_name: string | null;
-              msme_number: string | null;
-              contact_phone: string | null;
-              invoice_number_prefix: string | null;
-              invoice_notes: string | null;
-            }[]
-          >`
-            select name, state_code, gstin, address, pincode, trade_name,
-                   msme_number, contact_phone, invoice_number_prefix,
-                   invoice_notes
-            from organisations
-          `;
-          if (!organisation?.state_code) {
-            throw httpError(
-              400,
-              'ORG_STATE_REQUIRED',
-              'The organisation profile has no GST state code, so the CGST+SGST/IGST split is undecidable â€” set it and retry.',
-            );
-          }
-          if (!organisation.gstin) {
-            throw httpError(
-              400,
-              'ORG_GSTIN_REQUIRED',
-              'The organisation profile has no GSTIN â€” the e-invoice names the seller by it. Set it and retry.',
-            );
-          }
-
-          // The draft's buyer, resolved from the audit-trail store. The
-          // create/update writers always record it, so a hole here is
-          // corruption, not user error.
-          if (invoice.buyer_contact_id === null) {
-            throw new Error(
-              `tax invoice ${id} has no buyerContactId in its audit trail`,
-            );
-          }
-          const buyer = await requireBuyer(tx, invoice.buyer_contact_id);
-          const missing = [
-            ...(buyer.address === null ? ['address'] : []),
-            ...(buyer.state_code === null ? ['stateCode'] : []),
-            ...(buyer.pincode === null ? ['pincode'] : []),
-          ];
-          if (missing.length > 0) {
-            throw httpError(
-              400,
-              'BUYER_PROFILE_INCOMPLETE',
-              `The buyer contact is missing ${missing.join(', ')} â€” the invoice snapshot and the e-invoice payload need them. Complete the contact and retry.`,
-            );
-          }
-
-          // A DIRECT invoice â€” one raised against a private customer â€”
-          // names no Measurement Book, so there is nothing to lock and
-          // the taxable value is the one stated on the draft. An
-          // MB-backed invoice locks its book (serialising against a
-          // cancel the trigger would refuse anyway) and takes the MB
-          // total VERBATIM. The 0039 CHECK guarantees exactly one of the
-          // two is present, so this is a real either/or, not a fallback.
-          const book =
-            invoice.measurement_book_id === null || invoice.work_id === null
-              ? null
-              : await lockInvoiceableBook(
-                  tx,
-                  invoice.work_id,
-                  invoice.measurement_book_id,
-                );
-          if (book !== null && book.total_amount === null) {
-            throw new Error(`finalized Measurement Book ${book.id} has no total`);
-          }
-          const taxableValue = book?.total_amount ?? invoice.stated_taxable_value;
-          if (taxableValue === null) {
-            throw new Error(
-              `tax invoice ${id} has neither an MB total nor a stated value`,
-            );
-          }
-
-          // Gapless per (organisation, financial year) under the counter
-          // row lock: concurrent submits serialise here, and a rolled-
-          // back transaction rolls the number back with it.
-          const fyLabel = financialYearLabel(invoice.invoice_date);
-          // The number is COMPOSED, not templated: the owner's series is
-          // a prefix, the financial year's opening year, and one gapless
-          // serial per year SHARED across every prefix â€” P10 26 044 and
-          // P14 26 048 are the 44th and 48th invoices of 2026-27 under
-          // two prefixes. The invoice's own prefix wins over the house
-          // default; neither present is a refusal rather than a guess,
-          // because inventing a series would put a number on a legal
-          // document that the owner's books do not recognise.
-          const prefix = invoice.number_prefix ?? organisation.invoice_number_prefix;
-          const template = await loadNumberTemplate(tx, 'tax_invoice');
-          const [counter] = await tx<{ next_value: number }[]>`
-            insert into tax_invoice_counters (organisation_id, fy_label)
-            values (${organisationId}, ${fyLabel})
-            on conflict (organisation_id, fy_label)
-            do update set next_value = tax_invoice_counters.next_value + 1
-            returning next_value
-          `;
-          if (!counter) throw new Error('tax invoice counter upsert returned no row');
-          const sequence = counter.next_value;
-          // The organisation's own format. The default is TI/<FY>/NNN;
-          // an organisation whose series names a division ({DIV}) draws
-          // it from the BUYER, which is why a buyer with no division
-          // code is a named refusal rather than a number with a hole.
-          let invoiceNumber: string;
-          try {
-            invoiceNumber = renderNumberTemplate(template, {
-              prefix,
-              divisionCode: buyer.division_code,
-              financialYear: fyLabel,
-              documentDate: invoice.invoice_date,
-              sequence,
-            });
-          } catch (cause) {
-            if (cause instanceof NumberTemplateError) {
-              throw httpError(400, 'INVOICE_NUMBER_UNFILLABLE', cause.message);
-            }
-            throw cause;
-          }
-
-          // THE MONEY, entirely in SQL numeric arithmetic: taxable is the
-          // MB total verbatim; intra-state (organisation state = place of
-          // supply) splits into equal CGST and SGST halves of
-          // round(taxable*rate/200, 2); inter-state carries
-          // round(taxable*rate/100, 2) as IGST. The total re-adds the
-          // rounded parts, so what is charged is exactly what the parts
-          // say.
-          const intraState = organisation.state_code === invoice.place_of_supply;
-          const [money] = await tx<
-            {
-              taxable: string;
-              cgst: string;
-              sgst: string;
-              igst: string;
-              total: string;
-              round_off: string;
-            }[]
-          >`
-            with base as (
-              select ${taxableValue}::numeric(18,2) as taxable,
-                     case when ${intraState}
-                       then round(${taxableValue}::numeric(18,2)
-                              * ${invoice.gst_rate}::numeric / 200, 2)
-                       else 0 end::numeric(18,2) as half,
-                     case when ${intraState}
-                       then 0
-                       else round(${taxableValue}::numeric(18,2)
-                              * ${invoice.gst_rate}::numeric / 100, 2)
-                       end::numeric(18,2) as igst
-            )
-            select taxable::text as taxable, half::text as cgst, half::text as sgst,
-                   igst::text as igst,
-                   -- The invoice is payable in whole rupees, so the total
-                   -- is rounded and the delta is kept and printed. Both
-                   -- in SQL numeric: 4226994.01 + 380429.46 + 380429.46 =
-                   -- 4987852.93 becomes 4987853 with a round_off of 0.07,
-                   -- which is exactly what the customer's own invoice
-                   -- says.
-                   round(taxable + half + half + igst, 0)::numeric(18,2)::text
-                     as total,
-                   (round(taxable + half + half + igst, 0)
-                     - (taxable + half + half + igst))::numeric(18,2)::text
-                     as round_off
-            from base
-          `;
-          if (!money) throw new Error('tax computation returned no row');
-
-          // The buyer exactly as invoiced, frozen so master edits never
-          // rewrite the document (rule 7). contactId makes the read
-          // model's provenance resolution total.
-          const buyerSnapshot = {
-            contactId: buyer.id,
-            designation: buyer.designation,
-            contactPerson: buyer.contact_person,
-            gstin: buyer.gstin,
-            address: buyer.address,
-            stateCode: buyer.state_code,
-            pincode: buyer.pincode,
-          };
-
-          // The ship-to, when one was named. Same freeze as the buyer,
-          // and deliberately NOT a copy of it: the delivered-to block on
-          // a real invoice drops the GSTIN the billed-to block carries,
-          // so repeating the buyer would print a GSTIN the document
-          // means to leave off.
-          const shipTo =
-            invoice.ship_to_contact_id === null
-              ? null
-              : await requireShipTo(tx, invoice.ship_to_contact_id);
-          const shipToSnapshot =
-            shipTo === null
-              ? null
-              : {
-                  contactId: shipTo.id,
-                  designation: shipTo.designation,
-                  contactPerson: shipTo.contact_person,
-                  address: shipTo.address,
-                  stateCode: shipTo.state_code,
-                  pincode: shipTo.pincode,
-                };
-
-          // THE DOCUMENT, frozen. Everything the printed invoice says
-          // about parties and money, captured at the one moment it
-          // becomes legal â€” so correcting the company address in
-          // Settings tomorrow cannot rewrite the masthead of an invoice
-          // the Government has already registered. A re-render
-          // REPRODUCES this; it never recomputes from live tables.
-          const issuedSnapshot = {
-            templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
-            invoiceNumber,
-            invoiceDate: invoice.invoice_date,
-            fyLabel,
-            supplier: {
-              name: organisation.name,
-              tradeName: organisation.trade_name,
-              address: organisation.address,
-              pincode: organisation.pincode,
-              stateCode: organisation.state_code,
-              gstin: organisation.gstin,
-              phone: organisation.contact_phone,
-              msmeNumber: organisation.msme_number,
-            },
-            buyer: buyerSnapshot,
-            shipTo: shipToSnapshot,
-            placeOfSupply: invoice.place_of_supply,
-            customerPoReference: invoice.customer_po_reference,
-            line: {
-              sacCode: invoice.sac_code,
-              description: invoice.service_description,
-              quantity: '1.00',
-              unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
-              rate: money.taxable,
-              gstRate: invoice.gst_rate,
-              amount: money.taxable,
-            },
-            totals: {
-              taxableValue: money.taxable,
-              cgstAmount: money.cgst,
-              sgstAmount: money.sgst,
-              igstAmount: money.igst,
-              roundOff: money.round_off,
-              totalAmount: money.total,
-            },
-            // The organisation's standing line unless this invoice set
-            // its own; one sample carries it and the other does not.
-            notes: invoice.notes ?? organisation.invoice_notes,
-          };
-
-          await tx`
-            update tax_invoices
-            set status = 'submitted', invoice_number = ${invoiceNumber},
-                number_prefix = ${prefix},
-                sequence_number = ${sequence}, fy_label = ${fyLabel},
-                buyer_snapshot = ${jsonb(tx, buyerSnapshot)},
-                ship_to_snapshot = ${shipToSnapshot === null ? null : jsonb(tx, shipToSnapshot)},
-                issued_snapshot = ${jsonb(tx, issuedSnapshot)},
-                taxable_value = ${money.taxable}, cgst_amount = ${money.cgst},
-                sgst_amount = ${money.sgst}, igst_amount = ${money.igst},
-                round_off = ${money.round_off}, total_amount = ${money.total},
-                submitted_by_user_id = ${user.id}, submitted_at = now()
-            where id = ${id}
-          `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'TAX_INVOICE_NUMBER_CONFLICT',
-                `Tax invoice number ${invoiceNumber} already exists in this organisation.`,
-              );
-            }
-            throw error;
-          });
-
-          await auditInvoice(tx, organisationId, user.id, 'tax_invoice.submitted', id, {
-            invoiceNumber,
-            fyLabel,
-            sequence,
-            measurementBookId: invoice.measurement_book_id,
-            mbNumber: book?.mb_number ?? null,
-            buyerContactId: buyer.id,
-            taxableValue: money.taxable,
-            cgstAmount: money.cgst,
-            sgstAmount: money.sgst,
-            igstAmount: money.igst,
-            totalAmount: money.total,
-            placeOfSupply: invoice.place_of_supply,
-            intraState,
-          });
-          return readDetail(tx, id);
-        },
-      );
-      return reply.status(201).send(detail);
-    },
-  );
-
-  app.post(
-    '/api/tax-invoices/:id/cancel',
-    {
-      schema: {
-        params: IdParamsSchema,
-        body: CancelTaxInvoiceRequestSchema,
-        response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelTaxInvoiceRequest;
-      const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
-        const invoice = await lockInvoice(tx, id);
-        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-        if (invoice.status === 'draft') {
-          throw httpError(
-            409,
-            'TAX_INVOICE_STATUS_CONFLICT',
-            'Draft tax invoices are deleted, not cancelled.',
-          );
-        }
-        requireStatus(invoice, 'submitted');
-        // An e-way bill moves THIS invoice; cancelling the invoice under
-        // a live movement document would leave the e-way bill moving a
-        // cancelled supply. The e-way bill goes first.
-        const [liveEwb] = await tx<{ id: string; ewb_number: string | null }[]>`
-          select id, ewb_number from eway_bills
-          where tax_invoice_id = ${id} and status <> 'cancelled'
-        `;
-        if (liveEwb) {
-          throw httpError(
-            409,
-            'EWAY_BILL_LIVE',
-            `E-way bill ${liveEwb.ewb_number ?? liveEwb.id} still moves this invoice; cancel it first.`,
-          );
-        }
-        await tx`
-          update tax_invoices
-          set status = 'cancelled', cancelled_by_user_id = ${user.id},
-              cancelled_at = now(), cancellation_note = ${note}
-          where id = ${id}
-        `;
-        // Cancelling releases the MB: the one-live index and the 0035
-        // MB-cancel guard both ignore cancelled invoices, so a corrected
-        // invoice can be raised and the MB can again be cancelled.
-        await auditInvoice(tx, organisationId, user.id, 'tax_invoice.cancelled', id, {
-          invoiceNumber: invoice.invoice_number,
-          measurementBookId: invoice.measurement_book_id,
-          note,
-        });
-        return readDetail(tx, id);
-      });
-    },
-  );
-
-  app.post(
-    '/api/tax-invoices/:id/irp-response',
-    {
-      schema: {
-        params: IdParamsSchema,
-        body: RecordIrpResponseRequestSchema,
-        response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
-      },
-    },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as RecordIrpResponseRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        // Recording what the IRP already decided is clerical â€” writer
-        // role, not issue authority; the legal act was the submit.
-        await requireWriterRole(tx, user.id);
-        const invoice = await lockInvoice(tx, id);
-        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-        requireStatus(invoice, 'submitted');
-        // The IRP answers once per document: a second recording would
-        // overwrite the registered IRN with something else.
-        if (invoice.irn !== null) {
-          throw httpError(
-            409,
-            'IRP_ALREADY_RECORDED',
-            `This invoice already carries IRN ${invoice.irn}; the IRP response is recorded once.`,
-          );
-        }
-        await tx`
-          update tax_invoices
-          set irn = ${body.irn}, ack_number = ${body.ackNumber.trim()},
-              ack_date = ${body.ackDate}, signed_qr = ${body.signedQr}
-          where id = ${id}
-        `;
-        await auditInvoice(
-          tx,
-          organisationId,
-          user.id,
-          'tax_invoice.irp_recorded',
-          id,
-          {
-            invoiceNumber: invoice.invoice_number,
-            irn: body.irn,
-            ackNumber: body.ackNumber.trim(),
-            ackDate: body.ackDate,
-          },
-        );
-        return readDetail(tx, id);
-      });
-    },
-  );
-
-  app.get(
-    '/api/tax-invoices/:id/irp-payload',
-    { schema: { params: IdParamsSchema } },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        const rows = (await tx.unsafe(
-          `select ${TI_COLUMNS}, ti.buyer_snapshot ${TI_FROM} where ti.id = $1`,
-          [id],
-        )) as unknown as (InvoiceRow & { buyer_snapshot: unknown })[];
-        const invoice = rows[0];
-        if (!invoice) {
-          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-        }
-        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-        if (invoice.status !== 'submitted') {
-          throw httpError(
-            409,
-            'TAX_INVOICE_STATUS_CONFLICT',
-            `The IRP payload exists for a submitted invoice (current status: ${invoice.status}) â€” a draft has no number and a cancelled invoice registers nothing.`,
-          );
-        }
-        const [organisation] = await tx<
-          {
-            name: string;
-            address: string | null;
-            gstin: string | null;
-            state_code: string | null;
-            pincode: string | null;
-          }[]
-        >`
-          select name, address, gstin, state_code, pincode from organisations
-        `;
-        // The submit proved GSTIN and state; re-proved here because the
-        // profile can be cleared afterwards and the payload must never
-        // invent a seller.
-        if (!organisation?.gstin) {
-          throw httpError(
-            400,
-            'ORG_GSTIN_REQUIRED',
-            'The organisation profile has no GSTIN; the IRP payload cannot name the seller.',
-          );
-        }
-        if (!organisation.state_code) {
-          throw httpError(
-            400,
-            'ORG_STATE_REQUIRED',
-            'The organisation profile has no GST state code; the IRP payload cannot name the seller state.',
-          );
-        }
-        if (organisation.address === null) {
-          throw httpError(
-            400,
-            'ORG_ADDRESS_REQUIRED',
-            'The organisation profile has no address; the IRP payload needs the seller address.',
-          );
-        }
-        // The PIN is a column of its own since 0037. The address scrape
-        // survives ONLY as a fallback for a profile that predates it â€”
-        // an address line is not required to contain a PIN, and real
-        // ones frequently do not.
-        const sellerPincode =
-          organisation.pincode ?? extractPincode(organisation.address);
-        if (sellerPincode === null) {
-          throw httpError(
-            400,
-            'ORG_PINCODE_REQUIRED',
-            'The organisation profile has no PIN code, and its address names no six-digit one; the IRP payload needs the seller PIN. Set it in Settings.',
-          );
-        }
-        const snapshot = parseJsonbColumn(invoice.buyer_snapshot) as {
-          designation?: string;
-          gstin?: string | null;
-          address?: string;
-          stateCode?: string;
-          pincode?: string;
-        } | null;
-        if (
-          !snapshot ||
-          snapshot.designation === undefined ||
-          snapshot.address === undefined ||
-          snapshot.stateCode === undefined ||
-          snapshot.pincode === undefined ||
-          snapshot.address === null ||
-          snapshot.stateCode === null ||
-          snapshot.pincode === null
-        ) {
-          // Submit requires all of these before freezing the snapshot.
-          throw new Error(`tax invoice ${id} has an incomplete buyer snapshot`);
-        }
-        if (
-          invoice.taxable_value === null ||
-          invoice.cgst_amount === null ||
-          invoice.sgst_amount === null ||
-          invoice.igst_amount === null ||
-          invoice.total_amount === null ||
-          invoice.round_off === null ||
-          invoice.line_value === null ||
-          invoice.invoice_number === null
-        ) {
-          throw new Error(`submitted tax invoice ${id} is missing frozen amounts`);
-        }
-        return buildIrpPayload({
-          invoiceNumber: invoice.invoice_number,
-          invoiceDate: invoice.invoice_date,
-          sacCode: invoice.sac_code,
-          serviceDescription: invoice.service_description,
-          placeOfSupply: invoice.place_of_supply,
-          gstRate: invoice.gst_rate,
-          taxableValue: invoice.taxable_value,
-          cgstAmount: invoice.cgst_amount,
-          sgstAmount: invoice.sgst_amount,
-          igstAmount: invoice.igst_amount,
-          totalAmount: invoice.total_amount,
-          roundOff: invoice.round_off,
-          lineValue: invoice.line_value,
-          seller: {
-            gstin: organisation.gstin,
-            legalName: organisation.name,
-            address: organisation.address,
-            location: extractLocation(organisation.address, sellerPincode),
-            pincode: sellerPincode,
-            stateCode: organisation.state_code,
-          },
-          buyer: {
-            gstin: snapshot.gstin ?? null,
-            legalName: snapshot.designation,
-            address: snapshot.address,
-            location: extractLocation(snapshot.address, snapshot.pincode),
-            pincode: snapshot.pincode,
-            stateCode: snapshot.stateCode,
-          },
-        });
-      });
-    },
-  );
-}
+           state_code, locality, division_code, active
+    from contacts where id = ${cÛ^5ÚÚ$z{-®éÜj×¢ç÷7B€¢rö’÷F‚Ö–çfö–6W2ó¦–Bö6æ6VÂÖ—'rÀ¢°¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&öG“¢6æ6VÅ7FGWF÷'”Fö7VÖVçE&WVW7E66†VÖÀ¢&W7öç6S¢°¢#¢F„–çfö–6TFWF–Å&W7öç6U66†VÖÀ¢##¢F„–çfö–6TFWF–Å&W7öç6U66†VÖÀ¢ââæW'&÷%&W7öç6W2À¢ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7BÂ&WÇ’’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B&öG’Ò&WVW7Bæ&öG’26æ6VÅ7FGWF÷'”Fö7VÖVçE&WVW7C°¢6öç7B&VÖ&²Ò&öG’ç&VÖ&²çG&–Ò‚“°¢6öç7B&W&VBÒv—Bv—F„&÷VæEFVæçB€¢FF&6RÀ¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢7–æ2‡G‚’Óâ°¢v—B&WV—&TWF†÷&—G’‡G‚ÂW6W"æ–BÂv6æ6VÂr“°¢6öç7B&V6÷fW&VD÷W&F–öç2Òv—B&V6÷fW%7FÆU7FGWF÷'”÷W&F–öâ‡G‚Â°¢F„–çfö–6T–C¢–BÀ¢Ò“°¢6öç7B–çfö–6RÒv—BÆö6´–çfö–6R‡G‚Â–B“°¢v—B76W'D–çfö–6Uv÷&´66W72‡G‚ÂW6W"æ–BÂ–çfö–6Rçv÷&µö–B“°¢&WV—&U7FGW2†–çfö–6RÂw7V&Ö—GFVBr“°¢–b€¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÓÒv6æ6VÆÆF–öå÷Væ¶æ÷vârb`¢&V6÷fW&VD÷W&F–öç2æ–æ6ÇVFW2‚v6æ6VÅö—'r¢’°¢&WGW&â°¢&V6÷fW&VC¢G'VR26öç7BÀ¢FWF–Ã¢v—B&VDFWF–Â‡G‚Â–B’À¢Ó°¢Ğ¢–b‡&÷f–FW"ÓÓÒVæFVf–æVB’°¢F‡&÷r‡GGW'&÷"€¢C’À¢u5DEUDõ%•õ$õd”DU%ôäõEô4ôäd”uU$TBrÀ¢uv†—FV&öö·2G&ç7÷'B—2æ÷B6öæf–wW&VBârÀ¢“°¢Ğ¢–b€¢–çfö–6Ræ—&âÓÓÒçVÆÂÇÀ¢–çfö–6Ræ—'÷&÷f–FW"ÓÒwv†—FV&öö·2rÇÀ¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÒw&Vv—7FW&VBp¢’°¢F‡&÷r‡GGW'&÷"€¢C’À¢t•%õ5DDUô4ôädÄ”5BrÀ¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÓÒv6æ6VÆÆF–öå÷Væ¶æ÷vâp¢òuF†RV&Æ–W"6æ6VÆÆF–öâ&W7VÇB—2Væ¶æ÷vââ—B6ææ÷B&R6VçBv–â&Æ–æFÇ“²&V6öæ6–ÆR—Bv—F‚v†—FV&öö·2ôä”27W÷'Bâp¢¢töæÇ’v†—FV&öö·2×&Vv—7FW&VB•$â6â&R6æ6VÆÆVBF‡&÷Vv‚F†—27F–öâârÀ¢“°¢Ğ¢6öç7B¶Æ—fTWv”&–ÆÅÒÒv—BGƒÇ²–C¢7G&–æs²Wv%öçVÖ&W#¢7G&–ærÂçVÆÂÕµÓæ ¢6VÆV7B–BÂWv%öçVÖ&W"g&öÒWv•ö&–ÆÇ0¢v†W&RF…ö–çfö–6Uö–BÒG¶–GÒæB7FGW2Ãâv6æ6VÆÆVBp¢Æ–Ö—B¢°¢–b†Æ—fTWv”&–ÆÂ’°¢F‡&÷r‡GGW'&÷"€¢C’À¢tUt•ô$”ÄÅôÄ•dRrÀ¢6æ6VÂR×v’&–ÆÂG¶Æ—fTWv”&–ÆÂæWv%öçVÖ&W"óòÆ—fTWv”&–ÆÂæ–GÒ&Vf÷&R6æ6VÆÆ–ær—G2•$âæÀ¢“°¢Ğ¢6öç7B·6æ6†÷E&÷uÒÒv—BGƒÇ²—77VVE÷6æ6†÷C¢Væ¶æ÷vâÕµÓæ ¢6VÆV7B—77VVE÷6æ6†÷Bg&öÒF…ö–çfö–6W2v†W&R–BÒG¶–GĞ¢°¢–b‚6æ6†÷E&÷r’F‡&÷ræWrW'&÷"†F‚–çfö–6RG¶–GÒF—6V&VF“°¢6öç7Bw7F–âÒ'6UF„–çfö–6T—77VVE6æ6†÷B€¢'6T§6öæ$6öÇVÖâ‡6æ6†÷E&÷ræ—77VVE÷6æ6†÷B’À¢’ç7WÆ–W"æw7F–ã°¢6öç7B&WVW7D§6öâÒ7G&–æv–g•7FGWF÷'”§6öâ‡°¢—&ã¢–çfö–6Ræ—&âÀ¢6æÅ'6ã¢&öG’ç&V6öä6öFRÀ¢6æÅ&VÓ¢&VÖ&²À¢Ò“°¢6öç7B÷W&F–öä–BÒv—B7F'E7FGWF÷'”÷W&F–öâ‡G‚Â°¢÷&væ—6F–öä–BÀ¢W6W$–C¢W6W"æ–BÀ¢&÷f–FW"À¢÷W&F–öã¢v6æ6VÅö—'rÀ¢&WVW7E6†#Sc¢6†#Sd†W‚‡&WVW7D§6öâ’À¢F„–çfö–6T–C¢–BÀ¢Ò“°¢v—BG† ¢WFFRF…ö–çfö–6W26WB—'÷&÷f–FW%÷7FFRÒv6æ6VÆÆ–ærp¢v†W&R–BÒG¶–GĞ¢°¢&WGW&â°¢&V6÷fW&VC¢fÇ6R26öç7BÀ¢÷W&F–öä–BÀ¢—&ã¢–çfö–6Ræ—&âÀ¢w7F–âÀ¢&÷f–FW"À¢Ó°¢ÒÀ¢“° ¢–b‡&W&VBç&V6÷fW&VB’°¢&WGW&â&WÇ’ç7FGW2ƒ#"’ç6VæB‡&W&VBæFWF–Â“°¢Ğ ¢ÆWB6æ6VÆÆVC¢°¢&VFöæÇ’6æ6VÆÆVDEFW‡C¢7G&–æs°¢&VFöæÇ’6æ6VÆÆVDC¢7G&–æs°¢ÒÂçVÆÂÒçVÆÃ°¢ÆWBf–ÇW&S¢&WGW&åG—SÇG—Vöb&÷f–FW$f–ÇW&SâÂçVÆÂÒçVÆÃ°¢G'’°¢6æ6VÆÆVBÒv—B&W&VBç&÷f–FW"æ6æ6VÄ–çfö–6R‡°¢w7F–ã¢&W&VBæw7F–âÀ¢—&ã¢&W&VBæ—&âÀ¢&V6öä6öFS¢&öG’ç&V6öä6öFRÀ¢&VÖ&²À¢Ò“°¢Ò6F6‚†W'&÷"’°¢f–ÇW&RÒ&÷f–FW$f–ÇW&R†W'&÷"“°¢Ğ ¢6öç7BFWF–ÂÒv—Bv—F„&÷VæEFVæçB€¢FF&6RÀ¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢7–æ2‡G‚’Óâ°¢v—B&WV—&TWF†÷&—G’‡G‚ÂW6W"æ–BÂv6æ6VÂr“°¢6öç7B–çfö–6RÒv—BÆö6´–çfö–6R‡G‚Â–B“°¢v—B76W'D–çfö–6Uv÷&´66W72‡G‚ÂW6W"æ–BÂ–çfö–6Rçv÷&µö–B“°¢–b†–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÒv6æ6VÆÆ–ærr’°¢F‡&÷ræWrW'&÷"†F‚–çfö–6RG¶–GÒÆVgBF†R6æ6VÆÆ–ær7FFV“°¢Ğ¢–b†6æ6VÆÆVBÓÒçVÆÂ’°¢v—BG† ¢WFFRF…ö–çfö–6W0¢6WB—'÷&÷f–FW%÷7FFRÒv6æ6VÆÆVBrÀ¢—'ö6æ6VÆÆVEöBÒG¶6æ6VÆÆVBæ6æ6VÆÆVDGÒÀ¢—'ö6æ6VÆÆVEöE÷FW‡BÒG¶6æ6VÆÆVBæ6æ6VÆÆVDEFW‡GÒÀ¢—'ö6æ6VÅ÷&V6öåö6öFRÒG¶&öG’ç&V6öä6öFWÒÀ¢—'ö6æ6VÅ÷&VÖ&²ÒG·&VÖ&·Ğ¢v†W&R–BÒG¶–GĞ¢°¢v—Bf–æ—6…7FGWF÷'”÷W&F–öâ‡G‚Â&W&VBæ÷W&F–öä–BÂ°¢7FGW3¢w7V66VVFVBrÀ¢Ò“°¢ÒVÇ6R°¢6öç7B&W7VÇBÒf–ÇW&Róò°¢7FGW3¢wVæ¶æ÷vâr26öç7BÀ¢&÷f–FW$6öFS¢çVÆÂÀ¢‡GG7FGW3¢çVÆÂÀ¢Ó°¢v—BG† ¢WFFRF…ö–çfö–6W0¢6WB—'÷&÷f–FW%÷7FFRÒG°¢&W7VÇBç7FGW2ÓÓÒvf–ÆVBròw&Vv—7FW&VBr¢v6æ6VÆÆF–öå÷Væ¶æ÷vâp¢Ğ¢v†W&R–BÒG¶–GĞ¢°¢v—Bf–æ—6…7FGWF÷'”÷W&F–öâ‡G‚Â&W&VBæ÷W&F–öä–BÂ°¢7FGW3¢&W7VÇBç7FGW2À¢&÷f–FW$6öFS¢&W7VÇBç&÷f–FW$6öFRÀ¢‡GG7FGW3¢&W7VÇBæ‡GG7FGW2À¢Ò“°¢Ğ¢v—BVF—D–çfö–6R€¢G‚À¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢6æ6VÆÆVBÓÓÒçVÆÀ¢òwF…ö–çfö–6Ræ—'ö6æ6VÆÆF–öå÷Vç&W6öÇfVBp¢¢wF…ö–çfö–6Ræ—'ö6æ6VÆÆVBrÀ¢–BÀ¢°¢—&ã¢&W&VBæ—&âÀ¢÷WF6öÖS ¢6æ6VÆÆVBÓÓÒçVÆÂò†f–ÇW&Sòç7FGW2óòwVæ¶æ÷vâr’¢w7V66VVFVBrÀ¢&÷f–FW#¢&W&VBç&÷f–FW"ææÖRÀ¢÷W&F–öä–C¢&W&VBæ÷W&F–öä–BÀ¢ÒÀ¢“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢ÒÀ¢“°¢–b†6æ6VÆÆVBÓÒçVÆÂ’&WGW&â&WÇ’ç7FGW2ƒ#’ç6VæB†FWF–Â“°¢–b†f–ÇW&Sòç7FGW2ÓÓÒvf–ÆVBr’°¢F‡&÷r‡GGW'&÷"€¢S"À¢f–ÇW&RçV&Æ–46öFRÀ¢uv†—FV&öö·2&V¦V7FVBF†R•%6æ6VÆÆF–öââF†R•$â&VÖ–ç2&Vv—7FW&VBârÀ¢“°¢Ğ¢&WGW&â&WÇ’ç7FGW2ƒ#"’ç6VæB†FWF–Â“°¢ÒÀ¢“° ¢ç÷7B€¢rö’÷F‚Ö–çfö–6W2ó¦–Bö—'×&W7öç6RrÀ¢°¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&öG“¢&V6÷&D—'&W7öç6U&WVW7E66†VÖÀ¢&W7öç6S¢²#¢F„–çfö–6TFWF–Å&W7öç6U66†VÖÂââæW'&÷%&W7öç6W2ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7B’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B&öG’Ò&WVW7Bæ&öG’2&V6÷&D—'&W7öç6U&WVW7C°¢&WGW&âv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢òò6ö×F–&–Æ—G’–×÷'BöæÇ’âÖçVÆÇ’G—VBWf–FVæ6R—2Æ&VÆÆV@¢òòVçfW&–f–VBæB&WV—&W2F†R6ÖRWF†÷&—G’2&÷f–FW"&Vv—7G&F–öâà¢v—B&WV—&TWF†÷&—G’‡G‚ÂW6W"æ–BÂv—77VRr“°¢6öç7B–çfö–6RÒv—BÆö6´–çfö–6R‡G‚Â–B“°¢v—B76W'D–çfö–6Uv÷&´66W72‡G‚ÂW6W"æ–BÂ–çfö–6Rçv÷&µö–B“°¢–b‡&÷f–FW"ÓÒVæFVf–æVB’°¢F‡&÷r‡GGW'&÷"€¢C’À¢tÔåTÅõ$õd”DU%ôUd”DTä4UôD•4$ÄTBrÀ¢tÖçVÂ•%Wf–FVæ6RVçG'’—2F—6&ÆVBv†–ÆRv†—FV&öö·2G&ç7÷'B—26öæf–wW&VBârÀ¢“°¢Ğ¢&WV—&U7FGW2†–çfö–6RÂw7V&Ö—GFVBr“°¢òòF†R•%ç7vW'2öæ6RW"Fö7VÖVçC¢6V6öæB&V6÷&F–ærv÷VÆ@¢òò÷fW'w&—FRF†R&Vv—7FW&VB•$âv—F‚6öÖWF†–ærVÇ6Rà¢–b†–çfö–6Ræ—&âÓÒçVÆÂ’°¢F‡&÷r‡GGW'&÷"€¢C’À¢t•%ôÅ$TE•õ$T4õ$DTBrÀ¢F†—2–çfö–6RÇ&VG’6'&–W2•$âG¶–çfö–6Ræ—&çÓ²F†R•%&W7öç6R—2&V6÷&FVBöæ6RæÀ¢“°¢Ğ¢–b€¢–çfö–6Ræ—'÷&÷f–FW"ÓÒçVÆÂÇÀ¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÒvæ÷E÷&WVW7FVBp¢’°¢F‡&÷r‡GGW'&÷"€¢C’À¢tÔåTÅõ$õd”DU%ôUd”DTä4Uô4ôädÄ”5BrÀ¢tÖçVÂ•%Wf–FVæ6R6ææ÷B&WÆ6R÷"6ö×ÆWFRâW†—7F–ær&÷f–FW"GFV×BârÀ¢“°¢Ğ¢v—BG† ¢WFFRF…ö–çfö–6W0¢6WB—&âÒG¶&öG’æ—&çÒÂ6µöçVÖ&W"ÒG¶&öG’æ6´çVÖ&W"çG&–Ò‚—ÒÀ¢6µöFFRÒG¶&öG’æ6´FFWÒÂ6µöFFU÷FW‡BÒG¶&öG’æ6´FFUFW‡BçG&–Ò‚—ÒÀ¢6–væVE÷"ÒG¶&öG’ç6–væVE'ÒÀ¢6–væVEö–çfö–6RÒG¶&öG’ç6–væVD–çfö–6RóòçVÆÇÒÀ¢—'÷&÷f–FW"ÒvÖçVÂrÂ—'÷&÷f–FW%÷7FFRÒw&Vv—7FW&VBp¢v†W&R–BÒG¶–GĞ¢°¢v—BVF—D–çfö–6R€¢G‚À¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢wF…ö–çfö–6Ræ—'÷&V6÷&FVBrÀ¢–BÀ¢°¢–çfö–6TçVÖ&W#¢–çfö–6Ræ–çfö–6UöçVÖ&W"À¢—&ã¢&öG’æ—&âÀ¢6´çVÖ&W#¢&öG’æ6´çVÖ&W"çG&–Ò‚’À¢6´FFS¢&öG’æ6´FFRÀ¢Wf–FVæ6S¢vÖçVÅ÷VçfW&–f–VBrÀ¢ÒÀ¢“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢Ò“°¢ÒÀ¢“° ¢ç÷7B€¢rö’÷F‚Ö–çfö–6W2ó¦–Bö—'Ö6æ6VÂ×&W7öç6RrÀ¢°¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&öG“¢&V6÷&DÖçVÅ7FGWF÷'”6æ6VÆÆF–öå&WVW7E66†VÖÀ¢&W7öç6S¢²#¢F„–çfö–6TFWF–Å&W7öç6U66†VÖÂââæW'&÷%&W7öç6W2ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7B’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B&öG’Ò&WVW7Bæ&öG’2&V6÷&DÖçVÅ7FGWF÷'”6æ6VÆÆF–öå&WVW7C°¢6öç7B&VÖ&²Ò&öG’ç&VÖ&²çG&–Ò‚“°¢&WGW&âv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢v—B&WV—&TWF†÷&—G’‡G‚ÂW6W"æ–BÂv6æ6VÂr“°¢6öç7B–çfö–6RÒv—BÆö6´–çfö–6R‡G‚Â–B“°¢v—B76W'D–çfö–6Uv÷&´66W72‡G‚ÂW6W"æ–BÂ–çfö–6Rçv÷&µö–B“°¢–b†–çfö–6Rç7FGW2ÓÒw7V&Ö—GFVBrbb–çfö–6Rç7FGW2ÓÒv6æ6VÆÆVBr’°¢F‡&÷r‡GGW'&÷"€¢C’À¢uD…ô”ådô”4Uõ5DEU5ô4ôädÄ”5BrÀ¢töæÇ’â—77VVBF‚–çfö–6R6â&V6V—fRW‡FW&æÂ•%6æ6VÆÆF–öâWf–FVæ6RârÀ¢“°¢Ğ¢6öç7BÖçVÄ7F—fRĞ¢–çfö–6Ræ—'÷&÷f–FW"ÓÓÒvÖçVÂrb`¢†–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÓÒw&Vv—7FW&VBrÇÀ¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÓÒv6æ6VÆÆF–öå÷Væ¶æ÷vâr“°¢6öç7Bv†—FV&öö·5Væ¶æ÷vâĞ¢–çfö–6Ræ—'÷&÷f–FW"ÓÓÒwv†—FV&öö·2rb`¢–çfö–6Ræ—'÷&÷f–FW%÷7FFRÓÓÒv6æ6VÆÆF–öå÷Væ¶æ÷vâs°¢–b†–çfö–6Ræ—&âÓÓÒçVÆÂÇÂ‚ÖçVÄ7F—fRbbv†—FV&öö·5Væ¶æ÷vâ’’°¢F‡&÷r‡GGW'&÷"€¢C’À¢t•%õ5DDUô4ôädÄ”5BrÀ¢tW‡FW&æÂ6æ6VÆÆF–öâWf–FVæ6R—266WFVBöæÇ’f÷"ÖçVÂ•%&V6÷&G2÷"âVç&W6öÇfVBv†—FV&öö·26æ6VÆÆF–öâârÀ¢“°¢Ğ¢6öç7B¶Æ—fTWv”&–ÆÅÒÒv—BGƒÇ²–C¢7G&–æs²Wv%öçVÖ&W#¢7G&–ærÂçVÆÂÕµÓæ ¢6VÆV7B–BÂWv%öçVÖ&W"g&öÒWv•ö&–ÆÇ0¢v†W&RF…ö–çfö–6Uö–BÒG¶–GÒæB7FGW2Ãâv6æ6VÆÆVBp¢Æ–Ö—B¢°¢–b†Æ—fTWv”&–ÆÂ’°¢F‡&÷r‡GGW'&÷"€¢C’À¢tUt•ô$”ÄÅôÄ•dRrÀ¢6æ6VÂR×v’&–ÆÂG¶Æ—fTWv”&–ÆÂæWv%öçVÖ&W"óòÆ—fTWv”&–ÆÂæ–GÒ&Vf÷&R&V6÷&F–ær•%6æ6VÆÆF–öâæÀ¢“°¢Ğ¢v—BG† ¢WFFRF…ö–çfö–6W0¢6WB—'÷&÷f–FW%÷7FFRÒv6æ6VÆÆVBrÀ¢—'ö6æ6VÆÆVEöBÒG¶&öG’æ6æ6VÆÆVDGÒÀ¢—'ö6æ6VÆÆVEöE÷FW‡BÒG¶&öG’æ6æ6VÆÆVDEFW‡BçG&–Ò‚—ÒÀ¢—'ö6æ6VÅ÷&V6öåö6öFRÒG¶&öG’ç&V6öä6öFWÒÀ¢—'ö6æ6VÅ÷&VÖ&²ÒG·&VÖ&·Ğ¢v†W&R–BÒG¶–GĞ¢°¢v—BVF—D–çfö–6R€¢G‚À¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢wF…ö–çfö–6Ræ—'ö6æ6VÆÆF–öå÷&V6÷&FVBrÀ¢–BÀ¢°¢—&ã¢–çfö–6Ræ—&âÀ¢6æ6VÆÆVDC¢&öG’æ6æ6VÆÆVDBÀ¢Wf–FVæ6S¢vÖçVÅ÷VçfW&–f–VBrÀ¢&V6öæ6–ÆVE&÷f–FW%Væ¶æ÷vã¢v†—FV&öö·5Væ¶æ÷vâÀ¢ÒÀ¢“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢Ò“°¢ÒÀ¢“° ¢ævWB€¢rö’÷F‚Ö–çfö–6W2ó¦–Bö—'×–ÆöBrÀ¢²66†VÖ¢²&×3¢–E&×566†VÖÒÒÀ¢7–æ2‡&WVW7BÂ&WÇ’’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B–ÆöBÒv—Bv—F„&÷VæEFVæçB€¢FF&6RÀ¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢7–æ2‡G‚’Óâ°¢6öç7B¶–çfö–6UÒÒv—BGƒÀ¢°¢v÷&µö–C¢7G&–ærÂçVÆÃ°¢7FGW3¢F„–çfö–6U7FGW3°¢—77VVE÷6æ6†÷C¢Væ¶æ÷vã°¢ÕµĞ¢æ ¢6VÆV7Bv÷&µö–BÂ7FGW2Â—77VVE÷6æ6†÷@¢g&öÒF…ö–çfö–6W2v†W&R–BÒG¶–GĞ¢°¢–b‚–çfö–6R’°¢F‡&÷r‡GGW'&÷"ƒCBÂuD…ô”ådô”4UôäõEôdõTäBrÂtæò7V6‚F‚–çfö–6Râr“°¢Ğ¢v—B76W'D–çfö–6Uv÷&´66W72‡G‚ÂW6W"æ–BÂ–çfö–6Rçv÷&µö–B“°¢–b†–çfö–6Rç7FGW2ÓÒw7V&Ö—GFVBr’°¢F‡&÷r‡GGW'&÷"€¢C’À¢uD…ô”ådô”4Uõ5DEU5ô4ôädÄ”5BrÀ¢F†R•%–ÆöBW†—7G2f÷"7V&Ö—GFVB–çfö–6R†7W'&VçB7FGW3¢G¶–çfö–6Rç7FGW7Ò’(	BG&gB†2æòçVÖ&W"æB6æ6VÆÆVB–çfö–6R&Vv—7FW'2æ÷F†–æræÀ¢“°¢Ğ¢G'’°¢&WGW&â'V–ÆDg&÷¦Vä—'–ÆöB‡'6T§6öæ$6öÇVÖâ†–çfö–6Ræ—77VVE÷6æ6†÷B’“°¢Ò6F6‚†W'&÷"’°¢–b†W'&÷"–ç7Fæ6VöbT–çfö–6T#&5Vç7W÷'FVDW'&÷"’°¢F‡&÷r‡GGW'&÷"ƒC’ÂW'&÷"æ6öFRÂW'&÷"æÖW76vR“°¢Ğ¢–b†W'&÷"–ç7Fæ6VöbF„–çfö–6U6æ6†÷DW'&÷"’°¢F‡&÷r‡GGW'&÷"€¢C’À¢W'&÷"æ6öFRÀ¢uF†Rg&÷¦Vâ—77VVB–çfö–6R—2–æ6ö×ÆWFRf÷"•%7V&Ö—76–öã²—Bv2æ÷B&WÆ6VBv—F‚Æ—fRÖ7FW"FFârÀ¢“°¢Ğ¢F‡&÷rW'&÷#°¢Ğ¢ÒÀ¢“°¢fö–B&WÇ’çG—R‚vÆ–6F–öâö§6öã²6†'6WC×WFbÓ‚r“°¢&WGW&â&WÇ’ç6VæB‡7G&–æv–g•7FGWF÷'”§6öâ‡–ÆöB’“°¢ÒÀ¢“°§Ğ 

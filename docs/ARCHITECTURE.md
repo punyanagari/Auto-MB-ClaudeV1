@@ -14,11 +14,7 @@ Fastify modular API
       ├── private S3-compatible object storage
       └── Gotenberg (private HTML-to-PDF service)
 
-Worker
-      ├── PDF jobs
-      ├── upload scanning
-      ├── extraction jobs
-      └── notifications/exports
+Worker (reserved boundary; no asynchronous jobs currently run)
 ```
 
 Deploy as a modular monolith: one web build, one API service, one worker service, one PostgreSQL database.
@@ -80,9 +76,14 @@ Critical operations are atomic:
 - finalise MB → lock sources, compute exact staged values, allocate number,
   snapshot, audit;
 - submit tax invoice → lock its value source, allocate the configured number,
-  freeze parties and exact GST values, close the MB when applicable, audit;
-- generate or cancel an e-way bill → lock the invoice and movement row,
-  preserve the external response, and audit every lifecycle transition.
+  freeze parties, explicit localities, the operator-confirmed forward-charge
+  fact, and exact GST values, close the MB when applicable, and audit;
+- start a statutory-provider operation → lock and validate the document,
+  append a pending operation row, and commit the in-progress provider state;
+  perform HTTP outside the database transaction; then persist the outcome,
+  evidence, and audit event in a second transaction. A pending operation older
+  than two minutes becomes unknown. Unknown registration or generation is
+  lookup-only and never repeats the mutation blindly.
 
 Money uses `numeric`. Dates use `date`. IDs use opaque UUIDs. Indexes begin with `organisation_id` when serving tenant-scoped access paths.
 
@@ -105,12 +106,23 @@ Issued documents store:
 - signed-copy attachment metadata.
 
 Tax invoices follow the same legal-document posture: supplier, buyer,
-ship-to, line, tax, rounding, words, numbering inputs, and template version
-are frozen before rendering. IRP acknowledgements and signed QR data arrive
-after local issue and are append-only external evidence; they do not rewrite
-the issued snapshot.
+ship-to, line, tax, reverse-charge selection, rounding, words, numbering
+inputs, and template version are frozen before rendering. Reverse charge is
+not yet computed, so issue accepts only an explicit forward-charge selection;
+historical missing values stay unknown. IRP acknowledgements and signed QR
+data arrive after local issue and are append-only external evidence; they do
+not rewrite the issued snapshot.
 
-PDF generation is asynchronous but issue-state correctness does not depend on the renderer being available. A failed PDF job retries without reallocating the number.
+Implemented PDF render paths are synchronous and idempotent. Delivery
+Challans, Issue Challans, extensions, correction notices, finalized
+Measurement Books, and submitted tax invoices render from immutable snapshots.
+Tax invoices embed a real QR from the exact signed IRP payload when available.
+Every successful render appends a version containing the exact source hash,
+PDF hash, and a content-addressed frozen copy of the logo. Database guards keep
+the current pointer on the newest tenant-prefixed version; downloads re-hash
+the stored bytes before serving them. Prior versions remain in the owner export
+and after local cancellation. A failed render never reallocates a document
+number or replaces the previously referenced PDF.
 
 ## 7. LOA extraction
 
@@ -130,8 +142,9 @@ As delivered in Milestone 2: extraction runs complementary Poppler views from
 the same PDF: `pdftotext -layout` remains authoritative for headers,
 schedules, and numeric columns, while `pdftotext -raw` supplies exact item-row
 description ownership behind a strict whole-letter tuple gate. Both run in
-parallel inline at upload because extraction is sub-second; the first
-genuinely asynchronous job remains Milestone 3's PDF rendering (§9). The
+parallel inline at upload because extraction is sub-second. No product
+workflow currently requires a background job; implemented PDF routes are
+synchronous and idempotent (§9). The
 parser's review payload — per-field value plus printed raw source plus
 needsReview, item rows with exact-decimal reconciliation, pricing-shape
 classification, and the trap flags — is stored verbatim on the document
@@ -165,16 +178,29 @@ trigger: the first workflow that must retry unattended.
 
 ## 10. Statutory provider boundary
 
-Tax invoice and e-way-bill domain records do not depend on one GSP. The server
-currently builds deterministic IRP and NIC payloads from stored snapshots and
-records verified external responses without inventing IRN, acknowledgement,
-or e-way-bill values locally.
+Tax-invoice and e-way-bill records remain provider-neutral. `StatutoryProvider`
+is the server boundary; `WhitebooksProvider` implements authenticated B2B IRP
+registration, document lookup, IRP cancellation, EWB-by-IRN lookup, and
+standalone EWB cancellation. Browser code never receives credentials.
 
-Direct Whitebooks transport belongs behind a server-side adapter. Browser code
-never receives provider credentials. The adapter must use bounded timeouts,
-idempotency/correlation identifiers, redacted logs, stable internal errors, and
-an auditable request/response summary while keeping full sensitive payloads out
-of request logs. Local issue and external registration remain distinct states.
+IRP operations use the e-invoice client pair. Standalone EWB cancellation first
+authenticates against `/ewaybillapi/v1.03/authenticate` and uses the separate
+`WHITEBOOKS_EWAY_CLIENT_ID` / `WHITEBOOKS_EWAY_CLIENT_SECRET` pair. Cancellation
+fails closed when that pair is absent. The configured credential set is bound
+to one exact `WHITEBOOKS_GSTIN`; mismatched supplier GSTINs are refused.
+
+Provider HTTP calls use bounded timeouts and response sizes. The durable
+provider-operation ledger stores target, provider/environment, correlation id,
+request SHA-256, status, timestamps, redacted provider code, and HTTP status;
+it never stores request bodies, response wrappers, tokens, passwords, secrets,
+or signed documents. Failed outcomes may be retried where safe. Unknown
+registration or generation outcomes are reconciled by lookup only; unknown
+cancellations require externally confirmed evidence and are not resent blindly.
+
+NIC seller, buyer, and ship-to locality is explicit frozen data and is never
+guessed from an address. The application currently models cumulative SAC
+service invoices, so fresh EWB provider generation and NIC payload exposure are
+deliberately refused until goods/HSN delivery facts exist.
 
 ## 11. Scale target
 

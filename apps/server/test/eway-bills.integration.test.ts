@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
@@ -15,6 +15,10 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import {
+  StatutoryProviderError,
+  type StatutoryProvider,
+} from '../src/gsp/statutory-provider.js';
 
 /**
  * The e-way bill (migration 0035): the movement document for a
@@ -72,6 +76,7 @@ const TRANSPORTER_ID = '07ABCDE1234F1Z5';
 
 let admin: Sql;
 let app: FastifyInstance;
+let providerApp: FastifyInstance;
 let storageDir: string;
 let organisationId: string;
 let outsiderOrganisationId: string;
@@ -91,6 +96,23 @@ let owner: CookieJar;
 let clerk: CookieJar;
 let viewer: CookieJar;
 let outsider: CookieJar;
+
+const registerInvoiceProvider = vi.fn<StatutoryProvider['registerInvoice']>();
+const findInvoiceProvider = vi.fn<StatutoryProvider['findInvoiceByDocument']>();
+const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
+const generateEwayBillProvider = vi.fn<StatutoryProvider['generateEwayBillByIrn']>();
+const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
+const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
+const providerStub: StatutoryProvider = {
+  name: 'whitebooks',
+  environment: 'sandbox',
+  registerInvoice: registerInvoiceProvider,
+  findInvoiceByDocument: findInvoiceProvider,
+  cancelInvoice: cancelInvoiceProvider,
+  generateEwayBillByIrn: generateEwayBillProvider,
+  findEwayBillByIrn: findEwayBillProvider,
+  cancelEwayBill: cancelEwayBillProvider,
+};
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -113,6 +135,22 @@ async function authed(
 ) {
   const { organisationId: org, ...rest } = options;
   return app.inject({
+    ...rest,
+    headers: {
+      ...(rest.headers ?? {}),
+      cookie: jar.cookie,
+      ...(org !== undefined ? { 'x-organisation-id': org } : {}),
+    },
+  });
+}
+
+async function authedOn(
+  target: FastifyInstance,
+  jar: CookieJar,
+  options: InjectOptions & { organisationId?: string },
+) {
+  const { organisationId: org, ...rest } = options;
+  return target.inject({
     ...rest,
     headers: {
       ...(rest.headers ?? {}),
@@ -182,6 +220,7 @@ async function draftInvoiceOn(
       serviceDescription: SERVICE_DESCRIPTION,
       gstRate: '18',
       placeOfSupply: '07',
+      reverseChargeApplicable: false,
       buyerContactId,
     },
   });
@@ -210,6 +249,65 @@ async function createEwayBill(
     organisationId,
     payload: body,
   });
+}
+
+async function submittedDirectInvoice(suffix: string): Promise<string> {
+  const created = await authed(owner, {
+    method: 'POST',
+    url: '/api/tax-invoices',
+    organisationId,
+    payload: {
+      invoiceDate: '2026-08-08',
+      sacCode: '998734',
+      serviceDescription: `Whitebooks EWB cancellation probe ${suffix}.`,
+      gstRate: '18',
+      placeOfSupply: '07',
+      reverseChargeApplicable: false,
+      buyerContactId,
+      taxableValue: '1000.00',
+    },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  const id = created.json<TaxInvoiceDetailResponse>().invoice.id;
+  const submitted = await authed(owner, {
+    method: 'POST',
+    url: `/api/tax-invoices/${id}/submit`,
+    organisationId,
+  });
+  expect(submitted.statusCode, submitted.body).toBe(201);
+  return id;
+}
+
+async function seedWhitebooksEwayBill(
+  invoiceId: string,
+  ewbNumber: string,
+): Promise<string> {
+  const id = randomUUID();
+  await admin`
+    insert into eway_bills (
+      id, organisation_id, tax_invoice_id, status, transport_mode,
+      vehicle_number, distance_km, from_pincode, to_pincode,
+      ewb_number, ewb_date, valid_until, ewb_date_text, valid_until_text,
+      provider, provider_state, legacy_evidence_missing,
+      generated_by_user_id, generated_at, created_by_user_id
+    ) values (
+      ${id}, ${organisationId}, ${invoiceId}, 'generated', 'road',
+      'DL01AB1234', 25, '110020', '110055', ${ewbNumber},
+      '2026-08-08T09:00:00.000Z', '2026-08-09T23:59:59.000Z',
+      '08/08/2026 14:30:00', '09/08/2026 23:59:59',
+      'whitebooks', 'generated', false, ${ownerUserId}, now(), ${ownerUserId}
+    )
+  `;
+  return id;
+}
+
+function resetProviderMocks(): void {
+  registerInvoiceProvider.mockReset();
+  findInvoiceProvider.mockReset();
+  cancelInvoiceProvider.mockReset();
+  generateEwayBillProvider.mockReset();
+  findEwayBillProvider.mockReset();
+  cancelEwayBillProvider.mockReset();
 }
 
 beforeAll(async () => {
@@ -245,6 +343,13 @@ beforeAll(async () => {
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+  });
+  providerApp = await buildApp({
+    databaseUrl: appUrl,
+    authSecret: `integration-secret-${'0'.repeat(32)}`,
+    baseUrl: 'http://127.0.0.1:3000',
+    objectStorageDir: storageDir,
+    statutoryProvider: providerStub,
   });
 
   owner = await signUp(ownerEmail, 'EWB Owner');
@@ -300,6 +405,8 @@ beforeAll(async () => {
       stateCode: '07',
       gstin: ORG_GSTIN,
       address: ORG_ADDRESS,
+      pincode: '110002',
+      locality: 'New Delhi',
       invoiceNumberPrefix: 'P10',
     },
   });
@@ -353,564 +460,4 @@ beforeAll(async () => {
   await admin`
     insert into contacts (
       id, organisation_id, designation, contact_person, address, gstin,
-      pincode, state_code, is_consignee, active, created_by_user_id
-    )
-    values (${buyerContactId}, ${organisationId}, 'Sr. DEE (G) NR', 'S K Verma',
-            ${BUYER_ADDRESS}, ${BUYER_GSTIN}, '110055', '07', true, true,
-            ${ownerUserId})
-  `;
-
-  // Invoice 1: submitted â€” 1000.00 taxable at 18% intra: 90 + 90, 1180.
-  submittedInvoiceId = await draftInvoiceOn('2026-08-01', '10', '2026-08-05');
-  const submitted = await authed(owner, {
-    method: 'POST',
-    url: `/api/tax-invoices/${submittedInvoiceId}/submit`,
-    organisationId,
-  });
-  expect(submitted.statusCode, submitted.body).toBe(201);
-  const invoice = submitted.json<TaxInvoiceDetailResponse>().invoice;
-  expect(invoice.invoiceNumber).toBe('P1026001');
-  expect(invoice.taxableValue).toBe('1000.00');
-  expect(invoice.totalAmount).toBe('1180.00');
-
-  // Invoice 2: left in draft â€” the "no legal number to move" case.
-  draftInvoiceId = await draftInvoiceOn('2026-08-02', '20', '2026-08-06');
-}, 120_000);
-
-afterAll(async () => {
-  if (admin) {
-    for (const org of [organisationId, outsiderOrganisationId]) {
-      if (!org) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'work_assignments',
-          'eway_bills',
-          'tax_invoices',
-          'tax_invoice_counters',
-          'document_number_series',
-          'mb_sources',
-          'measurement_book_lines',
-          'measurement_book_counters',
-          'bills',
-          'measurement_books',
-          'bill_counters',
-          'payment_matrices',
-          'contacts',
-          'mb_entries',
-          'challan_item_serials',
-          'challan_receipts',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'delivery_challans',
-          'work_items',
-          'work_schedules',
-          'works',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [org],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
-    await admin`
-      delete from identity_audit_events
-      where user_id in (
-        select "id" from auth_users
-        where "email" like ${`%-${runId}@integration.test`}
-      )
-    `;
-    await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
-  }
-  await app?.close();
-  await admin?.end();
-  if (storageDir !== undefined) {
-    await rm(storageDir, { recursive: true, force: true });
-  }
-});
-
-describe('drafting the movement', () => {
-  it('refuses a draft invoice, at the API and at the database', async () => {
-    const refused = await createEwayBill(draftInvoiceId, roadBody());
-    expect(refused.statusCode).toBe(409);
-    expect(refused.json<{ code: string }>().code).toBe('TAX_INVOICE_STATUS_CONFLICT');
-
-    // The 0035 insert trigger holds the same rule against every writer.
-    await expect(
-      admin`
-        insert into eway_bills (
-          organisation_id, tax_invoice_id, transport_mode, distance_km,
-          from_pincode, to_pincode, created_by_user_id
-        )
-        values (${organisationId}, ${draftInvoiceId}, 'road', 10,
-                '110020', '110055', ${ownerUserId})
-      `,
-    ).rejects.toThrowError(/needs a submitted invoice/);
-  });
-
-  it('drafts against the submitted invoice; one live per invoice; viewer refused', async () => {
-    const denied = await createEwayBill(submittedInvoiceId, roadBody(), viewer);
-    expect(denied.statusCode).toBe(403);
-    expect(denied.json<{ code: string }>().code).toBe('ROLE_FORBIDDEN');
-
-    const first = await createEwayBill(submittedInvoiceId, roadBody());
-    expect(first.statusCode, first.body).toBe(201);
-    const throwawayId = first.json<EwayBillDetailResponse>().ewayBill.id;
-    expect(first.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
-      taxInvoiceId: submittedInvoiceId,
-      invoiceNumber: 'P1026001',
-      status: 'draft',
-      transportMode: 'road',
-      vehicleNumber: null,
-      ewbNumber: null,
-    });
-
-    const conflict = await createEwayBill(submittedInvoiceId, roadBody());
-    expect(conflict.statusCode).toBe(409);
-    const conflictBody = conflict.json<{
-      code: string;
-      details?: { existingRecordId: string };
-    }>();
-    expect(conflictBody.code).toBe('EWAY_BILL_EXISTS');
-    expect(conflictBody.details?.existingRecordId).toBe(throwawayId);
-
-    // A draft deletes (rule 8), freeing the slot.
-    const deleted = await authed(owner, {
-      method: 'DELETE',
-      url: `/api/eway-bills/${throwawayId}`,
-      organisationId,
-    });
-    expect(deleted.statusCode, deleted.body).toBe(204);
-
-    const second = await createEwayBill(submittedInvoiceId, roadBody());
-    expect(second.statusCode, second.body).toBe(201);
-    roadEwbId = second.json<EwayBillDetailResponse>().ewayBill.id;
-
-    const read = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${roadEwbId}`,
-      organisationId,
-    });
-    expect(read.statusCode, read.body).toBe(200);
-    expect(read.json<EwayBillDetailResponse>().ewayBill.status).toBe('draft');
-  });
-});
-
-describe('the NIC payload and response, road carriage', () => {
-  it('refuses the incomplete carriage as the named 400s', async () => {
-    const payload = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${roadEwbId}/nic-payload`,
-      organisationId,
-    });
-    expect(payload.statusCode).toBe(400);
-    expect(payload.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
-
-    const generated = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${roadEwbId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '123456789012',
-        ewbDate: '2026-08-06T10:00:00.000Z',
-        validUntil: '2026-08-07T23:59:59.000Z',
-      },
-    });
-    expect(generated.statusCode).toBe(400);
-    expect(generated.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
-  });
-
-  it('serves the canonical NIC EWB JSON once the vehicle is named â€” golden', async () => {
-    const edited = await authed(owner, {
-      method: 'PUT',
-      url: `/api/eway-bills/${roadEwbId}`,
-      organisationId,
-      payload: roadBody({
-        transporterId: TRANSPORTER_ID,
-        transporterName: '  Sharma Roadways  ',
-        vehicleNumber: 'DL01AB1234',
-      }),
-    });
-    expect(edited.statusCode, edited.body).toBe(200);
-    // Stored trimmed, exactly as the column measures it.
-    expect(edited.json<EwayBillDetailResponse>().ewayBill.transporterName).toBe(
-      'Sharma Roadways',
-    );
-
-    const response = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${roadEwbId}/nic-payload`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(200);
-    expect(response.json()).toStrictEqual({
-      supplyType: 'O',
-      subSupplyType: '1',
-      docType: 'INV',
-      docNo: 'P1026001',
-      docDate: '05/08/2026',
-      fromGstin: ORG_GSTIN,
-      fromTrdName: 'EWB Constructions',
-      fromAddr1: ORG_ADDRESS,
-      fromPlace: 'New Delhi',
-      fromPincode: 110020,
-      fromStateCode: 7,
-      actFromStateCode: 7,
-      toGstin: BUYER_GSTIN,
-      toTrdName: 'Sr. DEE (G) NR',
-      toAddr1: BUYER_ADDRESS,
-      toPlace: 'New Delhi',
-      toPincode: 110055,
-      toStateCode: 7,
-      actToStateCode: 7,
-      transactionType: 1,
-      itemList: [
-        {
-          itemNo: 1,
-          productDesc: SERVICE_DESCRIPTION,
-          hsnCode: 995421,
-          quantity: 1,
-          qtyUnit: 'OTH',
-          taxableAmount: 1000,
-          cgstRate: 9,
-          sgstRate: 9,
-          igstRate: 0,
-          cessRate: 0,
-        },
-      ],
-      totalValue: 1000,
-      cgstValue: 90,
-      sgstValue: 90,
-      igstValue: 0,
-      cessValue: 0,
-      totInvValue: 1180,
-      transMode: '1',
-      transDistance: '25',
-      transporterId: TRANSPORTER_ID,
-      transporterName: 'Sharma Roadways',
-      vehicleNo: 'DL01AB1234',
-    });
-  });
-
-  it('records the NIC response verbatim, moving draft -> generated once', async () => {
-    // Recording what NIC decided is clerical: an office writer without
-    // issue/cancel authority does it.
-    const generated = await authed(clerk, {
-      method: 'POST',
-      url: `/api/eway-bills/${roadEwbId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '123456789012',
-        ewbDate: '2026-08-06T10:00:00.000Z',
-        validUntil: '2026-08-07T23:59:59.000Z',
-      },
-    });
-    expect(generated.statusCode, generated.body).toBe(200);
-    const bill = generated.json<EwayBillDetailResponse>().ewayBill;
-    expect(bill).toMatchObject({
-      status: 'generated',
-      ewbNumber: '123456789012',
-      ewbDate: '2026-08-06T10:00:00.000Z',
-      validUntil: '2026-08-07T23:59:59.000Z',
-    });
-    expect(bill.generatedAt).not.toBeNull();
-
-    // Generated is frozen: no second response, no edits, no delete.
-    const again = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${roadEwbId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '999999999999',
-        ewbDate: '2026-08-06T11:00:00.000Z',
-        validUntil: '2026-08-08T23:59:59.000Z',
-      },
-    });
-    expect(again.statusCode).toBe(409);
-    const edit = await authed(owner, {
-      method: 'PUT',
-      url: `/api/eway-bills/${roadEwbId}`,
-      organisationId,
-      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
-    });
-    expect(edit.statusCode).toBe(409);
-    const del = await authed(owner, {
-      method: 'DELETE',
-      url: `/api/eway-bills/${roadEwbId}`,
-      organisationId,
-    });
-    expect(del.statusCode).toBe(409);
-
-    // The carriage CHECK is the database's own: raw SQL cannot strip the
-    // vehicle off a generated road movement either.
-    await expect(
-      admin`update eway_bills set vehicle_number = null where id = ${roadEwbId}`,
-    ).rejects.toMatchObject({ code: '23514' });
-  });
-
-  it('holds the cancel order: invoice refuses under a live e-way bill', async () => {
-    const invoiceCancel = await authed(owner, {
-      method: 'POST',
-      url: `/api/tax-invoices/${submittedInvoiceId}/cancel`,
-      organisationId,
-      payload: { note: 'trying to cancel under a live movement' },
-    });
-    expect(invoiceCancel.statusCode).toBe(409);
-    expect(invoiceCancel.json<{ code: string }>().code).toBe('EWAY_BILL_LIVE');
-
-    const unauthorised = await authed(clerk, {
-      method: 'POST',
-      url: `/api/eway-bills/${roadEwbId}/cancel`,
-      organisationId,
-      payload: { note: 'clerk cannot cancel' },
-    });
-    expect(unauthorised.statusCode).toBe(403);
-    expect(unauthorised.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
-
-    const cancelled = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${roadEwbId}/cancel`,
-      organisationId,
-      payload: { note: 'vehicle broke down before dispatch' },
-    });
-    expect(cancelled.statusCode, cancelled.body).toBe(200);
-    const bill = cancelled.json<EwayBillDetailResponse>().ewayBill;
-    expect(bill.status).toBe('cancelled');
-    // The 0035 generated-shape CHECK clears the NIC fields off a
-    // cancelled row â€” the voided number survives in the audit trail.
-    expect(bill.ewbNumber).toBeNull();
-    expect(bill.cancellationNote).toBe('vehicle broke down before dispatch');
-    const [event] = await admin<{ details: { ewbNumber?: string } }[]>`
-      select details from audit_events
-      where organisation_id = ${organisationId}
-        and entity_type = 'eway_bills' and entity_id = ${roadEwbId}
-        and action = 'eway_bill.cancelled'
-      order by occurred_at desc, id desc
-      limit 1
-    `;
-    expect(event?.details.ewbNumber).toBe('123456789012');
-  });
-});
-
-describe('rail carriage', () => {
-  it('drafts on the freed slot and serves the rail payload shape â€” golden', async () => {
-    const created = await createEwayBill(submittedInvoiceId, {
-      transportMode: 'rail',
-      transportDocNumber: 'RR-123456',
-      transportDocDate: '2026-08-06',
-      distanceKm: 900,
-      fromPincode: '110020',
-      toPincode: '110055',
-    });
-    expect(created.statusCode, created.body).toBe(201);
-    railEwbId = created.json<EwayBillDetailResponse>().ewayBill.id;
-
-    const response = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${railEwbId}/nic-payload`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(200);
-    // Rail carriage: transDocNo/transDocDate carry the movement, no
-    // vehicleNo key at all; the omitted transporter stays omitted.
-    expect(response.json()).toStrictEqual({
-      supplyType: 'O',
-      subSupplyType: '1',
-      docType: 'INV',
-      docNo: 'P1026001',
-      docDate: '05/08/2026',
-      fromGstin: ORG_GSTIN,
-      fromTrdName: 'EWB Constructions',
-      fromAddr1: ORG_ADDRESS,
-      fromPlace: 'New Delhi',
-      fromPincode: 110020,
-      fromStateCode: 7,
-      actFromStateCode: 7,
-      toGstin: BUYER_GSTIN,
-      toTrdName: 'Sr. DEE (G) NR',
-      toAddr1: BUYER_ADDRESS,
-      toPlace: 'New Delhi',
-      toPincode: 110055,
-      toStateCode: 7,
-      actToStateCode: 7,
-      transactionType: 1,
-      itemList: [
-        {
-          itemNo: 1,
-          productDesc: SERVICE_DESCRIPTION,
-          hsnCode: 995421,
-          quantity: 1,
-          qtyUnit: 'OTH',
-          taxableAmount: 1000,
-          cgstRate: 9,
-          sgstRate: 9,
-          igstRate: 0,
-          cessRate: 0,
-        },
-      ],
-      totalValue: 1000,
-      cgstValue: 90,
-      sgstValue: 90,
-      igstValue: 0,
-      cessValue: 0,
-      totInvValue: 1180,
-      transMode: '2',
-      transDistance: '900',
-      transDocNo: 'RR-123456',
-      transDocDate: '06/08/2026',
-    });
-  });
-
-  it('demands the transport document before NIC can answer', async () => {
-    // Drop the doc date: the carriage is incomplete again.
-    const stripped = await authed(owner, {
-      method: 'PUT',
-      url: `/api/eway-bills/${railEwbId}`,
-      organisationId,
-      payload: {
-        transportMode: 'rail',
-        transportDocNumber: 'RR-123456',
-        distanceKm: 900,
-        fromPincode: '110020',
-        toPincode: '110055',
-      },
-    });
-    expect(stripped.statusCode, stripped.body).toBe(200);
-
-    const refused = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${railEwbId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '210987654321',
-        ewbDate: '2026-08-07T09:00:00.000Z',
-        validUntil: '2026-08-10T23:59:59.000Z',
-      },
-    });
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json<{ code: string }>().code).toBe('TRANSPORT_DOC_REQUIRED');
-
-    const restored = await authed(owner, {
-      method: 'PUT',
-      url: `/api/eway-bills/${railEwbId}`,
-      organisationId,
-      payload: {
-        transportMode: 'rail',
-        transportDocNumber: 'RR-123456',
-        transportDocDate: '2026-08-06',
-        distanceKm: 900,
-        fromPincode: '110020',
-        toPincode: '110055',
-      },
-    });
-    expect(restored.statusCode, restored.body).toBe(200);
-
-    const generated = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${railEwbId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '210987654321',
-        ewbDate: '2026-08-07T09:00:00.000Z',
-        validUntil: '2026-08-10T23:59:59.000Z',
-      },
-    });
-    expect(generated.statusCode, generated.body).toBe(200);
-    expect(generated.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
-      status: 'generated',
-      ewbNumber: '210987654321',
-      transportMode: 'rail',
-      transportDocNumber: 'RR-123456',
-      transportDocDate: '2026-08-06',
-    });
-  });
-
-  it('closes the whole chain: e-way bill cancelled, then the invoice', async () => {
-    const blocked = await authed(owner, {
-      method: 'POST',
-      url: `/api/tax-invoices/${submittedInvoiceId}/cancel`,
-      organisationId,
-      payload: { note: 'still moving under the rail e-way bill' },
-    });
-    expect(blocked.statusCode).toBe(409);
-    expect(blocked.json<{ code: string }>().code).toBe('EWAY_BILL_LIVE');
-
-    const ewbCancelled = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${railEwbId}/cancel`,
-      organisationId,
-      payload: { note: 'consignment did not move' },
-    });
-    expect(ewbCancelled.statusCode, ewbCancelled.body).toBe(200);
-
-    const invoiceCancelled = await authed(owner, {
-      method: 'POST',
-      url: `/api/tax-invoices/${submittedInvoiceId}/cancel`,
-      organisationId,
-      payload: { note: 'billing period re-cast' },
-    });
-    expect(invoiceCancelled.statusCode, invoiceCancelled.body).toBe(200);
-    expect(invoiceCancelled.json<TaxInvoiceDetailResponse>().invoice.status).toBe(
-      'cancelled',
-    );
-  });
-});
-
-describe('listing, tenancy, and scope', () => {
-  it('lists the invoice movements, newest first, with the invoice number', async () => {
-    const response = await authed(owner, {
-      method: 'GET',
-      url: `/api/tax-invoices/${submittedInvoiceId}/eway-bills`,
-      organisationId,
-    });
-    expect(response.statusCode, response.body).toBe(200);
-    const { ewayBills } = response.json<EwayBillListResponse>();
-    expect(ewayBills.length).toBe(2);
-    expect(ewayBills.every((bill) => bill.status === 'cancelled')).toBe(true);
-    expect(ewayBills.every((bill) => bill.invoiceNumber === 'P1026001')).toBe(true);
-  });
-
-  it('answers 404 across tenants and 401 without a session', async () => {
-    const read = await authed(outsider, {
-      method: 'GET',
-      url: `/api/eway-bills/${railEwbId}`,
-      organisationId: outsiderOrganisationId,
-    });
-    expect(read.statusCode).toBe(404);
-
-    const list = await authed(outsider, {
-      method: 'GET',
-      url: `/api/tax-invoices/${submittedInvoiceId}/eway-bills`,
-      organisationId: outsiderOrganisationId,
-    });
-    expect(list.statusCode).toBe(404);
-
-    const payload = await authed(outsider, {
-      method: 'GET',
-      url: `/api/eway-bills/${railEwbId}/nic-payload`,
-      organisationId: outsiderOrganisationId,
-    });
-    expect(payload.statusCode).toBe(404);
-
-    const edit = await authed(outsider, {
-      method: 'PUT',
-      url: `/api/eway-bills/${railEwbId}`,
-      organisationId: outsiderOrganisationId,
-      payload: roadBody(),
-    });
-    expect(edit.statusCode).toBe(404);
-
-    const anonymous = await app.inject({
-      method: 'GET',
-      url: `/api/eway-bills/${railEwbId}`,
-      headers: { 'x-organisation-id': organisationId },
-    });
-    expect(anonymous.statusCode).toBe(401);
-  });
-});
+      pincode, state_code, locality, is_consignee, activÛÍ{¶‰ËkºwµçXÜàäÀÄÈœ°(€€€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀÙPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÀİPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€€€€€•İ‰…Ñ•Q•áĞè€œÀØ¼Àà¼ÈÀÈØ€ÄÔèÌÀèÀÀœ°(€€€€€€€Ù…±¥‘U¹Ñ¥±Q•áĞè€œÀÜ¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•¹•É…Ñ•¹ÍÑ…ÑÕÍ½‘”°•¹•É…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‰¥±°€ô•¹•É…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°ì(€€€•áÁ•Ğ¡‰¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€•¹•É…Ñ•œ°(€€€€€•İ‰9Õµ‰•Èè€œÄÈÌĞÔØÜàäÀÄÈœ°(€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀÙPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÀİPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€ô¤ì(€€€•áÁ•Ğ¡‰¥±°¹•¹•É…Ñ•‘Ğ¤¹¹½Ğ¹Ñ½	•9Õ±° ¤ì((€€€€¼¼•¹•É…Ñ•¥Ì™É½é•¸è¹¼Í•½¹É•ÍÁ½¹Í”°¹¼•‘¥ÑÌ°¹¼‘•±•Ñ”¸(€€€½¹ÍĞ……¥¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘ô½¹¥ŒµÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€•İ‰9Õµ‰•Èè€œääääääääääääœ°(€€€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀÙPÄÄèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÀáPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€€€€€•İ‰…Ñ•Q•áĞè€œÀØ¼Àà¼ÈÀÈØ€ÄØèÌÀèÀÀœ°(€€€€€€€Ù…±¥‘U¹Ñ¥±Q•áĞè€œÀà¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡……¥¸¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€½¹ÍĞ•‘¥Ğ€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èÉ½…‘	½‘ä¡ìÙ•¡¥±•9Õµ‰•Èè€0ÀÅÄÈÌĞœô¤°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ğ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€½¹ÍĞ‘•°€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€1Qœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•°¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì((€€€€¼¼Q¡”…ÉÉ¥…”!,¥ÌÑ¡”‘…Ñ…‰…Í”Ì½İ¸èÉ…ÜME0…¹¹½ĞÍÑÉ¥ÀÑ¡”(€€€€¼¼Ù•¡¥±”½™˜„•¹•É…Ñ•É½…µ½Ù•µ•¹Ğ•¥Ñ¡•È¸(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…‘µ¥¹ÕÁ‘…Ñ”•İ…å}‰¥±±ÌÍ•ĞÙ•¡¥±•}¹Õµ‰•È€ô¹Õ±°İ¡•É”¥€ô€‘íÉ½…‘İ‰%‘õ€°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œÈÌÔÄĞœô¤ì(€ô¤ì((€¥Ğ ¡½±‘ÌÑ¡”…¹•°½É‘•Èè¥¹Ù½¥”É•™ÕÍ•ÌÕ¹‘•È„±¥Ù””µİ…ä‰¥±°œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ¥¹Ù½¥•…¹•°€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘íÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€ÑÉå¥¹œÑ¼…¹•°Õ¹‘•È„±¥Ù”µ½Ù•µ•¹Ğœô°(€€€ô¤ì(€€€•áÁ•Ğ¡¥¹Ù½¥•…¹•°¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡¥¹Ù½¥•…¹•°¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” ]e}	%11}1%Yœ¤ì((€€€½¹ÍĞÕ¹…ÕÑ¡½É¥Í•€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€±•É¬…¹¹½Ğ…¹•°œô°(€€€ô¤ì(€€€•áÁ•Ğ¡Õ¹…ÕÑ¡½É¥Í•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡Õ¹…ÕÑ¡½É¥Í•¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” UQ!=I%Qe}IEU%Iœ¤ì((€€€½¹ÍĞ•áÑ•É¹…±…¹•±±…Ñ¥½¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘ô½µ…¹Õ…°µ…¹•°µÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€É•…Í½¹½‘”è€œÈœ°(€€€€€€€É•µ…É¬è€=É‘•È…¹•±±•‰•™½É”‘¥ÍÁ…Ñ œ°(€€€€€€€…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀÙPÄÄèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€…¹•±±•‘ÑQ•áĞè€œÀØ¼Àà¼ÈÀÈØ€ÄØèÌÀèÀÀœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•áÑ•É¹…±…¹•±±…Ñ¥½¸¹ÍÑ…ÑÕÍ½‘”°•áÑ•É¹…±…¹•±±…Ñ¥½¸¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡•áÑ•É¹…±…¹•±±…Ñ¥½¸¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÁÉ½Ù¥‘•ÉMÑ…Ñ”è€…¹•±±•œ°(€€€€€ÁÉ½Ù¥‘•É…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀÙPÄÄèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±±•‘ÑQ•áĞè€œÀØ¼Àà¼ÈÀÈØ€ÄØèÌÀèÀÀœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±I•…Í½¹½‘”è€œÈœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±I•µ…É¬è€=É‘•È…¹•±±•‰•™½É”‘¥ÍÁ…Ñ œ°(€€€ô¤ì((€€€½¹ÍĞ…¹•±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ½…‘İ‰%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€Ù•¡¥±”‰É½­”‘½İ¸‰•™½É”‘¥ÍÁ…Ñ œô°(€€€ô¤ì(€€€•áÁ•Ğ¡…¹•±±•¹ÍÑ…ÑÕÍ½‘”°…¹•±±•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‰¥±°€ô…¹•±±•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°ì(€€€•áÁ•Ğ¡‰¥±°¹ÍÑ…ÑÕÌ¤¹Ñ½	” …¹•±±•œ¤ì(€€€€¼¼…¹•±±…Ñ¥½¸É•Ñ…¥¹ÌÑ¡”½™™¥¥…°¥‘•¹Ñ¥Ñä…¹•á…ĞÁ½ÉÑ…°•Ù¥‘•¹”¸(€€€•áÁ•Ğ¡‰¥±°¹•İ‰9Õµ‰•È¤¹Ñ½	” œÄÈÌĞÔØÜàäÀÄÈœ¤ì(€€€•áÁ•Ğ¡‰¥±°¹•İ‰…Ñ•Q•áĞ¤¹Ñ½	” œÀØ¼Àà¼ÈÀÈØ€ÄÔèÌÀèÀÀœ¤ì(€€€•áÁ•Ğ¡‰¥±°¹Ù…±¥‘U¹Ñ¥±Q•áĞ¤¹Ñ½	” œÀÜ¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ¤ì(€€€•áÁ•Ğ¡‰¥±°¹…¹•±±…Ñ¥½¹9½Ñ”¤¹Ñ½	” Ù•¡¥±”‰É½­”‘½İ¸‰•™½É”‘¥ÍÁ…Ñ œ¤ì(€€€½¹ÍĞm•Ù•¹Ñt€ô…İ…¥Ğ…‘µ¥¸ñì‘•Ñ…¥±Ìèì•İ‰9Õµ‰•ÈüèÍÑÉ¥¹œôõmtù€(€€€€€Í•±•Ğ‘•Ñ…¥±Ì™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€…¹•¹Ñ¥Ñå}ÑåÁ”€ô€•İ…å}‰¥±±Ìœ…¹•¹Ñ¥Ñå}¥€ô€‘íÉ½…‘İ‰%‘ô(€€€€€€€…¹…Ñ¥½¸€ô€•İ…å}‰¥±°¹…¹•±±•œ(€€€€€½É‘•È‰ä½ÕÉÉ•‘}…Ğ‘•ÍŒ°¥‘•ÍŒ(€€€€€±¥µ¥Ğ€Ä(€€€€ì(€€€•áÁ•Ğ¡•Ù•¹Ğü¹‘•Ñ…¥±Ì¹•İ‰9Õµ‰•È¤¹Ñ½	” œÄÈÌĞÔØÜàäÀÄÈœ¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” É…¥°…ÉÉ¥…”œ°€ ¤€ôøì(€¥Ğ ‘É…™ÑÌ½¸Ñ¡”™É••Í±½Ğ…¹É•™ÕÍ•ÌÑ¡”±•…äÉ…¥°Á…å±½…œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥ĞÉ•…Ñ•İ…å	¥±°¡ÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%°ì(€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É…¥°œ°(€€€€€ÑÉ…¹ÍÁ½ÉÑ½9Õµ‰•Èè€IH´ÄÈÌĞÔØœ°(€€€€€ÑÉ…¹ÍÁ½ÉÑ½…Ñ”è€œÈÀÈØ´Àà´ÀØœ°(€€€€€‘¥ÍÑ…¹•-´è€äÀÀ°(€€€€€™É½µA¥¹½‘”è€œÄÄÀÀÈÀœ°(€€€€€Ñ½A¥¹½‘”è€œÄÄÀÀÔÔœ°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€É…¥±İ‰%€ôÉ•…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¹¥ì((€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½¹¥ŒµÁ…å±½…‘€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” (€€€€€€]e}	%11}9=Q}AA1%	1}Q=}MIY%}%9Y=%œ°(€€€€¤ì(€ô¤ì((€¥Ğ ‘•µ…¹‘ÌÑ¡”ÑÉ…¹ÍÁ½ÉĞ‘½Õµ•¹Ğ‰•™½É”9%…¸…¹Íİ•Èœ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼É½ÀÑ¡”‘½Œ‘…Ñ”èÑ¡”…ÉÉ¥…”¥Ì¥¹½µÁ±•Ñ”……¥¸¸(€€€½¹ÍĞÍÑÉ¥ÁÁ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É…¥°œ°(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ½9Õµ‰•Èè€IH´ÄÈÌĞÔØœ°(€€€€€€€‘¥ÍÑ…¹•-´è€äÀÀ°(€€€€€€€™É½µA¥¹½‘”è€œÄÄÀÀÈÀœ°(€€€€€€€Ñ½A¥¹½‘”è€œÄÄÀÀÔÔœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡ÍÑÉ¥ÁÁ•¹ÍÑ…ÑÕÍ½‘”°ÍÑÉ¥ÁÁ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞÉ•™ÕÍ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½¹¥ŒµÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€•İ‰9Õµ‰•Èè€œÈÄÀäàÜØÔĞÌÈÄœ°(€€€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀİPÀäèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÄÁPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€€€€€•İ‰…Ñ•Q•áĞè€œÀÜ¼Àà¼ÈÀÈØ€ÄĞèÌÀèÀÀœ°(€€€€€€€Ù…±¥‘U¹Ñ¥±Q•áĞè€œÄÀ¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÀ¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” QI9MA=IQ}=}IEU%Iœ¤ì((€€€½¹ÍĞÉ•ÍÑ½É•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É…¥°œ°(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ½9Õµ‰•Èè€IH´ÄÈÌĞÔØœ°(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ½…Ñ”è€œÈÀÈØ´Àà´ÀØœ°(€€€€€€€‘¥ÍÑ…¹•-´è€äÀÀ°(€€€€€€€™É½µA¥¹½‘”è€œÄÄÀÀÈÀœ°(€€€€€€€Ñ½A¥¹½‘”è€œÄÄÀÀÔÔœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÑ½É•¹ÍÑ…ÑÕÍ½‘”°É•ÍÑ½É•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞ•¹•É…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½¹¥ŒµÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€•İ‰9Õµ‰•Èè€œÈÄÀäàÜØÔĞÌÈÄœ°(€€€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀİPÀäèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÄÁPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€€€€€•İ‰…Ñ•Q•áĞè€œÀÜ¼Àà¼ÈÀÈØ€ÄĞèÌÀèÀÀœ°(€€€€€€€Ù…±¥‘U¹Ñ¥±Q•áĞè€œÄÀ¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•¹•É…Ñ•¹ÍÑ…ÑÕÍ½‘”°•¹•É…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡•¹•É…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€•¹•É…Ñ•œ°(€€€€€•İ‰9Õµ‰•Èè€œÈÄÀäàÜØÔĞÌÈÄœ°(€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É…¥°œ°(€€€€€ÑÉ…¹ÍÁ½ÉÑ½9Õµ‰•Èè€IH´ÄÈÌĞÔØœ°(€€€€€ÑÉ…¹ÍÁ½ÉÑ½…Ñ”è€œÈÀÈØ´Àà´ÀØœ°(€€€ô¤ì(€ô¤ì((€¥Ğ ±½Í•ÌÑ¡”İ¡½±”¡…¥¸è”µİ…ä‰¥±°…¹•±±•°Ñ¡•¸Ñ¡”¥¹Ù½¥”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ‰±½­•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘íÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€ÍÑ¥±°µ½Ù¥¹œÕ¹‘•ÈÑ¡”É…¥°”µİ…ä‰¥±°œô°(€€€ô¤ì(€€€•áÁ•Ğ¡‰±½­•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡‰±½­•¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” ]e}	%11}1%Yœ¤ì((€€€½¹ÍĞ•áÑ•É¹…±…¹•±±…Ñ¥½¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½µ…¹Õ…°µ…¹•°µÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€É•…Í½¹½‘”è€œÈœ°(€€€€€€€É•µ…É¬è€=É‘•È…¹•±±•‰•™½É”É…¥°‘¥ÍÁ…Ñ œ°(€€€€€€€…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀİPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€…¹•±±•‘ÑQ•áĞè€œÀÜ¼Àà¼ÈÀÈØ€ÄÔèÌÀèÀÀœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•áÑ•É¹…±…¹•±±…Ñ¥½¸¹ÍÑ…ÑÕÍ½‘”°•áÑ•É¹…±…¹•±±…Ñ¥½¸¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞ•İ‰…¹•±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€½¹Í¥¹µ•¹Ğ‘¥¹½Ğµ½Ù”œô°(€€€ô¤ì(€€€•áÁ•Ğ¡•İ‰…¹•±±•¹ÍÑ…ÑÕÍ½‘”°•İ‰…¹•±±•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞ¥¹Ù½¥•…¹•±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘íÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%‘ô½…¹•±€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€‰¥±±¥¹œÁ•É¥½É”µ…ÍĞœô°(€€€ô¤ì(€€€•áÁ•Ğ¡¥¹Ù½¥•…¹•±±•¹ÍÑ…ÑÕÍ½‘”°¥¹Ù½¥•…¹•±±•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡¥¹Ù½¥•…¹•±±•¹©Í½¸ñQ…á%¹Ù½¥••Ñ…¥±I•ÍÁ½¹Í”ø ¤¹¥¹Ù½¥”¹ÍÑ…ÑÕÌ¤¹Ñ½	” (€€€€€€…¹•±±•œ°(€€€€¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” ±¥ÍÑ¥¹œ°Ñ•¹…¹ä°…¹Í½Á”œ°€ ¤€ôøì(€¥Ğ ±¥ÍÑÌÑ¡”¥¹Ù½¥”µ½Ù•µ•¹ÑÌ°¹•İ•ÍĞ™¥ÉÍĞ°İ¥Ñ Ñ¡”¥¹Ù½¥”¹Õµ‰•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘íÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%‘ô½•İ…äµ‰¥±±Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞì•İ…å	¥±±Ìô€ôÉ•ÍÁ½¹Í”¹©Í½¸ñİ…å	¥±±1¥ÍÑI•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡•İ…å	¥±±Ì¹±•¹Ñ ¤¹Ñ½	” È¤ì(€€€•áÁ•Ğ¡•İ…å	¥±±Ì¹•Ù•Éä ¡‰¥±°¤€ôø‰¥±°¹ÍÑ…ÑÕÌ€ôôô€…¹•±±•œ¤¤¹Ñ½	”¡ÑÉÕ”¤ì(€€€•áÁ•Ğ¡•İ…å	¥±±Ì¹•Ù•Éä ¡‰¥±°¤€ôø‰¥±°¹¥¹Ù½¥•9Õµ‰•È€ôôô€@ÄÀÈØÀÀÄœ¤¤¹Ñ½	”¡ÑÉÕ”¤ì(€ô¤ì((€¥Ğ …¹Íİ•ÉÌ€ĞÀĞ…É½ÍÌÑ•¹…¹ÑÌ…¹€ĞÀÄİ¥Ñ¡½ÕĞ„Í•ÍÍ¥½¸œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞ±¥ÍĞ€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘íÍÕ‰µ¥ÑÑ•‘%¹Ù½¥•%‘ô½•İ…äµ‰¥±±Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡±¥ÍĞ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞÁ…å±½…€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘ô½¹¥ŒµÁ…å±½…‘€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡Á…å±½…¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞ•‘¥Ğ€ô…İ…¥Ğ…ÕÑ¡•¡½ÕÑÍ¥‘•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½ÕÑÍ¥‘•É=É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èÉ½…‘	½‘ä ¤°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ğ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞ…¹½¹åµ½ÕÌ€ô…İ…¥Ğ…ÁÀ¹¥¹©•Ğ¡ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘íÉ…¥±İ‰%‘õ€°(€€€€€¡•…‘•ÉÌèì€àµ½É…¹¥Í…Ñ¥½¸µ¥œè½É…¹¥Í…Ñ¥½¹%ô°(€€€ô¤ì(€€€•áÁ•Ğ¡…¹½¹åµ½ÕÌ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÄ¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” ]¡¥Ñ•‰½½­Ì”µİ…ä‰¥±°ÁÉ½Ù¥‘•È…¹•±±…Ñ¥½¸œ°€ ¤€ôøì(€¥Ğ …¹•±Ì½¹”…¹É•Ñ…¥¹Ì•á…ĞÁÉ½Ù¥‘•È•Ù¥‘•¹”¥¸Ñ¡”±•‘•Èœ°…Íå¹Œ€ ¤€ôøì(€€€É•Í•ÑAÉ½Ù¥‘•É5½­Ì ¤ì(€€€½¹ÍĞ¥¹Ù½¥•%€ô…İ…¥ĞÍÕ‰µ¥ÑÑ•‘¥É•Ñ%¹Ù½¥” ÍÕ•ÍÌœ¤ì(€€€½¹ÍĞ•İ…å	¥±±%€ô…İ…¥ĞÍ••‘]¡¥Ñ•‰½½­Íİ…å	¥±°¡¥¹Ù½¥•%°€œÌÀÄÈÌĞÔØÜàäÀœ¤ì(€€€…¹•±İ…å	¥±±AÉ½Ù¥‘•È¹µ½­I•Í½±Ù•‘Y…±Õ•=¹”¡ì(€€€€€…¹•±±•‘ÑQ•áĞè€œÀà¼Àà¼ÈÀÈØ€ÄØèÀÀèÀÀœ°(€€€€€…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀáPÄÀèÌÀèÀÀ¸ÀÀÁhœ°(€€€ô¤ì((€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•‘=¸¡ÁÉ½Ù¥‘•ÉÁÀ°½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½…¹•°µÁÉ½Ù¥‘•É€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìÉ•…Í½¹½‘”è€œÈœ°É•µ…É¬è€œ€=É‘•È…¹•±±•‰•™½É”‘¥ÍÁ…Ñ €€œô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€•¹•É…Ñ•œ°(€€€€€ÁÉ½Ù¥‘•Èè€İ¡¥Ñ•‰½½­Ìœ°(€€€€€ÁÉ½Ù¥‘•ÉMÑ…Ñ”è€…¹•±±•œ°(€€€€€ÁÉ½Ù¥‘•É…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀáPÄÀèÌÀèÀÀ¸ÀÀÁhœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±±•‘ÑQ•áĞè€œÀà¼Àà¼ÈÀÈØ€ÄØèÀÀèÀÀœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±I•…Í½¹½‘”è€œÈœ°(€€€€€ÁÉ½Ù¥‘•É…¹•±I•µ…É¬è€=É‘•È…¹•±±•‰•™½É”‘¥ÍÁ…Ñ œ°(€€€ô¤ì(€€€•áÁ•Ğ¡…¹•±İ…å	¥±±AÉ½Ù¥‘•È¤¹Ñ½!…Ù•	••¹…±±•‘Q¥µ•Ì Ä¤ì(€€€•áÁ•Ğ¡…¹•±İ…å	¥±±AÉ½Ù¥‘•È¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡ì(€€€€€ÍÑ¥¸è=I}MQ%8°(€€€€€•İ‰9Õµ‰•Èè€œÌÀÄÈÌĞÔØÜàäÀœ°(€€€€€É•…Í½¹½‘”è€œÈœ°(€€€€€É•µ…É¬è€=É‘•È…¹•±±•‰•™½É”‘¥ÍÁ…Ñ œ°(€€€ô¤ì(€€€½¹ÍĞm½Á•É…Ñ¥½¹t€ô…İ…¥Ğ…‘µ¥¸ğ(€€€€€ì(€€€€€€€½Á•É…Ñ¥½¸èÍÑÉ¥¹œì(€€€€€€€ÍÑ…ÑÕÌèÍÑÉ¥¹œì(€€€€€€€ÁÉ½Ù¥‘•ÈèÍÑÉ¥¹œì(€€€€€€€•¹Ù¥É½¹µ•¹ĞèÍÑÉ¥¹œì(€€€€€€€½µÁ±•Ñ•è‰½½±•…¸ì(€€€€€õmt(€€€€ù€(€€€€€Í•±•Ğ½Á•É…Ñ¥½¸°ÍÑ…ÑÕÌ°ÁÉ½Ù¥‘•È°•¹Ù¥É½¹µ•¹Ğ°(€€€€€€€€€€€€½µÁ±•Ñ•‘}…Ğ¥Ì¹½Ğ¹Õ±°…Ì½µÁ±•Ñ•(€€€€€™É½´ÍÑ…ÑÕÑ½Éå}ÁÉ½Ù¥‘•É}½Á•É…Ñ¥½¹Ìİ¡•É”•İ…å}‰¥±±}¥€ô€‘í•İ…å	¥±±%‘ô(€€€€ì(€€€•áÁ•Ğ¡½Á•É…Ñ¥½¸¤¹Ñ½ÅÕ…°¡ì(€€€€€½Á•É…Ñ¥½¸è€…¹•±}•İ…å}‰¥±°œ°(€€€€€ÍÑ…ÑÕÌè€ÍÕ••‘•œ°(€€€€€ÁÉ½Ù¥‘•Èè€İ¡¥Ñ•‰½½­Ìœ°(€€€€€•¹Ù¥É½¹µ•¹Ğè€Í…¹‘‰½àœ°(€€€€€½µÁ±•Ñ•èÑÉÕ”°(€€€ô¤ì(€ô¤ì((€¥Ğ ‘½•Ì¹½ĞÉ•Á•…Ğ…¸Õ¹­¹½İ¸…¹•±±…Ñ¥½¸µÕÑ…Ñ¥½¸œ°…Íå¹Œ€ ¤€ôøì(€€€É•Í•ÑAÉ½Ù¥‘•É5½­Ì ¤ì(€€€½¹ÍĞ¥¹Ù½¥•%€ô…İ…¥ĞÍÕ‰µ¥ÑÑ•‘¥É•Ñ%¹Ù½¥” Õ¹­¹½İ¸É•ÍÕ±Ğœ¤ì(€€€½¹ÍĞ•İ…å	¥±±%€ô…İ…¥ĞÍ••‘]¡¥Ñ•‰½½­Íİ…å	¥±°¡¥¹Ù½¥•%°€œĞÀÄÈÌĞÔØÜàäÀœ¤ì(€€€…¹•±İ…å	¥±±AÉ½Ù¥‘•È¹µ½­I•©•Ñ•‘Y…±Õ•=¹” (€€€€€¹•ÜMÑ…ÑÕÑ½ÉåAÉ½Ù¥‘•ÉÉÉ½È (€€€€€€€€]!%Q	==-M}5UQQ%=9}U9-9=]8œ°(€€€€€€€€Õ¹­¹½İ¸œ°(€€€€€€€€]´ÔÀÌœ°(€€€€€€€€ÔÀÌ°(€€€€€€¤°(€€€€¤ì((€€€½¹ÍĞÕ¹•ÉÑ…¥¸€ô…İ…¥Ğ…ÕÑ¡•‘=¸¡ÁÉ½Ù¥‘•ÉÁÀ°½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½…¹•°µÁÉ½Ù¥‘•É€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìÉ•…Í½¹½‘”è€œÈœ°É•µ…É¬è€Y•¡¥±”‘¥¹½Ğµ½Ù”œô°(€€€ô¤ì(€€€•áÁ•Ğ¡Õ¹•ÉÑ…¥¸¹ÍÑ…ÑÕÍ½‘”°Õ¹•ÉÑ…¥¸¹‰½‘ä¤¹Ñ½	” ÈÀÈ¤ì(€€€•áÁ•Ğ¡Õ¹•ÉÑ…¥¸¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¹ÁÉ½Ù¥‘•ÉMÑ…Ñ”¤¹Ñ½	” (€€€€€€…¹•±±…Ñ¥½¹}Õ¹­¹½İ¸œ°(€€€€¤ì((€€€½¹ÍĞÉ•Á•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•‘=¸¡ÁÉ½Ù¥‘•ÉÁÀ°½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½…¹•°µÁÉ½Ù¥‘•É€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìÉ•…Í½¹½‘”è€œÈœ°É•µ…É¬è€Y•¡¥±”‘¥¹½Ğµ½Ù”œô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•Á•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•Á•…Ñ•¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡É•Á•…Ñ•¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” ]e}AI=Y%I}MQQ}=91%Pœ¤ì(€€€•áÁ•Ğ¡…¹•±İ…å	¥±±AÉ½Ù¥‘•È¤¹Ñ½!…Ù•	••¹…±±•‘Q¥µ•Ì Ä¤ì((€€€½¹ÍĞm½Á•É…Ñ¥½¹t€ô…İ…¥Ğ…‘µ¥¸ğ(€€€€€ìÍÑ…ÑÕÌèÍÑÉ¥¹œìÁÉ½Ù¥‘•É}½‘”èÍÑÉ¥¹œğ¹Õ±°ì¡ÑÑÁ}ÍÑ…ÑÕÌè¹Õµ‰•Èğ¹Õ±°õmt(€€€€ù€(€€€€€Í•±•ĞÍÑ…ÑÕÌ°ÁÉ½Ù¥‘•É}½‘”°¡ÑÑÁ}ÍÑ…ÑÕÌ(€€€€€™É½´ÍÑ…ÑÕÑ½Éå}ÁÉ½Ù¥‘•É}½Á•É…Ñ¥½¹Ìİ¡•É”•İ…å}‰¥±±}¥€ô€‘í•İ…å	¥±±%‘ô(€€€€ì(€€€•áÁ•Ğ¡½Á•É…Ñ¥½¸¤¹Ñ½ÅÕ…°¡ì(€€€€€ÍÑ…ÑÕÌè€Õ¹­¹½İ¸œ°(€€€€€ÁÉ½Ù¥‘•É}½‘”è€]´ÔÀÌœ°(€€€€€¡ÑÑÁ}ÍÑ…ÑÕÌè€ÔÀÌ°(€€€ô¤ì((€€€½¹ÍĞÉ•Í½±Ù•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½µ…¹Õ…°µ…¹•°µÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€É•…Í½¹½‘”è€œÈœ°(€€€€€€€É•µ…É¬è€Y•¡¥±”‘¥¹½Ğµ½Ù”œ°(€€€€€€€…¹•±±•‘Ğè€œÈÀÈØ´Àà´ÀáPÄÀèĞÔèÀÀ¸ÀÀÁhœ°(€€€€€€€…¹•±±•‘ÑQ•áĞè€œÀà¼Àà¼ÈÀÈØ€ÄØèÄÔèÀÀœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•Í½±Ù•¹ÍÑ…ÑÕÍ½‘”°É•Í½±Ù•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡É•Í½±Ù•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¹ÁÉ½Ù¥‘•ÉMÑ…Ñ”¤¹Ñ½	” (€€€€€€…¹•±±•œ°(€€€€¤ì(€ô¤ì)ô¤ì

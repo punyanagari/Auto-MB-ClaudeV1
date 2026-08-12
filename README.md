@@ -29,8 +29,14 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
   generated MB documents;
 - procurement and tax-document foundations: contacts, purchase orders,
   budgetary quotations, direct or MB-backed GST invoices, configurable
-  numbering, immutable invoice snapshots, IRP/NIC payloads, and e-way-bill
-  lifecycle records. External GSP submission is not yet automatic;
+  numbering, immutable invoice snapshots with explicit NIC localities,
+  explicit forward-charge confirmation, deterministic IRP payloads,
+  append-only tax-invoice PDF versions with frozen branding, signed-QR
+  rendering, and operator-triggered Whitebooks IRP registration, lookup, and
+  cancellation with durable recovery states. Historical e-way-bill records
+  remain readable, reconcilable, and cancellable; fresh provider generation
+  and NIC payload exposure are blocked for the current cumulative SAC
+  service-invoice model until a goods/HSN delivery model exists;
 - optional NIT, Contract Agreement, and tender/specification uploads tied to
   an LOA only after deterministic tender-number and work-name matching;
 - a dashboard, organisation settings/branding, member roles, per-member
@@ -44,9 +50,10 @@ The repository is not an ERP framework, an AI-agent platform, or a rewrite of ev
 - concise product, architecture, security, operations, and roadmap
   contracts; agent instructions and CI.
 
-Owner MFA enforcement, external monitoring, DAST, direct GSP integration,
-and a follow-up security review remain before paid production
-(`docs/ROADMAP.md`). No STQC certification is claimed.
+Owner MFA enforcement, external monitoring, DAST, live Whitebooks
+certification, provider-specific monitoring, and a follow-up security review
+remain before paid production (`docs/ROADMAP.md`). No STQC certification is
+claimed.
 
 ## Local start
 
