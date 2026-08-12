@@ -17,24 +17,25 @@ export interface ReadinessDeps {
   readonly clamav?: { readonly host: string; readonly port: number };
 }
 
-async function withTimeout<T>(work: Promise<T>): Promise<T> {
+async function withTimeout<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('readiness probe timed out'));
-        }, PROBE_TIMEOUT_MS);
-      }),
-    ]);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error('readiness probe timed out'));
+      }, PROBE_TIMEOUT_MS);
+    });
+    return await Promise.race([start(controller.signal), timeout]);
   } finally {
     clearTimeout(timer);
+    controller.abort();
   }
 }
 
 async function probeDatabase(database: Sql): Promise<void> {
-  await withTimeout(Promise.resolve(database`select 1 as ready`));
+  await withTimeout(() => Promise.resolve(database`select 1 as ready`));
 }
 
 /** Round-trips a marker object: catches a read-only or root-owned
@@ -46,17 +47,15 @@ async function probeStorage(storage: ObjectStorage): Promise<void> {
   // behind on every poll, forever (external re-audit: a one-minute
   // uptime monitor is half a million files a year).
   const key = '00000000-0000-4000-8000-000000000000/readiness/probe';
-  await withTimeout(
-    (async () => {
-      await storage.put(key, Buffer.from('ready'));
-      await storage.get(key);
-    })(),
-  );
+  await withTimeout(async () => {
+    await storage.put(key, Buffer.from('ready'));
+    await storage.get(key);
+  });
 }
 
 async function probeGotenberg(baseUrl: string): Promise<void> {
-  const response = await withTimeout(
-    fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) }),
+  const response = await withTimeout((signal) =>
+    fetch(`${baseUrl}/health`, { signal }),
   );
   if (!response.ok) throw new Error(`gotenberg answered ${String(response.status)}`);
 }
@@ -64,25 +63,40 @@ async function probeGotenberg(baseUrl: string): Promise<void> {
 /** clamd PING/PONG over one short-lived socket. */
 function probeClamav(host: string, port: number): Promise<void> {
   return withTimeout(
-    new Promise<void>((resolve, reject) => {
-      const socket = net.connect({ host, port });
-      const chunks: Buffer[] = [];
-      socket.setTimeout(PROBE_TIMEOUT_MS, () => {
-        socket.destroy(new Error('clamd probe timed out'));
-      });
-      socket.on('connect', () => {
-        socket.write('zPING\0');
-      });
-      socket.on('data', (data) => {
-        chunks.push(data);
-        if (Buffer.concat(chunks).includes('PONG')) socket.end();
-      });
-      socket.on('error', reject);
-      socket.on('close', () => {
-        if (Buffer.concat(chunks).includes('PONG')) resolve();
-        else reject(new Error('clamd did not answer PONG'));
-      });
-    }),
+    (signal) =>
+      new Promise<void>((resolve, reject) => {
+        const socket = net.connect({ host, port });
+        const chunks: Buffer[] = [];
+        let settled = false;
+        const settle = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          socket.destroy();
+          if (error === undefined) resolve();
+          else reject(error);
+        };
+        signal.addEventListener(
+          'abort',
+          () => settle(new Error('clamd probe timed out')),
+          { once: true },
+        );
+        socket.setTimeout(PROBE_TIMEOUT_MS, () => {
+          settle(new Error('clamd probe timed out'));
+        });
+        socket.on('connect', () => {
+          socket.write('zPING\0');
+        });
+        socket.on('data', (data) => {
+          chunks.push(data);
+          if (Buffer.concat(chunks).includes('PONG')) settle();
+        });
+        socket.on('error', (error) => settle(error));
+        socket.on('close', () => {
+          if (settled) return;
+          if (Buffer.concat(chunks).includes('PONG')) settle();
+          else settle(new Error('clamd did not answer PONG'));
+        });
+      }),
   );
 }
 
