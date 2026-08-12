@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
@@ -15,6 +15,10 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import {
+  StatutoryProviderError,
+  type StatutoryProvider,
+} from '../src/gsp/statutory-provider.js';
 
 /**
  * The e-way bill (migration 0035): the movement document for a
@@ -72,6 +76,7 @@ const TRANSPORTER_ID = '07ABCDE1234F1Z5';
 
 let admin: Sql;
 let app: FastifyInstance;
+let providerApp: FastifyInstance;
 let storageDir: string;
 let organisationId: string;
 let outsiderOrganisationId: string;
@@ -91,6 +96,23 @@ let owner: CookieJar;
 let clerk: CookieJar;
 let viewer: CookieJar;
 let outsider: CookieJar;
+
+const registerInvoiceProvider = vi.fn<StatutoryProvider['registerInvoice']>();
+const findInvoiceProvider = vi.fn<StatutoryProvider['findInvoiceByDocument']>();
+const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
+const generateEwayBillProvider = vi.fn<StatutoryProvider['generateEwayBillByIrn']>();
+const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
+const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
+const providerStub: StatutoryProvider = {
+  name: 'whitebooks',
+  environment: 'sandbox',
+  registerInvoice: registerInvoiceProvider,
+  findInvoiceByDocument: findInvoiceProvider,
+  cancelInvoice: cancelInvoiceProvider,
+  generateEwayBillByIrn: generateEwayBillProvider,
+  findEwayBillByIrn: findEwayBillProvider,
+  cancelEwayBill: cancelEwayBillProvider,
+};
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -113,6 +135,22 @@ async function authed(
 ) {
   const { organisationId: org, ...rest } = options;
   return app.inject({
+    ...rest,
+    headers: {
+      ...(rest.headers ?? {}),
+      cookie: jar.cookie,
+      ...(org !== undefined ? { 'x-organisation-id': org } : {}),
+    },
+  });
+}
+
+async function authedOn(
+  target: FastifyInstance,
+  jar: CookieJar,
+  options: InjectOptions & { organisationId?: string },
+) {
+  const { organisationId: org, ...rest } = options;
+  return target.inject({
     ...rest,
     headers: {
       ...(rest.headers ?? {}),
@@ -182,6 +220,7 @@ async function draftInvoiceOn(
       serviceDescription: SERVICE_DESCRIPTION,
       gstRate: '18',
       placeOfSupply: '07',
+      reverseChargeApplicable: false,
       buyerContactId,
     },
   });
@@ -210,6 +249,65 @@ async function createEwayBill(
     organisationId,
     payload: body,
   });
+}
+
+async function submittedDirectInvoice(suffix: string): Promise<string> {
+  const created = await authed(owner, {
+    method: 'POST',
+    url: '/api/tax-invoices',
+    organisationId,
+    payload: {
+      invoiceDate: '2026-08-08',
+      sacCode: '998734',
+      serviceDescription: `Whitebooks EWB cancellation probe ${suffix}.`,
+      gstRate: '18',
+      placeOfSupply: '07',
+      reverseChargeApplicable: false,
+      buyerContactId,
+      taxableValue: '1000.00',
+    },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  const id = created.json<TaxInvoiceDetailResponse>().invoice.id;
+  const submitted = await authed(owner, {
+    method: 'POST',
+    url: `/api/tax-invoices/${id}/submit`,
+    organisationId,
+  });
+  expect(submitted.statusCode, submitted.body).toBe(201);
+  return id;
+}
+
+async function seedWhitebooksEwayBill(
+  invoiceId: string,
+  ewbNumber: string,
+): Promise<string> {
+  const id = randomUUID();
+  await admin`
+    insert into eway_bills (
+      id, organisation_id, tax_invoice_id, status, transport_mode,
+      vehicle_number, distance_km, from_pincode, to_pincode,
+      ewb_number, ewb_date, valid_until, ewb_date_text, valid_until_text,
+      provider, provider_state, legacy_evidence_missing,
+      generated_by_user_id, generated_at, created_by_user_id
+    ) values (
+      ${id}, ${organisationId}, ${invoiceId}, 'generated', 'road',
+      'DL01AB1234', 25, '110020', '110055', ${ewbNumber},
+      '2026-08-08T09:00:00.000Z', '2026-08-09T23:59:59.000Z',
+      '08/08/2026 14:30:00', '09/08/2026 23:59:59',
+      'whitebooks', 'generated', false, ${ownerUserId}, now(), ${ownerUserId}
+    )
+  `;
+  return id;
+}
+
+function resetProviderMocks(): void {
+  registerInvoiceProvider.mockReset();
+  findInvoiceProvider.mockReset();
+  cancelInvoiceProvider.mockReset();
+  generateEwayBillProvider.mockReset();
+  findEwayBillProvider.mockReset();
+  cancelEwayBillProvider.mockReset();
 }
 
 beforeAll(async () => {
@@ -245,6 +343,13 @@ beforeAll(async () => {
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+  });
+  providerApp = await buildApp({
+    databaseUrl: appUrl,
+    authSecret: `integration-secret-${'0'.repeat(32)}`,
+    baseUrl: 'http://127.0.0.1:3000',
+    objectStorageDir: storageDir,
+    statutoryProvider: providerStub,
   });
 
   owner = await signUp(ownerEmail, 'EWB Owner');
@@ -300,6 +405,8 @@ beforeAll(async () => {
       stateCode: '07',
       gstin: ORG_GSTIN,
       address: ORG_ADDRESS,
+      pincode: '110002',
+      locality: 'New Delhi',
       invoiceNumberPrefix: 'P10',
     },
   });
@@ -353,10 +460,10 @@ beforeAll(async () => {
   await admin`
     insert into contacts (
       id, organisation_id, designation, contact_person, address, gstin,
-      pincode, state_code, is_consignee, active, created_by_user_id
+      pincode, state_code, locality, is_consignee, active, created_by_user_id
     )
     values (${buyerContactId}, ${organisationId}, 'Sr. DEE (G) NR', 'S K Verma',
-            ${BUYER_ADDRESS}, ${BUYER_GSTIN}, '110055', '07', true, true,
+            ${BUYER_ADDRESS}, ${BUYER_GSTIN}, '110055', '07', 'New Delhi', true, true,
             ${ownerUserId})
   `;
 
@@ -386,6 +493,8 @@ afterAll(async () => {
         for (const table of [
           'audit_events',
           'work_assignments',
+          'statutory_provider_operations',
+          'tax_invoice_renders',
           'eway_bills',
           'tax_invoices',
           'tax_invoice_counters',
@@ -428,6 +537,7 @@ afterAll(async () => {
     `;
     await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
   }
+  await providerApp?.close();
   await app?.close();
   await admin?.end();
   if (storageDir !== undefined) {
@@ -509,8 +619,10 @@ describe('the NIC payload and response, road carriage', () => {
       url: `/api/eway-bills/${roadEwbId}/nic-payload`,
       organisationId,
     });
-    expect(payload.statusCode).toBe(400);
-    expect(payload.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
+    expect(payload.statusCode).toBe(409);
+    expect(payload.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
 
     const generated = await authed(owner, {
       method: 'POST',
@@ -520,13 +632,15 @@ describe('the NIC payload and response, road carriage', () => {
         ewbNumber: '123456789012',
         ewbDate: '2026-08-06T10:00:00.000Z',
         validUntil: '2026-08-07T23:59:59.000Z',
+        ewbDateText: '06/08/2026 15:30:00',
+        validUntilText: '07/08/2026 23:59:59',
       },
     });
     expect(generated.statusCode).toBe(400);
     expect(generated.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
   });
 
-  it('serves the canonical NIC EWB JSON once the vehicle is named — golden', async () => {
+  it('refuses the legacy standalone SAC-as-goods payload', async () => {
     const edited = await authed(owner, {
       method: 'PUT',
       url: `/api/eway-bills/${roadEwbId}`,
@@ -548,60 +662,25 @@ describe('the NIC payload and response, road carriage', () => {
       url: `/api/eway-bills/${roadEwbId}/nic-payload`,
       organisationId,
     });
-    expect(response.statusCode, response.body).toBe(200);
-    expect(response.json()).toStrictEqual({
-      supplyType: 'O',
-      subSupplyType: '1',
-      docType: 'INV',
-      docNo: 'P1026001',
-      docDate: '05/08/2026',
-      fromGstin: ORG_GSTIN,
-      fromTrdName: 'EWB Constructions',
-      fromAddr1: ORG_ADDRESS,
-      fromPlace: 'New Delhi',
-      fromPincode: 110020,
-      fromStateCode: 7,
-      actFromStateCode: 7,
-      toGstin: BUYER_GSTIN,
-      toTrdName: 'Sr. DEE (G) NR',
-      toAddr1: BUYER_ADDRESS,
-      toPlace: 'New Delhi',
-      toPincode: 110055,
-      toStateCode: 7,
-      actToStateCode: 7,
-      transactionType: 1,
-      itemList: [
-        {
-          itemNo: 1,
-          productDesc: SERVICE_DESCRIPTION,
-          hsnCode: 995421,
-          quantity: 1,
-          qtyUnit: 'OTH',
-          taxableAmount: 1000,
-          cgstRate: 9,
-          sgstRate: 9,
-          igstRate: 0,
-          cessRate: 0,
-        },
-      ],
-      totalValue: 1000,
-      cgstValue: 90,
-      sgstValue: 90,
-      igstValue: 0,
-      cessValue: 0,
-      totInvValue: 1180,
-      transMode: '1',
-      transDistance: '25',
-      transporterId: TRANSPORTER_ID,
-      transporterName: 'Sharma Roadways',
-      vehicleNo: 'DL01AB1234',
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
+
+    const generate = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${roadEwbId}/generate`,
+      organisationId,
     });
+    expect(generate.statusCode, generate.body).toBe(409);
+    expect(generate.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
   });
 
   it('records the NIC response verbatim, moving draft -> generated once', async () => {
-    // Recording what NIC decided is clerical: an office writer without
-    // issue/cancel authority does it.
-    const generated = await authed(clerk, {
+    // Imported portal evidence requires issue authority.
+    const denied = await authed(clerk, {
       method: 'POST',
       url: `/api/eway-bills/${roadEwbId}/nic-response`,
       organisationId,
@@ -609,6 +688,23 @@ describe('the NIC payload and response, road carriage', () => {
         ewbNumber: '123456789012',
         ewbDate: '2026-08-06T10:00:00.000Z',
         validUntil: '2026-08-07T23:59:59.000Z',
+        ewbDateText: '06/08/2026 15:30:00',
+        validUntilText: '07/08/2026 23:59:59',
+      },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
+
+    const generated = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${roadEwbId}/nic-response`,
+      organisationId,
+      payload: {
+        ewbNumber: '123456789012',
+        ewbDate: '2026-08-06T10:00:00.000Z',
+        validUntil: '2026-08-07T23:59:59.000Z',
+        ewbDateText: '06/08/2026 15:30:00',
+        validUntilText: '07/08/2026 23:59:59',
       },
     });
     expect(generated.statusCode, generated.body).toBe(200);
@@ -630,6 +726,8 @@ describe('the NIC payload and response, road carriage', () => {
         ewbNumber: '999999999999',
         ewbDate: '2026-08-06T11:00:00.000Z',
         validUntil: '2026-08-08T23:59:59.000Z',
+        ewbDateText: '06/08/2026 16:30:00',
+        validUntilText: '08/08/2026 23:59:59',
       },
     });
     expect(again.statusCode).toBe(409);
@@ -673,6 +771,26 @@ describe('the NIC payload and response, road carriage', () => {
     expect(unauthorised.statusCode).toBe(403);
     expect(unauthorised.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
 
+    const externalCancellation = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${roadEwbId}/manual-cancel-response`,
+      organisationId,
+      payload: {
+        reasonCode: '2',
+        remark: 'Order cancelled before dispatch',
+        cancelledAt: '2026-08-06T11:00:00.000Z',
+        cancelledAtText: '06/08/2026 16:30:00',
+      },
+    });
+    expect(externalCancellation.statusCode, externalCancellation.body).toBe(200);
+    expect(externalCancellation.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      providerState: 'cancelled',
+      providerCancelledAt: '2026-08-06T11:00:00.000Z',
+      providerCancelledAtText: '06/08/2026 16:30:00',
+      providerCancelReasonCode: '2',
+      providerCancelRemark: 'Order cancelled before dispatch',
+    });
+
     const cancelled = await authed(owner, {
       method: 'POST',
       url: `/api/eway-bills/${roadEwbId}/cancel`,
@@ -682,9 +800,10 @@ describe('the NIC payload and response, road carriage', () => {
     expect(cancelled.statusCode, cancelled.body).toBe(200);
     const bill = cancelled.json<EwayBillDetailResponse>().ewayBill;
     expect(bill.status).toBe('cancelled');
-    // The 0035 generated-shape CHECK clears the NIC fields off a
-    // cancelled row — the voided number survives in the audit trail.
-    expect(bill.ewbNumber).toBeNull();
+    // Cancellation retains the official identity and exact portal evidence.
+    expect(bill.ewbNumber).toBe('123456789012');
+    expect(bill.ewbDateText).toBe('06/08/2026 15:30:00');
+    expect(bill.validUntilText).toBe('07/08/2026 23:59:59');
     expect(bill.cancellationNote).toBe('vehicle broke down before dispatch');
     const [event] = await admin<{ details: { ewbNumber?: string } }[]>`
       select details from audit_events
@@ -699,7 +818,7 @@ describe('the NIC payload and response, road carriage', () => {
 });
 
 describe('rail carriage', () => {
-  it('drafts on the freed slot and serves the rail payload shape — golden', async () => {
+  it('drafts on the freed slot and refuses the legacy rail payload', async () => {
     const created = await createEwayBill(submittedInvoiceId, {
       transportMode: 'rail',
       transportDocNumber: 'RR-123456',
@@ -716,55 +835,10 @@ describe('rail carriage', () => {
       url: `/api/eway-bills/${railEwbId}/nic-payload`,
       organisationId,
     });
-    expect(response.statusCode, response.body).toBe(200);
-    // Rail carriage: transDocNo/transDocDate carry the movement, no
-    // vehicleNo key at all; the omitted transporter stays omitted.
-    expect(response.json()).toStrictEqual({
-      supplyType: 'O',
-      subSupplyType: '1',
-      docType: 'INV',
-      docNo: 'P1026001',
-      docDate: '05/08/2026',
-      fromGstin: ORG_GSTIN,
-      fromTrdName: 'EWB Constructions',
-      fromAddr1: ORG_ADDRESS,
-      fromPlace: 'New Delhi',
-      fromPincode: 110020,
-      fromStateCode: 7,
-      actFromStateCode: 7,
-      toGstin: BUYER_GSTIN,
-      toTrdName: 'Sr. DEE (G) NR',
-      toAddr1: BUYER_ADDRESS,
-      toPlace: 'New Delhi',
-      toPincode: 110055,
-      toStateCode: 7,
-      actToStateCode: 7,
-      transactionType: 1,
-      itemList: [
-        {
-          itemNo: 1,
-          productDesc: SERVICE_DESCRIPTION,
-          hsnCode: 995421,
-          quantity: 1,
-          qtyUnit: 'OTH',
-          taxableAmount: 1000,
-          cgstRate: 9,
-          sgstRate: 9,
-          igstRate: 0,
-          cessRate: 0,
-        },
-      ],
-      totalValue: 1000,
-      cgstValue: 90,
-      sgstValue: 90,
-      igstValue: 0,
-      cessValue: 0,
-      totInvValue: 1180,
-      transMode: '2',
-      transDistance: '900',
-      transDocNo: 'RR-123456',
-      transDocDate: '06/08/2026',
-    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
   });
 
   it('demands the transport document before NIC can answer', async () => {
@@ -791,6 +865,8 @@ describe('rail carriage', () => {
         ewbNumber: '210987654321',
         ewbDate: '2026-08-07T09:00:00.000Z',
         validUntil: '2026-08-10T23:59:59.000Z',
+        ewbDateText: '07/08/2026 14:30:00',
+        validUntilText: '10/08/2026 23:59:59',
       },
     });
     expect(refused.statusCode).toBe(400);
@@ -819,6 +895,8 @@ describe('rail carriage', () => {
         ewbNumber: '210987654321',
         ewbDate: '2026-08-07T09:00:00.000Z',
         validUntil: '2026-08-10T23:59:59.000Z',
+        ewbDateText: '07/08/2026 14:30:00',
+        validUntilText: '10/08/2026 23:59:59',
       },
     });
     expect(generated.statusCode, generated.body).toBe(200);
@@ -840,6 +918,19 @@ describe('rail carriage', () => {
     });
     expect(blocked.statusCode).toBe(409);
     expect(blocked.json<{ code: string }>().code).toBe('EWAY_BILL_LIVE');
+
+    const externalCancellation = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${railEwbId}/manual-cancel-response`,
+      organisationId,
+      payload: {
+        reasonCode: '2',
+        remark: 'Order cancelled before rail dispatch',
+        cancelledAt: '2026-08-07T10:00:00.000Z',
+        cancelledAtText: '07/08/2026 15:30:00',
+      },
+    });
+    expect(externalCancellation.statusCode, externalCancellation.body).toBe(200);
 
     const ewbCancelled = await authed(owner, {
       method: 'POST',
@@ -912,5 +1003,124 @@ describe('listing, tenancy, and scope', () => {
       headers: { 'x-organisation-id': organisationId },
     });
     expect(anonymous.statusCode).toBe(401);
+  });
+});
+
+describe('Whitebooks e-way bill provider cancellation', () => {
+  it('cancels once and retains exact provider evidence in the ledger', async () => {
+    resetProviderMocks();
+    const invoiceId = await submittedDirectInvoice('success');
+    const ewayBillId = await seedWhitebooksEwayBill(invoiceId, '301234567890');
+    cancelEwayBillProvider.mockResolvedValueOnce({
+      cancelledAtText: '08/08/2026 16:00:00',
+      cancelledAt: '2026-08-08T10:30:00.000Z',
+    });
+
+    const response = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${ewayBillId}/cancel-provider`,
+      organisationId,
+      payload: { reasonCode: '2', remark: '  Order cancelled before dispatch  ' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      status: 'generated',
+      provider: 'whitebooks',
+      providerState: 'cancelled',
+      providerCancelledAt: '2026-08-08T10:30:00.000Z',
+      providerCancelledAtText: '08/08/2026 16:00:00',
+      providerCancelReasonCode: '2',
+      providerCancelRemark: 'Order cancelled before dispatch',
+    });
+    expect(cancelEwayBillProvider).toHaveBeenCalledTimes(1);
+    expect(cancelEwayBillProvider).toHaveBeenCalledWith({
+      gstin: ORG_GSTIN,
+      ewbNumber: '301234567890',
+      reasonCode: '2',
+      remark: 'Order cancelled before dispatch',
+    });
+    const [operation] = await admin<
+      {
+        operation: string;
+        status: string;
+        provider: string;
+        environment: string;
+        completed: boolean;
+      }[]
+    >`
+      select operation, status, provider, environment,
+             completed_at is not null as completed
+      from statutory_provider_operations where eway_bill_id = ${ewayBillId}
+    `;
+    expect(operation).toEqual({
+      operation: 'cancel_eway_bill',
+      status: 'succeeded',
+      provider: 'whitebooks',
+      environment: 'sandbox',
+      completed: true,
+    });
+  });
+
+  it('does not repeat an unknown cancellation mutation', async () => {
+    resetProviderMocks();
+    const invoiceId = await submittedDirectInvoice('unknown result');
+    const ewayBillId = await seedWhitebooksEwayBill(invoiceId, '401234567890');
+    cancelEwayBillProvider.mockRejectedValueOnce(
+      new StatutoryProviderError(
+        'WHITEBOOKS_MUTATION_UNKNOWN',
+        'unknown',
+        'WB-503',
+        503,
+      ),
+    );
+
+    const uncertain = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${ewayBillId}/cancel-provider`,
+      organisationId,
+      payload: { reasonCode: '2', remark: 'Vehicle did not move' },
+    });
+    expect(uncertain.statusCode, uncertain.body).toBe(202);
+    expect(uncertain.json<EwayBillDetailResponse>().ewayBill.providerState).toBe(
+      'cancellation_unknown',
+    );
+
+    const repeated = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${ewayBillId}/cancel-provider`,
+      organisationId,
+      payload: { reasonCode: '2', remark: 'Vehicle did not move' },
+    });
+    expect(repeated.statusCode, repeated.body).toBe(409);
+    expect(repeated.json<{ code: string }>().code).toBe('EWAY_PROVIDER_STATE_CONFLICT');
+    expect(cancelEwayBillProvider).toHaveBeenCalledTimes(1);
+
+    const [operation] = await admin<
+      { status: string; provider_code: string | null; http_status: number | null }[]
+    >`
+      select status, provider_code, http_status
+      from statutory_provider_operations where eway_bill_id = ${ewayBillId}
+    `;
+    expect(operation).toEqual({
+      status: 'unknown',
+      provider_code: 'WB-503',
+      http_status: 503,
+    });
+
+    const resolved = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${ewayBillId}/manual-cancel-response`,
+      organisationId,
+      payload: {
+        reasonCode: '2',
+        remark: 'Vehicle did not move',
+        cancelledAt: '2026-08-08T10:45:00.000Z',
+        cancelledAtText: '08/08/2026 16:15:00',
+      },
+    });
+    expect(resolved.statusCode, resolved.body).toBe(200);
+    expect(resolved.json<EwayBillDetailResponse>().ewayBill.providerState).toBe(
+      'cancelled',
+    );
   });
 });

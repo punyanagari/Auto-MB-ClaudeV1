@@ -94,7 +94,12 @@ Delivered (the engineering half):
 
 - upload malware scanning: a dependency-free clamd INSTREAM client wired into both upload endpoints, fail-closed when configured (unreachable scanner rejects the upload), proven at the protocol level and over live HTTP against a stub daemon; production compose runs the real ClamAV service;
 - monitoring: a dependency-free Prometheus text-format `/metrics` endpoint (requests by method/route/status, latency histogram) behind a bearer token, refused publicly by the edge proxy;
-- export: owner-only `GET /api/export` returning the organisation's complete business record (works, items with evidence, challans with snapshots, audit trail), itself audit-logged;
+- export: owner-only `GET /api/export` using current wire format `export-v8`,
+  returning the organisation profile and localities, memberships and
+  assignments, operational records, masters, procurement, tax invoices,
+  e-way bills, statutory-provider operations, import provenance, every retained
+  tax-invoice render, numbering counters, object manifest, and audit trail; the
+  export itself is audit-logged;
 - backup plus successful restore: `scripts/backup.sh` / `scripts/restore.sh` (custom-format dump + object store + SHA-256 manifest), with the dump→restore→verify cycle proven live in `packages/db/test/backup-restore.integration.test.ts`;
 - deployment assets: production Dockerfiles, `deploy/docker-compose.prod.yml` (Caddy TLS + web, server, PostgreSQL 17, Gotenberg, ClamAV), env template, and the pilot runbook (docs/RUNBOOK.md: deploy, upgrade, backup cron, restore drill, alert thresholds, incident steps, partner onboarding checklist).
 
@@ -154,6 +159,9 @@ Re-audit remediation (2026-08-08, second external review):
 - export-v3 adds the organisation profile, work assignments, and a
   portable object manifest (keys + hashes) for offboarding/incident
   packages.
+
+These `export-v2` and `export-v3` entries record historical progression. The
+current wire format is `export-v8` (Milestone 10).
 
 Retention UI (2026-08-08):
 
@@ -456,7 +464,7 @@ Delivered (2026-08-10, migrations 0033–0034):
 
 ## Milestone 10 — GST invoices and e-way bills
 
-Delivered locally (2026-08-10, migrations 0035–0039):
+Delivered locally (2026-08-10 through 2026-08-12, migrations 0035–0045):
 
 - direct and finalized-MB-backed GST invoices with draft, submitted, and
   cancelled lifecycles;
@@ -464,18 +472,46 @@ Delivered locally (2026-08-10, migrations 0035–0039):
   buyer division tokens, direct-invoice values, and house defaults;
 - exact intra-state CGST/SGST or inter-state IGST split, whole-rupee rounding,
   immutable supplier/buyer/ship-to snapshots, amount in words, and
-  render-ready invoice data;
+  render-ready invoice data. Reverse charge is an explicit fact; issue accepts
+  confirmed forward charge and refuses the unsupported reverse-charge branch;
 - deterministic IRP schema 1.1 and NIC e-way-bill payloads, append-only IRN/
   acknowledgement/signed-QR evidence, e-way number/validity evidence, and
   cancellation ordering that refuses an invoice cancellation while a live
   e-way bill exists;
+- explicit seller, buyer, and ship-to NIC locality, never inferred from an
+  address;
+- provider-neutral transport plus the operator-triggered Whitebooks B2B IRP
+  register, document lookup, and cancellation adapter;
+- durable provider-operation leases, correlation ids, request hashes, failed
+  and unknown states, lookup-only reconciliation, stale-operation recovery,
+  and explicit manual-unverified cancellation confirmation;
+- separate E-way Bill API authentication and client credentials for standalone
+  EWB cancellation;
+- conservative legacy-evidence markers where migrated portal text cannot be
+  proved exact;
+- fresh EWB generation and NIC payload exposure blocked for the current
+  cumulative SAC service invoice, while historical records remain readable,
+  reconcilable, and cancellable;
+- deterministic tax-invoice HTML/PDF rendering from frozen facts, real SVG QR
+  encoding of signed IRP evidence, append-only render versions, frozen-logo and
+  source/PDF hashes, tenant-key database guards, verified downloads, and
+  retained read access after cancellation;
+- database delete guards preserve issued/manual/provider-touched statutory
+  records, and the legacy-evidence classifier is proven across the staged
+  0042→0043→0044 upgrade path with its update guards re-enabled;
+- normalized Measurement Book merge provenance, per-Work/vendor PO drafts,
+  immutable issued PO/BQ parents, and automatic PO reopening when a linked
+  challan cancellation releases receipt quantity;
+- `export-v8`, including current masters, procurement, statutory documents,
+  provider-operation and MB-merge history, import provenance, every retained
+  render, number counters, and object evidence;
 - full RLS, work-scope, authority, audit, concurrency, lifecycle, and database
   backstop tests for the new records.
 
-Remaining: invoice PDF rendering and direct Whitebooks transport. Current UI
-is honest operator-assisted mode: copy the provider-ready payload, submit
-externally, and record exactly what IRP/NIC returned. It never labels a local
-document externally registered without that evidence.
+Remaining: live Whitebooks sandbox/production certification, provider-specific
+metrics and alerts, an organisation-wide workspace for direct invoices, the
+staging Gotenberg proof, and the focused production security review. Provider
+actions remain operator-triggered and auditable, never unattended filing.
 
 ## Milestone 11 — contract-source intake and product experience
 
@@ -506,7 +542,7 @@ Delivered on the 2026-08-11 merge candidate (migration 0040):
 
 ## Deferred until usage proves demand
 
-- automatic statutory filing without an operator-visible provider request,
+- unattended/background statutory filing without an operator-visible provider request,
   response, and audit trail;
 - broad reporting;
 - department expansion;

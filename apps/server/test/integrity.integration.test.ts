@@ -433,6 +433,29 @@ describe('instrument status transitions', () => {
 
 describe('export completeness', () => {
   it('includes every Milestone 5 table in the business record', async () => {
+    const importBatchId = randomUUID();
+    const importRecordId = randomUUID();
+    await admin`
+      insert into import_batches (
+        id, organisation_id, source_system, importer_version, input_digest,
+        finished_at, reconciliation
+      )
+      values (
+        ${importBatchId}, ${organisationId}, 'audit-fixture', 'v1',
+        ${'a'.repeat(64)}, now(), ${admin.json({ imported: 1, rejected: 0 })}
+      )
+    `;
+    await admin`
+      insert into import_records (
+        id, organisation_id, entity_type, source_system, source_id,
+        target_id, batch_id, payload_fingerprint, payload
+      )
+      values (
+        ${importRecordId}, ${organisationId}, 'work', 'audit-fixture',
+        ${`legacy-${runId}`}, ${workId}, ${importBatchId}, ${'b'.repeat(64)},
+        ${admin.json({ legacyField: 'preserved exactly' })}
+      )
+    `;
     const response = await authed(owner, {
       method: 'GET',
       url: '/api/export',
@@ -440,7 +463,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v5');
+    expect(exported.formatVersion).toBe('export-v8');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -479,6 +502,54 @@ describe('export completeness', () => {
     // Work<->consignee association — additive sections, still export-v5.
     expect(Array.isArray(exported.contacts)).toBe(true);
     expect(Array.isArray(exported.workConsignees)).toBe(true);
+    // export-v8: current masters, procurement, statutory documents,
+    // cutover provenance, retained invoice renders, provider-operation
+    // history, and recovery-critical number counters.
+    for (const section of [
+      'locationMasters',
+      'unitMasters',
+      'organisationSignatories',
+      'purchaseOrders',
+      'purchaseOrderLines',
+      'budgetaryQuotations',
+      'budgetaryQuotationLines',
+      'taxInvoices',
+      'taxInvoiceRenders',
+      'measurementBookMergeProvenance',
+      'ewayBills',
+      'importBatches',
+      'importRecords',
+      'documentNumberSeries',
+      'statutoryProviderOperations',
+      'deliveryChallanCounters',
+      'billCounters',
+      'extensionRequestCounters',
+      'issueChallanCounters',
+      'correctionNoticeCounters',
+      'measurementBookCounters',
+      'purchaseOrderCounters',
+      'budgetaryQuotationCounters',
+      'taxInvoiceCounters',
+    ]) {
+      expect(Array.isArray(exported[section])).toBe(true);
+    }
+    expect(exported.importBatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: importBatchId,
+          reconciliation: { imported: 1, rejected: 0 },
+        }),
+      ]),
+    );
+    expect(exported.importRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: importRecordId,
+          source_id: `legacy-${runId}`,
+          payload: { legacyField: 'preserved exactly' },
+        }),
+      ]),
+    );
   });
 });
 

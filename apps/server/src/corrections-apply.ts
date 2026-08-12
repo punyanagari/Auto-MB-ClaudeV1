@@ -25,6 +25,9 @@ import { parseJsonbColumn } from './jsonb-column.js';
 import { assertSourceNotBilled } from './routes/measurement-books.js';
 import {
   assertChallanDate,
+  assertLinkedPurchaseOrderLocksCurrent,
+  lockLinkedPurchaseOrdersForChallan,
+  reopenClosedPurchaseOrders,
   writeLines as writeChallanLines,
 } from './routes/challans.js';
 import { writeLines as writeIssueChallanLines } from './routes/issue-challans.js';
@@ -115,9 +118,11 @@ export async function applyChallanCancelReplace(
   approvalId: string,
   proposed: ChallanCancelReplaceProposal,
 ): Promise<void> {
-  // Lock the original: cancel, receipt recording, serial recording, and MB
+  // Match PO close's lock order: purchase_orders -> delivery_challans.
+  // cancel, receipt recording, serial recording, and MB
   // entry writes all serialise on this row, so the evidence check below
   // cannot race new evidence.
+  const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, proposed.challanId);
   const [challan] = await tx<
     { id: string; work_id: string; status: string; challan_number: string | null }[]
   >`
@@ -132,6 +137,7 @@ export async function applyChallanCancelReplace(
       'The challan this correction targets no longer exists.',
     );
   }
+  await assertLinkedPurchaseOrderLocksCurrent(tx, challan.id, linkedOrders);
   if (challan.status !== 'issued') {
     throw httpError(
       409,
@@ -193,6 +199,14 @@ export async function applyChallanCancelReplace(
       note,
       approvalRequestId: approvalId,
     },
+  );
+  await reopenClosedPurchaseOrders(
+    tx,
+    organisationId,
+    userId,
+    { id: challan.id, challan_number: challan.challan_number },
+    note,
+    linkedOrders,
   );
 
   // Create the replacement DRAFT carrying provenance. It goes through the

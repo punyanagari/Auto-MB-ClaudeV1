@@ -178,6 +178,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     const gstin = optional('gstin');
     const pincode = optional('pincode');
     const stateCode = optional('stateCode');
+    const locality = optional('locality');
     const divisionCode = optional('divisionCode');
     // Role flags are membership, not profile text: an omitted flag leaves
     // the stored value unchanged, so only a CHANGED box travels — an
@@ -197,6 +198,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(gstin !== undefined ? { gstin } : {}),
         ...(pincode !== undefined ? { pincode } : {}),
         ...(stateCode !== undefined ? { stateCode } : {}),
+        ...(locality !== undefined ? { locality } : {}),
         ...(divisionCode !== undefined ? { divisionCode } : {}),
         ...(roleVendor !== wasVendor ? { isVendor: roleVendor } : {}),
         ...(roleClient !== wasClient ? { isClient: roleClient } : {}),
@@ -273,6 +275,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   {[
                     row.address,
                     row.pincode,
+                    row.locality,
                     row.stateCode ? `State ${row.stateCode}` : null,
                   ]
                     .filter((part) => part !== null && part !== undefined)
@@ -387,6 +390,17 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   maxLength={6}
                   defaultValue={editing?.pincode ?? ''}
                 />
+              </Field>
+              <Field>
+                <label htmlFor="contact-locality">Locality / city (optional)</label>
+                <input
+                  id="contact-locality"
+                  name="locality"
+                  minLength={2}
+                  maxLength={100}
+                  defaultValue={editing?.locality ?? ''}
+                />
+                <Hint>Exact NIC locality; never inferred from the address.</Hint>
               </Field>
               <Field>
                 <label htmlFor="contact-division-code">Division code</label>

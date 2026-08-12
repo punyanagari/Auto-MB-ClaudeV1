@@ -653,6 +653,12 @@ describe('budgetary quotation lifecycle', () => {
         )
       `,
     ).rejects.toThrowError(/lines are fixed once it is issued/);
+    await expect(
+      admin`
+        update budgetary_quotations set subject = 'Rewritten through raw SQL'
+        where id = ${freeTextId}
+      `,
+    ).rejects.toThrowError(/business data is immutable/);
 
     // Nothing above disturbed the issued record.
     const reread = await authed(viewer, {

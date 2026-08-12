@@ -114,6 +114,8 @@ import type {
   SaveEwayBillRequest,
   RecordEwayNicResponseRequest,
   CancelEwayBillRequest,
+  CancelStatutoryDocumentRequest,
+  RecordManualStatutoryCancellationRequest,
 } from '@auto-mb/contracts';
 
 export interface MeResponse {
@@ -909,6 +911,14 @@ export interface ApiClient {
     organisationId: string,
     invoiceId: string,
   ) => Promise<TaxInvoiceDetailResponse>;
+  readonly renderTaxInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly downloadTaxInvoicePdf: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<Blob>;
   readonly cancelTaxInvoice: (
     organisationId: string,
     invoiceId: string,
@@ -924,7 +934,25 @@ export interface ApiClient {
   readonly taxInvoiceIrpPayload: (
     organisationId: string,
     invoiceId: string,
-  ) => Promise<unknown>;
+  ) => Promise<string>;
+  readonly registerTaxInvoiceIrp: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly recoverTaxInvoiceProviderOperation: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly cancelTaxInvoiceIrp: (
+    organisationId: string,
+    invoiceId: string,
+    body: CancelStatutoryDocumentRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
+  readonly recordTaxInvoiceIrpCancellation: (
+    organisationId: string,
+    invoiceId: string,
+    body: RecordManualStatutoryCancellationRequest,
+  ) => Promise<TaxInvoiceDetailResponse>;
   /** Records what the GSP brought back from the IRP (IRN, ack, signed
    * QR) — once, on a submitted invoice, verbatim. */
   readonly recordTaxInvoiceIrpResponse: (
@@ -958,7 +986,25 @@ export interface ApiClient {
   readonly ewayBillNicPayload: (
     organisationId: string,
     ewayBillId: string,
-  ) => Promise<unknown>;
+  ) => Promise<string>;
+  readonly generateEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly cancelEwayBillAtProvider: (
+    organisationId: string,
+    ewayBillId: string,
+    body: CancelStatutoryDocumentRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly recoverEwayBillProviderOperation: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly recordEwayBillCancellation: (
+    organisationId: string,
+    ewayBillId: string,
+    body: RecordManualStatutoryCancellationRequest,
+  ) => Promise<EwayBillDetailResponse>;
   /** Records what NIC handed back through the GSP: the EWB number and
    * its validity window. */
   readonly recordEwayBillNicResponse: (
@@ -1065,6 +1111,22 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     if (!response.ok) throw await parseError(response);
     const text = await response.text();
     return (text.length > 0 ? JSON.parse(text) : undefined) as T;
+  }
+
+  async function requestText(
+    path: string,
+    options: { organisationId?: string } = {},
+  ): Promise<string> {
+    const response = await fetchImpl(path, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers:
+        options.organisationId === undefined
+          ? {}
+          : { 'x-organisation-id': options.organisationId },
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.text();
   }
 
   return {
@@ -2216,6 +2278,20 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'POST', organisationId },
       );
     },
+    async renderTaxInvoice(organisationId, invoiceId) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async downloadTaxInvoicePdf(organisationId, invoiceId) {
+      const response = await fetchImpl(`/api/tax-invoices/${invoiceId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
     async cancelTaxInvoice(organisationId, invoiceId, body) {
       return request<TaxInvoiceDetailResponse>(
         `/api/tax-invoices/${invoiceId}/cancel`,
@@ -2229,9 +2305,33 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async taxInvoiceIrpPayload(organisationId, invoiceId) {
-      return request<unknown>(`/api/tax-invoices/${invoiceId}/irp-payload`, {
+      return requestText(`/api/tax-invoices/${invoiceId}/irp-payload`, {
         organisationId,
       });
+    },
+    async registerTaxInvoiceIrp(organisationId, invoiceId) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/register-irp`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async recoverTaxInvoiceProviderOperation(organisationId, invoiceId) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/recover-provider-operation`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelTaxInvoiceIrp(organisationId, invoiceId, body) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/cancel-irp`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async recordTaxInvoiceIrpCancellation(organisationId, invoiceId, body) {
+      return request<TaxInvoiceDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/irp-cancel-response`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async recordTaxInvoiceIrpResponse(organisationId, invoiceId, body) {
       return request<TaxInvoiceDetailResponse>(
@@ -2265,9 +2365,33 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async ewayBillNicPayload(organisationId, ewayBillId) {
-      return request<unknown>(`/api/eway-bills/${ewayBillId}/nic-payload`, {
+      return requestText(`/api/eway-bills/${ewayBillId}/nic-payload`, {
         organisationId,
       });
+    },
+    async generateEwayBill(organisationId, ewayBillId) {
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}/generate`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelEwayBillAtProvider(organisationId, ewayBillId, body) {
+      return request<EwayBillDetailResponse>(
+        `/api/eway-bills/${ewayBillId}/cancel-provider`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async recoverEwayBillProviderOperation(organisationId, ewayBillId) {
+      return request<EwayBillDetailResponse>(
+        `/api/eway-bills/${ewayBillId}/recover-provider-operation`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async recordEwayBillCancellation(organisationId, ewayBillId, body) {
+      return request<EwayBillDetailResponse>(
+        `/api/eway-bills/${ewayBillId}/manual-cancel-response`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async recordEwayBillNicResponse(organisationId, ewayBillId, body) {
       return request<EwayBillDetailResponse>(

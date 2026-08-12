@@ -39,7 +39,12 @@ import {
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { applyApproval, isApprover, readApproval } from './amendments.js';
-import { assertChallanDate, cancellationNote, normaliseConsignee } from './challans.js';
+import {
+  assertChallanDate,
+  cancellationNote,
+  lockLinkedPurchaseOrdersForChallan,
+  normaliseConsignee,
+} from './challans.js';
 import { normaliseHeader } from './issue-challans.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -320,6 +325,17 @@ export function registerCorrectionRoutes(
         user.id,
         async (tx) => {
           await requireWriterRole(tx, user.id);
+          // Self-approving proposals apply cancellation in this same
+          // transaction. Authorise before locking linked POs, then follow
+          // PO-close order (POs -> challan) to avoid a deadlock.
+          const [challanRef] = await tx<{ work_id: string }[]>`
+            select work_id from delivery_challans where id = ${id}
+          `;
+          if (!challanRef) {
+            throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+          }
+          await assertWorkAccess(tx, user.id, challanRef.work_id);
+          await lockLinkedPurchaseOrdersForChallan(tx, id);
           const challan = await lockDeliveryChallan(tx, id);
           await assertWorkAccess(tx, user.id, challan.work_id);
           await requireActiveWork(tx, challan.work_id);
@@ -348,7 +364,7 @@ export function registerCorrectionRoutes(
           // each item belongs to this Work, so the stored proposal is
           // exactly what apply will write.
           const seen = new Set<string>();
-          const replacementItems: { workItemId: string; quantity: string }[] = [];
+          const replacementItems: (typeof body.replacement.items)[number][] = [];
           const replacementLabels: { label: string; quantity: string }[] = [];
           for (const item of body.replacement.items) {
             if (seen.has(item.workItemId)) {
@@ -382,6 +398,9 @@ export function registerCorrectionRoutes(
             replacementItems.push({
               workItemId: item.workItemId,
               quantity: row.quantity,
+              ...(item.purchaseOrderLineId !== undefined
+                ? { purchaseOrderLineId: item.purchaseOrderLineId }
+                : {}),
             });
             replacementLabels.push({ label: row.item_number, quantity: row.quantity });
           }

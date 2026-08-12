@@ -64,6 +64,7 @@ const TENANT_TABLES = [
   'pac_certificates',
   'pac_certificate_items',
   'measurement_books',
+  'measurement_book_merge_provenance',
   'measurement_book_lines',
   'mb_sources',
   'measurement_book_counters',
@@ -78,8 +79,10 @@ const TENANT_TABLES = [
   'budgetary_quotation_counters',
   // The GST tax invoice and the e-way bill that moves it (0035).
   'tax_invoices',
+  'tax_invoice_renders',
   'tax_invoice_counters',
   'eway_bills',
+  'statutory_provider_operations',
   // Number formats the organisation defines for itself (0039).
   'document_number_series',
 ] as const;
@@ -99,7 +102,15 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // Cutover provenance is append-only for the application role (0025):
     // UPDATE raises 42501 instead of matching zero rows.
     table !== 'import_batches' &&
-    table !== 'import_records',
+    table !== 'import_records' &&
+    // Completed provider operations are append-only by trigger; the
+    // dedicated provider test proves their one permitted pending->terminal
+    // transition.
+    table !== 'statutory_provider_operations' &&
+    // Render versions are append-only; the application role has no UPDATE.
+    table !== 'tax_invoice_renders' &&
+    // Merge provenance is append-only operational evidence (0045).
+    table !== 'measurement_book_merge_provenance',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -139,6 +150,9 @@ const DELETE_REVOKED_TABLES = [
   // is numbering state (0024).
   'measurement_book_lines',
   'measurement_book_counters',
+  'measurement_book_merge_provenance',
+  'statutory_provider_operations',
+  'tax_invoice_renders',
   // Cutover provenance is an append-only ledger (0025).
   'import_batches',
   'import_records',
@@ -611,6 +625,42 @@ async function seedTenantGraph(
       values (${organisationId}, ${work.id}, 1)
     `;
 
+    // 0045 normalized merge provenance: a live target plus one selected
+    // record that had no own source (the NULL pair is its membership sentinel).
+    const [mergeTarget] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, kind, created_by_user_id
+      ) values (${organisationId}, ${work.id}, '2026-02-05', 'on_account', ${userId})
+      returning id
+    `;
+    if (!mergeTarget) throw new Error('seed merge target insert returned no row');
+    const [mergedRecord] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, kind,
+        consignee_contact_id, created_by_user_id
+      ) values (
+        ${organisationId}, ${work.id}, '2026-02-05', 'record',
+        ${consigneeContact.id}, ${userId}
+      )
+      returning id
+    `;
+    if (!mergedRecord) throw new Error('seed merged record insert returned no row');
+    await tx`
+      insert into measurement_book_merge_provenance (
+        organisation_id, target_measurement_book_id,
+        record_measurement_book_id, work_id, source_type, source_id,
+        created_by_user_id
+      ) values (
+        ${organisationId}, ${mergeTarget.id}, ${mergedRecord.id}, ${work.id},
+        null, null, ${userId}
+      )
+    `;
+    await tx`
+      update measurement_books
+      set status = 'merged', merged_into_id = ${mergeTarget.id}
+      where id = ${mergedRecord.id}
+    `;
+
     // Wave 5 cutover provenance tables: one batch with one record.
     const [importBatch] = await tx<{ id: string }[]>`
       insert into import_batches (
@@ -722,21 +772,44 @@ async function seedTenantGraph(
         organisation_id, work_id, measurement_book_id, status,
         invoice_number, number_prefix, sequence_number, fy_label,
         invoice_date, sac_code,
-        service_description, gst_rate, place_of_supply, buyer_snapshot,
+        service_description, gst_rate, place_of_supply, buyer_contact_id,
+        buyer_snapshot,
         taxable_value, cgst_amount, sgst_amount, igst_amount, round_off,
-        total_amount, issued_snapshot,
+        total_amount, issued_snapshot, reverse_charge_applicable,
         submitted_at, submitted_by_user_id, created_by_user_id
       )
       values (${organisationId}, ${work.id}, ${finalizedMb.id}, 'submitted',
               ${`TI/2026-27/${workCode}`}, 'TI', 1, '2026-27', '2026-02-07',
               '995461', 'Works contract services per MB', '18.00', '27',
+              ${consigneeContact.id},
               ${tx.json({ name: 'Sr. DEE (G) CR', stateCode: '27' })},
               '100.00', '9.00', '9.00', '0.00', '0.00', '118.00',
-              ${tx.json({ templateVersion: 'ti-v1' })}, now(), ${userId},
+              ${tx.json({ templateVersion: 'ti-v1' })}, false, now(), ${userId},
               ${userId})
       returning id
     `;
     if (!taxInvoice) throw new Error('seed tax invoice insert returned no row');
+    await tx`
+      insert into tax_invoice_renders (
+        organisation_id, tax_invoice_id, version, template_version,
+        source_sha256, object_key, pdf_sha256, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, 1, 'ti-v1', ${'b'.repeat(64)},
+        ${`${organisationId}/ti/${taxInvoice.id}-seed.pdf`}, ${'c'.repeat(64)},
+        ${userId}
+      )
+    `;
+    await tx`
+      insert into statutory_provider_operations (
+        organisation_id, tax_invoice_id, provider, environment, operation,
+        status, request_sha256, created_by_user_id, completed_at
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, 'whitebooks', 'sandbox',
+        'reconcile_irp', 'unknown', ${'a'.repeat(64)}, ${userId}, now()
+      )
+    `;
     await tx`
       insert into tax_invoice_counters (organisation_id, fy_label, next_value)
       values (${organisationId}, '2026-27', 2)
@@ -1071,6 +1144,152 @@ describe('cross-tenant isolation on every tenant table', () => {
         },
       ),
     ).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('statutory document delete guards', () => {
+  it('allows pristine drafts but rejects issued or provider-touched records through the app role', async () => {
+    const pristineDraftId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [buyer] = await tx<{ id: string }[]>`
+          select id from contacts order by created_at, id limit 1
+        `;
+        if (!buyer) throw new Error('seed buyer missing');
+        const [draft] = await tx<{ id: string }[]>`
+          insert into tax_invoices (
+            organisation_id, invoice_date, sac_code, service_description,
+            gst_rate, place_of_supply, reverse_charge_applicable,
+            stated_taxable_value, buyer_contact_id, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, '2026-02-08', '998734',
+            'Pristine direct draft for delete proof', '18.00', '27', false,
+            '100.00', ${buyer.id}, ${userA}
+          )
+          returning id
+        `;
+        if (!draft) throw new Error('draft insert returned no row');
+        const deleted = await tx`delete from tax_invoices where id = ${draft.id}`;
+        expect(deleted.count).toBe(1);
+        return draft.id;
+      },
+    );
+    const [gone] = await admin<{ id: string }[]>`
+      select id from tax_invoices where id = ${pristineDraftId}
+    `;
+    expect(gone).toBeUndefined();
+
+    const touchedDraftId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [buyer] = await tx<{ id: string }[]>`
+          select id from contacts order by created_at, id limit 1
+        `;
+        if (!buyer) throw new Error('seed buyer missing');
+        const [draft] = await tx<{ id: string }[]>`
+          insert into tax_invoices (
+            organisation_id, invoice_date, sac_code, service_description,
+            gst_rate, place_of_supply, reverse_charge_applicable,
+            stated_taxable_value, buyer_contact_id, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, '2026-02-08', '998734',
+            'Provider-touched direct draft for delete proof', '18.00', '27',
+            false, '100.00', ${buyer.id}, ${userA}
+          )
+          returning id
+        `;
+        if (!draft) throw new Error('touched draft insert returned no row');
+        await tx`
+          insert into statutory_provider_operations (
+            organisation_id, tax_invoice_id, provider, environment,
+            operation, status, request_sha256, provider_code,
+            created_by_user_id, completed_at
+          )
+          values (
+            ${organisationA.id}, ${draft.id}, 'whitebooks', 'sandbox',
+            'register_irp', 'failed', ${'d'.repeat(64)}, 'TEST_FAILURE',
+            ${userA}, now()
+          )
+        `;
+        return draft.id;
+      },
+    );
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from tax_invoices where id = ${touchedDraftId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+
+    const { invoiceId, pristineEwayBillId } = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [invoice] = await tx<{ id: string }[]>`
+          select id from tax_invoices where status = 'submitted'
+          order by created_at, id limit 1
+        `;
+        if (!invoice) throw new Error('seed submitted invoice missing');
+        const [ewayBill] = await tx<{ id: string }[]>`
+          select id from eway_bills where tax_invoice_id = ${invoice.id}
+        `;
+        if (!ewayBill) throw new Error('seed pristine e-way bill missing');
+        const deleted = await tx`delete from eway_bills where id = ${ewayBill.id}`;
+        expect(deleted.count).toBe(1);
+        return { invoiceId: invoice.id, pristineEwayBillId: ewayBill.id };
+      },
+    );
+    expect(pristineEwayBillId).toBeDefined();
+
+    const touchedEwayBillId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [ewayBill] = await tx<{ id: string }[]>`
+          insert into eway_bills (
+            organisation_id, tax_invoice_id, distance_km, from_pincode,
+            to_pincode, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, ${invoiceId}, 120, '422010', '400001', ${userA}
+          )
+          returning id
+        `;
+        if (!ewayBill) throw new Error('replacement e-way bill missing');
+        await tx`
+          insert into statutory_provider_operations (
+            organisation_id, eway_bill_id, provider, environment,
+            operation, status, request_sha256, provider_code,
+            created_by_user_id, completed_at
+          )
+          values (
+            ${organisationA.id}, ${ewayBill.id}, 'whitebooks', 'sandbox',
+            'generate_eway_bill', 'failed', ${'e'.repeat(64)}, 'TEST_FAILURE',
+            ${userA}, now()
+          )
+        `;
+        return ewayBill.id;
+      },
+    );
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from eway_bills where id = ${touchedEwayBillId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from tax_invoices where id = ${invoiceId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });
 

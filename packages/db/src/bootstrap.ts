@@ -13,7 +13,7 @@ import { runMigrations } from './migration-runner.js';
  * a query through the application role.
  *
  * The matrix below is the CANONICAL final state, mirroring migrations
- * 0001–0009 after all revokes. Adding a table? Update the matrix AND the
+ * all migrations after all revokes. Adding a table? Update the matrix AND the
  * tenancy suite's table lists.
  */
 
@@ -84,6 +84,22 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   mb_sources: 'SELECT, INSERT, UPDATE, DELETE',
   measurement_book_lines: 'SELECT, INSERT, UPDATE',
   measurement_book_counters: 'SELECT, INSERT, UPDATE',
+  measurement_book_merge_provenance: 'SELECT, INSERT',
+  // Procurement and statutory documents (0033, 0035, 0039, 0041).
+  // Parent/line drafts delete through guarded routes; counters and provider
+  // operations are durable state and keep no DELETE privilege.
+  purchase_orders: 'SELECT, INSERT, UPDATE, DELETE',
+  purchase_order_lines: 'SELECT, INSERT, UPDATE, DELETE',
+  purchase_order_counters: 'SELECT, INSERT, UPDATE',
+  budgetary_quotations: 'SELECT, INSERT, UPDATE, DELETE',
+  budgetary_quotation_lines: 'SELECT, INSERT, UPDATE, DELETE',
+  budgetary_quotation_counters: 'SELECT, INSERT, UPDATE',
+  tax_invoices: 'SELECT, INSERT, UPDATE, DELETE',
+  tax_invoice_counters: 'SELECT, INSERT, UPDATE',
+  tax_invoice_renders: 'SELECT, INSERT',
+  eway_bills: 'SELECT, INSERT, UPDATE, DELETE',
+  document_number_series: 'SELECT, INSERT, UPDATE, DELETE',
+  statutory_provider_operations: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

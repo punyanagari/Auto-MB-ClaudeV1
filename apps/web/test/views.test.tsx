@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChallanDetailResponse,
   ConfirmWorkRequest,
+  EwayBill,
   LoaDocumentDetail,
   Membership,
   PurchaseOrder,
@@ -255,15 +256,25 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     getTaxInvoice: vi.fn(),
     updateTaxInvoice: vi.fn(),
     submitTaxInvoice: vi.fn(),
+    renderTaxInvoice: vi.fn(),
+    downloadTaxInvoicePdf: vi.fn(),
     cancelTaxInvoice: vi.fn(),
     deleteTaxInvoice: vi.fn().mockResolvedValue(undefined),
     taxInvoiceIrpPayload: vi.fn(),
     recordTaxInvoiceIrpResponse: vi.fn(),
+    registerTaxInvoiceIrp: vi.fn(),
+    recoverTaxInvoiceProviderOperation: vi.fn(),
+    cancelTaxInvoiceIrp: vi.fn(),
+    recordTaxInvoiceIrpCancellation: vi.fn(),
     listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
     createInvoiceEwayBill: vi.fn(),
     getEwayBill: vi.fn(),
     updateEwayBill: vi.fn(),
     ewayBillNicPayload: vi.fn(),
+    generateEwayBill: vi.fn(),
+    cancelEwayBillAtProvider: vi.fn(),
+    recoverEwayBillProviderOperation: vi.fn(),
+    recordEwayBillCancellation: vi.fn(),
     recordEwayBillNicResponse: vi.fn(),
     cancelEwayBill: vi.fn(),
     deleteEwayBill: vi.fn().mockResolvedValue(undefined),
@@ -2885,8 +2896,14 @@ describe('Settings', () => {
         address: 'Plot 4, MIDC, Nashik',
         gstin: '27ABCDE1234F1Z5',
         stateCode: '27',
+        tradeName: null,
+        locality: null,
+        pincode: null,
         contactPhone: null,
         contactEmail: null,
+        msmeNumber: null,
+        invoiceNumberPrefix: null,
+        invoiceNotes: null,
         warrantyTemplateText: null,
       });
     });
@@ -7806,6 +7823,7 @@ function taxInvoice(overrides: Record<string, unknown> = {}) {
     id: TAX_INVOICE_ID,
     workId: WORK_ID,
     measurementBookId: BILLABLE_MB_ID,
+    statedTaxableValue: null,
     mbNumber: 'DCW-1-MB-01',
     status: 'draft',
     invoiceNumber: null,
@@ -7816,15 +7834,32 @@ function taxInvoice(overrides: Record<string, unknown> = {}) {
     serviceDescription: 'Provision of passenger amenity services.',
     gstRate: '18',
     placeOfSupply: '27',
+    reverseChargeApplicable: null,
     buyerContactId: CLIENT_CONTACT_ID,
     taxableValue: null,
     cgstAmount: null,
     sgstAmount: null,
     igstAmount: null,
     totalAmount: null,
+    roundOff: null,
+    customerPoReference: null,
+    unitLabel: null,
+    notes: null,
+    shipToContactId: null,
+    numberPrefix: null,
     irn: null,
+    irpProvider: null,
+    irpProviderState: 'not_requested',
     ackNumber: null,
     ackDate: null,
+    ackDateText: null,
+    signedInvoiceAvailable: false,
+    renderedAvailable: false,
+    irpLegacyEvidenceMissing: false,
+    irpCancelledAt: null,
+    irpCancelledAtText: null,
+    irpCancelReasonCode: null,
+    irpCancelRemark: null,
     cancellationNote: null,
     createdAt: '2026-07-30T00:00:00.000Z',
     submittedAt: null,
@@ -7838,6 +7873,7 @@ const SUBMITTED_INVOICE = taxInvoice({
   invoiceNumber: 'TI/2026-27/001',
   sequenceNumber: 1,
   fyLabel: '2026-27',
+  reverseChargeApplicable: false,
   taxableValue: '4226994.01',
   cgstAmount: '380429.46',
   sgstAmount: '380429.46',
@@ -7845,6 +7881,41 @@ const SUBMITTED_INVOICE = taxInvoice({
   totalAmount: '4987852.93',
   submittedAt: '2026-07-30T06:39:00.000Z',
 });
+
+function ewayBill(overrides: Partial<EwayBill> = {}): EwayBill {
+  return {
+    id: 'eeee7777-7777-4777-8777-eeeeeeeeee77',
+    taxInvoiceId: TAX_INVOICE_ID,
+    invoiceNumber: 'TI/2026-27/001',
+    status: 'draft',
+    transportMode: 'road',
+    transporterId: null,
+    transporterName: null,
+    vehicleNumber: 'MH01AB1234',
+    transportDocNumber: null,
+    transportDocDate: null,
+    distanceKm: 120,
+    fromPincode: '411023',
+    toPincode: '400001',
+    ewbNumber: null,
+    provider: 'whitebooks',
+    providerState: 'generation_unknown',
+    ewbDate: null,
+    validUntil: null,
+    ewbDateText: null,
+    validUntilText: null,
+    legacyEvidenceMissing: false,
+    providerCancelledAt: null,
+    providerCancelledAtText: null,
+    providerCancelReasonCode: null,
+    providerCancelRemark: null,
+    cancellationNote: null,
+    createdAt: '2026-07-30T07:00:00.000Z',
+    generatedAt: null,
+    cancelledAt: null,
+    ...overrides,
+  };
+}
 
 describe('WorkDetail tax invoices', () => {
   function renderInvoiceWork(api: ApiClient) {
@@ -7986,6 +8057,9 @@ describe('WorkDetail tax invoices', () => {
     fireEvent.change(screen.getByLabelText('Place of supply'), {
       target: { value: '27' },
     });
+    fireEvent.change(screen.getByLabelText('Tax payable on reverse charge'), {
+      target: { value: 'false' },
+    });
     fireEvent.change(screen.getByLabelText('Buyer'), {
       target: { value: CLIENT_CONTACT_ID },
     });
@@ -7999,6 +8073,7 @@ describe('WorkDetail tax invoices', () => {
         serviceDescription: 'Provision of passenger amenity services.',
         gstRate: '18',
         placeOfSupply: '27',
+        reverseChargeApplicable: false,
         buyerContactId: CLIENT_CONTACT_ID,
       });
     });
@@ -8027,6 +8102,60 @@ describe('WorkDetail tax invoices', () => {
     // invite the reader to wonder what it means.
     expect(screen.queryByText('IGST')).toBeNull();
     expect(screen.getAllByText('₹3,80,429.46').length).toBe(2);
+  });
+
+  it('generates and exposes the stored tax-invoice PDF controls', async () => {
+    const renderTaxInvoice = vi.fn().mockResolvedValue({
+      invoice: taxInvoice({ ...SUBMITTED_INVOICE, renderedAvailable: true }),
+      buyerSnapshot: null,
+      shipToSnapshot: null,
+      issuedSnapshot: null,
+      signedQr: null,
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: SUBMITTED_INVOICE,
+        buyerSnapshot: null,
+        shipToSnapshot: null,
+        issuedSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+      renderTaxInvoice,
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate PDF' }));
+    await waitFor(() => {
+      expect(renderTaxInvoice).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID);
+    });
+
+    cleanup();
+    const renderedInvoice = taxInvoice({
+      ...SUBMITTED_INVOICE,
+      renderedAvailable: true,
+    });
+    const renderedApi = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([renderedInvoice]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: renderedInvoice,
+        buyerSnapshot: null,
+        shipToSnapshot: null,
+        issuedSnapshot: null,
+        signedQr: null,
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    });
+    renderInvoiceWork(renderedApi);
+    await openWorkTab('Bills');
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    expect(await screen.findByRole('button', { name: 'Regenerate PDF' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
   });
 
   it('shows IGST alone across states', async () => {
@@ -8079,7 +8208,9 @@ describe('WorkDetail tax invoices', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Record the IRP response' }),
+      await screen.findByRole('button', {
+        name: 'Manual compatibility import (unverified)',
+      }),
     );
 
     const irn = 'fda60c09ad1134252b55949c1430a26a94587374c693ea42665d27d092dbb337';
@@ -8089,6 +8220,9 @@ describe('WorkDetail tax invoices', () => {
     });
     fireEvent.change(screen.getByLabelText('Acknowledgement date'), {
       target: { value: '2026-07-30T12:09' },
+    });
+    fireEvent.change(screen.getByLabelText('Portal acknowledgement text (exact)'), {
+      target: { value: '30/07/2026 12:09:00' },
     });
     fireEvent.change(screen.getByLabelText('Signed QR'), {
       target: { value: 'eyJhbGciOi' },
@@ -8108,7 +8242,9 @@ describe('WorkDetail tax invoices', () => {
     });
   });
 
-  it('asks for a vehicle on a road e-way bill and a transport document otherwise', async () => {
+  it('explains SAC containment and exposes only lookup recovery for historical unknown EWB evidence', async () => {
+    const unknownBill = ewayBill();
+    const generateEwayBill = vi.fn().mockResolvedValue({ ewayBill: unknownBill });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
       listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
@@ -8117,27 +8253,39 @@ describe('WorkDetail tax invoices', () => {
         buyerSnapshot: null,
         signedQr: null,
       }),
-      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([unknownBill]),
+      generateEwayBill,
     });
     renderInvoiceWork(api);
     await openWorkTab('Bills');
 
     fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Draft an e-way bill' }));
+    expect(
+      await screen.findByText(/Fresh E-way Bill generation is unavailable/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Draft an e-way bill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Generate at Whitebooks' })).toBeNull();
 
-    // Road is the default, and it moves on a vehicle.
-    expect(screen.getByLabelText('Vehicle number')).toBeTruthy();
-    expect(screen.queryByLabelText('Transport document number')).toBeNull();
-
-    fireEvent.change(screen.getByLabelText('Transport mode'), {
-      target: { value: 'rail' },
+    fireEvent.click(screen.getByRole('button', { name: 'Reconcile' }));
+    await waitFor(() => {
+      expect(generateEwayBill).toHaveBeenCalledWith(
+        ORG_ID,
+        'eeee7777-7777-4777-8777-eeeeeeeeee77',
+      );
     });
-    expect(screen.getByLabelText('Transport document number')).toBeTruthy();
-    expect(screen.queryByLabelText('Vehicle number')).toBeNull();
   });
 
-  it('omits empty optionals rather than sending blanks NIC would reject', async () => {
-    const createInvoiceEwayBill = vi.fn().mockResolvedValue({});
+  it('uses the EWB cancellation reason-code meanings, not the IRP mapping', async () => {
+    const generatedBill = ewayBill({
+      status: 'generated',
+      providerState: 'generated',
+      ewbNumber: '123456789012',
+      ewbDate: '2026-07-30T07:00:00.000Z',
+      validUntil: '2026-07-31T23:59:59.000Z',
+      ewbDateText: '30/07/2026 12:30:00',
+      validUntilText: '31/07/2026 23:59:59',
+      generatedAt: '2026-07-30T07:00:00.000Z',
+    });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
       listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
@@ -8146,32 +8294,28 @@ describe('WorkDetail tax invoices', () => {
         buyerSnapshot: null,
         signedQr: null,
       }),
-      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
-      createInvoiceEwayBill,
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([generatedBill]),
     });
     renderInvoiceWork(api);
     await openWorkTab('Bills');
 
     fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Draft an e-way bill' }));
-
-    fireEvent.change(screen.getByLabelText('Distance (km)'), {
-      target: { value: '120' },
-    });
-    fireEvent.change(screen.getByLabelText('From PIN'), {
-      target: { value: '411023' },
-    });
-    fireEvent.change(screen.getByLabelText('To PIN'), { target: { value: '400001' } });
-    fireEvent.click(submitButton('Create e-way bill'));
-
-    await waitFor(() => {
-      expect(createInvoiceEwayBill).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID, {
-        transportMode: 'road',
-        distanceKm: 120,
-        fromPincode: '411023',
-        toPincode: '400001',
-      });
-    });
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Cancel EWB 123456789012 at Whitebooks',
+      }),
+    );
+    const reason = screen.getByLabelText<HTMLSelectElement>('Reason');
+    expect(
+      within(reason)
+        .getByRole('option', { name: 'Order cancelled' })
+        .getAttribute('value'),
+    ).toBe('2');
+    expect(
+      within(reason)
+        .getByRole('option', { name: 'Data entry mistake' })
+        .getAttribute('value'),
+    ).toBe('3');
   });
 
   it('requires a note to cancel, and says the Measurement Book is released', async () => {

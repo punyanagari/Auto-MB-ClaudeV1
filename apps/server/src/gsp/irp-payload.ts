@@ -1,37 +1,33 @@
 /**
- * The canonical NIC e-invoice (INV-01, schema version 1.1) JSON for a
- * SUBMITTED tax invoice — what the GSP (Taxilla, most likely) carries to
- * the IRP verbatim. Built from the stored rows only: nothing here
- * computes money, it re-serialises the amounts the submit transaction
- * froze in SQL numeric arithmetic.
+ * Canonical NIC e-invoice (INV-01, schema 1.1) payload.
  *
- * Mappings settled here and pinned by the golden payload test:
+ * The input comes only from the immutable submit-time invoice snapshot.
+ * Exact PostgreSQL numeric strings remain branded decimal lexemes until
+ * stringifyStatutoryJson writes the final bytes; statutory money and rates
+ * never round-trip through JavaScript floating point.
  *
- * - SupTyp: the buyer snapshot carries a GSTIN -> 'B2B'; it carries none
- *   -> 'B2C' (an unregistered domestic buyer — 'URP' on the wire). The
- *   export types (EXPWP/EXPWOP) are out of scope: a works contract for
- *   an Indian railway/government consignee is always a domestic supply
- *   with an Indian place of supply.
- * - ItemList has EXACTLY ONE line: the works contract is a cumulative
- *   supply of services, so the line is the service at its SAC for the
- *   billed Measurement Book's total. IsServc 'Y', Qty 1, Unit 'OTH',
- *   UnitPrice = AssAmt = the taxable value.
- * - Dates go on the wire as DD/MM/YYYY (the NIC shape), converted from
- *   the stored date-only strings without any timezone round-trip.
- * - Numbers go as JSON numbers, taken from the stored 2dp numeric
- *   strings. Number() on a numeric(18,2) text round-trips exactly
- *   through JSON serialisation, and no arithmetic happens on them here.
- *
- * The organisation profile has no pincode or location column, so the
- * seller's Pin and Loc are read out of the profile address: the LAST
- * standalone six-digit run is the PIN (Indian addresses end with it),
- * and the last comma-separated segment that is not just the PIN is the
- * location. The route refuses payload assembly when the address or an
- * extractable PIN is missing — a payload with an invented PIN would be
- * rejected by the IRP anyway, later and less legibly.
+ * This provider integration deliberately supports B2B only. Local invoices
+ * may name an unregistered buyer, but an IRP payload is refused until an
+ * explicit provider-backed B2C contract exists.
  */
 
+import {
+  exactJsonInteger,
+  exactJsonNumber,
+  type ExactJsonNumber,
+} from './statutory-json.js';
+
 export interface IrpSeller {
+  gstin: string;
+  legalName: string;
+  tradeName: string | null;
+  address: string;
+  location: string;
+  pincode: string;
+  stateCode: string;
+}
+
+export interface IrpBuyer {
   gstin: string;
   legalName: string;
   address: string;
@@ -40,15 +36,7 @@ export interface IrpSeller {
   stateCode: string;
 }
 
-export interface IrpBuyer {
-  /** null = unregistered buyer: 'URP' on the wire and SupTyp 'B2C'. */
-  gstin: string | null;
-  legalName: string;
-  address: string;
-  location: string;
-  pincode: string;
-  stateCode: string;
-}
+export type IrpShipTo = IrpBuyer;
 
 export interface IrpInvoiceInput {
   invoiceNumber: string;
@@ -57,126 +45,108 @@ export interface IrpInvoiceInput {
   sacCode: string;
   serviceDescription: string;
   placeOfSupply: string;
-  /** All five as the stored numeric(18,2)/(5,2) strings, verbatim. */
+  reverseChargeApplicable: boolean;
   gstRate: string;
   taxableValue: string;
   cgstAmount: string;
   sgstAmount: string;
   igstAmount: string;
   totalAmount: string;
-  /** Signed whole-rupee rounding delta; rounding is an INVOICE-level
-   * adjustment, so it belongs here and not on the line. */
   roundOff: string;
-  /** The line's own value: the UNROUNDED sum of the taxable value and
-   * its taxes, computed in SQL numeric like every other money figure
-   * here. NIC reconciles sum(TotItemVal) + RndOffAmt = TotInvVal, so
-   * this cannot be derived by subtracting in binary floating point. */
+  /** Unrounded taxable + tax sum for TotItemVal. */
   lineValue: string;
   seller: IrpSeller;
   buyer: IrpBuyer;
+  /** Null means Bill-To and Ship-To are the same frozen party. */
+  shipTo: IrpShipTo | null;
 }
 
-/** A stored numeric string as a JSON number. The stored values are at
- * most 2dp (the columns' own scale), so Number() is an exact reading —
- * this is serialisation, never arithmetic. */
-function toAmount(value: string): number {
-  return Number(value);
-}
-
-/** YYYY-MM-DD -> DD/MM/YYYY, on the string itself (rule 6: date-only
- * values never round-trip through a timezone). */
+/** YYYY-MM-DD -> DD/MM/YYYY, without a timezone round-trip. */
 export function formatNicDate(dateOnly: string): string {
   const [year, month, day] = dateOnly.split('-');
   return `${day ?? ''}/${month ?? ''}/${year ?? ''}`;
 }
 
-/** The LAST standalone six-digit run in an address — Indian addresses
- * close with the PIN, and "standalone" (no digit on either side) keeps a
- * plot number like '1100223' from being misread. Null when the address
- * names no PIN. */
+/** Last standalone six-digit PIN in a legacy address. New snapshots store PIN
+ * explicitly; this remains for old non-statutory call sites and migrations. */
 export function extractPincode(address: string): string | null {
   const matches = address.match(/(?<![0-9])[0-9]{6}(?![0-9])/g);
   return matches === null ? null : (matches[matches.length - 1] ?? null);
 }
 
-/** The address's location: the last comma-separated segment that still
- * says something once the PIN (and any joining dashes) is removed —
- * 'Plot 12, Industrial Area, New Delhi, 110002' and
- * 'Industrial Area, New Delhi - 110002' both read 'New Delhi'. Falls
- * back to the whole trimmed address when no segment survives. */
-export function extractLocation(address: string, pincode: string | null): string {
-  const segments = address
-    .split(',')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const segment = segments[index] ?? '';
-    const cleaned = (pincode === null ? segment : segment.replaceAll(pincode, ' '))
-      .replace(/[\s-]+$/u, '')
-      .trim();
-    if (cleaned.length > 0) return cleaned;
-  }
-  return address.trim();
+interface WirePartyAddress {
+  LglNm: string;
+  Addr1: string;
+  Loc: string;
+  Pin: ExactJsonNumber;
+  Stcd: string;
 }
 
 export interface IrpPayload {
   Version: '1.1';
-  TranDtls: { TaxSch: 'GST'; SupTyp: 'B2B' | 'B2C' };
+  TranDtls: { TaxSch: 'GST'; SupTyp: 'B2B'; RegRev: 'Y' | 'N' };
   DocDtls: { Typ: 'INV'; No: string; Dt: string };
-  SellerDtls: {
-    Gstin: string;
-    LglNm: string;
-    Addr1: string;
-    Loc: string;
-    Pin: number;
-    Stcd: string;
-  };
-  BuyerDtls: {
-    Gstin: string;
-    LglNm: string;
-    Pos: string;
-    Addr1: string;
-    Loc: string;
-    Pin: number;
-    Stcd: string;
-  };
+  SellerDtls: WirePartyAddress & { Gstin: string; TrdNm?: string };
+  BuyerDtls: WirePartyAddress & { Gstin: string; Pos: string };
+  ShipDtls?: WirePartyAddress & { Gstin: string };
   ItemList: [
     {
       SlNo: '1';
       PrdDesc: string;
       IsServc: 'Y';
       HsnCd: string;
-      Qty: 1;
+      Qty: ExactJsonNumber;
       Unit: 'OTH';
-      UnitPrice: number;
-      TotAmt: number;
-      AssAmt: number;
-      GstRt: number;
-      CgstAmt: number;
-      SgstAmt: number;
-      IgstAmt: number;
-      TotItemVal: number;
+      UnitPrice: ExactJsonNumber;
+      TotAmt: ExactJsonNumber;
+      AssAmt: ExactJsonNumber;
+      GstRt: ExactJsonNumber;
+      CgstAmt: ExactJsonNumber;
+      SgstAmt: ExactJsonNumber;
+      IgstAmt: ExactJsonNumber;
+      TotItemVal: ExactJsonNumber;
     },
   ];
   ValDtls: {
-    AssVal: number;
-    CgstVal: number;
-    SgstVal: number;
-    IgstVal: number;
-    /** The whole-rupee rounding delta. NIC has always had the field; we
-     * had nothing to put in it until the invoice learned to round. */
-    RndOffAmt: number;
-    TotInvVal: number;
+    AssVal: ExactJsonNumber;
+    CgstVal: ExactJsonNumber;
+    SgstVal: ExactJsonNumber;
+    IgstVal: ExactJsonNumber;
+    RndOffAmt: ExactJsonNumber;
+    TotInvVal: ExactJsonNumber;
+  };
+}
+
+function wireParty(party: IrpBuyer): WirePartyAddress & { Gstin: string } {
+  return {
+    Gstin: party.gstin,
+    LglNm: party.legalName,
+    Addr1: party.address,
+    Loc: party.location,
+    Pin: exactJsonInteger(party.pincode),
+    Stcd: party.stateCode,
+  };
+}
+
+function wireShipTo(party: IrpShipTo): WirePartyAddress & { Gstin: string } {
+  return {
+    Gstin: party.gstin,
+    LglNm: party.legalName,
+    Addr1: party.address,
+    Loc: party.location,
+    Pin: exactJsonInteger(party.pincode),
+    Stcd: party.stateCode,
   };
 }
 
 export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
-  const taxable = toAmount(input.taxableValue);
+  const taxable = exactJsonNumber(input.taxableValue);
   return {
     Version: '1.1',
     TranDtls: {
       TaxSch: 'GST',
-      SupTyp: input.buyer.gstin === null ? 'B2C' : 'B2B',
+      SupTyp: 'B2B',
+      RegRev: input.reverseChargeApplicable ? 'Y' : 'N',
     },
     DocDtls: {
       Typ: 'INV',
@@ -186,49 +156,42 @@ export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
     SellerDtls: {
       Gstin: input.seller.gstin,
       LglNm: input.seller.legalName,
+      ...(input.seller.tradeName === null ? {} : { TrdNm: input.seller.tradeName }),
       Addr1: input.seller.address,
       Loc: input.seller.location,
-      Pin: Number(input.seller.pincode),
+      Pin: exactJsonInteger(input.seller.pincode),
       Stcd: input.seller.stateCode,
     },
     BuyerDtls: {
-      Gstin: input.buyer.gstin ?? 'URP',
-      LglNm: input.buyer.legalName,
+      ...wireParty(input.buyer),
       Pos: input.placeOfSupply,
-      Addr1: input.buyer.address,
-      Loc: input.buyer.location,
-      Pin: Number(input.buyer.pincode),
-      Stcd: input.buyer.stateCode,
     },
+    ...(input.shipTo === null ? {} : { ShipDtls: wireShipTo(input.shipTo) }),
     ItemList: [
       {
         SlNo: '1',
         PrdDesc: input.serviceDescription,
         IsServc: 'Y',
         HsnCd: input.sacCode,
-        Qty: 1,
+        Qty: exactJsonNumber('1'),
         Unit: 'OTH',
         UnitPrice: taxable,
         TotAmt: taxable,
         AssAmt: taxable,
-        GstRt: toAmount(input.gstRate),
-        CgstAmt: toAmount(input.cgstAmount),
-        SgstAmt: toAmount(input.sgstAmount),
-        IgstAmt: toAmount(input.igstAmount),
-        // The LINE's value: the unrounded sum. NIC reconciles
-        // sum(TotItemVal) + RndOffAmt = TotInvVal, so sending the
-        // rounded invoice total here would break that identity by
-        // exactly the rounding delta.
-        TotItemVal: toAmount(input.lineValue),
+        GstRt: exactJsonNumber(input.gstRate),
+        CgstAmt: exactJsonNumber(input.cgstAmount),
+        SgstAmt: exactJsonNumber(input.sgstAmount),
+        IgstAmt: exactJsonNumber(input.igstAmount),
+        TotItemVal: exactJsonNumber(input.lineValue),
       },
     ],
     ValDtls: {
       AssVal: taxable,
-      CgstVal: toAmount(input.cgstAmount),
-      SgstVal: toAmount(input.sgstAmount),
-      IgstVal: toAmount(input.igstAmount),
-      RndOffAmt: toAmount(input.roundOff),
-      TotInvVal: toAmount(input.totalAmount),
+      CgstVal: exactJsonNumber(input.cgstAmount),
+      SgstVal: exactJsonNumber(input.sgstAmount),
+      IgstVal: exactJsonNumber(input.igstAmount),
+      RndOffAmt: exactJsonNumber(input.roundOff),
+      TotInvVal: exactJsonNumber(input.totalAmount),
     },
   };
 }

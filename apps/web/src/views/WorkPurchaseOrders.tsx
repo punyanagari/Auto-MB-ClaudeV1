@@ -137,7 +137,11 @@ export function WorkPurchaseOrders({
   }
 
   const order = detail?.purchaseOrder ?? null;
-  const hasDraft = purchaseOrders.some((candidate) => candidate.status === 'draft');
+  const draftVendorIds = new Set(
+    purchaseOrders
+      .filter((candidate) => candidate.status === 'draft')
+      .map((candidate) => candidate.vendorContactId),
+  );
   const itemNumberById = new Map(workItems.map((item) => [item.id, item.itemNumber]));
 
   return (
@@ -196,7 +200,6 @@ export function WorkPurchaseOrders({
       )}
 
       {canCreateDocuments &&
-        !hasDraft &&
         (vendors.length > 0 ? (
           <Disclosure
             label="Create purchase order"
@@ -238,15 +241,20 @@ export function WorkPurchaseOrders({
                     Pick a vendor contact
                   </option>
                   {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
+                    <option
+                      key={vendor.id}
+                      value={vendor.id}
+                      disabled={draftVendorIds.has(vendor.id)}
+                    >
                       {vendor.designation}
                       {vendor.address !== null ? ` — ${vendor.address}` : ''}
+                      {draftVendorIds.has(vendor.id) ? ' — draft already open' : ''}
                     </option>
                   ))}
                 </select>
                 <Hint>
-                  The vendor is snapshotted onto the order at issue; later contact edits
-                  never rewrite the document.
+                  One draft may remain open per vendor on this Work. The vendor is
+                  snapshotted at issue; later contact edits never rewrite the document.
                 </Hint>
               </Field>
               <FieldRow>

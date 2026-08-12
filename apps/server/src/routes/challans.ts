@@ -347,6 +347,97 @@ async function lockChallan(tx: TransactionSql, challanId: string): Promise<Chall
   return row;
 }
 
+export interface LinkedPurchaseOrderLock {
+  readonly id: string;
+  readonly status: string;
+  readonly po_number: string | null;
+}
+
+/** Locks every PO linked by this challan's lines in stable id order. Call
+ * before locking the challan itself: PO close uses purchase_orders ->
+ * delivery_challans, so this shared order prevents a close/cancel cycle. */
+export async function lockLinkedPurchaseOrdersForChallan(
+  tx: TransactionSql,
+  challanId: string,
+): Promise<LinkedPurchaseOrderLock[]> {
+  return tx<LinkedPurchaseOrderLock[]>`
+    select po.id, po.status, po.po_number
+    from purchase_orders po
+    where po.id in (
+      select pol.purchase_order_id
+      from delivery_challan_items dci
+      join purchase_order_lines pol on pol.id = dci.purchase_order_line_id
+      where dci.delivery_challan_id = ${challanId}
+    )
+    order by po.id
+    for update
+  `;
+}
+
+/** Revalidates the immutable issued-line link set after the challan lock. */
+export async function assertLinkedPurchaseOrderLocksCurrent(
+  tx: TransactionSql,
+  challanId: string,
+  lockedOrders: readonly LinkedPurchaseOrderLock[],
+): Promise<void> {
+  const current = await tx<{ id: string }[]>`
+    select po.id
+    from purchase_orders po
+    where po.id in (
+      select pol.purchase_order_id
+      from delivery_challan_items dci
+      join purchase_order_lines pol on pol.id = dci.purchase_order_line_id
+      where dci.delivery_challan_id = ${challanId}
+    )
+    order by po.id
+  `;
+  if (
+    current.length !== lockedOrders.length ||
+    current.some((row, index) => row.id !== lockedOrders[index]?.id)
+  ) {
+    throw httpError(
+      409,
+      'CHALLAN_PO_LINK_CHANGED',
+      'The challan receipt links changed concurrently; retry the operation.',
+    );
+  }
+}
+
+/** A receipt release makes a formerly complete PO incomplete. Reopen every
+ * linked closed order atomically and leave a durable audit explanation. */
+export async function reopenClosedPurchaseOrders(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  challan: { id: string; challan_number: string | null },
+  note: string,
+  linkedOrders: readonly LinkedPurchaseOrderLock[],
+): Promise<void> {
+  for (const order of linkedOrders) {
+    if (order.status !== 'closed') continue;
+    await tx`
+      update purchase_orders
+      set status = 'issued', closed_at = null, updated_at = now()
+      where id = ${order.id} and status = 'closed'
+    `;
+    await tx`
+      insert into audit_events (
+        organisation_id, actor_user_id, action, entity_type, entity_id, details
+      ) values (
+        ${organisationId}, ${userId},
+        'purchase_order.reopened_after_challan_cancellation',
+        'purchase_orders', ${order.id},
+        ${jsonb(tx, {
+          poNumber: order.po_number,
+          challanId: challan.id,
+          challanNumber: challan.challan_number,
+          cancellationNote: note,
+        })}
+      )
+    `;
+  }
+}
+
 function requireStatus(row: ChallanRow, status: Challan['status']): void {
   if (row.status !== status) {
     throw httpError(
@@ -1232,9 +1323,23 @@ export function registerChallanRoutes(
       const note = cancellationNote(body.note);
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireAuthority(tx, user.id, 'cancel');
+        const [challanRef] = await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${id}
+        `;
+        if (!challanRef) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, challanRef.work_id);
+        // Closing a PO locks purchase_orders -> linked delivery_challans.
+        // Take the identical order here before locking this challan, so a
+        // receipt release can reopen every affected PO without a deadlock.
+        // Issued challan lines are immutable; the second read below detects
+        // an exceptional concurrent raw-SQL link change and fails to retry.
+        const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'issued');
+        await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
         // R8: cancelling this challan would drop the delivered quantity
         // the completion predicate was measured against, leaving a Work
         // that says 'completed' below 100% executed. Lock order is the
@@ -1288,6 +1393,17 @@ export function registerChallanRoutes(
           challanNumber: challan.challan_number,
           note,
         });
+        // A closed PO whose receipt was just released must become receivable
+        // again. Otherwise its live balance shows pending material while the
+        // challan editor refuses the replacement receipt as PO_NOT_ISSUED.
+        await reopenClosedPurchaseOrders(
+          tx,
+          organisationId,
+          user.id,
+          { id, challan_number: challan.challan_number },
+          note,
+          linkedOrders,
+        );
         return readDetail(tx, id);
       });
     },

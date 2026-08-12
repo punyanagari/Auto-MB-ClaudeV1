@@ -79,7 +79,7 @@ import { assertWorkOperable } from '../work-status.js';
  * one-billing-draft rule (on-account/final) and the final-MB sweep are
  * unchanged; record MBs are invisible to billing. Un-merge is the only
  * way to take an absorbing draft apart: it restores the records and
- * their claims from the merge audit payload, then deletes the draft.
+ * their claims from normalized merge provenance, then deletes the draft.
  */
 
 const errorResponses = {
@@ -1236,7 +1236,8 @@ export function registerMeasurementBookRoutes(
   // in the same transaction. At every commit point each source has
   // exactly one live claim (the partial unique index never lapses);
   // provenance — which source came from which record — is written into
-  // the merge audit payload, which is what un-merge restores from.
+  // a constrained tenant table. Audit JSON stays human-readable evidence,
+  // but operational un-merge never depends on its mutable shape.
   app.post(
     '/api/works/:id/measurement-books/merge',
     {
@@ -1428,6 +1429,39 @@ export function registerMeasurementBookRoutes(
             throw error;
           });
           if (!target) throw new Error('merge target insert returned no row');
+          // Capture ownership while every claim still sits on its source
+          // record. The insert guard can therefore prove exact provenance;
+          // after the records become merged this ledger accepts no additions.
+          for (const record of records) {
+            const recordClaims = claims.filter(
+              (claim) => claim.measurement_book_id === record.id,
+            );
+            if (recordClaims.length === 0) {
+              await tx`
+                insert into measurement_book_merge_provenance (
+                  organisation_id, target_measurement_book_id,
+                  record_measurement_book_id, work_id, source_type, source_id,
+                  created_by_user_id
+                ) values (
+                  ${organisationId}, ${target.id}, ${record.id}, ${workId},
+                  null, null, ${user.id}
+                )
+              `;
+              continue;
+            }
+            for (const claim of recordClaims) {
+              await tx`
+                insert into measurement_book_merge_provenance (
+                  organisation_id, target_measurement_book_id,
+                  record_measurement_book_id, work_id, source_type, source_id,
+                  created_by_user_id
+                ) values (
+                  ${organisationId}, ${target.id}, ${record.id}, ${workId},
+                  ${claim.source_type}, ${claim.source_id}, ${user.id}
+                )
+              `;
+            }
+          }
           // The claim transfer: delete off the records (draft-time
           // claims delete cleanly, 0024), then claim the union on the
           // target. The union has no duplicates — the partial unique
@@ -1463,8 +1497,7 @@ export function registerMeasurementBookRoutes(
             set status = 'merged', merged_into_id = ${target.id}
             where id = any(${body.recordMbIds}::uuid[])
           `;
-          // The audit payload IS the un-merge provenance: which sources
-          // belonged to which record at merge time.
+          // Keep the same rich audit evidence for investigators and export.
           await audit(
             tx,
             organisationId,
@@ -1509,7 +1542,7 @@ export function registerMeasurementBookRoutes(
   // absorbed record MBs (DELETE answers MB_HAS_MERGED_RECORDS while any
   // exist). Restores each record MB to draft and re-claims, on each
   // record, exactly the sources the merge took from it — read back from
-  // the merge audit payload. Claims the operator added to the target
+  // normalized merge provenance. Claims the operator added to the target
   // AFTER the merge are simply released with the deleted draft, like
   // any draft deletion. One live claim per source holds at every commit
   // point: the target's claims are deleted and the records' re-inserted
@@ -1566,40 +1599,34 @@ export function registerMeasurementBookRoutes(
             'This Measurement Book absorbed no record Measurement Books; delete it instead.',
           );
         }
-        // The merge audit payload is the provenance store: which
-        // sources the merge took from which record.
-        const [mergeEvent] = await tx<{ details: unknown }[]>`
-          select details from audit_events
-          where action = 'measurement_book.merged'
-            and entity_type = 'measurement_books' and entity_id = ${id}
-          order by occurred_at desc, id desc
-          limit 1
+        // Operational restore state is normalized and constrained. Audit
+        // JSON remains evidence only, so format drift cannot strand a merge.
+        const provenanceRows = await tx<
+          {
+            record_measurement_book_id: string;
+            source_type: MbSourceType | null;
+            source_id: string | null;
+          }[]
+        >`
+          select record_measurement_book_id, source_type, source_id
+          from measurement_book_merge_provenance
+          where target_measurement_book_id = ${id}
+          order by record_measurement_book_id, source_type nulls first, source_id
         `;
-        const payload = parseJsonbColumn(mergeEvent?.details) as {
-          records?: {
-            recordMbId?: string;
-            sources?: { sourceType?: MbSourceType; sourceId?: string }[];
-          }[];
-        } | null;
         const provenance = new Map<string, MbSourceRef[]>();
-        for (const entry of payload?.records ?? []) {
-          if (typeof entry.recordMbId !== 'string') continue;
-          provenance.set(
-            entry.recordMbId,
-            (entry.sources ?? []).flatMap((source) =>
-              source.sourceType !== undefined && source.sourceId !== undefined
-                ? [{ sourceType: source.sourceType, sourceId: source.sourceId }]
-                : [],
-            ),
-          );
+        for (const row of provenanceRows) {
+          const sources = provenance.get(row.record_measurement_book_id) ?? [];
+          if (row.source_type !== null && row.source_id !== null) {
+            sources.push({ sourceType: row.source_type, sourceId: row.source_id });
+          }
+          provenance.set(row.record_measurement_book_id, sources);
         }
         for (const record of absorbed) {
           if (!provenance.has(record.id)) {
-            // The merge writes its audit event in the same transaction
-            // that marks the records, so a hole here is corruption, not
-            // user error.
+            // The merge writes provenance in the same transaction that
+            // marks the records, so a hole is corruption, not user error.
             throw new Error(
-              `merge provenance for record Measurement Book ${record.id} is missing from the audit trail`,
+              `merge provenance for record Measurement Book ${record.id} is missing`,
             );
           }
         }

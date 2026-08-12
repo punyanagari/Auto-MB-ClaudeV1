@@ -186,6 +186,10 @@ export const OrganisationProfileSchema = Type.Object(
     pincode: Type.Optional(
       Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
     ),
+    /** Explicit NIC SellerDtls.Loc value; never inferred from address text. */
+    locality: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 100 }), Type.Null()]),
+    ),
     /** The name traded under, when it differs from the legal name. */
     tradeName: Type.Optional(
       Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),
@@ -231,6 +235,9 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     stateCode: Type.Optional(Type.Union([GstStateCodeSchema, Type.Null()])),
     pincode: Type.Optional(
       Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    ),
+    locality: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 100 }), Type.Null()]),
     ),
     tradeName: Type.Optional(
       Type.Union([Type.String({ minLength: 2, maxLength: 200 }), Type.Null()]),

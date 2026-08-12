@@ -1,13 +1,18 @@
 import {
   ApiErrorSchema,
+  CancelStatutoryDocumentRequestSchema,
   CancelEwayBillRequestSchema,
   EwayBillDetailResponseSchema,
   EwayBillListResponseSchema,
+  RecordManualStatutoryCancellationRequestSchema,
   RecordEwayNicResponseRequestSchema,
   SaveEwayBillRequestSchema,
   type CancelEwayBillRequest,
+  type CancelStatutoryDocumentRequest,
   type EwayBill,
+  type EwayProviderState,
   type EwayBillStatus,
+  type RecordManualStatutoryCancellationRequest,
   type RecordEwayNicResponseRequest,
   type SaveEwayBillRequest,
   type TransportMode,
@@ -18,13 +23,31 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import {
+  assertWorkAccess as assertScopedWorkAccess,
+  requireAuthority,
+  requireWriterRole,
+} from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
-import { buildEwbPayload } from '../gsp/ewb-payload.js';
-import { extractLocation, extractPincode } from '../gsp/irp-payload.js';
+import {
+  finishStatutoryOperation,
+  providerFailure,
+  recoverStaleStatutoryOperation,
+  sha256Hex,
+  startStatutoryOperation,
+} from '../gsp/provider-operations.js';
+import type {
+  EwayBillProviderEvidence,
+  StatutoryProvider,
+} from '../gsp/statutory-provider.js';
+import { exactJsonInteger, stringifyStatutoryJson } from '../gsp/statutory-json.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
+import {
+  parseTaxInvoiceIssuedSnapshot,
+  TaxInvoiceSnapshotError,
+} from '../tax-invoice-snapshot.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
 
@@ -57,6 +80,7 @@ const errorResponses = {
   403: ApiErrorSchema,
   404: ApiErrorSchema,
   409: ApiErrorSchema,
+  502: ApiErrorSchema,
 } as const;
 
 const IdParamsSchema = Type.Object(
@@ -74,7 +98,7 @@ interface EwayBillRow {
   id: string;
   tax_invoice_id: string;
   invoice_number: string | null;
-  work_id: string;
+  work_id: string | null;
   status: EwayBillStatus;
   transport_mode: TransportMode;
   transporter_id: string | null;
@@ -86,8 +110,17 @@ interface EwayBillRow {
   from_pincode: string;
   to_pincode: string;
   ewb_number: string | null;
+  provider: 'manual' | 'whitebooks' | null;
+  provider_state: EwayProviderState;
   ewb_date: Date | null;
   valid_until: Date | null;
+  ewb_date_text: string | null;
+  valid_until_text: string | null;
+  legacy_evidence_missing: boolean;
+  provider_cancelled_at: Date | null;
+  provider_cancelled_at_text: string | null;
+  provider_cancel_reason_code: string | null;
+  provider_cancel_remark: string | null;
   cancellation_note: string | null;
   created_at: Date;
   generated_at: Date | null;
@@ -99,7 +132,11 @@ const EB_COLUMNS = `
   eb.transport_mode, eb.transporter_id, eb.transporter_name,
   eb.vehicle_number, eb.transport_doc_number,
   eb.transport_doc_date::text as transport_doc_date, eb.distance_km,
-  eb.from_pincode, eb.to_pincode, eb.ewb_number, eb.ewb_date, eb.valid_until,
+  eb.from_pincode, eb.to_pincode, eb.ewb_number, eb.provider, eb.provider_state,
+  eb.ewb_date, eb.valid_until, eb.ewb_date_text, eb.valid_until_text,
+  eb.legacy_evidence_missing,
+  eb.provider_cancelled_at, eb.provider_cancelled_at_text,
+  eb.provider_cancel_reason_code, eb.provider_cancel_remark,
   eb.cancellation_note, eb.created_at, eb.generated_at, eb.cancelled_at
 `;
 
@@ -124,8 +161,17 @@ function toEwayBill(row: EwayBillRow): EwayBill {
     fromPincode: row.from_pincode,
     toPincode: row.to_pincode,
     ewbNumber: row.ewb_number,
+    provider: row.provider,
+    providerState: row.provider_state,
     ewbDate: row.ewb_date?.toISOString() ?? null,
     validUntil: row.valid_until?.toISOString() ?? null,
+    ewbDateText: row.ewb_date_text,
+    validUntilText: row.valid_until_text,
+    legacyEvidenceMissing: row.legacy_evidence_missing,
+    providerCancelledAt: row.provider_cancelled_at?.toISOString() ?? null,
+    providerCancelledAtText: row.provider_cancelled_at_text,
+    providerCancelReasonCode: row.provider_cancel_reason_code,
+    providerCancelRemark: row.provider_cancel_remark,
     cancellationNote: row.cancellation_note,
     createdAt: row.created_at.toISOString(),
     generatedAt: row.generated_at?.toISOString() ?? null,
@@ -163,6 +209,14 @@ function requireStatus(row: EwayBillRow, status: EwayBillStatus): void {
       `This operation requires a ${status} e-way bill (current status: ${row.status}).`,
     );
   }
+}
+
+async function assertWorkAccess(
+  tx: TransactionSql,
+  userId: string,
+  workId: string | null,
+): Promise<void> {
+  if (workId !== null) await assertScopedWorkAccess(tx, userId, workId);
 }
 
 // --- Field guards -----------------------------------------------------------
@@ -251,6 +305,7 @@ export function registerEwayBillRoutes(
   app: FastifyInstance,
   auth: Auth,
   database: Sql,
+  provider?: StatutoryProvider,
 ): void {
   app.get(
     '/api/tax-invoices/:id/eway-bills',
@@ -271,7 +326,7 @@ export function registerEwayBillRoutes(
         organisationId,
         user.id,
         async (tx) => {
-          const [invoice] = await tx<{ work_id: string }[]>`
+          const [invoice] = await tx<{ work_id: string | null }[]>`
             select work_id from tax_invoices where id = ${invoiceId}
           `;
           if (!invoice) {
@@ -453,6 +508,16 @@ export function registerEwayBillRoutes(
         // updates and extensions are their own NIC transactions and out
         // of scope here.
         requireStatus(row, 'draft');
+        if (
+          row.provider_state !== 'not_requested' &&
+          row.provider_state !== 'generation_failed'
+        ) {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            'Carriage facts are frozen while a provider operation is in progress or its result is unknown.',
+          );
+        }
         await tx`
           update eway_bills
           set transport_mode = ${body.transportMode},
@@ -509,6 +574,13 @@ export function registerEwayBillRoutes(
         // Rule 8: a draft is not yet a document, so it deletes; a
         // generated e-way bill cancels and keeps its number forever.
         requireStatus(row, 'draft');
+        if (row.provider !== null || row.provider_state !== 'not_requested') {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_HISTORY_EXISTS',
+            'This draft has provider-operation history and cannot be deleted. Reconcile it instead.',
+          );
+        }
         await tx`delete from eway_bills where id = ${id}`;
         await auditEwayBill(tx, organisationId, user.id, 'eway_bill.deleted', id, {
           taxInvoiceId: row.tax_invoice_id,
@@ -518,152 +590,338 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.get(
-    '/api/eway-bills/:id/nic-payload',
-    { schema: { params: IdParamsSchema } },
-    async (request) => {
+  app.post(
+    '/api/eway-bills/:id/recover-provider-operation',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 202: EwayBillDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
       const user = await requireUser(auth, request);
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
       const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        const row = await readEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
-        if (row.status === 'cancelled') {
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const row = await lockEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
+          if (row.provider_state === 'generating') {
+            await requireAuthority(tx, user.id, 'issue');
+          } else if (row.provider_state === 'cancelling') {
+            await requireAuthority(tx, user.id, 'cancel');
+          } else {
+            throw httpError(
+              409,
+              'EWAY_PROVIDER_STATE_CONFLICT',
+              'Only an in-progress E-way Bill provider operation can be checked for stale recovery.',
+            );
+          }
+          const recovered = await recoverStaleStatutoryOperation(tx, {
+            ewayBillId: id,
+          });
+          if (recovered.length === 0) {
+            throw httpError(
+              409,
+              'STATUTORY_OPERATION_IN_PROGRESS',
+              'The provider operation is still within its two-minute lease.',
+            );
+          }
+          await auditEwayBill(
+            tx,
+            organisationId,
+            user.id,
+            'eway_bill.provider_operation_recovered',
+            id,
+            { operations: recovered },
+          );
+          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+        },
+      );
+      return reply.status(202).send(detail);
+    },
+  );
+
+  app.post(
+    '/api/eway-bills/:id/generate',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: {
+          200: EwayBillDetailResponseSchema,
+          202: EwayBillDetailResponseSchema,
+          ...errorResponses,
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+
+      const prepared = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'issue');
+          await recoverStaleStatutoryOperation(tx, { ewayBillId: id });
+          const row = await lockEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
+          requireStatus(row, 'draft');
+          if (row.provider_state === 'generating') {
+            throw httpError(
+              409,
+              'STATUTORY_OPERATION_IN_PROGRESS',
+              'An e-way bill provider operation is already in progress.',
+            );
+          }
+          if (
+            row.provider_state === 'cancelling' ||
+            row.provider_state === 'cancelled' ||
+            row.provider_state === 'cancellation_unknown'
+          ) {
+            throw httpError(
+              409,
+              'EWAY_PROVIDER_STATE_CONFLICT',
+              `E-way bill generation cannot start from ${row.provider_state}.`,
+            );
+          }
+          const reconcileOnly = row.provider_state === 'generation_unknown';
+          if (!reconcileOnly) {
+            throw httpError(
+              409,
+              'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+              'This cumulative tax invoice contains a SAC service line. Fresh E-way Bill generation is disabled until a goods/HSN delivery-challan model supplies the legally required item facts.',
+            );
+          }
+          if (provider === undefined) {
+            throw httpError(
+              409,
+              'STATUTORY_PROVIDER_NOT_CONFIGURED',
+              'Whitebooks transport is not configured.',
+            );
+          }
+          const [priorEwayBill] = await tx<{ id: string }[]>`
+            select id from eway_bills
+            where tax_invoice_id = ${row.tax_invoice_id} and id <> ${id}
+            limit 1
+          `;
+          if (priorEwayBill) {
+            throw httpError(
+              409,
+              'EWAY_REGENERATION_RECONCILIATION_UNSUPPORTED',
+              'This IRN already has earlier local EWB history. Automatic regeneration is disabled because an IRN-only lookup could attach old or cancelled provider evidence.',
+            );
+          }
+          const [invoice] = await tx<
+            {
+              status: string;
+              irn: string | null;
+              irp_provider: string | null;
+              irp_provider_state: string;
+              issued_snapshot: unknown;
+            }[]
+          >`
+            select status, irn, irp_provider, irp_provider_state,
+                   issued_snapshot
+            from tax_invoices where id = ${row.tax_invoice_id}
+          `;
+          if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
+          if (
+            invoice.status !== 'submitted' ||
+            invoice.irn === null ||
+            invoice.irp_provider !== 'whitebooks' ||
+            invoice.irp_provider_state !== 'registered'
+          ) {
+            throw httpError(
+              409,
+              'EWAY_IRP_REGISTRATION_REQUIRED',
+              'Generate an e-way bill through Whitebooks only after this invoice has a provider-verified, active IRN.',
+            );
+          }
+          const issued = parseJsonbColumn(invoice.issued_snapshot);
+          let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
+          try {
+            snapshot = parseTaxInvoiceIssuedSnapshot(issued);
+          } catch (error) {
+            if (error instanceof TaxInvoiceSnapshotError) {
+              throw httpError(409, error.code, error.message);
+            }
+            throw error;
+          }
+          const requestSha256 = sha256Hex(stringifyStatutoryJson({ Irn: invoice.irn }));
+          const operationId = await startStatutoryOperation(tx, {
+            organisationId,
+            userId: user.id,
+            provider,
+            operation: 'reconcile_eway_bill',
+            requestSha256,
+            ewayBillId: id,
+          });
+          await tx`
+            update eway_bills
+            set provider = 'whitebooks', provider_state = 'generating'
+            where id = ${id}
+          `;
+          return {
+            operationId,
+            gstin: snapshot.supplier.gstin,
+            irn: invoice.irn,
+            provider,
+          };
+        },
+      );
+
+      let evidence: EwayBillProviderEvidence | null = null;
+      let failure: ReturnType<typeof providerFailure> | null = null;
+      try {
+        evidence = await prepared.provider.findEwayBillByIrn({
+          gstin: prepared.gstin,
+          irn: prepared.irn,
+        });
+        if (evidence === null) {
+          failure = {
+            status: 'unknown',
+            providerCode: null,
+            httpStatus: null,
+            publicCode: 'WHITEBOOKS_EWB_NOT_FOUND',
+          };
+        }
+      } catch (error) {
+        const lookupFailure = providerFailure(error);
+        failure = { ...lookupFailure, status: 'unknown' };
+      }
+
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'issue');
+          const row = await lockEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
+          if (row.status !== 'draft' || row.provider_state !== 'generating') {
+            throw new Error(`e-way bill ${id} left the generating state`);
+          }
+          if (evidence !== null) {
+            await tx`
+              update eway_bills
+              set status = 'generated', provider = 'whitebooks',
+                  provider_state = 'generated',
+                  ewb_number = ${evidence.ewbNumber},
+                  ewb_date = ${evidence.ewbDate},
+                  valid_until = ${evidence.validUntil},
+                  ewb_date_text = ${evidence.ewbDateText},
+                  valid_until_text = ${evidence.validUntilText},
+                  legacy_evidence_missing = false,
+                  generated_by_user_id = ${user.id}, generated_at = now()
+              where id = ${id}
+            `;
+            await finishStatutoryOperation(tx, prepared.operationId, {
+              status: 'succeeded',
+            });
+            await auditEwayBill(
+              tx,
+              organisationId,
+              user.id,
+              'eway_bill.provider_generated',
+              id,
+              {
+                taxInvoiceId: row.tax_invoice_id,
+                ewbNumber: evidence.ewbNumber,
+                provider: prepared.provider.name,
+                operationId: prepared.operationId,
+              },
+            );
+          } else {
+            const result = failure ?? {
+              status: 'unknown' as const,
+              providerCode: null,
+              httpStatus: null,
+            };
+            await tx`
+              update eway_bills
+              set provider = 'whitebooks',
+                  provider_state = ${
+                    result.status === 'failed'
+                      ? 'generation_failed'
+                      : 'generation_unknown'
+                  }
+              where id = ${id}
+            `;
+            await finishStatutoryOperation(tx, prepared.operationId, {
+              status: result.status,
+              providerCode: result.providerCode,
+              httpStatus: result.httpStatus,
+            });
+            await auditEwayBill(
+              tx,
+              organisationId,
+              user.id,
+              'eway_bill.provider_generation_unresolved',
+              id,
+              {
+                taxInvoiceId: row.tax_invoice_id,
+                outcome: result.status,
+                providerCode: result.providerCode,
+                provider: prepared.provider.name,
+                operationId: prepared.operationId,
+              },
+            );
+          }
+          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+        },
+      );
+
+      if (evidence !== null) return reply.status(200).send(detail);
+      const result = failure ?? {
+        status: 'unknown' as const,
+        publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+      };
+      if (result.status === 'failed') {
+        throw httpError(
+          502,
+          result.publicCode,
+          'Whitebooks rejected e-way bill generation. The draft remains editable and no EWB number was invented.',
+        );
+      }
+      return reply.status(202).send(detail);
+    },
+  );
+
+  app.get(
+    '/api/eway-bills/:id/nic-payload',
+    { schema: { params: IdParamsSchema } },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const payloadJson = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const row = await readEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
           throw httpError(
             409,
-            'EWAY_BILL_STATUS_CONFLICT',
-            'A cancelled e-way bill moves nothing; there is no payload to carry.',
+            'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+            'This cumulative tax invoice contains a SAC service line. No E-way Bill payload is exposed until goods/HSN delivery facts exist.',
           );
-        }
-        // The payload NIC would accept needs the carriage complete —
-        // refused here as the same 400s nic-response answers, not
-        // rejected by NIC later.
-        assertCarriageComplete(row);
-        const [invoice] = await tx<
-          {
-            status: string;
-            invoice_number: string | null;
-            invoice_date: string;
-            sac_code: string;
-            service_description: string;
-            gst_rate: string;
-            taxable_value: string | null;
-            cgst_amount: string | null;
-            sgst_amount: string | null;
-            igst_amount: string | null;
-            total_amount: string | null;
-            buyer_snapshot: unknown;
-          }[]
-        >`
-          select status, invoice_number, invoice_date::text as invoice_date,
-                 sac_code, service_description, gst_rate::text as gst_rate,
-                 taxable_value::text as taxable_value,
-                 cgst_amount::text as cgst_amount,
-                 sgst_amount::text as sgst_amount,
-                 igst_amount::text as igst_amount,
-                 total_amount::text as total_amount, buyer_snapshot
-          from tax_invoices where id = ${row.tax_invoice_id}
-        `;
-        if (
-          !invoice ||
-          invoice.invoice_number === null ||
-          invoice.taxable_value === null ||
-          invoice.cgst_amount === null ||
-          invoice.sgst_amount === null ||
-          invoice.igst_amount === null ||
-          invoice.total_amount === null
-        ) {
-          // The 0035 insert trigger admits e-way bills only against
-          // submitted (numbered, frozen) invoices.
-          throw new Error(`eway bill ${id} points at an unfrozen invoice`);
-        }
-        const [organisation] = await tx<
-          {
-            name: string;
-            address: string | null;
-            gstin: string | null;
-            state_code: string | null;
-          }[]
-        >`
-          select name, address, gstin, state_code from organisations
-        `;
-        if (!organisation?.gstin) {
-          throw httpError(
-            400,
-            'ORG_GSTIN_REQUIRED',
-            'The organisation profile has no GSTIN; the e-way bill payload cannot name the consignor.',
-          );
-        }
-        if (!organisation.state_code) {
-          throw httpError(
-            400,
-            'ORG_STATE_REQUIRED',
-            'The organisation profile has no GST state code; the e-way bill payload cannot name the dispatch state.',
-          );
-        }
-        if (organisation.address === null) {
-          throw httpError(
-            400,
-            'ORG_ADDRESS_REQUIRED',
-            'The organisation profile has no address; the e-way bill payload needs the dispatch address.',
-          );
-        }
-        const snapshot = parseJsonbColumn(invoice.buyer_snapshot) as {
-          designation?: string;
-          gstin?: string | null;
-          address?: string | null;
-          stateCode?: string | null;
-          pincode?: string | null;
-        } | null;
-        if (
-          !snapshot ||
-          snapshot.designation === undefined ||
-          typeof snapshot.address !== 'string' ||
-          typeof snapshot.stateCode !== 'string'
-        ) {
-          throw new Error(
-            `tax invoice ${row.tax_invoice_id} has an incomplete buyer snapshot`,
-          );
-        }
-        const sellerPincode = extractPincode(organisation.address);
-        return buildEwbPayload({
-          invoiceNumber: invoice.invoice_number,
-          invoiceDate: invoice.invoice_date,
-          sacCode: invoice.sac_code,
-          serviceDescription: invoice.service_description,
-          gstRate: invoice.gst_rate,
-          taxableValue: invoice.taxable_value,
-          cgstAmount: invoice.cgst_amount,
-          sgstAmount: invoice.sgst_amount,
-          igstAmount: invoice.igst_amount,
-          totalAmount: invoice.total_amount,
-          seller: {
-            gstin: organisation.gstin,
-            tradeName: organisation.name,
-            address: organisation.address,
-            location: extractLocation(organisation.address, sellerPincode),
-            stateCode: organisation.state_code,
-          },
-          buyer: {
-            gstin: snapshot.gstin ?? null,
-            tradeName: snapshot.designation,
-            address: snapshot.address,
-            location: extractLocation(snapshot.address, snapshot.pincode ?? null),
-            stateCode: snapshot.stateCode,
-          },
-          transportMode: row.transport_mode,
-          transporterId: row.transporter_id,
-          transporterName: row.transporter_name,
-          vehicleNumber: row.vehicle_number,
-          transportDocNumber: row.transport_doc_number,
-          transportDocDate: row.transport_doc_date,
-          distanceKm: row.distance_km,
-          fromPincode: row.from_pincode,
-          toPincode: row.to_pincode,
-        });
-      });
+        },
+      );
+      void reply.type('application/json; charset=utf-8');
+      return reply.send(payloadJson);
     },
   );
 
@@ -684,12 +942,26 @@ export function registerEwayBillRoutes(
       const { id } = request.params as { id: string };
       const body = request.body as RecordEwayNicResponseRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        // Recording what NIC already decided is clerical — writer role;
-        // the legal act was the invoice's submit.
-        await requireWriterRole(tx, user.id);
+        // Compatibility import only. Manually typed evidence is explicitly
+        // unverified and requires issue authority.
+        await requireAuthority(tx, user.id, 'issue');
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
+        if (provider !== undefined) {
+          throw httpError(
+            409,
+            'MANUAL_PROVIDER_EVIDENCE_DISABLED',
+            'Manual NIC evidence entry is disabled while Whitebooks transport is configured.',
+          );
+        }
         requireStatus(row, 'draft');
+        if (row.provider !== null || row.provider_state !== 'not_requested') {
+          throw httpError(
+            409,
+            'MANUAL_PROVIDER_EVIDENCE_CONFLICT',
+            'Manual NIC evidence cannot replace or complete an existing provider attempt.',
+          );
+        }
         // Friendly form of the 0035 carriage CHECK; the catch below is
         // its backstop for any shape this misses.
         assertCarriageComplete(row);
@@ -697,6 +969,9 @@ export function registerEwayBillRoutes(
           update eway_bills
           set status = 'generated', ewb_number = ${body.ewbNumber},
               ewb_date = ${body.ewbDate}, valid_until = ${body.validUntil},
+              ewb_date_text = ${body.ewbDateText.trim()},
+              valid_until_text = ${body.validUntilText.trim()},
+              provider = 'manual', provider_state = 'generated',
               generated_by_user_id = ${user.id}, generated_at = now()
           where id = ${id}
         `.catch((error: unknown) => {
@@ -719,9 +994,270 @@ export function registerEwayBillRoutes(
           ewbNumber: body.ewbNumber,
           ewbDate: body.ewbDate,
           validUntil: body.validUntil,
+          evidence: 'manual_unverified',
         });
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
+    },
+  );
+
+  app.post(
+    '/api/eway-bills/:id/manual-cancel-response',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: RecordManualStatutoryCancellationRequestSchema,
+        response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as RecordManualStatutoryCancellationRequest;
+      const remark = body.remark.trim();
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireAuthority(tx, user.id, 'cancel');
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.status !== 'generated' && row.status !== 'cancelled') {
+          throw httpError(
+            409,
+            'EWAY_BILL_STATUS_CONFLICT',
+            'Only an issued E-way Bill can receive external cancellation evidence.',
+          );
+        }
+        const manualActive =
+          row.provider === 'manual' &&
+          (row.provider_state === 'generated' ||
+            row.provider_state === 'cancellation_unknown');
+        const whitebooksUnknown =
+          row.provider === 'whitebooks' &&
+          row.provider_state === 'cancellation_unknown';
+        if (!manualActive && !whitebooksUnknown) {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            'External cancellation evidence is accepted only for manual records or an unresolved Whitebooks cancellation.',
+          );
+        }
+        await tx`
+          update eway_bills
+          set provider_state = 'cancelled',
+              provider_cancelled_at = ${body.cancelledAt},
+              provider_cancelled_at_text = ${body.cancelledAtText.trim()},
+              provider_cancel_reason_code = ${body.reasonCode},
+              provider_cancel_remark = ${remark}
+          where id = ${id}
+        `;
+        await auditEwayBill(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.external_cancellation_recorded',
+          id,
+          {
+            ewbNumber: row.ewb_number,
+            cancelledAt: body.cancelledAt,
+            evidence: 'manual_unverified',
+            reconciledProviderUnknown: whitebooksUnknown,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
+    },
+  );
+
+  app.post(
+    '/api/eway-bills/:id/cancel-provider',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CancelStatutoryDocumentRequestSchema,
+        response: {
+          200: EwayBillDetailResponseSchema,
+          202: EwayBillDetailResponseSchema,
+          ...errorResponses,
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as CancelStatutoryDocumentRequest;
+      const remark = body.remark.trim();
+      const prepared = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'cancel');
+          const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
+            ewayBillId: id,
+          });
+          const row = await lockEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
+          if (provider === undefined) {
+            throw httpError(
+              409,
+              'STATUTORY_PROVIDER_NOT_CONFIGURED',
+              'Whitebooks transport is not configured.',
+            );
+          }
+          requireStatus(row, 'generated');
+          if (
+            row.provider_state === 'cancellation_unknown' &&
+            recoveredOperations.includes('cancel_eway_bill')
+          ) {
+            return {
+              recovered: true as const,
+              detail: { ewayBill: toEwayBill(await readEwayBill(tx, id)) },
+            };
+          }
+          if (
+            row.provider !== 'whitebooks' ||
+            row.provider_state !== 'generated' ||
+            row.ewb_number === null
+          ) {
+            throw httpError(
+              409,
+              'EWAY_PROVIDER_STATE_CONFLICT',
+              row.provider_state === 'cancellation_unknown'
+                ? 'The earlier cancellation result is unknown and cannot be sent again blindly. Reconcile with Whitebooks/NIC support.'
+                : 'Only a Whitebooks-generated active e-way bill can use provider cancellation.',
+            );
+          }
+          const [invoice] = await tx<{ issued_snapshot: unknown }[]>`
+            select issued_snapshot from tax_invoices
+            where id = ${row.tax_invoice_id}
+          `;
+          if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
+          const gstin = parseTaxInvoiceIssuedSnapshot(
+            parseJsonbColumn(invoice.issued_snapshot),
+          ).supplier.gstin;
+          const requestJson = stringifyStatutoryJson({
+            ewbNo: exactJsonInteger(row.ewb_number),
+            cancelRsnCode: exactJsonInteger(body.reasonCode),
+            cancelRmrk: remark,
+          });
+          const operationId = await startStatutoryOperation(tx, {
+            organisationId,
+            userId: user.id,
+            provider,
+            operation: 'cancel_eway_bill',
+            requestSha256: sha256Hex(requestJson),
+            ewayBillId: id,
+          });
+          await tx`
+            update eway_bills set provider_state = 'cancelling'
+            where id = ${id}
+          `;
+          return {
+            recovered: false as const,
+            operationId,
+            ewbNumber: row.ewb_number,
+            gstin,
+            provider,
+          };
+        },
+      );
+
+      if (prepared.recovered) {
+        return reply.status(202).send(prepared.detail);
+      }
+
+      let cancelled: {
+        readonly cancelledAtText: string;
+        readonly cancelledAt: string;
+      } | null = null;
+      let failure: ReturnType<typeof providerFailure> | null = null;
+      try {
+        cancelled = await prepared.provider.cancelEwayBill({
+          gstin: prepared.gstin,
+          ewbNumber: prepared.ewbNumber,
+          reasonCode: body.reasonCode,
+          remark,
+        });
+      } catch (error) {
+        failure = providerFailure(error);
+      }
+
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'cancel');
+          const row = await lockEwayBill(tx, id);
+          await assertWorkAccess(tx, user.id, row.work_id);
+          if (row.provider_state !== 'cancelling') {
+            throw new Error(`e-way bill ${id} left the cancelling state`);
+          }
+          if (cancelled !== null) {
+            await tx`
+              update eway_bills
+              set provider_state = 'cancelled',
+                  provider_cancelled_at = ${cancelled.cancelledAt},
+                  provider_cancelled_at_text = ${cancelled.cancelledAtText},
+                  provider_cancel_reason_code = ${body.reasonCode},
+                  provider_cancel_remark = ${remark}
+              where id = ${id}
+            `;
+            await finishStatutoryOperation(tx, prepared.operationId, {
+              status: 'succeeded',
+            });
+          } else {
+            const result = failure ?? {
+              status: 'unknown' as const,
+              providerCode: null,
+              httpStatus: null,
+            };
+            await tx`
+              update eway_bills
+              set provider_state = ${
+                result.status === 'failed' ? 'generated' : 'cancellation_unknown'
+              }
+              where id = ${id}
+            `;
+            await finishStatutoryOperation(tx, prepared.operationId, {
+              status: result.status,
+              providerCode: result.providerCode,
+              httpStatus: result.httpStatus,
+            });
+          }
+          await auditEwayBill(
+            tx,
+            organisationId,
+            user.id,
+            cancelled === null
+              ? 'eway_bill.provider_cancellation_unresolved'
+              : 'eway_bill.provider_cancelled',
+            id,
+            {
+              ewbNumber: prepared.ewbNumber,
+              outcome:
+                cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+        },
+      );
+      if (cancelled !== null) return reply.status(200).send(detail);
+      if (failure?.status === 'failed') {
+        throw httpError(
+          502,
+          failure.publicCode,
+          'Whitebooks rejected e-way bill cancellation. The provider document remains active.',
+        );
+      }
+      return reply.status(202).send(detail);
     },
   );
 
@@ -754,16 +1290,19 @@ export function registerEwayBillRoutes(
           );
         }
         requireStatus(row, 'generated');
-        // The 0035 generated-shape CHECK holds the NIC response fields
-        // to the generated status: a cancelled e-way bill clears them —
-        // NIC has voided the number, and a cleared row cannot be mistaken
-        // for a live movement document. The number lives on in the audit
-        // event below (and in the generation event before it).
+        if (row.provider !== null && row.provider_state !== 'cancelled') {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_CANCELLATION_REQUIRED',
+            'Record confirmed external cancellation before cancelling this local E-way Bill record.',
+          );
+        }
+        // Cancellation never erases an official EWB number, date, validity,
+        // generation actor, or evidence. Manual cancellation remains
+        // explicitly unresolved at the provider boundary.
         await tx`
           update eway_bills
-          set status = 'cancelled', ewb_number = null, ewb_date = null,
-              valid_until = null, generated_at = null,
-              generated_by_user_id = null,
+          set status = 'cancelled',
               cancelled_by_user_id = ${user.id}, cancelled_at = now(),
               cancellation_note = ${note}
           where id = ${id}

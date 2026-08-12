@@ -63,6 +63,7 @@ let workCode: string;
 let itemAId: string;
 let itemBId: string;
 let vendorId: string;
+let secondVendorId: string;
 let notVendorId: string;
 let retiredVendorId: string;
 
@@ -256,6 +257,7 @@ beforeAll(async () => {
   // Vendor contacts. `is_vendor` has been a dormant column since 0028 and
   // no route sets it yet, so the fixtures are written directly.
   vendorId = randomUUID();
+  secondVendorId = randomUUID();
   notVendorId = randomUUID();
   retiredVendorId = randomUUID();
   await admin`
@@ -268,6 +270,9 @@ beforeAll(async () => {
       (${vendorId}, ${organisationId}, ${`Bharat Cables Pvt Ltd ${runId}`},
        'R. Nair', 'Plot 12, MIDC, Pune', '02012345678', 'sales@bharat.example',
        '27AABCB1234C1ZP', '411019', '27', false, true, true, ${ownerUserId}),
+      (${secondVendorId}, ${organisationId}, ${`Konkan Switchgear ${runId}`},
+       null, 'TTC Industrial Area, Navi Mumbai', null, null,
+       '27AABCK1234C1ZQ', '400705', '27', false, true, true, ${ownerUserId}),
       (${notVendorId}, ${organisationId}, ${`Sr. DEE (G) NR ${runId}`},
        null, 'Delhi Division, New Delhi', null, null, null, null, '07',
        true, false, true, ${ownerUserId}),
@@ -431,7 +436,7 @@ describe('Purchase order lifecycle', () => {
     expect(detail.previewTotal).toBe('0.00');
   });
 
-  it('enforces one draft per Work, naming the existing draft in the 409', async () => {
+  it('enforces one draft per Work and vendor, naming the duplicate in the 409', async () => {
     const response = await authed(owner, {
       method: 'POST',
       url: `/api/works/${workId}/purchase-orders`,
@@ -443,6 +448,22 @@ describe('Purchase order lifecycle', () => {
       code: 'PO_DRAFT_EXISTS',
       details: { existingRecordId: purchaseOrderId },
     });
+
+    const independent = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: secondVendorId, poDate: '2026-08-08' },
+    });
+    expect(independent.statusCode, independent.body).toBe(201);
+    const independentId =
+      independent.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/purchase-orders/${independentId}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
   });
 
   it('refuses line edits to read-only roles and accepts them from office', async () => {
@@ -617,6 +638,12 @@ describe('Purchase order lifecycle', () => {
         )
       `,
     ).rejects.toThrowError(/lines are fixed once it is issued/);
+    await expect(
+      admin`
+        update purchase_orders set po_date = '2026-08-10'
+        where id = ${purchaseOrderId}
+      `,
+    ).rejects.toThrowError(/business data is immutable/);
 
     // The vendor master may still be edited; the issued document does not
     // change, because it reads its own snapshot (rule 7).
@@ -820,10 +847,9 @@ describe('Purchase order lifecycle', () => {
     expect(again.json()).toMatchObject({ code: 'PO_STATUS_CONFLICT' });
   });
 
-  it('shows the balance live, so a released receipt reappears as pending', async () => {
+  it('reopens a closed order when cancellation releases a receipt', async () => {
     // Cancelling the challan that fed line 2 gives the material back; the
-    // closed order keeps its recorded transition, and the derived balance
-    // tells the truth of now rather than of the day it was closed.
+    // order returns to issued so a corrected receipt can be linked.
     const cancelled = await authed(owner, {
       method: 'POST',
       url: `/api/challans/${secondChallanId}/cancel`,
@@ -838,11 +864,33 @@ describe('Purchase order lifecycle', () => {
       organisationId,
     });
     const body = detail.json<PurchaseOrderDetailResponse>();
-    expect(body.purchaseOrder.status).toBe('closed');
+    expect(body.purchaseOrder.status).toBe('issued');
+    expect(body.purchaseOrder.closedAt).toBeNull();
     expect(body.lines[1]).toMatchObject({
       receivedQuantity: '1.000',
       pendingQuantity: '1.500',
     });
+
+    const open = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/purchase-orders?status=open`,
+      organisationId,
+    });
+    expect(
+      open.json<PurchaseOrderListResponse>().purchaseOrders.map((order) => order.id),
+    ).toContain(purchaseOrderId);
+
+    await receive([
+      { workItemId: itemBId, quantity: '1.5', purchaseOrderLineId: lineTwoId },
+    ]);
+    const corrected = await authed(owner, {
+      method: 'GET',
+      url: `/api/purchase-orders/${purchaseOrderId}`,
+      organisationId,
+    });
+    expect(
+      corrected.json<PurchaseOrderDetailResponse>().lines[1]?.pendingQuantity,
+    ).toBe('0.000');
   });
 
   it('writes the full audit timeline', async () => {
@@ -856,6 +904,7 @@ describe('Purchase order lifecycle', () => {
       'purchase_order.lines_saved',
       'purchase_order.issued',
       'purchase_order.closed',
+      'purchase_order.reopened_after_challan_cancellation',
     ]);
   });
 });

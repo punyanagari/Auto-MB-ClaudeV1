@@ -115,6 +115,7 @@ interface ContactRow {
   gstin: string | null;
   pincode: string | null;
   state_code: string | null;
+  locality: string | null;
   division_code: string | null;
   is_consignee: boolean;
   is_vendor: boolean;
@@ -134,6 +135,7 @@ function toContact(row: ContactRow): Contact {
     gstin: row.gstin,
     pincode: row.pincode,
     stateCode: row.state_code,
+    locality: row.locality,
     divisionCode: row.division_code,
     isConsignee: row.is_consignee,
     isVendor: row.is_vendor,
@@ -145,7 +147,7 @@ function toContact(row: ContactRow): Contact {
 
 const CONTACT_COLUMNS = `
   id, designation, contact_person, address, phone, email, gstin, pincode,
-  state_code, division_code, is_consignee, is_vendor, is_client, active,
+  state_code, locality, division_code, is_consignee, is_vendor, is_client, active,
   created_at
 `;
 
@@ -424,6 +426,14 @@ export function registerMasterRoutes(
       ];
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
+      const locality = body.locality?.trim() ?? null;
+      if (body.locality !== undefined && body.locality.trim().length < 2) {
+        throw httpError(
+          400,
+          'LOCALITY_INVALID',
+          'Locality must contain at least two non-space characters.',
+        );
+      }
       const contact = await withBoundTenant(
         database,
         organisationId,
@@ -433,14 +443,14 @@ export function registerMasterRoutes(
           const [row] = await tx<ContactRow[]>`
             insert into contacts (
               organisation_id, designation, contact_person, address, phone,
-              email, gstin, pincode, state_code, division_code, is_consignee,
+              email, gstin, pincode, state_code, locality, division_code, is_consignee,
               is_vendor, is_client, created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
               ${body.contactPerson ?? null}, ${body.address ?? null},
               ${body.phone ?? null}, ${email}, ${gstin},
-              ${body.pincode ?? null}, ${body.stateCode ?? null},
+              ${body.pincode ?? null}, ${body.stateCode ?? null}, ${locality},
               ${body.divisionCode ?? null},
               ${isConsignee}, ${isVendor}, ${isClient},
               ${user.id}
@@ -491,6 +501,14 @@ export function registerMasterRoutes(
       const body = request.body as SaveContactRequest;
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
+      const locality = body.locality?.trim() ?? null;
+      if (body.locality !== undefined && body.locality.trim().length < 2) {
+        throw httpError(
+          400,
+          'LOCALITY_INVALID',
+          'Locality must contain at least two non-space characters.',
+        );
+      }
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         // The consignee role is a create-time fact an update never
@@ -516,6 +534,7 @@ export function registerMasterRoutes(
               email = ${email}, gstin = ${gstin},
               pincode = ${body.pincode ?? null},
               state_code = ${body.stateCode ?? null},
+              locality = ${locality},
               division_code = ${body.divisionCode ?? null},
               is_vendor = coalesce(${body.isVendor ?? null}, is_vendor),
               is_client = coalesce(${body.isClient ?? null}, is_client)
@@ -625,7 +644,8 @@ export function registerMasterRoutes(
           await requireWork(tx, workId);
           return tx<ContactRow[]>`
             select c.id, c.designation, c.contact_person, c.address, c.phone,
-                   c.email, c.gstin, c.pincode, c.state_code, c.division_code,
+                   c.email, c.gstin, c.pincode, c.state_code, c.locality,
+                   c.division_code,
                    c.is_consignee, c.is_vendor, c.is_client, c.active,
                    c.created_at
             from work_consignees wc

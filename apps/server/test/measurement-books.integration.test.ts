@@ -513,6 +513,7 @@ afterAll(async () => {
         for (const table of [
           'audit_events',
           'work_assignments',
+          'measurement_book_merge_provenance',
           'mb_sources',
           'measurement_book_lines',
           'measurement_book_counters',
@@ -1362,7 +1363,7 @@ describe('tenancy and scope', () => {
 });
 
 describe('export and timeline', () => {
-  it('exports the measurement book sections under export-v5', async () => {
+  it('exports the measurement book sections under export-v8', async () => {
     const response = await authed(owner, {
       method: 'GET',
       url: '/api/export',
@@ -1370,7 +1371,7 @@ describe('export and timeline', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v5');
+    expect(exported.formatVersion).toBe('export-v8');
     expect(exported.measurementBooks?.length).toBeGreaterThanOrEqual(6);
     expect(exported.measurementBookLines?.length).toBeGreaterThanOrEqual(5);
     expect(exported.mbSources?.length).toBeGreaterThanOrEqual(5);
@@ -2755,6 +2756,31 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
       where measurement_book_id in (${r1Id}, ${r2Id})
     `;
     expect(recordClaims?.count).toBe('0');
+    const provenance = await admin<
+      {
+        record_measurement_book_id: string;
+        source_type: string | null;
+        source_id: string | null;
+      }[]
+    >`
+      select record_measurement_book_id, source_type, source_id
+      from measurement_book_merge_provenance
+      where target_measurement_book_id = ${targetId}
+      order by record_measurement_book_id, source_type, source_id
+    `;
+    expect(provenance).toHaveLength(3);
+    expect(
+      provenance.map(
+        (row) =>
+          `${row.record_measurement_book_id}:${row.source_type}:${row.source_id}`,
+      ),
+    ).toEqual(
+      [
+        `${r1Id}:delivery_challan:${dcK1Id}`,
+        `${r2Id}:delivery_challan:${dcK2Id}`,
+        `${r2Id}:installation:${instK1Id}`,
+      ].sort(),
+    );
     // The merge is audited on the target with its provenance payload.
     const [auditRow] = await admin<{ details: unknown }[]>`
       select details from audit_events
@@ -2867,6 +2893,20 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
       { sourceType: 'delivery_challan', sourceId: dcK3Id },
     ]);
     expect(widened.statusCode, widened.body).toBe(200);
+
+    // Audit JSON remains evidence, but is no longer operational state.
+    // Simulate an old exporter/tool rewriting its details: normalized
+    // provenance still makes the restore exact.
+    await admin.unsafe(`set session_replication_role = 'replica'`);
+    try {
+      await admin`
+        update audit_events set details = '{}'::jsonb
+        where organisation_id = ${organisationId}
+          and action = 'measurement_book.merged' and entity_id = ${targetId}
+      `;
+    } finally {
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
 
     const unmerged = await authed(owner, {
       method: 'POST',

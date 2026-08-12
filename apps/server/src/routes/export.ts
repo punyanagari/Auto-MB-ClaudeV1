@@ -50,10 +50,7 @@ export function registerExportRoutes(
         await requireOwner(tx, user.id);
 
         const [organisation] = await tx<Record<string, unknown>[]>`
-          select id, name, slug, timezone, status, created_at,
-                 address, gstin, contact_phone, contact_email,
-                 logo_object_key, logo_media_type
-          from organisations
+          select * from organisations
         `;
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,
@@ -65,26 +62,22 @@ export function registerExportRoutes(
           from work_assignments order by created_at
         `;
         const works = await tx<Record<string, unknown>[]>`
-          select * from works where deleted_at is null order by created_at
+          select * from works order by created_at
         `;
         const schedules = await tx<Record<string, unknown>[]>`
           select * from work_schedules order by work_id, position
         `;
         const items = parseColumns(
           await tx<Record<string, unknown>[]>`
-            select * from work_items where deleted_at is null
-            order by work_id, item_number
+            select * from work_items order by work_id, item_number
           `,
           ['source_evidence'],
         );
         const documents = parseColumns(
           await tx<Record<string, unknown>[]>`
-            select id, object_key, original_filename, sha256, media_type,
-                   size_bytes, extraction_status, extraction_payload,
-                   confirmed_work_id, uploaded_by_user_id, created_at
-            from loa_documents order by created_at
+            select * from loa_documents order by created_at
           `,
-          ['extraction_payload'],
+          ['extraction_payload', 'identity_match'],
         );
         const challans = parseColumns(
           await tx<Record<string, unknown>[]>`
@@ -170,15 +163,106 @@ export function registerExportRoutes(
         const mbSources = await tx<Record<string, unknown>[]>`
           select * from mb_sources order by created_at, id
         `;
+        const measurementBookMergeProvenance = await tx<Record<string, unknown>[]>`
+          select * from measurement_book_merge_provenance
+          order by target_measurement_book_id, record_measurement_book_id,
+                   source_type nulls first, source_id, id
+        `;
+        const importBatches = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from import_batches order by started_at, id
+          `,
+          ['reconciliation'],
+        );
+        const importRecords = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from import_records order by imported_at, id
+          `,
+          ['payload'],
+        );
         // M6/7 retrofit (migration 0028): the unified Contacts master and
         // the Work<->consignee association. consignee_masters was never a
         // section of this export; contacts supersedes it, so the format
-        // stays 'export-v5' with two purely additive sections.
+        // became part of the current export with the procurement/statutory set.
         const contacts = await tx<Record<string, unknown>[]>`
           select * from contacts order by created_at, id
         `;
         const workConsignees = await tx<Record<string, unknown>[]>`
           select * from work_consignees order by created_at, id
+        `;
+        const locationMasters = await tx<Record<string, unknown>[]>`
+          select * from location_masters order by name, id
+        `;
+        const unitMasters = await tx<Record<string, unknown>[]>`
+          select * from unit_masters order by name, id
+        `;
+        const organisationSignatories = await tx<Record<string, unknown>[]>`
+          select * from organisation_signatories order by created_at, id
+        `;
+        const purchaseOrders = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from purchase_orders order by created_at, id
+          `,
+          ['vendor_snapshot'],
+        );
+        const purchaseOrderLines = await tx<Record<string, unknown>[]>`
+          select * from purchase_order_lines order by purchase_order_id, line_number, id
+        `;
+        const budgetaryQuotations = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from budgetary_quotations order by created_at, id
+          `,
+          ['customer_snapshot'],
+        );
+        const budgetaryQuotationLines = await tx<Record<string, unknown>[]>`
+          select * from budgetary_quotation_lines
+          order by budgetary_quotation_id, line_number, id
+        `;
+        const taxInvoices = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from tax_invoices order by created_at, id
+          `,
+          ['buyer_snapshot', 'ship_to_snapshot', 'issued_snapshot'],
+        );
+        const taxInvoiceRenders = await tx<Record<string, unknown>[]>`
+          select * from tax_invoice_renders
+          order by tax_invoice_id, version, created_at, id
+        `;
+        const ewayBills = await tx<Record<string, unknown>[]>`
+          select * from eway_bills order by created_at, id
+        `;
+        const documentNumberSeries = await tx<Record<string, unknown>[]>`
+          select * from document_number_series order by document_type
+        `;
+        const statutoryProviderOperations = await tx<Record<string, unknown>[]>`
+          select * from statutory_provider_operations order by started_at, id
+        `;
+        const deliveryChallanCounters = await tx<Record<string, unknown>[]>`
+          select * from delivery_challan_counters order by work_id
+        `;
+        const billCounters = await tx<Record<string, unknown>[]>`
+          select * from bill_counters order by work_id
+        `;
+        const extensionRequestCounters = await tx<Record<string, unknown>[]>`
+          select * from extension_request_counters order by work_id
+        `;
+        const issueChallanCounters = await tx<Record<string, unknown>[]>`
+          select * from issue_challan_counters order by work_id
+        `;
+        const correctionNoticeCounters = await tx<Record<string, unknown>[]>`
+          select * from correction_notice_counters order by work_id
+        `;
+        const measurementBookCounters = await tx<Record<string, unknown>[]>`
+          select * from measurement_book_counters order by work_id
+        `;
+        const purchaseOrderCounters = await tx<Record<string, unknown>[]>`
+          select * from purchase_order_counters order by work_id
+        `;
+        const budgetaryQuotationCounters = await tx<Record<string, unknown>[]>`
+          select * from budgetary_quotation_counters order by organisation_id
+        `;
+        const taxInvoiceCounters = await tx<Record<string, unknown>[]>`
+          select * from tax_invoice_counters order by fy_label
         `;
         // Recorded first so the export contains its own audit record.
         await tx`
@@ -309,11 +393,27 @@ export function registerExportRoutes(
                 ]
               : [],
           ),
+          ...taxInvoiceRenders.flatMap((render) => [
+            {
+              kind: 'tax-invoice-rendered-pdf-version',
+              objectKey: render.object_key,
+              sha256: render.pdf_sha256,
+            },
+            ...(render.logo_object_key === null
+              ? []
+              : [
+                  {
+                    kind: 'tax-invoice-render-logo',
+                    objectKey: render.logo_object_key,
+                    sha256: render.logo_sha256,
+                  },
+                ]),
+          ]),
         ];
 
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v5',
+          formatVersion: 'export-v8',
           organisation,
           members,
           workAssignments: assignments,
@@ -339,15 +439,37 @@ export function registerExportRoutes(
           pacCertificates,
           pacCertificateItems,
           // Milestone 8 phase 2 (Measurement Book lifecycle). The
-          // format stays 'export-v5': v5 was defined as the complete
-          // Milestone 8 record, and these sections complete it.
+          // Measurement Book lifecycle records.
           measurementBooks,
           measurementBookLines,
           mbSources,
-          // M6/7 retrofit (migration 0028): additive sections completing
-          // the export-v5 record with the unified Contacts master.
+          measurementBookMergeProvenance,
+          importBatches,
+          importRecords,
+          // M6/7 retrofit (migration 0028): unified Contacts master.
           contacts,
           workConsignees,
+          locationMasters,
+          unitMasters,
+          organisationSignatories,
+          purchaseOrders,
+          purchaseOrderLines,
+          budgetaryQuotations,
+          budgetaryQuotationLines,
+          taxInvoices,
+          taxInvoiceRenders,
+          ewayBills,
+          documentNumberSeries,
+          statutoryProviderOperations,
+          deliveryChallanCounters,
+          billCounters,
+          extensionRequestCounters,
+          issueChallanCounters,
+          correctionNoticeCounters,
+          measurementBookCounters,
+          purchaseOrderCounters,
+          budgetaryQuotationCounters,
+          taxInvoiceCounters,
           objectManifest,
           auditEvents,
         };

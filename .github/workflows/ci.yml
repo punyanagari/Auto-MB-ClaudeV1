@@ -174,15 +174,16 @@ jobs:
           # ClamAV downloads its virus database on first boot — minutes,
           # not seconds. The gate is full readiness: HTTP 200 with every
           # configured component ok.
-          for attempt in $(seq 1 90); do
-            body=$(curl -sk https://localhost/api/ready || true)
+          body=''
+          for attempt in $(seq 1 60); do
+            body=$(curl -skS --connect-timeout 2 --max-time 5 \
+              https://localhost/api/ready || true)
             echo "attempt $attempt: $body"
             case "$body" in
               *'"status":"ready"'*) break ;;
             esac
             sleep 10
           done
-          body=$(curl -fsk https://localhost/api/ready)
           echo "$body"
           echo "$body" | grep -q '"status":"ready"'
           echo "$body" | grep -q '"database":"ok"'
@@ -190,17 +191,21 @@ jobs:
           echo "$body" | grep -q '"pdfRenderer":"ok"'
           echo "$body" | grep -q '"malwareScanner":"ok"'
       - name: Web bundle served
-        run: curl -fsk https://localhost/ | grep -qi '<!doctype html>'
+        run: >-
+          curl -fskS --connect-timeout 2 --max-time 10 https://localhost/
+          | grep -qi '<!doctype html>'
       - name: Sign-up works end to end
         run: |
-          status=$(curl -sk -o /tmp/signup.json -w '%{http_code}' \
+          status=$(curl -skS --connect-timeout 2 --max-time 10 \
+            -o /tmp/signup.json -w '%{http_code}' \
             -X POST https://localhost/api/auth/sign-up/email \
+            -H 'Origin: https://localhost' \
             -H 'content-type: application/json' \
             -d '{"email":"smoke@example.test","password":"smoke-password-123","name":"Smoke Test"}')
           cat /tmp/signup.json
           test "$status" = "200"
       - name: Logs on failure
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         run: |
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production ps

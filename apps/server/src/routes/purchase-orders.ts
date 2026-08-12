@@ -665,17 +665,18 @@ export function registerPurchaseOrderRoutes(
           await assertPurchaseOrderDate(tx, workId, body.poDate);
           await requireVendor(tx, body.vendorContactId);
 
-          // One open draft per Work (the 0033 partial unique index is the
-          // arbiter): the 409 names the existing draft so the client can
-          // open it instead of parsing the message.
+          // One open draft per Work and vendor (0045 partial unique index):
+          // independent vendors may be drafted in parallel, while the 409
+          // names a duplicate for the same vendor.
           const [existingDraft] = await tx<{ id: string }[]>`
             select id from purchase_orders
-            where work_id = ${workId} and status = 'draft'
+            where work_id = ${workId} and vendor_contact_id = ${body.vendorContactId}
+              and status = 'draft'
           `;
           if (existingDraft) {
             throw draftConflictError(
               'PO_DRAFT_EXISTS',
-              'This Work already has a draft purchase order; issue or delete it first.',
+              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
               existingDraft.id,
             );
           }
@@ -698,7 +699,7 @@ export function registerPurchaseOrderRoutes(
               throw httpError(
                 409,
                 'PO_DRAFT_EXISTS',
-                'This Work already has a draft purchase order; issue or delete it first.',
+                'This vendor already has a draft purchase order on this Work; issue or delete it first.',
               );
             }
             throw error;
@@ -724,7 +725,9 @@ export function registerPurchaseOrderRoutes(
           withBoundTenant(database, organisationId, user.id, async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from purchase_orders
-              where work_id = ${workId} and status = 'draft'
+              where work_id = ${workId}
+                and vendor_contact_id = ${body.vendorContactId}
+                and status = 'draft'
             `;
             return row?.id ?? null;
           }),
@@ -791,12 +794,34 @@ export function registerPurchaseOrderRoutes(
         requireStatus(order, 'draft');
         await assertPurchaseOrderDate(tx, order.work_id, body.poDate);
         const vendor = await requireVendor(tx, body.vendorContactId);
+        const [existingDraft] = await tx<{ id: string }[]>`
+          select id from purchase_orders
+          where work_id = ${order.work_id}
+            and vendor_contact_id = ${body.vendorContactId}
+            and status = 'draft' and id <> ${id}
+        `;
+        if (existingDraft) {
+          throw draftConflictError(
+            'PO_DRAFT_EXISTS',
+            'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            existingDraft.id,
+          );
+        }
         await tx`
           update purchase_orders
           set vendor_contact_id = ${body.vendorContactId}, po_date = ${body.poDate},
               expected_on = ${body.expectedOn ?? null}, terms = ${terms}
           where id = ${id}
-        `;
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PO_DRAFT_EXISTS',
+              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
         const changes = auditDiff(
           {
             vendorContactId: order.vendor_contact_id,
@@ -820,6 +845,20 @@ export function registerPurchaseOrderRoutes(
           { before: changes.before, after: changes.after, vendor: vendor.designation },
         );
         return readDetail(tx, id);
+      }).catch(async (error: unknown) => {
+        throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from purchase_orders
+              where work_id = (
+                select work_id from purchase_orders where id = ${id}
+              )
+                and vendor_contact_id = ${body.vendorContactId}
+                and status = 'draft' and id <> ${id}
+            `;
+            return row?.id ?? null;
+          }),
+        );
       });
     },
   );

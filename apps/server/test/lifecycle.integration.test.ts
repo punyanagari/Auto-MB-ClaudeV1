@@ -357,6 +357,8 @@ describe('1 — LOA to Work', () => {
         stateCode: '07',
         gstin: ORG_GSTIN,
         address: ORG_ADDRESS,
+        pincode: '110002',
+        locality: 'New Delhi',
         // The house number series. Invoice numbers are composed from it,
         // the financial year's opening year, and one gapless serial.
         invoiceNumberPrefix: 'P10',
@@ -405,6 +407,7 @@ describe('1 — LOA to Work', () => {
         gstin: VENDOR_GSTIN,
         pincode: '411019',
         stateCode: '27',
+        locality: 'Pune',
       })
     ).id;
     await admin`
@@ -419,6 +422,7 @@ describe('1 — LOA to Work', () => {
         gstin: BUYER_GSTIN,
         pincode: '110055',
         stateCode: '07',
+        locality: 'New Delhi',
       })
     ).id;
     await admin`
@@ -936,11 +940,12 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       organisationId,
       payload: {
         measurementBookId: mb1Id,
-        invoiceDate: '2026-09-01',
+        invoiceDate: '2026-08-09',
         sacCode: SAC,
         serviceDescription: SERVICE_DESCRIPTION,
         gstRate: '18',
         placeOfSupply: '07',
+        reverseChargeApplicable: false,
         buyerContactId,
       },
     });
@@ -1035,8 +1040,8 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     expect(payload.statusCode, payload.body).toBe(200);
     expect(payload.json()).toStrictEqual({
       Version: '1.1',
-      TranDtls: { TaxSch: 'GST', SupTyp: 'B2B' },
-      DocDtls: { Typ: 'INV', No: 'P1026001', Dt: '01/09/2026' },
+      TranDtls: { TaxSch: 'GST', SupTyp: 'B2B', RegRev: 'N' },
+      DocDtls: { Typ: 'INV', No: 'P1026001', Dt: '09/08/2026' },
       SellerDtls: {
         Gstin: ORG_GSTIN,
         LglNm: ORG_NAME,
@@ -1091,7 +1096,8 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       payload: {
         irn,
         ackNumber: '112010036563',
-        ackDate: '2026-09-01T10:30:00.000Z',
+        ackDate: '2026-08-09T10:30:00.000Z',
+        ackDateText: '09/08/2026 16:00:00',
         signedQr: 'signed-qr-jws-payload',
       },
     });
@@ -1123,14 +1129,17 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       vehicleNumber: null,
     });
 
-    // A road movement without a vehicle has nothing for NIC to answer.
+    // Service-invoice EWB uses the Whitebooks generate-by-IRN surface.
+    // With no provider configured, no standalone SAC-as-goods payload is exposed.
     const incomplete = await authed(owner, {
       method: 'GET',
       url: `/api/eway-bills/${ewayBillId}/nic-payload`,
       organisationId,
     });
-    expect(incomplete.statusCode).toBe(400);
-    expect(incomplete.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
+    expect(incomplete.statusCode).toBe(409);
+    expect(incomplete.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
 
     const edited = await authed(owner, {
       method: 'PUT',
@@ -1148,76 +1157,24 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     });
     expect(edited.statusCode, edited.body).toBe(200);
 
-    const payload = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${ewayBillId}/nic-payload`,
-      organisationId,
-    });
-    expect(payload.statusCode, payload.body).toBe(200);
-    expect(payload.json()).toStrictEqual({
-      supplyType: 'O',
-      subSupplyType: '1',
-      docType: 'INV',
-      docNo: 'P1026001',
-      docDate: '01/09/2026',
-      fromGstin: ORG_GSTIN,
-      fromTrdName: ORG_NAME,
-      fromAddr1: ORG_ADDRESS,
-      fromPlace: 'New Delhi',
-      fromPincode: 110002,
-      fromStateCode: 7,
-      actFromStateCode: 7,
-      toGstin: BUYER_GSTIN,
-      toTrdName: 'Sr. DEE (G) NR',
-      toAddr1: BUYER_ADDRESS,
-      toPlace: 'New Delhi',
-      toPincode: 110055,
-      toStateCode: 7,
-      actToStateCode: 7,
-      transactionType: 1,
-      itemList: [
-        {
-          itemNo: 1,
-          productDesc: SERVICE_DESCRIPTION,
-          hsnCode: 995421,
-          quantity: 1,
-          qtyUnit: 'OTH',
-          taxableAmount: 25260,
-          cgstRate: 9,
-          sgstRate: 9,
-          igstRate: 0,
-          cessRate: 0,
-        },
-      ],
-      totalValue: 25260,
-      cgstValue: 2273.4,
-      sgstValue: 2273.4,
-      igstValue: 0,
-      cessValue: 0,
-      totInvValue: 29807,
-      transMode: '1',
-      transDistance: '25',
-      transporterId: TRANSPORTER_ID,
-      transporterName: 'Sharma Roadways',
-      vehicleNo: 'DL01AB1234',
-    });
-
     const generated = await authed(owner, {
       method: 'POST',
       url: `/api/eway-bills/${ewayBillId}/nic-response`,
       organisationId,
       payload: {
         ewbNumber: '123456789012',
-        ewbDate: '2026-09-01T12:00:00.000Z',
-        validUntil: '2026-09-02T23:59:59.000Z',
+        ewbDate: '2026-08-09T12:00:00.000Z',
+        validUntil: '2026-08-10T23:59:59.000Z',
+        ewbDateText: '09/08/2026 17:30:00',
+        validUntilText: '10/08/2026 23:59:59',
       },
     });
     expect(generated.statusCode, generated.body).toBe(200);
     expect(generated.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
       status: 'generated',
       ewbNumber: '123456789012',
-      ewbDate: '2026-09-01T12:00:00.000Z',
-      validUntil: '2026-09-02T23:59:59.000Z',
+      ewbDate: '2026-08-09T12:00:00.000Z',
+      validUntil: '2026-08-10T23:59:59.000Z',
     });
   });
 });
@@ -1408,11 +1365,12 @@ describe('7 — the remainder, and the FINAL Measurement Book', () => {
       organisationId,
       payload: {
         measurementBookId: mb2Id,
-        invoiceDate: '2026-09-02',
+        invoiceDate: '2026-08-10',
         sacCode: SAC,
         serviceDescription: SERVICE_DESCRIPTION,
         gstRate: '18',
         placeOfSupply: '07',
+        reverseChargeApplicable: false,
         buyerContactId,
       },
     });

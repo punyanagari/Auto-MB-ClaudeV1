@@ -65,6 +65,21 @@ services:
       # backup_last_success_timestamp_seconds gauge. Absent file simply
       # omits the series.
       BACKUP_MARKER_PATH: /backup-status/last-success
+      # Optional Whitebooks transport. Disabled unless explicitly true;
+      # credentials remain deployment secrets and are never baked into images.
+      WHITEBOOKS_ENABLED: ${WHITEBOOKS_ENABLED:-false}
+      WHITEBOOKS_ENVIRONMENT: ${WHITEBOOKS_ENVIRONMENT:-sandbox}
+      WHITEBOOKS_EMAIL: ${WHITEBOOKS_EMAIL:-}
+      WHITEBOOKS_USERNAME: ${WHITEBOOKS_USERNAME:-}
+      WHITEBOOKS_PASSWORD: ${WHITEBOOKS_PASSWORD:-}
+      WHITEBOOKS_CLIENT_ID: ${WHITEBOOKS_CLIENT_ID:-}
+      WHITEBOOKS_CLIENT_SECRET: ${WHITEBOOKS_CLIENT_SECRET:-}
+      WHITEBOOKS_EWAY_CLIENT_ID: ${WHITEBOOKS_EWAY_CLIENT_ID:-}
+      WHITEBOOKS_EWAY_CLIENT_SECRET: ${WHITEBOOKS_EWAY_CLIENT_SECRET:-}
+      WHITEBOOKS_IP_ADDRESS: ${WHITEBOOKS_IP_ADDRESS:-}
+      WHITEBOOKS_GSTIN: ${WHITEBOOKS_GSTIN:-}
+      WHITEBOOKS_IRP: ${WHITEBOOKS_IRP:-NIC1}
+      WHITEBOOKS_TIMEOUT_MS: ${WHITEBOOKS_TIMEOUT_MS:-10000}
     volumes:
       - objects:/data/objects
       # Marker directory only, read-only — the dumps themselves must never

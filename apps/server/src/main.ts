@@ -1,4 +1,5 @@
 import { assertProductionSecret, buildApp } from './app.js';
+import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? '3000');
@@ -13,6 +14,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
 }
 
 const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+const whitebooksConfig = readWhitebooksConfig(process.env);
 
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '0');
 if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
@@ -36,6 +38,9 @@ const app = await buildApp({
         // the container bind address.
         baseUrl: process.env.WEB_ORIGIN ?? `http://${host}:${String(port)}`,
         trustedOrigins: [webOrigin],
+        ...(whitebooksConfig === null
+          ? {}
+          : { statutoryProvider: new WhitebooksProvider(whitebooksConfig) }),
         ...(process.env.OBJECT_STORAGE_DIR
           ? { objectStorageDir: process.env.OBJECT_STORAGE_DIR }
           : {}),

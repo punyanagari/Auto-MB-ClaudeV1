@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import net from 'node:net';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -531,4 +532,80 @@ describe('readiness components', () => {
       await app.close();
     }
   }, 15_000);
+
+  it('does not wait for clamd to close after it replies PONG', async () => {
+    const clamd = net.createServer((socket) => {
+      socket.once('data', () => {
+        socket.write('PONG\0');
+        // Real clamd keeps the connection open. Readiness must settle from
+        // the complete reply instead of waiting for a remote FIN forever.
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      clamd.once('error', reject);
+      clamd.listen(0, '127.0.0.1', resolve);
+    });
+    const address = clamd.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('test clamd did not bind a TCP port');
+    }
+    const app = await buildApp({
+      databaseUrl: appUrl,
+      objectStorageDir: storageDir,
+      clamav: { host: '127.0.0.1', port: address.port },
+    });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/ready' });
+      expect(response.statusCode, response.body).toBe(
+        process.env.DATABASE_URL === undefined ? 503 : 200,
+      );
+      expect(
+        response.json<{ components: Record<string, string> }>().components,
+      ).toMatchObject({ malwareScanner: 'ok' });
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => {
+        clamd.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
+    }
+  });
+
+  it(
+    'aborts an in-flight clamd probe when its readiness deadline expires',
+    { timeout: 10_000 },
+    async () => {
+      const clamd = net.createServer((socket) => {
+        socket.once('data', () => {
+          // Accept and remain silent: this models a wedged clamd socket.
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        clamd.once('error', reject);
+        clamd.listen(0, '127.0.0.1', resolve);
+      });
+      const address = clamd.address();
+      if (address === null || typeof address === 'string') {
+        throw new Error('test clamd did not bind a TCP port');
+      }
+      const app = await buildApp({
+        databaseUrl: appUrl,
+        objectStorageDir: storageDir,
+        clamav: { host: '127.0.0.1', port: address.port },
+      });
+      try {
+        const startedAt = Date.now();
+        const response = await app.inject({ method: 'GET', url: '/api/ready' });
+        expect(Date.now() - startedAt).toBeLessThan(5_000);
+        expect(response.statusCode).toBe(503);
+        expect(
+          response.json<{ components: Record<string, string> }>().components,
+        ).toMatchObject({ malwareScanner: 'failed' });
+      } finally {
+        await app.close();
+        await new Promise<void>((resolve, reject) => {
+          clamd.close((error) => (error === undefined ? resolve() : reject(error)));
+        });
+      }
+    },
+  );
 });

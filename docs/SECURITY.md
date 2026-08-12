@@ -183,11 +183,20 @@ Activated with contract administration, procurement, and tax documents:
   endpoint tests;
 - authoritative quantities and money use PostgreSQL numeric arithmetic;
   submitted invoices freeze supplier, buyer, ship-to, tax split, rounding,
-  totals, numbering inputs, and rendering data;
+  totals, amount in words, explicit NIC locality, reverse-charge selection,
+  numbering inputs, and rendering data. Issue currently requires explicit
+  forward charge and refuses unsupported reverse charge;
+- tax-invoice renders are append-only versions with source, PDF, and frozen-logo
+  hashes. Database guards enforce contiguous versions, tenant-prefixed keys,
+  immutable history, and a current pointer to the latest version; download
+  verifies the retained bytes against the recorded SHA-256 before serving;
 - IRN, acknowledgement, signed QR, e-way-bill number, and validity are never
-  minted locally. External registration is displayed only after a response is
-  recorded, and local document status stays distinct from provider status;
-- provider credentials belong only in server-side secret configuration.
+  minted locally. Local document status stays distinct from provider status;
+  unknown registration or generation is lookup-only and is never blindly
+  replayed. Manual compatibility evidence is labelled unverified;
+- provider credentials belong only in server-side secret configuration. The
+  e-invoice client pair and the separate E-way Bill API client pair are distinct
+  secrets and are never substituted for one another.
   Browser payloads, application logs, audit details, and committed fixtures
   must never contain GSP passwords, app keys, auth tokens, decrypted session
   material, or production GST data.
@@ -206,9 +215,12 @@ Before paid production:
 - incident and rollback exercise;
 - key rotation procedure;
 - threat model review.
-- direct GSP adapter review covering credential storage, TLS validation,
-  request timeouts, replay/idempotency, redaction, provider outages, and
-  cancellation authority before production Whitebooks credentials are used.
+- Whitebooks production-readiness review and provider sandbox/live
+  certification covering credential storage, single-GSTIN binding, TLS,
+  timeouts, replay/idempotency, redaction, provider outages, separate EWB
+  authentication, cancellation authority, and unknown-outcome recovery;
+- provider-specific metrics and alerts; current `/metrics` exposes HTTP and
+  backup signals, not Whitebooks operation or authentication series.
 
 Before a government/STQC-mandated deployment:
 

@@ -23,6 +23,18 @@ No production secret, database dump, or customer document belongs in local devel
 - edge/WAF and TLS termination;
 - central logs, metrics, traces, and alerting.
 
+The Whitebooks adapter is disabled unless `WHITEBOOKS_ENABLED=true`. Enable it
+only with one exact configured GSTIN, an e-invoice credential set, the
+authorised public IP, and—when standalone EWB cancellation is required—the
+separate E-way Bill API client-id/client-secret pair.
+
+Tax-invoice rendering bounds the Gotenberg request to 45 seconds and the PDF
+response to 20 MiB. A timeout, oversized/invalid response, branding read error,
+or storage error leaves the previous render pointer unchanged. Each successful
+version freezes its logo and is retained; object-storage lifecycle policy must
+therefore preserve every key listed in `tax_invoice_renders`, not only the
+invoice's current pointer.
+
 The API's login/upload rate limits and the account-scoped login lockout
 keep their counters in process memory: they protect a SINGLE API
 instance only. Running more than one API instance divides (and for the
@@ -72,8 +84,9 @@ Minimum signals:
 - PDF generation failures;
 - authentication failures and suspicious access;
 - object-storage errors;
-- statutory-provider request failures, latency, authentication expiry, and
-  locally issued documents awaiting external registration;
+- before Whitebooks production enablement: statutory-provider request
+  failures, latency, authentication expiry, unknown operations, and locally
+  issued documents awaiting external registration;
 - tenant-boundary denial events;
 - backup recency: age of the last fully verified backup, exposed as a
   metric and alerted on before it exceeds one missed backup cycle;
@@ -81,10 +94,13 @@ Minimum signals:
 
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.
 
-Provider telemetry records operation name, internal document id, correlation
-id, status class, latency, and redacted provider error code only. It never logs
-GSP credentials, auth tokens, encrypted/decrypted session material, signed QR
-payloads, full invoice JSON, GSTIN-bearing bodies, or provider responses.
+The current durable provider-operation ledger records operation name, document
+id, provider/environment, correlation id, request SHA-256, terminal status,
+timestamps, redacted provider code, and HTTP status. It never stores request or
+response bodies, credentials, tokens, encrypted/decrypted session material,
+signed QR payloads, or full invoice JSON. Provider-specific Prometheus metrics,
+latency histograms, authentication-expiry signals, and alerts are not yet
+implemented and remain production-enablement gates.
 
 ## 7. Incident response
 
