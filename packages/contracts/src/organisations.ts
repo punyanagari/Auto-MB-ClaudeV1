@@ -34,6 +34,10 @@ export const MembershipSchema = Type.Object(
     canIssueDocuments: Type.Boolean(),
     canCancelDocuments: Type.Boolean(),
     canApproveAmendments: Type.Boolean(),
+    /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
+     * see it in the member list so authority is granted to enrolled
+     * accounts, not enrolment chased afterwards (finding 36). */
+    twoFactorEnabled: Type.Boolean(),
     status: Type.Union([
       Type.Literal('invited'),
       Type.Literal('active'),

@@ -23,6 +23,12 @@ if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
 
 const app = await buildApp({
   logger: true,
+  // Finding 36: MFA refusals for privilege holders deploy dark and are
+  // switched on with MFA_ENFORCE=true. Passed only when the variable is
+  // set so the mfa-policy default (also read from MFA_ENFORCE) stands.
+  ...(process.env.MFA_ENFORCE !== undefined
+    ? { mfaEnforce: process.env.MFA_ENFORCE === 'true' }
+    : {}),
   ...(trustProxyHops > 0 ? { trustProxyHops } : {}),
   ...(process.env.METRICS_TOKEN ? { metricsToken: process.env.METRICS_TOKEN } : {}),
   ...(process.env.BACKUP_MARKER_PATH

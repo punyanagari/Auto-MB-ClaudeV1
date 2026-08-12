@@ -20,6 +20,7 @@ import { jsonb, withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { httpError } from './../http.js';
+import { mfaEnforcementEnabled, mfaGate } from '../mfa-policy.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 
@@ -31,6 +32,11 @@ interface MembershipRow {
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
   can_approve_amendments: boolean;
+  /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
+   * Surfaced so owners can see enrolment BEFORE granting authority —
+   * granting to an unenrolled account walls them off on their next
+   * tenant request once enforcement is on (finding 36). */
+  two_factor_enabled: boolean;
   status: Membership['status'];
 }
 
@@ -43,6 +49,7 @@ function toMembership(row: MembershipRow): Membership {
     canIssueDocuments: row.can_issue_documents,
     canCancelDocuments: row.can_cancel_documents,
     canApproveAmendments: row.can_approve_amendments,
+    twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
 }
@@ -65,21 +72,33 @@ export function registerIdentityRoutes(
     { schema: { response: { ...errorResponses } } },
     async (request) => {
       const user = await requireUser(auth, request);
-      const memberships = await withUserContext(
+      const { memberships, gate } = await withUserContext(
         database,
         user.id,
-        (tx) =>
-          tx<MembershipRow[]>`
-          select organisation_id, user_id, role, work_scope,
-                 can_issue_documents, can_cancel_documents,
-                 can_approve_amendments, status
-          from organisation_memberships
-          order by organisation_id
-        `,
+        async (tx) => ({
+          memberships: await tx<MembershipRow[]>`
+            select m.organisation_id, m.user_id, m.role, m.work_scope,
+                   m.can_issue_documents, m.can_cancel_documents,
+                   m.can_approve_amendments,
+                   coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
+                   m.status
+            from organisation_memberships m
+            join auth_users u on u."id" = m.user_id
+            order by m.organisation_id
+          `,
+          gate: await mfaGate(tx),
+        }),
       );
       return {
         user,
         memberships: memberships.map(toMembership),
+        // Finding 36: the client renders the enrolment wall and the
+        // account-security section from these three facts. The gate is
+        // computed even while enforcement is dark, so the flags tell the
+        // truth the moment MFA_ENFORCE flips.
+        twoFactorEnabled: gate.enabled,
+        mfaRequired: gate.required,
+        mfaEnforced: mfaEnforcementEnabled(),
       };
     },
   );
@@ -154,12 +173,15 @@ export function registerIdentityRoutes(
         user.id,
         (tx) =>
           tx<MembershipRow[]>`
-            select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents,
-                   can_approve_amendments, status
-            from organisation_memberships
-            where organisation_id = app_private.current_organisation_id()
-            order by created_at, user_id
+            select m.organisation_id, m.user_id, m.role, m.work_scope,
+                   m.can_issue_documents, m.can_cancel_documents,
+                   m.can_approve_amendments,
+                   coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
+                   m.status
+            from organisation_memberships m
+            join auth_users u on u."id" = m.user_id
+            where m.organisation_id = app_private.current_organisation_id()
+            order by m.created_at, m.user_id
           `,
       );
       return { members: members.map(toMembership) };
@@ -247,12 +269,15 @@ export function registerIdentityRoutes(
           `;
 
           return tx<MembershipRow[]>`
-            select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents,
-                   can_approve_amendments, status
-            from organisation_memberships
-            where organisation_id = app_private.current_organisation_id()
-            order by created_at, user_id
+            select m.organisation_id, m.user_id, m.role, m.work_scope,
+                   m.can_issue_documents, m.can_cancel_documents,
+                   m.can_approve_amendments,
+                   coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
+                   m.status
+            from organisation_memberships m
+            join auth_users u on u."id" = m.user_id
+            where m.organisation_id = app_private.current_organisation_id()
+            order by m.created_at, m.user_id
           `;
         },
       );
@@ -387,12 +412,15 @@ export function registerIdentityRoutes(
             )
           `;
           return tx<MembershipRow[]>`
-            select organisation_id, user_id, role, work_scope,
-                   can_issue_documents, can_cancel_documents,
-                   can_approve_amendments, status
-            from organisation_memberships
-            where organisation_id = app_private.current_organisation_id()
-            order by created_at, user_id
+            select m.organisation_id, m.user_id, m.role, m.work_scope,
+                   m.can_issue_documents, m.can_cancel_documents,
+                   m.can_approve_amendments,
+                   coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
+                   m.status
+            from organisation_memberships m
+            join auth_users u on u."id" = m.user_id
+            where m.organisation_id = app_private.current_organisation_id()
+            order by m.created_at, m.user_id
           `;
         },
       );

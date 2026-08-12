@@ -2,14 +2,21 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
 import pg from 'pg';
-import { createDatabasePool } from '@auto-mb/db';
+import { createDatabasePool, withUserContext } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
 import {
   identityActionForPath,
+  isTwoFactorPath,
   recordIdentityEvent,
   recordLoginLockout,
 } from './identity-audit.js';
+import {
+  configureMfaEnforcement,
+  mfaEnforcementEnabled,
+  mfaGate,
+  mfaRequiredByPolicyError,
+} from './mfa-policy.js';
 import { createClamdScanner, noScanner } from './malware-scan.js';
 import { createMetricsRegistry } from './metrics.js';
 import {
@@ -85,6 +92,13 @@ export interface BuildAppOptions {
     readonly upload?: RateLimitRule;
     readonly accountLockout?: AccountLockoutRule;
   };
+  /** Turns the finding-36 MFA refusals on: privilege-holding users without
+   * enrolled TOTP are refused tenant-scoped requests and refused two-factor
+   * disable. The gate itself is always computed and reported by /api/me;
+   * only the refusals are flag-gated, so the control deploys dark. When the
+   * option is omitted the process-wide default (MFA_ENFORCE, read by
+   * main.ts) stands. */
+  readonly mfaEnforce?: boolean;
   /** Number of reverse-proxy hops to trust for client addressing. In the
    * production topology the server sits exactly one hop behind Caddy,
    * which replaces any client-supplied X-Forwarded-For with the real
@@ -103,6 +117,44 @@ function userIdFromAuthBody(text: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The raw session token from a Better Auth Set-Cookie list. The cookie
+ * value is `${token}.${signature}` (URI-encoded); the auth_sessions row
+ * stores the bare token. Enable-completion and disable both ROTATE the
+ * caller's session, so the token to preserve when revoking the user's
+ * other sessions is the one this response just set, not the one the
+ * request arrived with.
+ */
+function sessionTokenFromSetCookie(cookies: readonly string[]): string | null {
+  for (const entry of cookies) {
+    const match = /^(?:__Secure-)?better-auth\.session_token=([^;]*)/.exec(entry);
+    if (match?.[1] !== undefined && match[1] !== '') {
+      const token = decodeURIComponent(match[1]).split('.')[0];
+      if (token !== undefined && token.length > 0) return token;
+    }
+  }
+  return null;
+}
+
+/**
+ * The pending two-factor challenge identifier from the request's Cookie
+ * header. Better Auth's sign-in-time verification lockout fires before any
+ * session exists, so the locked account can only be named through the
+ * challenge cookie's verification row. The signature is deliberately not
+ * verified here: the identifier is only used to LOOK UP a server-created
+ * verification row for an audit fact, and a forged identifier simply finds
+ * nothing.
+ */
+function twoFactorChallengeIdentifier(cookieHeader: string | undefined): string | null {
+  if (cookieHeader === undefined) return null;
+  const match = /(?:^|;\s*)(?:__Secure-)?better-auth\.two_factor=([^;]*)/.exec(
+    cookieHeader,
+  );
+  if (match?.[1] === undefined || match[1] === '') return null;
+  const identifier = decodeURIComponent(match[1]).split('.')[0];
+  return identifier !== undefined && identifier.length > 0 ? identifier : null;
 }
 
 const DATABASE_UNAVAILABLE_CODES = new Set([
@@ -155,6 +207,12 @@ function isDatabaseUnavailableError(error: unknown): boolean {
 export async function buildApp(
   options: BuildAppOptions = {},
 ): Promise<FastifyInstance> {
+  // Explicit only: an omitted option must not overwrite the process-wide
+  // default (or another instance's explicit choice) with `false`.
+  if (options.mfaEnforce !== undefined) {
+    configureMfaEnforcement(options.mfaEnforce);
+  }
+
   const app = Fastify({
     logger: options.logger ?? false,
     requestIdHeader: 'x-request-id',
@@ -350,9 +408,14 @@ export async function buildApp(
   );
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0] ?? '';
+    // Two-factor endpoints join the sign-in window: verify-totp and
+    // verify-backup-code are code-guessing surfaces, and enable/disable
+    // hash the submitted password exactly like sign-in does.
     const isAuthAttempt =
       request.method === 'POST' &&
-      (path === '/api/auth/sign-in/email' || path === '/api/auth/sign-up/email');
+      (path === '/api/auth/sign-in/email' ||
+        path === '/api/auth/sign-up/email' ||
+        path.startsWith('/api/auth/two-factor/'));
     const isUpload =
       (request.method === 'POST' || request.method === 'PUT') &&
       (path === '/api/loa-documents' ||
@@ -422,6 +485,46 @@ export async function buildApp(
           signOutUserId = session?.user.id ?? null;
         }
 
+        // Two-factor endpoints (finding 36): the acting user and their
+        // pre-request enrolment state must be read BEFORE forwarding —
+        // enable-completion and disable both rotate the session, and the
+        // "did this verify complete enrolment?" question is only answerable
+        // against the state the request found.
+        const isTwoFactor = isTwoFactorPath(path) && request.method === 'POST';
+        let twoFactorSession: { userId: string; token: string } | null = null;
+        let twoFactorWasEnabled = false;
+        if (isTwoFactor) {
+          const session = await authInstance.api.getSession({
+            headers: toWebHeaders(request),
+          });
+          if (session) {
+            twoFactorSession = {
+              userId: session.user.id,
+              token: session.session.token,
+            };
+            const [enabledRow] = await database<{ enabled: boolean | null }[]>`
+              select "twoFactorEnabled" as enabled
+              from auth_users where "id" = ${session.user.id}
+            `;
+            twoFactorWasEnabled = enabledRow?.enabled === true;
+          }
+          // A privilege-holding user may rotate their enrolment but never
+          // stand without one: disable is refused by policy before Better
+          // Auth ever sees it. Same dark-deploy flag as the tenant wall.
+          if (
+            path === '/api/auth/two-factor/disable' &&
+            twoFactorSession !== null &&
+            mfaEnforcementEnabled()
+          ) {
+            const gate = await withUserContext(
+              database,
+              twoFactorSession.userId,
+              (tx) => mfaGate(tx),
+            );
+            if (gate.required) throw mfaRequiredByPolicyError();
+          }
+        }
+
         const response = await authInstance.handler(toWebRequest(request));
 
         if (lockoutKey !== null) {
@@ -450,7 +553,97 @@ export async function buildApp(
         if (cookies.length > 0) void reply.header('set-cookie', cookies);
         const text = await response.text();
 
-        if (action !== null && response.status < 400) {
+        if (isTwoFactor && action !== null) {
+          // Success: audit the two-factor act. A verify-totp under a
+          // session whose account was not yet enabled is the enrolment
+          // completion, so it is recorded as two_factor_enabled rather
+          // than two_factor_verified; the sign-in-time verify carries the
+          // user in the response body instead of a session.
+          if (response.status < 400) {
+            const userId = twoFactorSession?.userId ?? userIdFromAuthBody(text);
+            const resolvedAction =
+              action === 'two_factor_verified' &&
+              twoFactorSession !== null &&
+              !twoFactorWasEnabled
+                ? 'two_factor_enabled'
+                : action;
+            if (userId !== null) {
+              try {
+                await recordIdentityEvent(database, {
+                  userId,
+                  action: resolvedAction,
+                  requestId: request.id,
+                });
+              } catch (error) {
+                request.log.error(
+                  { err: error, action: resolvedAction, userId },
+                  'identity audit write failed',
+                );
+              }
+              // Turning MFA on or off invalidates every OTHER session the
+              // account holds: a hijacked pre-enrolment session must not
+              // outlive enrolment, and a disable must not leave parallel
+              // sessions running under the weaker posture. Better Auth
+              // rotated the caller's own session, so the survivor is the
+              // token this response just set (falling back to the
+              // pre-request token if no rotation happened). Log-and-
+              // continue: un-enabling MFA over a failed cleanup would be
+              // worse than the stale sessions, which expire on their own.
+              if (
+                resolvedAction === 'two_factor_enabled' ||
+                resolvedAction === 'two_factor_disabled'
+              ) {
+                const keepToken =
+                  sessionTokenFromSetCookie(cookies) ?? twoFactorSession?.token;
+                try {
+                  if (keepToken !== undefined) {
+                    await database`
+                      delete from auth_sessions
+                      where "userId" = ${userId} and "token" <> ${keepToken}
+                    `;
+                  }
+                } catch (error) {
+                  request.log.error(
+                    { err: error, userId },
+                    'two-factor session revocation failed',
+                  );
+                }
+              }
+            }
+          } else if (
+            response.status === 429 &&
+            (path === '/api/auth/two-factor/verify-totp' ||
+              path === '/api/auth/two-factor/verify-backup-code')
+          ) {
+            // Better Auth's built-in verification lockout
+            // (auth_two_factors."lockedUntil") answers 429. It fires only
+            // in the sign-in flow — before any session exists — so the
+            // locked account is named through the challenge cookie's
+            // verification row, which the lockout leaves in place.
+            try {
+              const identifier = twoFactorChallengeIdentifier(request.headers.cookie);
+              const [challenge] =
+                identifier === null
+                  ? []
+                  : await database<{ value: string }[]>`
+                      select "value" from auth_verifications
+                      where "identifier" = ${identifier}
+                    `;
+              if (challenge !== undefined) {
+                await recordIdentityEvent(database, {
+                  userId: challenge.value,
+                  action: 'two_factor_locked',
+                  requestId: request.id,
+                });
+              }
+            } catch (error) {
+              request.log.error(
+                { err: error },
+                'two-factor lockout audit write failed',
+              );
+            }
+          }
+        } else if (action !== null && response.status < 400) {
           const userId =
             action === 'sign_out' ? signOutUserId : userIdFromAuthBody(text);
           if (userId !== null) {
