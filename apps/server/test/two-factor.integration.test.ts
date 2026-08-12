@@ -249,8 +249,8 @@ afterAll(async () => {
       for (const table of [
         'audit_events',
         'organisation_memberships',
-        // Organisation creation seeds the GST rate master (0048); the rows
-        // must go before the organisation their foreign key references.
+        // Organisation creation seeds the GST rate master (0048); the
+        // rows must go before the organisation they reference.
         'gst_rates',
         'organisations',
       ]) {

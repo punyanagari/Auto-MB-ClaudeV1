@@ -12,7 +12,10 @@ export type StatutoryOperation =
   | 'cancel_irp'
   | 'generate_eway_bill'
   | 'reconcile_eway_bill'
-  | 'cancel_eway_bill';
+  | 'cancel_eway_bill'
+  | 'register_crn'
+  | 'reconcile_crn'
+  | 'cancel_crn';
 
 export type StatutoryOperationStatus = 'succeeded' | 'failed' | 'unknown';
 
@@ -59,30 +62,38 @@ export async function startStatutoryOperation(
     readonly requestSha256: string;
     readonly taxInvoiceId?: string;
     readonly ewayBillId?: string;
+    readonly creditNoteId?: string;
   },
 ): Promise<string> {
-  const irpOperation =
+  const target =
     input.operation === 'register_irp' ||
     input.operation === 'reconcile_irp' ||
-    input.operation === 'cancel_irp';
-  if (
-    (irpOperation &&
-      (input.taxInvoiceId === undefined || input.ewayBillId !== undefined)) ||
-    (!irpOperation &&
-      (input.ewayBillId === undefined || input.taxInvoiceId !== undefined))
-  ) {
+    input.operation === 'cancel_irp'
+      ? 'tax_invoice'
+      : input.operation === 'register_crn' ||
+          input.operation === 'reconcile_crn' ||
+          input.operation === 'cancel_crn'
+        ? 'credit_note'
+        : 'eway_bill';
+  const provided = [
+    input.taxInvoiceId === undefined ? null : 'tax_invoice',
+    input.ewayBillId === undefined ? null : 'eway_bill',
+    input.creditNoteId === undefined ? null : 'credit_note',
+  ].filter((value) => value !== null);
+  if (provided.length !== 1 || provided[0] !== target) {
     throw new Error('statutory operation does not match its target');
   }
   try {
     const [row] = await tx<{ id: string }[]>`
       insert into statutory_provider_operations (
-        organisation_id, tax_invoice_id, eway_bill_id,
+        organisation_id, tax_invoice_id, eway_bill_id, credit_note_id,
         provider, environment, operation, request_sha256,
         created_by_user_id
       )
       values (
         ${input.organisationId}, ${input.taxInvoiceId ?? null},
-        ${input.ewayBillId ?? null}, ${input.provider.name},
+        ${input.ewayBillId ?? null}, ${input.creditNoteId ?? null},
+        ${input.provider.name},
         ${input.provider.environment}, ${input.operation},
         ${input.requestSha256}, ${input.userId}
       )
@@ -131,7 +142,10 @@ export async function finishStatutoryOperation(
  * UNKNOWN (therefore lookup-only on the next action), never retryable. */
 export async function recoverStaleStatutoryOperation(
   tx: TransactionSql,
-  target: { readonly taxInvoiceId: string } | { readonly ewayBillId: string },
+  target:
+    | { readonly taxInvoiceId: string }
+    | { readonly ewayBillId: string }
+    | { readonly creditNoteId: string },
 ): Promise<readonly StatutoryOperation[]> {
   const rows = await tx<{ operation: StatutoryOperation }[]>`
     update statutory_provider_operations
@@ -144,6 +158,9 @@ export async function recoverStaleStatutoryOperation(
       }
       and eway_bill_id is not distinct from ${
         'ewayBillId' in target ? target.ewayBillId : null
+      }
+      and credit_note_id is not distinct from ${
+        'creditNoteId' in target ? target.creditNoteId : null
       }
     returning operation
   `;
@@ -159,6 +176,18 @@ export async function recoverStaleStatutoryOperation(
       await tx`
         update tax_invoices set irp_provider_state = 'cancellation_unknown'
         where id = ${target.taxInvoiceId} and irp_provider_state = 'cancelling'
+      `;
+    } else if (row.operation === 'register_crn' || row.operation === 'reconcile_crn') {
+      if (!('creditNoteId' in target)) throw new Error('CRN operation target mismatch');
+      await tx`
+        update credit_notes set irp_provider_state = 'registration_unknown'
+        where id = ${target.creditNoteId} and irp_provider_state = 'registering'
+      `;
+    } else if (row.operation === 'cancel_crn') {
+      if (!('creditNoteId' in target)) throw new Error('CRN operation target mismatch');
+      await tx`
+        update credit_notes set irp_provider_state = 'cancellation_unknown'
+        where id = ${target.creditNoteId} and irp_provider_state = 'cancelling'
       `;
     } else if (
       row.operation === 'generate_eway_bill' ||

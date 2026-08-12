@@ -186,6 +186,37 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('RAISE EXCEPTION');
   });
 
+  it('binds the credit-note guards and the supersession arms in 0051', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0051_credit_notes.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain('CREATE TABLE credit_notes');
+    expect(sql).toContain('CREATE TABLE credit_note_counters');
+    // One live credit note per invoice; supersession releases the MB.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX credit_notes_one_live_per_invoice\s+ON credit_notes \(organisation_id, tax_invoice_id\)\s+WHERE status <> 'cancelled';/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX tax_invoices_one_live_per_mb\s+ON tax_invoices \(organisation_id, measurement_book_id\)\s+WHERE status NOT IN \('cancelled', 'superseded'\);/,
+    );
+    // Full value is database-proven, and supersession is trigger-gated
+    // on an issued credit note in both directions.
+    expect(sql).toContain('guard_credit_note_full_value');
+    expect(sql).toContain('a tax invoice is superseded only by an issued credit note');
+    expect(sql).toContain(
+      'the invoice stays superseded while an issued credit note exists',
+    );
+    // The 0047 scope CHECK gains an EXPLICIT credit_note arm — the old
+    // ELSE true must not silently exempt the new type (finding 8).
+    expect(sql).toMatch(/WHEN 'credit_note' THEN\s+template LIKE '%\{FY%'/);
+    // The provider ledger gains its third, mutually exclusive target.
+    expect(sql).toContain('statutory_provider_operations_one_pending_credit_note');
+    expect(sql).toMatch(/'register_crn', 'reconcile_crn', 'cancel_crn'/);
+  });
+
   it('normalizes merge provenance and narrows PO draft scope in 0045', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0045_audit_integrity_followup.sql'),

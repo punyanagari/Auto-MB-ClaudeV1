@@ -681,7 +681,14 @@ export class WhitebooksProvider implements StatutoryProvider {
       'GET',
       '/einvoice/type/GETIRNBYDOCDETAILS/version/V1_03',
       {
-        query: { param1: 'INV', email: this.config.email, irp: this.config.irp },
+        // param1 is the document type in the provider spec — 'INV' for a
+        // tax invoice, 'CRN' for a Section 34 credit note. The rest of
+        // the surface (GENERATE, CANCEL by IRN) is document-agnostic.
+        query: {
+          param1: identity.documentType ?? 'INV',
+          email: this.config.email,
+          irp: this.config.irp,
+        },
         headers: {
           ...(await this.#irpHeaders(identity.gstin)),
           docnum: identity.documentNumber,
@@ -804,6 +811,7 @@ export class WhitebooksProvider implements StatutoryProvider {
     const document = object(payload?.DocDtls);
     if (
       seller?.Gstin !== identity.gstin ||
+      document?.Typ !== (identity.documentType ?? 'INV') ||
       document?.No !== identity.documentNumber ||
       document?.Dt !== formatNicDate(identity.documentDate)
     ) {

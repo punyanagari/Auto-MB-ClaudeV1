@@ -106,6 +106,12 @@ import type {
   TaxInvoiceDetailResponse,
   CreateDirectTaxInvoiceRequest,
   CreateTaxInvoiceRequest,
+  CreditNote,
+  CreditNoteDetailResponse,
+  CreateCreditNoteRequest,
+  UpdateCreditNoteRequest,
+  CancelCreditNoteRequest,
+  UpdateRecipientItcRequest,
   NumberSeries,
   NumberedDocumentType,
   SaveNumberSeriesRequest,
@@ -1010,6 +1016,71 @@ export interface ApiClient {
     invoiceId: string,
     body: RecordIrpResponseRequest,
   ) => Promise<TaxInvoiceDetailResponse>;
+  /** The Section 34 credit note (migration 0051): full value against one
+   * submitted invoice; issuing it supersedes the invoice and releases
+   * its Measurement Book. Its own IRN document (DocTyp CRN). */
+  readonly listCreditNotes: (organisationId: string) => Promise<readonly CreditNote[]>;
+  readonly listInvoiceCreditNotes: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<readonly CreditNote[]>;
+  readonly createCreditNote: (
+    organisationId: string,
+    invoiceId: string,
+    body: CreateCreditNoteRequest,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly getCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly updateCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+    body: UpdateCreditNoteRequest,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly deleteCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<void>;
+  readonly issueCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly cancelCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+    body: CancelCreditNoteRequest,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly updateCreditNoteRecipientItc: (
+    organisationId: string,
+    creditNoteId: string,
+    body: UpdateRecipientItcRequest,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly registerCreditNoteIrp: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly recoverCreditNoteProviderOperation: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly cancelCreditNoteIrp: (
+    organisationId: string,
+    creditNoteId: string,
+    body: CancelStatutoryDocumentRequest,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly creditNoteIrpPayload: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<string>;
+  readonly renderCreditNote: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<CreditNoteDetailResponse>;
+  readonly downloadCreditNotePdf: (
+    organisationId: string,
+    creditNoteId: string,
+  ) => Promise<Blob>;
   /** The e-way bill moves a submitted invoice: drafted here, carried to
    * NIC by the GSP, and the 12-digit EWB number and validity window come
    * BACK from NIC. Draft -> generated -> cancelled. */
@@ -2445,6 +2516,99 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/tax-invoices/${invoiceId}/irp-response`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async listCreditNotes(organisationId) {
+      const payload = await request<{ creditNotes: CreditNote[] }>(
+        '/api/credit-notes',
+        { organisationId },
+      );
+      return payload.creditNotes;
+    },
+    async listInvoiceCreditNotes(organisationId, invoiceId) {
+      const payload = await request<{ creditNotes: CreditNote[] }>(
+        `/api/tax-invoices/${invoiceId}/credit-notes`,
+        { organisationId },
+      );
+      return payload.creditNotes;
+    },
+    async createCreditNote(organisationId, invoiceId, body) {
+      return request<CreditNoteDetailResponse>(
+        `/api/tax-invoices/${invoiceId}/credit-notes`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async getCreditNote(organisationId, creditNoteId) {
+      return request<CreditNoteDetailResponse>(`/api/credit-notes/${creditNoteId}`, {
+        organisationId,
+      });
+    },
+    async updateCreditNote(organisationId, creditNoteId, body) {
+      return request<CreditNoteDetailResponse>(`/api/credit-notes/${creditNoteId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async deleteCreditNote(organisationId, creditNoteId) {
+      await request(`/api/credit-notes/${creditNoteId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async issueCreditNote(organisationId, creditNoteId) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/issue`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelCreditNote(organisationId, creditNoteId, body) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async updateCreditNoteRecipientItc(organisationId, creditNoteId, body) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/recipient-itc`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async registerCreditNoteIrp(organisationId, creditNoteId) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/register-irp`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async recoverCreditNoteProviderOperation(organisationId, creditNoteId) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/recover-provider-operation`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async cancelCreditNoteIrp(organisationId, creditNoteId, body) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/cancel-irp`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async creditNoteIrpPayload(organisationId, creditNoteId) {
+      return requestText(`/api/credit-notes/${creditNoteId}/irp-payload`, {
+        organisationId,
+      });
+    },
+    async renderCreditNote(organisationId, creditNoteId) {
+      return request<CreditNoteDetailResponse>(
+        `/api/credit-notes/${creditNoteId}/render`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async downloadCreditNotePdf(organisationId, creditNoteId) {
+      const response = await fetchImpl(`/api/credit-notes/${creditNoteId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async listInvoiceEwayBills(organisationId, invoiceId) {
       const payload = await request<{ ewayBills: EwayBill[] }>(
