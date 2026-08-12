@@ -1,9 +1,8 @@
 -- Migration 0053: manual IRP evidence truth (finding 2 residue,
--- docs/AUDIT-DISPOSITION-2026-08-10.md).
---
--- 0051 and 0052 are reserved by parallel work (credit notes; money
--- backstops) and deliberately not present here; the runner tolerates
--- numbering gaps.
+-- docs/AUDIT-DISPOSITION-2026-08-10.md). Runs after 0051 (credit notes)
+-- and 0052 (money backstops); both guard recreations below are written
+-- ON TOP OF 0051's function texts, so every supersession clause 0051
+-- added survives.
 --
 -- Two truths this migration adds:
 --
@@ -52,10 +51,12 @@ COMMENT ON COLUMN statutory_provider_operations.request_body IS
 COMMENT ON COLUMN statutory_provider_operations.response_body IS
   'Raw provider response body as received (truncated with response_body_truncated = true when over 256 KiB). Written once, when the operation completes; NULL when no response arrived or the row predates 0053.';
 
--- Recreated verbatim from 0041 with two additions: the raw request body
--- joins the immutable operation identity, and the raw response body may
--- change only in the update that takes the row out of pending (completed
--- rows were already immutable). No other clause changes.
+-- Recreated verbatim from 0051's text (which added credit_note_id to the
+-- identity ROW) with two additions: the raw request body joins the
+-- immutable operation identity, and the raw response body may change
+-- only in the update that takes the row out of pending (completed rows
+-- were already immutable). No other clause changes; the 0051
+-- credit-note pinning survives.
 CREATE OR REPLACE FUNCTION app_private.guard_statutory_operation_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -69,11 +70,13 @@ BEGIN
 
   IF ROW(
     NEW.organisation_id, NEW.tax_invoice_id, NEW.eway_bill_id,
+    NEW.credit_note_id,
     NEW.provider, NEW.environment, NEW.operation, NEW.correlation_id,
     NEW.request_sha256, NEW.request_body, NEW.request_body_truncated,
     NEW.created_by_user_id, NEW.started_at
   ) IS DISTINCT FROM ROW(
     OLD.organisation_id, OLD.tax_invoice_id, OLD.eway_bill_id,
+    OLD.credit_note_id,
     OLD.provider, OLD.environment, OLD.operation, OLD.correlation_id,
     OLD.request_sha256, OLD.request_body, OLD.request_body_truncated,
     OLD.created_by_user_id, OLD.started_at
@@ -138,19 +141,33 @@ ALTER TABLE tax_invoices
      AND signed_invoice IS NULL AND irp_legacy_evidence_missing = false)
   );
 
--- Recreated verbatim from 0049 with two new transition arms and no other
--- clause changes: the manual compatibility door lands a fresh recording
--- in registered_unverified, and externally confirmed cancellation
--- evidence closes it as cancelled. registered_unverified deliberately
--- stays OUT of the whitebooks arms (registering/cancelling never touch
--- it) and IS caught by the local-cancel interlock below, because it is
--- not in ('not_requested', 'cancelled').
+-- Recreated verbatim from 0051's text — NOT 0049's: 0051 rebuilt this
+-- guard with the credit-note supersession clauses (draft can never be
+-- superseded; submitted -> superseded only under an issued credit note
+-- with no provider operation mid-flight; superseded terminal except the
+-- guarded revert to submitted when no issued note remains) and made it
+-- SECURITY DEFINER for the cross-row credit_notes reads. Every one of
+-- those clauses survives below. What THIS migration adds is exactly two
+-- transition arms and nothing else: the manual compatibility door lands
+-- a fresh recording in registered_unverified, and externally confirmed
+-- cancellation evidence closes it as cancelled. registered_unverified
+-- deliberately stays OUT of the whitebooks arms (registering/cancelling
+-- never touch it), IS caught by the local-cancel interlock (it is not in
+-- ('not_requested', 'cancelled')), and does NOT block supersession —
+-- a manually-registered invoice past the 24-hour window is precisely the
+-- case the credit note exists for.
 CREATE OR REPLACE FUNCTION app_private.guard_tax_invoice_issued_update()
 RETURNS trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
+  IF OLD.status = 'draft' AND NEW.status = 'superseded' THEN
+    RAISE EXCEPTION 'only a submitted tax invoice can be superseded by a credit note'
+      USING ERRCODE = '23514';
+  END IF;
+
   IF OLD.status <> 'draft' THEN
     IF ROW(
       NEW.organisation_id, NEW.work_id, NEW.measurement_book_id,
@@ -195,6 +212,38 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'tax invoice cancellation evidence is immutable'
         USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.status = 'submitted' AND NEW.status = 'superseded' THEN
+      IF OLD.irp_provider_state IN ('registering', 'cancelling') THEN
+        RAISE EXCEPTION 'resolve the in-flight provider operation before superseding the invoice'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM credit_notes
+         WHERE tax_invoice_id = OLD.id
+           AND organisation_id = OLD.organisation_id
+           AND status = 'issued'
+      ) THEN
+        RAISE EXCEPTION 'a tax invoice is superseded only by an issued credit note'
+          USING ERRCODE = '23514';
+      END IF;
+    END IF;
+
+    IF OLD.status = 'superseded' AND NEW.status <> 'superseded' THEN
+      IF NEW.status <> 'submitted' THEN
+        RAISE EXCEPTION 'a superseded tax invoice is terminal (it may only revert to submitted when its credit note is cancelled)'
+          USING ERRCODE = '23514';
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM credit_notes
+         WHERE tax_invoice_id = OLD.id
+           AND organisation_id = OLD.organisation_id
+           AND status = 'issued'
+      ) THEN
+        RAISE EXCEPTION 'the invoice stays superseded while an issued credit note exists for it'
+          USING ERRCODE = '23514';
+      END IF;
     END IF;
 
     IF OLD.irn IS NOT NULL AND ROW(

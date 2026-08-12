@@ -96,6 +96,10 @@ const TABLE_PRIVILEGES: Record<string, string> = {
   budgetary_quotation_counters: 'SELECT, INSERT, UPDATE',
   tax_invoices: 'SELECT, INSERT, UPDATE, DELETE',
   tax_invoice_counters: 'SELECT, INSERT, UPDATE',
+  // The Section 34 credit note (0051): drafts delete, issued notes
+  // cancel; the counter is numbering state and never deletes.
+  credit_notes: 'SELECT, INSERT, UPDATE, DELETE',
+  credit_note_counters: 'SELECT, INSERT, UPDATE',
   // The GST rate master (0048): rates retire via end-dating, so like
   // every master there is no DELETE.
   gst_rates: 'SELECT, INSERT, UPDATE',

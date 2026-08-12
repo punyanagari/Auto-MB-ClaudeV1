@@ -35,7 +35,16 @@ import { InvoiceNumberPrefixSchema } from './organisations.js';
 
 // --- Shared vocabulary -------------------------------------------------------
 
-export const TAX_INVOICE_STATUSES = ['draft', 'submitted', 'cancelled'] as const;
+/** superseded (migration 0051): an issued credit note replaced the
+ * invoice in full. Terminal like cancelled — it releases the invoice's
+ * Measurement Book — except that cancelling the credit note reverts the
+ * invoice to submitted while its MB has not been re-invoiced. */
+export const TAX_INVOICE_STATUSES = [
+  'draft',
+  'submitted',
+  'cancelled',
+  'superseded',
+] as const;
 export const TaxInvoiceStatusSchema = Type.Union(
   TAX_INVOICE_STATUSES.map((status) => Type.Literal(status)),
 );
@@ -383,6 +392,18 @@ export const TaxInvoiceSchema = Type.Object(
      * registered at the IRP. Local validity is untouched — this is a
      * signal, not a state. */
     irpReportingOverdue: Type.Boolean(),
+    /** When NIC's 24-hour IRN cancellation window closes: ack_date + 24
+     * hours, derived in SQL. Null until the invoice is registered, and
+     * null for legacy manual evidence whose ack instant is unprovable —
+     * such rows are treated as window-CLOSED, never unknown-open. */
+    irpCancelWindowClosesAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    /** Derived, never stored: the IRN is provider-registered, its ack
+     * instant is provable, and the 24-hour window has not yet closed.
+     * Past it the lawful remedy is a credit note. */
+    irpCancelWindowOpen: Type.Boolean(),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),

@@ -25,6 +25,9 @@ const CHIP_TONES = {
   // A manually-recorded IRP registration: real evidence, no provider
   // verification — caution, not success (migration 0053).
   registered_unverified: 'warning',
+  // An invoice replaced in full by an issued credit note (0051): not a
+  // failure, but no longer the live document either.
+  superseded: 'warning',
 
   failed: 'destructive',
   cancelled: 'destructive',

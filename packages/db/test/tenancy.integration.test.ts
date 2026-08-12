@@ -81,6 +81,9 @@ const TENANT_TABLES = [
   'tax_invoices',
   'tax_invoice_renders',
   'tax_invoice_counters',
+  // The Section 34 credit note and its FY counter (0051).
+  'credit_notes',
+  'credit_note_counters',
   'eway_bills',
   'statutory_provider_operations',
   // Number formats the organisation defines for itself (0039).
@@ -164,6 +167,8 @@ const DELETE_REVOKED_TABLES = [
   // Invoice numbering is a GST rule-46 serial; the invoice itself
   // cancels, never deletes, once submitted (0035).
   'tax_invoice_counters',
+  // Credit note numbering is the same rule-46A serial (0051).
+  'credit_note_counters',
   // The GST rate master retires rows by end-dating; no DELETE (0048).
   'gst_rates',
 ] as const satisfies readonly TenantTable[];
@@ -178,6 +183,8 @@ const DELETE_ALLOWED_TABLES = [
   // generated cancels instead (0035).
   'tax_invoices',
   'eway_bills',
+  // A draft credit note may be discarded; an issued one cancels (0051).
+  'credit_notes',
   // A draft order or quotation is not yet a document and may be discarded;
   // once issued the status moves to cancelled or withdrawn instead (0033).
   'purchase_orders',
@@ -275,6 +282,12 @@ async function seedTenantGraph(
     // organisation, the owner membership, and the audit event.
     await tx`
       select app_private.create_organisation_with_owner(${name}, ${slug}, ${organisationId})
+    `;
+    // The 0052 split guard judges every money-carrying invoice against the
+    // organisation's own state; the seeded invoice below is an intra-state
+    // (27 -> 27) CGST/SGST split, so the organisation must carry state 27.
+    await tx`
+      update organisations set state_code = '27' where id = ${organisationId}
     `;
     const [work] = await tx<{ id: string }[]>`
       insert into works (
@@ -829,6 +842,23 @@ async function seedTenantGraph(
     await tx`
       insert into tax_invoice_counters (organisation_id, fy_label, next_value)
       values (${organisationId}, '2026-27', 2)
+    `;
+    // A draft credit note against the seeded submitted invoice (0051):
+    // a draft carries no number/money, so the cross-record and
+    // full-value guards accept it without superseding the invoice.
+    await tx`
+      insert into credit_notes (
+        organisation_id, tax_invoice_id, work_id, note_date, reason,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, ${work.id}, '2026-02-08',
+        'Tenant isolation seed credit note', ${userId}
+      )
+    `;
+    await tx`
+      insert into credit_note_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 1)
     `;
     await tx`
       insert into eway_bills (
