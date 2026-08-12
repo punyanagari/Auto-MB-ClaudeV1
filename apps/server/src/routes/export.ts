@@ -3,12 +3,8 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
-import {
-  requireOrganisationHeader,
-  withBoundTenantSnapshot,
-} from '../tenant-context.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -41,17 +37,17 @@ export function registerExportRoutes(
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // No 200 schema is declared (the package shape is versioned by its own
   // formatVersion field, not by the API contract), so the explicit Reply
   // generic stands in for the success type the provider cannot infer.
-  app.get<{ Reply: Record<string, unknown> }>(
-    '/api/export',
-    { schema: { response: { ...errorResponses } } },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/export',
+      schema: { response: { ...errorResponses } },
+    },
+    async ({ user, organisationId, tenantSnapshot }) => {
       // REPEATABLE READ, not the default READ COMMITTED. The package below
       // is built from around forty-five sequential SELECTs, and under READ
       // COMMITTED each one takes its own snapshot: a writer committing
@@ -61,7 +57,7 @@ export function registerExportRoutes(
       // document read before it existed. One snapshot for the whole
       // transaction makes the package a true picture of a single instant.
       // The transaction stays read-write for the audit event at the end.
-      return withBoundTenantSnapshot(database, organisationId, user.id, async (tx) => {
+      return tenantSnapshot(async (tx) => {
         await requireOwner(tx, user.id);
 
         const [organisation] = await tx<Record<string, unknown>[]>`

@@ -15,7 +15,7 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { isApprover } from './amendments.js';
 import { draftConflictError } from '../draft-conflict.js';
 import {
@@ -28,9 +28,7 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { assertNotMalware } from '../upload-guards.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import {
   audit,
@@ -38,6 +36,7 @@ import {
   upstreamErrorResponses as errorResponses,
 } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -273,46 +272,41 @@ export function registerExtensionRoutes(
   gotenbergUrl: string,
   scanner: MalwareScanner,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // --- Completion dates -----------------------------------------------------
-  app.get(
-    '/api/works/:id/completion',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/completion',
       schema: {
         params: IdParamsSchema,
         response: { 200: WorkCompletionResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         return readCompletion(tx, workId);
       });
     },
   );
 
-  app.put(
-    '/api/works/:id/completion-dates',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/works/:id/completion-dates',
       schema: {
         params: IdParamsSchema,
         body: SetCompletionDateRequestSchema,
         response: { 200: WorkCompletionResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const work = await lockWork(tx, workId);
         if (work.current_completion_date !== null) {
@@ -353,54 +347,47 @@ export function registerExtensionRoutes(
   );
 
   // --- Extension request lifecycle -------------------------------------------
-  app.post(
-    '/api/works/:id/extension-requests',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/extension-requests',
       schema: {
         params: IdParamsSchema,
         body: SaveExtensionRequestSchema,
         response: { 201: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          const work = await lockWork(tx, workId);
-          // R8: a completed Work accepts no new operational documents.
-          // lockWork holds the works row, so this serialises against
-          // completion; the 0031 insert guard is the database backstop.
-          assertWorkOperable(work.status, 'raising an extension request');
-          assertProposedExtends(work, body.proposedCompletionDate);
-          if (body.letterDate !== undefined) {
-            await assertLetterDate(tx, workId, body.letterDate);
-          }
-          // One draft per Work: the partial unique index is the proof;
-          // this lookup (under the work row lock, which serialises
-          // concurrent creates) surfaces the existing draft's id in the
-          // 409 for the client to open.
-          const [existing] = await tx<{ id: string }[]>`
+      const detail = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const work = await lockWork(tx, workId);
+        // R8: a completed Work accepts no new operational documents.
+        // lockWork holds the works row, so this serialises against
+        // completion; the 0031 insert guard is the database backstop.
+        assertWorkOperable(work.status, 'raising an extension request');
+        assertProposedExtends(work, body.proposedCompletionDate);
+        if (body.letterDate !== undefined) {
+          await assertLetterDate(tx, workId, body.letterDate);
+        }
+        // One draft per Work: the partial unique index is the proof;
+        // this lookup (under the work row lock, which serialises
+        // concurrent creates) surfaces the existing draft's id in the
+        // 409 for the client to open.
+        const [existing] = await tx<{ id: string }[]>`
             select id from extension_requests
             where work_id = ${workId} and status = 'draft'
           `;
-          if (existing) {
-            throw draftConflictError(
-              'EXTENSION_DRAFT_EXISTS',
-              'This Work already has a draft extension request; finalise or delete it first.',
-              existing.id,
-            );
-          }
-          const [created] = await tx<{ id: string }[]>`
+        if (existing) {
+          throw draftConflictError(
+            'EXTENSION_DRAFT_EXISTS',
+            'This Work already has a draft extension request; finalise or delete it first.',
+            existing.id,
+          );
+        }
+        const [created] = await tx<{ id: string }[]>`
             insert into extension_requests (
               organisation_id, work_id, proposed_completion_date, reason,
               addressee, letter_date, created_by_user_id
@@ -412,19 +399,18 @@ export function registerExtensionRoutes(
             )
             returning id
           `;
-          if (!created) throw new Error('extension insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'extension.created',
-            'extension_requests',
-            created.id,
-            { workId, proposedCompletionDate: body.proposedCompletionDate },
-          );
-          return readDetail(tx, created.id);
-        },
-      );
+        if (!created) throw new Error('extension insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'extension.created',
+          'extension_requests',
+          created.id,
+          { workId, proposedCompletionDate: body.proposedCompletionDate },
+        );
+        return readDetail(tx, created.id);
+      });
       return reply.status(201).send(detail);
     },
   );
@@ -438,63 +424,56 @@ export function registerExtensionRoutes(
   // letter may exist alongside. Back-fill letters in paper order — each
   // proposed date must extend the then-current completion date, exactly
   // as it did on paper.
-  app.post(
-    '/api/works/:id/extension-requests/backfill',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/extension-requests/backfill',
       schema: {
         params: IdParamsSchema,
         body: BackfillExtensionRequestSchema,
         response: { 201: BackfillExtensionResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      const result = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Consuming a number slot is the same act of authority as
-          // finalising — the issue authority gates both.
-          await requireAuthority(tx, user.id, 'issue');
-          await assertWorkAccess(tx, user.id, workId);
-          const work = await lockWork(tx, workId);
-          // R8: a completed Work accepts no new operational documents —
-          // a back-filled paper letter consumes a number slot like any
-          // other finalisation.
-          assertWorkOperable(work.status, 'back-filling an extension letter');
-          assertProposedExtends(work, body.proposedCompletionDate);
-          await assertLetterDate(tx, workId, body.letterDate);
-          if (work.original_completion_date === null) {
-            throw new Error('completion dates disappeared under the work row lock');
-          }
+      const result = await tenant(async (tx) => {
+        // Consuming a number slot is the same act of authority as
+        // finalising — the issue authority gates both.
+        await assertWorkAccess(tx, user.id, workId);
+        const work = await lockWork(tx, workId);
+        // R8: a completed Work accepts no new operational documents —
+        // a back-filled paper letter consumes a number slot like any
+        // other finalisation.
+        assertWorkOperable(work.status, 'back-filling an extension letter');
+        assertProposedExtends(work, body.proposedCompletionDate);
+        await assertLetterDate(tx, workId, body.letterDate);
+        if (work.original_completion_date === null) {
+          throw new Error('completion dates disappeared under the work row lock');
+        }
 
-          // §5.5: warn — without blocking — when the paper letter is
-          // dated after the first software-generated letter (a letter
-          // from the software era should itself have been generated).
-          const warnings: string[] = [];
-          const [firstSoftware] = await tx<{ letter_date: string }[]>`
+        // §5.5: warn — without blocking — when the paper letter is
+        // dated after the first software-generated letter (a letter
+        // from the software era should itself have been generated).
+        const warnings: string[] = [];
+        const [firstSoftware] = await tx<{ letter_date: string }[]>`
             select min(letter_date)::text as letter_date
             from extension_requests
             where work_id = ${workId} and source = 'software'
               and status <> 'draft' and letter_date is not null
             having min(letter_date) is not null
           `;
-          if (
-            firstSoftware !== undefined &&
-            body.letterDate > firstSoftware.letter_date
-          ) {
-            warnings.push(
-              `This letter is dated ${body.letterDate}, after the first software-generated letter (${firstSoftware.letter_date}); check that it really was issued on paper.`,
-            );
-          }
+        if (
+          firstSoftware !== undefined &&
+          body.letterDate > firstSoftware.letter_date
+        ) {
+          warnings.push(
+            `This letter is dated ${body.letterDate}, after the first software-generated letter (${firstSoftware.letter_date}); check that it really was issued on paper.`,
+          );
+        }
 
-          const [counter] = await tx<{ next_value: number }[]>`
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into extension_request_counters (organisation_id, work_id)
             values (${organisationId}, ${workId})
             on conflict (organisation_id, work_id)
@@ -502,40 +481,40 @@ export function registerExtensionRoutes(
                           updated_at = now()
             returning next_value
           `;
-          if (!counter) throw new Error('extension counter upsert returned no row');
-          const sequence = counter.next_value;
-          const requestNumber = `${work.work_code}-Extension-${String(sequence).padStart(2, '0')}`;
+        if (!counter) throw new Error('extension counter upsert returned no row');
+        const sequence = counter.next_value;
+        const requestNumber = `${work.work_code}-Extension-${String(sequence).padStart(2, '0')}`;
 
-          const [organisation] = await tx<{ name: string }[]>`
+        const [organisation] = await tx<{ name: string }[]>`
             select name from organisations
             where id = app_private.current_organisation_id()
           `;
-          const finalisedAt = new Date().toISOString();
-          // The snapshot preserves what was transcribed; the PAPER letter
-          // remains the legal document (manual records are never
-          // rendered), so the template version marks the record as a
-          // transcription, not a generated letter.
-          const snapshot: ExtensionSnapshot = {
-            templateVersion: MANUAL_TEMPLATE_VERSION,
-            organisationName: organisation?.name ?? '',
-            requestNumber,
-            manualReference: body.reference,
-            letterDate: body.letterDate,
-            addressee: body.addressee,
-            reason: body.reason,
-            work: {
-              workCode: work.work_code,
-              title: work.title,
-              letterNumber: work.letter_number,
-              letterDate: work.letter_date,
-            },
-            originalCompletionDate: work.original_completion_date,
-            currentCompletionDate: work.current_completion_date ?? '',
-            proposedCompletionDate: body.proposedCompletionDate,
-            finalisedAt,
-          };
+        const finalisedAt = new Date().toISOString();
+        // The snapshot preserves what was transcribed; the PAPER letter
+        // remains the legal document (manual records are never
+        // rendered), so the template version marks the record as a
+        // transcription, not a generated letter.
+        const snapshot: ExtensionSnapshot = {
+          templateVersion: MANUAL_TEMPLATE_VERSION,
+          organisationName: organisation?.name ?? '',
+          requestNumber,
+          manualReference: body.reference,
+          letterDate: body.letterDate,
+          addressee: body.addressee,
+          reason: body.reason,
+          work: {
+            workCode: work.work_code,
+            title: work.title,
+            letterNumber: work.letter_number,
+            letterDate: work.letter_date,
+          },
+          originalCompletionDate: work.original_completion_date,
+          currentCompletionDate: work.current_completion_date ?? '',
+          proposedCompletionDate: body.proposedCompletionDate,
+          finalisedAt,
+        };
 
-          const [created] = await tx<{ id: string }[]>`
+        const [created] = await tx<{ id: string }[]>`
             insert into extension_requests (
               organisation_id, work_id, status, source, manual_reference,
               proposed_completion_date, reason, addressee, letter_date,
@@ -552,47 +531,43 @@ export function registerExtensionRoutes(
             )
             returning id
           `;
-          if (!created) throw new Error('extension back-fill insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'extension.manual_backfilled',
-            'extension_requests',
-            created.id,
-            {
-              workId,
-              requestNumber,
-              sequence,
-              manualReference: body.reference,
-              letterDate: body.letterDate,
-              proposedCompletionDate: body.proposedCompletionDate,
-              warnings,
-            },
-          );
-          const detail = await readDetail(tx, created.id);
-          return { ...detail, warnings };
-        },
-      );
+        if (!created) throw new Error('extension back-fill insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'extension.manual_backfilled',
+          'extension_requests',
+          created.id,
+          {
+            workId,
+            requestNumber,
+            sequence,
+            manualReference: body.reference,
+            letterDate: body.letterDate,
+            proposedCompletionDate: body.proposedCompletionDate,
+            warnings,
+          },
+        );
+        const detail = await readDetail(tx, created.id);
+        return { ...detail, warnings };
+      });
       return reply.status(201).send(result);
     },
   );
 
-  app.get(
-    '/api/extension-requests/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/extension-requests/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from extension_requests where id = ${id}
         `;
@@ -605,24 +580,21 @@ export function registerExtensionRoutes(
     },
   );
 
-  app.put(
-    '/api/extension-requests/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/extension-requests/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveExtensionRequestSchema,
         response: { 200: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const extension = await lockExtension(tx, id);
         await assertWorkAccess(tx, user.id, extension.work_id);
         requireStatus(extension, ['draft']);
@@ -652,22 +624,19 @@ export function registerExtensionRoutes(
     },
   );
 
-  app.delete(
-    '/api/extension-requests/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/extension-requests/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         const extension = await lockExtension(tx, id);
         await assertWorkAccess(tx, user.id, extension.work_id);
         if (extension.source === 'manual' && extension.status !== 'draft') {
@@ -739,50 +708,43 @@ export function registerExtensionRoutes(
     },
   );
 
-  app.post(
-    '/api/extension-requests/:id/finalise',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/extension-requests/:id/finalise',
       schema: {
         params: IdParamsSchema,
         response: { 201: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Finalising assigns a legal number — the same authority
-          // discipline as issuing a challan or preparing a bill.
-          await requireAuthority(tx, user.id, 'issue');
-          const extension = await lockExtension(tx, id);
-          await assertWorkAccess(tx, user.id, extension.work_id);
-          requireStatus(extension, ['draft']);
-          const work = await lockWork(tx, extension.work_id);
-          // Revalidate at finalise: the current completion date may have
-          // moved since the draft was written.
-          assertProposedExtends(work, extension.proposed_completion_date);
-          if (extension.letter_date === null) {
-            throw httpError(
-              400,
-              'LETTER_DATE_REQUIRED',
-              'Set the letter date on the draft before finalising.',
-            );
-          }
-          if (work.original_completion_date === null) {
-            throw new Error('completion dates disappeared under the work row lock');
-          }
+      const detail = await tenant(async (tx) => {
+        // Finalising assigns a legal number — the same authority
+        // discipline as issuing a challan or preparing a bill.
+        const extension = await lockExtension(tx, id);
+        await assertWorkAccess(tx, user.id, extension.work_id);
+        requireStatus(extension, ['draft']);
+        const work = await lockWork(tx, extension.work_id);
+        // Revalidate at finalise: the current completion date may have
+        // moved since the draft was written.
+        assertProposedExtends(work, extension.proposed_completion_date);
+        if (extension.letter_date === null) {
+          throw httpError(
+            400,
+            'LETTER_DATE_REQUIRED',
+            'Set the letter date on the draft before finalising.',
+          );
+        }
+        if (work.original_completion_date === null) {
+          throw new Error('completion dates disappeared under the work row lock');
+        }
 
-          // Serialised per-Work numbering: the counter row lock orders
-          // concurrent finalisations; a rolled-back transaction rolls the
-          // counter back with it, so numbers are gapless per Work.
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Serialised per-Work numbering: the counter row lock orders
+        // concurrent finalisations; a rolled-back transaction rolls the
+        // counter back with it, so numbers are gapless per Work.
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into extension_request_counters (organisation_id, work_id)
             values (${organisationId}, ${extension.work_id})
             on conflict (organisation_id, work_id)
@@ -790,35 +752,35 @@ export function registerExtensionRoutes(
                           updated_at = now()
             returning next_value
           `;
-          if (!counter) throw new Error('extension counter upsert returned no row');
-          const sequence = counter.next_value;
-          const requestNumber = `${work.work_code}-Extension-${String(sequence).padStart(2, '0')}`;
+        if (!counter) throw new Error('extension counter upsert returned no row');
+        const sequence = counter.next_value;
+        const requestNumber = `${work.work_code}-Extension-${String(sequence).padStart(2, '0')}`;
 
-          const [organisation] = await tx<{ name: string }[]>`
+        const [organisation] = await tx<{ name: string }[]>`
             select name from organisations
             where id = app_private.current_organisation_id()
           `;
-          const finalisedAt = new Date().toISOString();
-          const snapshot: ExtensionSnapshot = {
-            templateVersion: EXTENSION_TEMPLATE_VERSION,
-            organisationName: organisation?.name ?? '',
-            requestNumber,
-            letterDate: extension.letter_date,
-            addressee: extension.addressee,
-            reason: extension.reason,
-            work: {
-              workCode: work.work_code,
-              title: work.title,
-              letterNumber: work.letter_number,
-              letterDate: work.letter_date,
-            },
-            originalCompletionDate: work.original_completion_date,
-            currentCompletionDate: work.current_completion_date ?? '',
-            proposedCompletionDate: extension.proposed_completion_date,
-            finalisedAt,
-          };
+        const finalisedAt = new Date().toISOString();
+        const snapshot: ExtensionSnapshot = {
+          templateVersion: EXTENSION_TEMPLATE_VERSION,
+          organisationName: organisation?.name ?? '',
+          requestNumber,
+          letterDate: extension.letter_date,
+          addressee: extension.addressee,
+          reason: extension.reason,
+          work: {
+            workCode: work.work_code,
+            title: work.title,
+            letterNumber: work.letter_number,
+            letterDate: work.letter_date,
+          },
+          originalCompletionDate: work.original_completion_date,
+          currentCompletionDate: work.current_completion_date ?? '',
+          proposedCompletionDate: extension.proposed_completion_date,
+          finalisedAt,
+        };
 
-          await tx`
+        await tx`
             update extension_requests
             set status = 'finalised', sequence_number = ${sequence},
                 request_number = ${requestNumber},
@@ -827,88 +789,79 @@ export function registerExtensionRoutes(
                 finalised_by_user_id = ${user.id}, finalised_at = ${finalisedAt}
             where id = ${id}
           `;
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'extension.finalised',
-            'extension_requests',
-            id,
-            {
-              requestNumber,
-              sequence,
-              proposedCompletionDate: extension.proposed_completion_date,
-            },
-          );
-          return readDetail(tx, id);
-        },
-      );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'extension.finalised',
+          'extension_requests',
+          id,
+          {
+            requestNumber,
+            sequence,
+            proposedCompletionDate: extension.proposed_completion_date,
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
   // --- The letter PDF ---------------------------------------------------------
-  app.post(
-    '/api/extension-requests/:id/render',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/extension-requests/:id/render',
       schema: {
         params: IdParamsSchema,
         response: { 200: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
       // the immutable finalised snapshot, so re-rendering reproduces the
       // letter. Branding is presentation from the current profile.
-      const { snapshot, branding } = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const extension = await lockExtension(tx, id);
-          await assertWorkAccess(tx, user.id, extension.work_id);
-          requireStatus(extension, ['finalised', 'responded']);
-          if (extension.source === 'manual') {
-            // The PAPER letter is the legal record of a back-fill; a
-            // generated look-alike could be mistaken for the original.
-            throw httpError(
-              409,
-              'EXTENSION_MANUAL_NOT_RENDERABLE',
-              'Manual back-fill records are transcriptions of paper letters and are never rendered; the paper letter is the record.',
-            );
-          }
-          const [row] = await tx<{ finalised_snapshot: unknown }[]>`
+      const { snapshot, branding } = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const extension = await lockExtension(tx, id);
+        await assertWorkAccess(tx, user.id, extension.work_id);
+        requireStatus(extension, ['finalised', 'responded']);
+        if (extension.source === 'manual') {
+          // The PAPER letter is the legal record of a back-fill; a
+          // generated look-alike could be mistaken for the original.
+          throw httpError(
+            409,
+            'EXTENSION_MANUAL_NOT_RENDERABLE',
+            'Manual back-fill records are transcriptions of paper letters and are never rendered; the paper letter is the record.',
+          );
+        }
+        const [row] = await tx<{ finalised_snapshot: unknown }[]>`
             select finalised_snapshot from extension_requests where id = ${id}
           `;
-          const [organisation] = await tx<
-            {
-              address: string | null;
-              gstin: string | null;
-              contact_phone: string | null;
-              contact_email: string | null;
-              logo_object_key: string | null;
-              logo_media_type: string | null;
-            }[]
-          >`
+        const [organisation] = await tx<
+          {
+            address: string | null;
+            gstin: string | null;
+            contact_phone: string | null;
+            contact_email: string | null;
+            logo_object_key: string | null;
+            logo_media_type: string | null;
+          }[]
+        >`
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
             where id = app_private.current_organisation_id()
           `;
-          return {
-            snapshot: parseJsonbColumn(row?.finalised_snapshot) as ExtensionSnapshot,
-            branding: organisation ?? null,
-          };
-        },
-      );
+        return {
+          snapshot: parseJsonbColumn(row?.finalised_snapshot) as ExtensionSnapshot,
+          branding: organisation ?? null,
+        };
+      });
 
       let logoDataUri: string | undefined;
       if (branding?.logo_object_key && branding.logo_media_type) {
@@ -951,7 +904,7 @@ export function registerExtensionRoutes(
       const objectKey = `${organisationId}/ext/${id}.pdf`;
       await storage.put(objectKey, pdf);
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const updated = await tx`
           update extension_requests
           set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
@@ -987,86 +940,78 @@ export function registerExtensionRoutes(
   // draft, and a draft has no immutable snapshot to store evidence
   // against. Any member with access to the Work may preview (the same
   // audience the stored-PDF GET serves).
-  app.get(
-    '/api/extension-requests/:id/draft-preview',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/extension-requests/:id/draft-preview',
       schema: { params: IdParamsSchema },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
-      const { snapshot, branding } = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [extension] = await tx<ExtensionRow[]>`
+      const { snapshot, branding } = await tenant(async (tx) => {
+        const [extension] = await tx<ExtensionRow[]>`
             select ${tx.unsafe(EXTENSION_COLUMNS)}
             from extension_requests where id = ${id}
           `;
-          if (!extension) {
-            throw httpError(404, 'EXTENSION_NOT_FOUND', 'No such extension request.');
-          }
-          await assertWorkAccess(tx, user.id, extension.work_id);
-          requireStatus(extension, ['draft']);
-          const [work] = await tx<
-            {
-              work_code: string;
-              title: string;
-              letter_number: string;
-              letter_date: string;
-              original_completion_date: string | null;
-              current_completion_date: string | null;
-            }[]
-          >`
+        if (!extension) {
+          throw httpError(404, 'EXTENSION_NOT_FOUND', 'No such extension request.');
+        }
+        await assertWorkAccess(tx, user.id, extension.work_id);
+        requireStatus(extension, ['draft']);
+        const [work] = await tx<
+          {
+            work_code: string;
+            title: string;
+            letter_number: string;
+            letter_date: string;
+            original_completion_date: string | null;
+            current_completion_date: string | null;
+          }[]
+        >`
             select work_code, title, letter_number,
                    letter_date::text as letter_date,
                    original_completion_date::text as original_completion_date,
                    current_completion_date::text as current_completion_date
             from works where id = ${extension.work_id} and deleted_at is null
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          const [organisation] = await tx<
-            {
-              name: string;
-              address: string | null;
-              gstin: string | null;
-              contact_phone: string | null;
-              contact_email: string | null;
-              logo_object_key: string | null;
-              logo_media_type: string | null;
-            }[]
-          >`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        const [organisation] = await tx<
+          {
+            name: string;
+            address: string | null;
+            gstin: string | null;
+            contact_phone: string | null;
+            contact_email: string | null;
+            logo_object_key: string | null;
+            logo_media_type: string | null;
+          }[]
+        >`
             select name, address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
             where id = app_private.current_organisation_id()
           `;
-          const preview: ExtensionSnapshot = {
-            templateVersion: EXTENSION_TEMPLATE_VERSION,
-            organisationName: organisation?.name ?? '',
-            // No number exists before finalisation; the preview says so.
-            requestNumber: 'DRAFT',
-            letterDate: extension.letter_date ?? '(letter date not set)',
-            addressee: extension.addressee,
-            reason: extension.reason,
-            work: {
-              workCode: work.work_code,
-              title: work.title,
-              letterNumber: work.letter_number,
-              letterDate: work.letter_date,
-            },
-            originalCompletionDate: work.original_completion_date ?? '—',
-            currentCompletionDate: work.current_completion_date ?? '—',
-            proposedCompletionDate: extension.proposed_completion_date,
-            finalisedAt: '',
-          };
-          return { snapshot: preview, branding: organisation ?? null };
-        },
-      );
+        const preview: ExtensionSnapshot = {
+          templateVersion: EXTENSION_TEMPLATE_VERSION,
+          organisationName: organisation?.name ?? '',
+          // No number exists before finalisation; the preview says so.
+          requestNumber: 'DRAFT',
+          letterDate: extension.letter_date ?? '(letter date not set)',
+          addressee: extension.addressee,
+          reason: extension.reason,
+          work: {
+            workCode: work.work_code,
+            title: work.title,
+            letterNumber: work.letter_number,
+            letterDate: work.letter_date,
+          },
+          originalCompletionDate: work.original_completion_date ?? '—',
+          currentCompletionDate: work.current_completion_date ?? '—',
+          proposedCompletionDate: extension.proposed_completion_date,
+          finalisedAt: '',
+        };
+        return { snapshot: preview, branding: organisation ?? null };
+      });
 
       let logoDataUri: string | undefined;
       if (branding?.logo_object_key && branding.logo_media_type) {
@@ -1118,20 +1063,17 @@ export function registerExtensionRoutes(
   );
 
   // --- The railway's response -------------------------------------------------
-  app.post(
-    '/api/extension-requests/:id/response-document',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/extension-requests/:id/response-document',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         params: IdParamsSchema,
         response: { 200: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
@@ -1146,7 +1088,7 @@ export function registerExtensionRoutes(
       }
       // Authorisation before the expensive scan (ops batch): an
       // unauthorised caller must not spend scanner capacity.
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
       });
       await assertNotMalware(scanner, body);
@@ -1154,7 +1096,7 @@ export function registerExtensionRoutes(
       // never overwrites earlier evidence (signed-copy pattern).
       const responseSha256 = createHash('sha256').update(body).digest('hex');
       const objectKey = `${organisationId}/extresponse/${id}-${responseSha256.slice(0, 16)}.pdf`;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const extension = await lockExtension(tx, id);
         await assertWorkAccess(tx, user.id, extension.work_id);
@@ -1180,24 +1122,21 @@ export function registerExtensionRoutes(
     },
   );
 
-  app.post(
-    '/api/extension-requests/:id/respond',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/extension-requests/:id/respond',
       schema: {
         params: IdParamsSchema,
         body: RespondExtensionRequestSchema,
         response: { 200: ExtensionRequestDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const extension = await lockExtension(tx, id);
         await assertWorkAccess(tx, user.id, extension.work_id);
         requireStatus(extension, ['finalised']);
@@ -1300,51 +1239,43 @@ export function registerExtensionRoutes(
     },
   );
 
-  app.get(
-    '/api/extension-requests/:id/pdf',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/extension-requests/:id/pdf',
       schema: { params: IdParamsSchema, querystring: PdfQuerySchema },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
       const { kind = 'rendered' } = request.query;
-      const key = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [row] = await tx<
-            {
-              work_id: string;
-              rendered_object_key: string | null;
-              response_object_key: string | null;
-            }[]
-          >`
+      const key = await tenant(async (tx) => {
+        const [row] = await tx<
+          {
+            work_id: string;
+            rendered_object_key: string | null;
+            response_object_key: string | null;
+          }[]
+        >`
             select work_id, rendered_object_key, response_object_key
             from extension_requests where id = ${id}
           `;
-          if (!row) {
-            throw httpError(404, 'EXTENSION_NOT_FOUND', 'No such extension request.');
-          }
-          await assertWorkAccess(tx, user.id, row.work_id);
-          const found =
-            kind === 'rendered' ? row.rendered_object_key : row.response_object_key;
-          if (found === null) {
-            throw httpError(
-              404,
-              'PDF_NOT_AVAILABLE',
-              kind === 'rendered'
-                ? 'This extension request has not been rendered yet.'
-                : 'No railway response has been uploaded for this request.',
-            );
-          }
-          return found;
-        },
-      );
+        if (!row) {
+          throw httpError(404, 'EXTENSION_NOT_FOUND', 'No such extension request.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        const found =
+          kind === 'rendered' ? row.rendered_object_key : row.response_object_key;
+        if (found === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            kind === 'rendered'
+              ? 'This extension request has not been rendered yet.'
+              : 'No railway response has been uploaded for this request.',
+          );
+        }
+        return found;
+      });
       const bytes = await storage.get(key);
       void reply.type('application/pdf');
       void reply.header(

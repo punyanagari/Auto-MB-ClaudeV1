@@ -7,9 +7,8 @@ import {
 import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -82,19 +81,17 @@ export function registerDashboardRoutes(
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
-    '/api/dashboard',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/dashboard',
       schema: {
         response: { 200: DashboardResponseSchema, ...errorResponses },
       },
     },
-    async (request): Promise<DashboardResponse> => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ user, tenant }): Promise<DashboardResponse> => {
+      return tenant(async (tx) => {
         // 'assigned'-scoped members see a dashboard of their Works only.
         const full = await hasFullWorkScope(tx, user.id);
         const works = await tx<ProgressRow[]>`

@@ -14,10 +14,9 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -124,26 +123,24 @@ export function registerTimelineRoutes(
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
-    '/api/works/:id/timeline',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/timeline',
       schema: {
         params: IdParamsSchema,
         querystring: TimelineQuerySchema,
         response: { 200: TimelineResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
       const query = request.query;
       const limit = query.limit ?? DEFAULT_PAGE_SIZE;
       const entityTypes = parseEntityTypes(query.entityTypes);
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
@@ -208,25 +205,22 @@ export function registerTimelineRoutes(
     },
   );
 
-  app.get(
-    '/api/audit/entity/:entityType/:entityId',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/audit/entity/:entityType/:entityId',
       schema: {
         params: EntityParamsSchema,
         querystring: EntityTimelineQuerySchema,
         response: { 200: TimelineResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { entityType, entityId } = request.params;
       const query = request.query;
       const limit = query.limit ?? DEFAULT_PAGE_SIZE;
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // Unknown types answer like unknown records — a probe learns
         // nothing about which entity types carry history.
         if (!(TIMELINE_ENTITY_TYPES as readonly string[]).includes(entityType)) {

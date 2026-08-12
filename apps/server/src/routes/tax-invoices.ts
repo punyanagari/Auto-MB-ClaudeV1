@@ -45,7 +45,6 @@ import {
   renderNumberTemplate,
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import {
   renderTaxInvoiceHtml,
@@ -58,7 +57,6 @@ import {
   parseTaxInvoiceIssuedSnapshot,
   TaxInvoiceSnapshotError,
 } from '../tax-invoice-snapshot.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
 import {
   audit,
@@ -66,6 +64,7 @@ import {
   upstreamErrorResponses as errorResponses,
 } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * The GST tax invoice (migration 0035): CUMULATIVE, one service line at
@@ -703,80 +702,66 @@ export function registerTaxInvoiceRoutes(
   gotenbergUrl: string,
   provider?: StatutoryProvider,
 ): void {
-  app.get(
-    '/api/works/:id/tax-invoices',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/tax-invoices',
       schema: {
         params: IdParamsSchema,
         response: { 200: TaxInvoiceListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<{ id: string }[]>`
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const [work] = await tx<{ id: string }[]>`
             select id from works where id = ${workId} and deleted_at is null
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          return (await tx.unsafe(
-            `select ${TI_COLUMNS} ${TI_FROM}
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        return (await tx.unsafe(
+          `select ${TI_COLUMNS} ${TI_FROM}
              where ti.work_id = $1
              order by ti.created_at desc, ti.id`,
-            [workId],
-          )) as unknown as InvoiceRow[];
-        },
-      );
+          [workId],
+        )) as unknown as InvoiceRow[];
+      });
       return { invoices: rows.map(toInvoice) };
     },
   );
 
-  app.post(
-    '/api/works/:id/tax-invoices',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/tax-invoices',
       schema: {
         params: IdParamsSchema,
         body: CreateTaxInvoiceRequestSchema,
         response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertInvoiceDateNotFuture(tx, body.invoiceDate);
-          // The rate must be one the Government had notified on the
-          // invoice date (gst_rates master, finding 19) — checked here so
-          // a 1.8-instead-of-18 typo is a named 400, and re-checked at
-          // submit because the date can change until then.
-          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
-          await assertWorkAccess(tx, user.id, workId);
-          const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
-          assertInvoiceDate(body.invoiceDate, book);
-          await requireBuyer(tx, body.buyerContactId);
-          await assertBookUninvoiced(tx, book.id);
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+        // The rate must be one the Government had notified on the
+        // invoice date (gst_rates master, finding 19) — checked here so
+        // a 1.8-instead-of-18 typo is a named 400, and re-checked at
+        // submit because the date can change until then.
+        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
+        await assertWorkAccess(tx, user.id, workId);
+        const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
+        assertInvoiceDate(body.invoiceDate, book);
+        await requireBuyer(tx, body.buyerContactId);
+        await assertBookUninvoiced(tx, book.id);
 
-          const [created] = await tx<{ id: string }[]>`
+        const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
               organisation_id, work_id, measurement_book_id, invoice_date,
               sac_code, service_description, gst_rate, place_of_supply,
@@ -795,46 +780,45 @@ export function registerTaxInvoiceRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              // A concurrent create won the one-live-per-MB index race;
-              // the transaction is aborted, so the route-level catch
-              // names the winner from a fresh read.
-              throw httpError(
-                409,
-                'TAX_INVOICE_EXISTS',
-                'This Measurement Book already has a live tax invoice; cancel or delete it before raising another.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('tax invoice insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            // A concurrent create won the one-live-per-MB index race;
+            // the transaction is aborted, so the route-level catch
+            // names the winner from a fresh read.
+            throw httpError(
+              409,
+              'TAX_INVOICE_EXISTS',
+              'This Measurement Book already has a live tax invoice; cancel or delete it before raising another.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('tax invoice insert returned no row');
 
-          // `buyerContactId` in the details is the draft's buyer store —
-          // see the module note. Always written, never diffed away.
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.created',
-            'tax_invoices',
-            created.id,
-            {
-              workId,
-              measurementBookId: body.measurementBookId,
-              mbNumber: book?.mb_number ?? null,
-              buyerContactId: body.buyerContactId,
-              invoiceDate: body.invoiceDate,
-              sacCode: body.sacCode,
-              gstRate: body.gstRate,
-              placeOfSupply: body.placeOfSupply,
-              reverseChargeApplicable: body.reverseChargeApplicable ?? null,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      ).catch(async (error: unknown) => {
+        // `buyerContactId` in the details is the draft's buyer store —
+        // see the module note. Always written, never diffed away.
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.created',
+          'tax_invoices',
+          created.id,
+          {
+            workId,
+            measurementBookId: body.measurementBookId,
+            mbNumber: book?.mb_number ?? null,
+            buyerContactId: body.buyerContactId,
+            invoiceDate: body.invoiceDate,
+            sacCode: body.sacCode,
+            gstRate: body.gstRate,
+            placeOfSupply: body.placeOfSupply,
+            reverseChargeApplicable: body.reverseChargeApplicable ?? null,
+          },
+        );
+        return readDetail(tx, created.id);
+      }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'TAX_INVOICE_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
+          tenant(async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from tax_invoices
               where measurement_book_id = ${body.measurementBookId}
@@ -852,33 +836,26 @@ export function registerTaxInvoiceRoutes(
   // value. Everything downstream — submit, the number, the GST split,
   // the IRP payload, the e-way bill — is the same code path, because the
   // only thing that differs is where the taxable value came from.
-  app.post(
-    '/api/tax-invoices',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices',
       schema: {
         body: CreateDirectTaxInvoiceRequestSchema,
         response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertInvoiceDateNotFuture(tx, body.invoiceDate);
-          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
-          await requireBuyer(tx, body.buyerContactId);
-          const [created] = await tx<{ id: string }[]>`
+      const detail = await tenant(async (tx) => {
+        await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
+        await requireBuyer(tx, body.buyerContactId);
+        const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
               organisation_id, invoice_date, sac_code, service_description,
               gst_rate, place_of_supply, stated_taxable_value,
@@ -897,43 +874,39 @@ export function registerTaxInvoiceRoutes(
             )
             returning id
           `;
-          if (!created) throw new Error('direct tax invoice insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.created',
-            'tax_invoices',
-            created.id,
-            {
-              direct: true,
-              taxableValue: body.taxableValue,
-              reverseChargeApplicable: body.reverseChargeApplicable ?? null,
-              buyerContactId: body.buyerContactId,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      );
+        if (!created) throw new Error('direct tax invoice insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.created',
+          'tax_invoices',
+          created.id,
+          {
+            direct: true,
+            taxableValue: body.taxableValue,
+            reverseChargeApplicable: body.reverseChargeApplicable ?? null,
+            buyerContactId: body.buyerContactId,
+          },
+        );
+        return readDetail(tx, created.id);
+      });
       return reply.code(201).send(detail);
     },
   );
 
-  app.get(
-    '/api/tax-invoices/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/tax-invoices/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from tax_invoices where id = ${id}
         `;
@@ -944,68 +917,60 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/render',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/render',
       schema: {
         params: IdParamsSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
 
       // Read immutable render inputs in one short transaction. Gotenberg and
       // object storage run without a database lock; a second transaction
       // verifies that the append-only IRP evidence did not change meanwhile.
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          requireStatus(invoice, 'submitted');
-          const [source] = await tx<
-            {
-              issued_snapshot: unknown;
-              signed_qr: string | null;
-            }[]
-          >`
+      const prepared = await tenant(async (tx) => {
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        requireStatus(invoice, 'submitted');
+        const [source] = await tx<
+          {
+            issued_snapshot: unknown;
+            signed_qr: string | null;
+          }[]
+        >`
             select issued_snapshot, signed_qr
             from tax_invoices where id = ${id}
           `;
-          const [organisation] = await tx<
-            { logo_object_key: string | null; logo_media_type: string | null }[]
-          >`
+        const [organisation] = await tx<
+          { logo_object_key: string | null; logo_media_type: string | null }[]
+        >`
             select logo_object_key, logo_media_type from organisations
             where id = app_private.current_organisation_id()
           `;
-          if (!source) throw new Error('tax invoice render source disappeared');
-          const snapshot = parseTaxInvoiceIssuedSnapshot(
-            parseJsonbColumn(source.issued_snapshot),
-          );
-          const evidence: TaxInvoiceIrpRenderEvidence = {
-            provider: invoice.irp_provider,
-            irn: invoice.irn,
-            ackNumber: invoice.ack_number,
-            ackDateText: invoice.ack_date_text,
-            signedQr: source.signed_qr,
-            legacyEvidenceMissing: invoice.irp_legacy_evidence_missing,
-          };
-          return {
-            snapshot,
-            evidence,
-            logoObjectKey: organisation?.logo_object_key ?? null,
-            logoMediaType: organisation?.logo_media_type ?? null,
-          };
-        },
-      );
+        if (!source) throw new Error('tax invoice render source disappeared');
+        const snapshot = parseTaxInvoiceIssuedSnapshot(
+          parseJsonbColumn(source.issued_snapshot),
+        );
+        const evidence: TaxInvoiceIrpRenderEvidence = {
+          provider: invoice.irp_provider,
+          irn: invoice.irn,
+          ackNumber: invoice.ack_number,
+          ackDateText: invoice.ack_date_text,
+          signedQr: source.signed_qr,
+          legacyEvidenceMissing: invoice.irp_legacy_evidence_missing,
+        };
+        return {
+          snapshot,
+          evidence,
+          logoObjectKey: organisation?.logo_object_key ?? null,
+          logoMediaType: organisation?.logo_media_type ?? null,
+        };
+      });
 
       let logoDataUri: string | undefined;
       let logoBytes: Buffer | null = null;
@@ -1094,8 +1059,7 @@ export function registerTaxInvoiceRoutes(
         );
       }
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'submitted');
@@ -1177,28 +1141,23 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.get(
-    '/api/tax-invoices/:id/pdf',
-    { schema: { params: IdParamsSchema } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/tax-invoices/:id/pdf',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
-      const rendered = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [invoice] = await tx<
-            {
-              work_id: string | null;
-              rendered_object_key: string | null;
-              rendered_sha256: string | null;
-              object_key_scope_missing: boolean | null;
-            }[]
-          >`
+      const rendered = await tenant(async (tx) => {
+        const [invoice] = await tx<
+          {
+            work_id: string | null;
+            rendered_object_key: string | null;
+            rendered_sha256: string | null;
+            object_key_scope_missing: boolean | null;
+          }[]
+        >`
           select invoice.work_id, invoice.rendered_object_key,
                  invoice.rendered_sha256, latest.object_key_scope_missing
           from tax_invoices invoice
@@ -1211,30 +1170,26 @@ export function registerTaxInvoiceRoutes(
           ) latest on true
           where invoice.id = ${id}
       `;
-          if (!invoice) {
-            throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-          }
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (
-            invoice.rendered_object_key === null ||
-            invoice.rendered_sha256 === null
-          ) {
-            throw httpError(
-              404,
-              'PDF_NOT_AVAILABLE',
-              'This tax invoice has not been rendered yet.',
-            );
-          }
-          if (invoice.object_key_scope_missing !== false) {
-            throw httpError(
-              409,
-              'RENDERED_PDF_SCOPE_UNVERIFIED',
-              'This compatibility render has no verified tenant-scoped object key.',
-            );
-          }
-          return { key: invoice.rendered_object_key, sha256: invoice.rendered_sha256 };
-        },
-      );
+        if (!invoice) {
+          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        }
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.rendered_object_key === null || invoice.rendered_sha256 === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'This tax invoice has not been rendered yet.',
+          );
+        }
+        if (invoice.object_key_scope_missing !== false) {
+          throw httpError(
+            409,
+            'RENDERED_PDF_SCOPE_UNVERIFIED',
+            'This compatibility render has no verified tenant-scoped object key.',
+          );
+        }
+        return { key: invoice.rendered_object_key, sha256: invoice.rendered_sha256 };
+      });
       const bytes = await storage.get(rendered.key);
       const actualSha256 = createHash('sha256').update(bytes).digest('hex');
       if (actualSha256 !== rendered.sha256) {
@@ -1253,26 +1208,23 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.put(
-    '/api/tax-invoices/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/tax-invoices/:id',
       schema: {
         params: IdParamsSchema,
         body: UpdateTaxInvoiceRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       const serviceDescription = trimmedDescription(body.serviceDescription);
       const document = documentFields(body);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
         await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
         const invoice = await lockInvoice(tx, id);
@@ -1359,22 +1311,19 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.delete(
-    '/api/tax-invoices/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/tax-invoices/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         // Rule 8: a draft is not yet a document, so it deletes — which
@@ -1399,77 +1348,70 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/submit',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/submit',
       schema: {
         params: IdParamsSchema,
         response: { 201: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Submitting assigns a legal number and freezes money: issue
-          // authority, like challan issue and MB finalize.
-          await requireAuthority(tx, user.id, 'issue');
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          requireStatus(invoice, 'draft');
-          await assertInvoiceDateNotFuture(tx, invoice.invoice_date);
-          // Re-checked at the money moment: the rate and the date were
-          // both checked when the draft was written, but either may have
-          // been edited since, and the rate master itself may have been
-          // end-dated between drafting and submit. Nothing is computed
-          // from a rate the Government had not notified on this date.
-          await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
+      const detail = await tenant(async (tx) => {
+        // Submitting assigns a legal number and freezes money: issue
+        // authority, like challan issue and MB finalize.
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        requireStatus(invoice, 'draft');
+        await assertInvoiceDateNotFuture(tx, invoice.invoice_date);
+        // Re-checked at the money moment: the rate and the date were
+        // both checked when the draft was written, but either may have
+        // been edited since, and the rate master itself may have been
+        // end-dated between drafting and submit. Nothing is computed
+        // from a rate the Government had not notified on this date.
+        await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
 
-          if (invoice.reverse_charge_applicable === null) {
-            throw httpError(
-              400,
-              'REVERSE_CHARGE_CONFIRMATION_REQUIRED',
-              'Confirm whether tax is payable under reverse charge before submitting this invoice.',
-            );
-          }
-          if (invoice.reverse_charge_applicable) {
-            throw httpError(
-              409,
-              'REVERSE_CHARGE_UNSUPPORTED',
-              'Reverse-charge tax invoices are not implemented. Keep this invoice as a draft and issue it outside Auto-MB.',
-            );
-          }
+        if (invoice.reverse_charge_applicable === null) {
+          throw httpError(
+            400,
+            'REVERSE_CHARGE_CONFIRMATION_REQUIRED',
+            'Confirm whether tax is payable under reverse charge before submitting this invoice.',
+          );
+        }
+        if (invoice.reverse_charge_applicable) {
+          throw httpError(
+            409,
+            'REVERSE_CHARGE_UNSUPPORTED',
+            'Reverse-charge tax invoices are not implemented. Keep this invoice as a draft and issue it outside Auto-MB.',
+          );
+        }
 
-          // The split is decided by the organisation's state against the
-          // place of supply; without a state it is undecidable, and the
-          // IRP payload cannot name a seller without a GSTIN. Refused
-          // here, not at draft time — the profile may well be completed
-          // between drafting and the money moment.
-          const [organisation] = await tx<
-            {
-              name: string;
-              state_code: string | null;
-              gstin: string | null;
-              address: string | null;
-              pincode: string | null;
-              locality: string | null;
-              trade_name: string | null;
-              msme_number: string | null;
-              contact_phone: string | null;
-              invoice_number_prefix: string | null;
-              invoice_notes: string | null;
-              einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
-              einvoice_applicable_from: string | null;
-              irp_reporting_window_days: number | null;
-            }[]
-          >`
+        // The split is decided by the organisation's state against the
+        // place of supply; without a state it is undecidable, and the
+        // IRP payload cannot name a seller without a GSTIN. Refused
+        // here, not at draft time — the profile may well be completed
+        // between drafting and the money moment.
+        const [organisation] = await tx<
+          {
+            name: string;
+            state_code: string | null;
+            gstin: string | null;
+            address: string | null;
+            pincode: string | null;
+            locality: string | null;
+            trade_name: string | null;
+            msme_number: string | null;
+            contact_phone: string | null;
+            invoice_number_prefix: string | null;
+            invoice_notes: string | null;
+            einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
+            einvoice_applicable_from: string | null;
+            irp_reporting_window_days: number | null;
+          }[]
+        >`
             select name, state_code, gstin, address, pincode, locality, trade_name,
                    msme_number, contact_phone, invoice_number_prefix,
                    invoice_notes, einvoice_applicability,
@@ -1478,147 +1420,147 @@ export function registerTaxInvoiceRoutes(
             from organisations
             where id = app_private.current_organisation_id()
           `;
-          if (!organisation?.state_code) {
-            throw httpError(
-              400,
-              'ORG_STATE_REQUIRED',
-              'The organisation profile has no GST state code, so the CGST+SGST/IGST split is undecidable — set it and retry.',
-            );
-          }
-          if (!organisation.gstin) {
-            throw httpError(
-              400,
-              'ORG_GSTIN_REQUIRED',
-              'The organisation profile has no GSTIN — the e-invoice names the seller by it. Set it and retry.',
-            );
-          }
+        if (!organisation?.state_code) {
+          throw httpError(
+            400,
+            'ORG_STATE_REQUIRED',
+            'The organisation profile has no GST state code, so the CGST+SGST/IGST split is undecidable — set it and retry.',
+          );
+        }
+        if (!organisation.gstin) {
+          throw httpError(
+            400,
+            'ORG_GSTIN_REQUIRED',
+            'The organisation profile has no GSTIN — the e-invoice names the seller by it. Set it and retry.',
+          );
+        }
 
-          if (!organisation.address) {
-            throw httpError(
-              400,
-              'ORG_ADDRESS_REQUIRED',
-              'The organisation profile has no address; the immutable invoice and IRP payload need it. Set it and retry.',
-            );
-          }
-          if (!organisation.pincode) {
-            throw httpError(
-              400,
-              'ORG_PINCODE_REQUIRED',
-              'The organisation profile has no PIN code; the immutable invoice and IRP payload need it. Set it and retry.',
-            );
-          }
-          if (!organisation.locality) {
-            throw httpError(
-              400,
-              'ORG_LOCALITY_REQUIRED',
-              'The organisation profile has no explicit locality for the NIC seller block. Set it before issuing this IRP-ready invoice.',
-            );
-          }
+        if (!organisation.address) {
+          throw httpError(
+            400,
+            'ORG_ADDRESS_REQUIRED',
+            'The organisation profile has no address; the immutable invoice and IRP payload need it. Set it and retry.',
+          );
+        }
+        if (!organisation.pincode) {
+          throw httpError(
+            400,
+            'ORG_PINCODE_REQUIRED',
+            'The organisation profile has no PIN code; the immutable invoice and IRP payload need it. Set it and retry.',
+          );
+        }
+        if (!organisation.locality) {
+          throw httpError(
+            400,
+            'ORG_LOCALITY_REQUIRED',
+            'The organisation profile has no explicit locality for the NIC seller block. Set it before issuing this IRP-ready invoice.',
+          );
+        }
 
-          // The draft's buyer is ordinary relational state since 0041;
-          // the audit trail is evidence, never the operational store.
-          const buyer = await requireBuyer(tx, invoice.buyer_contact_id);
-          const missing = [
-            ...(buyer.address === null ? ['address'] : []),
-            ...(buyer.state_code === null ? ['stateCode'] : []),
-            ...(buyer.pincode === null ? ['pincode'] : []),
-            ...(buyer.gstin !== null && buyer.locality === null ? ['locality'] : []),
-          ];
-          if (missing.length > 0) {
-            throw httpError(
-              400,
-              'BUYER_PROFILE_INCOMPLETE',
-              `The buyer contact is missing ${missing.join(', ')} — the invoice snapshot and the e-invoice payload need them. Complete the contact and retry.`,
-            );
-          }
+        // The draft's buyer is ordinary relational state since 0041;
+        // the audit trail is evidence, never the operational store.
+        const buyer = await requireBuyer(tx, invoice.buyer_contact_id);
+        const missing = [
+          ...(buyer.address === null ? ['address'] : []),
+          ...(buyer.state_code === null ? ['stateCode'] : []),
+          ...(buyer.pincode === null ? ['pincode'] : []),
+          ...(buyer.gstin !== null && buyer.locality === null ? ['locality'] : []),
+        ];
+        if (missing.length > 0) {
+          throw httpError(
+            400,
+            'BUYER_PROFILE_INCOMPLETE',
+            `The buyer contact is missing ${missing.join(', ')} — the invoice snapshot and the e-invoice payload need them. Complete the contact and retry.`,
+          );
+        }
 
-          // A DIRECT invoice — one raised against a private customer —
-          // names no Measurement Book, so there is nothing to lock and
-          // the taxable value is the one stated on the draft. An
-          // MB-backed invoice locks its book (serialising against a
-          // cancel the trigger would refuse anyway) and takes the MB
-          // total VERBATIM. The 0039 CHECK guarantees exactly one of the
-          // two is present, so this is a real either/or, not a fallback.
-          const book =
-            invoice.measurement_book_id === null || invoice.work_id === null
-              ? null
-              : await lockInvoiceableBook(
-                  tx,
-                  invoice.work_id,
-                  invoice.measurement_book_id,
-                );
-          if (book !== null && book.total_amount === null) {
-            throw new Error(`finalized Measurement Book ${book.id} has no total`);
-          }
-          const taxableValue = book?.total_amount ?? invoice.stated_taxable_value;
-          if (taxableValue === null) {
-            throw new Error(
-              `tax invoice ${id} has neither an MB total nor a stated value`,
-            );
-          }
+        // A DIRECT invoice — one raised against a private customer —
+        // names no Measurement Book, so there is nothing to lock and
+        // the taxable value is the one stated on the draft. An
+        // MB-backed invoice locks its book (serialising against a
+        // cancel the trigger would refuse anyway) and takes the MB
+        // total VERBATIM. The 0039 CHECK guarantees exactly one of the
+        // two is present, so this is a real either/or, not a fallback.
+        const book =
+          invoice.measurement_book_id === null || invoice.work_id === null
+            ? null
+            : await lockInvoiceableBook(
+                tx,
+                invoice.work_id,
+                invoice.measurement_book_id,
+              );
+        if (book !== null && book.total_amount === null) {
+          throw new Error(`finalized Measurement Book ${book.id} has no total`);
+        }
+        const taxableValue = book?.total_amount ?? invoice.stated_taxable_value;
+        if (taxableValue === null) {
+          throw new Error(
+            `tax invoice ${id} has neither an MB total nor a stated value`,
+          );
+        }
 
-          // Gapless per (organisation, financial year) under the counter
-          // row lock: concurrent submits serialise here, and a rolled-
-          // back transaction rolls the number back with it.
-          const fyLabel = financialYearLabel(invoice.invoice_date);
-          // The number is COMPOSED, not templated: the owner's series is
-          // a prefix, the financial year's opening year, and one gapless
-          // serial per year SHARED across every prefix — P10 26 044 and
-          // P14 26 048 are the 44th and 48th invoices of 2026-27 under
-          // two prefixes. The invoice's own prefix wins over the house
-          // default; neither present is a refusal rather than a guess,
-          // because inventing a series would put a number on a legal
-          // document that the owner's books do not recognise.
-          const prefix = invoice.number_prefix ?? organisation.invoice_number_prefix;
-          const template = await loadNumberTemplate(tx, 'tax_invoice');
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Gapless per (organisation, financial year) under the counter
+        // row lock: concurrent submits serialise here, and a rolled-
+        // back transaction rolls the number back with it.
+        const fyLabel = financialYearLabel(invoice.invoice_date);
+        // The number is COMPOSED, not templated: the owner's series is
+        // a prefix, the financial year's opening year, and one gapless
+        // serial per year SHARED across every prefix — P10 26 044 and
+        // P14 26 048 are the 44th and 48th invoices of 2026-27 under
+        // two prefixes. The invoice's own prefix wins over the house
+        // default; neither present is a refusal rather than a guess,
+        // because inventing a series would put a number on a legal
+        // document that the owner's books do not recognise.
+        const prefix = invoice.number_prefix ?? organisation.invoice_number_prefix;
+        const template = await loadNumberTemplate(tx, 'tax_invoice');
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into tax_invoice_counters (organisation_id, fy_label)
             values (${organisationId}, ${fyLabel})
             on conflict (organisation_id, fy_label)
             do update set next_value = tax_invoice_counters.next_value + 1
             returning next_value
           `;
-          if (!counter) throw new Error('tax invoice counter upsert returned no row');
-          const sequence = counter.next_value;
-          // The organisation's own format. The default is TI/<FY>/NNN;
-          // an organisation whose series names a division ({DIV}) draws
-          // it from the BUYER, which is why a buyer with no division
-          // code is a named refusal rather than a number with a hole.
-          let invoiceNumber: string;
-          try {
-            invoiceNumber = renderNumberTemplate(template, {
-              prefix,
-              divisionCode: buyer.division_code,
-              financialYear: fyLabel,
-              documentDate: invoice.invoice_date,
-              sequence,
-            });
-          } catch (cause) {
-            if (cause instanceof NumberTemplateError) {
-              throw httpError(400, 'INVOICE_NUMBER_UNFILLABLE', cause.message);
-            }
-            throw cause;
+        if (!counter) throw new Error('tax invoice counter upsert returned no row');
+        const sequence = counter.next_value;
+        // The organisation's own format. The default is TI/<FY>/NNN;
+        // an organisation whose series names a division ({DIV}) draws
+        // it from the BUYER, which is why a buyer with no division
+        // code is a named refusal rather than a number with a hole.
+        let invoiceNumber: string;
+        try {
+          invoiceNumber = renderNumberTemplate(template, {
+            prefix,
+            divisionCode: buyer.division_code,
+            financialYear: fyLabel,
+            documentDate: invoice.invoice_date,
+            sequence,
+          });
+        } catch (cause) {
+          if (cause instanceof NumberTemplateError) {
+            throw httpError(400, 'INVOICE_NUMBER_UNFILLABLE', cause.message);
           }
+          throw cause;
+        }
 
-          // THE MONEY, entirely in SQL numeric arithmetic: taxable is the
-          // MB total verbatim; intra-state (organisation state = place of
-          // supply) splits into equal CGST and SGST halves of
-          // round(taxable*rate/200, 2); inter-state carries
-          // round(taxable*rate/100, 2) as IGST. The total re-adds the
-          // rounded parts, so what is charged is exactly what the parts
-          // say.
-          const intraState = organisation.state_code === invoice.place_of_supply;
-          const [money] = await tx<
-            {
-              taxable: string;
-              cgst: string;
-              sgst: string;
-              igst: string;
-              total: string;
-              round_off: string;
-              line_value: string;
-            }[]
-          >`
+        // THE MONEY, entirely in SQL numeric arithmetic: taxable is the
+        // MB total verbatim; intra-state (organisation state = place of
+        // supply) splits into equal CGST and SGST halves of
+        // round(taxable*rate/200, 2); inter-state carries
+        // round(taxable*rate/100, 2) as IGST. The total re-adds the
+        // rounded parts, so what is charged is exactly what the parts
+        // say.
+        const intraState = organisation.state_code === invoice.place_of_supply;
+        const [money] = await tx<
+          {
+            taxable: string;
+            cgst: string;
+            sgst: string;
+            igst: string;
+            total: string;
+            round_off: string;
+            line_value: string;
+          }[]
+        >`
             with base as (
               select ${taxableValue}::numeric(18,2) as taxable,
                      case when ${intraState}
@@ -1648,128 +1590,128 @@ export function registerTaxInvoiceRoutes(
                      as line_value
             from base
           `;
-          if (!money) throw new Error('tax computation returned no row');
+        if (!money) throw new Error('tax computation returned no row');
 
-          // The buyer exactly as invoiced, frozen so master edits never
-          // rewrite the document (rule 7). contactId makes the read
-          // model's provenance resolution total.
-          const buyerSnapshot = {
-            contactId: buyer.id,
-            designation: buyer.designation,
-            contactPerson: buyer.contact_person,
-            gstin: buyer.gstin,
-            address: buyer.address,
-            stateCode: buyer.state_code,
-            pincode: buyer.pincode,
-            locality: buyer.locality,
-          };
+        // The buyer exactly as invoiced, frozen so master edits never
+        // rewrite the document (rule 7). contactId makes the read
+        // model's provenance resolution total.
+        const buyerSnapshot = {
+          contactId: buyer.id,
+          designation: buyer.designation,
+          contactPerson: buyer.contact_person,
+          gstin: buyer.gstin,
+          address: buyer.address,
+          stateCode: buyer.state_code,
+          pincode: buyer.pincode,
+          locality: buyer.locality,
+        };
 
-          // The ship-to, when one was named. Same freeze as the buyer,
-          // and deliberately NOT a copy of it. NIC requires the frozen
-          // ship-to GSTIN and explicit locality when this block is present.
-          const shipTo =
-            invoice.ship_to_contact_id === null
-              ? null
-              : await requireShipTo(tx, invoice.ship_to_contact_id);
-          if (shipTo !== null) {
-            const missingShipTo = [
-              ...(shipTo.address === null ? ['address'] : []),
-              ...(shipTo.state_code === null ? ['stateCode'] : []),
-              ...(shipTo.pincode === null ? ['pincode'] : []),
-              ...(shipTo.gstin === null ? ['gstin'] : []),
-              ...(shipTo.locality === null ? ['locality'] : []),
-            ];
-            if (missingShipTo.length > 0) {
-              throw httpError(
-                400,
-                'SHIP_TO_PROFILE_INCOMPLETE',
-                `The ship-to contact is missing ${missingShipTo.join(', ')} — complete it before the invoice is frozen.`,
-              );
-            }
+        // The ship-to, when one was named. Same freeze as the buyer,
+        // and deliberately NOT a copy of it. NIC requires the frozen
+        // ship-to GSTIN and explicit locality when this block is present.
+        const shipTo =
+          invoice.ship_to_contact_id === null
+            ? null
+            : await requireShipTo(tx, invoice.ship_to_contact_id);
+        if (shipTo !== null) {
+          const missingShipTo = [
+            ...(shipTo.address === null ? ['address'] : []),
+            ...(shipTo.state_code === null ? ['stateCode'] : []),
+            ...(shipTo.pincode === null ? ['pincode'] : []),
+            ...(shipTo.gstin === null ? ['gstin'] : []),
+            ...(shipTo.locality === null ? ['locality'] : []),
+          ];
+          if (missingShipTo.length > 0) {
+            throw httpError(
+              400,
+              'SHIP_TO_PROFILE_INCOMPLETE',
+              `The ship-to contact is missing ${missingShipTo.join(', ')} — complete it before the invoice is frozen.`,
+            );
           }
-          const shipToSnapshot =
-            shipTo === null
-              ? null
-              : {
-                  contactId: shipTo.id,
-                  designation: shipTo.designation,
-                  contactPerson: shipTo.contact_person,
-                  gstin: shipTo.gstin,
-                  address: shipTo.address,
-                  stateCode: shipTo.state_code,
-                  pincode: shipTo.pincode,
-                  locality: shipTo.locality,
-                };
+        }
+        const shipToSnapshot =
+          shipTo === null
+            ? null
+            : {
+                contactId: shipTo.id,
+                designation: shipTo.designation,
+                contactPerson: shipTo.contact_person,
+                gstin: shipTo.gstin,
+                address: shipTo.address,
+                stateCode: shipTo.state_code,
+                pincode: shipTo.pincode,
+                locality: shipTo.locality,
+              };
 
-          // THE DOCUMENT, frozen. Everything the printed invoice says
-          // about parties and money, captured at the one moment it
-          // becomes legal — so correcting the company address in
-          // Settings tomorrow cannot rewrite the masthead of an invoice
-          // the Government has already registered. A re-render
-          // REPRODUCES this; it never recomputes from live tables.
-          const issuedSnapshot = {
-            templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
-            invoiceNumber,
-            invoiceDate: invoice.invoice_date,
-            fyLabel,
-            supplier: {
-              name: organisation.name,
-              tradeName: organisation.trade_name,
-              address: organisation.address,
-              pincode: organisation.pincode,
-              locality: organisation.locality,
-              stateCode: organisation.state_code,
-              gstin: organisation.gstin,
-              phone: organisation.contact_phone,
-              msmeNumber: organisation.msme_number,
-            },
-            buyer: buyerSnapshot,
-            shipTo: shipToSnapshot,
-            placeOfSupply: invoice.place_of_supply,
-            reverseChargeApplicable: invoice.reverse_charge_applicable,
-            customerPoReference: invoice.customer_po_reference,
-            line: {
-              sacCode: invoice.sac_code,
-              description: invoice.service_description,
-              quantity: '1.00',
-              unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
-              rate: money.taxable,
-              gstRate: invoice.gst_rate,
-              amount: money.taxable,
-              lineValue: money.line_value,
-            },
-            totals: {
-              taxableValue: money.taxable,
-              cgstAmount: money.cgst,
-              sgstAmount: money.sgst,
-              igstAmount: money.igst,
-              roundOff: money.round_off,
-              totalAmount: money.total,
-            },
-            // The organisation's standing line unless this invoice set
-            // its own; one sample carries it and the other does not.
-            notes: invoice.notes ?? organisation.invoice_notes,
-            amountInWords: amountInWords(money.total),
-          };
+        // THE DOCUMENT, frozen. Everything the printed invoice says
+        // about parties and money, captured at the one moment it
+        // becomes legal — so correcting the company address in
+        // Settings tomorrow cannot rewrite the masthead of an invoice
+        // the Government has already registered. A re-render
+        // REPRODUCES this; it never recomputes from live tables.
+        const issuedSnapshot = {
+          templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
+          invoiceNumber,
+          invoiceDate: invoice.invoice_date,
+          fyLabel,
+          supplier: {
+            name: organisation.name,
+            tradeName: organisation.trade_name,
+            address: organisation.address,
+            pincode: organisation.pincode,
+            locality: organisation.locality,
+            stateCode: organisation.state_code,
+            gstin: organisation.gstin,
+            phone: organisation.contact_phone,
+            msmeNumber: organisation.msme_number,
+          },
+          buyer: buyerSnapshot,
+          shipTo: shipToSnapshot,
+          placeOfSupply: invoice.place_of_supply,
+          reverseChargeApplicable: invoice.reverse_charge_applicable,
+          customerPoReference: invoice.customer_po_reference,
+          line: {
+            sacCode: invoice.sac_code,
+            description: invoice.service_description,
+            quantity: '1.00',
+            unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
+            rate: money.taxable,
+            gstRate: invoice.gst_rate,
+            amount: money.taxable,
+            lineValue: money.line_value,
+          },
+          totals: {
+            taxableValue: money.taxable,
+            cgstAmount: money.cgst,
+            sgstAmount: money.sgst,
+            igstAmount: money.igst,
+            roundOff: money.round_off,
+            totalAmount: money.total,
+          },
+          // The organisation's standing line unless this invoice set
+          // its own; one sample carries it and the other does not.
+          notes: invoice.notes ?? organisation.invoice_notes,
+          amountInWords: amountInWords(money.total),
+        };
 
-          // THE REPORTING WINDOW, frozen with the rest (migration 0049):
-          // the organisation's e-invoicing declaration as it stands at
-          // this money moment decides whether this invoice ever had an
-          // IRP reporting deadline, and the consequence is stamped on
-          // the row so a later declaration edit cannot rewrite which
-          // invoices were lawfully reportable. Date-only arithmetic in
-          // SQL (rule 6): invoice date + window days. An invoice dated
-          // before the applicable-from date carries NULL — the mandate
-          // did not cover it — as does any invoice submitted while no
-          // window is declared. Submit itself is NEVER refused by this:
-          // the local document is valid regardless of IRP reporting.
-          const reportingWindowApplies =
-            organisation.einvoice_applicability === 'applicable' &&
-            organisation.einvoice_applicable_from !== null &&
-            invoice.invoice_date >= organisation.einvoice_applicable_from &&
-            organisation.irp_reporting_window_days !== null;
+        // THE REPORTING WINDOW, frozen with the rest (migration 0049):
+        // the organisation's e-invoicing declaration as it stands at
+        // this money moment decides whether this invoice ever had an
+        // IRP reporting deadline, and the consequence is stamped on
+        // the row so a later declaration edit cannot rewrite which
+        // invoices were lawfully reportable. Date-only arithmetic in
+        // SQL (rule 6): invoice date + window days. An invoice dated
+        // before the applicable-from date carries NULL — the mandate
+        // did not cover it — as does any invoice submitted while no
+        // window is declared. Submit itself is NEVER refused by this:
+        // the local document is valid regardless of IRP reporting.
+        const reportingWindowApplies =
+          organisation.einvoice_applicability === 'applicable' &&
+          organisation.einvoice_applicable_from !== null &&
+          invoice.invoice_date >= organisation.einvoice_applicable_from &&
+          organisation.irp_reporting_window_days !== null;
 
-          const [stamped] = await tx<{ irp_reporting_deadline: string | null }[]>`
+        const [stamped] = await tx<{ irp_reporting_deadline: string | null }[]>`
             update tax_invoices
             set status = 'submitted', invoice_number = ${invoiceNumber},
                 number_prefix = ${prefix},
@@ -1788,67 +1730,63 @@ export function registerTaxInvoiceRoutes(
             where id = ${id}
             returning irp_reporting_deadline::text as irp_reporting_deadline
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'TAX_INVOICE_NUMBER_CONFLICT',
-                `Tax invoice number ${invoiceNumber} already exists in this organisation.`,
-              );
-            }
-            throw error;
-          });
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'TAX_INVOICE_NUMBER_CONFLICT',
+              `Tax invoice number ${invoiceNumber} already exists in this organisation.`,
+            );
+          }
+          throw error;
+        });
 
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.submitted',
-            'tax_invoices',
-            id,
-            {
-              invoiceNumber,
-              fyLabel,
-              sequence,
-              measurementBookId: invoice.measurement_book_id,
-              mbNumber: book?.mb_number ?? null,
-              buyerContactId: buyer.id,
-              taxableValue: money.taxable,
-              cgstAmount: money.cgst,
-              sgstAmount: money.sgst,
-              igstAmount: money.igst,
-              totalAmount: money.total,
-              placeOfSupply: invoice.place_of_supply,
-              reverseChargeApplicable: invoice.reverse_charge_applicable,
-              intraState,
-              irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
-            },
-          );
-          return readDetail(tx, id);
-        },
-      );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.submitted',
+          'tax_invoices',
+          id,
+          {
+            invoiceNumber,
+            fyLabel,
+            sequence,
+            measurementBookId: invoice.measurement_book_id,
+            mbNumber: book?.mb_number ?? null,
+            buyerContactId: buyer.id,
+            taxableValue: money.taxable,
+            cgstAmount: money.cgst,
+            sgstAmount: money.sgst,
+            igstAmount: money.igst,
+            totalAmount: money.total,
+            placeOfSupply: invoice.place_of_supply,
+            reverseChargeApplicable: invoice.reverse_charge_applicable,
+            intraState,
+            irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelTaxInvoiceRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         if (invoice.status === 'draft') {
@@ -1913,67 +1851,60 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/recover-provider-operation',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/recover-provider-operation',
       schema: {
         params: IdParamsSchema,
         response: { 202: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (invoice.irp_provider_state === 'registering') {
-            await requireAuthority(tx, user.id, 'issue');
-          } else if (invoice.irp_provider_state === 'cancelling') {
-            await requireAuthority(tx, user.id, 'cancel');
-          } else {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              'Only an in-progress IRP provider operation can be checked for stale recovery.',
-            );
-          }
-          const recovered = await recoverStaleStatutoryOperation(tx, {
-            taxInvoiceId: id,
-          });
-          if (recovered.length === 0) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'The provider operation is still within its two-minute lease.',
-            );
-          }
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.provider_operation_recovered',
-            'tax_invoices',
-            id,
-            { operations: recovered },
+      const detail = await tenant(async (tx) => {
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.irp_provider_state === 'registering') {
+          await requireAuthority(tx, user.id, 'issue');
+        } else if (invoice.irp_provider_state === 'cancelling') {
+          await requireAuthority(tx, user.id, 'cancel');
+        } else {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            'Only an in-progress IRP provider operation can be checked for stale recovery.',
           );
-          return readDetail(tx, id);
-        },
-      );
+        }
+        const recovered = await recoverStaleStatutoryOperation(tx, {
+          taxInvoiceId: id,
+        });
+        if (recovered.length === 0) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'The provider operation is still within its two-minute lease.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.provider_operation_recovered',
+          'tax_invoices',
+          id,
+          { operations: recovered },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(202).send(detail);
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/register-irp',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/register-irp',
       schema: {
         params: IdParamsSchema,
         response: {
@@ -1982,123 +1913,113 @@ export function registerTaxInvoiceRoutes(
           ...errorResponses,
         },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
 
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          await recoverStaleStatutoryOperation(tx, { taxInvoiceId: id });
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured. Use the explicitly unverified manual compatibility flow or configure deployment secrets.',
-            );
-          }
-          requireStatus(invoice, 'submitted');
-          if (invoice.irp_provider_state === 'registered' || invoice.irn !== null) {
-            throw httpError(
-              409,
-              'IRP_ALREADY_RECORDED',
-              `This invoice already carries IRN ${invoice.irn ?? '(registered)'}; registration is not repeated.`,
-            );
-          }
-          if (
-            invoice.irp_provider_state === 'registering' ||
-            invoice.irp_provider_state === 'cancelling'
-          ) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'A statutory-provider operation is already in progress for this invoice.',
-            );
-          }
-          if (
-            invoice.irp_provider_state === 'cancelled' ||
-            invoice.irp_provider_state === 'cancellation_unknown'
-          ) {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              `IRP registration cannot start from ${invoice.irp_provider_state}.`,
-            );
-          }
-          const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
+      const prepared = await tenant(async (tx) => {
+        await recoverStaleStatutoryOperation(tx, { taxInvoiceId: id });
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured. Use the explicitly unverified manual compatibility flow or configure deployment secrets.',
+          );
+        }
+        requireStatus(invoice, 'submitted');
+        if (invoice.irp_provider_state === 'registered' || invoice.irn !== null) {
+          throw httpError(
+            409,
+            'IRP_ALREADY_RECORDED',
+            `This invoice already carries IRN ${invoice.irn ?? '(registered)'}; registration is not repeated.`,
+          );
+        }
+        if (
+          invoice.irp_provider_state === 'registering' ||
+          invoice.irp_provider_state === 'cancelling'
+        ) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'A statutory-provider operation is already in progress for this invoice.',
+          );
+        }
+        if (
+          invoice.irp_provider_state === 'cancelled' ||
+          invoice.irp_provider_state === 'cancellation_unknown'
+        ) {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            `IRP registration cannot start from ${invoice.irp_provider_state}.`,
+          );
+        }
+        const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from tax_invoices where id = ${id}
           `;
-          if (!snapshotRow)
-            throw new Error(`tax invoice ${id} disappeared while locked`);
-          let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
-          let payloadJson: string;
-          try {
-            const issued = parseJsonbColumn(snapshotRow.issued_snapshot);
-            snapshot = parseTaxInvoiceIssuedSnapshot(issued);
-            payloadJson = stringifyStatutoryJson(buildFrozenIrpPayload(issued));
-          } catch (error) {
-            if (error instanceof EInvoiceB2cUnsupportedError) {
-              throw httpError(409, error.code, error.message);
-            }
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                'The frozen issued invoice is incomplete for IRP submission; live master data was not substituted.',
-              );
-            }
-            throw error;
+        if (!snapshotRow) throw new Error(`tax invoice ${id} disappeared while locked`);
+        let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
+        let payloadJson: string;
+        try {
+          const issued = parseJsonbColumn(snapshotRow.issued_snapshot);
+          snapshot = parseTaxInvoiceIssuedSnapshot(issued);
+          payloadJson = stringifyStatutoryJson(buildFrozenIrpPayload(issued));
+        } catch (error) {
+          if (error instanceof EInvoiceB2cUnsupportedError) {
+            throw httpError(409, error.code, error.message);
           }
-          if (snapshot.buyer.gstin === null) {
+          if (error instanceof TaxInvoiceSnapshotError) {
             throw httpError(
               409,
-              'E_INVOICE_B2C_UNSUPPORTED',
-              'This adapter registers only B2B invoices with a frozen buyer GSTIN.',
+              error.code,
+              'The frozen issued invoice is incomplete for IRP submission; live master data was not substituted.',
             );
           }
-          const identity: IrpDocumentIdentity = {
-            gstin: snapshot.supplier.gstin,
-            documentNumber: snapshot.invoiceNumber,
-            documentDate: snapshot.invoiceDate,
-          };
-          const reconcileOnly = invoice.irp_provider_state === 'registration_unknown';
-          // The applicability and window gates (finding 20), before any
-          // provider operation is opened: undeclared and not-applicable
-          // organisations never reach the transport at all, and a fresh
-          // registration past the frozen deadline is refused — but a
-          // reconcile-by-lookup of an unknown earlier attempt still
-          // runs, because learning what already happened is not a new
-          // report.
-          const today = await requireEinvoiceDeclared(tx);
-          if (!reconcileOnly) assertReportingWindowOpen(invoice, today);
-          const requestSha256 = sha256Hex(
-            reconcileOnly ? stringifyStatutoryJson(identity) : payloadJson,
+          throw error;
+        }
+        if (snapshot.buyer.gstin === null) {
+          throw httpError(
+            409,
+            'E_INVOICE_B2C_UNSUPPORTED',
+            'This adapter registers only B2B invoices with a frozen buyer GSTIN.',
           );
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: reconcileOnly ? 'reconcile_irp' : 'register_irp',
-            requestSha256,
-            taxInvoiceId: id,
-          });
-          await tx`
+        }
+        const identity: IrpDocumentIdentity = {
+          gstin: snapshot.supplier.gstin,
+          documentNumber: snapshot.invoiceNumber,
+          documentDate: snapshot.invoiceDate,
+        };
+        const reconcileOnly = invoice.irp_provider_state === 'registration_unknown';
+        // The applicability and window gates (finding 20), before any
+        // provider operation is opened: undeclared and not-applicable
+        // organisations never reach the transport at all, and a fresh
+        // registration past the frozen deadline is refused — but a
+        // reconcile-by-lookup of an unknown earlier attempt still
+        // runs, because learning what already happened is not a new
+        // report.
+        const today = await requireEinvoiceDeclared(tx);
+        if (!reconcileOnly) assertReportingWindowOpen(invoice, today);
+        const requestSha256 = sha256Hex(
+          reconcileOnly ? stringifyStatutoryJson(identity) : payloadJson,
+        );
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: reconcileOnly ? 'reconcile_irp' : 'register_irp',
+          requestSha256,
+          taxInvoiceId: id,
+        });
+        await tx`
             update tax_invoices
             set irp_provider = 'whitebooks', irp_provider_state = 'registering'
             where id = ${id}
           `;
-          return { operationId, identity, payloadJson, reconcileOnly, provider };
-        },
-      );
+        return { operationId, identity, payloadJson, reconcileOnly, provider };
+      });
 
       let evidence: IrpRegistrationEvidence | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
@@ -2145,19 +2066,14 @@ export function registerTaxInvoiceRoutes(
         }
       }
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (invoice.irp_provider_state !== 'registering') {
-            throw new Error(`tax invoice ${id} left the registering state`);
-          }
-          if (evidence !== null) {
-            await tx`
+      const detail = await tenant(async (tx) => {
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.irp_provider_state !== 'registering') {
+          throw new Error(`tax invoice ${id} left the registering state`);
+        }
+        if (evidence !== null) {
+          await tx`
               update tax_invoices
               set irn = ${evidence.irn}, ack_number = ${evidence.ackNumber},
                   ack_date = ${evidence.ackDate},
@@ -2167,32 +2083,32 @@ export function registerTaxInvoiceRoutes(
                   irp_provider = 'whitebooks', irp_provider_state = 'registered'
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-            });
-            await audit(
-              tx,
-              organisationId,
-              user.id,
-              'tax_invoice.irp_registered',
-              'tax_invoices',
-              id,
-              {
-                invoiceNumber: invoice.invoice_number,
-                irn: evidence.irn,
-                ackNumber: evidence.ackNumber,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-              publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'tax_invoice.irp_registered',
+            'tax_invoices',
+            id,
+            {
+              invoiceNumber: invoice.invoice_number,
+              irn: evidence.irn,
+              ackNumber: evidence.ackNumber,
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+            publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+          };
+          await tx`
               update tax_invoices
               set irp_provider = 'whitebooks',
                   irp_provider_state = ${
@@ -2202,30 +2118,29 @@ export function registerTaxInvoiceRoutes(
                   }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'tax_invoice.irp_registration_unresolved',
+            'tax_invoices',
+            id,
+            {
+              invoiceNumber: invoice.invoice_number,
+              outcome: result.status,
               providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-            });
-            await audit(
-              tx,
-              organisationId,
-              user.id,
-              'tax_invoice.irp_registration_unresolved',
-              'tax_invoices',
-              id,
-              {
-                invoiceNumber: invoice.invoice_number,
-                outcome: result.status,
-                providerCode: result.providerCode,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          }
-          return readDetail(tx, id);
-        },
-      );
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        }
+        return readDetail(tx, id);
+      });
 
       if (evidence !== null) return reply.status(200).send(detail);
       const result = failure ?? {
@@ -2243,9 +2158,10 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/cancel-irp',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/cancel-irp',
       schema: {
         params: IdParamsSchema,
         body: CancelStatutoryDocumentRequestSchema,
@@ -2255,105 +2171,96 @@ export function registerTaxInvoiceRoutes(
           ...errorResponses,
         },
       },
+      authority: 'cancel',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       const remark = body.remark.trim();
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
-            taxInvoiceId: id,
-          });
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          requireStatus(invoice, 'submitted');
-          if (
-            invoice.irp_provider_state === 'cancellation_unknown' &&
-            recoveredOperations.includes('cancel_irp')
-          ) {
-            return {
-              recovered: true as const,
-              detail: await readDetail(tx, id),
-            };
-          }
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured.',
-            );
-          }
-          if (
-            invoice.irn === null ||
-            invoice.irp_provider !== 'whitebooks' ||
-            invoice.irp_provider_state !== 'registered'
-          ) {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              invoice.irp_provider_state === 'cancellation_unknown'
-                ? 'The earlier cancellation result is unknown. It cannot be sent again blindly; reconcile it with Whitebooks/NIC support.'
-                : 'Only a Whitebooks-registered IRN can be cancelled through this action.',
-            );
-          }
-          // Window honesty BEFORE a provider operation is opened: past
-          // NIC's 24 hours the cancellation cannot lawfully succeed, and
-          // the refusal names the credit-note remedy.
-          assertIrpCancelWindowOpen(invoice);
-          const [liveEwayBill] = await tx<{ id: string; ewb_number: string | null }[]>`
+      const prepared = await tenant(async (tx) => {
+        const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
+          taxInvoiceId: id,
+        });
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        requireStatus(invoice, 'submitted');
+        if (
+          invoice.irp_provider_state === 'cancellation_unknown' &&
+          recoveredOperations.includes('cancel_irp')
+        ) {
+          return {
+            recovered: true as const,
+            detail: await readDetail(tx, id),
+          };
+        }
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured.',
+          );
+        }
+        if (
+          invoice.irn === null ||
+          invoice.irp_provider !== 'whitebooks' ||
+          invoice.irp_provider_state !== 'registered'
+        ) {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            invoice.irp_provider_state === 'cancellation_unknown'
+              ? 'The earlier cancellation result is unknown. It cannot be sent again blindly; reconcile it with Whitebooks/NIC support.'
+              : 'Only a Whitebooks-registered IRN can be cancelled through this action.',
+          );
+        }
+        // Window honesty BEFORE a provider operation is opened: past
+        // NIC's 24 hours the cancellation cannot lawfully succeed, and
+        // the refusal names the credit-note remedy.
+        assertIrpCancelWindowOpen(invoice);
+        const [liveEwayBill] = await tx<{ id: string; ewb_number: string | null }[]>`
             select id, ewb_number from eway_bills
             where tax_invoice_id = ${id} and status <> 'cancelled'
             limit 1
           `;
-          if (liveEwayBill) {
-            throw httpError(
-              409,
-              'EWAY_BILL_LIVE',
-              `Cancel e-way bill ${liveEwayBill.ewb_number ?? liveEwayBill.id} before cancelling its IRN.`,
-            );
-          }
-          const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
+        if (liveEwayBill) {
+          throw httpError(
+            409,
+            'EWAY_BILL_LIVE',
+            `Cancel e-way bill ${liveEwayBill.ewb_number ?? liveEwayBill.id} before cancelling its IRN.`,
+          );
+        }
+        const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from tax_invoices where id = ${id}
           `;
-          if (!snapshotRow) throw new Error(`tax invoice ${id} disappeared`);
-          const gstin = parseTaxInvoiceIssuedSnapshot(
-            parseJsonbColumn(snapshotRow.issued_snapshot),
-          ).supplier.gstin;
-          const requestJson = stringifyStatutoryJson({
-            Irn: invoice.irn,
-            CnlRsn: body.reasonCode,
-            CnlRem: remark,
-          });
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: 'cancel_irp',
-            requestSha256: sha256Hex(requestJson),
-            taxInvoiceId: id,
-          });
-          await tx`
+        if (!snapshotRow) throw new Error(`tax invoice ${id} disappeared`);
+        const gstin = parseTaxInvoiceIssuedSnapshot(
+          parseJsonbColumn(snapshotRow.issued_snapshot),
+        ).supplier.gstin;
+        const requestJson = stringifyStatutoryJson({
+          Irn: invoice.irn,
+          CnlRsn: body.reasonCode,
+          CnlRem: remark,
+        });
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: 'cancel_irp',
+          requestSha256: sha256Hex(requestJson),
+          taxInvoiceId: id,
+        });
+        await tx`
             update tax_invoices set irp_provider_state = 'cancelling'
             where id = ${id}
           `;
-          return {
-            recovered: false as const,
-            operationId,
-            irn: invoice.irn,
-            gstin,
-            provider,
-          };
-        },
-      );
+        return {
+          recovered: false as const,
+          operationId,
+          irn: invoice.irn,
+          gstin,
+          provider,
+        };
+      });
 
       if (prepared.recovered) {
         return reply.status(202).send(prepared.detail);
@@ -2375,25 +2282,20 @@ export function registerTaxInvoiceRoutes(
         failure = providerFailure(error);
       }
 
-      const outcome = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const invoice = await lockInvoice(tx, id);
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (invoice.irp_provider_state !== 'cancelling') {
-            throw new Error(`tax invoice ${id} left the cancelling state`);
-          }
-          // For mapping a provider window-expired refusal below: the row
-          // is mid-cancel here, so the derived open flag is unusable —
-          // judge by the frozen closing instant itself.
-          const windowClosed =
-            invoice.irp_cancel_window_closes_at === null ||
-            invoice.irp_cancel_window_closes_at.getTime() <= Date.now();
-          if (cancelled !== null) {
-            await tx`
+      const outcome = await tenant(async (tx) => {
+        const invoice = await lockInvoice(tx, id);
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.irp_provider_state !== 'cancelling') {
+          throw new Error(`tax invoice ${id} left the cancelling state`);
+        }
+        // For mapping a provider window-expired refusal below: the row
+        // is mid-cancel here, so the derived open flag is unusable —
+        // judge by the frozen closing instant itself.
+        const windowClosed =
+          invoice.irp_cancel_window_closes_at === null ||
+          invoice.irp_cancel_window_closes_at.getTime() <= Date.now();
+        if (cancelled !== null) {
+          await tx`
               update tax_invoices
               set irp_provider_state = 'cancelled',
                   irp_cancelled_at = ${cancelled.cancelledAt},
@@ -2402,48 +2304,46 @@ export function registerTaxInvoiceRoutes(
                   irp_cancel_remark = ${remark}
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-            });
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+          });
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+          };
+          await tx`
               update tax_invoices
               set irp_provider_state = ${
                 result.status === 'failed' ? 'registered' : 'cancellation_unknown'
               }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
-              providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-            });
-          }
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            cancelled === null
-              ? 'tax_invoice.irp_cancellation_unresolved'
-              : 'tax_invoice.irp_cancelled',
-            'tax_invoices',
-            id,
-            {
-              irn: prepared.irn,
-              outcome:
-                cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
-              provider: prepared.provider.name,
-              operationId: prepared.operationId,
-            },
-          );
-          return { detail: await readDetail(tx, id), windowClosed };
-        },
-      );
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+          });
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          cancelled === null
+            ? 'tax_invoice.irp_cancellation_unresolved'
+            : 'tax_invoice.irp_cancelled',
+          'tax_invoices',
+          id,
+          {
+            irn: prepared.irn,
+            outcome: cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
+            provider: prepared.provider.name,
+            operationId: prepared.operationId,
+          },
+        );
+        return { detail: await readDetail(tx, id), windowClosed };
+      });
       if (cancelled !== null) return reply.status(200).send(outcome.detail);
       if (failure?.status === 'failed') {
         // The pre-check refuses before the window closes by OUR clock;
@@ -2467,26 +2367,23 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/irp-response',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/irp-response',
       schema: {
         params: IdParamsSchema,
         body: RecordIrpResponseRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // Compatibility import only. Manually typed evidence is labelled
         // unverified and requires the same authority as provider registration.
-        await requireAuthority(tx, user.id, 'issue');
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         if (provider !== undefined) {
@@ -2553,25 +2450,22 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/irp-cancel-response',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/irp-cancel-response',
       schema: {
         params: IdParamsSchema,
         body: RecordManualStatutoryCancellationRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       const remark = body.remark.trim();
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         if (invoice.status !== 'submitted' && invoice.status !== 'cancelled') {
@@ -2635,58 +2529,52 @@ export function registerTaxInvoiceRoutes(
     },
   );
 
-  app.get(
-    '/api/tax-invoices/:id/irp-payload',
-    { schema: { params: IdParamsSchema } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/tax-invoices/:id/irp-payload',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
-      const payload = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [invoice] = await tx<
-            {
-              work_id: string | null;
-              status: TaxInvoiceStatus;
-              issued_snapshot: unknown;
-            }[]
-          >`
+      const payload = await tenant(async (tx) => {
+        const [invoice] = await tx<
+          {
+            work_id: string | null;
+            status: TaxInvoiceStatus;
+            issued_snapshot: unknown;
+          }[]
+        >`
           select work_id, status, issued_snapshot
           from tax_invoices where id = ${id}
         `;
-          if (!invoice) {
-            throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        if (!invoice) {
+          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        }
+        await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.status !== 'submitted') {
+          throw httpError(
+            409,
+            'TAX_INVOICE_STATUS_CONFLICT',
+            `The IRP payload exists for a submitted invoice (current status: ${invoice.status}) — a draft has no number and a cancelled invoice registers nothing.`,
+          );
+        }
+        try {
+          return buildFrozenIrpPayload(parseJsonbColumn(invoice.issued_snapshot));
+        } catch (error) {
+          if (error instanceof EInvoiceB2cUnsupportedError) {
+            throw httpError(409, error.code, error.message);
           }
-          await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
-          if (invoice.status !== 'submitted') {
+          if (error instanceof TaxInvoiceSnapshotError) {
             throw httpError(
               409,
-              'TAX_INVOICE_STATUS_CONFLICT',
-              `The IRP payload exists for a submitted invoice (current status: ${invoice.status}) — a draft has no number and a cancelled invoice registers nothing.`,
+              error.code,
+              'The frozen issued invoice is incomplete for IRP submission; it was not replaced with live master data.',
             );
           }
-          try {
-            return buildFrozenIrpPayload(parseJsonbColumn(invoice.issued_snapshot));
-          } catch (error) {
-            if (error instanceof EInvoiceB2cUnsupportedError) {
-              throw httpError(409, error.code, error.message);
-            }
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                'The frozen issued invoice is incomplete for IRP submission; it was not replaced with live master data.',
-              );
-            }
-            throw error;
-          }
-        },
-      );
+          throw error;
+        }
+      });
       void reply.type('application/json; charset=utf-8');
       return reply.send(stringifyStatutoryJson(payload));
     },

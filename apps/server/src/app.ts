@@ -55,6 +55,7 @@ import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
+import { recordRegisteredRoutes } from './tenant-route.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard } from './origin-guard.js';
 
@@ -229,6 +230,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       ? { trustProxy: options.trustProxyHops }
       : {}),
   }).withTypeProvider<TypeBoxTypeProvider>();
+  // Captures every route registration for the route-inventory test, which
+  // proves the tenant preamble is a mechanism rather than a convention.
+  recordRegisteredRoutes(app);
 
   const database = options.databaseUrl
     ? createDatabasePool({

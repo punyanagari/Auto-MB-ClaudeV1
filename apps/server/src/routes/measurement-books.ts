@@ -29,7 +29,7 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
@@ -48,12 +48,12 @@ import {
 import { MB_REMARK_TEMPLATE_VERSION } from '../mb-remark.js';
 import { loadPaymentMatrix } from '../payment-matrix.js';
 import { canonicalRateText } from '../rate-text.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Milestone 8 phase 2: the stage-wise Measurement Book lifecycle engine
@@ -874,21 +874,19 @@ export function registerMeasurementBookRoutes(
   storage: ObjectStorage,
   gotenbergUrl: string,
 ): void {
-  app.get(
-    '/api/works/:id/measurement-books',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/measurement-books',
       schema: {
         params: IdParamsSchema,
         response: { 200: MeasurementBookListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
@@ -905,21 +903,18 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.get(
-    '/api/measurement-books/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/measurement-books/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const book = await readBook(tx, id);
         if (!book) {
           throw httpError(
@@ -934,20 +929,17 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/measurement-books',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/measurement-books',
       schema: {
         params: IdParamsSchema,
         body: CreateMeasurementBookRequestSchema,
         response: { 201: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
       // `kind` is the request truth (0034); `isFinal` stays accepted as
@@ -980,16 +972,12 @@ export function registerMeasurementBookRoutes(
           'Only record Measurement Books name a consignee.',
         );
       }
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<
-            { status: string; letter_date: string; today: string }[]
-          >`
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertWorkAccess(tx, user.id, workId);
+        const [work] = await tx<
+          { status: string; letter_date: string; today: string }[]
+        >`
             select w.status, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
@@ -997,140 +985,140 @@ export function registerMeasurementBookRoutes(
             where w.id = ${workId} and w.deleted_at is null
             for update of w
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          // R8: a completed Work accepts no new operational documents.
-          // The works lock above pairs with the one POST
-          // /api/works/:id/complete holds, so a draft MB can never appear
-          // behind a completed Work's refusals; the 0031 insert guard
-          // backstops it in the database.
-          assertWorkOperable(work.status, 'raising a Measurement Book');
-          // §5.9, friendly form (the 0024 trigger holds it against every
-          // writer): MB date not in the future in the organisation's
-          // timezone, not before the LOA letter date.
-          if (body.mbDate > work.today) {
-            throw httpError(
-              400,
-              'MB_DATE_FUTURE',
-              `The MB date cannot be in the future (today is ${work.today}).`,
-            );
-          }
-          if (body.mbDate < work.letter_date) {
-            throw httpError(
-              400,
-              'MB_DATE_BEFORE_LOA',
-              `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
-            );
-          }
-          // §5.9 register order: the MB register's dates must not run
-          // backwards behind its gap-free, strictly increasing numbering.
-          // MB-02's per-line remarks narrate 'previously billed X, now Y'
-          // from the prior-cumulative memory, so an MB dated before its
-          // predecessor prints a prior cumulative that, by its own date,
-          // had not yet been measured — and the finalized snapshot is
-          // immutable, so it can never be corrected. Equal dates pass:
-          // several MBs on one day is normal. Checked here only: one
-          // BILLING draft per Work (0034) means no MB can be finalized
-          // between this draft's creation and its own finalize, so the
-          // newest finalized date can only fall (by cancellation)
-          // meanwhile, never rise. One indexed read —
-          // measurement_books_work_idx already orders by (work_id,
-          // status, mb_date desc). Record MBs are exempt: they never
-          // take a number, never print the prior-cumulative narration,
-          // and their sheet dates flow into nothing — the merged
-          // on-account draft carries its own register-checked date.
-          if (kind !== 'record') {
-            const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // R8: a completed Work accepts no new operational documents.
+        // The works lock above pairs with the one POST
+        // /api/works/:id/complete holds, so a draft MB can never appear
+        // behind a completed Work's refusals; the 0031 insert guard
+        // backstops it in the database.
+        assertWorkOperable(work.status, 'raising a Measurement Book');
+        // §5.9, friendly form (the 0024 trigger holds it against every
+        // writer): MB date not in the future in the organisation's
+        // timezone, not before the LOA letter date.
+        if (body.mbDate > work.today) {
+          throw httpError(
+            400,
+            'MB_DATE_FUTURE',
+            `The MB date cannot be in the future (today is ${work.today}).`,
+          );
+        }
+        if (body.mbDate < work.letter_date) {
+          throw httpError(
+            400,
+            'MB_DATE_BEFORE_LOA',
+            `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
+          );
+        }
+        // §5.9 register order: the MB register's dates must not run
+        // backwards behind its gap-free, strictly increasing numbering.
+        // MB-02's per-line remarks narrate 'previously billed X, now Y'
+        // from the prior-cumulative memory, so an MB dated before its
+        // predecessor prints a prior cumulative that, by its own date,
+        // had not yet been measured — and the finalized snapshot is
+        // immutable, so it can never be corrected. Equal dates pass:
+        // several MBs on one day is normal. Checked here only: one
+        // BILLING draft per Work (0034) means no MB can be finalized
+        // between this draft's creation and its own finalize, so the
+        // newest finalized date can only fall (by cancellation)
+        // meanwhile, never rise. One indexed read —
+        // measurement_books_work_idx already orders by (work_id,
+        // status, mb_date desc). Record MBs are exempt: they never
+        // take a number, never print the prior-cumulative narration,
+        // and their sheet dates flow into nothing — the merged
+        // on-account draft carries its own register-checked date.
+        if (kind !== 'record') {
+          const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
               select mb_date::text as mb_date, mb_number
               from measurement_books
               where work_id = ${workId} and status = 'finalized'
               order by mb_date desc
               limit 1
             `;
-            if (newest && body.mbDate < newest.mb_date) {
-              throw httpError(
-                400,
-                'MB_DATE_BEFORE_PREVIOUS',
-                `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
-              );
-            }
+          if (newest && body.mbDate < newest.mb_date) {
+            throw httpError(
+              400,
+              'MB_DATE_BEFORE_PREVIOUS',
+              `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
+            );
           }
-          // A record MB names an ACTIVE consignee-role contact (the
-          // 0034 FK holds existence; role and lifecycle are checked here
-          // like every other contact picker).
-          if (kind === 'record' && body.consigneeContactId !== undefined) {
-            const [contact] = await tx<
-              { id: string; is_consignee: boolean; active: boolean }[]
-            >`
+        }
+        // A record MB names an ACTIVE consignee-role contact (the
+        // 0034 FK holds existence; role and lifecycle are checked here
+        // like every other contact picker).
+        if (kind === 'record' && body.consigneeContactId !== undefined) {
+          const [contact] = await tx<
+            { id: string; is_consignee: boolean; active: boolean }[]
+          >`
               select id, is_consignee, active from contacts
               where id = ${body.consigneeContactId}
             `;
-            if (!contact) {
-              throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
-            }
-            if (!contact.is_consignee) {
-              throw httpError(
-                409,
-                'CONTACT_NOT_CONSIGNEE',
-                'A record Measurement Book is filled by a consignee contact; this contact does not carry the consignee role.',
-              );
-            }
-            if (!contact.active) {
-              throw httpError(
-                409,
-                'CONTACT_RETIRED',
-                'This consignee is retired — reactivate it or pick another.',
-              );
-            }
+          if (!contact) {
+            throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
           }
-          // No further MBs once a live final MB exists (friendly form;
-          // the 0024 insert guard holds it against every writer —
-          // record sheets included: nothing they gather could ever be
-          // billed past the final MB).
-          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+          if (!contact.is_consignee) {
+            throw httpError(
+              409,
+              'CONTACT_NOT_CONSIGNEE',
+              'A record Measurement Book is filled by a consignee contact; this contact does not carry the consignee role.',
+            );
+          }
+          if (!contact.active) {
+            throw httpError(
+              409,
+              'CONTACT_RETIRED',
+              'This consignee is retired — reactivate it or pick another.',
+            );
+          }
+        }
+        // No further MBs once a live final MB exists (friendly form;
+        // the 0024 insert guard holds it against every writer —
+        // record sheets included: nothing they gather could ever be
+        // billed past the final MB).
+        const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
             where work_id = ${workId} and is_final and status <> 'cancelled'
           `;
-          if (finalBook) {
-            throw httpError(
-              409,
-              'FINAL_MB_EXISTS',
-              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
-            );
-          }
-          // The 0034 draft rules, friendly form (the two partial unique
-          // indexes decide races; the catches rebuild the same 409s):
-          // exactly one BILLING draft (on-account or final) per Work,
-          // and one record draft per consignee — record sheets run in
-          // parallel across consignees by design.
-          if (kind === 'record') {
-            const [existingRecord] = await tx<{ id: string }[]>`
+        if (finalBook) {
+          throw httpError(
+            409,
+            'FINAL_MB_EXISTS',
+            `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
+          );
+        }
+        // The 0034 draft rules, friendly form (the two partial unique
+        // indexes decide races; the catches rebuild the same 409s):
+        // exactly one BILLING draft (on-account or final) per Work,
+        // and one record draft per consignee — record sheets run in
+        // parallel across consignees by design.
+        if (kind === 'record') {
+          const [existingRecord] = await tx<{ id: string }[]>`
               select id from measurement_books
               where work_id = ${workId} and status = 'draft' and kind = 'record'
                 and consignee_contact_id = ${body.consigneeContactId ?? null}
             `;
-            if (existingRecord) {
-              throw draftConflictError(
-                'MB_RECORD_DRAFT_EXISTS',
-                'This consignee already has an open record Measurement Book on this Work; merge or delete it first.',
-                existingRecord.id,
-              );
-            }
-          } else {
-            const [existingDraft] = await tx<{ id: string }[]>`
+          if (existingRecord) {
+            throw draftConflictError(
+              'MB_RECORD_DRAFT_EXISTS',
+              'This consignee already has an open record Measurement Book on this Work; merge or delete it first.',
+              existingRecord.id,
+            );
+          }
+        } else {
+          const [existingDraft] = await tx<{ id: string }[]>`
               select id from measurement_books
               where work_id = ${workId} and status = 'draft' and kind <> 'record'
             `;
-            if (existingDraft) {
-              throw draftConflictError(
-                'MB_DRAFT_EXISTS',
-                'This Work already has a draft Measurement Book; finalize or delete it first.',
-                existingDraft.id,
-              );
-            }
+          if (existingDraft) {
+            throw draftConflictError(
+              'MB_DRAFT_EXISTS',
+              'This Work already has a draft Measurement Book; finalize or delete it first.',
+              existingDraft.id,
+            );
           }
-          // 0034 made is_final a GENERATED column: the insert names
-          // `kind`, never is_final.
-          const [row] = await tx<{ id: string }[]>`
+        }
+        // 0034 made is_final a GENERATED column: the insert names
+        // `kind`, never is_final.
+        const [row] = await tx<{ id: string }[]>`
             insert into measurement_books (
               organisation_id, work_id, mb_date, kind, consignee_contact_id,
               created_by_user_id
@@ -1141,42 +1129,41 @@ export function registerMeasurementBookRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                kind === 'record' ? 'MB_RECORD_DRAFT_EXISTS' : 'MB_DRAFT_EXISTS',
-                kind === 'record'
-                  ? 'This consignee already has an open record Measurement Book on this Work; merge or delete it first.'
-                  : 'This Work already has a draft Measurement Book; finalize or delete it first.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('measurement book insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'measurement_book.created',
-            'measurement_books',
-            row.id,
-            {
-              workId,
-              mbDate: body.mbDate,
-              kind,
-              isFinal: kind === 'final',
-              ...(kind === 'record'
-                ? { consigneeContactId: body.consigneeContactId }
-                : {}),
-            },
-          );
-          return readDetail(tx, row.id);
-        },
-      ).catch(async (error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              kind === 'record' ? 'MB_RECORD_DRAFT_EXISTS' : 'MB_DRAFT_EXISTS',
+              kind === 'record'
+                ? 'This consignee already has an open record Measurement Book on this Work; merge or delete it first.'
+                : 'This Work already has a draft Measurement Book; finalize or delete it first.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('measurement book insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.created',
+          'measurement_books',
+          row.id,
+          {
+            workId,
+            mbDate: body.mbDate,
+            kind,
+            isFinal: kind === 'final',
+            ...(kind === 'record'
+              ? { consigneeContactId: body.consigneeContactId }
+              : {}),
+          },
+        );
+        return readDetail(tx, row.id);
+      }).catch(async (error: unknown) => {
         const conflictCode =
           kind === 'record' ? 'MB_RECORD_DRAFT_EXISTS' : 'MB_DRAFT_EXISTS';
         throw await nameDraftConflict(error, conflictCode, async () => {
-          return withBoundTenant(database, organisationId, user.id, async (tx) => {
+          return tenant(async (tx) => {
             const [draft] =
               kind === 'record'
                 ? await tx<{ id: string }[]>`
@@ -1208,20 +1195,17 @@ export function registerMeasurementBookRoutes(
   // provenance — which source came from which record — is written into
   // a constrained tenant table. Audit JSON stays human-readable evidence,
   // but operational un-merge never depends on its mutable shape.
-  app.post(
-    '/api/works/:id/measurement-books/merge',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/measurement-books/merge',
       schema: {
         params: IdParamsSchema,
         body: MergeMeasurementBooksRequestSchema,
         response: { 201: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
       if (new Set(body.recordMbIds).size !== body.recordMbIds.length) {
@@ -1231,19 +1215,15 @@ export function registerMeasurementBookRoutes(
           'The same record Measurement Book appears more than once.',
         );
       }
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works lock serialises the merge against create, another
-          // merge, finalize, and completion — the create-route lock
-          // order (work first, then MB rows).
-          const [work] = await tx<
-            { status: string; letter_date: string; today: string }[]
-          >`
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertWorkAccess(tx, user.id, workId);
+        // The works lock serialises the merge against create, another
+        // merge, finalize, and completion — the create-route lock
+        // order (work first, then MB rows).
+        const [work] = await tx<
+          { status: string; letter_date: string; today: string }[]
+        >`
             select w.status, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
@@ -1251,135 +1231,135 @@ export function registerMeasurementBookRoutes(
             where w.id = ${workId} and w.deleted_at is null
             for update of w
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'merging record Measurement Books');
-          // The created draft is a BILLING draft: the full register-date
-          // discipline of the create route applies to it.
-          if (body.mbDate > work.today) {
-            throw httpError(
-              400,
-              'MB_DATE_FUTURE',
-              `The MB date cannot be in the future (today is ${work.today}).`,
-            );
-          }
-          if (body.mbDate < work.letter_date) {
-            throw httpError(
-              400,
-              'MB_DATE_BEFORE_LOA',
-              `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
-            );
-          }
-          const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'merging record Measurement Books');
+        // The created draft is a BILLING draft: the full register-date
+        // discipline of the create route applies to it.
+        if (body.mbDate > work.today) {
+          throw httpError(
+            400,
+            'MB_DATE_FUTURE',
+            `The MB date cannot be in the future (today is ${work.today}).`,
+          );
+        }
+        if (body.mbDate < work.letter_date) {
+          throw httpError(
+            400,
+            'MB_DATE_BEFORE_LOA',
+            `The MB date cannot precede the LOA letter date ${work.letter_date}.`,
+          );
+        }
+        const [newest] = await tx<{ mb_date: string; mb_number: string | null }[]>`
             select mb_date::text as mb_date, mb_number
             from measurement_books
             where work_id = ${workId} and status = 'finalized'
             order by mb_date desc
             limit 1
           `;
-          if (newest && body.mbDate < newest.mb_date) {
-            throw httpError(
-              400,
-              'MB_DATE_BEFORE_PREVIOUS',
-              `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
-            );
-          }
-          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+        if (newest && body.mbDate < newest.mb_date) {
+          throw httpError(
+            400,
+            'MB_DATE_BEFORE_PREVIOUS',
+            `The MB date cannot precede ${newest.mb_number ?? 'the previous Measurement Book'}, dated ${newest.mb_date}.`,
+          );
+        }
+        const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
             where work_id = ${workId} and is_final and status <> 'cancelled'
           `;
-          if (finalBook) {
-            throw httpError(
-              409,
-              'FINAL_MB_EXISTS',
-              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
-            );
-          }
-          // One billing draft per Work still applies to the draft the
-          // merge creates; the friendly check names the open one.
-          const [existingDraft] = await tx<{ id: string }[]>`
+        if (finalBook) {
+          throw httpError(
+            409,
+            'FINAL_MB_EXISTS',
+            `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; no further Measurement Books can be raised.`,
+          );
+        }
+        // One billing draft per Work still applies to the draft the
+        // merge creates; the friendly check names the open one.
+        const [existingDraft] = await tx<{ id: string }[]>`
             select id from measurement_books
             where work_id = ${workId} and status = 'draft' and kind <> 'record'
           `;
-          if (existingDraft) {
-            throw draftConflictError(
-              'MB_DRAFT_EXISTS',
-              'This Work already has a draft Measurement Book; finalize or delete it before merging.',
-              existingDraft.id,
-            );
-          }
-          // Lock the named record MBs (id order — the un-merge locks
-          // them the same way) and hold every one to the rule: a record
-          // draft of THIS Work. Another Work's or tenant's MB answers
-          // exactly like an unknown id.
-          const records = await tx<
-            {
-              id: string;
-              work_id: string;
-              status: string;
-              kind: string;
-              consignee_contact_id: string | null;
-            }[]
-          >`
+        if (existingDraft) {
+          throw draftConflictError(
+            'MB_DRAFT_EXISTS',
+            'This Work already has a draft Measurement Book; finalize or delete it before merging.',
+            existingDraft.id,
+          );
+        }
+        // Lock the named record MBs (id order — the un-merge locks
+        // them the same way) and hold every one to the rule: a record
+        // draft of THIS Work. Another Work's or tenant's MB answers
+        // exactly like an unknown id.
+        const records = await tx<
+          {
+            id: string;
+            work_id: string;
+            status: string;
+            kind: string;
+            consignee_contact_id: string | null;
+          }[]
+        >`
             select id, work_id, status, kind, consignee_contact_id
             from measurement_books
             where id = any(${body.recordMbIds}::uuid[])
             order by id
             for update
           `;
-          const byId = new Map(records.map((row) => [row.id, row]));
-          for (const recordId of body.recordMbIds) {
-            const row = byId.get(recordId);
-            if (!row || row.work_id !== workId) {
-              throw httpError(
-                404,
-                'MEASUREMENT_BOOK_NOT_FOUND',
-                'No such Measurement Book in this Work.',
-              );
-            }
-            if (row.kind !== 'record' || row.status !== 'draft') {
-              throw httpError(
-                409,
-                'MB_MERGE_NOT_RECORD_DRAFT',
-                `Only record Measurement Book drafts merge — ${recordId} is a ${row.status} ${row.kind.replace('_', '-')} Measurement Book.`,
-              );
-            }
+        const byId = new Map(records.map((row) => [row.id, row]));
+        for (const recordId of body.recordMbIds) {
+          const row = byId.get(recordId);
+          if (!row || row.work_id !== workId) {
+            throw httpError(
+              404,
+              'MEASUREMENT_BOOK_NOT_FOUND',
+              'No such Measurement Book in this Work.',
+            );
           }
-          // Everything the records gathered, with its provenance. A
-          // record draft's claims are always live (release needs a
-          // cancel, and records never cancel), but the filter states
-          // the invariant.
-          const claims = await tx<
-            {
-              measurement_book_id: string;
-              source_type: MbSourceType;
-              source_id: string;
-            }[]
-          >`
+          if (row.kind !== 'record' || row.status !== 'draft') {
+            throw httpError(
+              409,
+              'MB_MERGE_NOT_RECORD_DRAFT',
+              `Only record Measurement Book drafts merge — ${recordId} is a ${row.status} ${row.kind.replace('_', '-')} Measurement Book.`,
+            );
+          }
+        }
+        // Everything the records gathered, with its provenance. A
+        // record draft's claims are always live (release needs a
+        // cancel, and records never cancel), but the filter states
+        // the invariant.
+        const claims = await tx<
+          {
+            measurement_book_id: string;
+            source_type: MbSourceType;
+            source_id: string;
+          }[]
+        >`
             select measurement_book_id, source_type, source_id
             from mb_sources
             where measurement_book_id = any(${body.recordMbIds}::uuid[])
               and released_at is null
             order by measurement_book_id, source_type, source_id
           `;
-          if (claims.length === 0) {
-            throw httpError(
-              409,
-              'MB_MERGE_EMPTY',
-              'There is nothing to merge — the record Measurement Books claim no sources.',
-            );
-          }
-          // Row-lock the sources and revalidate their billable state
-          // (the finalize discipline), serialising against the source
-          // cancel routes.
-          const refs = claims.map((claim) => ({
-            sourceType: claim.source_type,
-            sourceId: claim.source_id,
-          }));
-          await validateSources(tx, workId, refs, true);
-          // The new on-account draft. The partial unique index decides
-          // a billing-draft race; the insert guard backstops the final-
-          // MB freeze.
-          const [target] = await tx<{ id: string }[]>`
+        if (claims.length === 0) {
+          throw httpError(
+            409,
+            'MB_MERGE_EMPTY',
+            'There is nothing to merge — the record Measurement Books claim no sources.',
+          );
+        }
+        // Row-lock the sources and revalidate their billable state
+        // (the finalize discipline), serialising against the source
+        // cancel routes.
+        const refs = claims.map((claim) => ({
+          sourceType: claim.source_type,
+          sourceId: claim.source_id,
+        }));
+        await validateSources(tx, workId, refs, true);
+        // The new on-account draft. The partial unique index decides
+        // a billing-draft race; the insert guard backstops the final-
+        // MB freeze.
+        const [target] = await tx<{ id: string }[]>`
             insert into measurement_books (
               organisation_id, work_id, mb_date, kind, created_by_user_id
             )
@@ -1389,25 +1369,25 @@ export function registerMeasurementBookRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'MB_DRAFT_EXISTS',
-                'This Work already has a draft Measurement Book; finalize or delete it before merging.',
-              );
-            }
-            throw error;
-          });
-          if (!target) throw new Error('merge target insert returned no row');
-          // Capture ownership while every claim still sits on its source
-          // record. The insert guard can therefore prove exact provenance;
-          // after the records become merged this ledger accepts no additions.
-          for (const record of records) {
-            const recordClaims = claims.filter(
-              (claim) => claim.measurement_book_id === record.id,
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'MB_DRAFT_EXISTS',
+              'This Work already has a draft Measurement Book; finalize or delete it before merging.',
             );
-            if (recordClaims.length === 0) {
-              await tx`
+          }
+          throw error;
+        });
+        if (!target) throw new Error('merge target insert returned no row');
+        // Capture ownership while every claim still sits on its source
+        // record. The insert guard can therefore prove exact provenance;
+        // after the records become merged this ledger accepts no additions.
+        for (const record of records) {
+          const recordClaims = claims.filter(
+            (claim) => claim.measurement_book_id === record.id,
+          );
+          if (recordClaims.length === 0) {
+            await tx`
                 insert into measurement_book_merge_provenance (
                   organisation_id, target_measurement_book_id,
                   record_measurement_book_id, work_id, source_type, source_id,
@@ -1417,10 +1397,10 @@ export function registerMeasurementBookRoutes(
                   null, null, ${user.id}
                 )
               `;
-              continue;
-            }
-            for (const claim of recordClaims) {
-              await tx`
+            continue;
+          }
+          for (const claim of recordClaims) {
+            await tx`
                 insert into measurement_book_merge_provenance (
                   organisation_id, target_measurement_book_id,
                   record_measurement_book_id, work_id, source_type, source_id,
@@ -1430,19 +1410,19 @@ export function registerMeasurementBookRoutes(
                   ${claim.source_type}, ${claim.source_id}, ${user.id}
                 )
               `;
-            }
           }
-          // The claim transfer: delete off the records (draft-time
-          // claims delete cleanly, 0024), then claim the union on the
-          // target. The union has no duplicates — the partial unique
-          // index guarantees one live claim per source.
-          await tx`
+        }
+        // The claim transfer: delete off the records (draft-time
+        // claims delete cleanly, 0024), then claim the union on the
+        // target. The union has no duplicates — the partial unique
+        // index guarantees one live claim per source.
+        await tx`
             delete from mb_sources
             where measurement_book_id = any(${body.recordMbIds}::uuid[])
           `;
-          const types = claims.map((claim) => claim.source_type);
-          const ids = claims.map((claim) => claim.source_id);
-          await tx`
+        const types = claims.map((claim) => claim.source_type);
+        const ids = claims.map((claim) => claim.source_id);
+        await tx`
             insert into mb_sources (
               organisation_id, measurement_book_id, work_id, source_type, source_id
             )
@@ -1451,52 +1431,51 @@ export function registerMeasurementBookRoutes(
             from unnest(${types as string[]}::text[], ${ids}::uuid[])
               as req(source_type, source_id)
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'MB_SOURCE_ALREADY_BILLED',
-                'A source was claimed by another live Measurement Book while merging.',
-              );
-            }
-            throw error;
-          });
-          // Mark the records merged, pointing at the draft that
-          // absorbed them.
-          await tx`
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'MB_SOURCE_ALREADY_BILLED',
+              'A source was claimed by another live Measurement Book while merging.',
+            );
+          }
+          throw error;
+        });
+        // Mark the records merged, pointing at the draft that
+        // absorbed them.
+        await tx`
             update measurement_books
             set status = 'merged', merged_into_id = ${target.id}
             where id = any(${body.recordMbIds}::uuid[])
           `;
-          // Keep the same rich audit evidence for investigators and export.
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'measurement_book.merged',
-            'measurement_books',
-            target.id,
-            {
-              workId,
-              mbDate: body.mbDate,
-              recordMbIds: records.map((row) => row.id),
-              records: records.map((row) => ({
-                recordMbId: row.id,
-                consigneeContactId: row.consignee_contact_id,
-                sources: claims
-                  .filter((claim) => claim.measurement_book_id === row.id)
-                  .map((claim) => ({
-                    sourceType: claim.source_type,
-                    sourceId: claim.source_id,
-                  })),
-              })),
-              sourceCount: claims.length,
-            },
-          );
-          return readDetail(tx, target.id);
-        },
-      ).catch(async (error: unknown) => {
+        // Keep the same rich audit evidence for investigators and export.
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'measurement_book.merged',
+          'measurement_books',
+          target.id,
+          {
+            workId,
+            mbDate: body.mbDate,
+            recordMbIds: records.map((row) => row.id),
+            records: records.map((row) => ({
+              recordMbId: row.id,
+              consigneeContactId: row.consignee_contact_id,
+              sources: claims
+                .filter((claim) => claim.measurement_book_id === row.id)
+                .map((claim) => ({
+                  sourceType: claim.source_type,
+                  sourceId: claim.source_id,
+                })),
+            })),
+            sourceCount: claims.length,
+          },
+        );
+        return readDetail(tx, target.id);
+      }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'MB_DRAFT_EXISTS', async () => {
-          return withBoundTenant(database, organisationId, user.id, async (tx) => {
+          return tenant(async (tx) => {
             const [draft] = await tx<{ id: string }[]>`
               select id from measurement_books
               where work_id = ${workId} and status = 'draft' and kind <> 'record'
@@ -1518,22 +1497,19 @@ export function registerMeasurementBookRoutes(
   // any draft deletion. One live claim per source holds at every commit
   // point: the target's claims are deleted and the records' re-inserted
   // inside one transaction.
-  app.post(
-    '/api/measurement-books/:id/unmerge',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/measurement-books/:id/unmerge',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
           select id, work_id, status from measurement_books
           where id = ${id}
@@ -1721,20 +1697,18 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.put(
-    '/api/measurement-books/:id/sources',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/measurement-books/:id/sources',
       schema: {
         params: IdParamsSchema,
         body: SetMbSourcesRequestSchema,
         response: { 200: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
       const keys = body.sources.map((s) => `${s.sourceType}:${s.sourceId}`);
@@ -1745,8 +1719,7 @@ export function registerMeasurementBookRoutes(
           'The same source appears more than once in the selection.',
         );
       }
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         // The MB row lock serialises selection edits against finalize,
         // delete, and concurrent selection replacements.
         const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
@@ -1832,24 +1805,21 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.post(
-    '/api/measurement-books/:id/finalize',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/measurement-books/:id/finalize',
       schema: {
         params: IdParamsSchema,
         response: { 200: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // Finalizing assigns a legal number and freezes a financial
         // snapshot: issue authority required, like bill preparation.
-        await requireAuthority(tx, user.id, 'issue');
         const [book] = await tx<
           {
             id: string;
@@ -2128,24 +2098,21 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.post(
-    '/api/measurement-books/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/measurement-books/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelMeasurementBookRequestSchema,
         response: { 200: MeasurementBookDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const [book] = await tx<
           {
             id: string;
@@ -2282,22 +2249,19 @@ export function registerMeasurementBookRoutes(
     },
   );
 
-  app.delete(
-    '/api/measurement-books/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/measurement-books/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         const [book] = await tx<{ id: string; work_id: string; status: string }[]>`
           select id, work_id, status from measurement_books
           where id = ${id}
@@ -2364,71 +2328,64 @@ export function registerMeasurementBookRoutes(
   // (ADR-0006 decision 2; replaces the Milestone 5 sweep of unbilled
   // mb_entries). Amount = the MB's snapshotted total; lines_snapshot
   // carries the MB's lines verbatim; bills.mb_id links 1:1.
-  app.post(
-    '/api/measurement-books/:id/bill',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/measurement-books/:id/bill',
       schema: {
         params: IdParamsSchema,
         response: { 201: BillSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const bill = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Preparing a bill is a financial act: issue authority
-          // required (Milestone 5 gate, unchanged).
-          await requireAuthority(tx, user.id, 'issue');
-          const [book] = await tx<
-            {
-              id: string;
-              work_id: string;
-              status: string;
-              mb_number: string | null;
-              total_amount: string | null;
-            }[]
-          >`
+      const bill = await tenant(async (tx) => {
+        // Preparing a bill is a financial act: issue authority
+        // required (Milestone 5 gate, unchanged).
+        const [book] = await tx<
+          {
+            id: string;
+            work_id: string;
+            status: string;
+            mb_number: string | null;
+            total_amount: string | null;
+          }[]
+        >`
             select id, work_id, status, mb_number, total_amount::text as total_amount
             from measurement_books
             where id = ${id}
             for update
           `;
-          if (!book) {
-            throw httpError(
-              404,
-              'MEASUREMENT_BOOK_NOT_FOUND',
-              'No such Measurement Book.',
-            );
-          }
-          await assertWorkAccess(tx, user.id, book.work_id);
-          if (book.status !== 'finalized') {
-            throw httpError(
-              409,
-              'MB_STATUS_CONFLICT',
-              `Bills are prepared from finalized Measurement Books (current status: ${book.status}).`,
-            );
-          }
-          const [existing] = await tx<{ id: string; bill_number: number }[]>`
+        if (!book) {
+          throw httpError(
+            404,
+            'MEASUREMENT_BOOK_NOT_FOUND',
+            'No such Measurement Book.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, book.work_id);
+        if (book.status !== 'finalized') {
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            `Bills are prepared from finalized Measurement Books (current status: ${book.status}).`,
+          );
+        }
+        const [existing] = await tx<{ id: string; bill_number: number }[]>`
             select id, bill_number from bills where mb_id = ${id}
           `;
-          if (existing) {
-            throw httpError(
-              409,
-              'MB_ALREADY_BILLED',
-              `Bill #${String(existing.bill_number)} was already prepared from this Measurement Book.`,
-            );
-          }
+        if (existing) {
+          throw httpError(
+            409,
+            'MB_ALREADY_BILLED',
+            `Bill #${String(existing.bill_number)} was already prepared from this Measurement Book.`,
+          );
+        }
 
-          // The counter row lock serialises concurrent bill preparation
-          // for the Work (0006 mechanics, unchanged).
-          const [counter] = await tx<{ next_value: number }[]>`
+        // The counter row lock serialises concurrent bill preparation
+        // for the Work (0006 mechanics, unchanged).
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into bill_counters (organisation_id, work_id)
             values (${organisationId}, ${book.work_id})
             on conflict (organisation_id, work_id)
@@ -2436,23 +2393,23 @@ export function registerMeasurementBookRoutes(
                           updated_at = now()
             returning next_value
           `;
-          if (!counter) throw new Error('bill counter upsert returned no row');
+        if (!counter) throw new Error('bill counter upsert returned no row');
 
-          const lines = await readStoredLines(tx, id);
-          const [row] = await tx<
-            {
-              id: string;
-              work_id: string;
-              bill_number: number;
-              status: Bill['status'];
-              lines_snapshot: unknown;
-              total_amount: string;
-              mb_id: string | null;
-              created_at: Date;
-              submitted_at: Date | null;
-              paid_at: Date | null;
-            }[]
-          >`
+        const lines = await readStoredLines(tx, id);
+        const [row] = await tx<
+          {
+            id: string;
+            work_id: string;
+            bill_number: number;
+            status: Bill['status'];
+            lines_snapshot: unknown;
+            total_amount: string;
+            mb_id: string | null;
+            created_at: Date;
+            submitted_at: Date | null;
+            paid_at: Date | null;
+          }[]
+        >`
             insert into bills (
               organisation_id, work_id, bill_number, lines_snapshot,
               total_amount, prepared_by_user_id, mb_id
@@ -2466,17 +2423,17 @@ export function registerMeasurementBookRoutes(
                       total_amount::text as total_amount, mb_id, created_at,
                       submitted_at, paid_at
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'MB_ALREADY_BILLED',
-                'A bill was already prepared from this Measurement Book.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('bill insert returned no row');
-          await tx`
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'MB_ALREADY_BILLED',
+              'A bill was already prepared from this Measurement Book.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('bill insert returned no row');
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id,
               details
@@ -2492,20 +2449,19 @@ export function registerMeasurementBookRoutes(
               })}
             )
           `;
-          return {
-            id: row.id,
-            workId: row.work_id,
-            billNumber: row.bill_number,
-            status: row.status,
-            totalAmount: row.total_amount,
-            linesSnapshot: parseJsonbColumn(row.lines_snapshot),
-            createdAt: row.created_at.toISOString(),
-            submittedAt: row.submitted_at?.toISOString() ?? null,
-            paidAt: row.paid_at?.toISOString() ?? null,
-            mbId: row.mb_id,
-          } satisfies Bill;
-        },
-      );
+        return {
+          id: row.id,
+          workId: row.work_id,
+          billNumber: row.bill_number,
+          status: row.status,
+          totalAmount: row.total_amount,
+          linesSnapshot: parseJsonbColumn(row.lines_snapshot),
+          createdAt: row.created_at.toISOString(),
+          submittedAt: row.submitted_at?.toISOString() ?? null,
+          paidAt: row.paid_at?.toISOString() ?? null,
+          mbId: row.mb_id,
+        } satisfies Bill;
+      });
       return reply.status(201).send(bill);
     },
   );
@@ -2518,9 +2474,10 @@ export function registerMeasurementBookRoutes(
   // the slow external call holds no database locks; the final write
   // re-checks the status so a race against cancel discards the orphan
   // render instead of stamping it (the challan render discipline).
-  app.post(
-    '/api/measurement-books/:id/render',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/measurement-books/:id/render',
       schema: {
         params: IdParamsSchema,
         response: {
@@ -2530,51 +2487,42 @@ export function registerMeasurementBookRoutes(
         },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
 
-      const { snapshot, branding } = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const book = await readBook(tx, id);
-          if (!book) {
-            throw httpError(
-              404,
-              'MEASUREMENT_BOOK_NOT_FOUND',
-              'No such Measurement Book.',
-            );
-          }
-          await assertWorkAccess(tx, user.id, book.work_id);
-          if (book.status !== 'finalized') {
-            throw httpError(
-              409,
-              'MB_STATUS_CONFLICT',
-              `Only finalized Measurement Books render to a persisted PDF (current status: ${book.status}); drafts stream a live preview instead.`,
-            );
-          }
-          const work = await readWorkIdentity(tx, book.work_id);
-          const lines = await readStoredLines(tx, id);
-          const organisation = await readBranding(tx);
-          return {
-            snapshot: toSnapshot(
-              book,
-              organisation?.name ?? '',
-              work,
-              lines,
-              book.total_amount ?? '0.00',
-              book.remark_template_version ?? MB_REMARK_TEMPLATE_VERSION,
-            ),
-            branding: organisation,
-          };
-        },
-      );
+      const { snapshot, branding } = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const book = await readBook(tx, id);
+        if (!book) {
+          throw httpError(
+            404,
+            'MEASUREMENT_BOOK_NOT_FOUND',
+            'No such Measurement Book.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, book.work_id);
+        if (book.status !== 'finalized') {
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            `Only finalized Measurement Books render to a persisted PDF (current status: ${book.status}); drafts stream a live preview instead.`,
+          );
+        }
+        const work = await readWorkIdentity(tx, book.work_id);
+        const lines = await readStoredLines(tx, id);
+        const organisation = await readBranding(tx);
+        return {
+          snapshot: toSnapshot(
+            book,
+            organisation?.name ?? '',
+            work,
+            lines,
+            book.total_amount ?? '0.00',
+            book.remark_template_version ?? MB_REMARK_TEMPLATE_VERSION,
+          ),
+          branding: organisation,
+        };
+      });
 
       const html = renderMeasurementBookHtml(
         snapshot,
@@ -2589,7 +2537,7 @@ export function registerMeasurementBookRoutes(
       const objectKey = `${organisationId}/mb/${id}.pdf`;
       await storage.put(objectKey, pdf);
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const updated = await tx`
           update measurement_books
           set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256},
@@ -2628,9 +2576,10 @@ export function registerMeasurementBookRoutes(
   // live state, watermarked DRAFT, converted, and streamed WITHOUT
   // persisting — drafts change constantly, so no stored artifact and no
   // render columns are ever touched. Same authz as the MB read routes.
-  app.get(
-    '/api/measurement-books/:id/pdf',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/measurement-books/:id/pdf',
       schema: {
         params: IdParamsSchema,
         querystring: Type.Object(
@@ -2639,52 +2588,43 @@ export function registerMeasurementBookRoutes(
         ),
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
       const { preview } = request.query;
 
       if (preview === '1') {
-        const { snapshot, branding } = await withBoundTenant(
-          database,
-          organisationId,
-          user.id,
-          async (tx) => {
-            const book = await readBook(tx, id);
-            if (!book) {
-              throw httpError(
-                404,
-                'MEASUREMENT_BOOK_NOT_FOUND',
-                'No such Measurement Book.',
-              );
-            }
-            await assertWorkAccess(tx, user.id, book.work_id);
-            if (book.status !== 'draft') {
-              throw httpError(
-                409,
-                'MB_STATUS_CONFLICT',
-                `The live preview is for draft Measurement Books (current status: ${book.status}); use the persisted render instead.`,
-              );
-            }
-            const work = await readWorkIdentity(tx, book.work_id);
-            const computation = await computeForBook(tx, book);
-            const organisation = await readBranding(tx);
-            return {
-              snapshot: toSnapshot(
-                book,
-                organisation?.name ?? '',
-                work,
-                computation.lines.map(toLine),
-                computation.totalAmount,
-                MB_REMARK_TEMPLATE_VERSION,
-              ),
-              branding: organisation,
-            };
-          },
-        );
+        const { snapshot, branding } = await tenant(async (tx) => {
+          const book = await readBook(tx, id);
+          if (!book) {
+            throw httpError(
+              404,
+              'MEASUREMENT_BOOK_NOT_FOUND',
+              'No such Measurement Book.',
+            );
+          }
+          await assertWorkAccess(tx, user.id, book.work_id);
+          if (book.status !== 'draft') {
+            throw httpError(
+              409,
+              'MB_STATUS_CONFLICT',
+              `The live preview is for draft Measurement Books (current status: ${book.status}); use the persisted render instead.`,
+            );
+          }
+          const work = await readWorkIdentity(tx, book.work_id);
+          const computation = await computeForBook(tx, book);
+          const organisation = await readBranding(tx);
+          return {
+            snapshot: toSnapshot(
+              book,
+              organisation?.name ?? '',
+              work,
+              computation.lines.map(toLine),
+              computation.totalAmount,
+              MB_REMARK_TEMPLATE_VERSION,
+            ),
+            branding: organisation,
+          };
+        });
         const html = renderMeasurementBookHtml(
           snapshot,
           await brandingWithLogo(storage, branding, (error) => {
@@ -2705,32 +2645,27 @@ export function registerMeasurementBookRoutes(
         return reply.send(pdf);
       }
 
-      const key = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const book = await readBook(tx, id);
-          if (!book) {
-            throw httpError(
-              404,
-              'MEASUREMENT_BOOK_NOT_FOUND',
-              'No such Measurement Book.',
-            );
-          }
-          await assertWorkAccess(tx, user.id, book.work_id);
-          if (book.rendered_object_key === null) {
-            throw httpError(
-              404,
-              'RENDER_MISSING',
-              book.status === 'draft'
-                ? 'Draft Measurement Books have no persisted PDF; use the live preview.'
-                : 'This Measurement Book has not been rendered yet.',
-            );
-          }
-          return book.rendered_object_key;
-        },
-      );
+      const key = await tenant(async (tx) => {
+        const book = await readBook(tx, id);
+        if (!book) {
+          throw httpError(
+            404,
+            'MEASUREMENT_BOOK_NOT_FOUND',
+            'No such Measurement Book.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, book.work_id);
+        if (book.rendered_object_key === null) {
+          throw httpError(
+            404,
+            'RENDER_MISSING',
+            book.status === 'draft'
+              ? 'Draft Measurement Books have no persisted PDF; use the live preview.'
+              : 'This Measurement Book has not been rendered yet.',
+          );
+        }
+        return book.rendered_object_key;
+      });
       const bytes = await storage.get(key);
       void reply.type('application/pdf');
       void reply.header(

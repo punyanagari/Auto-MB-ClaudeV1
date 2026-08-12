@@ -11,7 +11,6 @@ import {
   type NumberSeries,
   type NumberedDocumentType,
   type OrganisationProfile,
-  type SaveNumberSeriesRequest,
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
@@ -21,7 +20,6 @@ import type { Auth } from '../auth.js';
 import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import {
   ALLOWED_TOKENS,
@@ -29,10 +27,10 @@ import {
   NumberTemplateError,
   assertValidTemplate,
 } from '../number-series.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
 import { audit } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -216,27 +214,24 @@ export function registerOrganisationRoutes(
   storage: ObjectStorage,
   scanner: MalwareScanner,
 ): void {
-  app.get(
-    '/api/organisation/profile',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/organisation/profile',
       schema: {
         response: { 200: OrganisationProfileSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      return withBoundTenant(database, organisationId, user.id, async (tx) =>
-        toProfile(await loadProfile(tx)),
-      );
+    async ({ tenant }) => {
+      return tenant(async (tx) => toProfile(await loadProfile(tx)));
     },
   );
 
-  app.patch<{ Body: UpdateOrganisationProfileRequest }>(
-    '/api/organisation/profile',
+  tenantRoute(
     {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
       /** The contract's GSTIN pattern is uppercase-only, because the
        * stored value must be; without this a correctly-typed lowercase
        * GSTIN would be bounced by schema validation with a generic 400
@@ -255,11 +250,7 @@ export function registerOrganisationRoutes(
         response: { 200: OrganisationProfileSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const body = request.body;
       // The contractor's own GSTIN and email are proved exactly as a
       // contact's are (../contact-fields.js) and before the transaction
@@ -284,7 +275,7 @@ export function registerOrganisationRoutes(
           'Locality must contain at least two non-space characters.',
         );
       }
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireOwner(tx, user.id);
         const current = await loadProfile(tx);
         const next = {
@@ -426,14 +417,13 @@ export function registerOrganisationRoutes(
     },
   );
 
-  app.put<{ Body: Buffer }>(
-    '/api/organisation/logo',
-    { schema: { response: { ...errorResponses } } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+  tenantRoute(
+    {
+      method: 'PUT',
+      url: '/api/organisation/logo',
+      schema: { response: { ...errorResponses } },
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -450,23 +440,19 @@ export function registerOrganisationRoutes(
         throw httpError(400, 'INVALID_IMAGE', 'The logo must be a PNG or JPEG image.');
       }
       // Authorisation before the expensive scan (ops batch).
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireOwner(tx, user.id);
       });
       await assertNotMalware(scanner, body);
 
       const extension = mediaType === 'image/png' ? 'png' : 'jpg';
       const key = `${organisationId}/branding/logo.${extension}`;
-      const profile = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireOwner(tx, user.id);
-          // Store before the row points at the key; an orphan object is
-          // harmless, a dangling key is not.
-          await storage.put(key, body);
-          const [updated] = await tx<ProfileRow[]>`
+      const profile = await tenant(async (tx) => {
+        await requireOwner(tx, user.id);
+        // Store before the row points at the key; an orphan object is
+        // harmless, a dangling key is not.
+        await storage.put(key, body);
+        const [updated] = await tx<ProfileRow[]>`
             update organisations set
               logo_object_key = ${key},
               logo_media_type = ${mediaType},
@@ -476,8 +462,8 @@ export function registerOrganisationRoutes(
                       contact_email, logo_object_key, warranty_template_text,
                       state_code
           `;
-          if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
-          await tx`
+        if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -487,37 +473,30 @@ export function registerOrganisationRoutes(
               ${jsonb(tx, { mediaType, sizeBytes: body.length })}
             )
           `;
-          return toProfile(updated);
-        },
-      );
+        return toProfile(updated);
+      });
       return reply.status(200).send(profile);
     },
   );
 
   // The success payload is the raw image bytes, which no response schema
   // describes; the explicit Reply generic says so to the type provider.
-  app.get<{ Reply: Buffer }>(
-    '/api/organisation/logo',
-    { schema: { response: { ...errorResponses } } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const row = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [organisation] = await tx<
-            { logo_object_key: string | null; logo_media_type: string | null }[]
-          >`
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/organisation/logo',
+      schema: { response: { ...errorResponses } },
+    },
+    async ({ reply, tenant }) => {
+      const row = await tenant(async (tx) => {
+        const [organisation] = await tx<
+          { logo_object_key: string | null; logo_media_type: string | null }[]
+        >`
             select logo_object_key, logo_media_type from organisations
             where id = app_private.current_organisation_id()
           `;
-          return organisation ?? null;
-        },
-      );
+        return organisation ?? null;
+      });
       if (!row?.logo_object_key || !row.logo_media_type) {
         throw httpError(404, 'NO_LOGO', 'The organisation has no logo.');
       }
@@ -529,19 +508,16 @@ export function registerOrganisationRoutes(
     },
   );
 
-  app.delete(
-    '/api/organisation/logo',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/organisation/logo',
       schema: {
         response: { 204: { type: 'null' }, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ reply, user, organisationId, tenant }) => {
+      await tenant(async (tx) => {
         await requireOwner(tx, user.id);
         await tx`
           update organisations set
@@ -572,19 +548,16 @@ export function registerOrganisationRoutes(
   // numbers will look like); writes are owner-only, like the rest of the
   // profile.
 
-  app.get(
-    '/api/organisation/number-series',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/organisation/number-series',
       schema: {
         response: { 200: NumberSeriesListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ tenant }) => {
+      return tenant(async (tx) => {
         const rows = await tx<
           { document_type: NumberedDocumentType; template: string }[]
         >`
@@ -604,12 +577,10 @@ export function registerOrganisationRoutes(
     },
   );
 
-  app.put<{
-    Params: { documentType: NumberedDocumentType };
-    Body: SaveNumberSeriesRequest;
-  }>(
-    '/api/organisation/number-series/:documentType',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/organisation/number-series/:documentType',
       schema: {
         params: Type.Object(
           { documentType: NumberedDocumentTypeSchema },
@@ -619,11 +590,7 @@ export function registerOrganisationRoutes(
         response: { 200: NumberSeriesSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { documentType } = request.params;
       const template = request.body.template.trim();
       // Proved BEFORE it is stored: a template that cannot be filled in
@@ -637,7 +604,7 @@ export function registerOrganisationRoutes(
         }
         throw cause;
       }
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireOwner(tx, user.id);
         await tx`
           insert into document_number_series (organisation_id, document_type, template)
@@ -664,9 +631,10 @@ export function registerOrganisationRoutes(
     },
   );
 
-  app.delete<{ Params: { documentType: NumberedDocumentType } }>(
-    '/api/organisation/number-series/:documentType',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/organisation/number-series/:documentType',
       schema: {
         params: Type.Object(
           { documentType: NumberedDocumentTypeSchema },
@@ -675,13 +643,9 @@ export function registerOrganisationRoutes(
         response: { 200: NumberSeriesSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { documentType } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireOwner(tx, user.id);
         await tx`
           delete from document_number_series where document_type = ${documentType}

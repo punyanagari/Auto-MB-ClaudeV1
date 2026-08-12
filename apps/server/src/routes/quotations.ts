@@ -25,10 +25,9 @@ import {
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Budgetary quotations (migration 0033; legacy spec §5.8).
@@ -495,24 +494,19 @@ export function registerQuotationRoutes(
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
-    '/api/budgetary-quotations',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/budgetary-quotations',
       schema: {
         response: { 200: BudgetaryQuotationListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ tenant }) => {
       // A quotation has no Work, so it has no work_scope to filter by:
       // every member of the organisation sees the organisation's offers.
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
+      const rows = await tenant(
         async (tx) => tx<QuotationRow[]>`
           select ${tx.unsafe(QUOTATION_COLUMNS)}
           from budgetary_quotations
@@ -523,35 +517,28 @@ export function registerQuotationRoutes(
     },
   );
 
-  app.post(
-    '/api/budgetary-quotations',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
       schema: {
         body: CreateBudgetaryQuotationRequestSchema,
         response: { 201: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const header = normaliseHeader(request.body);
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertBqDateNotFuture(tx, header.bqDate);
-          if (header.customerContactId !== null) {
-            await requireCustomerContact(tx, header.customerContactId);
-          }
-          // Deliberately NO one-draft rule: a contractor quotes several
-          // customers at once, and 0033 carries no partial unique index
-          // to say otherwise (the delivery challan's is per Work, and a
-          // quotation has no Work).
-          const [created] = await tx<{ id: string }[]>`
+      const detail = await tenant(async (tx) => {
+        await assertBqDateNotFuture(tx, header.bqDate);
+        if (header.customerContactId !== null) {
+          await requireCustomerContact(tx, header.customerContactId);
+        }
+        // Deliberately NO one-draft rule: a contractor quotes several
+        // customers at once, and 0033 carries no partial unique index
+        // to say otherwise (the delivery challan's is per Work, and a
+        // quotation has no Work).
+        const [created] = await tx<{ id: string }[]>`
             insert into budgetary_quotations (
               organisation_id, customer_contact_id, addressed_to, subject,
               bq_date, valid_until, notes, created_by_user_id
@@ -563,61 +550,52 @@ export function registerQuotationRoutes(
             )
             returning id
           `;
-          if (!created) throw new Error('budgetary quotation insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'budgetary_quotation.created',
-            'budgetary_quotations',
-            created.id,
-            { addressedTo: header.addressedTo, subject: header.subject },
-          );
-          return readDetail(tx, created.id);
-        },
-      );
+        if (!created) throw new Error('budgetary quotation insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'budgetary_quotation.created',
+          'budgetary_quotations',
+          created.id,
+          { addressedTo: header.addressedTo, subject: header.subject },
+        );
+        return readDetail(tx, created.id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.get(
-    '/api/budgetary-quotations/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/budgetary-quotations/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, tenant }) => {
       const { id } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) =>
-        readDetail(tx, id),
-      );
+      return tenant(async (tx) => readDetail(tx, id));
     },
   );
 
-  app.put(
-    '/api/budgetary-quotations/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/budgetary-quotations/:id',
       schema: {
         params: IdParamsSchema,
         body: CreateBudgetaryQuotationRequestSchema,
         response: { 200: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const header = normaliseHeader(request.body);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertBqDateNotFuture(tx, header.bqDate);
         const quotation = await lockQuotation(tx, id);
         // An issued offer is a document that left the building: it takes
@@ -669,24 +647,21 @@ export function registerQuotationRoutes(
     },
   );
 
-  app.put(
-    '/api/budgetary-quotations/:id/lines',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/budgetary-quotations/:id/lines',
       schema: {
         params: IdParamsSchema,
         body: SaveBudgetaryQuotationLinesRequestSchema,
         response: { 200: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const quotation = await lockQuotation(tx, id);
         // The 0033 line trigger says the same thing in the database; the
         // refusal is made here so the operator reads a 409 with a status
@@ -712,22 +687,19 @@ export function registerQuotationRoutes(
     },
   );
 
-  app.delete(
-    '/api/budgetary-quotations/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/budgetary-quotations/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         const quotation = await lockQuotation(tx, id);
         // Drafts may be deleted; an issued offer expires, converts, or is
         // withdrawn, and keeps its number forever (engineering rule 8).
@@ -754,88 +726,81 @@ export function registerQuotationRoutes(
     },
   );
 
-  app.post(
-    '/api/budgetary-quotations/:id/issue',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/budgetary-quotations/:id/issue',
       schema: {
         params: IdParamsSchema,
         response: { 201: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          const quotation = await lockQuotation(tx, id);
-          requireStatus(quotation, 'draft');
-          await assertBqDateNotFuture(tx, quotation.bq_date);
+      const detail = await tenant(async (tx) => {
+        const quotation = await lockQuotation(tx, id);
+        requireStatus(quotation, 'draft');
+        await assertBqDateNotFuture(tx, quotation.bq_date);
 
-          const lines = await readLines(tx, id);
-          if (lines.length === 0) {
-            throw httpError(
-              409,
-              'BQ_EMPTY',
-              'This quotation has nothing to offer — save at least one priced line before issuing it.',
-            );
-          }
-          const totalAmount = await readPreviewTotal(tx, id);
+        const lines = await readLines(tx, id);
+        if (lines.length === 0) {
+          throw httpError(
+            409,
+            'BQ_EMPTY',
+            'This quotation has nothing to offer — save at least one priced line before issuing it.',
+          );
+        }
+        const totalAmount = await readPreviewTotal(tx, id);
 
-          // Snapshot-on-use: the customer as the offer names them, frozen
-          // now so retiring or renaming the contact never rewrites the
-          // document. A quotation addressed to a stranger carries no
-          // snapshot — `addressed_to` is the whole record.
-          let customerSnapshot: CustomerSnapshot | null = null;
-          if (quotation.customer_contact_id !== null) {
-            const [contact] = await tx<ContactRow[]>`
+        // Snapshot-on-use: the customer as the offer names them, frozen
+        // now so retiring or renaming the contact never rewrites the
+        // document. A quotation addressed to a stranger carries no
+        // snapshot — `addressed_to` is the whole record.
+        let customerSnapshot: CustomerSnapshot | null = null;
+        if (quotation.customer_contact_id !== null) {
+          const [contact] = await tx<ContactRow[]>`
               select ${tx.unsafe(CONTACT_COLUMNS)} from contacts
               where id = ${quotation.customer_contact_id}
             `;
-            if (!contact) throw new Error('quotation customer contact vanished');
-            customerSnapshot = toCustomerSnapshot(contact);
-          }
-          // SQL NULL, not the jsonb scalar `null` a bare json() would
-          // write: "no snapshot" is the absence of a value, not a value.
-          const snapshotParameter =
-            customerSnapshot === null ? null : jsonb(tx, customerSnapshot);
+          if (!contact) throw new Error('quotation customer contact vanished');
+          customerSnapshot = toCustomerSnapshot(contact);
+        }
+        // SQL NULL, not the jsonb scalar `null` a bare json() would
+        // write: "no snapshot" is the absence of a value, not a value.
+        const snapshotParameter =
+          customerSnapshot === null ? null : jsonb(tx, customerSnapshot);
 
-          // Gapless BQ-NN per ORGANISATION (not per Work — there is no
-          // Work): the counter row lock orders concurrent issues, and a
-          // rolled-back transaction rolls the counter back with it, so
-          // the numbers carry no gaps and are never reused. The quotation
-          // row is already locked above, so the lock order is always
-          // document -> counter and concurrent issues cannot deadlock.
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Gapless BQ-NN per ORGANISATION (not per Work — there is no
+        // Work): the counter row lock orders concurrent issues, and a
+        // rolled-back transaction rolls the counter back with it, so
+        // the numbers carry no gaps and are never reused. The quotation
+        // row is already locked above, so the lock order is always
+        // document -> counter and concurrent issues cannot deadlock.
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into budgetary_quotation_counters (organisation_id)
             values (${organisationId})
             on conflict (organisation_id)
             do update set next_value = budgetary_quotation_counters.next_value + 1
             returning next_value
           `;
-          if (!counter) throw new Error('quotation counter upsert returned no row');
-          const sequence = counter.next_value;
-          const template = await loadNumberTemplate(tx, 'budgetary_quotation');
-          let bqNumber: string;
-          try {
-            bqNumber = renderNumberTemplate(template, {
-              documentDate: quotation.bq_date,
-              sequence,
-            });
-          } catch (cause) {
-            if (cause instanceof NumberTemplateError) {
-              throw httpError(400, 'QUOTATION_NUMBER_UNFILLABLE', cause.message);
-            }
-            throw cause;
+        if (!counter) throw new Error('quotation counter upsert returned no row');
+        const sequence = counter.next_value;
+        const template = await loadNumberTemplate(tx, 'budgetary_quotation');
+        let bqNumber: string;
+        try {
+          bqNumber = renderNumberTemplate(template, {
+            documentDate: quotation.bq_date,
+            sequence,
+          });
+        } catch (cause) {
+          if (cause instanceof NumberTemplateError) {
+            throw httpError(400, 'QUOTATION_NUMBER_UNFILLABLE', cause.message);
           }
+          throw cause;
+        }
 
-          await tx`
+        await tx`
             update budgetary_quotations
             set status = 'issued', bq_number = ${bqNumber},
                 sequence_number = ${sequence}, total_amount = ${totalAmount},
@@ -843,53 +808,49 @@ export function registerQuotationRoutes(
                 issued_by_user_id = ${user.id}, issued_at = now()
             where id = ${id}
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'NUMBER_CONFLICT',
-                `Quotation number ${bqNumber} already exists in this organisation.`,
-              );
-            }
-            throw error;
-          });
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'NUMBER_CONFLICT',
+              `Quotation number ${bqNumber} already exists in this organisation.`,
+            );
+          }
+          throw error;
+        });
 
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'budgetary_quotation.issued',
-            'budgetary_quotations',
-            id,
-            {
-              bqNumber,
-              sequence,
-              totalAmount,
-            },
-          );
-          return readDetail(tx, id);
-        },
-      );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'budgetary_quotation.issued',
+          'budgetary_quotations',
+          id,
+          {
+            bqNumber,
+            sequence,
+            totalAmount,
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.post(
-    '/api/budgetary-quotations/:id/outcome',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/budgetary-quotations/:id/outcome',
       schema: {
         params: IdParamsSchema,
         body: SetBudgetaryQuotationOutcomeRequestSchema,
         response: { 200: BudgetaryQuotationDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const { outcome } = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // WITHDRAWING is the contractor taking back a document that left
         // the building — the same act the cancel authority exists for
         // (0033: "documents are cancelled or withdrawn, never deleted"),

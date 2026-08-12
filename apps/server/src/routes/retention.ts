@@ -22,18 +22,12 @@ import {
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import {
-  assertWorkAccess,
-  requireAuthority,
-  requireEvidenceRole,
-  requireWriterRole,
-} from '../authz.js';
+import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 interface InstrumentRow {
   id: string;
@@ -132,57 +126,51 @@ export function registerRetentionRoutes(
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // --- Delivery receipt ---------------------------------------------------
-  app.post(
-    '/api/challans/:id/receipt',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/receipt',
       schema: {
         params: IdParamsSchema,
         body: RecordReceiptRequestSchema,
         response: { 201: ReceiptSchema, ...errorResponses },
       },
+      role: 'evidence',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: challanId } = request.params;
       const body = request.body;
-      const receipt = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireEvidenceRole(tx, user.id);
-          // The row lock serialises receipt recording against concurrent
-          // cancellation: whichever transaction wins, the other sees the
-          // final status.
-          const [challan] = await tx<{ status: string; work_id: string }[]>`
+      const receipt = await tenant(async (tx) => {
+        // The row lock serialises receipt recording against concurrent
+        // cancellation: whichever transaction wins, the other sees the
+        // final status.
+        const [challan] = await tx<{ status: string; work_id: string }[]>`
             select status, work_id from delivery_challans
             where id = ${challanId}
             for update
           `;
-          if (!challan) {
-            throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
-          }
-          await assertWorkAccess(tx, user.id, challan.work_id);
-          if (challan.status !== 'issued') {
-            throw httpError(
-              409,
-              'CHALLAN_STATUS_CONFLICT',
-              'Receipts are recorded against issued challans.',
-            );
-          }
-          const [row] = await tx<
-            {
-              id: string;
-              received_on: string;
-              received_by: string;
-              remarks: string | null;
-              created_at: Date;
-            }[]
-          >`
+        if (!challan) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        if (challan.status !== 'issued') {
+          throw httpError(
+            409,
+            'CHALLAN_STATUS_CONFLICT',
+            'Receipts are recorded against issued challans.',
+          );
+        }
+        const [row] = await tx<
+          {
+            id: string;
+            received_on: string;
+            received_by: string;
+            remarks: string | null;
+            created_at: Date;
+          }[]
+        >`
             insert into challan_receipts (
               organisation_id, delivery_challan_id, work_id, received_on,
               received_by, remarks, recorded_by_user_id
@@ -195,57 +183,53 @@ export function registerRetentionRoutes(
             returning id, received_on::text as received_on, received_by,
                       remarks, created_at
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'RECEIPT_EXISTS',
-                'A receipt is already recorded for this challan.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('receipt insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'challan.received',
-            'challan_receipts',
-            row.id,
-            {
-              challanId,
-              receivedOn: body.receivedOn,
-            },
-          );
-          return {
-            id: row.id,
-            deliveryChallanId: challanId,
-            receivedOn: row.received_on,
-            receivedBy: row.received_by,
-            remarks: row.remarks,
-            createdAt: row.created_at.toISOString(),
-          } satisfies Receipt;
-        },
-      );
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'RECEIPT_EXISTS',
+              'A receipt is already recorded for this challan.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('receipt insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.received',
+          'challan_receipts',
+          row.id,
+          {
+            challanId,
+            receivedOn: body.receivedOn,
+          },
+        );
+        return {
+          id: row.id,
+          deliveryChallanId: challanId,
+          receivedOn: row.received_on,
+          receivedBy: row.received_by,
+          remarks: row.remarks,
+          createdAt: row.created_at.toISOString(),
+        } satisfies Receipt;
+      });
       return reply.status(201).send(receipt);
     },
   );
 
-  app.get(
-    '/api/challans/:id/receipt',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/challans/:id/receipt',
       schema: {
         params: IdParamsSchema,
         response: { 200: ReceiptSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: challanId } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${challanId}
         `;
@@ -282,32 +266,25 @@ export function registerRetentionRoutes(
   );
 
   // --- Serial traceability ------------------------------------------------
-  app.post(
-    '/api/challans/:id/serials',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/serials',
       schema: {
         params: IdParamsSchema,
         body: RecordSerialsRequestSchema,
         response: { 201: SerialListResponseSchema, ...errorResponses },
       },
+      role: 'evidence',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: challanId } = request.params;
       const body = request.body;
-      const serials = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireEvidenceRole(tx, user.id);
-          // Lock the line so the quantity cap cannot race.
-          const [line] = await tx<
-            { id: string; work_id: string; quantity: string; challan_status: string }[]
-          >`
+      const serials = await tenant(async (tx) => {
+        // Lock the line so the quantity cap cannot race.
+        const [line] = await tx<
+          { id: string; work_id: string; quantity: string; challan_status: string }[]
+        >`
             select dci.id, dci.work_id, dci.quantity::text as quantity, dc.status as challan_status
             from delivery_challan_items dci
             join delivery_challans dc on dc.id = dci.delivery_challan_id
@@ -315,34 +292,34 @@ export function registerRetentionRoutes(
               and dci.delivery_challan_id = ${challanId}
             for update of dci, dc
           `;
-          if (!line) {
-            throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
-          }
-          // Serials are recorded post-issue (the historical evidence
-          // flow) or on the draft (required before issue for items with
-          // requires_serials). Cancelled challans take no new evidence.
-          if (line.challan_status !== 'issued' && line.challan_status !== 'draft') {
-            throw httpError(
-              409,
-              'CHALLAN_STATUS_CONFLICT',
-              'Serials are recorded against draft or issued challans.',
-            );
-          }
-          await assertWorkAccess(tx, user.id, line.work_id);
-          const [existing] = await tx<{ count: string }[]>`
+        if (!line) {
+          throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
+        }
+        // Serials are recorded post-issue (the historical evidence
+        // flow) or on the draft (required before issue for items with
+        // requires_serials). Cancelled challans take no new evidence.
+        if (line.challan_status !== 'issued' && line.challan_status !== 'draft') {
+          throw httpError(
+            409,
+            'CHALLAN_STATUS_CONFLICT',
+            'Serials are recorded against draft or issued challans.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, line.work_id);
+        const [existing] = await tx<{ count: string }[]>`
             select count(*)::text as count from challan_item_serials
             where delivery_challan_item_id = ${body.challanItemId}
           `;
-          const already = Number(existing?.count ?? '0');
-          if (already + body.serialNumbers.length > Math.floor(Number(line.quantity))) {
-            throw httpError(
-              409,
-              'SERIAL_LIMIT',
-              `This line shipped ${line.quantity}; ${String(already)} serials are already recorded.`,
-            );
-          }
-          for (const serialNumber of body.serialNumbers) {
-            await tx`
+        const already = Number(existing?.count ?? '0');
+        if (already + body.serialNumbers.length > Math.floor(Number(line.quantity))) {
+          throw httpError(
+            409,
+            'SERIAL_LIMIT',
+            `This line shipped ${line.quantity}; ${String(already)} serials are already recorded.`,
+          );
+        }
+        for (const serialNumber of body.serialNumbers) {
+          await tx`
               insert into challan_item_serials (
                 organisation_id, work_id, delivery_challan_id,
                 delivery_challan_item_id, serial_number
@@ -352,174 +329,150 @@ export function registerRetentionRoutes(
                 ${body.challanItemId}, ${serialNumber}
               )
             `.catch((error: unknown) => {
-              if (error instanceof Error && 'code' in error && error.code === '23505') {
-                throw httpError(
-                  409,
-                  'DUPLICATE_SERIAL',
-                  `Serial ${serialNumber} already exists in this Work.`,
-                );
-              }
-              throw error;
-            });
-          }
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'serials.recorded',
-            'challan_item_serials',
-            challanId,
-            {
-              challanItemId: body.challanItemId,
-              count: body.serialNumbers.length,
-            },
-          );
-          return listSerials(tx, line.work_id);
-        },
-      );
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'DUPLICATE_SERIAL',
+                `Serial ${serialNumber} already exists in this Work.`,
+              );
+            }
+            throw error;
+          });
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'serials.recorded',
+          'challan_item_serials',
+          challanId,
+          {
+            challanItemId: body.challanItemId,
+            count: body.serialNumbers.length,
+          },
+        );
+        return listSerials(tx, line.work_id);
+      });
       return reply.status(201).send({ serials });
     },
   );
 
-  app.put(
-    '/api/serials/:id/installation',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/serials/:id/installation',
       schema: {
         params: IdParamsSchema,
         body: InstallSerialRequestSchema,
         response: { 200: SerialListResponseSchema, ...errorResponses },
       },
+      role: 'evidence',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      const serials = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireEvidenceRole(tx, user.id);
-          const [serial] = await tx<
-            {
-              work_id: string;
-              installed_on: string | null;
-              installation_remarks: string | null;
-            }[]
-          >`
+      const serials = await tenant(async (tx) => {
+        const [serial] = await tx<
+          {
+            work_id: string;
+            installed_on: string | null;
+            installation_remarks: string | null;
+          }[]
+        >`
             select work_id, installed_on::text as installed_on,
                    installation_remarks
             from challan_item_serials where id = ${id}
             for update
           `;
-          if (!serial) {
-            throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
-          }
-          await assertWorkAccess(tx, user.id, serial.work_id);
-          // A serial covered by a live quantity-level installation record
-          // (Milestone 7) is managed through that record: cancel it to
-          // release the serial instead of editing the per-serial date.
-          const [attachment] = await tx<{ installation_id: string }[]>`
+        if (!serial) {
+          throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
+        }
+        await assertWorkAccess(tx, user.id, serial.work_id);
+        // A serial covered by a live quantity-level installation record
+        // (Milestone 7) is managed through that record: cancel it to
+        // release the serial instead of editing the per-serial date.
+        const [attachment] = await tx<{ installation_id: string }[]>`
             select installation_id from installation_serials
             where challan_item_serial_id = ${id} and released_at is null
           `;
-          if (attachment) {
-            throw httpError(
-              409,
-              'SERIAL_ATTACHED_TO_INSTALLATION',
-              'This serial is covered by an installation record; cancel that record to release it.',
-            );
-          }
-          const [updated] = await tx<{ work_id: string }[]>`
+        if (attachment) {
+          throw httpError(
+            409,
+            'SERIAL_ATTACHED_TO_INSTALLATION',
+            'This serial is covered by an installation record; cancel that record to release it.',
+          );
+        }
+        const [updated] = await tx<{ work_id: string }[]>`
             update challan_item_serials
             set installed_on = ${body.installedOn},
                 installation_remarks = ${body.remarks ?? null}
             where id = ${id}
             returning work_id
           `;
-          if (!updated) {
-            throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
-          }
-          // Re-recording an installation overwrites the previous date, so
-          // the trail keeps the old value alongside the new one.
-          const changes = auditDiff(
-            {
-              installedOn: serial.installed_on,
-              installationRemarks: serial.installation_remarks,
-            },
-            {
-              installedOn: body.installedOn,
-              installationRemarks: body.remarks ?? null,
-            },
-          );
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'serial.installed',
-            'challan_item_serials',
-            id,
-            { before: changes.before, after: changes.after },
-          );
-          return listSerials(tx, updated.work_id);
-        },
-      );
+        if (!updated) {
+          throw httpError(404, 'SERIAL_NOT_FOUND', 'No such serial record.');
+        }
+        // Re-recording an installation overwrites the previous date, so
+        // the trail keeps the old value alongside the new one.
+        const changes = auditDiff(
+          {
+            installedOn: serial.installed_on,
+            installationRemarks: serial.installation_remarks,
+          },
+          {
+            installedOn: body.installedOn,
+            installationRemarks: body.remarks ?? null,
+          },
+        );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'serial.installed',
+          'challan_item_serials',
+          id,
+          { before: changes.before, after: changes.after },
+        );
+        return listSerials(tx, updated.work_id);
+      });
       return { serials };
     },
   );
 
-  app.get(
-    '/api/works/:id/serials',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/serials',
       schema: {
         params: IdParamsSchema,
         response: { 200: SerialListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const serials = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return listSerials(tx, workId);
-        },
-      );
+      const serials = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return listSerials(tx, workId);
+      });
       return { serials };
     },
   );
 
   // --- Contract instruments -----------------------------------------------
-  app.get(
-    '/api/works/:id/instruments',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/instruments',
       schema: {
         params: IdParamsSchema,
         response: { 200: InstrumentListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return tx<InstrumentRow[]>`
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return tx<InstrumentRow[]>`
             select id, work_id, kind, reference, amount::text as amount,
                    issued_on::text as issued_on, expires_on::text as expires_on,
                    status, notes, created_at
@@ -527,87 +480,79 @@ export function registerRetentionRoutes(
             where work_id = ${workId}
             order by kind, issued_on, reference
           `;
-        },
-      );
+      });
       return { instruments: rows.map(toInstrument) };
     },
   );
 
-  app.post(
-    '/api/works/:id/instruments',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/instruments',
       schema: {
         params: IdParamsSchema,
         body: SaveInstrumentRequestSchema,
         response: { 201: InstrumentSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      const instrument = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<{ id: string; letter_date: string; today: string }[]>`
+      const instrument = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const [work] = await tx<{ id: string; letter_date: string; today: string }[]>`
             select w.id, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
             where w.id = ${workId} and w.deleted_at is null
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          // Product invariant 8, the same window every other dated record
-          // obeys (challans 0010, installations 0017, PACs 0022): the
-          // issue date is never in the future, in the organisation's own
-          // timezone rather than the server clock. A typo'd year hides
-          // the instrument from the dashboard expiry sweep while still
-          // counting toward the PBG coverage sum, silently clearing the
-          // "under value" alert for a guarantee that does not yet exist.
-          if (body.issuedOn > work.today) {
-            throw httpError(
-              400,
-              'INSTRUMENT_ISSUED_ON_INVALID',
-              `The issue date cannot be in the future (today is ${work.today}).`,
-            );
-          }
-          // Deliberately NOT refused when the issue date precedes the LOA
-          // letter date: a 'doc' instrument (tender document, or an EMD /
-          // bid security later converted) legitimately predates the
-          // letter, and paper records are back-dated. It is recorded as a
-          // warning on the audit event instead.
-          const issuedBeforeLetterDate = body.issuedOn < work.letter_date;
-          if (body.expiresOn !== undefined && body.expiresOn < body.issuedOn) {
-            throw httpError(
-              400,
-              'INSTRUMENT_EXPIRY_INVALID',
-              `The expiry date ${body.expiresOn} cannot precede the issue date ${body.issuedOn}. Check the year on the instrument — an expiry before issue reads as a lapsed guarantee on the dashboard for the rest of the Work.`,
-            );
-          }
-          // Legacy §5.5: a performance guarantee must record what it
-          // secures. The dashboard sums active pbg amounts against
-          // works.pbg_required_amount, so a NULL or zero amount keeps
-          // showing "under value" for a guarantee actually lodged, with
-          // nothing to distinguish it from a real shortfall. 'pac' and
-          // 'doc' instruments legitimately carry no amount.
-          if (
-            body.kind === 'pbg' &&
-            (body.amount === undefined || !isPositiveDecimal(body.amount))
-          ) {
-            throw httpError(
-              400,
-              'INSTRUMENT_AMOUNT_REQUIRED',
-              'A performance guarantee must record the amount it secures, greater than zero — the dashboard checks that sum against the required PBG value.',
-            );
-          }
-          const [row] = await tx<InstrumentRow[]>`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // Product invariant 8, the same window every other dated record
+        // obeys (challans 0010, installations 0017, PACs 0022): the
+        // issue date is never in the future, in the organisation's own
+        // timezone rather than the server clock. A typo'd year hides
+        // the instrument from the dashboard expiry sweep while still
+        // counting toward the PBG coverage sum, silently clearing the
+        // "under value" alert for a guarantee that does not yet exist.
+        if (body.issuedOn > work.today) {
+          throw httpError(
+            400,
+            'INSTRUMENT_ISSUED_ON_INVALID',
+            `The issue date cannot be in the future (today is ${work.today}).`,
+          );
+        }
+        // Deliberately NOT refused when the issue date precedes the LOA
+        // letter date: a 'doc' instrument (tender document, or an EMD /
+        // bid security later converted) legitimately predates the
+        // letter, and paper records are back-dated. It is recorded as a
+        // warning on the audit event instead.
+        const issuedBeforeLetterDate = body.issuedOn < work.letter_date;
+        if (body.expiresOn !== undefined && body.expiresOn < body.issuedOn) {
+          throw httpError(
+            400,
+            'INSTRUMENT_EXPIRY_INVALID',
+            `The expiry date ${body.expiresOn} cannot precede the issue date ${body.issuedOn}. Check the year on the instrument — an expiry before issue reads as a lapsed guarantee on the dashboard for the rest of the Work.`,
+          );
+        }
+        // Legacy §5.5: a performance guarantee must record what it
+        // secures. The dashboard sums active pbg amounts against
+        // works.pbg_required_amount, so a NULL or zero amount keeps
+        // showing "under value" for a guarantee actually lodged, with
+        // nothing to distinguish it from a real shortfall. 'pac' and
+        // 'doc' instruments legitimately carry no amount.
+        if (
+          body.kind === 'pbg' &&
+          (body.amount === undefined || !isPositiveDecimal(body.amount))
+        ) {
+          throw httpError(
+            400,
+            'INSTRUMENT_AMOUNT_REQUIRED',
+            'A performance guarantee must record the amount it secures, greater than zero — the dashboard checks that sum against the required PBG value.',
+          );
+        }
+        const [row] = await tx<InstrumentRow[]>`
             insert into work_instruments (
               organisation_id, work_id, kind, reference, amount, issued_on,
               expires_on, notes, created_by_user_id
@@ -621,58 +566,54 @@ export function registerRetentionRoutes(
                       issued_on::text as issued_on, expires_on::text as expires_on,
                       status, notes, created_at
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'INSTRUMENT_EXISTS',
-                'This instrument reference already exists for the Work.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('instrument insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'instrument.created',
-            'work_instruments',
-            row.id,
-            {
-              workId,
-              kind: body.kind,
-              reference: body.reference,
-              // The soft half of the date rule: accepted, but recorded so
-              // an instrument issued before the LOA is visible in the
-              // trail rather than silent.
-              issuedBeforeLetterDate,
-            },
-          );
-          return toInstrument(row);
-        },
-      );
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'INSTRUMENT_EXISTS',
+              'This instrument reference already exists for the Work.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('instrument insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'instrument.created',
+          'work_instruments',
+          row.id,
+          {
+            workId,
+            kind: body.kind,
+            reference: body.reference,
+            // The soft half of the date rule: accepted, but recorded so
+            // an instrument issued before the LOA is visible in the
+            // trail rather than silent.
+            issuedBeforeLetterDate,
+          },
+        );
+        return toInstrument(row);
+      });
       return reply.status(201).send(instrument);
     },
   );
 
-  app.put(
-    '/api/instruments/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/instruments/:id',
       schema: {
         params: IdParamsSchema,
         body: UpdateInstrumentRequestSchema,
         response: { 200: InstrumentSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         // The row lock serialises concurrent status edits, and the locked
         // values are the audit trail's before-image.
         const [existing] = await tx<
@@ -751,27 +692,20 @@ export function registerRetentionRoutes(
   );
 
   // --- Measurement Book ---------------------------------------------------
-  app.get(
-    '/api/works/:id/mb-entries',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/mb-entries',
       schema: {
         params: IdParamsSchema,
         response: { 200: MbEntryListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return tx<MbEntryRow[]>`
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return tx<MbEntryRow[]>`
             select mb.id, mb.work_item_id, wi.item_number,
                    mb.delivery_challan_id, mb.measured_quantity::text as measured_quantity,
                    mb.measured_on::text as measured_on, mb.mb_book_ref, mb.remarks,
@@ -781,45 +715,37 @@ export function registerRetentionRoutes(
             where mb.work_id = ${workId}
             order by mb.measured_on, mb.created_at
           `;
-        },
-      );
+      });
       return { entries: rows.map(toMbEntry) };
     },
   );
 
-  app.post(
-    '/api/works/:id/mb-entries',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/mb-entries',
       schema: {
         params: IdParamsSchema,
         body: RecordMbEntryRequestSchema,
         response: { 201: MbEntrySchema, ...errorResponses },
       },
+      role: 'evidence',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      const entry = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireEvidenceRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // Lock the item: cumulative measurement must not exceed delivered
-          // (issued challans), and this check must not race.
-          const [item] = await tx<
-            {
-              id: string;
-              item_number: string;
-              letter_date: string;
-              today: string;
-            }[]
-          >`
+      const entry = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        // Lock the item: cumulative measurement must not exceed delivered
+        // (issued challans), and this check must not race.
+        const [item] = await tx<
+          {
+            id: string;
+            item_number: string;
+            letter_date: string;
+            today: string;
+          }[]
+        >`
             select wi.id, wi.item_number, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from work_items wi
@@ -829,56 +755,56 @@ export function registerRetentionRoutes(
               and wi.deleted_at is null
             for update of wi
           `;
-          if (!item) {
-            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-          }
-          // The same window every other dated operational record obeys
-          // (challans 0010, installations 0017, PACs 0022, Measurement
-          // Books 0024): not in the future in the organisation's own
-          // timezone, not before the LOA letter date. Nothing downstream
-          // ever revisits a measurement date, so a mistyped year would
-          // silently corrupt the site-measurement evidence. Back-dating
-          // inside the window stays fully supported — paper site
-          // measurements are typed up weeks late.
-          if (body.measuredOn > item.today) {
-            throw httpError(
-              400,
-              'MB_ENTRY_DATE_FUTURE',
-              `The measurement date cannot be in the future (today is ${item.today}).`,
-            );
-          }
-          if (body.measuredOn < item.letter_date) {
-            throw httpError(
-              400,
-              'MB_ENTRY_DATE_BEFORE_LOA',
-              `The measurement date cannot precede the LOA letter date ${item.letter_date}.`,
-            );
-          }
-          if (body.deliveryChallanId !== undefined) {
-            // The claimed provenance must be a real, issued challan of this
-            // Work; the row lock serialises against cancellation, and the
-            // composite foreign key backs this check in the database.
-            const [source] = await tx<{ status: string }[]>`
+        if (!item) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        // The same window every other dated operational record obeys
+        // (challans 0010, installations 0017, PACs 0022, Measurement
+        // Books 0024): not in the future in the organisation's own
+        // timezone, not before the LOA letter date. Nothing downstream
+        // ever revisits a measurement date, so a mistyped year would
+        // silently corrupt the site-measurement evidence. Back-dating
+        // inside the window stays fully supported — paper site
+        // measurements are typed up weeks late.
+        if (body.measuredOn > item.today) {
+          throw httpError(
+            400,
+            'MB_ENTRY_DATE_FUTURE',
+            `The measurement date cannot be in the future (today is ${item.today}).`,
+          );
+        }
+        if (body.measuredOn < item.letter_date) {
+          throw httpError(
+            400,
+            'MB_ENTRY_DATE_BEFORE_LOA',
+            `The measurement date cannot precede the LOA letter date ${item.letter_date}.`,
+          );
+        }
+        if (body.deliveryChallanId !== undefined) {
+          // The claimed provenance must be a real, issued challan of this
+          // Work; the row lock serialises against cancellation, and the
+          // composite foreign key backs this check in the database.
+          const [source] = await tx<{ status: string }[]>`
               select status from delivery_challans
               where id = ${body.deliveryChallanId} and work_id = ${workId}
               for update
             `;
-            if (!source) {
-              throw httpError(
-                404,
-                'CHALLAN_NOT_FOUND',
-                'The referenced challan does not belong to this Work.',
-              );
-            }
-            if (source.status !== 'issued') {
-              throw httpError(
-                409,
-                'CHALLAN_STATUS_CONFLICT',
-                'Measurements reference issued challans.',
-              );
-            }
+          if (!source) {
+            throw httpError(
+              404,
+              'CHALLAN_NOT_FOUND',
+              'The referenced challan does not belong to this Work.',
+            );
           }
-          const [exceeds] = await tx<{ exceeded: boolean }[]>`
+          if (source.status !== 'issued') {
+            throw httpError(
+              409,
+              'CHALLAN_STATUS_CONFLICT',
+              'Measurements reference issued challans.',
+            );
+          }
+        }
+        const [exceeds] = await tx<{ exceeded: boolean }[]>`
             select (
               coalesce((
                 select sum(measured_quantity) from mb_entries
@@ -892,14 +818,14 @@ export function registerRetentionRoutes(
                 and dc.status = 'issued'
             ), 0) as exceeded
           `;
-          if (exceeds?.exceeded === true) {
-            throw httpError(
-              409,
-              'MEASUREMENT_EXCEEDS_DELIVERY',
-              `Cumulative measurement for ${item.item_number} would exceed the delivered quantity.`,
-            );
-          }
-          const [row] = await tx<MbEntryRow[]>`
+        if (exceeds?.exceeded === true) {
+          throw httpError(
+            409,
+            'MEASUREMENT_EXCEEDS_DELIVERY',
+            `Cumulative measurement for ${item.item_number} would exceed the delivered quantity.`,
+          );
+        }
+        const [row] = await tx<MbEntryRow[]>`
             insert into mb_entries (
               organisation_id, work_id, work_item_id, delivery_challan_id,
               measured_quantity, measured_on, mb_book_ref, remarks,
@@ -917,56 +843,39 @@ export function registerRetentionRoutes(
                       measured_on::text as measured_on, mb_book_ref, remarks,
                       bill_id, created_at
           `;
-          if (!row) throw new Error('mb entry insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'mb.recorded',
-            'mb_entries',
-            row.id,
-            {
-              workItemId: body.workItemId,
-              measuredQuantity: body.measuredQuantity,
-            },
-          );
-          return toMbEntry(row);
-        },
-      );
+        if (!row) throw new Error('mb entry insert returned no row');
+        await audit(tx, organisationId, user.id, 'mb.recorded', 'mb_entries', row.id, {
+          workItemId: body.workItemId,
+          measuredQuantity: body.measuredQuantity,
+        });
+        return toMbEntry(row);
+      });
       return reply.status(201).send(entry);
     },
   );
 
   // --- Bills ----------------------------------------------------------------
-  app.get(
-    '/api/works/:id/bills',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/bills',
       schema: {
         params: IdParamsSchema,
         response: { 200: BillListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return tx<BillRow[]>`
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
                  total_amount::text as total_amount, mb_id, created_at,
                  submitted_at, paid_at
           from bills where work_id = ${workId}
           order by bill_number desc
         `;
-        },
-      );
+      });
       return { bills: rows.map(toBill) };
     },
   );
@@ -979,24 +888,21 @@ export function registerRetentionRoutes(
   // payment matrix. mb_entries stay recordable site measurement
   // evidence; they are no longer a billing input.
 
-  app.post(
-    '/api/bills/:id/status',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/bills/:id/status',
       schema: {
         params: IdParamsSchema,
         body: UpdateBillStatusRequestSchema,
         response: { 200: BillSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'issue');
+      return tenant(async (tx) => {
         const [current] = await tx<{ status: Bill['status']; work_id: string }[]>`
           select status, work_id from bills where id = ${id} for update
         `;

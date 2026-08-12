@@ -18,13 +18,12 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { auditDiff } from '../audit-diff.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix and item category
@@ -260,21 +259,19 @@ export function registerPaymentRoutes(
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
-    '/api/works/:id/payment-matrix',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/payment-matrix',
       schema: {
         params: IdParamsSchema,
         response: { 200: PaymentMatrixResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
@@ -291,26 +288,23 @@ export function registerPaymentRoutes(
     },
   );
 
-  app.put(
-    '/api/works/:id/payment-matrix/:category',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/works/:id/payment-matrix/:category',
       schema: {
         params: MatrixParamsSchema,
         body: UpsertPaymentMatrixRowRequestSchema,
         response: { 200: PaymentMatrixRowSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workId, category: rawCategory } = request.params;
       const category = assertMatrixCategory(rawCategory);
       const body = request.body;
       assertPercentagesSumTo100(body);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
@@ -402,23 +396,20 @@ export function registerPaymentRoutes(
     },
   );
 
-  app.delete(
-    '/api/works/:id/payment-matrix/:category',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/works/:id/payment-matrix/:category',
       schema: {
         params: MatrixParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId, category: rawCategory } = request.params;
       const category = assertMatrixCategory(rawCategory);
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         // Deleting configuration is legitimate here: finalised MBs
         // snapshot their percentages, so removing a row only affects
@@ -471,24 +462,21 @@ export function registerPaymentRoutes(
     },
   );
 
-  app.patch(
-    '/api/work-items/:id/payment-category',
+  tenantRoute(
     {
+      method: 'PATCH',
+      url: '/api/work-items/:id/payment-category',
       schema: {
         params: IdParamsSchema,
         body: SetWorkItemPaymentCategoryRequestSchema,
         response: { 200: WorkItemPaymentCategoryResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workItemId } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         // Row lock: serialises concurrent category edits so the
         // before/after audit pairs chain truthfully.
         const [item] = await tx<
@@ -557,25 +545,21 @@ export function registerPaymentRoutes(
     },
   );
 
-  app.patch(
-    '/api/work-items/:id/tax-facts',
+  tenantRoute(
     {
+      method: 'PATCH',
+      url: '/api/work-items/:id/tax-facts',
       schema: {
         params: IdParamsSchema,
         body: SetWorkItemTaxFactsRequestSchema,
         response: { 200: WorkItemTaxFactsResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workItemId } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
-
+      return tenant(async (tx) => {
         // Lock the Work row FIRST, then the item — the order every other
         // Work-scoped writer takes (routes/work-completion.ts locks these
         // same two rows in exactly this order), so a tax-fact edit racing

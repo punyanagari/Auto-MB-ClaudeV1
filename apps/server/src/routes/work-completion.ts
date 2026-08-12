@@ -39,11 +39,10 @@ import {
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 interface WorkStatusRow {
   id: string;
@@ -333,6 +332,7 @@ export function registerWorkCompletionRoutes(
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   /** The same two refusals POST /complete raises, asked as a question.
    * The Work page calls this so it can show the operator what is left
    * instead of offering a completion form that cannot succeed — the
@@ -342,21 +342,18 @@ export function registerWorkCompletionRoutes(
    * Read-only, and deliberately reuses the writers' own functions: a
    * second implementation of "is this Work finished" would drift, and the
    * one that drifted would be the one the operator reads. */
-  app.get(
-    '/api/works/:id/completion-readiness',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/completion-readiness',
       schema: {
         params: IdParamsSchema,
         response: { 200: WorkCompletionReadinessSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const work = await readWork(tx, workId);
         // The row locks unfinishedItems takes are the writers' concern;
@@ -379,24 +376,21 @@ export function registerWorkCompletionRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/complete',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/complete',
       schema: {
         params: IdParamsSchema,
         body: CompleteWorkRequestSchema,
         response: { 200: WorkStatusResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const work = await lockWork(tx, workId);
         if (work.status === 'completed') {
@@ -457,24 +451,21 @@ export function registerWorkCompletionRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/reopen',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/reopen',
       schema: {
         params: IdParamsSchema,
         body: ReopenWorkRequestSchema,
         response: { 200: WorkStatusResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const work = await lockWork(tx, workId);
         if (work.status !== 'completed') {
