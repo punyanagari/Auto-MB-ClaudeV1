@@ -358,10 +358,7 @@ export const TaxInvoiceSchema = Type.Object(
     /** True once the immutable invoice has been converted to a stored PDF. */
     renderedAvailable: Type.Boolean(),
     irpLegacyEvidenceMissing: Type.Boolean(),
-    irpCancelledAt: Type.Union([
-      Type.String({ format: 'date-time' }),
-      Type.Null(),
-    ]),
+    irpCancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     irpCancelledAtText: Type.Union([Type.String(), Type.Null()]),
     irpCancelReasonCode: Type.Union([Type.String(), Type.Null()]),
     irpCancelRemark: Type.Union([Type.String(), Type.Null()]),

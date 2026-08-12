@@ -45,7 +45,8 @@ export function formatInvoiceAmount(value: string): string {
   // fraction. No overlapping alternatives or nested repetition.
   // eslint-disable-next-line security/detect-unsafe-regex
   const match = /^(-?)([0-9]+)(?:\.([0-9]{1,2}))?$/.exec(value);
-  if (match === null) throw new Error(`Invalid invoice amount: ${JSON.stringify(value)}`);
+  if (match === null)
+    throw new Error(`Invalid invoice amount: ${JSON.stringify(value)}`);
   const sign = match[1] ?? '';
   const digits = (match[2] ?? '0').replace(/^0+(?=\d)/, '');
   const fraction = (match[3] ?? '').padEnd(2, '0');
@@ -59,15 +60,14 @@ export function formatInvoiceAmount(value: string): string {
   return `${sign}${groupedLeading === '' ? '' : `${groupedLeading},`}${lastThree}.${fraction}`;
 }
 
-function partyBlock(
-  label: string,
-  party: TaxInvoiceIssuedSnapshotV1['buyer'],
-): string {
+function partyBlock(label: string, party: TaxInvoiceIssuedSnapshotV1['buyer']): string {
   return `<section class="party">
   <h2>${escapeHtml(label)}</h2>
   <strong>${escapeHtml(party.designation)}</strong>
   ${party.contactPerson === null ? '' : `<div>Attention: ${escapeHtml(party.contactPerson)}</div>`}
-  ${addressLines(party).map((line) => `<div>${escapeHtml(line)}</div>`).join('\n  ')}
+  ${addressLines(party)
+    .map((line) => `<div>${escapeHtml(line)}</div>`)
+    .join('\n  ')}
   <div>GSTIN: ${party.gstin === null ? 'Unregistered' : escapeHtml(party.gstin)}</div>
 </section>`;
 }
@@ -167,7 +167,9 @@ export async function renderTaxInvoiceHtml(
     <div>
       <div class="supplier-name">${escapeHtml(snapshot.supplier.name)}</div>
       ${snapshot.supplier.tradeName === null ? '' : `<div class="trade-name">${escapeHtml(snapshot.supplier.tradeName)}</div>`}
-      ${addressLines(snapshot.supplier).map((line) => `<div>${escapeHtml(line)}</div>`).join('\n      ')}
+      ${addressLines(snapshot.supplier)
+        .map((line) => `<div>${escapeHtml(line)}</div>`)
+        .join('\n      ')}
       <div>GSTIN: ${escapeHtml(snapshot.supplier.gstin)}</div>
       ${snapshot.supplier.phone === null ? '' : `<div>Phone: ${escapeHtml(snapshot.supplier.phone)}</div>`}
       ${snapshot.supplier.msmeNumber === null ? '' : `<div>MSME: ${escapeHtml(snapshot.supplier.msmeNumber)}</div>`}

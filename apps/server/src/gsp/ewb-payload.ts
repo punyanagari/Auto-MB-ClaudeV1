@@ -67,10 +67,7 @@ function halfRate(rate: string): string {
     BigInt(match[1] ?? '0') * 100n + BigInt((match[2] ?? '').padEnd(2, '0'));
   const thousandths = hundredths * 5n;
   const whole = thousandths / 1000n;
-  const fraction = (thousandths % 1000n)
-    .toString()
-    .padStart(3, '0')
-    .replace(/0+$/, '');
+  const fraction = (thousandths % 1000n).toString().padStart(3, '0').replace(/0+$/, '');
   return fraction === '' ? whole.toString() : `${whole}.${fraction}`;
 }
 
@@ -180,7 +177,9 @@ export function buildEwbPayload(input: EwbInput): EwbPayload {
       : {
           transDocNo: input.transportDocNumber ?? '',
           transDocDate:
-            input.transportDocDate === null ? '' : formatNicDate(input.transportDocDate),
+            input.transportDocDate === null
+              ? ''
+              : formatNicDate(input.transportDocDate),
         }),
   };
 }

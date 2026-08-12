@@ -166,7 +166,9 @@ function scaledPaise(value: string, path: string): bigint {
   const match = /^(-?)([0-9]+)(?:\.([0-9]{1,2}))?$/.exec(value);
   if (!match) throw new TaxInvoiceSnapshotError(`${path} is not a 2dp amount`);
   const sign = match[1] === '-' ? -1n : 1n;
-  return sign * (BigInt(match[2] ?? '0') * 100n + BigInt((match[3] ?? '').padEnd(2, '0')));
+  return (
+    sign * (BigInt(match[2] ?? '0') * 100n + BigInt((match[3] ?? '').padEnd(2, '0')))
+  );
 }
 
 function paiseText(value: bigint): string {
@@ -204,11 +206,9 @@ export function parseTaxInvoiceIssuedSnapshot(
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(invoiceDate)) {
     throw new TaxInvoiceSnapshotError('issuedSnapshot.invoiceDate is invalid');
   }
-  const shipTo = root.shipTo === null ? null : party(root.shipTo, 'issuedSnapshot.shipTo');
-  const totalAmount = decimal(
-    totals.totalAmount,
-    'issuedSnapshot.totals.totalAmount',
-  );
+  const shipTo =
+    root.shipTo === null ? null : party(root.shipTo, 'issuedSnapshot.shipTo');
+  const totalAmount = decimal(totals.totalAmount, 'issuedSnapshot.totals.totalAmount');
   const fyLabel = nullableText(root.fyLabel, 'issuedSnapshot.fyLabel');
   if (fyLabel !== null && !/^[0-9]{4}-[0-9]{2}$/.test(fyLabel)) {
     throw new TaxInvoiceSnapshotError('issuedSnapshot.fyLabel is invalid');

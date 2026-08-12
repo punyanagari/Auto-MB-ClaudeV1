@@ -1,8 +1,5 @@
 import { formatNicDate } from './irp-payload.js';
-import {
-  exactJsonInteger,
-  stringifyStatutoryJson,
-} from './statutory-json.js';
+import { exactJsonInteger, stringifyStatutoryJson } from './statutory-json.js';
 import {
   StatutoryProviderError,
   type EwayBillProviderEvidence,
@@ -55,9 +52,7 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
-export function readWhitebooksConfig(
-  env: NodeJS.ProcessEnv,
-): WhitebooksConfig | null {
+export function readWhitebooksConfig(env: NodeJS.ProcessEnv): WhitebooksConfig | null {
   const enabled = env.WHITEBOOKS_ENABLED?.trim().toLowerCase();
   const related = Object.keys(env).some(
     (key) =>
@@ -252,7 +247,9 @@ function exactNumericField(
 
 function statusSucceeded(value: unknown): boolean {
   const status = textValue(value, ['status_cd', 'statusCd', 'status']);
-  return status !== null && ['1', 'success', 'succeeded'].includes(status.toLowerCase());
+  return (
+    status !== null && ['1', 'success', 'succeeded'].includes(status.toLowerCase())
+  );
 }
 
 function providerCode(value: unknown): string | null {
@@ -319,10 +316,8 @@ function indiaInstant(raw: string, field: string): string {
     }
     return validatedInstant(offsetIso.slice(1, 7), offset, field);
   }
-  const ymd =
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
-  const dmy =
-    /^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
+  const dmy = /^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
   const parts = ymd
     ? [ymd[1], ymd[2], ymd[3], ymd[4], ymd[5], ymd[6]]
     : dmy
@@ -344,8 +339,15 @@ function boundedText(value: string | null, code: string, max: number): string {
   return value;
 }
 
-function normaliseIrp(rawTexts: readonly string[], value: unknown): IrpRegistrationEvidence {
-  const irn = boundedText(textValue(value, ['Irn', 'irn']), 'WHITEBOOKS_IRN_MISSING', 64);
+function normaliseIrp(
+  rawTexts: readonly string[],
+  value: unknown,
+): IrpRegistrationEvidence {
+  const irn = boundedText(
+    textValue(value, ['Irn', 'irn']),
+    'WHITEBOOKS_IRN_MISSING',
+    64,
+  );
   if (!/^[0-9a-f]{64}$/i.test(irn)) {
     throw new StatutoryProviderError('WHITEBOOKS_IRN_INVALID', 'unknown');
   }
@@ -383,10 +385,7 @@ function normaliseEway(
 ): EwayBillProviderEvidence {
   const providerStatus = textValue(value, ['Status']);
   if (providerStatus === null) {
-    throw new StatutoryProviderError(
-      'WHITEBOOKS_EWB_STATUS_MISSING',
-      'unknown',
-    );
+    throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
   }
   if (providerStatus.toUpperCase() !== 'ACT') {
     throw new StatutoryProviderError(
@@ -450,7 +449,10 @@ export class WhitebooksProvider implements StatutoryProvider {
       readonly mutation: boolean;
       readonly notFoundIsNull?: boolean;
     },
-  ): Promise<{ readonly parsed: unknown; readonly rawTexts: readonly string[] } | null> {
+  ): Promise<{
+    readonly parsed: unknown;
+    readonly rawTexts: readonly string[];
+  } | null> {
     const url = new URL(path, this.#baseUrl);
     for (const [key, value] of Object.entries(options.query ?? {})) {
       url.searchParams.set(key, value);
@@ -490,9 +492,10 @@ export class WhitebooksProvider implements StatutoryProvider {
       );
     }
     const data = decodeJson(valueByKey(parsed, ['data'])) ?? parsed;
-    const dataRaw = typeof valueByKey(parsed, ['data']) === 'string'
-      ? (valueByKey(parsed, ['data']) as string)
-      : '';
+    const dataRaw =
+      typeof valueByKey(parsed, ['data']) === 'string'
+        ? (valueByKey(parsed, ['data']) as string)
+        : '';
     const rawTexts = dataRaw === '' ? [raw] : [raw, dataRaw];
     // A generic status_cd=0 is also used for authentication and validation
     // failures. Only an actual HTTP 404 is safe to call "not found"; every
@@ -515,10 +518,7 @@ export class WhitebooksProvider implements StatutoryProvider {
 
   #commonHeaders(gstin: string): Record<string, string> {
     if (gstin !== this.config.gstin) {
-      throw new StatutoryProviderError(
-        'WHITEBOOKS_GSTIN_NOT_AUTHORISED',
-        'failed',
-      );
+      throw new StatutoryProviderError('WHITEBOOKS_GSTIN_NOT_AUTHORISED', 'failed');
     }
     return {
       ip_address: this.config.ipAddress,
@@ -530,15 +530,9 @@ export class WhitebooksProvider implements StatutoryProvider {
 
   #ewayCommonHeaders(gstin: string): Record<string, string> {
     if (gstin !== this.config.gstin) {
-      throw new StatutoryProviderError(
-        'WHITEBOOKS_GSTIN_NOT_AUTHORISED',
-        'failed',
-      );
+      throw new StatutoryProviderError('WHITEBOOKS_GSTIN_NOT_AUTHORISED', 'failed');
     }
-    if (
-      this.config.ewayClientId === null ||
-      this.config.ewayClientSecret === null
-    ) {
+    if (this.config.ewayClientId === null || this.config.ewayClientSecret === null) {
       throw new StatutoryProviderError(
         'WHITEBOOKS_EWAY_CANCELLATION_NOT_CONFIGURED',
         'failed',
@@ -616,25 +610,18 @@ export class WhitebooksProvider implements StatutoryProvider {
     const headers = this.#ewayCommonHeaders(gstin);
     const request = (async () => {
       try {
-        const result = await this.#request(
-          'GET',
-          '/ewaybillapi/v1.03/authenticate',
-          {
-            query: {
-              email: this.config.email,
-              username: this.config.username,
-              password: this.config.password,
-              irp: this.config.irp,
-            },
-            headers,
-            mutation: false,
+        const result = await this.#request('GET', '/ewaybillapi/v1.03/authenticate', {
+          query: {
+            email: this.config.email,
+            username: this.config.username,
+            password: this.config.password,
+            irp: this.config.irp,
           },
-        );
+          headers,
+          mutation: false,
+        });
         if (!result) {
-          throw new StatutoryProviderError(
-            'WHITEBOOKS_EWAY_AUTH_FAILED',
-            'failed',
-          );
+          throw new StatutoryProviderError('WHITEBOOKS_EWAY_AUTH_FAILED', 'failed');
         }
       } catch (error) {
         if (error instanceof StatutoryProviderError) {
@@ -783,21 +770,18 @@ export class WhitebooksProvider implements StatutoryProvider {
     readonly remark: string;
   }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }> {
     await this.#authenticateEway(input.gstin);
-    const result = await this.#request(
-      'POST',
-      '/ewaybillapi/v1.03/ewayapi/canewb',
-      {
-        query: { email: this.config.email, irp: this.config.irp },
-        headers: this.#ewayCommonHeaders(input.gstin),
-        body: stringifyStatutoryJson({
-          ewbNo: exactJsonInteger(input.ewbNumber),
-          cancelRsnCode: exactJsonInteger(input.reasonCode),
-          cancelRmrk: input.remark,
-        }),
-        mutation: true,
-      },
-    );
-    if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_CANCEL_EMPTY', 'unknown');
+    const result = await this.#request('POST', '/ewaybillapi/v1.03/ewayapi/canewb', {
+      query: { email: this.config.email, irp: this.config.irp },
+      headers: this.#ewayCommonHeaders(input.gstin),
+      body: stringifyStatutoryJson({
+        ewbNo: exactJsonInteger(input.ewbNumber),
+        cancelRsnCode: exactJsonInteger(input.reasonCode),
+        cancelRmrk: input.remark,
+      }),
+      mutation: true,
+    });
+    if (!result)
+      throw new StatutoryProviderError('WHITEBOOKS_EWB_CANCEL_EMPTY', 'unknown');
     const cancelledAtText = boundedText(
       textValue(result.parsed, ['cancelDate', 'CancelDate']),
       'WHITEBOOKS_EWB_CANCEL_DATE_MISSING',
@@ -809,10 +793,7 @@ export class WhitebooksProvider implements StatutoryProvider {
     };
   }
 
-  #assertIrpPayloadIdentity(
-    identity: IrpDocumentIdentity,
-    payloadJson: string,
-  ): void {
+  #assertIrpPayloadIdentity(identity: IrpDocumentIdentity, payloadJson: string): void {
     let payload: JsonObject | null = null;
     try {
       payload = object(JSON.parse(payloadJson) as unknown);

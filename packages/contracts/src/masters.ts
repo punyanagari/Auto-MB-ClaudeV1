@@ -37,10 +37,7 @@ export const ContactSchema = Type.Object(
     pincode: Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
     stateCode: Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
     /** Explicit NIC BuyerDtls/ShipDtls.Loc value. */
-    locality: Type.Union([
-      Type.String({ minLength: 2, maxLength: 100 }),
-      Type.Null(),
-    ]),
+    locality: Type.Union([Type.String({ minLength: 2, maxLength: 100 }), Type.Null()]),
     /** Railway division code as the railnet STD directory writes it.
      * A number series may draw on it ({DIV} drops one trailing zero),
      * which is why it is stored as the directory writes it. */

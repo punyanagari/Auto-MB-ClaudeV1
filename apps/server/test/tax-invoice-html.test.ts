@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  formatInvoiceAmount,
-  renderTaxInvoiceHtml,
-} from '../src/tax-invoice-html.js';
+import { formatInvoiceAmount, renderTaxInvoiceHtml } from '../src/tax-invoice-html.js';
 import type { TaxInvoiceIssuedSnapshotV1 } from '../src/tax-invoice-snapshot.js';
 
 const SNAPSHOT: TaxInvoiceIssuedSnapshotV1 = {
@@ -84,16 +81,10 @@ describe('tax invoice HTML', () => {
 
   it('refuses to invent or misstate the reverse-charge legal fact', async () => {
     await expect(
-      renderTaxInvoiceHtml(
-        { ...SNAPSHOT, reverseChargeApplicable: null },
-        NO_IRP,
-      ),
+      renderTaxInvoiceHtml({ ...SNAPSHOT, reverseChargeApplicable: null }, NO_IRP),
     ).rejects.toThrow(/forward-charge confirmation/);
     await expect(
-      renderTaxInvoiceHtml(
-        { ...SNAPSHOT, reverseChargeApplicable: true },
-        NO_IRP,
-      ),
+      renderTaxInvoiceHtml({ ...SNAPSHOT, reverseChargeApplicable: true }, NO_IRP),
     ).rejects.toThrow(/forward-charge confirmation/);
   });
 

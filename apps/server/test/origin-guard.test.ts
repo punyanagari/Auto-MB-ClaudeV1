@@ -14,7 +14,7 @@ describe('mutation Origin guard', () => {
     },
   );
 
-  it.each([undefined, 'null', 'https://evil.example', 'https://auto-mb.example.evil']) (
+  it.each([undefined, 'null', 'https://evil.example', 'https://auto-mb.example.evil'])(
     'rejects missing, opaque, or hostile Origin %s',
     (origin) => {
       expect(() => guard('POST', origin)).toThrowError(

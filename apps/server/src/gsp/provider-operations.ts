@@ -14,10 +14,7 @@ export type StatutoryOperation =
   | 'reconcile_eway_bill'
   | 'cancel_eway_bill';
 
-export type StatutoryOperationStatus =
-  | 'succeeded'
-  | 'failed'
-  | 'unknown';
+export type StatutoryOperationStatus = 'succeeded' | 'failed' | 'unknown';
 
 export interface ProviderFailure {
   readonly status: 'failed' | 'unknown';
@@ -134,9 +131,7 @@ export async function finishStatutoryOperation(
  * UNKNOWN (therefore lookup-only on the next action), never retryable. */
 export async function recoverStaleStatutoryOperation(
   tx: TransactionSql,
-  target:
-    | { readonly taxInvoiceId: string }
-    | { readonly ewayBillId: string },
+  target: { readonly taxInvoiceId: string } | { readonly ewayBillId: string },
 ): Promise<readonly StatutoryOperation[]> {
   const rows = await tx<{ operation: StatutoryOperation }[]>`
     update statutory_provider_operations
@@ -144,12 +139,12 @@ export async function recoverStaleStatutoryOperation(
         completed_at = now()
     where status = 'pending'
       and started_at < now() - interval '2 minutes'
-      and tax_invoice_id is not distinct from ${'taxInvoiceId' in target
-        ? target.taxInvoiceId
-        : null}
-      and eway_bill_id is not distinct from ${'ewayBillId' in target
-        ? target.ewayBillId
-        : null}
+      and tax_invoice_id is not distinct from ${
+        'taxInvoiceId' in target ? target.taxInvoiceId : null
+      }
+      and eway_bill_id is not distinct from ${
+        'ewayBillId' in target ? target.ewayBillId : null
+      }
     returning operation
   `;
   for (const row of rows) {

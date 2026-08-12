@@ -40,10 +40,7 @@ import type {
   EwayBillProviderEvidence,
   StatutoryProvider,
 } from '../gsp/statutory-provider.js';
-import {
-  exactJsonInteger,
-  stringifyStatutoryJson,
-} from '../gsp/statutory-json.js';
+import { exactJsonInteger, stringifyStatutoryJson } from '../gsp/statutory-json.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
@@ -756,17 +753,11 @@ export function registerEwayBillRoutes(
             snapshot = parseTaxInvoiceIssuedSnapshot(issued);
           } catch (error) {
             if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                error.message,
-              );
+              throw httpError(409, error.code, error.message);
             }
             throw error;
           }
-          const requestSha256 = sha256Hex(
-            stringifyStatutoryJson({ Irn: invoice.irn }),
-          );
+          const requestSha256 = sha256Hex(stringifyStatutoryJson({ Irn: invoice.irn }));
           const operationId = await startStatutoryOperation(tx, {
             organisationId,
             userId: user.id,
@@ -859,9 +850,11 @@ export function registerEwayBillRoutes(
             await tx`
               update eway_bills
               set provider = 'whitebooks',
-                  provider_state = ${result.status === 'failed'
-                    ? 'generation_failed'
-                    : 'generation_unknown'}
+                  provider_state = ${
+                    result.status === 'failed'
+                      ? 'generation_failed'
+                      : 'generation_unknown'
+                  }
               where id = ${id}
             `;
             await finishStatutoryOperation(tx, prepared.operationId, {
@@ -1178,9 +1171,10 @@ export function registerEwayBillRoutes(
         return reply.status(202).send(prepared.detail);
       }
 
-      let cancelled:
-        | { readonly cancelledAtText: string; readonly cancelledAt: string }
-        | null = null;
+      let cancelled: {
+        readonly cancelledAtText: string;
+        readonly cancelledAt: string;
+      } | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
       try {
         cancelled = await prepared.provider.cancelEwayBill({
@@ -1225,9 +1219,9 @@ export function registerEwayBillRoutes(
             };
             await tx`
               update eway_bills
-              set provider_state = ${result.status === 'failed'
-                ? 'generated'
-                : 'cancellation_unknown'}
+              set provider_state = ${
+                result.status === 'failed' ? 'generated' : 'cancellation_unknown'
+              }
               where id = ${id}
             `;
             await finishStatutoryOperation(tx, prepared.operationId, {
@@ -1246,7 +1240,8 @@ export function registerEwayBillRoutes(
             id,
             {
               ewbNumber: prepared.ewbNumber,
-              outcome: cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
+              outcome:
+                cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
               provider: prepared.provider.name,
               operationId: prepared.operationId,
             },

@@ -266,10 +266,7 @@ export function WorkTaxInvoices({
               const form = event.currentTarget;
               const data = new FormData(form);
               void act(async () => {
-                const customerPoReference = formValue(
-                  data,
-                  'invoice-customer-po',
-                );
+                const customerPoReference = formValue(data, 'invoice-customer-po');
                 const unitLabel = formValue(data, 'invoice-unit-label');
                 const notes = formValue(data, 'invoice-notes');
                 const shipToContactId = formValue(data, 'invoice-ship-to');
@@ -339,7 +336,9 @@ export function WorkTaxInvoices({
               </Field>
             </FieldRow>
             <Field>
-              <label htmlFor="invoice-reverse-charge">Tax payable on reverse charge</label>
+              <label htmlFor="invoice-reverse-charge">
+                Tax payable on reverse charge
+              </label>
               <select
                 id="invoice-reverse-charge"
                 name="invoice-reverse-charge"
@@ -609,14 +608,8 @@ export function WorkTaxInvoices({
                     );
                     const unitLabel = formValue(data, 'edit-invoice-unit-label');
                     const notes = formValue(data, 'edit-invoice-notes');
-                    const shipToContactId = formValue(
-                      data,
-                      'edit-invoice-ship-to',
-                    );
-                    const numberPrefix = formValue(
-                      data,
-                      'edit-invoice-number-prefix',
-                    );
+                    const shipToContactId = formValue(data, 'edit-invoice-ship-to');
+                    const numberPrefix = formValue(data, 'edit-invoice-number-prefix');
                     await api.updateTaxInvoice(organisationId, invoice.id, {
                       invoiceDate: formValue(data, 'edit-invoice-date'),
                       sacCode: formValue(data, 'edit-invoice-sac'),
@@ -626,9 +619,7 @@ export function WorkTaxInvoices({
                       reverseChargeApplicable:
                         formValue(data, 'edit-invoice-reverse-charge') === 'true',
                       buyerContactId: formValue(data, 'edit-invoice-buyer'),
-                      ...(customerPoReference === ''
-                        ? {}
-                        : { customerPoReference }),
+                      ...(customerPoReference === '' ? {} : { customerPoReference }),
                       ...(unitLabel === '' ? {} : { unitLabel }),
                       ...(notes === '' ? {} : { notes }),
                       ...(shipToContactId === '' ? {} : { shipToContactId }),
@@ -781,9 +772,7 @@ export function WorkTaxInvoices({
                     />
                   </Field>
                   <Field>
-                    <label htmlFor="edit-invoice-ship-to">
-                      Ship to (optional)
-                    </label>
+                    <label htmlFor="edit-invoice-ship-to">Ship to (optional)</label>
                     <select
                       id="edit-invoice-ship-to"
                       name="edit-invoice-ship-to"
@@ -848,13 +837,16 @@ export function WorkTaxInvoices({
               <Button
                 variant="secondary"
                 onClick={() => {
-                  void act(async () => {
-                    await api.renderTaxInvoice(organisationId, invoice.id);
-                    await refreshList();
-                    await openInvoiceDetail(invoice.id);
-                  }, invoice.renderedAvailable
-                    ? 'Tax invoice PDF regenerated from frozen invoice facts and current IRP evidence.'
-                    : 'Tax invoice PDF generated from frozen invoice facts.');
+                  void act(
+                    async () => {
+                      await api.renderTaxInvoice(organisationId, invoice.id);
+                      await refreshList();
+                      await openInvoiceDetail(invoice.id);
+                    },
+                    invoice.renderedAvailable
+                      ? 'Tax invoice PDF regenerated from frozen invoice facts and current IRP evidence.'
+                      : 'Tax invoice PDF generated from frozen invoice facts.',
+                  );
                 }}
                 disabled={pending}
               >
@@ -867,10 +859,7 @@ export function WorkTaxInvoices({
                 onClick={() => {
                   void act(async () => {
                     openPdf(
-                      await api.downloadTaxInvoicePdf(
-                        organisationId,
-                        invoice.id,
-                      ),
+                      await api.downloadTaxInvoicePdf(organisationId, invoice.id),
                     );
                   }, 'Tax invoice PDF opened.');
                 }}
@@ -925,35 +914,35 @@ export function WorkTaxInvoices({
                   </p>
                   <Actions>
                     {canIssue && invoice.irpProviderState !== 'cancelling' && (
-                        <Button
-                          onClick={() => {
-                            void act(async () => {
-                              if (invoice.irpProviderState === 'registering') {
-                                await api.recoverTaxInvoiceProviderOperation(
-                                  organisationId,
-                                  invoice.id,
-                                );
-                              } else {
-                                await api.registerTaxInvoiceIrp(
-                                  organisationId,
-                                  invoice.id,
-                                );
-                              }
-                              await refreshList();
-                              await openInvoiceDetail(invoice.id);
-                            }, 'Whitebooks request finished. Provider state is refreshed below; unknown results are never submitted twice.');
-                          }}
-                          disabled={pending}
-                        >
-                          {invoice.irpProviderState === 'registering'
-                            ? 'Check stalled registration'
-                            : invoice.irpProviderState === 'registration_unknown'
+                      <Button
+                        onClick={() => {
+                          void act(async () => {
+                            if (invoice.irpProviderState === 'registering') {
+                              await api.recoverTaxInvoiceProviderOperation(
+                                organisationId,
+                                invoice.id,
+                              );
+                            } else {
+                              await api.registerTaxInvoiceIrp(
+                                organisationId,
+                                invoice.id,
+                              );
+                            }
+                            await refreshList();
+                            await openInvoiceDetail(invoice.id);
+                          }, 'Whitebooks request finished. Provider state is refreshed below; unknown results are never submitted twice.');
+                        }}
+                        disabled={pending}
+                      >
+                        {invoice.irpProviderState === 'registering'
+                          ? 'Check stalled registration'
+                          : invoice.irpProviderState === 'registration_unknown'
                             ? 'Reconcile with Whitebooks'
                             : invoice.irpProviderState === 'registration_failed'
                               ? 'Retry confirmed rejection'
                               : 'Register with Whitebooks'}
-                        </Button>
-                      )}
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       onClick={() => {
@@ -989,10 +978,7 @@ export function WorkTaxInvoices({
                                 ackDate: new Date(
                                   formValue(data, 'irp-ack-date'),
                                 ).toISOString(),
-                                ackDateText: formValue(
-                                  data,
-                                  'irp-ack-date-text',
-                                ),
+                                ackDateText: formValue(data, 'irp-ack-date-text'),
                                 signedQr: formValue(data, 'irp-signed-qr'),
                                 ...(formValue(data, 'irp-signed-invoice') === ''
                                   ? {}
@@ -1101,8 +1087,7 @@ export function WorkTaxInvoices({
                     <dt>Acknowledgement</dt>
                     <dd>
                       {invoice.ackNumber ?? '—'}
-                      {invoice.ackDateText !== null &&
-                        ` · ${invoice.ackDateText}`}
+                      {invoice.ackDateText !== null && ` · ${invoice.ackDateText}`}
                       {invoice.ackDateText === null &&
                         invoice.ackDate !== null &&
                         ` · ${formatDate(invoice.ackDate)}`}
@@ -1110,8 +1095,8 @@ export function WorkTaxInvoices({
                   </dl>
                   {invoice.irpLegacyEvidenceMissing && (
                     <FormError>
-                      This migrated IRP record lacks some historical evidence. No
-                      value was invented to fill the gap.
+                      This migrated IRP record lacks some historical evidence. No value
+                      was invented to fill the gap.
                     </FormError>
                   )}
                   {canCancel &&
@@ -1134,10 +1119,8 @@ export function WorkTaxInvoices({
                                   organisationId,
                                   invoice.id,
                                   {
-                                    reasonCode: formValue(
-                                      data,
-                                      'irp-cancel-reason',
-                                    ) as '1' | '2' | '3' | '4',
+                                    reasonCode: formValue(data, 'irp-cancel-reason') as
+                                      '1' | '2' | '3' | '4',
                                     remark: formValue(data, 'irp-cancel-remark'),
                                   },
                                 );
@@ -1200,10 +1183,7 @@ export function WorkTaxInvoices({
                                     data,
                                     'manual-irp-cancel-reason',
                                   ) as '1' | '2' | '3' | '4',
-                                  remark: formValue(
-                                    data,
-                                    'manual-irp-cancel-remark',
-                                  ),
+                                  remark: formValue(data, 'manual-irp-cancel-remark'),
                                   cancelledAt: new Date(
                                     formValue(data, 'manual-irp-cancel-date'),
                                   ).toISOString(),
@@ -1258,9 +1238,7 @@ export function WorkTaxInvoices({
                             />
                           </Field>
                           <Field>
-                            <label htmlFor="manual-irp-cancel-remark">
-                              Remark
-                            </label>
+                            <label htmlFor="manual-irp-cancel-remark">Remark</label>
                             <input
                               id="manual-irp-cancel-remark"
                               name="manual-irp-cancel-remark"
@@ -1287,9 +1265,9 @@ export function WorkTaxInvoices({
               <h4>E-way bills</h4>
               <FormError>
                 Fresh E-way Bill generation is unavailable for this cumulative SAC
-                service invoice. Historical records remain readable, reconcilable,
-                and cancellable. Goods/HSN and delivery-challan lines must be added
-                before generation can be enabled safely.
+                service invoice. Historical records remain readable, reconcilable, and
+                cancellable. Goods/HSN and delivery-challan lines must be added before
+                generation can be enabled safely.
               </FormError>
               {ewayBills.length > 0 ? (
                 <DataTable>
@@ -1346,10 +1324,7 @@ export function WorkTaxInvoices({
                                       bill.id,
                                     );
                                   } else {
-                                    await api.generateEwayBill(
-                                      organisationId,
-                                      bill.id,
-                                    );
+                                    await api.generateEwayBill(organisationId, bill.id);
                                   }
                                   setEwayBills(
                                     await api.listInvoiceEwayBills(
@@ -1364,8 +1339,8 @@ export function WorkTaxInvoices({
                               {bill.providerState === 'generating'
                                 ? 'Check stalled operation'
                                 : bill.providerState === 'generation_unknown'
-                                ? 'Reconcile'
-                                : 'Generate at Whitebooks'}
+                                  ? 'Reconcile'
+                                  : 'Generate at Whitebooks'}
                             </Button>
                           ) : (
                             '—'
@@ -1502,10 +1477,7 @@ export function WorkTaxInvoices({
                                   `eway-manual-remark-${bill.id}`,
                                 ),
                                 cancelledAt: new Date(
-                                  formValue(
-                                    data,
-                                    `eway-manual-date-${bill.id}`,
-                                  ),
+                                  formValue(data, `eway-manual-date-${bill.id}`),
                                 ).toISOString(),
                                 cancelledAtText: formValue(
                                   data,
@@ -1586,8 +1558,7 @@ export function WorkTaxInvoices({
                 ewayBills
                   .filter(
                     (bill) =>
-                      bill.status === 'generated' &&
-                      bill.providerState === 'cancelled',
+                      bill.status === 'generated' && bill.providerState === 'cancelled',
                   )
                   .map((bill) => (
                     <Disclosure
@@ -1635,7 +1606,6 @@ export function WorkTaxInvoices({
                       </form>
                     </Disclosure>
                   ))}
-
             </>
           )}
 
@@ -1643,47 +1613,49 @@ export function WorkTaxInvoices({
             canCancel &&
             (invoice.irpProviderState === 'not_requested' ||
               invoice.irpProviderState === 'cancelled') && (
-            <Disclosure label="Cancel this invoice">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void act(async () => {
-                    await api.cancelTaxInvoice(organisationId, invoice.id, {
-                      note: cancelNote,
-                    });
-                    await refreshList();
-                    await openInvoiceDetail(invoice.id);
-                    setCancelNote('');
-                  }, 'Tax invoice cancelled — the Measurement Book it billed is released for a corrected invoice.');
-                }}
-              >
-                <Field>
-                  <label htmlFor="invoice-cancel-note">Why it is being cancelled</label>
-                  <textarea
-                    id="invoice-cancel-note"
-                    name="invoice-cancel-note"
-                    rows={2}
-                    required
-                    minLength={3}
-                    maxLength={2000}
-                    value={cancelNote}
-                    onChange={(event) => {
-                      setCancelNote(event.currentTarget.value);
-                    }}
-                  />
-                  <Hint>
-                    A cancelled invoice keeps its number for ever — the number is never
-                    reused — and this note is the record of why.
-                  </Hint>
-                </Field>
-                <Actions>
-                  <Button type="submit" variant="destructive" disabled={pending}>
-                    Cancel invoice
-                  </Button>
-                </Actions>
-              </form>
-            </Disclosure>
-          )}
+              <Disclosure label="Cancel this invoice">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void act(async () => {
+                      await api.cancelTaxInvoice(organisationId, invoice.id, {
+                        note: cancelNote,
+                      });
+                      await refreshList();
+                      await openInvoiceDetail(invoice.id);
+                      setCancelNote('');
+                    }, 'Tax invoice cancelled — the Measurement Book it billed is released for a corrected invoice.');
+                  }}
+                >
+                  <Field>
+                    <label htmlFor="invoice-cancel-note">
+                      Why it is being cancelled
+                    </label>
+                    <textarea
+                      id="invoice-cancel-note"
+                      name="invoice-cancel-note"
+                      rows={2}
+                      required
+                      minLength={3}
+                      maxLength={2000}
+                      value={cancelNote}
+                      onChange={(event) => {
+                        setCancelNote(event.currentTarget.value);
+                      }}
+                    />
+                    <Hint>
+                      A cancelled invoice keeps its number for ever — the number is
+                      never reused — and this note is the record of why.
+                    </Hint>
+                  </Field>
+                  <Actions>
+                    <Button type="submit" variant="destructive" disabled={pending}>
+                      Cancel invoice
+                    </Button>
+                  </Actions>
+                </form>
+              </Disclosure>
+            )}
           {invoice.status === 'submitted' &&
             canCancel &&
             invoice.irpProviderState !== 'not_requested' &&

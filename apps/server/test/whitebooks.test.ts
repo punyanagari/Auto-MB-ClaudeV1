@@ -145,9 +145,7 @@ describe('Whitebooks IRP transport', () => {
           }),
         );
       }
-      expect(url.pathname).toBe(
-        '/einvoice/type/GETIRNBYDOCDETAILS/version/V1_03',
-      );
+      expect(url.pathname).toBe('/einvoice/type/GETIRNBYDOCDETAILS/version/V1_03');
       expect(url.searchParams.get('param1')).toBe('INV');
       const headers = new Headers(init?.headers);
       expect(headers.get('docnum')).toBe(identity.documentNumber);
@@ -205,19 +203,19 @@ describe('Whitebooks IRP transport', () => {
     const provider = new WhitebooksProvider(baseConfig, fetchImpl);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      await expect(provider.registerInvoice(identity, payloadJson)).rejects.toMatchObject(
-        {
-          code: 'WHITEBOOKS_AUTH_FAILED',
-          outcome: 'failed',
-          providerCode: 'AUTH-503',
-          httpStatus: 503,
-        },
-      );
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        code: 'WHITEBOOKS_AUTH_FAILED',
+        outcome: 'failed',
+        providerCode: 'AUTH-503',
+        httpStatus: 503,
+      });
     }
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(
-      fetchImpl.mock.calls.some(
-        ([input]) => inputUrl(input).pathname.includes('/GENERATE/'),
+      fetchImpl.mock.calls.some(([input]) =>
+        inputUrl(input).pathname.includes('/GENERATE/'),
       ),
     ).toBe(false);
   });
@@ -235,9 +233,7 @@ describe('Whitebooks E-way Bill transport', () => {
         expect(url.searchParams.get('irp')).toBe('NIC1');
         expect(new Headers(init?.headers).get('client_id')).toBe('eway-client');
         expect(new Headers(init?.headers).get('client_secret')).toBe('eway-secret');
-        return Promise.resolve(
-          jsonResponse({ status_cd: '1', data: { Status: '1' } }),
-        );
+        return Promise.resolve(jsonResponse({ status_cd: '1', data: { Status: '1' } }));
       }
 
       expect(url.pathname).toBe('/ewaybillapi/v1.03/ewayapi/canewb');
@@ -337,9 +333,7 @@ describe('Whitebooks E-way Bill transport', () => {
 
   it('maps side-effect-free EWB authentication failures to a safe retryable auth failure', async () => {
     const fetchImpl = vi.fn<typeof fetch>(() =>
-      Promise.resolve(
-        jsonResponse({ status_cd: '0', error_cd: 'AUTH-401' }, 401),
-      ),
+      Promise.resolve(jsonResponse({ status_cd: '0', error_cd: 'AUTH-401' }, 401)),
     );
     const provider = new WhitebooksProvider(baseConfig, fetchImpl);
 

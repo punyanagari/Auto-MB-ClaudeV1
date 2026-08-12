@@ -14,7 +14,7 @@ Dependencies are adopted only when they replace meaningful commodity work and ha
 | Testing     | Vitest                   | Shared TypeScript test runner                                                                                                                                |
 | PDF service | Gotenberg                | Isolated, repeatable Chromium rendering                                                                                                                      |
 | PDF text    | poppler-utils            | Parallel `pdftotext -layout` + `-raw`: layout-authoritative fields and exact item-description ownership; system binary, argument-vector invocation, no shell |
-| Invoice QR  | qrcode                   | Standards-compliant SVG encoding of the exact IRP signed-QR payload for a self-contained tax-invoice PDF                                                    |
+| Invoice QR  | qrcode                   | Standards-compliant SVG encoding of the exact IRP signed-QR payload for a self-contained tax-invoice PDF                                                     |
 
 ## Adopt with the relevant milestone
 

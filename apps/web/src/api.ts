@@ -2370,10 +2370,10 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async generateEwayBill(organisationId, ewayBillId) {
-      return request<EwayBillDetailResponse>(
-        `/api/eway-bills/${ewayBillId}/generate`,
-        { method: 'POST', organisationId },
-      );
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}/generate`, {
+        method: 'POST',
+        organisationId,
+      });
     },
     async cancelEwayBillAtProvider(organisationId, ewayBillId, body) {
       return request<EwayBillDetailResponse>(

@@ -546,12 +546,7 @@ export async function buildApp(
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
       options.statutoryProvider,
     );
-    registerEwayBillRoutes(
-      app,
-      authInstance,
-      database,
-      options.statutoryProvider,
-    );
+    registerEwayBillRoutes(app, authInstance, database, options.statutoryProvider);
     registerWorkCompletionRoutes(app, authInstance, database);
   }
 

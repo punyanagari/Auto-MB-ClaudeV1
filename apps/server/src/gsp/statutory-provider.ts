@@ -74,4 +74,3 @@ export interface StatutoryProvider {
     readonly remark: string;
   }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }>;
 }
-

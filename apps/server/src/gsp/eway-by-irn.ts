@@ -4,13 +4,13 @@ import {
   type TaxInvoiceIssuedSnapshotV1,
 } from '../tax-invoice-snapshot.js';
 import { formatNicDate } from './irp-payload.js';
-import {
-  exactJsonInteger,
-  stringifyStatutoryJson,
-} from './statutory-json.js';
+import { exactJsonInteger, stringifyStatutoryJson } from './statutory-json.js';
 
 export class EwayByIrnPayloadError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message);
     this.name = 'EwayByIrnPayloadError';
   }
@@ -69,9 +69,7 @@ export function buildEwayByIrnPayload(
     Distance: exactJsonInteger(String(input.distanceKm)),
     TransMode: TRANS_MODE[input.transportMode],
     ...(input.transporterId === null ? {} : { TransId: input.transporterId }),
-    ...(input.transporterName === null
-      ? {}
-      : { TransName: input.transporterName }),
+    ...(input.transporterName === null ? {} : { TransName: input.transporterName }),
   };
   if (input.transportMode === 'road') {
     if (input.vehicleNumber === null) {
