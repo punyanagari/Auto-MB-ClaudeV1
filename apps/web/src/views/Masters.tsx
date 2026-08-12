@@ -1235,11 +1235,7 @@ export function Masters({
 
   return (
     <Card className="w-full" aria-labelledby="masters-title">
-      <h1
-        id="masters-title"
-        tabIndex={-1}
-        className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
-      >
+      <h1 id="masters-title" tabIndex={-1}>
         Masters
       </h1>
       <div

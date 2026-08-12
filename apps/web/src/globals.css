@@ -1,10 +1,23 @@
 /* Auto-MB operations workspace design system.
  *
+ * Design contract (owner decision, 2026-08-12): the quiet light system —
+ * one dependable blue action colour (#155eef) on cool white surfaces — is
+ * the blessed visual language, and a dark palette is provided on the same
+ * semantic tokens. The earlier "Signal Cabin" amber/dark-default language
+ * is retired. See docs/UX.md § Visual system.
+ *
  * The product is information-dense by nature, so the visual system keeps
- * the canvas quiet: cool white surfaces, one dependable blue action colour,
- * restrained status tones, generous hierarchy, and tabular numerals. Existing
- * views continue to use semantic tokens; changing the values here gives every
- * workflow one coherent language without moving business logic into the UI. */
+ * the canvas quiet: restrained status tones, generous hierarchy, tabular
+ * numerals, and IBM Plex as the single type family. Existing views continue
+ * to use semantic tokens; changing the values here gives every workflow one
+ * coherent language without moving business logic into the UI.
+ *
+ * Theming is three-state. Every token is a light-dark() pair resolved by
+ * the element's color-scheme: the default follows the operating system
+ * (prefers-color-scheme), and an explicit choice persisted by the
+ * Appearance setting places data-theme="light|dark" on <html>, which pins
+ * color-scheme and therefore wins over the media query. Native controls
+ * (scrollbars, date pickers, form widgets) follow the same color-scheme. */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss';
@@ -48,6 +61,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-table-header: var(--table-header);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
@@ -59,60 +73,73 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
   /* Ground and surfaces */
-  --background: #f6f8fb;
-  --foreground: #172033;
-  --card: #ffffff;
-  --card-foreground: #172033;
-  --popover: #ffffff;
-  --popover-foreground: #172033;
+  --background: light-dark(#f6f8fb, #0d1420);
+  --foreground: light-dark(#172033, #e7ecf5);
+  --card: light-dark(#ffffff, #131b2a);
+  --card-foreground: light-dark(#172033, #e7ecf5);
+  --popover: light-dark(#ffffff, #172134);
+  --popover-foreground: light-dark(#172033, #e7ecf5);
 
-  /* One action colour. Status colours communicate state, never decoration. */
-  --primary: #155eef;
-  --primary-foreground: #ffffff;
-  --secondary: #eef2f7;
-  --secondary-foreground: #344054;
-  --muted: #f2f4f7;
-  --muted-foreground: #667085;
-  --accent: #eaf2ff;
-  --accent-foreground: #174ea6;
+  /* One action colour. Status colours communicate state, never decoration.
+   * The dark primary is a lifted blue so it still reads as text on dark
+   * surfaces; solid primary fills carry dark ink instead of white there. */
+  --primary: light-dark(#155eef, #7ca2f7);
+  --primary-foreground: light-dark(#ffffff, #0d1420);
+  --secondary: light-dark(#eef2f7, #202b3f);
+  --secondary-foreground: light-dark(#344054, #cdd7e6);
+  --muted: light-dark(#f2f4f7, #1a2436);
+  /* Deep enough to hold 4.5:1 even when meta text sits ON the muted tint
+   * (the old #667085 measured 4.497:1 there — a hair under AA). */
+  --muted-foreground: light-dark(#5d6b83, #94a6bd);
+  --accent: light-dark(#eaf2ff, #1b2b4a);
+  --accent-foreground: light-dark(#174ea6, #a7c1fb);
 
-  --destructive: #d92d20;
-  --destructive-foreground: #ffffff;
-  --success: #067647;
-  --success-foreground: #ffffff;
-  --warning: #f79009;
-  --warning-foreground: #9a4b00;
-  --info: #175cd3;
-  --info-foreground: #ffffff;
+  /* Status tones. The base colour is legible as text on the theme's
+   * surfaces and tints; the -foreground pair is the ink for solid fills. */
+  --destructive: light-dark(#b42318, #f97066);
+  --destructive-foreground: light-dark(#ffffff, #0d1420);
+  --success: light-dark(#067647, #47cd89);
+  --success-foreground: light-dark(#ffffff, #0d1420);
+  --warning: light-dark(#f79009, #f79009);
+  --warning-foreground: light-dark(#9a4b00, #fdb022);
+  --info: light-dark(#175cd3, #82a7f5);
+  --info-foreground: light-dark(#ffffff, #0d1420);
 
-  --border: #e4e7ec;
-  --input: #d0d5dd;
-  --ring: #155eef;
+  --border: light-dark(#e4e7ec, #26324a);
+  --input: light-dark(#d0d5dd, #34415c);
+  --ring: light-dark(#155eef, #7ca2f7);
   --radius: 0.625rem;
 
-  /* The application rail is a quiet white surface rather than a second
-   * visual theme. Active destinations use the same blue as primary actions. */
-  --sidebar: #ffffff;
-  --sidebar-foreground: #172033;
-  --sidebar-faint: #475467;
-  --sidebar-primary: #155eef;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef4ff;
-  --sidebar-accent-foreground: #174ea6;
-  --sidebar-border: #e4e7ec;
-  --sidebar-ring: #155eef;
+  /* Sticky table headings must be opaque so scrolled rows cannot read
+   * through them — a raised near-surface tone in both themes. */
+  --table-header: light-dark(#f9fafc, #182338);
 
-  /* Compatibility tokens still referenced by older views. */
-  --amber: #f79009;
-  --amber-ink: #9a4b00;
-  --amber-soft: #fff4e5;
-  --green-soft: #ecfdf3;
-  --red-soft: #fef3f2;
-  --ink-faint: #667085;
-  --rule-strong: #d0d5dd;
+  /* The application rail is a quiet surface rather than a second visual
+   * theme. Active destinations use the same blue as primary actions. */
+  --sidebar: light-dark(#ffffff, #111927);
+  --sidebar-foreground: light-dark(#172033, #e7ecf5);
+  --sidebar-faint: light-dark(#475467, #94a6bd);
+  --sidebar-primary: light-dark(#155eef, #7ca2f7);
+  --sidebar-primary-foreground: light-dark(#ffffff, #0d1420);
+  --sidebar-accent: light-dark(#eef4ff, #1b2b4a);
+  --sidebar-accent-foreground: light-dark(#174ea6, #a7c1fb);
+  --sidebar-border: light-dark(#e4e7ec, #26324a);
+  --sidebar-ring: light-dark(#155eef, #7ca2f7);
+}
+
+/* The Appearance setting persists an explicit choice as data-theme on the
+ * root. Pinning color-scheme resolves every light-dark() token above and
+ * overrides the operating-system preference; without the attribute the
+ * default `light dark` follows prefers-color-scheme. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 @layer base {
@@ -142,7 +169,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--primary) 18%, white);
+    background: color-mix(in srgb, var(--primary) 24%, var(--background));
     color: var(--foreground);
   }
 
@@ -151,8 +178,11 @@
     outline-offset: 2px;
   }
 
+  /* Type scale: 26/650 display, 16/600 section, 13/600 subsection, 14 body,
+   * 12 floor for persistent UI text. IBM Plex Sans Variable carries the
+   * display weight — one family, no second face. */
   h1 {
-    @apply mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance;
+    @apply mb-2 text-[1.625rem] leading-8 font-[650] tracking-[-0.02em] text-balance;
   }
 
   h1:focus {
@@ -160,7 +190,7 @@
   }
 
   h2 {
-    @apply mt-6 mb-2 text-sm font-semibold;
+    @apply mt-6 mb-2 text-base leading-6 font-semibold tracking-[-0.01em];
   }
 
   h3 {
@@ -252,7 +282,9 @@
 }
 
 @media print {
+  /* Paper is light regardless of the on-screen theme choice. */
   :root {
+    color-scheme: light;
     --background: #ffffff;
     --card: #ffffff;
   }

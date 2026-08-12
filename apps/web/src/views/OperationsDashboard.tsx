@@ -208,7 +208,7 @@ export function OperationsDashboard({
           <p className="mb-1 text-xs font-semibold tracking-[0.16em] text-primary uppercase">
             Operations overview
           </p>
-          <h1 tabIndex={-1} className="mb-1 text-3xl leading-tight">
+          <h1 tabIndex={-1} className="mb-1">
             Dashboard
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -408,7 +408,7 @@ export function OperationsDashboard({
             <table className="w-full min-w-[760px] text-sm">
               <caption className="sr-only">Work execution and billing progress</caption>
               <thead>
-                <tr className="border-b border-border bg-muted/35 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <tr className="border-b border-border bg-muted/35 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                   <th className="px-5 py-3">Work</th>
                   <th className="px-5 py-3">Delivery progress</th>
                   <th className="px-5 py-3 text-right">Delivered</th>

@@ -249,6 +249,9 @@ afterAll(async () => {
       for (const table of [
         'audit_events',
         'organisation_memberships',
+        // Organisation creation seeds default GST rates, so they must be
+        // removed before the organisation row or its FK blocks the delete.
+        'gst_rates',
         'organisations',
       ]) {
         await admin.unsafe(

@@ -759,7 +759,7 @@ export function WorkDetail({
           </Button>
         </>
       )}
-      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Letter</dt>
           <dd>
@@ -868,7 +868,7 @@ export function WorkDetail({
               {count !== null && (
                 <span
                   className={cn(
-                    'rounded-sm px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
+                    'rounded-sm px-1.5 py-px font-mono text-xs font-semibold tabular-nums',
                     current
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground',
@@ -909,7 +909,7 @@ export function WorkDetail({
                       {tabCounts[candidate] ?? '—'}
                     </span>
                   </span>
-                  <span className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                  <span className="flex flex-col gap-1 text-xs text-muted-foreground">
                     {relatedState === 'ready' ? (
                       (summaryLines[candidate] ?? []).map((line) => (
                         <span className="flex items-baseline gap-2" key={line.label}>
