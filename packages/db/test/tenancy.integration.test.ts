@@ -2,10 +2,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { organisationA, organisationB } from './fixtures.js';
-import type { Sql } from 'postgres';
+import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
-import { withTenant, withUserContext } from '../src/tenant.js';
+import { withTenant, withTenantSnapshot, withUserContext } from '../src/tenant.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -1433,5 +1433,144 @@ describe('audit trail append-only guarantee', () => {
         throw new Error('truncate unexpectedly succeeded');
       }),
     ).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('withTenantSnapshot', () => {
+  /** Inserts a Work into Organisation A from a SEPARATE connection and
+   * commits, so an already-open transaction can be tested against it. */
+  async function commitConcurrentWork(workCode: string): Promise<string> {
+    return withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [work] = await tx<{ id: string }[]>`
+          insert into works (
+            organisation_id, work_code, letter_number, letter_date, title,
+            advertised_value, contract_value, pricing_shape, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, ${workCode}, ${`LOA/${workCode}`}, '2026-01-15',
+            'Concurrent writer probe', '100000.00', '95000.00', 'per_schedule',
+            ${userA}
+          )
+          returning id
+        `;
+        if (!work) throw new Error('concurrent work insert returned no row');
+        return work.id;
+      },
+    );
+  }
+
+  async function countWorks(tx: TransactionSql): Promise<number> {
+    const rows = await tx<{ count: number }[]>`
+      select count(*)::int as count from works
+      where organisation_id = ${organisationA.id}
+    `;
+    return rows[0]?.count ?? 0;
+  }
+
+  const created: string[] = [];
+  afterAll(async () => {
+    if (created.length > 0) {
+      await admin`delete from works where id = any(${created}::uuid[])`;
+    }
+  });
+
+  it('reads one snapshot for the whole transaction', async () => {
+    const workCode = `SNAP-${Date.now().toString(36).toUpperCase()}`;
+    const { before, after } = await withTenantSnapshot(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const before = await countWorks(tx);
+        created.push(await commitConcurrentWork(workCode));
+        return { before, after: await countWorks(tx) };
+      },
+    );
+    // The writer committed between the two reads and is still invisible:
+    // this is the property the organisation export depends on.
+    expect(after).toBe(before);
+  });
+
+  it('differs from withTenant, which sees the concurrent commit', async () => {
+    // The control. Without it the test above would also pass against a
+    // database that simply had no concurrent writer.
+    const workCode = `RC-${Date.now().toString(36).toUpperCase()}`;
+    const { before, after } = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const before = await countWorks(tx);
+        created.push(await commitConcurrentWork(workCode));
+        return { before, after: await countWorks(tx) };
+      },
+    );
+    expect(after).toBe(before + 1);
+  });
+
+  it('runs at repeatable read and stays read-write', async () => {
+    const isolation = await withTenantSnapshot(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        // A write proves the transaction is not READ ONLY: the export
+        // records its own audit event inside this transaction.
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, entity_id
+          )
+          values (
+            ${organisationA.id}, ${userA}, 'integration.snapshot', 'works',
+            ${graphA.workId}
+          )
+        `;
+        const rows = await tx<{ level: string }[]>`
+          select current_setting('transaction_isolation') as level
+        `;
+        return rows[0]?.level ?? '';
+      },
+    );
+    expect(isolation).toBe('repeatable read');
+  });
+
+  it('keeps the tenant binding transaction-local, exactly like withTenant', async () => {
+    // The security property. Both GUCs are set with is_local = true, so
+    // they die with the transaction instead of riding the pooled
+    // connection into the next borrower's work. The pool is forced to one
+    // connection so the follow-up read is guaranteed to land on the same
+    // backend the snapshot transaction used.
+    const single = createDatabasePool({
+      url: appUrl,
+      max: 1,
+      applicationName: 'auto-mb-db-integration-snapshot-local',
+    });
+    try {
+      const bound = await withTenantSnapshot(
+        single,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          const rows = await tx<{ organisation_id: string | null }[]>`
+            select app_private.current_organisation_id() as organisation_id
+          `;
+          return rows[0]?.organisation_id ?? null;
+        },
+      );
+      expect(bound).toBe(organisationA.id);
+
+      const [leaked] = await single<
+        { organisation: string; user: string; visible: number }[]
+      >`
+        select current_setting('app.organisation_id', true) as organisation,
+               current_setting('app.user_id', true) as "user",
+               (select count(*)::int from works) as visible
+      `;
+      expect(leaked?.organisation ?? '').toBe('');
+      expect(leaked?.user ?? '').toBe('');
+      // And with no binding, RLS shows nothing at all.
+      expect(leaked?.visible).toBe(0);
+    } finally {
+      await single.end();
+    }
   });
 });

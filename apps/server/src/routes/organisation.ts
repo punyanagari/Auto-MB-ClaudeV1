@@ -76,7 +76,9 @@ async function audit(
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
   const [membership] = await tx<{ role: string }[]>`
-    select role from organisation_memberships where user_id = ${userId}
+    select role from organisation_memberships
+    where user_id = ${userId}
+      and organisation_id = app_private.current_organisation_id()
   `;
   if (membership?.role !== 'owner') {
     throw httpError(

@@ -1,5 +1,5 @@
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { withTenant } from '@auto-mb/db';
+import { withTenant, withTenantSnapshot } from '@auto-mb/db';
 import { httpError } from './http.js';
 
 const UUID_PATTERN =
@@ -32,17 +32,43 @@ export async function withBoundTenant<T>(
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  return withTenant(sql, { organisationId, userId }, async (tx) => {
-    const [bound] = await tx<{ organisation_id: string | null }[]>`
-      select app_private.current_organisation_id() as organisation_id
-    `;
-    if (bound?.organisation_id !== organisationId) {
-      throw httpError(
-        403,
-        'NOT_A_MEMBER',
-        'The authenticated user holds no active membership in this organisation.',
-      );
-    }
-    return work(tx);
-  });
+  return withTenant(sql, { organisationId, userId }, (tx) =>
+    assertBoundThen(tx, organisationId, work),
+  );
+}
+
+/**
+ * `withBoundTenant` at REPEATABLE READ, for a request that reads many
+ * tables and must hand back one self-consistent picture of them (see
+ * `withTenantSnapshot`). The membership floor is proved identically and
+ * on the same snapshot, so a membership revoked mid-request cannot widen
+ * what the request may read.
+ */
+export async function withBoundTenantSnapshot<T>(
+  sql: Sql,
+  organisationId: string,
+  userId: string,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  return withTenantSnapshot(sql, { organisationId, userId }, (tx) =>
+    assertBoundThen(tx, organisationId, work),
+  );
+}
+
+async function assertBoundThen<T>(
+  tx: TransactionSql,
+  organisationId: string,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  const [bound] = await tx<{ organisation_id: string | null }[]>`
+    select app_private.current_organisation_id() as organisation_id
+  `;
+  if (bound?.organisation_id !== organisationId) {
+    throw httpError(
+      403,
+      'NOT_A_MEMBER',
+      'The authenticated user holds no active membership in this organisation.',
+    );
+  }
+  return work(tx);
 }

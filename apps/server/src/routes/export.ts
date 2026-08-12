@@ -5,7 +5,10 @@ import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import {
+  requireOrganisationHeader,
+  withBoundTenantSnapshot,
+} from '../tenant-context.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -46,7 +49,16 @@ export function registerExportRoutes(
       const organisationId = requireOrganisationHeader(
         request.headers['x-organisation-id'],
       );
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      // REPEATABLE READ, not the default READ COMMITTED. The package below
+      // is built from around forty-five sequential SELECTs, and under READ
+      // COMMITTED each one takes its own snapshot: a writer committing
+      // midway is invisible to the earlier queries and visible to the
+      // later ones, so the exported package can be referentially broken —
+      // challan items whose parent challan is absent, lines pointing at a
+      // document read before it existed. One snapshot for the whole
+      // transaction makes the package a true picture of a single instant.
+      // The transaction stays read-write for the audit event at the end.
+      return withBoundTenantSnapshot(database, organisationId, user.id, async (tx) => {
         await requireOwner(tx, user.id);
 
         const [organisation] = await tx<Record<string, unknown>[]>`
@@ -55,7 +67,9 @@ export function registerExportRoutes(
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, status, created_at
-          from organisation_memberships order by created_at
+          from organisation_memberships
+          where organisation_id = app_private.current_organisation_id()
+          order by created_at
         `;
         const assignments = await tx<Record<string, unknown>[]>`
           select user_id, work_id, created_at
@@ -480,7 +494,9 @@ export function registerExportRoutes(
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
   const [membership] = await tx<{ role: string }[]>`
-    select role from organisation_memberships where user_id = ${userId}
+    select role from organisation_memberships
+    where user_id = ${userId}
+      and organisation_id = app_private.current_organisation_id()
   `;
   if (membership?.role !== 'owner') {
     throw httpError(

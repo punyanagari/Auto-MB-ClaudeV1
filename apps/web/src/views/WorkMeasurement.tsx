@@ -220,7 +220,12 @@ export function WorkMeasurement({
         canPrepareBill={billsState === 'ready'}
         canCancel={canCancel}
         onBillPrepared={() => {
-          void api.listBills(organisationId, workId).then(setBills);
+          // Through the page's shared runner so a failed refresh surfaces
+          // as an action error instead of vanishing as an unhandled
+          // rejection — the bill itself is already prepared either way.
+          void act(async () => {
+            setBills(await api.listBills(organisationId, workId));
+          }, 'Bills list refreshed.');
         }}
       />
     </>

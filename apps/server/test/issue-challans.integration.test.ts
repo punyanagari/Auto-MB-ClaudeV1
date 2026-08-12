@@ -1229,4 +1229,33 @@ describe('Issue Challan invariant exit suite', () => {
     const issued = await issue(draftId);
     expect(issued.statusCode, issued.body).toBe(201);
   });
+
+  it('names a non-positive line quantity with a 400 rather than letting the column CHECK answer', async () => {
+    // Work-item and manual lines share the one predicate
+    // (isPositiveDecimal); the column reads
+    // `numeric(18,3) NOT NULL CHECK (quantity > 0)`, and a CHECK
+    // violation carries no HTTP status, so the operator would read
+    // 'The request could not be completed.'
+    for (const quantity of ['0', '0.000', '-2', '-0']) {
+      const workItemLine = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${exitWorkId}/issue-challans`,
+        organisationId,
+        payload: draftBody([{ workItemId: exitItemId, quantity }]),
+      });
+      expect(workItemLine.statusCode, `${quantity}: ${workItemLine.body}`).toBe(400);
+      expect(workItemLine.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
+
+      const manualLine = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${exitWorkId}/issue-challans`,
+        organisationId,
+        payload: draftBody([
+          { description: 'Cable ties (site consumables)', unit: 'Pkt', quantity },
+        ]),
+      });
+      expect(manualLine.statusCode, `${quantity}: ${manualLine.body}`).toBe(400);
+      expect(manualLine.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
+    }
+  });
 });

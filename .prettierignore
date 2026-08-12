@@ -7,3 +7,4 @@ docs/reference
 test-results/
 playwright-report/
 .claude/
+graphify-out/

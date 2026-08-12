@@ -6,6 +6,7 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
@@ -20,15 +21,6 @@ interface PacCertificatesProps {
    * record and cancel run under owner/office. */
   readonly canModify: boolean;
   readonly workItems: readonly WorkItem[];
-}
-
-function openPdf(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  // Give the new tab time to load the blob before the URL is revoked.
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
 }
 
 /**
@@ -232,8 +224,8 @@ export function PacCertificates({
                   disabled={pending}
                   onClick={() =>
                     void act(async () => {
-                      openPdf(
-                        await api.downloadPacCertificateDocument(
+                      await openPdf(() =>
+                        api.downloadPacCertificateDocument(
                           organisationId,
                           certificate.id,
                         ),

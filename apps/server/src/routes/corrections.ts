@@ -41,7 +41,9 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import { applyApproval, isApprover, readApproval } from './amendments.js';
 import {
   assertChallanDate,
+  assertPurchaseOrderLineReceivable,
   cancellationNote,
+  isPositiveDecimal,
   lockLinkedPurchaseOrdersForChallan,
   normaliseConsignee,
 } from './challans.js';
@@ -335,7 +337,7 @@ export function registerCorrectionRoutes(
             throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
           }
           await assertWorkAccess(tx, user.id, challanRef.work_id);
-          await lockLinkedPurchaseOrdersForChallan(tx, id);
+          const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
           const challan = await lockDeliveryChallan(tx, id);
           await assertWorkAccess(tx, user.id, challan.work_id);
           await requireActiveWork(tx, challan.work_id);
@@ -363,10 +365,17 @@ export function registerCorrectionRoutes(
           // Normalise the replacement lines through SQL numeric and prove
           // each item belongs to this Work, so the stored proposal is
           // exactly what apply will write.
+          // The orders this correction's own apply will reopen: their
+          // receipts die with the cancelled challan, so a replacement may
+          // keep a link into them even while they read 'closed'.
+          const reopenableOrderIds = new Set(
+            linkedOrders.filter((order) => order.status === 'closed').map((o) => o.id),
+          );
           const seen = new Set<string>();
           const replacementItems: (typeof body.replacement.items)[number][] = [];
           const replacementLabels: { label: string; quantity: string }[] = [];
-          for (const item of body.replacement.items) {
+          for (const [index, item] of body.replacement.items.entries()) {
+            const lineLabel = `Replacement line ${String(index + 1)}`;
             if (seen.has(item.workItemId)) {
               throw httpError(
                 409,
@@ -375,7 +384,7 @@ export function registerCorrectionRoutes(
               );
             }
             seen.add(item.workItemId);
-            if (item.quantity.startsWith('-') || Number(item.quantity) === 0) {
+            if (!isPositiveDecimal(item.quantity)) {
               throw httpError(
                 400,
                 'QUANTITY_INVALID',
@@ -393,6 +402,24 @@ export function registerCorrectionRoutes(
                 404,
                 'WORK_ITEM_NOT_FOUND',
                 'A replacement item does not belong to this Work.',
+              );
+            }
+            // The receipt link is validated HERE, not only at apply. An
+            // unknown or foreign purchase-order line stored in the
+            // proposal fails inside the approver's deciding transaction,
+            // which rolls their decision back and leaves the request
+            // pending with an error only the requester can fix. The apply
+            // still revalidates against live state (a linked order can
+            // close between filing and approval, and the apply reopens
+            // it), so this is a fast failure at the right person, not a
+            // replacement for that check.
+            if (item.purchaseOrderLineId !== undefined) {
+              await assertPurchaseOrderLineReceivable(
+                tx,
+                challan.work_id,
+                item.purchaseOrderLineId,
+                lineLabel,
+                reopenableOrderIds,
               );
             }
             replacementItems.push({
@@ -581,7 +608,7 @@ export function registerCorrectionRoutes(
           const labels: { label: string; quantity: string }[] = [];
           const normalisedLines: typeof body.replacement.lines = [];
           for (const line of body.replacement.lines) {
-            if (line.quantity.startsWith('-') || Number(line.quantity) === 0) {
+            if (!isPositiveDecimal(line.quantity)) {
               throw httpError(
                 400,
                 'QUANTITY_INVALID',

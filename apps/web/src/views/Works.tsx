@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import type { LoaDocument, Work } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatCompactInr, formatDate } from '../format.js';
+import { formatCompactInr, formatDate, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -321,7 +321,7 @@ export function Works({
                         {document.originalFilename}
                       </th>
                       <td className="px-4 py-3 text-[13px] tnum">
-                        {formatDate(document.createdAt)}
+                        {formatTimestampDate(document.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={DOCUMENT_BADGE[document.extractionStatus]}>

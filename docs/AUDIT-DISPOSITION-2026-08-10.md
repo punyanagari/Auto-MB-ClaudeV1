@@ -1,0 +1,211 @@
+# Disposition of the 10 August 2026 external audit
+
+This document maps every finding of the external audit of
+`f780b05c16ea87db6b3184ae8cb276c72da10947` (10 August 2026, 39 migrations)
+to its status against the current tree (46 migrations). It is the item
+`docs/HANDOFF-2026-08-12.md` recorded as owed.
+
+## Provenance and scope
+
+The source audit was supplied on 12 August 2026 as a Word document
+(`auot-mb-claudev1-audit-10-08-2026.docx`). It was not in the repository
+before that, which is why the handoff could not complete this mapping.
+
+**The audit contains 44 findings, not 48.** Its numbering runs from 1 to
+48, but sections 12, 24, 25 and 26 do not exist in the document. The file
+carries no tracked changes, no insertions, no deletions and no comments,
+so those numbers were skipped or removed before it was saved rather than
+lost in extraction. The counts below are over the 44 findings that exist.
+If a version containing the missing four is produced, this document must
+be extended rather than assumed complete.
+
+## Method
+
+Each finding was verified against the current source — never against the
+repository's own documentation or code comments. That distinction matters
+here for two reasons. The audit itself warns that stale comments are
+hazardous in compliance code because reviewers trust them as design
+evidence, and the disposition work found documentation asserting fixes
+that had not happened (recorded under "Documentation accuracy" below).
+
+Verification was static: the code was read, not executed. `pnpm verify`
+passes on this tree with 46 migrations validated, reported separately in
+`docs/AUDIT-2026-08-12.md`.
+
+## Summary
+
+| Status          | Count | Meaning                                        |
+| --------------- | ----- | ---------------------------------------------- |
+| Fixed           | 17    | Resolved; evidence cited                       |
+| Partial         | 11    | Materially addressed; a named sub-item remains |
+| Still open      | 15    | Not addressed                                  |
+| Owner-dismissed | 1     | Decided not applicable by the owner            |
+
+Most of what is fixed was fixed by the 0041–0045 checkpoint, which was
+this audit's direct consequence, and by the follow-up audit of 12 August.
+What remains clusters in operations, deployment and assurance — surfaces
+neither of those passes touched.
+
+## Owner dispositions
+
+Two findings carry the owner's own decision inside the source document.
+These govern; the auditor's recommendation is recorded but not applied.
+
+**Finding 1** — the owner states that an invoice raised by the contractor
+to Railways carries a SAC code and therefore does not require an e-way
+bill, so e-way bills are not applicable to these invoices. The auditor's
+required correction (rebuild e-way-bill generation around goods and HSN
+lines) is therefore not scope. The code matches the decision: fresh
+generation is refused, the NIC payload endpoint always answers 409, and
+the payload builder has no call site at all.
+
+**Finding 2** — the owner agreed with the auditor's correction, so it
+remains a live requirement and is dispositioned on its merits.
+
+## Findings
+
+### Statutory: GST, e-invoicing and e-way bills
+
+| #   | Finding                                                                 | Status                                         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | ----------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | SAC-only e-way-bill payload is structurally rejected                    | Owner-dismissed, and neutralised in code       | `routes/eway-bills.ts:697-704` refuses generation; `:914-921` always 409s; `gsp/ewb-payload.ts` has no call site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2   | An ordinary writer can fabricate an IRP or NIC response                 | Partial                                        | Real adapter `gsp/whitebooks.ts`; operation ledger `0041:312-368`; manual path needs the `issue` authority and is disabled when transport is configured (`routes/tax-invoices.ts:2275-2288`). Remaining: raw provider request and response bodies are not stored (`0041:309-311` keeps only a hash, code and status); no local signed-QR or IRN-derivation verification; manual evidence is typed field by field rather than captured as a whole response; the state is `registered` with `irp_provider='manual'` rather than a distinct unverified state; no dedicated compliance authority and no record of which portal was used |
+| 3   | Local "submit" treated as the legal IRP act                             | Fixed                                          | Local status and IRP provider state are separate axes (`contracts/src/tax-documents.ts:57-71`, `0041:79-103`); the offending comment is gone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 4   | B2C invoices pushed through the B2B IRP model                           | Fixed                                          | `gsp/irp-payload.ts:87` fixes `SupTyp: 'B2B'`; `tax-invoice-snapshot.ts:267` throws; refusals at `routes/tax-invoices.ts:1883-1889`, `:2452-2456`. No test covers the refusal                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 5   | Invoice and e-way-bill cancellation can diverge from government records | Partial                                        | Divergence is now structurally prevented and no official identifier is ever cleared (`routes/tax-invoices.ts:1694-1705`, `routes/eway-bills.ts:1292-1310`, `0041:88-98,172-183`). Remaining: the 24-hour IRP window is not modelled, and there is no credit-note state, so after the window an invoice cannot be cancelled locally at all                                                                                                                                                                                                                                                                                           |
+| 6   | Statutory payloads ignore the frozen supplier snapshot                  | Fixed                                          | Payloads build only from the issued snapshot (`tax-invoice-snapshot.ts:260-330`, `routes/tax-invoices.ts:1846-1864`); frozen ship-to is emitted (`irp-payload.ts:169`); locality is an explicit snapshot fact (`0042`)                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 7   | E-way-bill implementation stale against the May 2026 API                | Partial — risk neutralised, code not corrected | `gsp/ewb-payload.ts:94,141-147` still hardcodes transaction type 1 and a single party, with no ship-to GSTIN or closure. It is dead code and generation is gated. Live provider surface is lookup and cancellation only                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 19  | GST-rate validation too permissive                                      | **Still open**                                 | `contracts/src/primitives.ts:123-127` and `0035:44` still accept any rate from 0 to 100; no rate master exists through 0046                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 20  | E-invoice applicability and reporting deadlines not modelled            | **Still open**                                 | No turnover, mandate-date, applicability or reporting-deadline concept exists anywhere                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 21  | Invoice dates can be in the future                                      | Fixed                                          | `assertInvoiceDateNotFuture` (`routes/tax-invoices.ts:538-554`) on create, direct create, update and submit; quotations bounded at `routes/quotations.ts:288-298`. No test; a contradicting comment survives at `:522-523`                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 22  | Monetary JSON serialisation not exact                                   | Fixed                                          | `gsp/statutory-json.ts:10-89` emits decimal lexemes verbatim and rejects unsafe integers; inbound values are read from raw bytes (`whitebooks.ts:188-243`). Boundary tests do not exist                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 23  | Acknowledgement timestamps lose verbatim portal evidence                | Fixed                                          | Exact portal text stored alongside a derived instant (`whitebooks.ts:333-373`, `contracts/src/tax-documents.ts:275-286`); display prefers the text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 43  | Stale design comment in the IRP payload file                            | Partial                                        | The named comment is corrected and `extractPincode` is dead. Two statutory comments are now stale in the same way: `contracts/src/tax-documents.ts:27-30` and `routes/tax-invoices.ts:522-523`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 46  | Golden payload tests can preserve a wrong interpretation                | Partial; external half operator-owned          | Local proofs were added (SAC-only refusal, reconcile-by-lookup, exact large integers). No official schema fixtures, no sandbox run, no B2C-refusal or allowed-rate cases                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+### Platform, database and numbering
+
+| #   | Finding                                                         | Status         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --- | --------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8   | Organisation-defined numbering can deadlock a series            | **Still open** | `number-series.ts:192-238` validates only brace balance, token names and the presence of `{SEQ}`; it has no scope requirement. Counters are narrower than the uniqueness key: delivery challans count per Work (`routes/challans.ts:1234-1240`) against `UNIQUE (organisation_id, challan_number)` (`0001:168`); tax invoices count per financial year (`routes/tax-invoices.ts:1438-1444`) against `UNIQUE (organisation_id, invoice_number)` (`0035:72`) |
+| 9   | New legal-document parent rows lack database-level immutability | Fixed          | Parent guards for tax invoices (`0041:375-491`), e-way bills (`0041:493-588`), purchase orders (`0045:39-99`) and quotations (`0045:101-145`): issued facts frozen, only named lifecycle columns mutable, terminal states final, provider evidence append-once, official identifiers never cleared                                                                                                                                                         |
+| 10  | Bootstrap privilege matrix stale                                | Partial        | The matrix now declares every table created by any migration — verified by diffing all 55 `CREATE TABLE` statements against `bootstrap.ts:21-116`, zero missing. But no catalog-driven test enforces it, so a new table can land undeclared with CI green                                                                                                                                                                                                  |
+| 11  | Export is no longer the complete business record                | Partial        | All 55 tenant tables are exported, with an object manifest and snapshot isolation (`routes/export.ts`, `formatVersion: 'export-v8'`). The completeness test is a hand-maintained list (`test/integrity.integration.test.ts:510-537`), which is precisely what the audit said not to rely on                                                                                                                                                                |
+| 13  | No repository-wide CSRF protection                              | Fixed          | Global pre-routing hook (`app.ts:285-295`) installed before every route registration, with an exact-match allowlist rejecting missing, `null` and multi-valued Origin on all mutating verbs (`origin-guard.ts:25-47`), proven through a real application lifecycle test                                                                                                                                                                                    |
+| 14  | Procurement closure can dead-end                                | Fixed          | `reopenClosedPurchaseOrders` (`routes/challans.ts:417-448`) runs in the cancelling transaction with a pinned lock order and an audit event; the trigger permits `closed → issued` (`0045:71-75`); proven including an exactly-once concurrency test                                                                                                                                                                                                        |
+| 15  | One purchase-order draft per Work is over-broad                 | Fixed          | `0045:31-34` replaces the per-Work index with one keyed on work and vendor                                                                                                                                                                                                                                                                                                                                                                                 |
+| 16  | Tax-invoice draft state depends on audit history                | Fixed          | `0041:21-57` adds `buyer_contact_id`, backfills it, fails the migration on unprovable rows, then enforces `NOT NULL` with a composite foreign key. No runtime read of the audit payload survives                                                                                                                                                                                                                                                           |
+| 17  | Record Measurement Books need a database shape guarantee        | Fixed          | `0045:24-27` adds a validated bidirectional check with an actionable preflight. The raw-SQL negative test the audit asked for does not exist                                                                                                                                                                                                                                                                                                               |
+| 18  | Un-merge relies on audit JSON as operational state              | Fixed          | `0045:150-361` adds normalised merge provenance with identity and ownership indexes, append-only ACL, forced RLS, and a compatibility backfill; un-merge reads it and refuses on a provenance hole                                                                                                                                                                                                                                                         |
+
+### Web client and product narrative
+
+| #   | Finding                                                     | Status         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 27  | Failed reads rendered as legitimate empty states            | Partial        | The dangerous case is fixed: a failed invoice list now shows an error and a retry rather than an empty register (`views/WorkTaxInvoices.tsx:75,87-89,141-159`), and `views/WorkDetail.tsx:115-143` carries the same pattern. Remaining: the Measurement Book and contact picker loads still swallow failures silently, and the audit's distinction between permission-denied and service-unavailable is not modelled |
+| 28  | No durable deep links or browser history                    | **Still open** | Navigation is React state only (`views/OperationsWorkspace.tsx:217-231`, `App.tsx:34-57`); no router and no history API anywhere in `apps/web/src`. Not tracked in any roadmap                                                                                                                                                                                                                                       |
+| 29  | A transient session error looks like sign-out               | Fixed          | `api.ts:1133-1142` returns null only on 401; every other failure renders a retryable outage state (`App.tsx:135-144,217-244`) with tests                                                                                                                                                                                                                                                                             |
+| 30  | The old Measurement Entry UI is semantically stale          | **Still open** | `views/WorkMeasurement.tsx:62,70,112-116` still renders "Measurement Book" headings and retired billed/unbilled chips directly above the formal Measurement Books component                                                                                                                                                                                                                                          |
+| 31  | One authoritative billing narrative is needed               | Partial        | In-product copy now explains cardinality and cancellation release. But `docs/UX.md:96-103` documents a sequence the code does not follow — the invoice is raised from the finalised Measurement Book, not from the contractual bill — and `docs/UX.md` is referenced by nothing in the repository                                                                                                                    |
+| 39  | PRODUCT.md calls shipped features non-goals                 | Fixed          | `docs/PRODUCT.md:172-187,131-153,74-77`                                                                                                                                                                                                                                                                                                                                                                              |
+| 40  | ROADMAP both delivers and defers the same features          | Partial        | The main list is corrected. Two items the audit named remain: ClamAV at `docs/ROADMAP.md:66` and the backup-age gauge at `:114-118`, both implemented (`scripts/backup.sh:36-39`, `apps/server/src/metrics.ts:88-94`)                                                                                                                                                                                                |
+| 41  | README production claim contradicts its blockers            | Fixed          | `README.md:17-18,53-56`                                                                                                                                                                                                                                                                                                                                                                                              |
+| 42  | README feature summary behind implementation                | Fixed          | `README.md:20-51`                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 44  | OpenAPI version still 0.1.0                                 | **Still open** | `apps/server/src/app.ts:210`                                                                                                                                                                                                                                                                                                                                                                                         |
+| 45  | Development-model documentation does not match the workflow | **Still open** | `README.md:119`; ADR-0004 title and status                                                                                                                                                                                                                                                                                                                                                                           |
+
+### Operations, deployment and assurance
+
+| #   | Finding                                                    | Status                                         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ---------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 32  | Deployment workflow conflicts with the operations contract | **Still open**                                 | All seven sub-claims hold: `deploy.yml:19,34` deploys current main without proving CI; `:80` trusts `ssh-keyscan` at deploy time; `:107-108` builds on the production host; `:113-118` runs migrations after containers start; no protected environment, no digest, no rollback                                                                                                                                                             |
+| 33  | Backup is not one consistent database-and-object snapshot  | **Still open**                                 | `scripts/backup.sh:24-25` dumps then archives without quiescence or a snapshot; the checksum file covers the two archives, not an object manifest tied to the dump                                                                                                                                                                                                                                                                          |
+| 34  | Filesystem storage is pilot-grade                          | **Still open**                                 | `storage.ts:12-15,60-64` — `put`/`get` over a bare `writeFile`, with no atomic rename, fsync, delete, versioning or encryption                                                                                                                                                                                                                                                                                                              |
+| 35  | Production deployment is one failure domain                | **Still open**                                 | `deploy/docker-compose.prod.yml` places database, object storage, API, renderer, scanner and edge on one host with local volumes                                                                                                                                                                                                                                                                                                            |
+| 36  | Owner MFA remains an open gate                             | **Still open**                                 | `auth.ts:69-75` registers the plugin; there is no enrolment flow in the web client and no enforcement policy                                                                                                                                                                                                                                                                                                                                |
+| 37  | Observability is far narrower than the contract            | **Still open**                                 | `metrics.ts` exposes three series against the list at `docs/OPERATIONS.md:78-93`                                                                                                                                                                                                                                                                                                                                                            |
+| 38  | Rate limiting is single-process                            | **Still open**, not a live defect              | `rate-limit.ts:22,92` use in-process maps, correct for the current single-container topology and a gate on the first replica                                                                                                                                                                                                                                                                                                                |
+| 47  | Important negative tests are missing                       | Partial — 3 of 17 present, 5 partial, 9 absent | Present: e-way-bill number retained after cancellation, hostile-origin rejection, purchase-order reopen after closure. Absent include: payload byte-stability after a profile change, local cancellation with an active IRN (guarded but untested), numbering templates across two Works and two financial years, maximum money serialisation, and backup during a document write. The importer proof exists but is skipped in CI by design |
+| 48  | Production smoke does not exercise the new surfaces        | **Still open**                                 | `ci.yml:145-213` proves readiness, web delivery and sign-up only. The separate fresh-cluster restore job is stronger but proves record survival only by counting organisations                                                                                                                                                                                                                                                              |
+
+## Release-blocking set
+
+Consolidated from all four verification passes, in the order they should
+be taken:
+
+1. **Finding 8 — numbering template scope.** The only structural
+   integrity defect left entirely untouched. An owner can still save
+   `{SEQ}` for challans or `TI/{SEQ}` for tax invoices; the first Work or
+   the first invoice of a second financial year then collides with the
+   organisation-wide unique constraint, and because the counter rolls
+   back with the failed transaction, every retry requests the same
+   number. The series wedges at issue time, when the operator already has
+   a finished document. The named 409 makes this legible but does not
+   clear it.
+2. **Finding 19 — unbounded GST rate.** The only place where a locally
+   finalised, gap-free numbered, immutably snapshotted document can carry
+   a value the government will reject. The correction path afterwards is
+   constrained by finding 5.
+3. **Finding 20 — no e-invoicing applicability model.** Nothing records
+   whether an organisation is required or permitted to register, or
+   whether an invoice is past its reporting window. A hard gate before
+   any production IRP credential is used.
+4. **Finding 5's residue — no cancellation window, no credit-note
+   state.** Divergence is prevented by refusal, so an invoice past the
+   IRP window becomes permanently uncancellable locally: a dead end on a
+   legal register.
+5. **Finding 36 — owner MFA.** The installed plugin makes this look
+   complete. Password-only owner accounts on a tenant holding contract,
+   GST and signed-document data is the most exploitable item on the list.
+6. **Findings 33 and 34 — backup consistency and storage durability.**
+   Together these decide whether a customer's data can actually be
+   returned. A dump-then-archive over a non-atomic object store can
+   restore an invoice row pointing at bytes that were never captured.
+7. **Finding 37, security subset** — authentication failures, tenant
+   denials and backup-age alerting. Incident response cannot run on
+   metrics that are not collected.
+8. **Finding 32, narrow piece** — run migrations before starting new
+   containers, and pin the production host key instead of trusting
+   `ssh-keyscan`.
+9. **Finding 47, money and legal subset** — cancellation with an active
+   IRN, an ordinary writer being unable to invent provider status,
+   raw-SQL parent immutability, and maximum money serialisation. Three
+   already have guards in code and only lack the test that stops a
+   regression from silently removing them.
+10. **Finding 46 — external contract proof.** Operator-owned; the gate on
+    enabling a production statutory environment, still conditional on
+    rotating the credentials exposed in the supplied provider
+    documentation.
+
+Findings 10 and 11 are drift-prevention rather than present defects: both
+matrices are materially complete, but neither has the catalog-driven test
+the audit made the acceptance condition. The export should not be
+described as complete until that test exists.
+
+## Documentation accuracy
+
+The disposition found three places where the repository asserts something
+untrue about itself. These are recorded because the audit's own warning —
+that reviewers treat comments and documents as design evidence — applies
+directly, and because a false claim of completion is worse than the
+original gap it describes.
+
+- `docs/UX.md:105` states that the older site-measurement surface "is
+  labelled as measurement evidence rather than being presented as the
+  formal Measurement Book itself." The interface still labels it
+  Measurement Book (finding 30).
+- `docs/OPERATIONS.md:51` states that "Failed health checks trigger
+  rollback." The deployment workflow has no rollback; on failure it exits
+  and leaves the new containers running (finding 32).
+- `routes/tax-invoices.ts:216-218` still describes the draft buyer as
+  resolved from the newest audit event. The code immediately beneath it
+  reads a column (finding 16). `number-series.ts:184-190` similarly still
+  claims a template is "proved when it is saved" (finding 8), and
+  `routes/tax-invoices.ts:522-523` claims there is deliberately no
+  future-date bound fifteen lines above the guard that enforces one
+  (finding 21).
+
+For findings 33, 36 and 37 the documentation was instead updated to
+concede the gap honestly. That is an improvement, but it is not
+remediation, and the repository's own claims should not be read as
+evidence that those gates are closed.

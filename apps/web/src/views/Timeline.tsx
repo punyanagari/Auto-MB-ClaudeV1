@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TimelineEvent, TimelineResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { CardHeader } from '../ui/card.js';
 import { Actions, FormError } from '../ui/form.js';
@@ -167,10 +168,6 @@ function contextFacts(details: unknown): readonly string[] {
     .map(([key, value]) => `${humaniseField(key)}: ${String(value)}`);
 }
 
-function occurredOn(iso: string): string {
-  return iso.slice(0, 10);
-}
-
 export function Timeline({ api, organisationId, scope }: TimelineProps) {
   const [events, setEvents] = useState<readonly TimelineEvent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -291,7 +288,7 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
                   <span className="font-semibold">{humaniseAction(event.action)}</span>
                   <span className="text-muted-foreground">
                     {' '}
-                    · {occurredOn(event.occurredAt)}
+                    · {formatTimestampDate(event.occurredAt)}
                     {event.actorName !== null ? ` · ${event.actorName}` : ''}
                   </span>
                 </p>

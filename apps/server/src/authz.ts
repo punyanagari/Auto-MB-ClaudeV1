@@ -14,7 +14,9 @@ export async function membershipOf(
 ): Promise<MembershipRow | undefined> {
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents
-    from organisation_memberships where user_id = ${userId}
+    from organisation_memberships
+    where user_id = ${userId}
+      and organisation_id = app_private.current_organisation_id()
   `;
   return membership;
 }

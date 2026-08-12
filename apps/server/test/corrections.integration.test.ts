@@ -13,6 +13,7 @@ import type {
   CorrectionNoticeDetailResponse,
   CorrectionNoticeListResponse,
   IssueChallanDetailResponse,
+  PurchaseOrderDetailResponse,
   TimelineResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
@@ -363,6 +364,9 @@ afterAll(async () => {
           'issue_challan_counters',
           'issue_challans',
           'delivery_challans',
+          'purchase_order_lines',
+          'purchase_orders',
+          'purchase_order_counters',
           'approval_requests',
           'work_assignments',
           'work_items',
@@ -1992,5 +1996,708 @@ describe('Wave 2 schema hardening (0023)', () => {
         )
       `,
     ).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+describe('closed purchase orders across cancel-and-replace', () => {
+  // A dedicated Work keeps this fixture clear of the one-draft slots and
+  // replacement drafts the earlier suites leave behind.
+  let work4Id: string;
+  let work4Code: string;
+  let item4Id: string;
+  let vendorId: string;
+
+  beforeAll(async () => {
+    work4Id = randomUUID();
+    work4Code = `COR4-${runId.toUpperCase()}`;
+    const schedule4Id = randomUUID();
+    item4Id = randomUUID();
+    vendorId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (${work4Id}, ${organisationId}, ${work4Code},
+              ${`cor-letter-4-${runId}`}, '2025-06-01',
+              'Correction fixture work 4', 1000.00, 900.00, 'per_schedule',
+              ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${schedule4Id}, ${organisationId}, ${work4Id}, 'D', 'Schedule D', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${item4Id}, ${organisationId}, ${work4Id}, ${schedule4Id}, 'D/1',
+              'Distribution board', 'Nos', 10.000, 100.00)
+    `;
+    // `is_vendor` has no route setter yet (dormant since 0028), so the
+    // vendor fixture is written directly — the purchase-order suite does
+    // the same.
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, contact_person, address, phone,
+        email, gstin, pincode, state_code, is_consignee, is_vendor, active,
+        created_by_user_id
+      )
+      values (${vendorId}, ${organisationId}, ${`Correction Vendors ${runId}`},
+              null, 'TTC Industrial Area, Navi Mumbai', null, null, null,
+              null, '27', false, true, true, ${ownerUserId})
+    `;
+  }, 30_000);
+
+  it('reopens the closed order on apply and preserves the receipt link on the replacement', async () => {
+    // An issued purchase order with one line on the Work item.
+    const createdPo = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${work4Id}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(createdPo.statusCode, createdPo.body).toBe(201);
+    const poId = createdPo.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const lines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${poId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: item4Id,
+            description: 'Distribution board',
+            unitCode: 'Nos',
+            quantity: '2',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(lines.statusCode, lines.body).toBe(200);
+    const poLineId = lines.json<PurchaseOrderDetailResponse>().lines[0]?.id ?? '';
+    expect(poLineId).not.toBe('');
+    const issuedPo = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${poId}/issue`,
+      organisationId,
+    });
+    expect(issuedPo.statusCode, issuedPo.body).toBe(201);
+
+    // The delivery arrives against the order and the challan issues; the
+    // fully received order then closes.
+    const draft = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${work4Id}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: `${work4Code}-DC`,
+        consignee: consignee(),
+        items: [
+          { workItemId: item4Id, quantity: '2.000', purchaseOrderLineId: poLineId },
+        ],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const dcId = draft.json<ChallanDetailResponse>().challan.id;
+    const issuedDc = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${dcId}/issue`,
+      organisationId,
+    });
+    expect(issuedDc.statusCode, issuedDc.body).toBe(201);
+    const closed = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${poId}/close`,
+      organisationId,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+
+    // With the order CLOSED, the clerk files a quantity correction whose
+    // replacement keeps the receipt link, and the owner approves. The
+    // apply must reopen the order before writing the replacement lines —
+    // otherwise the preserved link is refused as PO_NOT_ISSUED.
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${dcId}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'One board was recorded twice on the issued copy.',
+        replacement: {
+          challanDate: '2026-08-08',
+          prefix: `${work4Code}-DC`,
+          consignee: consignee(),
+          items: [
+            { workItemId: item4Id, quantity: '1.000', purchaseOrderLineId: poLineId },
+          ],
+        },
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const requestId = filed.json<ApprovalRequest>().id;
+    const approved = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    // The original is cancelled and the closed order reopened, once, with
+    // durable audit evidence naming the cancelled challan.
+    const [original] = await admin<{ status: string }[]>`
+      select status from delivery_challans where id = ${dcId}
+    `;
+    expect(original?.status).toBe('cancelled');
+    const [po] = await admin<{ status: string; closed_at: Date | null }[]>`
+      select status, closed_at from purchase_orders where id = ${poId}
+    `;
+    expect(po?.status).toBe('issued');
+    expect(po?.closed_at).toBeNull();
+    const reopenEvents = await admin<{ challan_id: string | null }[]>`
+      select details->>'challanId' as challan_id from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${poId}
+        and action = 'purchase_order.reopened_after_challan_cancellation'
+    `;
+    expect(reopenEvents).toHaveLength(1);
+    expect(reopenEvents[0]?.challan_id).toBe(dcId);
+
+    // The replacement draft carries the provenance AND the receipt link.
+    const [replacement] = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where work_id = ${work4Id} and status = 'draft'
+        and replaces_challan_id = ${dcId}
+    `;
+    expect(replacement).toBeDefined();
+    const replacementLines = await admin<
+      { purchase_order_line_id: string | null; quantity: string }[]
+    >`
+      select purchase_order_line_id, quantity::text as quantity
+      from delivery_challan_items
+      where delivery_challan_id = ${replacement?.id ?? ''}
+    `;
+    expect(replacementLines).toEqual([
+      { purchase_order_line_id: poLineId, quantity: '1.000' },
+    ]);
+  });
+});
+
+describe('replacement receipt links are validated when the correction is filed', () => {
+  // A wrong purchase-order line stored unchecked in a proposal only fails
+  // inside the approver's deciding transaction: that rolls the decision
+  // back, leaves the request pending, and hands the approver an error only
+  // the requester can fix. These prove the refusal lands at propose.
+  let linkWorkId: string;
+  let linkWorkCode: string;
+  let linkItemId: string;
+  let otherWorkId: string;
+  let vendorId: string;
+  let issuedPoLineId: string;
+  let draftPoLineId: string;
+  let foreignPoLineId: string;
+  // One issued challan per test: the one-pending-request rule would
+  // otherwise turn the first test's leftover into the second's failure.
+  let foreignCaseChallanId: string;
+  let draftCaseChallanId: string;
+  let acceptedCaseChallanId: string;
+  let linkIssueChallanId: string;
+
+  /** Creates a purchase order with one line on the given item and
+   * optionally issues it; returns the line id. */
+  async function purchaseOrderLine(
+    targetWorkId: string,
+    workItemId: string,
+    issue: boolean,
+  ): Promise<string> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${targetWorkId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const poId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const lines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${poId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId,
+            description: 'Relay rack',
+            unitCode: 'Nos',
+            quantity: '4',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(lines.statusCode, lines.body).toBe(200);
+    const lineId = lines.json<PurchaseOrderDetailResponse>().lines[0]?.id ?? '';
+    expect(lineId).not.toBe('');
+    if (issue) {
+      const issued = await authed(owner, {
+        method: 'POST',
+        url: `/api/purchase-orders/${poId}/issue`,
+        organisationId,
+      });
+      expect(issued.statusCode, issued.body).toBe(201);
+    }
+    return lineId;
+  }
+
+  beforeAll(async () => {
+    linkWorkId = randomUUID();
+    linkWorkCode = `COR7-${runId.toUpperCase()}`;
+    linkItemId = randomUUID();
+    otherWorkId = randomUUID();
+    const otherItemId = randomUUID();
+    vendorId = randomUUID();
+    const scheduleId = randomUUID();
+    const otherScheduleId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values
+        (${linkWorkId}, ${organisationId}, ${linkWorkCode},
+         ${`cor-letter-7-${runId}`}, '2025-06-01',
+         'Correction fixture work 7', 1000.00, 900.00, 'per_schedule',
+         ${ownerUserId}),
+        (${otherWorkId}, ${organisationId}, ${`COR8-${runId.toUpperCase()}`},
+         ${`cor-letter-8-${runId}`}, '2025-06-01',
+         'Correction fixture work 8', 1000.00, 900.00, 'per_schedule',
+         ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values
+        (${scheduleId}, ${organisationId}, ${linkWorkId}, 'G', 'Schedule G', 1),
+        (${otherScheduleId}, ${organisationId}, ${otherWorkId}, 'H', 'Schedule H', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values
+        (${linkItemId}, ${organisationId}, ${linkWorkId}, ${scheduleId}, 'G/1',
+         'Relay rack', 'Nos', 10.000, 100.00),
+        (${otherItemId}, ${organisationId}, ${otherWorkId}, ${otherScheduleId},
+         'H/1', 'Relay rack', 'Nos', 10.000, 100.00)
+    `;
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, contact_person, address, phone,
+        email, gstin, pincode, state_code, is_consignee, is_vendor, active,
+        created_by_user_id
+      )
+      values (${vendorId}, ${organisationId}, ${`Link Vendors ${runId}`},
+              null, 'TTC Industrial Area, Navi Mumbai', null, null, null,
+              null, '27', false, true, true, ${ownerUserId})
+    `;
+    issuedPoLineId = await purchaseOrderLine(linkWorkId, linkItemId, true);
+    draftPoLineId = await purchaseOrderLine(linkWorkId, linkItemId, false);
+    foreignPoLineId = await purchaseOrderLine(otherWorkId, otherItemId, true);
+    ({ challanId: foreignCaseChallanId } = await issueChallan(
+      linkWorkId,
+      `${linkWorkCode}-DC`,
+      [{ workItemId: linkItemId, quantity: '2.000' }],
+    ));
+    ({ challanId: draftCaseChallanId } = await issueChallan(
+      linkWorkId,
+      `${linkWorkCode}-DC`,
+      [{ workItemId: linkItemId, quantity: '2.000' }],
+    ));
+    ({ challanId: acceptedCaseChallanId } = await issueChallan(
+      linkWorkId,
+      `${linkWorkCode}-DC`,
+      [{ workItemId: linkItemId, quantity: '2.000' }],
+    ));
+    const createdIssueChallan = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${linkWorkId}/issue-challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        movementType: 'issue',
+        issuedToName: 'SSE/Signal/Delhi',
+        lines: [{ workItemId: linkItemId, quantity: '2.000' }],
+      },
+    });
+    expect(createdIssueChallan.statusCode, createdIssueChallan.body).toBe(201);
+    linkIssueChallanId =
+      createdIssueChallan.json<IssueChallanDetailResponse>().issueChallan.id;
+    const issuedIssueChallan = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${linkIssueChallanId}/issue`,
+      organisationId,
+    });
+    expect(issuedIssueChallan.statusCode, issuedIssueChallan.body).toBe(201);
+  }, 60_000);
+
+  function proposal(purchaseOrderLineId: string) {
+    return {
+      reason: 'Receipt link correction fixture.',
+      replacement: {
+        challanDate: '2026-08-08',
+        prefix: `${linkWorkCode}-DC`,
+        consignee: consignee(),
+        items: [{ workItemId: linkItemId, quantity: '3.000', purchaseOrderLineId }],
+      },
+    };
+  }
+
+  async function pendingRequestCount(challanId: string): Promise<number> {
+    const [row] = await admin<{ count: number }[]>`
+      select count(*)::int as count from approval_requests
+      where entity_id = ${challanId} and status = 'pending'
+    `;
+    return row?.count ?? 0;
+  }
+
+  it("refuses a replacement line naming another Work's purchase-order line", async () => {
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${foreignCaseChallanId}/corrections/cancel-replace`,
+      organisationId,
+      payload: proposal(foreignPoLineId),
+    });
+    expect(filed.statusCode, filed.body).toBe(404);
+    expect(filed.json()).toMatchObject({ code: 'PO_LINE_NOT_FOUND' });
+    expect(filed.json<{ message: string }>().message).toContain('Replacement line 1');
+    // No request was filed, so nothing can strand pending.
+    expect(await pendingRequestCount(foreignCaseChallanId)).toBe(0);
+  });
+
+  it('refuses a replacement line naming an unissued purchase order', async () => {
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${draftCaseChallanId}/corrections/cancel-replace`,
+      organisationId,
+      payload: proposal(draftPoLineId),
+    });
+    expect(filed.statusCode, filed.body).toBe(409);
+    expect(filed.json()).toMatchObject({ code: 'PO_NOT_ISSUED' });
+    expect(filed.json<{ message: string }>().message).toContain('Replacement line 1');
+    expect(await pendingRequestCount(draftCaseChallanId)).toBe(0);
+  });
+
+  it('accepts a replacement line naming an issued purchase order of this Work', async () => {
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${acceptedCaseChallanId}/corrections/cancel-replace`,
+      organisationId,
+      payload: proposal(issuedPoLineId),
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const requestId = filed.json<ApprovalRequest>().id;
+    expect(await pendingRequestCount(acceptedCaseChallanId)).toBe(1);
+    const withdrawn = await authed(clerk, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/withdraw`,
+      organisationId,
+    });
+    expect(withdrawn.statusCode, withdrawn.body).toBe(200);
+  });
+
+  it('refuses a non-positive replacement quantity on both correction paths', async () => {
+    // Both propose paths decide "greater than zero" through the challan
+    // writers' own predicate (isPositiveDecimal), so a replacement can
+    // never carry a quantity the numeric(18,3) CHECK would refuse at apply
+    // time as an unnamed 500.
+    for (const quantity of ['0', '0.000', '-3', '-0']) {
+      const deliveryChallan = await authed(clerk, {
+        method: 'POST',
+        url: `/api/challans/${acceptedCaseChallanId}/corrections/cancel-replace`,
+        organisationId,
+        payload: {
+          reason: 'Quantity guard fixture.',
+          replacement: {
+            challanDate: '2026-08-08',
+            prefix: `${linkWorkCode}-DC`,
+            consignee: consignee(),
+            items: [{ workItemId: linkItemId, quantity }],
+          },
+        },
+      });
+      expect(deliveryChallan.statusCode, `${quantity}: ${deliveryChallan.body}`).toBe(
+        400,
+      );
+      expect(deliveryChallan.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
+
+      const issueChallanReplacement = await authed(clerk, {
+        method: 'POST',
+        url: `/api/issue-challans/${linkIssueChallanId}/corrections/cancel-replace`,
+        organisationId,
+        payload: {
+          reason: 'Quantity guard fixture.',
+          replacement: {
+            challanDate: '2026-08-08',
+            movementType: 'issue',
+            issuedToName: 'SSE/Works/Delhi',
+            lines: [{ workItemId: linkItemId, quantity }],
+          },
+        },
+      });
+      expect(
+        issueChallanReplacement.statusCode,
+        `${quantity}: ${issueChallanReplacement.body}`,
+      ).toBe(400);
+      expect(issueChallanReplacement.json()).toMatchObject({
+        code: 'QUANTITY_INVALID',
+      });
+    }
+    // No request survived any of those refusals.
+    expect(await pendingRequestCount(acceptedCaseChallanId)).toBe(0);
+    expect(await pendingRequestCount(linkIssueChallanId)).toBe(0);
+  });
+});
+
+describe('correction apply against a completed Work (R8)', () => {
+  // The correction apply cancels an ISSUED document, so it owes the same
+  // R8 refusal the direct cancel routes owe: a completed Work is reopened
+  // first. Reaching the state through the API alone is impossible — a
+  // pending approval request is itself a completion blocker — so the
+  // completion is written directly, exactly the shape a clean-state rule
+  // change (or raw SQL) would produce. Without the works lock and
+  // assertWorkOperable in the apply, the 0032 update guard raises a bare
+  // check_violation and the approver reads a 500.
+  // One Work per test: a failing assertion leaves its Work completed, and
+  // a shared fixture would then mask the second test's own evidence.
+  let work5Id: string;
+  let work5Code: string;
+  let item5Id: string;
+  let work6Id: string;
+  let item6Id: string;
+
+  async function insertWork(
+    workId: string,
+    workCode: string,
+    scheduleCode: string,
+    itemId: string,
+    letterSuffix: string,
+  ): Promise<void> {
+    const scheduleId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (${workId}, ${organisationId}, ${workCode},
+              ${`cor-letter-${letterSuffix}-${runId}`}, '2025-06-01',
+              ${`Correction fixture work ${letterSuffix}`}, 1000.00, 900.00,
+              'per_schedule', ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleId}, ${organisationId}, ${workId}, ${scheduleCode},
+              ${`Schedule ${scheduleCode}`}, 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${itemId}, ${organisationId}, ${workId}, ${scheduleId},
+              ${`${scheduleCode}/1`}, 'Relay rack', 'Nos', 10.000, 100.00)
+    `;
+  }
+
+  beforeAll(async () => {
+    work5Id = randomUUID();
+    work5Code = `COR5-${runId.toUpperCase()}`;
+    item5Id = randomUUID();
+    work6Id = randomUUID();
+    item6Id = randomUUID();
+    await insertWork(work5Id, work5Code, 'E', item5Id, '5');
+    await insertWork(work6Id, `COR6-${runId.toUpperCase()}`, 'F', item6Id, '6');
+  }, 30_000);
+
+  /** Moves a fixture Work between active and completed directly, since
+   * the completion route refuses while the pending request exists. */
+  async function setWorkStatus(
+    workId: string,
+    status: 'active' | 'completed',
+  ): Promise<void> {
+    if (status === 'completed') {
+      await admin`
+        update works
+        set status = 'completed', completed_at = now(),
+            completed_by_user_id = ${ownerUserId},
+            completion_note = 'Completed for the R8 correction fixture.',
+            reopened_at = null, reopened_by_user_id = null, reopen_note = null
+        where id = ${workId}
+      `;
+    } else {
+      await admin`
+        update works
+        set status = 'active', completed_at = null,
+            completed_by_user_id = null, completion_note = null,
+            reopened_at = now(), reopened_by_user_id = ${ownerUserId},
+            reopen_note = 'Reopened for the R8 correction fixture.'
+        where id = ${workId}
+      `;
+    }
+  }
+
+  it('refuses a Delivery Challan cancel-and-replace apply with a named 409, leaving the request pending', async () => {
+    const { challanId } = await issueChallan(work5Id, `${work5Code}-DC`, [
+      { workItemId: item5Id, quantity: '2.000' },
+    ]);
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'Quantity wrong on the issued copy.',
+        replacement: {
+          challanDate: '2026-08-08',
+          prefix: `${work5Code}-DC`,
+          consignee: consignee(),
+          items: [{ workItemId: item5Id, quantity: '3.000' }],
+        },
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const requestId = filed.json<ApprovalRequest>().id;
+
+    await setWorkStatus(work5Id, 'completed');
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'WORK_COMPLETED' });
+    expect(refused.json<{ message: string }>().message).toContain(
+      'cancelling a delivery challan',
+    );
+
+    // The claim was released: the request is still pending and the
+    // original challan is untouched.
+    const [request] = await admin<{ status: string }[]>`
+      select status from approval_requests where id = ${requestId}
+    `;
+    expect(request?.status).toBe('pending');
+    const [challan] = await admin<{ status: string }[]>`
+      select status from delivery_challans where id = ${challanId}
+    `;
+    expect(challan?.status).toBe('issued');
+    const [replacementCount] = await admin<{ count: number }[]>`
+      select count(*)::int as count from delivery_challans
+      where work_id = ${work5Id} and status = 'draft'
+    `;
+    expect(replacementCount?.count).toBe(0);
+
+    // Positive control: reopening the Work lets the identical approval
+    // through, so the refusal is the work status and nothing else.
+    await setWorkStatus(work5Id, 'active');
+    const approved = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const [draft] = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where work_id = ${work5Id} and status = 'draft'
+    `;
+    if (!draft) throw new Error('R8 fixture left no replacement draft');
+    const removed = await authed(clerk, {
+      method: 'DELETE',
+      url: `/api/challans/${draft.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(204);
+  });
+
+  it('refuses an Issue Challan cancel-and-replace apply with a named 409, leaving the request pending', async () => {
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${work6Id}/issue-challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        movementType: 'issue',
+        issuedToName: 'SSE/Signal/Delhi',
+        lines: [{ workItemId: item6Id, quantity: '2.000' }],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const icId = created.json<IssueChallanDetailResponse>().issueChallan.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/issue-challans/${icId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    const filed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/issue-challans/${icId}/corrections/cancel-replace`,
+      organisationId,
+      payload: {
+        reason: 'Issued to the wrong engineer.',
+        replacement: {
+          challanDate: '2026-08-08',
+          movementType: 'issue',
+          issuedToName: 'SSE/Works/Delhi',
+          lines: [{ workItemId: item6Id, quantity: '2.000' }],
+        },
+      },
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const requestId = filed.json<ApprovalRequest>().id;
+
+    await setWorkStatus(work6Id, 'completed');
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'WORK_COMPLETED' });
+    expect(refused.json<{ message: string }>().message).toContain(
+      'cancelling an issue challan',
+    );
+
+    const [request] = await admin<{ status: string }[]>`
+      select status from approval_requests where id = ${requestId}
+    `;
+    expect(request?.status).toBe('pending');
+    const [challan] = await admin<{ status: string }[]>`
+      select status from issue_challans where id = ${icId}
+    `;
+    expect(challan?.status).toBe('issued');
+    const [replacementCount] = await admin<{ count: number }[]>`
+      select count(*)::int as count from issue_challans
+      where work_id = ${work6Id} and status = 'draft'
+    `;
+    expect(replacementCount?.count).toBe(0);
+
+    // Positive control: reopening the Work lets the identical approval
+    // through, so the refusal is the work status and nothing else.
+    await setWorkStatus(work6Id, 'active');
+    const approved = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${requestId}/approve`,
+      organisationId,
+      payload: {},
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const [replacement] = await admin<{ replaces_issue_challan_id: string | null }[]>`
+      select replaces_issue_challan_id from issue_challans
+      where work_id = ${work6Id} and status = 'draft'
+    `;
+    expect(replacement?.replaces_issue_challan_id).toBe(icId);
   });
 });

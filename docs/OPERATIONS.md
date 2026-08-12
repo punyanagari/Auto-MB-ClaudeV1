@@ -51,6 +51,16 @@ into PostgreSQL or a shared store (docs/SECURITY.md).
 6. Failed health checks trigger rollback.
 7. Never depend on an agent session as the sole deployment record.
 
+These are the rules the deployment must meet, not a description of the
+current workflow. `.github/workflows/deploy.yml` does not yet satisfy
+rules 1, 3, 5 and 6: it builds images on the production host rather than
+deploying a reviewed immutable digest, starts containers before running
+migrations, has no protected-environment approval, and has no rollback —
+a failed health check leaves the new containers running. It also trusts
+the host key discovered by `ssh-keyscan` at deploy time. Recorded as
+finding 32 in `docs/AUDIT-DISPOSITION-2026-08-10.md`; closing it is a
+pre-production gate.
+
 ## 4. Database changes
 
 - forward-only SQL migrations;
