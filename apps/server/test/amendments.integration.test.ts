@@ -829,6 +829,55 @@ describe('amendment approvals', () => {
     expect(duplicate.json()).toMatchObject({ code: 'DUPLICATE_ENTRY' });
   });
 
+  it('refuses a non-positive quantity on a new item with a named 400', async () => {
+    // Same predicate as the challan writers (isPositiveDecimal): an added
+    // item with nothing to execute is not an amendment, and
+    // work_items.awarded_quantity carries the column CHECK that would
+    // otherwise answer as an unnamed 500.
+    for (const quantity of ['0', '0.000', '-4', '-0']) {
+      const proposed = await authed(clerk, {
+        method: 'POST',
+        url: `/api/works/${workId}/amendments/items`,
+        organisationId,
+        payload: {
+          reason: 'Quantity guard fixture.',
+          scheduleId,
+          itemNumber: 'A/9',
+          description: 'Lightning arrester, station class',
+          unitCode: 'Nos',
+          quantity,
+          rate: '50.00',
+        },
+      });
+      expect(proposed.statusCode, `${quantity}: ${proposed.body}`).toBe(400);
+      expect(proposed.json()).toMatchObject({ code: 'AMENDMENT_INVALID' });
+    }
+    // The refusal is the quantity alone: the identical proposal with a
+    // positive quantity is accepted, and the item number stays free until
+    // then.
+    const accepted = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments/items`,
+      organisationId,
+      payload: {
+        reason: 'Quantity guard fixture.',
+        scheduleId,
+        itemNumber: 'A/9',
+        description: 'Lightning arrester, station class',
+        unitCode: 'Nos',
+        quantity: '0.001',
+        rate: '50.00',
+      },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(201);
+    const withdrawn = await authed(clerk, {
+      method: 'POST',
+      url: `/api/approvals/${accepted.json<ApprovalRequest>().id}/withdraw`,
+      organisationId,
+    });
+    expect(withdrawn.statusCode, withdrawn.body).toBe(200);
+  });
+
   it('omits an item: the effective ceiling drops to zero', async () => {
     const detail = await authed(viewer, {
       method: 'GET',

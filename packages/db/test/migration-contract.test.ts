@@ -92,6 +92,30 @@ describe('tenant migration contract', () => {
     );
   });
 
+  it('binds the delivery and installation quantity ceilings in 0046', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0046_quantity_ceilings_and_fk_indexes.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain('installations_quantity_ceiling_guard');
+    expect(sql).toContain('delivery_challans_quantity_ceiling_guard');
+    // The ceiling reads happen under a work_items row lock, which is what makes
+    // two simultaneous writers serialise instead of each passing a stale sum.
+    expect(sql).toContain('FOR UPDATE OF item');
+    // allow_excess_delivery is consulted by the delivery guard only; the
+    // installation guard must never read it.
+    const installationGuard = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.guard_installation_quantity_ceiling()'),
+      sql.indexOf('CREATE TRIGGER installations_quantity_ceiling_guard'),
+    );
+    expect(installationGuard).toContain('FOR UPDATE');
+    expect(installationGuard).not.toContain('allow_excess_delivery');
+    // The cross-tenant read in the 0039 tax invoice guard is closed.
+    expect(sql).toContain('AND organisation_id = NEW.organisation_id');
+  });
+
   it('normalizes merge provenance and narrows PO draft scope in 0045', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0045_audit_integrity_followup.sql'),

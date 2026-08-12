@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formatTimestampDate } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
@@ -49,15 +51,6 @@ const MOVEMENT_LABELS = {
   loan: 'Loan (returnable)',
   return: 'Return',
 } as const;
-
-function openPdf(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  // Give the new tab time to load the blob before the URL is revoked.
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
-}
 
 export function IssueChallanDetail({
   api,
@@ -208,7 +201,7 @@ export function IssueChallanDetail({
         {issueChallan.issuedAt !== null && (
           <div>
             <dt>Issued</dt>
-            <dd>{issueChallan.issuedAt.slice(0, 10)}</dd>
+            <dd>{formatTimestampDate(issueChallan.issuedAt)}</dd>
           </div>
         )}
       </dl>
@@ -313,8 +306,8 @@ export function IssueChallanDetail({
             disabled={pending}
             onClick={() =>
               void act(async () => {
-                openPdf(
-                  await api.downloadIssueChallanPdf(
+                await openPdf(() =>
+                  api.downloadIssueChallanPdf(
                     organisationId,
                     issueChallan.id,
                     'rendered',
@@ -333,8 +326,8 @@ export function IssueChallanDetail({
             disabled={pending}
             onClick={() =>
               void act(async () => {
-                openPdf(
-                  await api.downloadIssueChallanPdf(
+                await openPdf(() =>
+                  api.downloadIssueChallanPdf(
                     organisationId,
                     issueChallan.id,
                     'signed',

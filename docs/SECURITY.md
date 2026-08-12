@@ -43,6 +43,19 @@ Primary risks:
   moving this state into PostgreSQL or a shared store first;
 - MFA before general availability for owners/admins;
 - sensitive issue/cancel actions require explicit authority;
+- every membership read that runs inside a bound-tenant transaction
+  filters on `app_private.current_organisation_id()` as well as the user.
+  The SELECT policy on `organisation_memberships` deliberately carries an
+  `OR user_id = current_user_id()` branch so the unbound organisation
+  picker can list a user's own memberships, and that branch stays active
+  under a bound tenant. A read filtered on `user_id` alone therefore sees
+  the caller's rows in _every_ organisation and resolves an arbitrary one,
+  which would let a role or authority held elsewhere answer for the bound
+  organisation. Only the unbound picker endpoints may omit the predicate;
+- the authentication secret is rejected when it is absent, shorter than 32
+  characters, or the documented placeholder, unless `NODE_ENV` is
+  explicitly `development` or `test`. An unset `NODE_ENV` is treated as
+  production, so a bare start cannot fall back to a known constant;
 - support access is time-limited and fully audited.
 
 ### Uploads and documents

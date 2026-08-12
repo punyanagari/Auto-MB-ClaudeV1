@@ -555,6 +555,137 @@ describe('export completeness', () => {
   });
 });
 
+describe('the export is one consistent snapshot', () => {
+  /**
+   * The export runs about forty-five sequential SELECTs. Under READ
+   * COMMITTED each takes its own snapshot, so a writer that commits
+   * midway is invisible to the earlier queries and visible to the later
+   * ones — and the package comes out referentially broken.
+   *
+   * The race is made deterministic with a table lock. `loa_documents` is
+   * read after `works` and before `delivery_challans`, so an ACCESS
+   * EXCLUSIVE lock on it parks the export exactly between the parent read
+   * and the child read. A Work and a challan on it then commit into that
+   * window. Under READ COMMITTED the package would carry the challan
+   * without its Work; on the transaction's own snapshot it carries
+   * neither.
+   */
+  it('excludes a Work and its challan that commit mid-export, rather than splitting them', async () => {
+    const locker = createDatabasePool({
+      url: adminUrl,
+      max: 1,
+      applicationName: 'auto-mb-integrity-export-lock',
+    });
+    const writer = createDatabasePool({
+      url: adminUrl,
+      max: 2,
+      applicationName: 'auto-mb-integrity-export-writer',
+    });
+    const raceWorkId = randomUUID();
+    const raceChallanId = randomUUID();
+    try {
+      let releaseLock!: () => void;
+      const lockReleased = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      let lockTaken!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        lockTaken = resolve;
+      });
+      const holding = locker.begin(async (tx) => {
+        await tx`lock table loa_documents in access exclusive mode`;
+        lockTaken();
+        await lockReleased;
+      });
+      await locked;
+
+      // Not awaited: the export must be in flight and blocked.
+      const exporting = authed(owner, {
+        method: 'GET',
+        url: '/api/export',
+        organisationId,
+      });
+      const deadline = Date.now() + 20_000;
+      for (;;) {
+        const [waiting] = await writer<{ count: number }[]>`
+          select count(*)::int as count from pg_stat_activity
+          where wait_event_type = 'Lock' and query ilike '%loa_documents%'
+        `;
+        if ((waiting?.count ?? 0) > 0) break;
+        if (Date.now() > deadline) {
+          throw new Error('the export never blocked on the loa_documents lock');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      const raceScheduleId = randomUUID();
+      await writer`
+        insert into works (
+          id, organisation_id, work_code, letter_number, letter_date, title,
+          advertised_value, contract_value, pricing_shape, created_by_user_id
+        )
+        values (
+          ${raceWorkId}, ${organisationId}, ${`RACE-${runId.toUpperCase()}`},
+          ${`race-letter-${runId}`}, '2025-06-01', 'Mid-export race work',
+          1000.00, 900.00, 'per_schedule', ${ownerUserId}
+        )
+      `;
+      await writer`
+        insert into work_schedules (
+          id, organisation_id, work_id, schedule_code, title, position
+        )
+        values (${raceScheduleId}, ${organisationId}, ${raceWorkId}, 'A',
+                'Schedule A', 1)
+      `;
+      await writer`
+        insert into delivery_challans (
+          id, organisation_id, work_id, challan_date, prefix,
+          consignee_snapshot, created_by_user_id
+        )
+        values (
+          ${raceChallanId}, ${organisationId}, ${raceWorkId}, '2026-08-08',
+          'RACE', ${writer.json({ name: 'Race Store', address: 'Depot 9, Nashik' })},
+          ${ownerUserId}
+        )
+      `;
+
+      releaseLock();
+      await holding;
+      const response = await exporting;
+      expect(response.statusCode, response.body).toBe(200);
+      const exported = response.json<{
+        works: { id: string }[];
+        deliveryChallans: { id: string; work_id: string }[];
+        deliveryChallanItems: { delivery_challan_id: string }[];
+      }>();
+
+      // The package is internally consistent: every challan's Work is in
+      // it, and every challan item's challan is in it.
+      const workIds = new Set(exported.works.map((row) => row.id));
+      for (const challan of exported.deliveryChallans) {
+        expect(workIds, `challan ${challan.id} without its Work`).toContain(
+          challan.work_id,
+        );
+      }
+      const challanIds = new Set(exported.deliveryChallans.map((row) => row.id));
+      for (const item of exported.deliveryChallanItems) {
+        expect(challanIds).toContain(item.delivery_challan_id);
+      }
+      // And specifically: the racing pair commits after the transaction's
+      // snapshot, so neither half is in the package.
+      expect(workIds.has(raceWorkId)).toBe(false);
+      expect(challanIds.has(raceChallanId)).toBe(false);
+    } finally {
+      // Child first, so the fixture unwinds without touching FK triggers.
+      await writer`delete from delivery_challans where id = ${raceChallanId}`;
+      await writer`delete from work_schedules where work_id = ${raceWorkId}`;
+      await writer`delete from works where id = ${raceWorkId}`;
+      await locker.end();
+      await writer.end();
+    }
+  }, 60_000);
+});
+
 describe('signed copy evidence', () => {
   it('stores a content-addressed key and the SHA-256', async () => {
     const challanId = await issueChallan('3.000');

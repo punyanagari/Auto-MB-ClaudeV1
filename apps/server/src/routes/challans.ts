@@ -281,8 +281,17 @@ export async function assertChallanDate(
 /** True when a DecimalString denotes a value greater than zero, decided
  * on the digits themselves — never binary floating-point arithmetic
  * (engineering rule 5). The schema pattern guarantees the shape, so a
- * leading '-' is the only sign and any non-zero digit means positive. */
-function isPositiveDecimal(value: string): boolean {
+ * leading '-' is the only sign and any non-zero digit means positive.
+ *
+ * Exported because every writer that refuses a non-positive quantity owes
+ * the same answer. The alternative the other routes used, `Number(value)
+ * === 0`, is correct only while DecimalStringSchema caps fraction digits
+ * at three: widen that cap (RateStringSchema already allows six) and
+ * '0.0001' rounds to a positive Number, passes, and lands on the
+ * `CHECK (quantity > 0)` in the database as a statusless 23514 the
+ * operator reads as 'The request could not be completed.' Digit
+ * inspection does not depend on the cap. */
+export function isPositiveDecimal(value: string): boolean {
   return !value.startsWith('-') && /[1-9]/.test(value);
 }
 
@@ -438,6 +447,62 @@ export async function reopenClosedPurchaseOrders(
   }
 }
 
+/** The receipt link (0033): a challan line may name the purchase-order
+ * line it fulfils. The named line must belong to an ISSUED order of THIS
+ * Work — a draft order has not been placed yet, a closed or cancelled one
+ * takes no further receipts, and another Work's procurement answers
+ * exactly like an unknown id (the same posture RLS gives another
+ * tenant's). What is deliberately NOT checked here is the quantity:
+ * over-receipt against the ordered amount is a warning on the read model
+ * (readOverReceiptWarnings), never a refusal — vendors over-ship, and the
+ * challan must record what actually arrived. The composite FK on
+ * (organisation_id, purchase_order_line_id) backstops the existence check
+ * in the database.
+ *
+ * `label` names the offending line the way the caller counts lines, e.g.
+ * 'Line 2'. Exported so the correction propose path validates the link at
+ * the person who can fix it, rather than discovering it at apply time
+ * where the failure rolls the approver's decision back and strands the
+ * request as pending.
+ *
+ * `reopenableOrderIds` is that propose path's one concession: a
+ * cancel-and-replace releases the original challan's receipts, so its
+ * apply reopens every CLOSED order those receipts closed
+ * (reopenClosedPurchaseOrders) before writing the replacement lines. A
+ * replacement that keeps a link into one of those orders is therefore
+ * lawful even though the order reads 'closed' right now. Any other closed
+ * order is refused, because nothing will reopen it. Writers of actual
+ * lines pass nothing and hold the strict rule. */
+export async function assertPurchaseOrderLineReceivable(
+  tx: TransactionSql,
+  workId: string,
+  purchaseOrderLineId: string,
+  label: string,
+  reopenableOrderIds: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  const [poLine] = await tx<{ id: string; status: string; work_id: string }[]>`
+    select po.id, po.status, po.work_id
+    from purchase_order_lines pol
+    join purchase_orders po on po.id = pol.purchase_order_id
+    where pol.id = ${purchaseOrderLineId}
+  `;
+  if (!poLine || poLine.work_id !== workId) {
+    throw httpError(
+      404,
+      'PO_LINE_NOT_FOUND',
+      `${label}: the named purchase-order line does not belong to this Work.`,
+    );
+  }
+  const reopenable = poLine.status === 'closed' && reopenableOrderIds.has(poLine.id);
+  if (poLine.status !== 'issued' && !reopenable) {
+    throw httpError(
+      409,
+      'PO_NOT_ISSUED',
+      `${label}: deliveries are received against an ISSUED purchase order (current status: ${poLine.status}).`,
+    );
+  }
+}
+
 function requireStatus(row: ChallanRow, status: Challan['status']): void {
   if (row.status !== status) {
     throw httpError(
@@ -492,38 +557,13 @@ export async function writeLines(
         `Line ${lineNumber}: the delivered quantity ${item.quantity} is too large to record — check for a mistyped digit.`,
       );
     }
-    // The receipt link (0033): a line may name the purchase-order line it
-    // fulfils. The named line must belong to an ISSUED order of THIS Work
-    // — a draft order has not been placed yet, a closed or cancelled one
-    // takes no further receipts, and another Work's procurement answers
-    // exactly like an unknown id (the same posture RLS gives another
-    // tenant's). What is deliberately NOT checked here is the quantity:
-    // over-receipt against the ordered amount is a warning on the read
-    // model (readOverReceiptWarnings), never a refusal — vendors
-    // over-ship, and the challan must record what actually arrived. The
-    // composite FK on (organisation_id, purchase_order_line_id) backstops
-    // the existence check in the database.
     if (item.purchaseOrderLineId !== undefined) {
-      const [poLine] = await tx<{ status: string; work_id: string }[]>`
-        select po.status, po.work_id
-        from purchase_order_lines pol
-        join purchase_orders po on po.id = pol.purchase_order_id
-        where pol.id = ${item.purchaseOrderLineId}
-      `;
-      if (!poLine || poLine.work_id !== workId) {
-        throw httpError(
-          404,
-          'PO_LINE_NOT_FOUND',
-          `Line ${lineNumber}: the named purchase-order line does not belong to this Work.`,
-        );
-      }
-      if (poLine.status !== 'issued') {
-        throw httpError(
-          409,
-          'PO_NOT_ISSUED',
-          `Line ${lineNumber}: deliveries are received against an ISSUED purchase order (current status: ${poLine.status}).`,
-        );
-      }
+      await assertPurchaseOrderLineReceivable(
+        tx,
+        workId,
+        item.purchaseOrderLineId,
+        `Line ${lineNumber}`,
+      );
     }
     const [inserted] = await tx<{ id: string }[]>`
       insert into delivery_challan_items (
@@ -966,9 +1006,29 @@ export function registerChallanRoutes(
         user.id,
         async (tx) => {
           await requireAuthority(tx, user.id, 'issue');
+          // Closing a PO locks purchase_orders -> linked delivery_challans.
+          // Take the identical order here before locking this challan, so
+          // the status re-check below cannot deadlock against a close.
+          const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
           const challan = await lockChallan(tx, id);
           await assertWorkAccess(tx, user.id, challan.work_id);
           requireStatus(challan, 'draft');
+          await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
+          // writeLines validates the receipt link when the draft is saved,
+          // but the order may have been closed or cancelled in between: a
+          // closed or cancelled order takes no further receipts, and only
+          // a cancellation reopens one. Re-check under the locks above so
+          // the issue is refused rather than silently over-receipting.
+          const unavailableOrder = linkedOrders.find(
+            (order) => order.status !== 'issued',
+          );
+          if (unavailableOrder) {
+            throw httpError(
+              409,
+              'PO_NOT_ISSUED',
+              `Purchase order ${unavailableOrder.po_number ?? unavailableOrder.id} is no longer issued (current status: ${unavailableOrder.status}); deliveries are received against an ISSUED purchase order.`,
+            );
+          }
 
           // The works row lock pairs with the one the MB finalize
           // transaction holds: an issue and a final-MB finalize on the

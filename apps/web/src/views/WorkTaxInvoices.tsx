@@ -8,7 +8,8 @@ import type {
   TransportMode,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
-import { formatInr, formatDate } from '../format.js';
+import { formatInr, formatDate, formatTimestampDate } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -35,14 +36,6 @@ const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   air: 'Air',
   ship: 'Ship',
 };
-
-function openPdf(blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
-}
 
 /**
  * The GST tax invoice raised against a finalized Measurement Book, and
@@ -858,8 +851,8 @@ export function WorkTaxInvoices({
                 variant="ghost"
                 onClick={() => {
                   void act(async () => {
-                    openPdf(
-                      await api.downloadTaxInvoicePdf(organisationId, invoice.id),
+                    await openPdf(() =>
+                      api.downloadTaxInvoicePdf(organisationId, invoice.id),
                     );
                   }, 'Tax invoice PDF opened.');
                 }}
@@ -1090,7 +1083,7 @@ export function WorkTaxInvoices({
                       {invoice.ackDateText !== null && ` · ${invoice.ackDateText}`}
                       {invoice.ackDateText === null &&
                         invoice.ackDate !== null &&
-                        ` · ${formatDate(invoice.ackDate)}`}
+                        ` · ${formatTimestampDate(invoice.ackDate)}`}
                     </dd>
                   </dl>
                   {invoice.irpLegacyEvidenceMissing && (

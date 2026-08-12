@@ -8,7 +8,9 @@ import type {
   Serial,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatRate } from '../format.js';
+import { formatInr, formatRate, formatTimestampDate } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
+import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
@@ -35,13 +37,20 @@ interface ChallanDetailProps {
   readonly onBack: () => void;
 }
 
-function openPdf(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  // Give the new tab time to load the blob before the URL is revoked.
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
+/** Exact challan total: Σ lineAmount summed in BigInt minor units (a
+ * DecimalString carries at most three fraction digits). The float sum
+ * this replaces could drift off the exact paisa on large totals while
+ * being displayed as authoritative. Null when a line amount is not a
+ * plain non-negative decimal — then no total is shown rather than a
+ * guessed one. */
+function exactTotal(items: readonly ChallanItem[]): string | null {
+  let total = 0n;
+  for (const item of items) {
+    const line = parseDecimalMinorUnits(item.lineAmount, 3);
+    if (line === null) return null;
+    total += line;
+  }
+  return formatMinorUnits(total, 3);
 }
 
 /** How many serials a line needs: one per delivered unit. Read off the
@@ -300,9 +309,7 @@ export function ChallanDetail({
   }
 
   const { challan, items } = detail;
-  const total = items
-    .reduce((sum, item) => sum + Number(item.lineAmount), 0)
-    .toFixed(2);
+  const total = exactTotal(items);
   const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
   const recordedOn = (challanItemId: string) =>
     (serials ?? []).filter((serial) => serial.challanItemId === challanItemId).length;
@@ -351,7 +358,7 @@ export function ChallanDetail({
         {challan.issuedAt !== null && (
           <div>
             <dt>Issued</dt>
-            <dd>{challan.issuedAt.slice(0, 10)}</dd>
+            <dd>{formatTimestampDate(challan.issuedAt)}</dd>
           </div>
         )}
         {challan.status !== 'draft' && (
@@ -402,7 +409,7 @@ export function ChallanDetail({
               Total
             </th>
             <td className={numericCell}>
-              <strong>{formatInr(total)}</strong>
+              <strong>{total === null ? '—' : formatInr(total)}</strong>
             </td>
           </tr>
         </tbody>
@@ -487,8 +494,8 @@ export function ChallanDetail({
             disabled={pending}
             onClick={() =>
               void act(async () => {
-                openPdf(
-                  await api.downloadChallanPdf(organisationId, challan.id, 'rendered'),
+                await openPdf(() =>
+                  api.downloadChallanPdf(organisationId, challan.id, 'rendered'),
                 );
                 return null;
               }, 'PDF opened in a new tab.')
@@ -503,8 +510,8 @@ export function ChallanDetail({
             disabled={pending}
             onClick={() =>
               void act(async () => {
-                openPdf(
-                  await api.downloadChallanPdf(organisationId, challan.id, 'signed'),
+                await openPdf(() =>
+                  api.downloadChallanPdf(organisationId, challan.id, 'signed'),
                 );
                 return null;
               }, 'Signed copy opened in a new tab.')
@@ -841,7 +848,7 @@ export function ChallanDetail({
                   <td>
                     <StatusChip status={notice.status} />
                   </td>
-                  <td>{notice.createdAt.slice(0, 10)}</td>
+                  <td>{formatTimestampDate(notice.createdAt)}</td>
                   <td>
                     {notice.renderedAvailable ? (
                       <Button
@@ -849,8 +856,8 @@ export function ChallanDetail({
                         disabled={pending}
                         onClick={() =>
                           void act(async () => {
-                            openPdf(
-                              await api.downloadCorrectionNoticePdf(
+                            await openPdf(() =>
+                              api.downloadCorrectionNoticePdf(
                                 organisationId,
                                 notice.id,
                               ),

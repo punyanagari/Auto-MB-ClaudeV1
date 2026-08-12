@@ -1111,3 +1111,129 @@ describe('tenant isolation', () => {
     expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
   });
 });
+
+describe('close versus cancel of a linked challan under concurrency', () => {
+  it('lets cancellation reopen the closed order exactly once, with no lost update', async () => {
+    // A closed order whose entire receipt came from one issued challan,
+    // linked through the API's own purchaseOrderLineId field this time.
+    const arena = await freshWork('CC');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${arena.workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const poId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${poId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: arena.itemId,
+            description: 'Concurrency arena item',
+            unitCode: 'Nos',
+            quantity: '2',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const poLineId = saved.json<PurchaseOrderDetailResponse>().lines[0]?.id ?? '';
+    expect(poLineId).not.toBe('');
+    const issuedPo = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${poId}/issue`,
+      organisationId,
+    });
+    expect(issuedPo.statusCode, issuedPo.body).toBe(201);
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${arena.workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-09',
+        prefix: `PCC${runId.slice(0, 3).toUpperCase()}`,
+        consignee: { name: 'Site store', address: 'Site stores, Pune' },
+        items: [
+          { workItemId: arena.itemId, quantity: '2', purchaseOrderLineId: poLineId },
+        ],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const challanId = draft.json<ChallanDetailResponse>().challan.id;
+    const issuedChallan = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/issue`,
+      organisationId,
+    });
+    expect(issuedChallan.statusCode, issuedChallan.body).toBe(201);
+
+    const closed = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${poId}/close`,
+      organisationId,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+
+    // The race: a repeat close and the linked challan's cancellation
+    // arrive together. Both paths lock the purchase-order row before the
+    // challan row, so they serialise in one of two orders — and in both
+    // the close must lose: against the still-closed order it is a status
+    // conflict, and against the just-reopened order the released receipt
+    // leaves a line pending.
+    const [closeAgain, cancelled] = await Promise.all([
+      authed(owner, {
+        method: 'POST',
+        url: `/api/purchase-orders/${poId}/close`,
+        organisationId,
+      }),
+      authed(owner, {
+        method: 'POST',
+        url: `/api/challans/${challanId}/cancel`,
+        organisationId,
+        payload: { note: 'Material returned to the vendor during the race.' },
+      }),
+    ]);
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(closeAgain.statusCode, closeAgain.body).toBe(409);
+    expect(['PO_STATUS_CONFLICT', 'PO_NOT_FULLY_RECEIVED']).toContain(
+      closeAgain.json<{ code: string }>().code,
+    );
+
+    // No lost update: whichever interleaving won, the released receipt
+    // leaves the order OPEN with its full quantity pending again.
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/purchase-orders/${poId}`,
+      organisationId,
+    });
+    const body = detail.json<PurchaseOrderDetailResponse>();
+    expect(body.purchaseOrder.status).toBe('issued');
+    expect(body.purchaseOrder.closedAt).toBeNull();
+    expect(body.lines[0]).toMatchObject({
+      receivedQuantity: '0.000',
+      pendingQuantity: '2.000',
+    });
+
+    // Durable audit evidence: closed once, reopened exactly once — never
+    // a second reopen, never a close that outlived the cancellation.
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${poId}
+        and action in (
+          'purchase_order.closed',
+          'purchase_order.reopened_after_challan_cancellation'
+        )
+      order by occurred_at, action
+    `;
+    expect(events.map((event) => event.action)).toEqual([
+      'purchase_order.closed',
+      'purchase_order.reopened_after_challan_cancellation',
+    ]);
+  });
+});

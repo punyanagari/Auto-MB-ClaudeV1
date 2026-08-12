@@ -10,6 +10,7 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable } from '../ui/table.js';
@@ -24,15 +25,6 @@ interface CompletionExtensionsProps {
   readonly canIssue: boolean;
   /** Holds can_approve_amendments — gates manual back-fill deletion. */
   readonly canApprove: boolean;
-}
-
-function openPdf(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  // Give the new tab time to load the blob before the URL is revoked.
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
 }
 
 /**
@@ -228,8 +220,8 @@ export function CompletionExtensions({
             disabled={pending}
             onClick={() =>
               void act(async () => {
-                openPdf(
-                  await api.downloadExtensionDraftPreview(organisationId, draft.id),
+                await openPdf(() =>
+                  api.downloadExtensionDraftPreview(organisationId, draft.id),
                 );
               }, 'Draft preview opened — watermarked DRAFT, no number until finalised.')
             }

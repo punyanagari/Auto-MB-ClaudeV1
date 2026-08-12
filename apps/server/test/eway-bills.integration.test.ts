@@ -1124,3 +1124,82 @@ describe('Whitebooks e-way bill provider cancellation', () => {
     );
   });
 });
+
+describe('concurrency', () => {
+  it('lets exactly one of two simultaneous drafts claim the live slot', async () => {
+    const invoiceId = await submittedDirectInvoice('concurrent draft');
+    const [first, second] = await Promise.all([
+      createEwayBill(invoiceId, roadBody()),
+      createEwayBill(invoiceId, roadBody()),
+    ]);
+    // The invoice row lock serialises the creates: one live e-way bill,
+    // and the loser's conflict names it.
+    const statuses = [first.statusCode, second.statusCode].sort((a, b) => a - b);
+    expect(statuses, `${first.body} then ${second.body}`).toEqual([201, 409]);
+    const winner = first.statusCode === 201 ? first : second;
+    const loser = first.statusCode === 201 ? second : first;
+    const winnerId = winner.json<EwayBillDetailResponse>().ewayBill.id;
+    const conflict = loser.json<{
+      code: string;
+      details?: { existingRecordId: string };
+    }>();
+    expect(conflict.code).toBe('EWAY_BILL_EXISTS');
+    expect(conflict.details?.existingRecordId).toBe(winnerId);
+    const rows = await admin<{ id: string }[]>`
+      select id from eway_bills where tax_invoice_id = ${invoiceId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(winnerId);
+  });
+
+  it('lets exactly one of two simultaneous provider cancellations reach Whitebooks', async () => {
+    resetProviderMocks();
+    const invoiceId = await submittedDirectInvoice('concurrent cancel');
+    const ewayBillId = await seedWhitebooksEwayBill(invoiceId, '501234567890');
+    cancelEwayBillProvider.mockImplementation(() =>
+      Promise.resolve({
+        cancelledAtText: '12/08/2026 17:00:00',
+        cancelledAt: '2026-08-12T11:30:00.000Z',
+      }),
+    );
+
+    const cancelRequest = () =>
+      authedOn(providerApp, owner, {
+        method: 'POST',
+        url: `/api/eway-bills/${ewayBillId}/cancel-provider`,
+        organisationId,
+        payload: { reasonCode: '2', remark: 'Movement abandoned at the depot' },
+      });
+    const [first, second] = await Promise.all([cancelRequest(), cancelRequest()]);
+
+    // The row lock plus the pending-operation lease keep the provider
+    // mutation single-flight: exactly one request reaches Whitebooks,
+    // the other refuses without resending — a duplicate NIC cancellation
+    // is never risked.
+    const statuses = [first.statusCode, second.statusCode].sort((a, b) => a - b);
+    expect(statuses, `${first.body} then ${second.body}`).toEqual([200, 409]);
+    const loser = first.statusCode === 200 ? second : first;
+    expect(loser.json<{ code: string }>().code).toBe('EWAY_PROVIDER_STATE_CONFLICT');
+    expect(cancelEwayBillProvider).toHaveBeenCalledTimes(1);
+
+    const operations = await admin<{ operation: string; status: string }[]>`
+      select operation, status from statutory_provider_operations
+      where eway_bill_id = ${ewayBillId}
+    `;
+    expect(operations).toEqual([
+      { operation: 'cancel_eway_bill', status: 'succeeded' },
+    ]);
+
+    const read = await authed(owner, {
+      method: 'GET',
+      url: `/api/eway-bills/${ewayBillId}`,
+      organisationId,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      status: 'generated',
+      providerState: 'cancelled',
+      providerCancelledAt: '2026-08-12T11:30:00.000Z',
+    });
+  });
+});

@@ -7,6 +7,8 @@ import type {
 } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
+import { formatTimestampDate } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
@@ -171,24 +173,23 @@ export function WorkDeliveries({
                   <td>
                     <StatusChip status={correctionNotice.status} />
                   </td>
-                  <td>{correctionNotice.createdAt.slice(0, 10)}</td>
+                  <td>{formatTimestampDate(correctionNotice.createdAt)}</td>
                   <td>
                     {correctionNotice.renderedAvailable ? (
                       <Button
                         variant="outline"
                         disabled={pending}
                         onClick={() =>
-                          void act(async () => {
-                            const blob = await api.downloadCorrectionNoticePdf(
-                              organisationId,
-                              correctionNotice.id,
-                            );
-                            const url = URL.createObjectURL(blob);
-                            window.open(url, '_blank', 'noopener');
-                            setTimeout(() => {
-                              URL.revokeObjectURL(url);
-                            }, 60_000);
-                          }, 'Correction notice PDF opened in a new tab.')
+                          void act(
+                            () =>
+                              openPdf(() =>
+                                api.downloadCorrectionNoticePdf(
+                                  organisationId,
+                                  correctionNotice.id,
+                                ),
+                              ),
+                            'Correction notice PDF opened in a new tab.',
+                          )
                         }
                       >
                         Open PDF

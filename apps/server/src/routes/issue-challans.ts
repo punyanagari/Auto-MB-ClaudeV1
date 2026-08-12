@@ -36,6 +36,7 @@ import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
+import { isPositiveDecimal } from './challans.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -291,7 +292,7 @@ export async function writeLines(
     delete from issue_challan_lines where issue_challan_id = ${challanId}
   `;
   for (const [index, line] of body.lines.entries()) {
-    if (!(Number(line.quantity) > 0)) {
+    if (!isPositiveDecimal(line.quantity)) {
       throw httpError(
         400,
         'QUANTITY_INVALID',

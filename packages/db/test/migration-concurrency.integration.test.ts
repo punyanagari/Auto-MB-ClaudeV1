@@ -347,6 +347,257 @@ describe('concurrent migration execution', () => {
     }
   }, 60_000);
 
+  it('upgrades a true pre-0041 database through 0041..0045 in a single run', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-migrations-'));
+    try {
+      const names = (await readdir(realMigrationsDirectory))
+        .filter((name) => name.endsWith('.sql'))
+        .sort();
+      for (const name of names.filter((name) => name.slice(0, 4) <= '0040')) {
+        await copyFile(
+          path.join(realMigrationsDirectory, name),
+          path.join(directory, name),
+        );
+      }
+
+      await withTemporaryDatabase(async (pool) => {
+        await runMigrations(pool, directory);
+
+        // The stage genuinely predates the checkpoint migrations.
+        const [newest] = await pool<{ id: string | null }[]>`
+          select max(id) as id from schema_migrations
+        `;
+        expect(newest?.id).toBe('0040');
+
+        const [organisation] = await pool<{ id: string }[]>`
+          insert into organisations (name, slug)
+          values ('Pre-0041 staged proof', ${`pre41-proof-${randomBytes(4).toString('hex')}`})
+          returning id
+        `;
+        if (!organisation) throw new Error('organisation seed failed');
+
+        // A draft direct invoice whose buyer is only provable through the
+        // audit trail: at this stage buyer_contact_id does not exist and the
+        // draft shape forbids a buyer snapshot, so the 0041 backfill must
+        // recover the buyer from audit evidence.
+        const [buyer] = await pool<{ id: string }[]>`
+          insert into contacts (
+            organisation_id, designation, address, gstin, pincode,
+            state_code, is_client, created_by_user_id
+          )
+          values (
+            ${organisation.id}, 'Pre-0041 Buyer', 'Pre-0041 buyer address',
+            '27AAAGM0289C1ZL', '400001', '27', true, 'migration-test'
+          )
+          returning id
+        `;
+        if (!buyer) throw new Error('buyer seed failed');
+        const invoiceId = randomUUID();
+        await pool`
+          insert into tax_invoices (
+            id, organisation_id, status, invoice_date, sac_code,
+            service_description, gst_rate, place_of_supply,
+            stated_taxable_value, created_by_user_id
+          )
+          values (
+            ${invoiceId}, ${organisation.id}, 'draft', current_date, '998734',
+            'Pre-0041 direct service invoice', '18.00', '27',
+            '100.00', 'migration-test'
+          )
+        `;
+        await pool`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, entity_id, details
+          )
+          values (
+            ${organisation.id}, 'migration-test', 'tax_invoice.created',
+            'tax_invoices', ${invoiceId},
+            ${pool.json({ buyerContactId: buyer.id })}
+          )
+        `;
+
+        // A live merge that predates the provenance table: a record MB merged
+        // into an on-account draft, with the merge audit payload the old
+        // route wrote. The 0045 backfill must turn this into provenance rows.
+        const [work] = await pool<{ id: string }[]>`
+          insert into works (
+            organisation_id, work_code, letter_number, letter_date, title,
+            advertised_value, contract_value, pricing_shape, created_by_user_id
+          )
+          values (
+            ${organisation.id}, 'PRE41', 'LOA/PRE41/1', '2025-01-01',
+            'Pre-0041 staged upgrade work', '100000.00', '100000.00',
+            'per_schedule', 'migration-test'
+          )
+          returning id
+        `;
+        if (!work) throw new Error('work seed failed');
+        const [consignee] = await pool<{ id: string }[]>`
+          insert into contacts (
+            organisation_id, designation, address, is_consignee, created_by_user_id
+          )
+          values (
+            ${organisation.id}, 'Pre-0041 Consignee', 'Pre-0041 consignee address',
+            true, 'migration-test'
+          )
+          returning id
+        `;
+        if (!consignee) throw new Error('consignee seed failed');
+        const [target] = await pool<{ id: string }[]>`
+          insert into measurement_books (
+            organisation_id, work_id, kind, status, mb_date, created_by_user_id
+          )
+          values (
+            ${organisation.id}, ${work.id}, 'on_account', 'draft',
+            current_date, 'migration-test'
+          )
+          returning id
+        `;
+        if (!target) throw new Error('target measurement book seed failed');
+        const [record] = await pool<{ id: string }[]>`
+          insert into measurement_books (
+            organisation_id, work_id, kind, status, mb_date,
+            consignee_contact_id, merged_into_id, created_by_user_id
+          )
+          values (
+            ${organisation.id}, ${work.id}, 'record', 'merged', current_date,
+            ${consignee.id}, ${target.id}, 'migration-test'
+          )
+          returning id
+        `;
+        if (!record) throw new Error('record measurement book seed failed');
+        const mergedSourceId = randomUUID();
+        await pool`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, entity_id, details
+          )
+          values (
+            ${organisation.id}, 'migration-test', 'measurement_book.merged',
+            'measurement_books', ${target.id},
+            ${pool.json({
+              records: [
+                {
+                  recordMbId: record.id,
+                  sources: [
+                    { sourceType: 'delivery_challan', sourceId: mergedSourceId },
+                  ],
+                },
+              ],
+            })}
+          )
+        `;
+
+        // All five checkpoint migrations arrive together and apply in one run.
+        for (const name of names.filter(
+          (name) => name.slice(0, 4) >= '0041' && name.slice(0, 4) <= '0045',
+        )) {
+          await copyFile(
+            path.join(realMigrationsDirectory, name),
+            path.join(directory, name),
+          );
+        }
+        await runMigrations(pool, directory);
+
+        const ledger = await appliedLedger(pool);
+        expect(ledger.slice(-5).map((row) => row.id)).toEqual([
+          '0041',
+          '0042',
+          '0043',
+          '0044',
+          '0045',
+        ]);
+
+        // 0041 recovered the draft's buyer from the audit trail and left the
+        // untouched provider state truthful; 0044's operator-confirmation
+        // column stays NULL on historical rows.
+        const [upgradedInvoice] = await pool<
+          {
+            buyer_contact_id: string;
+            irp_provider_state: string;
+            irp_legacy_evidence_missing: boolean;
+            reverse_charge_applicable: boolean | null;
+          }[]
+        >`
+          select buyer_contact_id, irp_provider_state,
+                 irp_legacy_evidence_missing, reverse_charge_applicable
+          from tax_invoices where id = ${invoiceId}
+        `;
+        expect(upgradedInvoice).toEqual({
+          buyer_contact_id: buyer.id,
+          irp_provider_state: 'not_requested',
+          irp_legacy_evidence_missing: false,
+          reverse_charge_applicable: null,
+        });
+
+        // The tables 0041, 0044, and 0045 introduce all exist.
+        const [createdTables] = await pool<{ count: number }[]>`
+          select count(*)::int as count from pg_catalog.pg_tables
+          where schemaname = 'public' and tablename in (
+            'statutory_provider_operations',
+            'tax_invoice_renders',
+            'measurement_book_merge_provenance'
+          )
+        `;
+        expect(createdTables?.count).toBe(3);
+
+        // 0042 added explicit locality to both parties.
+        const localityColumns = await pool<{ table_name: string }[]>`
+          select table_name from information_schema.columns
+          where table_schema = 'public' and column_name = 'locality'
+            and table_name in ('organisations', 'contacts')
+          order by table_name
+        `;
+        expect(localityColumns.map((row) => row.table_name)).toEqual([
+          'contacts',
+          'organisations',
+        ]);
+
+        // 0045 backfilled normalized merge provenance from the audit payload.
+        const provenance = await pool<
+          {
+            target_measurement_book_id: string;
+            record_measurement_book_id: string;
+            work_id: string;
+            source_type: string | null;
+            source_id: string | null;
+            created_by_user_id: string;
+          }[]
+        >`
+          select target_measurement_book_id, record_measurement_book_id,
+                 work_id, source_type, source_id, created_by_user_id
+          from measurement_book_merge_provenance
+          where organisation_id = ${organisation.id}
+        `;
+        expect(provenance).toEqual([
+          {
+            target_measurement_book_id: target.id,
+            record_measurement_book_id: record.id,
+            work_id: work.id,
+            source_type: 'delivery_challan',
+            source_id: mergedSourceId,
+            created_by_user_id: 'migration-test',
+          },
+        ]);
+
+        // 0045's record-consignee shape holds for new rows on the upgraded
+        // database: a record draft without a consignee is refused.
+        await expect(
+          pool`
+            insert into measurement_books (
+              organisation_id, work_id, kind, status, mb_date, created_by_user_id
+            )
+            values (
+              ${organisation.id}, ${work.id}, 'record', 'draft',
+              current_date, 'migration-test'
+            )
+          `,
+        ).rejects.toMatchObject({ code: '23514' });
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it(
     'lets two simultaneous runners bootstrap a fresh database exactly once',
     async () => {

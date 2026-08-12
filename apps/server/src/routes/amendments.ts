@@ -46,6 +46,7 @@ import { canonicalRateText } from '../rate-text.js';
 import { requireUser } from '../session.js';
 import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
+import { isPositiveDecimal } from './challans.js';
 
 const errorResponses = {
   400: ApiErrorSchema,
@@ -171,6 +172,7 @@ export async function isApprover(tx: TransactionSql, userId: string): Promise<bo
   const [membership] = await tx<{ can_approve_amendments: boolean }[]>`
     select can_approve_amendments from organisation_memberships
     where user_id = ${userId}
+      and organisation_id = app_private.current_organisation_id()
   `;
   return membership?.can_approve_amendments ?? false;
 }
@@ -744,7 +746,7 @@ export function registerAmendmentRoutes(
       const { id: workId } = request.params as { id: string };
       const body = request.body as ProposeAddItemRequest;
       assertNonNegative(body.rate, 'rate');
-      if (body.quantity.startsWith('-') || Number(body.quantity) === 0) {
+      if (!isPositiveDecimal(body.quantity)) {
         throw httpError(
           400,
           'AMENDMENT_INVALID',
@@ -1239,7 +1241,9 @@ export function registerAmendmentRoutes(
       const body = request.body as UpdateWorkSettingsRequest;
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         const [membership] = await tx<{ role: string }[]>`
-          select role from organisation_memberships where user_id = ${user.id}
+          select role from organisation_memberships
+          where user_id = ${user.id}
+            and organisation_id = app_private.current_organisation_id()
         `;
         if (membership?.role !== 'owner') {
           throw httpError(

@@ -15,7 +15,7 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr } from '../format.js';
+import { formatInr, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
@@ -938,7 +938,7 @@ export function WorkDetail({
                   This Work is <strong>completed</strong>
                   {work.completedAt === null
                     ? ''
-                    : ` on ${work.completedAt.slice(0, 10)}`}
+                    : ` on ${formatTimestampDate(work.completedAt)}`}
                   . No new challan, installation, PAC certificate, Measurement Book,
                   extension request, or change proposal can be recorded until it is
                   reopened.

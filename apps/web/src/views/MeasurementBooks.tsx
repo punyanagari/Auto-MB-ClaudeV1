@@ -17,6 +17,7 @@ import {
   type ApiClient,
 } from '../api.js';
 import { formatInr } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -43,14 +44,6 @@ interface MeasurementBooksProps {
   /** Lets the Work page refresh its Bills section once a bill is
    * prepared from a finalized MB. */
   readonly onBillPrepared: () => void;
-}
-
-function openPdf(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 60_000);
 }
 
 function sourceKey(sourceType: MbSourceType, sourceId: string): string {
@@ -860,11 +853,8 @@ export function MeasurementBooks({
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
-                    openPdf(
-                      await api.downloadMeasurementBookDraftPreview(
-                        organisationId,
-                        book.id,
-                      ),
+                    await openPdf(() =>
+                      api.downloadMeasurementBookDraftPreview(organisationId, book.id),
                     );
                   }, 'Draft preview PDF opened in a new tab (watermarked DRAFT; nothing is stored).');
                 }}
@@ -961,8 +951,8 @@ export function MeasurementBooks({
                 disabled={pending}
                 onClick={() => {
                   tryAct(async () => {
-                    openPdf(
-                      await api.downloadMeasurementBookPdf(organisationId, book.id),
+                    await openPdf(() =>
+                      api.downloadMeasurementBookPdf(organisationId, book.id),
                     );
                   }, 'Measurement Book PDF opened in a new tab.');
                 }}

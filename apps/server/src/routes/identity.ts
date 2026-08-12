@@ -158,6 +158,7 @@ export function registerIdentityRoutes(
                    can_issue_documents, can_cancel_documents,
                    can_approve_amendments, status
             from organisation_memberships
+            where organisation_id = app_private.current_organisation_id()
             order by created_at, user_id
           `,
       );
@@ -188,6 +189,7 @@ export function registerIdentityRoutes(
           const [requester] = await tx<{ role: string }[]>`
             select role from organisation_memberships
             where user_id = ${user.id}
+              and organisation_id = app_private.current_organisation_id()
           `;
           if (requester?.role !== 'owner') {
             throw httpError(
@@ -249,6 +251,7 @@ export function registerIdentityRoutes(
                    can_issue_documents, can_cancel_documents,
                    can_approve_amendments, status
             from organisation_memberships
+            where organisation_id = app_private.current_organisation_id()
             order by created_at, user_id
           `;
         },
@@ -288,7 +291,9 @@ export function registerIdentityRoutes(
             select id from organisations where id = ${organisationId} for update
           `;
           const [requester] = await tx<{ role: string }[]>`
-            select role from organisation_memberships where user_id = ${user.id}
+            select role from organisation_memberships
+            where user_id = ${user.id}
+              and organisation_id = app_private.current_organisation_id()
           `;
           if (requester?.role !== 'owner') {
             throw httpError(
@@ -310,6 +315,7 @@ export function registerIdentityRoutes(
                    can_cancel_documents
             from organisation_memberships
             where user_id = ${memberUserId}
+              and organisation_id = app_private.current_organisation_id()
             for update
           `;
           if (!current) {
@@ -326,6 +332,7 @@ export function registerIdentityRoutes(
             const [owners] = await tx<{ count: string }[]>`
               select count(*)::text as count from organisation_memberships
               where role = 'owner' and status = 'active'
+                and organisation_id = app_private.current_organisation_id()
             `;
             if (Number(owners?.count ?? '0') <= 1) {
               throw httpError(
@@ -384,6 +391,7 @@ export function registerIdentityRoutes(
                    can_issue_documents, can_cancel_documents,
                    can_approve_amendments, status
             from organisation_memberships
+            where organisation_id = app_private.current_organisation_id()
             order by created_at, user_id
           `;
         },
@@ -411,7 +419,9 @@ export function registerIdentityRoutes(
         user.id,
         async (tx) => {
           const [requester] = await tx<{ role: string }[]>`
-            select role from organisation_memberships where user_id = ${user.id}
+            select role from organisation_memberships
+            where user_id = ${user.id}
+              and organisation_id = app_private.current_organisation_id()
           `;
           if (requester?.role !== 'owner' && user.id !== memberUserId) {
             throw httpError(
@@ -453,7 +463,9 @@ export function registerIdentityRoutes(
         user.id,
         async (tx) => {
           const [requester] = await tx<{ role: string }[]>`
-            select role from organisation_memberships where user_id = ${user.id}
+            select role from organisation_memberships
+            where user_id = ${user.id}
+              and organisation_id = app_private.current_organisation_id()
           `;
           if (requester?.role !== 'owner') {
             throw httpError(
@@ -465,6 +477,7 @@ export function registerIdentityRoutes(
           const [member] = await tx<{ user_id: string }[]>`
             select user_id from organisation_memberships
             where user_id = ${memberUserId}
+              and organisation_id = app_private.current_organisation_id()
           `;
           if (!member) {
             throw httpError(404, 'MEMBER_NOT_FOUND', 'No such member.');

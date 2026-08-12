@@ -61,6 +61,22 @@ export function formatDate(isoDate: string): string {
   });
 }
 
+/** Date-time instant → the VIEWER'S calendar day, in formatDate's style:
+ * "2026-08-11T20:30:00Z" seen from IST is "12 Aug 2026". formatDate
+ * stays pinned to UTC because its input is a date-only string with no
+ * instant to shift; slicing a timestamp to its UTC day instead printed
+ * yesterday's date to anyone east of UTC until their offset had passed
+ * midnight. Anything unparseable passes through. */
+export function formatTimestampDate(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 /** First letters of the first two words — the avatar monogram. */
 export function initials(nameOrEmail: string): string {
   return nameOrEmail

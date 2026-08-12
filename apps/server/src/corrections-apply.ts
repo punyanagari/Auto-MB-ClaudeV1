@@ -31,6 +31,7 @@ import {
   writeLines as writeChallanLines,
 } from './routes/challans.js';
 import { writeLines as writeIssueChallanLines } from './routes/issue-challans.js';
+import { assertWorkOperable } from './work-status.js';
 
 // --- Proposal snapshot shapes (stored verbatim in approval_requests) --------
 
@@ -95,6 +96,36 @@ export async function challanEvidenceCounts(
   return row ?? { receipts: 0, serials: 0, measurements: 0 };
 }
 
+/**
+ * R8 for the correction apply path: cancel-and-replace withdraws an
+ * ISSUED document, so it owes the same refusal the direct cancel routes
+ * owe (challans.ts and issue-challans.ts both lock the works row and call
+ * assertWorkOperable before cancelling). Taking the lock here makes the
+ * apply serialise against POST /api/works/:id/complete instead of relying
+ * on the non-local invariant that a pending request blocks completion —
+ * that invariant holds today, but it lives in another module and would
+ * fail silently if completion's clean-state rule ever changed. Without
+ * it, a completed Work answers the approver with a bare 500 from the 0032
+ * update guard rather than the named 409 that tells them to reopen.
+ *
+ * Lock order is the direct routes': the document row is locked first, then
+ * works — and, where a challan links purchase orders, purchase_orders
+ * before both. Callers must therefore hold the document lock already.
+ */
+async function assertWorkOperableForCancel(
+  tx: TransactionSql,
+  workId: string,
+  action: string,
+): Promise<void> {
+  const [work] = await tx<{ status: string }[]>`
+    select status from works
+    where id = ${workId} and deleted_at is null
+    for update
+  `;
+  if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  assertWorkOperable(work.status, action);
+}
+
 /** The cancellation note carries the requester's HUMAN reason (spec R17)
  * plus the approval reference — the cancelled document must explain
  * itself without a queue lookup. */
@@ -145,6 +176,13 @@ export async function applyChallanCancelReplace(
       `The challan is no longer issued (current status: ${challan.status}); the correction cannot apply.`,
     );
   }
+  // R8, in the direct cancel route's own position: works lock taken after
+  // the challan lock, before the evidence checks.
+  await assertWorkOperableForCancel(
+    tx,
+    challan.work_id,
+    'cancelling a delivery challan',
+  );
   // Evidence recorded between filing and approval lawfully blocks
   // cancellation: the request stays pending and the queue stays truthful —
   // the operator withdraws it and files a correction notice instead.
@@ -297,6 +335,9 @@ export async function applyIssueChallanCancelReplace(
       `The Issue Challan is no longer issued (current status: ${challan.status}); the correction cannot apply.`,
     );
   }
+  // R8, in the direct cancel route's own position: works lock taken after
+  // the Issue Challan lock.
+  await assertWorkOperableForCancel(tx, challan.work_id, 'cancelling an issue challan');
   // Issue Challans have no downstream evidence tables — cancellation is
   // always lawful (legacy spec §5.3); only the one-draft rule can block,
   // and its 409 names the occupying draft so the client can open it.

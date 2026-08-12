@@ -2112,3 +2112,159 @@ describe('a division-derived number series', () => {
     expect(submitted.json<{ code: string }>().code).toBe('INVOICE_NUMBER_UNFILLABLE');
   });
 });
+
+describe('render-ledger and submit hardening', () => {
+  beforeAll(async () => {
+    // The division-series block above left '{DIV}' in the template, which
+    // the suite's division-less buyer cannot fill; restore the canonical
+    // series so direct submits number again.
+    const series = await authed(owner, {
+      method: 'PUT',
+      url: '/api/organisation/number-series/tax_invoice',
+      organisationId,
+      payload: { template: '{PREFIX}{FY2}{SEQ:3}' },
+    });
+    expect(series.statusCode, series.body).toBe(200);
+  });
+
+  it('serialises concurrent renders of one invoice into distinct ledger versions', async () => {
+    const invoice = await submittedDirectInvoice('concurrent render');
+    const invoiceId = invoice.invoice.id;
+    const pdf = Buffer.from('%PDF-1.7\nconcurrent-render\n%%EOF', 'utf8');
+    // A fresh Response per call: both racing renders read a body.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        new Response(pdf, {
+          status: 200,
+          headers: { 'content-type': 'application/pdf' },
+        }),
+      ),
+    );
+    try {
+      const [first, second] = await Promise.all([
+        authed(owner, {
+          method: 'POST',
+          url: `/api/tax-invoices/${invoiceId}/render`,
+          organisationId,
+        }),
+        authed(owner, {
+          method: 'POST',
+          url: `/api/tax-invoices/${invoiceId}/render`,
+          organisationId,
+        }),
+      ]);
+      // The invoice row lock serialises the ledger writes: both renders
+      // succeed, and each retained version is distinct and consecutive —
+      // no duplicate version, no lost ledger row.
+      expect(first.statusCode, first.body).toBe(200);
+      expect(second.statusCode, second.body).toBe(200);
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const renders = await admin<{ version: number; pdf_sha256: string }[]>`
+        select version, pdf_sha256 from tax_invoice_renders
+        where tax_invoice_id = ${invoiceId}
+        order by version
+      `;
+      expect(renders.map((row) => row.version)).toEqual([1, 2]);
+      expect(renders.every((row) => row.pdf_sha256 === sha256)).toBe(true);
+      const [pointer] = await admin<{ rendered_sha256: string | null }[]>`
+        select rendered_sha256 from tax_invoices where id = ${invoiceId}
+      `;
+      expect(pointer?.rendered_sha256).toBe(sha256);
+      const [audited] = await admin<{ count: number }[]>`
+        select count(*)::int as count from audit_events
+        where organisation_id = ${organisationId} and entity_id = ${invoiceId}
+          and action = 'tax_invoice.rendered'
+      `;
+      expect(audited?.count).toBe(2);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('refuses concurrent submits of a reverse-charge invoice without minting a number', async () => {
+    const [counterBefore] = await admin<{ next_value: number }[]>`
+      select next_value from tax_invoice_counters
+      where organisation_id = ${organisationId} and fy_label = '2025-26'
+    `;
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-20',
+        sacCode: '998734',
+        serviceDescription: 'Reverse-charge concurrency probe.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: true,
+        buyerContactId,
+        taxableValue: '1000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    // The reverse-charge refusal happens under the invoice row lock and
+    // BEFORE numbering: two simultaneous submits both refuse, the draft
+    // survives untouched, and the gapless FY counter never moves.
+    const [first, second] = await Promise.all([
+      submitInvoice(invoiceId),
+      submitInvoice(invoiceId),
+    ]);
+    for (const response of [first, second]) {
+      expect(response.statusCode, response.body).toBe(409);
+      expect(response.json<{ code: string }>().code).toBe('REVERSE_CHARGE_UNSUPPORTED');
+    }
+    const [row] = await admin<
+      {
+        status: string;
+        invoice_number: string | null;
+        sequence_number: number | null;
+      }[]
+    >`
+      select status, invoice_number, sequence_number
+      from tax_invoices where id = ${invoiceId}
+    `;
+    expect(row).toEqual({
+      status: 'draft',
+      invoice_number: null,
+      sequence_number: null,
+    });
+    const [counterAfter] = await admin<{ next_value: number }[]>`
+      select next_value from tax_invoice_counters
+      where organisation_id = ${organisationId} and fy_label = '2025-26'
+    `;
+    expect(counterAfter?.next_value).toBe(counterBefore?.next_value);
+  });
+
+  it('refuses TRUNCATE on the render ledger from the application role', async () => {
+    const [before] = await admin<{ count: number }[]>`
+      select count(*)::int as count from tax_invoice_renders
+      where organisation_id = ${organisationId}
+    `;
+    const appDb = createDatabasePool({
+      url: appUrl,
+      max: 1,
+      applicationName: 'auto-mb-ti-truncate-probe',
+    });
+    try {
+      // Wrapped in a transaction that always throws: if the TRUNCATE
+      // revoke ever regresses, the data is rolled back and the test fails
+      // on the wrong rejection instead of destroying the render ledger.
+      await expect(
+        appDb.begin(async (tx) => {
+          await tx.unsafe('truncate tax_invoice_renders');
+          throw new Error('truncate unexpectedly succeeded');
+        }),
+      ).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await appDb.end();
+    }
+    const [after] = await admin<{ count: number }[]>`
+      select count(*)::int as count from tax_invoice_renders
+      where organisation_id = ${organisationId}
+    `;
+    expect(after?.count).toBe(before?.count);
+    expect(after?.count).toBeGreaterThan(0);
+  });
+});

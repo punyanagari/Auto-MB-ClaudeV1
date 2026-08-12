@@ -12,12 +12,19 @@ export interface CreateAuthOptions {
 const PLACEHOLDER_SECRET = 'replace-with-at-least-32-random-characters';
 
 export function assertProductionSecret(secret: string | undefined): string {
+  // Treat anything that is not an explicit development or test run as
+  // production for this gate. A bare `pnpm start` leaves NODE_ENV unset,
+  // and that path must never silently fall back to the placeholder secret
+  // (which would let anyone forge session cookies). This mirrors the docs
+  // UI, which already fail-closes when NODE_ENV is unset.
+  const isNonProduction =
+    process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
   if (
-    process.env.NODE_ENV === 'production' &&
+    !isNonProduction &&
     (secret === undefined || secret.length < 32 || secret === PLACEHOLDER_SECRET)
   ) {
     throw new Error(
-      'AUTH_SECRET must be set to at least 32 non-placeholder characters in production',
+      'AUTH_SECRET must be set to at least 32 non-placeholder characters outside development and test',
     );
   }
   return secret ?? PLACEHOLDER_SECRET;

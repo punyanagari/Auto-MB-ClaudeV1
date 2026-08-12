@@ -159,9 +159,34 @@ export async function runMigrations(
         `;
       }
 
-      const applied = await reserved<{ id: string; sha256: string }[]>`
-        select id, sha256 from schema_migrations order by id
+      const applied = await reserved<
+        { id: string; file_name: string; sha256: string }[]
+      >`
+        select id, file_name, sha256 from schema_migrations order by id
       `;
+
+      // Every applied ledger row must still have its file on disk under its
+      // recorded name. The per-migration hash check below catches edits to an
+      // applied file, but a lookup keyed by id alone would silently accept a
+      // renamed file (same id, same hash) and never notice a deleted one, so
+      // both are refused here before anything new is applied.
+      const migrationsById = new Map(
+        migrations.map((migration) => [migration.id, migration]),
+      );
+      for (const row of applied) {
+        const migration = migrationsById.get(row.id);
+        if (migration === undefined) {
+          throw new Error(
+            `${row.file_name}: applied migration ${row.id} has no file on disk`,
+          );
+        }
+        if (migration.fileName !== row.file_name) {
+          throw new Error(
+            `${migration.fileName}: applied migration file name changed (the ledger records ${row.file_name})`,
+          );
+        }
+      }
+
       const appliedById = new Map(applied.map((row) => [row.id, row.sha256]));
 
       for (const migration of migrations) {

@@ -26,20 +26,73 @@ export async function withUserContext<T>(
   return result as T;
 }
 
-export async function withTenant<T>(
+/**
+ * The tenant binding, in one place for both isolation levels. The two
+ * `set_config` calls are the security primitive every RLS policy reads,
+ * and their third argument — `is_local = true` — is what keeps them
+ * scoped to THIS transaction: a session-level setting would outlive the
+ * work and leak the binding onto the next borrower of the pooled
+ * connection. Any variant added here must keep that argument true and set
+ * both keys, including the empty-string user id, so a missing value can
+ * never fall through to a previous transaction's.
+ *
+ * `beginOptions` is appended to BEGIN by postgres.js. It is a fixed
+ * literal chosen by the exported wrapper below, never caller input.
+ */
+async function withTenantAt<T>(
   sql: Sql,
   context: TenantContext,
+  beginOptions: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
   if (!UUID_PATTERN.test(context.organisationId)) {
     throw new TypeError('organisationId must be a UUID');
   }
 
-  const result = await sql.begin(async (tx) => {
+  const result = await sql.begin(beginOptions, async (tx) => {
     await tx`select set_config('app.organisation_id', ${context.organisationId}, true)`;
     await tx`select set_config('app.user_id', ${context.userId ?? ''}, true)`;
     return work(tx);
   });
   // Same UnwrapPromiseArray<T> identity as withUserContext above.
   return result as T;
+}
+
+/** The default: a tenant-scoped transaction at the server's isolation
+ * level (READ COMMITTED). Every statement sees the newest committed data,
+ * which is what a request that reads and writes one consistent set of
+ * rows under row locks wants. */
+export async function withTenant<T>(
+  sql: Sql,
+  context: TenantContext,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  return withTenantAt(sql, context, '', work);
+}
+
+/**
+ * A tenant-scoped transaction at REPEATABLE READ: every statement reads
+ * the same snapshot, taken at the first one.
+ *
+ * For work that reads MANY tables and has to hand back a self-consistent
+ * result. Under READ COMMITTED each statement takes its own snapshot, so
+ * a writer committing midway through a long sequence of SELECTs is
+ * visible to the later ones and invisible to the earlier ones — a
+ * full-organisation export can then contain challan items whose parent
+ * challan was read before it existed. Locking those tables is not an
+ * option (it would stall the tenant's normal work for the length of the
+ * export); a snapshot costs nothing and answers exactly the question.
+ *
+ * The transaction stays READ WRITE, so callers may still record their own
+ * audit event. The cost is that a concurrent update to a row this
+ * transaction writes raises a serialization_failure (40001) instead of
+ * blocking, so a caller that writes contended rows should use `withTenant`
+ * or be prepared to retry.
+ */
+export async function withTenantSnapshot<T>(
+  sql: Sql,
+  context: TenantContext,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  return withTenantAt(sql, context, 'isolation level repeatable read', work);
 }

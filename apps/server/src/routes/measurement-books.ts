@@ -1677,6 +1677,33 @@ export function registerMeasurementBookRoutes(
         const restored: MbSourceRef[] = absorbed.flatMap(
           (record) => provenance.get(record.id) ?? [],
         );
+        // ACCEPTED DEAD END. This validation is all-or-nothing over the
+        // provenance set, and the provenance set is fixed at merge time,
+        // so one sequence puts un-merge permanently out of reach: deselect
+        // a transferred source from the target (PUT /sources releases its
+        // mb_sources claim while its provenance row stays), then cancel
+        // that now-unclaimed source document. From then on validateSources
+        // answers 409 MB_SOURCE_NOT_BILLABLE on every un-merge attempt,
+        // and there is no way back:
+        //   - the merged records cannot be cancelled or deleted (both
+        //     refuse with MB_STATUS_CONFLICT, pointing at un-merge);
+        //   - the target draft cannot be deleted while they point at it
+        //     (MB_HAS_MERGED_RECORDS, backed by the 0034 RESTRICT FK);
+        //   - un-merge itself is the blocked operation.
+        // The operator's ONLY exit is to finalise the target, after which
+        // the records stay merged and billed for good (the un-merge route
+        // refuses a non-draft book above with exactly that explanation).
+        //
+        // This is deliberate, not an oversight. A partial restore would
+        // silently drop billable work from the record MB it belonged to,
+        // and restoring the claim anyway would leave a live Measurement
+        // Book claiming a cancelled document. Finalising the target bills
+        // the work that is still live and closes the merge honestly, which
+        // is the correct answer to "a source I merged has since been
+        // cancelled". If this ever needs an operator-facing escape, it
+        // belongs in a route that re-derives provenance from the
+        // still-billable subset with its own audit trail, not in a
+        // loosened check here.
         await validateSources(tx, book.work_id, restored, true);
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
         for (const record of absorbed) {
