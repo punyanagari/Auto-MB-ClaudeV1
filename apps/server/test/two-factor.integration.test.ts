@@ -249,6 +249,7 @@ afterAll(async () => {
       for (const table of [
         'audit_events',
         'organisation_memberships',
+        'gst_rates',
         'organisations',
       ]) {
         await admin.unsafe(
