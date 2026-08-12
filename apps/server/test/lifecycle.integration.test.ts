@@ -432,4 +432,1033 @@ describe('1 â€” LOA to Work', () => {
 
   it('uploads the LOA PDF and confirms it into the Work', async () => {
     const uploaded = await authed(owner, {
-      methëÍ}¶‰Ëkºwµç}…µ½Õ¹Ğè€œÈÈÜÌ¸ĞÀœ°(€€€€€ÍÍÑ}…µ½Õ¹Ğè€œÈÈÜÌ¸ĞÀœ°(€€€€€¥ÍÑ}…µ½Õ¹Ğè€œÀ¸ÀÀœ°(€€€€€Ñ½Ñ…±}…µ½Õ¹Ğè€œÈäàÀÜ¸ÀÀœ°(€€€€€™å}±…‰•°è€œÈÀÈØ´ÈÜœ°(€€€ô¤ì(€ô¤ì((€¥Ğ Ñ¡”ÍÕ‰µ¥ÑÑ•¥¹Ù½¥”1=ML5´ÀÄèÑ¡”€ÀÀÌÔÑÉ¥•ÈÉ•™ÕÍ•Ì¥ÑÌ…¹•°……¥¹ÍĞ…¹äİÉ¥Ñ•Èœ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…‘µ¥¹€(€€€€€€€ÕÁ‘…Ñ”µ•…ÍÕÉ•µ•¹Ñ}‰½½­Ì(€€€€€€€Í•ĞÍÑ…ÑÕÌ€ô€…¹•±±•œ°…¹•±±…Ñ¥½¹}¹½Ñ”€ô€±½ÍÕÉ”ÉÕ±”ÁÉ½‰”œ°(€€€€€€€€€€€…¹•±±•‘}‰å}ÕÍ•É}¥€ô€‘í½İ¹•ÉUÍ•É%‘ô°…¹•±±•‘}…Ğ€ô¹½Ü ¤(€€€€€€€İ¡•É”¥€ô€‘íµˆÅ%‘ô(€€€€€€°(€€€€¤¹É•©•ÑÌ¹Ñ½Q¡É½İÉÉ½È ½±½Í•‰ä„Ñ…à¥¹Ù½¥”¼¤ì(€€€½¹ÍĞm‰½½­t€ô…İ…¥Ğ…‘µ¥¸ñìÍÑ…ÑÕÌèÍÑÉ¥¹œõmtù€(€€€€€Í•±•ĞÍÑ…ÑÕÌ™É½´µ•…ÍÕÉ•µ•¹Ñ}‰½½­Ìİ¡•É”¥€ô€‘íµˆÅ%‘ô(€€€€ì(€€€•áÁ•Ğ¡‰½½¬ü¹ÍÑ…ÑÕÌ¤¹Ñ½	” ™¥¹…±¥é•œ¤ì(€ô¤ì((€¥Ğ Í•ÉÙ•ÌÑ¡”…¹½¹¥…°9%€Ä¸Ä%I@Á…å±½……¹É•½É‘ÌÑ¡”%I@É•ÍÁ½¹Í”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÁ…å±½…€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘í¥¹Ù½¥”Å%‘ô½¥ÉÀµÁ…å±½…‘€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡Á…å±½…¹ÍÑ…ÑÕÍ½‘”°Á…å±½…¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡Á…å±½…¹©Í½¸ ¤¤¹Ñ½MÑÉ¥ÑÅÕ…°¡ì(€€€€€Y•ÉÍ¥½¸è€œÄ¸Äœ°(€€€€€QÉ…¹Ñ±ÌèìQ…áM è€MPœ°MÕÁQåÀè€Éœ°I•I•Øè€8œô°(€€€€€½Ñ±ÌèìQåÀè€%9Xœ°9¼è€@ÄÀÈØÀÀÄœ°Ğè€œÀä¼Àà¼ÈÀÈØœô°(€€€€€M•±±•ÉÑ±Ìèì(€€€€€€€ÍÑ¥¸è=I}MQ%8°(€€€€€€€1±9´è=I}95°(€€€€€€€‘‘ÈÄè=I}IML°(€€€€€€€1½Œè€9•Ü•±¡¤œ°(€€€€€€€A¥¸è€ÄÄÀÀÀÈ°(€€€€€€€MÑè€œÀÜœ°(€€€€€ô°(€€€€€	Õå•ÉÑ±Ìèì(€€€€€€€ÍÑ¥¸è	UeI}MQ%8°(€€€€€€€1±9´è€MÈ¸€¡¤9Hœ°(€€€€€€€A½Ìè€œÀÜœ°(€€€€€€€‘‘ÈÄè	UeI}IML°(€€€€€€€1½Œè€9•Ü•±¡¤œ°(€€€€€€€A¥¸è€ÄÄÀÀÔÔ°(€€€€€€€MÑè€œÀÜœ°(€€€€€ô°(€€€€€%Ñ•µ1¥ÍĞèl(€€€€€€€ì(€€€€€€€€€M±9¼è€œÄœ°(€€€€€€€€€AÉ‘•ÍŒèMIY%}MI%AQ%=8°(€€€€€€€€€%ÍM•ÉÙŒè€dœ°(€€€€€€€€€!Í¹èM°(€€€€€€€€€EÑäè€Ä°(€€€€€€€€€U¹¥Ğè€=Q œ°(€€€€€€€€€U¹¥ÑAÉ¥”è€ÈÔÈØÀ°(€€€€€€€€€Q½ÑµĞè€ÈÔÈØÀ°(€€€€€€€€€ÍÍµĞè€ÈÔÈØÀ°(€€€€€€€€€ÍÑIĞè€Äà°(€€€€€€€€€ÍÑµĞè€ÈÈÜÌ¸Ğ°(€€€€€€€€€MÍÑµĞè€ÈÈÜÌ¸Ğ°(€€€€€€€€€%ÍÑµĞè€À°(€€€€€€€€€Q½Ñ%Ñ•µY…°è€ÈäàÀØ¸à°(€€€€€€€ô°(€€€€€t°(€€€€€Y…±Ñ±Ìèì(€€€€€€€ÍÍY…°è€ÈÔÈØÀ°(€€€€€€€ÍÑY…°è€ÈÈÜÌ¸Ğ°(€€€€€€€MÍÑY…°è€ÈÈÜÌ¸Ğ°(€€€€€€€%ÍÑY…°è€À°(€€€€€€€€¼¼ÍÕ´¡Q½Ñ%Ñ•µY…°¤€¬I¹‘=™™µĞ€ôQ½Ñ%¹ÙY…°°9%Ì½İ¸¥‘•¹Ñ¥Ñä¸(€€€€€€€I¹‘=™™µĞè€À¸È°(€€€€€€€Q½Ñ%¹ÙY…°è€ÈäàÀÜ°(€€€€€ô°(€€€ô¤ì((€€€½¹ÍĞ¥É¸€ô€œÀÄÈÌĞÔØÜàå…‰‘•˜œ¹É•Á•…Ğ Ğ¤ì(€€€½¹ÍĞÉ•½É‘•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘í¥¹Ù½¥”Å%‘ô½¥ÉÀµÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€¥É¸°(€€€€€€€…­9Õµ‰•Èè€œÄÄÈÀÄÀÀÌØÔØÌœ°(€€€€€€€…­…Ñ”è€œÈÀÈØ´Àà´ÀåPÄÀèÌÀèÀÀ¸ÀÀÁhœ°(€€€€€€€…­…Ñ•Q•áĞè€œÀä¼Àà¼ÈÀÈØ€ÄØèÀÀèÀÀœ°(€€€€€€€Í¥¹•‘EÈè€Í¥¹•µÅÈµ©İÌµÁ…å±½…œ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•½É‘•¹ÍÑ…ÑÕÍ½‘”°É•½É‘•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ôÉ•½É‘•¹©Í½¸ñQ…á%¹Ù½¥••Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹¥¹Ù½¥”¹¥É¸¤¹Ñ½	”¡¥É¸¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹¥¹Ù½¥”¹…­9Õµ‰•È¤¹Ñ½	” œÄÄÈÀÄÀÀÌØÔØÌœ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹Í¥¹•‘EÈ¤¹Ñ½	” Í¥¹•µÅÈµ©İÌµÁ…å±½…œ¤ì(€ô¤ì((€¥Ğ µ½Ù•ÌÑ¡”¥¹Ù½¥”½¸…¸”µİ…ä‰¥±°è‘É…™Ğ°9%Á…å±½…°9%É•ÍÁ½¹Í”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘í¥¹Ù½¥”Å%‘ô½•İ…äµ‰¥±±Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É½…œ°(€€€€€€€‘¥ÍÑ…¹•-´è€ÈÔ°(€€€€€€€™É½µA¥¹½‘”è€œÄÄÀÀÀÈœ°(€€€€€€€Ñ½A¥¹½‘”è€œÄÄÀÀÔÔœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€•İ…å	¥±±%€ôÉ•…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¹¥ì(€€€•áÁ•Ğ¡É•…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€Ñ…á%¹Ù½¥•%è¥¹Ù½¥”Å%°(€€€€€¥¹Ù½¥•9Õµ‰•Èè€@ÄÀÈØÀÀÄœ°(€€€€€ÍÑ…ÑÕÌè€‘É…™Ğœ°(€€€€€Ù•¡¥±•9Õµ‰•Èè¹Õ±°°(€€€ô¤ì((€€€€¼¼M•ÉÙ¥”µ¥¹Ù½¥”]ÕÍ•ÌÑ¡”]¡¥Ñ•‰½½­Ì•¹•É…Ñ”µ‰äµ%I8ÍÕÉ™…”¸(€€€€¼¼]¥Ñ ¹¼ÁÉ½Ù¥‘•È½¹™¥ÕÉ•°¹¼ÍÑ…¹‘…±½¹”Mµ…Ìµ½½‘ÌÁ…å±½…¥Ì•áÁ½Í•¸(€€€½¹ÍĞ¥¹½µÁ±•Ñ”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½¹¥ŒµÁ…å±½…‘€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¥¹½µÁ±•Ñ”¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡¥¹½µÁ±•Ñ”¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” (€€€€€€]e}	%11}9=Q}AA1%	1}Q=}MIY%}%9Y=%œ°(€€€€¤ì((€€€½¹ÍĞ•‘¥Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ5½‘”è€É½…œ°(€€€€€€€‘¥ÍÑ…¹•-´è€ÈÔ°(€€€€€€€™É½µA¥¹½‘”è€œÄÄÀÀÀÈœ°(€€€€€€€Ñ½A¥¹½‘”è€œÄÄÀÀÔÔœ°(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ•É%èQI9MA=IQI}%°(€€€€€€€ÑÉ…¹ÍÁ½ÉÑ•É9…µ”è€M¡…Éµ„I½…‘İ…åÌœ°(€€€€€€€Ù•¡¥±•9Õµ‰•Èè€0ÀÅÄÈÌĞœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ñ•¹ÍÑ…ÑÕÍ½‘”°•‘¥Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì((€€€½¹ÍĞ•¹•É…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½•İ…äµ‰¥±±Ì¼‘í•İ…å	¥±±%‘ô½¹¥ŒµÉ•ÍÁ½¹Í•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€•İ‰9Õµ‰•Èè€œÄÈÌĞÔØÜàäÀÄÈœ°(€€€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀåPÄÈèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÄÁPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€€€€€•İ‰…Ñ•Q•áĞè€œÀä¼Àà¼ÈÀÈØ€ÄÜèÌÀèÀÀœ°(€€€€€€€Ù…±¥‘U¹Ñ¥±Q•áĞè€œÄÀ¼Àà¼ÈÀÈØ€ÈÌèÔäèÔäœ°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡•¹•É…Ñ•¹ÍÑ…ÑÕÍ½‘”°•¹•É…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡•¹•É…Ñ•¹©Í½¸ñİ…å	¥±±•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹•İ…å	¥±°¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€•¹•É…Ñ•œ°(€€€€€•İ‰9Õµ‰•Èè€œÄÈÌĞÔØÜàäÀÄÈœ°(€€€€€•İ‰…Ñ”è€œÈÀÈØ´Àà´ÀåPÄÈèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€Ù…±¥‘U¹Ñ¥°è€œÈÀÈØ´Àà´ÄÁPÈÌèÔäèÔä¸ÀÀÁhœ°(€€€ô¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” œÜƒŠPÑ¡”É•µ…¥¹‘•È°…¹Ñ¡”%905•…ÍÕÉ•µ•¹Ğ	½½¬œ°€ ¤€ôøì(€¥Ğ Ñ¡”É•…‘¥¹•ÍÌ•¹‘Á½¥¹Ğ¹…µ•Ì•á…Ñ±äİ¡…Ğ¥ÌÍÑ¥±°½İ•œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½½µÁ±•Ñ¥½¸µÉ•…‘¥¹•ÍÍ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞÉ•…‘¥¹•ÍÌ€ôÉ•ÍÁ½¹Í”¹©Í½¸ñ]½É­½µÁ±•Ñ¥½¹I•…‘¥¹•ÍÌø ¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹É•…‘ä¤¹Ñ½	”¡™…±Í”¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹‰±½­•ÉÌ¤¹Ñ½ÅÕ…°¡mt¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹Õ¹™¥¹¥Í¡•¤¹Ñ½!…Ù•1•¹Ñ  È¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹Õ¹™¥¹¥Í¡•‘lÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€İ½É­%Ñ•µ%è…‰±•%Ñ•µ%°(€€€€€¥Ñ•µ9Õµ‰•Èè€œÄœ°(€€€€€É•ÅÕ¥É•µ•¹Ğè€‘•±¥Ù•Éäœ°(€€€€€‘¥É•Ñ¥½¸è€Í¡½ÉĞœ°(€€€€€É•ÅÕ¥É•‘EÕ…¹Ñ¥Ñäè€œÄÀÀ¸ÀÀÀœ°(€€€€€‘•±¥Ù•É•‘EÕ…¹Ñ¥Ñäè€œØÀ¸ÀÀÀœ°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹Õ¹™¥¹¥Í¡•‘lÅt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€İ½É­%Ñ•µ%è¥¹ÍÑ…±±%Ñ•µ%°(€€€€€¥Ñ•µ9Õµ‰•Èè€œÌœ°(€€€€€É•ÅÕ¥É•µ•¹Ğè€¥¹ÍÑ…±±…Ñ¥½¸œ°(€€€€€‘¥É•Ñ¥½¸è€Í¡½ÉĞœ°(€€€€€É•ÅÕ¥É•‘EÕ…¹Ñ¥Ñäè€œÔ¸ÀÀÀœ°(€€€€€¥¹ÍÑ…±±•‘EÕ…¹Ñ¥Ñäè€œÌ¸ÀÀÀœ°(€€€ô¤ì(€ô¤ì((€¥Ğ ‘•±¥Ù•ÉÌ…¹¥¹ÍÑ…±±ÌÑ¡”É•µ…¥¹‘•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½¡…±±…¹Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€¡…±±…¹…Ñ”è€œÈÀÈØ´Àà´ÀØœ°(€€€€€€€ÁÉ•™¥àè€1œ°(€€€€€€€½¹Í¥¹•”èì(€€€€€€€€€¹…µ”èMÈ¸€¡QI¤H€‘íÉÕ¹%‘õ€°(€€€€€€€€€…‘‘É•ÍÌè€¥Ù¥Í¥½¹…°½™™¥”°•±¡¤¥Ù¥Í¥½¸œ°(€€€€€€€ô°(€€€€€€€¥Ñ•µÌèmìİ½É­%Ñ•µ%è…‰±•%Ñ•µ%°ÅÕ…¹Ñ¥Ñäè€œĞÀœõt°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€¡…±±…¸É%€ôÉ•…Ñ•¹©Í½¸ñ¡…±±…¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹¡…±±…¸¹¥ì(€€€½¹ÍĞ¥ÍÍÕ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½¡…±±…¹Ì¼‘í¡…±±…¸É%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¥ÍÍÕ•¹ÍÑ…ÑÕÍ½‘”°¥ÍÍÕ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€•áÁ•Ğ¡¥ÍÍÕ•¹©Í½¸ñ¡…±±…¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹¡…±±…¸¹¡…±±…¹9Õµ‰•È¤¹Ñ½	” 1¼Èœ¤ì((€€€½¹ÍĞ¥¹ÍÑ…±±•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½¥¹ÍÑ…±±…Ñ¥½¹Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€İ½É­%Ñ•µ%è¥¹ÍÑ…±±%Ñ•µ%°(€€€€€€€ÅÕ…¹Ñ¥Ñäè€œÈœ°(€€€€€€€¥¹ÍÑ…±±•‘=¸è€œÈÀÈØ´Àà´ÀØœ°(€€€€€€€¹•İ1½…Ñ¥½¸èì¹…µ”è	•Ñ„…‰¥¸€‘íÉÕ¹%‘õ€°­¥¹è€ÍÑ…Ñ¥½¸œô°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡¥¹ÍÑ…±±•¹ÍÑ…ÑÕÍ½‘”°¥¹ÍÑ…±±•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€¥¹ÍÑ…±±…Ñ¥½¸É%€ô¥¹ÍÑ…±±•¹©Í½¸ñì¥èÍÑÉ¥¹œôø ¤¹¥ì(€ô¤ì((€¥Ğ É…¥Í•ÌÑ¡”±…ÍĞ5…Ì­¥¹%90…¹µÕÍĞÍİ••À•Ù•Éä½Á•¸Í½ÕÉ”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½µ•…ÍÕÉ•µ•¹Ğµ‰½½­Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìµ‰…Ñ”è€œÈÀÈØ´Àà´ÀÜœ°­¥¹è€™¥¹…°œô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ‰½½¬€ôÉ•…Ñ•¹©Í½¸ñ5•…ÍÕÉ•µ•¹Ñ	½½­•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰½½¬ì(€€€µˆÉ%€ô‰½½¬¹¥ì(€€€•áÁ•Ğ¡‰½½¬¹­¥¹¤¹Ñ½	” ™¥¹…°œ¤ì(€€€•áÁ•Ğ¡‰½½¬¹¥Í¥¹…°¤¹Ñ½	”¡ÑÉÕ”¤ì((€€€€¼¼±…¥µ¥¹œ½¹±äÑ¡”¡…±±…¸±•…Ù•ÌÑ¡”¥¹ÍÑ…±±…Ñ¥½¸ÍÑÉ…¹‘•èÑ¡”(€€€€¼¼™¥¹…°Íİ••ÀÉ•™ÕÍ•Ì°¹…µ¥¹œ•á…Ñ±äİ¡…Ğ¥Ğµ¥ÍÍ•¸(€€€½¹ÍĞÁ…ÉÑ¥…°€ô…İ…¥ĞÍ•ÑM½ÕÉ•Ì¡µˆÉ%°l(€€€€€ìÍ½ÕÉ•QåÁ”è€‘•±¥Ù•Éå}¡…±±…¸œ°Í½ÕÉ•%è¡…±±…¸É%ô°(€€€t¤ì(€€€•áÁ•Ğ¡Á…ÉÑ¥…°¹ÍÑ…ÑÕÍ½‘”°Á…ÉÑ¥…°¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞÉ•™ÕÍ•€ô…İ…¥Ğ™¥¹…±¥é”¡µˆÉ%¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€½¹ÍĞ‰½‘ä€ôÉ•™ÕÍ•¹©Í½¸ñì(€€€€€½‘”èÍÑÉ¥¹œì(€€€€€‘•Ñ…¥±Ìèìµ¥ÍÍ•‘M½ÕÉ•ÌèìÍ½ÕÉ•QåÁ”èÍÑÉ¥¹œìÍ½ÕÉ•%èÍÑÉ¥¹œõmtôì(€€€ôø ¤ì(€€€•áÁ•Ğ¡‰½‘ä¹½‘”¤¹Ñ½	” 5	}%91}M]A}%9=5A1Qœ¤ì(€€€•áÁ•Ğ¡‰½‘ä¹‘•Ñ…¥±Ì¹µ¥ÍÍ•‘M½ÕÉ•Ì¤¹Ñ½!…Ù•1•¹Ñ  Ä¤ì(€€€•áÁ•Ğ¡‰½‘ä¹‘•Ñ…¥±Ì¹µ¥ÍÍ•‘M½ÕÉ•ÍlÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€Í½ÕÉ•QåÁ”è€¥¹ÍÑ…±±…Ñ¥½¸œ°(€€€€€Í½ÕÉ•%è¥¹ÍÑ…±±…Ñ¥½¸É%°(€€€ô¤ì((€€€½¹ÍĞÍİ•ÁĞ€ô…İ…¥ĞÍ•ÑM½ÕÉ•Ì¡µˆÉ%°l(€€€€€ìÍ½ÕÉ•QåÁ”è€‘•±¥Ù•Éå}¡…±±…¸œ°Í½ÕÉ•%è¡…±±…¸É%ô°(€€€€€ìÍ½ÕÉ•QåÁ”è€¥¹ÍÑ…±±…Ñ¥½¸œ°Í½ÕÉ•%è¥¹ÍÑ…±±…Ñ¥½¸É%ô°(€€€t¤ì(€€€•áÁ•Ğ¡Íİ•ÁĞ¹ÍÑ…ÑÕÍ½‘”°Íİ•ÁĞ¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€ô¤ì((€¥Ğ ™¥¹…±¥é•Ì5´ÀÈİ¥Ñ Ñ¡”•á…Ğ™¥¹…°µ‰¥±°ÍÑ…”…µ½Õ¹ÑÌœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ™¥¹…±¥é•€ô…İ…¥Ğ™¥¹…±¥é”¡µˆÉ%¤ì(€€€•áÁ•Ğ¡™¥¹…±¥é•¹ÍÑ…ÑÕÍ½‘”°™¥¹…±¥é•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ô™¥¹…±¥é•¹©Í½¸ñ5•…ÍÕÉ•µ•¹Ñ	½½­•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰½½¬¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€™¥¹…±¥é•œ°(€€€€€­¥¹è€™¥¹…°œ°(€€€€€¥Í¥¹…°èÑÉÕ”°(€€€€€µ‰9Õµ‰•Èè€‘íİ½É­½‘•ôµ5´ÀÉ€°(€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€È°(€€€€€Ñ½Ñ…±µ½Õ¹Ğè€œÄÌÜĞÀ¸ÀÀœ°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•Ì¤¹Ñ½!…Ù•1•¹Ñ  Ì¤ì(€€€€¼¼MUAA1d‰É…¹ èÑ¡”™¥¹…°€ÄÀ”™…±±Ì½¸€ÄÀÀ”½˜Ñ¡”1%YI(€€€€¼¼ÅÕ…¹Ñ¥ÑäƒŠP€ĞÀµ½É”ÍÕÁÁ±¥•¹½Ü°€ÄÀÀÉ•±•…Í•™½ÈÑ¡”™¥¹…°‰¥±°¸(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•ÍlÁt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€¥Ñ•µ9Õµ‰•Èè€œÄœ°(€€€€€‘•±Ñ…MÕÁÁ±¥•è€œĞÀ¸ÀÀÀœ°(€€€€€‘•±Ñ…¥¹…±	¥±°è€œÄÀÀ¸ÀÀÀœ°(€€€€€ÁÉ¥½ÉMÕÁÁ±¥•è€œØÀ¸ÀÀÀœ°(€€€€€…µ½Õ¹ÑMÕÁÁ±äè€œäÀÀÀ¸ÀÀœ°(€€€€€…µ½Õ¹Ñ¥¹…±	¥±°è€œÈÔÀÀ¸ÀÀœ°(€€€€€±¥¹•Q½Ñ…°è€œÄÄÔÀÀ¸ÀÀœ°(€€€ô¤ì(€€€€¼¼Õ±±ä‘•±¥Ù•É•½¸5´ÀÄè¹½Ñ¡¥¹œ‰ÕĞ¥ÑÌ™¥¹…°µ‰¥±°É•Ñ•¹Ñ¥½¸¸(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•ÍlÅt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€¥Ñ•µ9Õµ‰•Èè€œÈœ°(€€€€€‘•±Ñ…¥¹…±	¥±°è€œÄÀ¸ÀÀÀœ°(€€€€€ÁÉ¥½ÉMÕÁÁ±¥•è€œÄÀ¸ÀÀÀœ°(€€€€€…µ½Õ¹ÑMÕÁÁ±äè€œÀ¸ÀÀœ°(€€€€€…µ½Õ¹Ñ¥¹…±	¥±°è€œÄÈÀÀ¸ÀÀœ°(€€€€€±¥¹•Q½Ñ…°è€œÄÈÀÀ¸ÀÀœ°(€€€ô¤ì(€€€€¼¼AUI}%9MQ11Q%=8‰É…¹ èÑ¡”™¥¹…°€ÈÀ”™…±±Ì½¸Ñ¡”%9MQ11(€€€€¼¼ÅÕ…¹Ñ¥Ñä½¹±ä¸(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•ÍlÉt¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€¥Ñ•µ9Õµ‰•Èè€œÌœ°(€€€€€‘•±Ñ…%¹ÍÑ…±±•è€œÈ¸ÀÀÀœ°(€€€€€‘•±Ñ…¥¹…±	¥±°è€œÔ¸ÀÀÀœ°(€€€€€ÁÉ¥½É%¹ÍÑ…±±•è€œÌ¸ÀÀÀœ°(€€€€€…µ½Õ¹Ñ%¹ÍÑ…±±…Ñ¥½¸è€œØĞÀ¸ÀÀœ°(€€€€€…µ½Õ¹Ñ¥¹…±	¥±°è€œĞÀÀ¸ÀÀœ°(€€€€€±¥¹•Q½Ñ…°è€œÄÀĞÀ¸ÀÀœ°(€€€ô¤ì(€ô¤ì((€¥Ğ Á•Éµ¥ÑÌ¹¼™ÕÉÑ¡•È5½˜9d­¥¹…™Ñ•ÈÑ¡”™¥¹…°½¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ½¹½Õ¹Ğ€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½µ•…ÍÕÉ•µ•¹Ğµ‰½½­Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èìµ‰…Ñ”è€œÈÀÈØ´Àà´Ààœô°(€€€ô¤ì(€€€•áÁ•Ğ¡½¹½Õ¹Ğ¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡½¹½Õ¹Ğ¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” %91}5	}a%MQLœ¤ì((€€€½¹ÍĞÉ•½É€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½µ•…ÍÕÉ•µ•¹Ğµ‰½½­Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€µ‰…Ñ”è€œÈÀÈØ´Àà´Ààœ°(€€€€€€€­¥¹è€É•½Éœ°(€€€€€€€½¹Í¥¹••½¹Ñ…Ñ%è½¹Í¥¹•”Å%°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•½É¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡É•½É¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” %91}5	}a%MQLœ¤ì(€ô¤ì((€¥Ğ ¥¹Ù½¥•ÌÑ¡”™¥¹…°5…¹ÍÕ‰µ¥ÑÌ¥Ğ½¸Ñ¡”Í…µ”d½Õ¹Ñ•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½Ñ…àµ¥¹Ù½¥•Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€µ•…ÍÕÉ•µ•¹Ñ	½½­%èµˆÉ%°(€€€€€€€¥¹Ù½¥•…Ñ”è€œÈÀÈØ´Àà´ÄÀœ°(€€€€€€€Í…½‘”èM°(€€€€€€€Í•ÉÙ¥••ÍÉ¥ÁÑ¥½¸èMIY%}MI%AQ%=8°(€€€€€€€ÍÑI…Ñ”è€œÄàœ°(€€€€€€€Á±…•=™MÕÁÁ±äè€œÀÜœ°(€€€€€€€É•Ù•ÉÍ•¡…É•ÁÁ±¥…‰±”è™…±Í”°(€€€€€€€‰Õå•É½¹Ñ…Ñ%°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ¥¹Ù½¥”É%€ôÉ•…Ñ•¹©Í½¸ñQ…á%¹Ù½¥••Ñ…¥±I•ÍÁ½¹Í”ø ¤¹¥¹Ù½¥”¹¥ì((€€€½¹ÍĞÍÕ‰µ¥ÑÑ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½Ñ…àµ¥¹Ù½¥•Ì¼‘í¥¹Ù½¥”É%‘ô½ÍÕ‰µ¥Ñ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡ÍÕ‰µ¥ÑÑ•¹ÍÑ…ÑÕÍ½‘”°ÍÕ‰µ¥ÑÑ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€•áÁ•Ğ¡ÍÕ‰µ¥ÑÑ•¹©Í½¸ñQ…á%¹Ù½¥••Ñ…¥±I•ÍÁ½¹Í”ø ¤¹¥¹Ù½¥”¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€ÍÕ‰µ¥ÑÑ•œ°(€€€€€€¼¼…Á±•ÍÌİ¥Ñ¡¥¸Ñ¡”™¥¹…¹¥…°å•…Èè€ÀÀÈ™½±±½İÌ€ÀÀÄ¸(€€€€€¥¹Ù½¥•9Õµ‰•Èè€@ÄÀÈØÀÀÈœ°(€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€È°(€€€€€™å1…‰•°è€œÈÀÈØ´ÈÜœ°(€€€€€Ñ…á…‰±•Y…±Õ”è€œÄÌÜĞÀ¸ÀÀœ°(€€€€€ÍÑµ½Õ¹Ğè€œÄÈÌØ¸ØÀœ°(€€€€€ÍÍÑµ½Õ¹Ğè€œÄÈÌØ¸ØÀœ°(€€€€€¥ÍÑµ½Õ¹Ğè€œÀ¸ÀÀœ°(€€€€€€¼¼I½Õ¹‘Ì=]8¡•É”°Í¼Ñ¡”‘•±Ñ„¥Ì¹•…Ñ¥Ù”¸(€€€€€É½Õ¹‘=™˜è€œ´À¸ÈÀœ°(€€€€€Ñ½Ñ…±µ½Õ¹Ğè€œÄØÈÄÌ¸ÀÀœ°(€€€ô¤ì((€€€€¼¼Q¡”d½Õ¹Ñ•È…É••Ìİ¥Ñ Ñ¡”¹Õµ‰•ÉÌ¡…¹‘•½ÕĞ¸(€€€½¹ÍĞ½Õ¹Ñ•ÉÌ€ô…İ…¥Ğ…‘µ¥¸ñì™å}±…‰•°èÍÑÉ¥¹œì¹•áÑ}Ù…±Õ”è¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ™å}±…‰•°°¹•áÑ}Ù…±Õ”™É½´Ñ…á}¥¹Ù½¥•}½Õ¹Ñ•ÉÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€½É‘•È‰ä™å}±…‰•°(€€€€ì(€€€•áÁ•Ğ¡½Õ¹Ñ•ÉÌ¤¹Ñ½ÅÕ…°¡mì™å}±…‰•°è€œÈÀÈØ´ÈÜœ°¹•áÑ}Ù…±Õ”è€Èõt¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” œàƒŠP½µÁ±•Ñ¥¹œÑ¡”]½É¬œ°€ ¤€ôøì(€¥Ğ Ñ¡”É•…‘¥¹•ÍÌ•¹‘Á½¥¹ĞÍ…åÌÉ•…‘ä°…¹½µÁ±•Ñ¥½¸ÍÕ••‘Ìœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…‘¥¹•ÍÌ€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½½µÁ±•Ñ¥½¸µÉ•…‘¥¹•ÍÍ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹ÍÑ…ÑÕÍ½‘”°É•…‘¥¹•ÍÌ¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ¡É•…‘¥¹•ÍÌ¹©Í½¸ñ]½É­½µÁ±•Ñ¥½¹I•…‘¥¹•ÍÌø ¤¤¹Ñ½ÅÕ…°¡ì(€€€€€É•…‘äèÑÉÕ”°(€€€€€Õ¹™¥¹¥Í¡•èmt°(€€€€€‰±½­•ÉÌèmt°(€€€ô¤ì((€€€½¹ÍĞ½µÁ±•Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½½µÁ±•Ñ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì¹½Ñ”è€±°¥Ñ•µÌ‘•±¥Ù•É•°¥¹ÍÑ…±±•°µ•…ÍÕÉ•°…¹‰¥±±•¸œô°(€€€ô¤ì(€€€•áÁ•Ğ¡½µÁ±•Ñ•¹ÍÑ…ÑÕÍ½‘”°½µÁ±•Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞİ½É¬€ô½µÁ±•Ñ•¹©Í½¸ñì(€€€€€İ½É¬èì(€€€€€€€ÍÑ…ÑÕÌèÍÑÉ¥¹œì(€€€€€€€½µÁ±•Ñ•‘ĞèÍÑÉ¥¹œğ¹Õ±°ì(€€€€€€€½µÁ±•Ñ¥½¹9½Ñ”èÍÑÉ¥¹œğ¹Õ±°ì(€€€€€ôì(€€€ôø ¤¹İ½É¬ì(€€€•áÁ•Ğ¡İ½É¬¹ÍÑ…ÑÕÌ¤¹Ñ½	” ½µÁ±•Ñ•œ¤ì(€€€•áÁ•Ğ¡İ½É¬¹½µÁ±•Ñ•‘Ğ¤¹¹½Ğ¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ğ¡İ½É¬¹½µÁ±•Ñ¥½¹9½Ñ”¤¹Ñ½	” (€€€€€€±°¥Ñ•µÌ‘•±¥Ù•É•°¥¹ÍÑ…±±•°µ•…ÍÕÉ•°…¹‰¥±±•¸œ°(€€€€¤ì(€ô¤ì((€¥Ğ „½µÁ±•Ñ•]½É¬É•™ÕÍ•Ì„¹•Ü‘•±¥Ù•Éä¡…±±…¸œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•™ÕÍ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½İ½É­Ì¼‘íİ½É­%‘ô½¡…±±…¹Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì(€€€€€€€¡…±±…¹…Ñ”è€œÈÀÈØ´Àà´Ààœ°(€€€€€€€ÁÉ•™¥àè€1œ°(€€€€€€€½¹Í¥¹•”èì(€€€€€€€€€¹…µ”èMÈ¸€¡QI¤H€‘íÉÕ¹%‘õ€°(€€€€€€€€€…‘‘É•ÍÌè€¥Ù¥Í¥½¹…°½™™¥”°•±¡¤¥Ù¥Í¥½¸œ°(€€€€€€€ô°(€€€€€€€¥Ñ•µÌèmìİ½É­%Ñ•µ%è…‰±•%Ñ•µ%°ÅÕ…¹Ñ¥Ñäè€œÄœõt°(€€€€€ô°(€€€ô¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡É•™ÕÍ•¹©Í½¸ñì½‘”èÍÑÉ¥¹œôø ¤¹½‘”¤¹Ñ½	” ]=I-}=5A1Qœ¤ì(€ô¤ì)ô¤ì(
+      method: 'POST',
+      url: '/api/loa-documents?filename=lifecycle-loa.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('Auto-MB lifecycle LOA letter'),
+    });
+    expect(uploaded.statusCode, uploaded.body).toBe(201);
+    const document = uploaded.json<{ id: string; extractionStatus: string }>();
+    expect(document.extractionStatus).toBe('review');
+
+    // The reviewer types the three awarded items in; the parsed test
+    // letter names none, so every row carries the manual-entry marker.
+    const confirmed = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${document.id}/confirm`,
+      organisationId,
+      payload: {
+        workCode,
+        letterNumber: `L-${workCode}`,
+        letterDate: LETTER_DATE,
+        title: 'Signalling supply and installation lifecycle work',
+        advertisedValue: '40000.00',
+        contractValue: '39000.00',
+        pricingShape: 'per_schedule',
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: '1',
+                description: 'Signalling cable',
+                unitCode: 'Mtr',
+                awardedQuantity: '100',
+                effectiveRate: '250.00',
+                manualEntry: true,
+              },
+              {
+                itemNumber: '2',
+                description: 'Relay unit',
+                unitCode: 'Nos',
+                awardedQuantity: '10',
+                effectiveRate: '1200.00',
+                manualEntry: true,
+              },
+              {
+                itemNumber: '3',
+                description: 'Installation of signalling gear',
+                unitCode: 'Nos',
+                awardedQuantity: '5',
+                effectiveRate: '400.00',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    const detail = confirmed.json<WorkDetailResponse>();
+    workId = detail.work.id;
+    expect(detail.work.workCode).toBe(workCode);
+    expect(detail.work.contractValue).toBe('39000.00');
+    expect(detail.work.status).toBe('active');
+    const items = detail.schedules[0]?.items ?? [];
+    expect(items).toHaveLength(3);
+    cableItemId = items.find((item) => item.itemNumber === '1')?.id ?? '';
+    relayItemId = items.find((item) => item.itemNumber === '2')?.id ?? '';
+    installItemId = items.find((item) => item.itemNumber === '3')?.id ?? '';
+    expect(cableItemId && relayItemId && installItemId).toBeTruthy();
+  }, 30_000);
+
+  it('categorises the items and writes the payment matrix through the API', async () => {
+    for (const [itemId, category] of [
+      [cableItemId, 'SUPPLY'],
+      [relayItemId, 'SUPPLY'],
+      [installItemId, 'PURE_INSTALLATION'],
+    ] as const) {
+      const response = await authed(owner, {
+        method: 'PATCH',
+        url: `/api/work-items/${itemId}/payment-category`,
+        organisationId,
+        payload: { paymentCategory: category },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<{ paymentCategory: string }>().paymentCategory).toBe(
+        category,
+      );
+    }
+
+    // SUPPLY pays 90% on delivery and holds 10% for the final bill;
+    // PURE_INSTALLATION pays 80% on erection and holds 20%.
+    const supplyRow = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/SUPPLY`,
+      organisationId,
+      payload: {
+        pctSupply: '90',
+        pctInstallation: '0',
+        pctPac: '0',
+        pctFinalBill: '10',
+      },
+    });
+    expect(supplyRow.statusCode, supplyRow.body).toBe(200);
+    expect(supplyRow.json<{ pctSupply: string; pctFinalBill: string }>()).toMatchObject(
+      { pctSupply: '90.00', pctFinalBill: '10.00' },
+    );
+    const installRow = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/PURE_INSTALLATION`,
+      organisationId,
+      payload: {
+        pctSupply: '0',
+        pctInstallation: '80',
+        pctPac: '0',
+        pctFinalBill: '20',
+      },
+    });
+    expect(installRow.statusCode, installRow.body).toBe(200);
+    expect(
+      installRow.json<{ pctInstallation: string; pctFinalBill: string }>(),
+    ).toMatchObject({ pctInstallation: '80.00', pctFinalBill: '20.00' });
+  });
+});
+
+describe('2 â€” purchase order to the vendor for the supply items', () => {
+  it('drafts the order, saves its lines, and issues it with an exact frozen total', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/purchase-orders`,
+      organisationId,
+      payload: {
+        vendorContactId,
+        poDate: '2026-07-01',
+        terms: '30 days credit; delivery at site.',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    purchaseOrderId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+
+    const lines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${purchaseOrderId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: cableItemId,
+            description: 'Signalling cable, ISI marked',
+            unitCode: 'Mtr',
+            quantity: '60',
+            rate: '250',
+          },
+          {
+            workItemId: relayItemId,
+            description: 'Relay unit',
+            unitCode: 'Nos',
+            quantity: '10',
+            rate: '1200',
+          },
+        ],
+      },
+    });
+    expect(lines.statusCode, lines.body).toBe(200);
+    const drafted = lines.json<PurchaseOrderDetailResponse>();
+    poLineCableId = drafted.lines[0]?.id ?? '';
+    poLineRelayId = drafted.lines[1]?.id ?? '';
+    expect(drafted.lines[0]).toMatchObject({
+      lineNumber: 1,
+      workItemId: cableItemId,
+      quantity: '60.000',
+      rate: '250.00',
+      lineAmount: '15000.00',
+      receivedQuantity: '0.000',
+      pendingQuantity: '60.000',
+    });
+    expect(drafted.lines[1]).toMatchObject({
+      lineNumber: 2,
+      workItemId: relayItemId,
+      quantity: '10.000',
+      rate: '1200.00',
+      lineAmount: '12000.00',
+      pendingQuantity: '10.000',
+    });
+    // Money summed server-side as exact decimals; the record's own total
+    // is issue-written.
+    expect(drafted.previewTotal).toBe('27000.00');
+    expect(drafted.purchaseOrder.totalAmount).toBeNull();
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${purchaseOrderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const detail = issued.json<PurchaseOrderDetailResponse>();
+    expect(detail.purchaseOrder).toMatchObject({
+      status: 'issued',
+      poNumber: `${workCode}-PO-01`,
+      sequenceNumber: 1,
+      totalAmount: '27000.00',
+    });
+    expect(detail.vendorSnapshot).toMatchObject({
+      contactId: vendorContactId,
+      designation: `Bharat Cables Pvt Ltd ${runId}`,
+      gstin: VENDOR_GSTIN,
+      stateCode: '27',
+      address: 'Plot 12, MIDC, Pune',
+    });
+  });
+
+  it('refuses to close while both lines are still owed material', async () => {
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${purchaseOrderId}/close`,
+      organisationId,
+    });
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{
+      code: string;
+      details: { outstandingLines: { purchaseOrderLineId: string }[] };
+    }>();
+    expect(body.code).toBe('PO_NOT_FULLY_RECEIVED');
+    expect(body.details.outstandingLines).toHaveLength(2);
+    expect(body.details.outstandingLines[0]).toMatchObject({
+      purchaseOrderLineId: poLineCableId,
+      orderedQuantity: '60.000',
+      receivedQuantity: '0.000',
+      pendingQuantity: '60.000',
+    });
+  });
+});
+
+describe('3 â€” delivery challan against the purchase order', () => {
+  it('drafts the challan, maps its items onto the order lines, and issues it', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-07-05',
+        prefix: 'LCDC',
+        consignee: {
+          name: `Sr. DEE (TRD) CR ${runId}`,
+          address: 'Divisional office, Delhi Division',
+        },
+        items: [
+          { workItemId: cableItemId, quantity: '60' },
+          { workItemId: relayItemId, quantity: '10' },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    challan1Id = created.json<ChallanDetailResponse>().challan.id;
+
+    // The receipt link (delivery_challan_items.purchase_order_line_id) is
+    // written with admin SQL: the challan editor that offers open orders
+    // belongs to the web slice, and what this test proves is the balance
+    // the purchase-order route derives from that column â€” the same
+    // posture as the purchase-order suite.
+    for (const [workItemId, lineId] of [
+      [cableItemId, poLineCableId],
+      [relayItemId, poLineRelayId],
+    ] as const) {
+      await admin`
+        update delivery_challan_items
+        set purchase_order_line_id = ${lineId}
+        where delivery_challan_id = ${challan1Id} and work_item_id = ${workItemId}
+      `;
+    }
+
+    // A draft challan has delivered nothing yet.
+    const beforeIssue = await getPurchaseOrder();
+    expect(beforeIssue.lines[0]).toMatchObject({
+      receivedQuantity: '0.000',
+      pendingQuantity: '60.000',
+    });
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challan1Id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const challan = issued.json<ChallanDetailResponse>().challan;
+    expect(challan.status).toBe('issued');
+    expect(challan.challanNumber).toBe('LCDC/1');
+  });
+
+  it('shows both lines fully received and closes the order â€” the derived close', async () => {
+    const received = await getPurchaseOrder();
+    expect(received.lines[0]).toMatchObject({
+      receivedQuantity: '60.000',
+      pendingQuantity: '0.000',
+    });
+    expect(received.lines[1]).toMatchObject({
+      receivedQuantity: '10.000',
+      pendingQuantity: '0.000',
+    });
+
+    const closed = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${purchaseOrderId}/close`,
+      organisationId,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    const detail = closed.json<PurchaseOrderDetailResponse>();
+    expect(detail.purchaseOrder.status).toBe('closed');
+    expect(detail.purchaseOrder.closedAt).not.toBeNull();
+    // The number and the frozen total survive the transition untouched.
+    expect(detail.purchaseOrder.poNumber).toBe(`${workCode}-PO-01`);
+    expect(detail.purchaseOrder.totalAmount).toBe('27000.00');
+    expect(detail.lines.map((line) => line.pendingQuantity)).toEqual([
+      '0.000',
+      '0.000',
+    ]);
+  });
+});
+
+describe('4 â€” the pure-installation item goes up on site', () => {
+  it('records 3 of the 5 units installed', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: installItemId,
+        quantity: '3',
+        installedOn: '2026-07-15',
+        newLocation: { name: `Alpha Cabin ${runId}`, kind: 'station' },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    installation1Id = response.json<{ id: string }>().id;
+  });
+});
+
+describe('5 â€” two record MBs in parallel, merged into the on-account MB', () => {
+  it('two consignees open record sheets side by side', async () => {
+    const first = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: {
+        mbDate: '2026-08-01',
+        kind: 'record',
+        consigneeContactId: consignee1Id,
+      },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const firstBook = first.json<MeasurementBookDetailResponse>().book;
+    record1Id = firstBook.id;
+    expect(firstBook.kind).toBe('record');
+    expect(firstBook.consigneeContactId).toBe(consignee1Id);
+
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: {
+        mbDate: '2026-08-01',
+        kind: 'record',
+        consigneeContactId: consignee2Id,
+      },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    record2Id = second.json<MeasurementBookDetailResponse>().book.id;
+  });
+
+  it('each claims its own source, and the one-live-claim rule holds between them', async () => {
+    // Record 1 claims the delivery challan.
+    const claimed1 = await setSources(record1Id, [
+      { sourceType: 'delivery_challan', sourceId: challan1Id },
+    ]);
+    expect(claimed1.statusCode, claimed1.body).toBe(200);
+
+    // Record 2 reaching for the SAME challan is refused, naming the holder.
+    const conflict = await setSources(record2Id, [
+      { sourceType: 'delivery_challan', sourceId: challan1Id },
+    ]);
+    expect(conflict.statusCode).toBe(409);
+    const conflictBody = conflict.json<{
+      code: string;
+      details: { holdingMeasurementBookId: string };
+    }>();
+    expect(conflictBody.code).toBe('MB_SOURCE_ALREADY_BILLED');
+    expect(conflictBody.details.holdingMeasurementBookId).toBe(record1Id);
+
+    // A record's claim protects its source like any live claim.
+    const challanCancel = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challan1Id}/cancel`,
+      organisationId,
+      payload: { note: 'Attempt against a record-claimed challan.' },
+    });
+    expect(challanCancel.statusCode).toBe(409);
+    expect(challanCancel.json<{ code: string }>().code).toBe('SOURCE_BILLED_IN_MB');
+
+    // Record 2 claims the installation instead â€” disjoint sources.
+    const claimed2 = await setSources(record2Id, [
+      { sourceType: 'installation', sourceId: installation1Id },
+    ]);
+    expect(claimed2.statusCode, claimed2.body).toBe(200);
+
+    // A record sheet never bills on its own.
+    const refused = await finalize(record1Id);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('MB_RECORD_NOT_BILLABLE');
+  });
+
+  it('the main consignee merges both records into one on-account draft', async () => {
+    const merged = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [record1Id, record2Id], mbDate: '2026-08-05' },
+    });
+    expect(merged.statusCode, merged.body).toBe(201);
+    const detail = merged.json<MeasurementBookDetailResponse>();
+    mb1Id = detail.book.id;
+    expect(detail.book.kind).toBe('on_account');
+    expect(detail.book.status).toBe('draft');
+    const keys = detail.sources.map((s) => `${s.sourceType}:${s.sourceId}`).sort();
+    expect(keys).toEqual(
+      [`delivery_challan:${challan1Id}`, `installation:${installation1Id}`].sort(),
+    );
+    // 60 x 250.00 x 90% + 10 x 1200.00 x 90% + 3 x 400.00 x 80%.
+    expect(detail.previewTotal).toBe('25260.00');
+
+    // The records are merged, pointing at the absorber, holding nothing.
+    for (const recordId of [record1Id, record2Id]) {
+      const record = await authed(owner, {
+        method: 'GET',
+        url: `/api/measurement-books/${recordId}`,
+        organisationId,
+      });
+      const recordDetail = record.json<MeasurementBookDetailResponse>();
+      expect(recordDetail.book.status).toBe('merged');
+      expect(recordDetail.book.mergedIntoId).toBe(mb1Id);
+      expect(recordDetail.sources).toEqual([]);
+    }
+
+    // The one-live-claim rule held through the merge: each source has
+    // EXACTLY one live claim, and every one sits on the merged draft.
+    const [claims] = await admin<{ target: string; elsewhere: string }[]>`
+      select
+        (select count(*) from mb_sources
+          where measurement_book_id = ${mb1Id}
+            and released_at is null)::text as target,
+        (select count(*) from mb_sources
+          where measurement_book_id <> ${mb1Id}
+            and work_id = ${workId} and released_at is null)::text as elsewhere
+    `;
+    expect(claims).toEqual({ target: '2', elsewhere: '0' });
+  });
+
+  it('finalizes as MB-01 with the exact stage amounts', async () => {
+    const finalized = await finalize(mb1Id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.book).toMatchObject({
+      status: 'finalized',
+      kind: 'on_account',
+      isFinal: false,
+      mbNumber: `${workCode}-MB-01`,
+      sequenceNumber: 1,
+      totalAmount: '25260.00',
+    });
+    expect(detail.lines).toHaveLength(3);
+    expect(detail.lines[0]).toMatchObject({
+      itemNumber: '1',
+      resolvedCategory: 'SUPPLY',
+      pctSupply: '90.00',
+      pctFinalBill: '10.00',
+      deltaSupplied: '60.000',
+      amountSupply: '13500.00',
+      amountInstallation: '0.00',
+      amountFinalBill: '0.00',
+      lineTotal: '13500.00',
+    });
+    expect(detail.lines[1]).toMatchObject({
+      itemNumber: '2',
+      resolvedCategory: 'SUPPLY',
+      deltaSupplied: '10.000',
+      amountSupply: '10800.00',
+      amountFinalBill: '0.00',
+      lineTotal: '10800.00',
+    });
+    expect(detail.lines[2]).toMatchObject({
+      itemNumber: '3',
+      resolvedCategory: 'PURE_INSTALLATION',
+      pctInstallation: '80.00',
+      deltaInstalled: '3.000',
+      amountInstallation: '960.00',
+      amountFinalBill: '0.00',
+      lineTotal: '960.00',
+    });
+  });
+});
+
+describe('6 â€” the cumulative tax invoice, the IRP, and the e-way bill', () => {
+  it('drafts and submits the invoice: FY number, intra-state split, exact totals', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/tax-invoices`,
+      organisationId,
+      payload: {
+        measurementBookId: mb1Id,
+        invoiceDate: '2026-08-09',
+        sacCode: SAC,
+        serviceDescription: SERVICE_DESCRIPTION,
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    invoice1Id = created.json<TaxInvoiceDetailResponse>().invoice.id;
+    expect(created.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      status: 'draft',
+      invoiceNumber: null,
+      mbNumber: `${workCode}-MB-01`,
+      taxableValue: null,
+    });
+
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoice1Id}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    const detail = submitted.json<TaxInvoiceDetailResponse>();
+    expect(detail.invoice).toMatchObject({
+      status: 'submitted',
+      invoiceNumber: 'P1026001',
+      sequenceNumber: 1,
+      fyLabel: '2026-27',
+      // The MB total VERBATIM; round(25260 x 18 / 200, 2) each side.
+      taxableValue: '25260.00',
+      cgstAmount: '2273.40',
+      sgstAmount: '2273.40',
+      igstAmount: '0.00',
+      // The invoice is payable in whole rupees: 29806.80 rounds up and
+      // the 0.20 is kept as the Rounding line the document prints.
+      roundOff: '0.20',
+      totalAmount: '29807.00',
+      buyerContactId,
+    });
+    expect(detail.buyerSnapshot).toMatchObject({
+      contactId: buyerContactId,
+      designation: 'Sr. DEE (G) NR',
+      gstin: BUYER_GSTIN,
+      address: BUYER_ADDRESS,
+      stateCode: '07',
+      pincode: '110055',
+    });
+
+    // The stored row says the same, in exact numeric text.
+    const [row] = await admin<
+      {
+        taxable_value: string;
+        cgst_amount: string;
+        sgst_amount: string;
+        igst_amount: string;
+        total_amount: string;
+        fy_label: string;
+      }[]
+    >`
+      select taxable_value::text as taxable_value, cgst_amount::text as cgst_amount,
+             sgst_amount::text as sgst_amount, igst_amount::text as igst_amount,
+             total_amount::text as total_amount, fy_label
+      from tax_invoices where id = ${invoice1Id}
+    `;
+    expect(row).toMatchObject({
+      taxable_value: '25260.00',
+      cgst_amount: '2273.40',
+      sgst_amount: '2273.40',
+      igst_amount: '0.00',
+      total_amount: '29807.00',
+      fy_label: '2026-27',
+    });
+  });
+
+  it('the submitted invoice CLOSES MB-01: the 0035 trigger refuses its cancel against any writer', async () => {
+    await expect(
+      admin`
+        update measurement_books
+        set status = 'cancelled', cancellation_note = 'closure rule probe',
+            cancelled_by_user_id = ${ownerUserId}, cancelled_at = now()
+        where id = ${mb1Id}
+      `,
+    ).rejects.toThrowError(/closed by a tax invoice/);
+    const [book] = await admin<{ status: string }[]>`
+      select status from measurement_books where id = ${mb1Id}
+    `;
+    expect(book?.status).toBe('finalized');
+  });
+
+  it('serves the canonical NIC 1.1 IRP payload and records the IRP response', async () => {
+    const payload = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoice1Id}/irp-payload`,
+      organisationId,
+    });
+    expect(payload.statusCode, payload.body).toBe(200);
+    expect(payload.json()).toStrictEqual({
+      Version: '1.1',
+      TranDtls: { TaxSch: 'GST', SupTyp: 'B2B', RegRev: 'N' },
+      DocDtls: { Typ: 'INV', No: 'P1026001', Dt: '09/08/2026' },
+      SellerDtls: {
+        Gstin: ORG_GSTIN,
+        LglNm: ORG_NAME,
+        Addr1: ORG_ADDRESS,
+        Loc: 'New Delhi',
+        Pin: 110002,
+        Stcd: '07',
+      },
+      BuyerDtls: {
+        Gstin: BUYER_GSTIN,
+        LglNm: 'Sr. DEE (G) NR',
+        Pos: '07',
+        Addr1: BUYER_ADDRESS,
+        Loc: 'New Delhi',
+        Pin: 110055,
+        Stcd: '07',
+      },
+      ItemList: [
+        {
+          SlNo: '1',
+          PrdDesc: SERVICE_DESCRIPTION,
+          IsServc: 'Y',
+          HsnCd: SAC,
+          Qty: 1,
+          Unit: 'OTH',
+          UnitPrice: 25260,
+          TotAmt: 25260,
+          AssAmt: 25260,
+          GstRt: 18,
+          CgstAmt: 2273.4,
+          SgstAmt: 2273.4,
+          IgstAmt: 0,
+          TotItemVal: 29806.8,
+        },
+      ],
+      ValDtls: {
+        AssVal: 25260,
+        CgstVal: 2273.4,
+        SgstVal: 2273.4,
+        IgstVal: 0,
+        // sum(TotItemVal) + RndOffAmt = TotInvVal, NIC's own identity.
+        RndOffAmt: 0.2,
+        TotInvVal: 29807,
+      },
+    });
+
+    const irn = '0123456789abcdef'.repeat(4);
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoice1Id}/irp-response`,
+      organisationId,
+      payload: {
+        irn,
+        ackNumber: '112010036563',
+        ackDate: '2026-08-09T10:30:00.000Z',
+        ackDateText: '09/08/2026 16:00:00',
+        signedQr: 'signed-qr-jws-payload',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    const detail = recorded.json<TaxInvoiceDetailResponse>();
+    expect(detail.invoice.irn).toBe(irn);
+    expect(detail.invoice.ackNumber).toBe('112010036563');
+    expect(detail.signedQr).toBe('signed-qr-jws-payload');
+  });
+
+  it('moves the invoice on an e-way bill: draft, NIC payload, NIC response', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoice1Id}/eway-bills`,
+      organisationId,
+      payload: {
+        transportMode: 'road',
+        distanceKm: 25,
+        fromPincode: '110002',
+        toPincode: '110055',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    ewayBillId = created.json<EwayBillDetailResponse>().ewayBill.id;
+    expect(created.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      taxInvoiceId: invoice1Id,
+      invoiceNumber: 'P1026001',
+      status: 'draft',
+      vehicleNumber: null,
+    });
+
+    // Service-invoice EWB uses the Whitebooks generate-by-IRN surface.
+    // With no provider configured, no standalone SAC-as-goods payload is exposed.
+    const incomplete = await authed(owner, {
+      method: 'GET',
+      url: `/api/eway-bills/${ewayBillId}/nic-payload`,
+      organisationId,
+    });
+    expect(incomplete.statusCode).toBe(409);
+    expect(incomplete.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
+
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/eway-bills/${ewayBillId}`,
+      organisationId,
+      payload: {
+        transportMode: 'road',
+        distanceKm: 25,
+        fromPincode: '110002',
+        toPincode: '110055',
+        transporterId: TRANSPORTER_ID,
+        transporterName: 'Sharma Roadways',
+        vehicleNumber: 'DL01AB1234',
+      },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+
+    const generated = await authed(owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${ewayBillId}/nic-response`,
+      organisationId,
+      payload: {
+        ewbNumber: '123456789012',
+        ewbDate: '2026-08-09T12:00:00.000Z',
+        validUntil: '2026-08-10T23:59:59.000Z',
+        ewbDateText: '09/08/2026 17:30:00',
+        validUntilText: '10/08/2026 23:59:59',
+      },
+    });
+    expect(generated.statusCode, generated.body).toBe(200);
+    expect(generated.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      status: 'generated',
+      ewbNumber: '123456789012',
+      ewbDate: '2026-08-09T12:00:00.000Z',
+      validUntil: '2026-08-10T23:59:59.000Z',
+    });
+  });
+});
+
+describe('7 â€” the remainder, and the FINAL Measurement Book', () => {
+  it('the readiness endpoint names exactly what is still owed', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/completion-readiness`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const readiness = response.json<WorkCompletionReadiness>();
+    expect(readiness.ready).toBe(false);
+    expect(readiness.blockers).toEqual([]);
+    expect(readiness.unfinished).toHaveLength(2);
+    expect(readiness.unfinished[0]).toMatchObject({
+      workItemId: cableItemId,
+      itemNumber: '1',
+      requirement: 'delivery',
+      direction: 'short',
+      requiredQuantity: '100.000',
+      deliveredQuantity: '60.000',
+    });
+    expect(readiness.unfinished[1]).toMatchObject({
+      workItemId: installItemId,
+      itemNumber: '3',
+      requirement: 'installation',
+      direction: 'short',
+      requiredQuantity: '5.000',
+      installedQuantity: '3.000',
+    });
+  });
+
+  it('delivers and installs the remainder', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-06',
+        prefix: 'LCDC',
+        consignee: {
+          name: `Sr. DEE (TRD) CR ${runId}`,
+          address: 'Divisional office, Delhi Division',
+        },
+        items: [{ workItemId: cableItemId, quantity: '40' }],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    challan2Id = created.json<ChallanDetailResponse>().challan.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challan2Id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    expect(issued.json<ChallanDetailResponse>().challan.challanNumber).toBe('LCDC/2');
+
+    const installed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: installItemId,
+        quantity: '2',
+        installedOn: '2026-08-06',
+        newLocation: { name: `Beta Cabin ${runId}`, kind: 'station' },
+      },
+    });
+    expect(installed.statusCode, installed.body).toBe(201);
+    installation2Id = installed.json<{ id: string }>().id;
+  });
+
+  it('raises the last MB as kind FINAL and must sweep every open source', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-07', kind: 'final' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const book = created.json<MeasurementBookDetailResponse>().book;
+    mb2Id = book.id;
+    expect(book.kind).toBe('final');
+    expect(book.isFinal).toBe(true);
+
+    // Claiming only the challan leaves the installation stranded: the
+    // final sweep refuses, naming exactly what it missed.
+    const partial = await setSources(mb2Id, [
+      { sourceType: 'delivery_challan', sourceId: challan2Id },
+    ]);
+    expect(partial.statusCode, partial.body).toBe(200);
+    const refused = await finalize(mb2Id);
+    expect(refused.statusCode).toBe(409);
+    const body = refused.json<{
+      code: string;
+      details: { missedSources: { sourceType: string; sourceId: string }[] };
+    }>();
+    expect(body.code).toBe('MB_FINAL_SWEEP_INCOMPLETE');
+    expect(body.details.missedSources).toHaveLength(1);
+    expect(body.details.missedSources[0]).toMatchObject({
+      sourceType: 'installation',
+      sourceId: installation2Id,
+    });
+
+    const swept = await setSources(mb2Id, [
+      { sourceType: 'delivery_challan', sourceId: challan2Id },
+      { sourceType: 'installation', sourceId: installation2Id },
+    ]);
+    expect(swept.statusCode, swept.body).toBe(200);
+  });
+
+  it('finalizes MB-02 with the exact final-bill stage amounts', async () => {
+    const finalized = await finalize(mb2Id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.book).toMatchObject({
+      status: 'finalized',
+      kind: 'final',
+      isFinal: true,
+      mbNumber: `${workCode}-MB-02`,
+      sequenceNumber: 2,
+      totalAmount: '13740.00',
+    });
+    expect(detail.lines).toHaveLength(3);
+    // SUPPLY branch: the final 10% falls on 100% of the DELIVERED
+    // quantity â€” 40 more supplied now, 100 released for the final bill.
+    expect(detail.lines[0]).toMatchObject({
+      itemNumber: '1',
+      deltaSupplied: '40.000',
+      deltaFinalBill: '100.000',
+      priorSupplied: '60.000',
+      amountSupply: '9000.00',
+      amountFinalBill: '2500.00',
+      lineTotal: '11500.00',
+    });
+    // Fully delivered on MB-01: nothing but its final-bill retention.
+    expect(detail.lines[1]).toMatchObject({
+      itemNumber: '2',
+      deltaFinalBill: '10.000',
+      priorSupplied: '10.000',
+      amountSupply: '0.00',
+      amountFinalBill: '1200.00',
+      lineTotal: '1200.00',
+    });
+    // PURE_INSTALLATION branch: the final 20% falls on the INSTALLED
+    // quantity only.
+    expect(detail.lines[2]).toMatchObject({
+      itemNumber: '3',
+      deltaInstalled: '2.000',
+      deltaFinalBill: '5.000',
+      priorInstalled: '3.000',
+      amountInstallation: '640.00',
+      amountFinalBill: '400.00',
+      lineTotal: '1040.00',
+    });
+  });
+
+  it('permits no further MB of ANY kind after the final one', async () => {
+    const onAccount = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-08' },
+    });
+    expect(onAccount.statusCode).toBe(409);
+    expect(onAccount.json<{ code: string }>().code).toBe('FINAL_MB_EXISTS');
+
+    const record = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/measurement-books`,
+      organisationId,
+      payload: {
+        mbDate: '2026-08-08',
+        kind: 'record',
+        consigneeContactId: consignee1Id,
+      },
+    });
+    expect(record.statusCode).toBe(409);
+    expect(record.json<{ code: string }>().code).toBe('FINAL_MB_EXISTS');
+  });
+
+  it('invoices the final MB and submits it on the same FY counter', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/tax-invoices`,
+      organisationId,
+      payload: {
+        measurementBookId: mb2Id,
+        invoiceDate: '2026-08-10',
+        sacCode: SAC,
+        serviceDescription: SERVICE_DESCRIPTION,
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoice2Id = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoice2Id}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    expect(submitted.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      status: 'submitted',
+      // Gapless within the financial year: 002 follows 001.
+      invoiceNumber: 'P1026002',
+      sequenceNumber: 2,
+      fyLabel: '2026-27',
+      taxableValue: '13740.00',
+      cgstAmount: '1236.60',
+      sgstAmount: '1236.60',
+      igstAmount: '0.00',
+      // Rounds DOWN here, so the delta is negative.
+      roundOff: '-0.20',
+      totalAmount: '16213.00',
+    });
+
+    // The FY counter agrees with the numbers handed out.
+    const counters = await admin<{ fy_label: string; next_value: number }[]>`
+      select fy_label, next_value from tax_invoice_counters
+      where organisation_id = ${organisationId}
+      order by fy_label
+    `;
+    expect(counters).toEqual([{ fy_label: '2026-27', next_value: 2 }]);
+  });
+});
+
+describe('8 â€” completing the Work', () => {
+  it('the readiness endpoint says ready, and completion succeeds', async () => {
+    const readiness = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/completion-readiness`,
+      organisationId,
+    });
+    expect(readiness.statusCode, readiness.body).toBe(200);
+    expect(readiness.json<WorkCompletionReadiness>()).toEqual({
+      ready: true,
+      unfinished: [],
+      blockers: [],
+    });
+
+    const completed = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/complete`,
+      organisationId,
+      payload: { note: 'All items delivered, installed, measured, and billed.' },
+    });
+    expect(completed.statusCode, completed.body).toBe(200);
+    const work = completed.json<{
+      work: {
+        status: string;
+        completedAt: string | null;
+        completionNote: string | null;
+      };
+    }>().work;
+    expect(work.status).toBe('completed');
+    expect(work.completedAt).not.toBeNull();
+    expect(work.completionNote).toBe(
+      'All items delivered, installed, measured, and billed.',
+    );
+  });
+
+  it('a completed Work refuses a new delivery challan', async () => {
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'LCDC',
+        consignee: {
+          name: `Sr. DEE (TRD) CR ${runId}`,
+          address: 'Divisional office, Delhi Division',
+        },
+        items: [{ workItemId: cableItemId, quantity: '1' }],
+      },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('WORK_COMPLETED');
+  });
+});

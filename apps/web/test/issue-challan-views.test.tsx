@@ -409,4 +409,609 @@ describe('IssueChallanEditor', () => {
     fireEvent.change(screen.getByLabelText('Description for manual line 1'), {
       target: { value: 'Cable ties (site consumables)' },
     });
-    fireEvent.change(screen.getByLabelText('Unit for manua×Íµ¶‰žËkºwµçh€ô¤ì((€¥Ð ™½ÕÍ•ÌÑ¡”™¥ÉÍÐÅÕ…¹Ñ¥Ñä‰½àÝ¡•¸¹½Ñ¡¥¹œ¡…Ì‰••¸•¹Ñ•É•œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ìÝ½É­	…±…¹”èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡	19¤ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹‘¥Ñ½È(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€Ý½É­%õí]=I-}%ô(€€€€€€€¡…±±…¹%õí¹Õ±±ô(€€€€€€€½¹M…Ù•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹…¹•°õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì(€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ 5…¥¸ÍÝ¥Ñ¡‰½…Éœ¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ %ÍÍÕ•Ñ¼€¡¹…µ”¤œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€MM½M¥¹…°½•±¡¤œô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€M…Ù”‘É…™Ðœô¤¤ì((€€€•áÁ•Ð ¡…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” …±•ÉÐœ¤¤¹Ñ•áÑ½¹Ñ•¹Ð¤¹Ñ½½¹Ñ…¥¸ (€€€€€€…Ð±•…ÍÐ½¹”¥Ñ•´œ°(€€€€¤ì(€€€•áÁ•Ð¡‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð¤¹Ñ½	” (€€€€€ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ EÕ…¹Ñ¥Ñä½˜¼Ä½¸Ñ¡¥Ì%ÍÍÕ”¡…±±…¸œ¤°(€€€€¤ì(€ô¤ì((€¥Ð ½¹™¥ÉµÌ‰•™½É”‘¥Í…É‘¥¹œ…¸•‘¥Ñ•‘É…™Ð…¹±•…Ù•Ì„ÁÉ¥ÍÑ¥¹”½¹”…Ð½¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ìÝ½É­	…±…¹”èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡	19¤ô¤ì(€€€½¹ÍÐ½¹…¹•°€ôÙ¤¹™¸ ¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹‘¥Ñ½È(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€Ý½É­%õí]=I-}%ô(€€€€€€€¡…±±…¹%õí¹Õ±±ô(€€€€€€€½¹M…Ù•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹…¹•°õí½¹…¹•±ô(€€€€€€¼ø°(€€€€¤ì(€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ 5…¥¸ÍÝ¥Ñ¡‰½…Éœ¤ì((€€€€¼¼9½Ñ¡¥¹œÑåÁ•å•Ðè…¹•°±•…Ù•ÌÝ¥Ñ¡½ÕÐ…Í­¥¹œ¸(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€…¹•°œô¤¤ì(€€€•áÁ•Ð¡½¹…¹•°¤¹Ñ½!…Ù•	••¹…±±•‘Q¥µ•Ì Ä¤ì((€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ EÕ…¹Ñ¥Ñä½˜¼Ä½¸Ñ¡¥Ì%ÍÍÕ”¡…±±…¸œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€œÈœô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€…¹•°œô¤¤ì(€€€•áÁ•Ð¡½¹…¹•°¤¹Ñ½!…Ù•	••¹…±±•‘Q¥µ•Ì Ä¤ì(€€€½¹ÍÐ‘¥Í…É€ôÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€¥Í…É…¹±•…Ù”œô¤ì(€€€•áÁ•Ð¡‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð¤¹Ñ½	”¡‘¥Í…É¤ì((€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€-••À•‘¥Ñ¥¹œœô¤¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹ÅÕ•Éå	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€¥Í…É…¹±•…Ù”œô¤¤¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ð (€€€€€ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐñ!Q51%¹ÁÕÑ±•µ•¹Ðø EÕ…¹Ñ¥Ñä½˜¼Ä½¸Ñ¡¥Ì%ÍÍÕ”¡…±±…¸œ¤(€€€€€€€€¹Ù…±Õ”°(€€€€¤¹Ñ½	” œÈœ¤ì((€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€…¹•°œô¤¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€¥Í…É…¹±•…Ù”œô¤¤ì(€€€•áÁ•Ð¡½¹…¹•°¤¹Ñ½!…Ù•	••¹…±±•‘Q¥µ•Ì È¤ì(€ô¤ì((€¥Ð É½ÕÑ•ÌÑ¼Ñ¡”•á¥ÍÑ¥¹œ‘É…™Ð½¸„IQ}a%MQL½¹™±¥Ðœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ•á¥ÍÑ¥¹%€ô€‰‰‰ˆÐÐÐÐ´ÐÐÐÐ´ÐÐÐÐ´àÐÐÐ´ÐÐÐÐÐÐÐÐÐÐÐÐœì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€Ý½É­	…±…¹”èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡	19¤°(€€€€€É•…Ñ•%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•©•Ñ•‘Y…±Õ” (€€€€€€€¹•ÜI•ÅÕ•ÍÑ…¥±•‘ÉÉ½È ÐÀä°€IQ}a%MQLœ°€‘É…™Ð…±É•…‘ä•á¥ÍÑÌ¸œ°ì(€€€€€€€€€•á¥ÍÑ¥¹I•½É‘%è•á¥ÍÑ¥¹%°(€€€€€€€ô¤°(€€€€€€¤°(€€€ô¤ì(€€€½¹ÍÐ½¹M…Ù•€ôÙ¤¹™¸ ¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹‘¥Ñ½È(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€Ý½É­%õí]=I-}%ô(€€€€€€€¡…±±…¹%õí¹Õ±±ô(€€€€€€€½¹M…Ù•õí½¹M…Ù•‘ô(€€€€€€€½¹…¹•°õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì(€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ 5…¥¸ÍÝ¥Ñ¡‰½…Éœ¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ %ÍÍÕ•Ñ¼€¡¹…µ”¤œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€MM½M¥¹…°½•±¡¤œô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ EÕ…¹Ñ¥Ñä½˜¼Ä½¸Ñ¡¥Ì%ÍÍÕ”¡…±±…¸œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€œÄœô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€M…Ù”‘É…™Ðœô¤¤ì(€€€…Ý…¥ÐÝ…¥Ñ½È  ¤€ôøì(€€€€€•áÁ•Ð¡½¹M…Ù•¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡•á¥ÍÑ¥¹%¤ì(€€€ô¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” %ÍÍÕ•¡…±±…¹•Ñ…¥°œ°€ ¤€ôøì(€¥Ð ¥ÍÍÕ•Ì„‘É…™ÐÝ¡•¸Ñ¡”µ•µ‰•È¡½±‘ÌÑ¡”¥ÍÍÕ”…ÕÑ¡½É¥Ñäœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ¥ÍÍÕ•%ÍÍÕ•¡…±±…¸€ôÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€ô¤°(€€€€¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡¥ÍÍÕ•¡…±±…¹•Ñ…¥° ¤¤°(€€€€€¥ÍÍÕ•%ÍÍÕ•¡…±±…¸°(€€€ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€¡…±±…¹%õí!119}%ô(€€€€€€€…¹5½‘¥™ä(€€€€€€€…¹%ÍÍÕ”(€€€€€€€…¹…¹•°õí™…±Í•ô(€€€€€€€½¹‘¥ÐõíÙ¤¹™¸ ¥ô(€€€€€€€½¹•±•Ñ•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì((€€€€¼¼5…¹Õ…°±¥¹•ÌÉ•¹‘•ÈÝ¥Ñ Ñ¡•¥ÈÁ±…•¡½±‘•È¥Ñ•´µ…É­•È¸(€€€•áÁ•Ð¡…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ …‰±”Ñ¥•Ì€¡Í¥Ñ”½¹ÍÕµ…‰±•Ì¤œ¤¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹•Ñ	åQ•áÐ 5…¹Õ…°œ¤¤¹Ñ½	•QÉÕÑ¡ä ¤ì((€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€%ÍÍÕ”¡…±±…¸œô¤¤ì(€€€…Ý…¥ÐÝ…¥Ñ½È  ¤€ôøì(€€€€€•áÁ•Ð¡¥ÍÍÕ•%ÍÍÕ•¡…±±…¸¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡=I}%°!119}%¤ì(€€€ô¤ì(€€€•áÁ•Ð (€€€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€%ÍÍÕ”¡…±±…¸\´Äµ%¼Äœô¤°(€€€€¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€ô¤ì((€¥Ð …¹¹½Ñ…Ñ•Ì±½…¸µ½Ù•µ•¹ÑÌ…¹…¹•±ÌÝ¥Ñ „¹½Ñ”Õ¹‘•ÈÑ¡”…¹•°…ÕÑ¡½É¥Ñäœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ…¹•±%ÍÍÕ•¡…±±…¸€ôÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€ÍÑ…ÑÕÌè€…¹•±±•œ°(€€€€€€€µ½Ù•µ•¹ÑQåÁ”è€±½…¸œ°(€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€…¹•±±•‘Ðè€œÈÀÈØ´ÀÄ´ÄÙPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€…¹•±±…Ñ¥½¹9½Ñ”è€]É½¹œÍ¥Ñ”¸œ°(€€€€€ô¤°(€€€€¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€€€€€µ½Ù•µ•¹ÑQåÁ”è€±½…¸œ°(€€€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€ô¤°(€€€€€€¤°(€€€€€…¹•±%ÍÍÕ•¡…±±…¸°(€€€ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€¡…±±…¹%õí!119}%ô(€€€€€€€…¹5½‘¥™äõí™…±Í•ô(€€€€€€€…¹%ÍÍÕ”õí™…±Í•ô(€€€€€€€…¹…¹•°(€€€€€€€½¹‘¥ÐõíÙ¤¹™¸ ¥ô(€€€€€€€½¹•±•Ñ•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì((€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€%ÍÍÕ”¡…±±…¸\´Äµ%¼Äœô¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹•Ñ	åQ•áÐ 1½…¸µ½Ù•µ•¹ÐèÑ¡”µ…Ñ•É¥…°¥ÌÉ•ÑÕÉ¹…‰±”¸œ¤¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹ÅÕ•Éå	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€%ÍÍÕ”¡…±±…¸œô¤¤¹Ñ½	•9Õ±° ¤ì(€€€€¼¼I•…µ½¹±äµ•µ‰•ÈÝ¥Ñ¡½ÕÐµ½‘¥™äÉ¥¡ÑÌÍ••Ì¹¼Í¥¹•µ½ÁäÕÁ±½…¸(€€€•áÁ•Ð¡ÍÉ••¸¹ÅÕ•Éå	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€UÁ±½…Í¥¹•½Áäœô¤¤¹Ñ½	•9Õ±° ¤ì((€€€…Ý…¥Ð½Á•¹½É´ …¹•°¡…±±…¸œ¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ …¹•±±…Ñ¥½¸¹½Ñ”œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€]É½¹œÍ¥Ñ”¸œô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÕ‰µ¥Ñ	ÕÑÑ½¸ …¹•°¡…±±…¸œ¤¤ì(€€€…Ý…¥ÐÝ…¥Ñ½È  ¤€ôøì(€€€€€•áÁ•Ð¡…¹•±%ÍÍÕ•¡…±±…¸¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡=I}%°!119}%°ì(€€€€€€€¹½Ñ”è€]É½¹œÍ¥Ñ”¸œ°(€€€€€ô¤ì(€€€ô¤ì(€€€•áÁ•Ð¡…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ ½…¹•±±•è]É½¹œÍ¥Ñ•p¸¼¤¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€ô¤ì)ô¤ì((¼¨¨Q¡”]½É¬Á…”ÍÁ±¥ÑÌ¥ÑÌ…É•…Ì…É½ÍÌÑ…‰Ì°Í¼„Ñ•ÍÐÑ¡…Ð…ÍÍ•ÉÑÌ½¸½¹”(€¨…É•„½Á•¹Ì¥Ð™¥ÉÍÐƒŠP•á…Ñ±ä…Ì…¸½Á•É…Ñ½È‘½•Ì¸Q¡”Ñ…ˆÌ…•ÍÍ¥‰±”(€¨¹…µ”…ÉÉ¥•Ì¥ÑÌ½Õ¹Ð°Í¼µ…Ñ ½¸Ñ¡”±…‰•°ÁÉ•™¥à¸€¨¼)…Íå¹Œ™Õ¹Ñ¥½¸½Á•¹]½É­Q…ˆ¡±…‰•°èÍÑÉ¥¹œ¤ì(€€¼¼M½Á•Ñ¼Ñ¡”Ñ…ˆÍÑÉ¥ÀèÑ¡”=Ù•ÉÙ¥•ÜÍÕµµ…Éä½™™•ÉÌ„‰ÕÑÑ½¸Á•È…É•„(€€¼¼Ñ½¼°…¹‰½Ñ …ÉÉäÑ¡”Í…µ”±…‰•°¸(€½¹ÍÐÑ…‰Ì€ô…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ¹…Ù¥…Ñ¥½¸œ°ì¹…µ”è€]½É¬Í•Ñ¥½¹Ìœô¤ì(€™¥É•Ù•¹Ð¹±¥¬ (€€€Ý¥Ñ¡¥¸¡Ñ…‰Ì¤¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì(€€€€€¹…µ”è€¡…•ÍÍ¥‰±•9…µ”èÍÑÉ¥¹œ¤€ôø…•ÍÍ¥‰±•9…µ”¹ÍÑ…ÉÑÍ]¥Ñ ¡±…‰•°¤°(€€€ô¤°(€€¤ì)ô()‘•ÍÉ¥‰” ]½É­•Ñ…¥°%ÍÍÕ”¡…±±…¹ÌÍ•Ñ¥½¸œ°€ ¤€ôøì(€½¹ÍÐ]=I-}Q%0€ôì(€€€Ý½É¬èì(€€€€€¥è]=I-}%°(€€€€€Ý½É­½‘”è€\´Äœ°(€€€€€±•ÑÑ•É9Õµ‰•Èè€0´ÐÈ¼ÈÀÈÔœ°(€€€€€±•ÑÑ•É…Ñ”è€œÈÀÈÔ´ÀØ´ÀÄœ°(€€€€€Ñ¥Ñ±”è€MÕÁÁ±ä½˜ÍÝ¥Ñ¡‰½…É‘Ìœ°(€€€€€…‘Ù•ÉÑ¥Í•‘Y…±Õ”è€œÄÀÀÀ¸ÀÀœ°(€€€€€½¹ÑÉ…ÑY…±Õ”è€œäÀÀ¸ÀÀœ°(€€€€€ÁÉ¥¥¹M¡…Á”è€Á•É}Í¡•‘Õ±”œ°(€€€€€±•ÑÑ•ÉA•É•¹Ñ…”è¹Õ±°°(€€€€€±•ÑÑ•ÉA•É•¹Ñ…•¥É•Ñ¥½¸è¹Õ±°°(€€€€€ÍÑ…ÑÕÌè€…Ñ¥Ù”œ°(€€€€€É•…Ñ•‘Ðè€œÈÀÈØ´Àà´ÀáPÀÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€ô°(€€€Í¡•‘Õ±•Ìèl(€€€€€ì(€€€€€€€¥èM!U1}%°(€€€€€€€Í¡•‘Õ±•½‘”è€œ°(€€€€€€€Ñ¥Ñ±”è€M¡•‘Õ±”œ°(€€€€€€€Á½Í¥Ñ¥½¸è€Ä°(€€€€€€€¥Ñ•µÌèl(€€€€€€€€€ì(€€€€€€€€€€€¥è%Q5}°(€€€€€€€€€€€Í¡•‘Õ±•%èM!U1}%°(€€€€€€€€€€€¥Ñ•µ9Õµ‰•Èè€¼Äœ°(€€€€€€€€€€€‘•ÍÉ¥ÁÑ¥½¸è€5…¥¸ÍÝ¥Ñ¡‰½…Éœ°(€€€€€€€€€€€Õ¹¥Ñ½‘”è€9½Ìœ°(€€€€€€€€€€€…Ý…É‘•‘EÕ…¹Ñ¥Ñäè€œÔ¸ÀÀÀœ°(€€€€€€€€€€€•™™•Ñ¥Ù•I…Ñ”è€œÄÀÀ¸ÀÀœ°(€€€€€€€€€ô°(€€€€€€€t°(€€€€€ô°(€€€t°(€ôì((€™Õ¹Ñ¥½¸É•¹‘•É]½É­•Ñ…¥° (€€€…Á¤èÁ¥±¥•¹Ð°(€€€¡…¹‘±•ÉÌèì(€€€€€½¹9•Ý%ÍÍÕ•¡…±±…¸üè€¡Ý½É­%èÍÑÉ¥¹œ¤€ôøÙ½¥ì(€€€€€½¹=Á•¹%ÍÍÕ•¡…±±…¸üè€¡¡…±±…¹%èÍÑÉ¥¹œ¤€ôøÙ½¥ì(€€€ô€ôíô°(€€¤ì(€€€É•ÑÕÉ¸É•¹‘•È (€€€€€€ñ]½É­•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€Ý½É­%õí]=I-}%ô(€€€€€€€…¹5½‘¥™ä(€€€€€€€…¹I•½É‘Ù¥‘•¹”(€€€€€€€…¹%ÍÍÕ”(€€€€€€€…¹…¹•°(€€€€€€€…¹ÁÁÉ½Ù”õí™…±Í•ô(€€€€€€€¥Í=Ý¹•Èõí™…±Í•ô(€€€€€€€½¹9•Ý¡…±±…¸õíÙ¤¹™¸ ¥ô(€€€€€€€½¹=Á•¹¡…±±…¸õíÙ¤¹™¸ ¥ô(€€€€€€€½¹9•Ý%ÍÍÕ•¡…±±…¸õí¡…¹‘±•ÉÌ¹½¹9•Ý%ÍÍÕ•¡…±±…¸€üüÙ¤¹™¸ ¥ô(€€€€€€€½¹=Á•¹%ÍÍÕ•¡…±±…¸õí¡…¹‘±•ÉÌ¹½¹=Á•¹%ÍÍÕ•¡…±±…¸€üüÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì(€ô((€¥Ð ±¥ÍÑÌ%ÍÍÕ”¡…±±…¹Ì…¹É½ÕÑ•Ì½Á•¹¥¹œ½¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ¥ÍÍÕ•€ô¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€ô¤¹¥ÍÍÕ•¡…±±…¸ì(€€€½¹ÍÐ½¹=Á•¹%ÍÍÕ•¡…±±…¸€ôÙ¤¹™¸ ¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ]½É¬èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡]=I-}Q%0¤°(€€€€€±¥ÍÑ%ÍÍÕ•¡…±±…¹ÌèÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡m¥ÍÍÕ•‘t¤°(€€€ô¤ì(€€€É•¹‘•É]½É­•Ñ…¥°¡…Á¤°ì½¹=Á•¹%ÍÍÕ•¡…±±…¸ô¤ì(€€€…Ý…¥Ð½Á•¹]½É­Q…ˆ %ÍÍÕ•Ìœ¤ì((€€€™¥É•Ù•¹Ð¹±¥¬¡…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€\´Äµ%¼Äœô¤¤ì(€€€•áÁ•Ð¡½¹=Á•¹%ÍÍÕ•¡…±±…¸¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡!119}%¤ì(€€€€¼¼9¼‘É…™Ð•á¥ÍÑÌ°Í¼Ñ¡”ÁÉ¥µ…Éä…Ñ¥½¸ÍÑ…ÉÑÌ„¹•Ü%ÍÍÕ”¡…±±…¸¸(€€€•áÁ•Ð¡ÍÉ••¸¹•Ñ	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€9•Ü%ÍÍÕ”¡…±±…¸œô¤¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€ô¤ì((€¥Ð ½™™•ÉÌÑ¡”½Á•¸µ‘É…™Ð…Ñ¥½¸Ý¡•¸„‘É…™Ð%ÍÍÕ”¡…±±…¸•á¥ÍÑÌœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ‘É…™Ð€ô¥ÍÍÕ•¡…±±…¹•Ñ…¥° ¤¹¥ÍÍÕ•¡…±±…¸ì(€€€½¹ÍÐ½¹=Á•¹%ÍÍÕ•¡…±±…¸€ôÙ¤¹™¸ ¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ]½É¬èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡]=I-}Q%0¤°(€€€€€±¥ÍÑ%ÍÍÕ•¡…±±…¹ÌèÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡m‘É…™Ñt¤°(€€€ô¤ì(€€€É•¹‘•É]½É­•Ñ…¥°¡…Á¤°ì½¹=Á•¹%ÍÍÕ•¡…±±…¸ô¤ì(€€€…Ý…¥Ð½Á•¹]½É­Q…ˆ %ÍÍÕ•Ìœ¤ì((€€€™¥É•Ù•¹Ð¹±¥¬ (€€€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€=Á•¸‘É…™Ð%ÍÍÕ”¡…±±…¸œô¤°(€€€€¤ì(€€€•áÁ•Ð¡½¹=Á•¹%ÍÍÕ•¡…±±…¸¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡!119}%¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹ÅÕ•Éå	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€9•Ü%ÍÍÕ”¡…±±…¸œô¤¤¹Ñ½	•9Õ±° ¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” %ÍÍÕ”¡…±±…¸½ÉÉ•Ñ¥½¸™±½Üœ°€ ¤€ôøì(€¥Ð ™¥±•Ì„…¹•°µ…¹µÉ•Á±…”½ÉÉ•Ñ¥½¸™½È…¸¥ÍÍÕ•%ÍÍÕ”¡…±±…¸œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐÁÉ½Á½Í•%ÍÍÕ•¡…±±…¹…¹•±I•Á±…”€ôÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡íô¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€ô¤°(€€€€€€¤°(€€€€€ÁÉ½Á½Í•%ÍÍÕ•¡…±±…¹…¹•±I•Á±…”°(€€€ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€¡…±±…¹%õí!119}%ô(€€€€€€€…¹5½‘¥™ä(€€€€€€€…¹%ÍÍÕ”õí™…±Í•ô(€€€€€€€…¹…¹•°õí™…±Í•ô(€€€€€€€½¹‘¥ÐõíÙ¤¹™¸ ¥ô(€€€€€€€½¹•±•Ñ•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì((€€€•áÁ•Ð (€€€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€I•ÅÕ•ÍÐ½ÉÉ•Ñ¥½¸œô¤°(€€€€¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€€€…Ý…¥Ð½Á•¹½É´ I•ÅÕ•ÍÐ…¹•°€˜É•Á±…”œ¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ %ÍÍÕ•Ñ¼œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€MM½]½É­Ì½•±¡¤œô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹¡…¹”¡ÍÉ••¸¹•Ñ	å1…‰•±Q•áÐ I•…Í½¸™½È½ÉÉ•Ñ¥½¸œ¤°ì(€€€€€Ñ…É•ÐèìÙ…±Õ”è€%ÍÍÕ•Ñ¼Ñ¡”ÝÉ½¹œÍ¥Ñ”•¹¥¹••È¸œô°(€€€ô¤ì(€€€™¥É•Ù•¹Ð¹±¥¬¡ÍÕ‰µ¥Ñ	ÕÑÑ½¸ I•ÅÕ•ÍÐ…¹•°€˜É•Á±…”œ¤¤ì((€€€…Ý…¥ÐÝ…¥Ñ½È  ¤€ôøì(€€€€€•áÁ•Ð¡ÁÉ½Á½Í•%ÍÍÕ•¡…±±…¹…¹•±I•Á±…”¤¹Ñ½!…Ù•	••¹…±±• ¤ì(€€€ô¤ì(€€€½¹ÍÐl°€°‰½‘åt€ôÁÉ½Á½Í•%ÍÍÕ•¡…±±…¹…¹•±I•Á±…”¹µ½¬¹…±±ÍlÁt…Ìl(€€€€€ÍÑÉ¥¹œ°(€€€€€ÍÑÉ¥¹œ°(€€€€€ì(€€€€€€€É•…Í½¸èÍÑÉ¥¹œì(€€€€€€€É•Á±…•µ•¹Ðèì(€€€€€€€€€¥ÍÍÕ•‘Q½9…µ”èÍÑÉ¥¹œì(€€€€€€€€€µ½Ù•µ•¹ÑQåÁ”èÍÑÉ¥¹œì(€€€€€€€€€±¥¹•ÌèÉ•…‘½¹±äI•½ÉñÍÑÉ¥¹œ°ÍÑÉ¥¹œùmtì(€€€€€€€ôì(€€€€€ô°(€€€tì(€€€•áÁ•Ð¡‰½‘ä¹É•…Í½¸¤¹Ñ½	” %ÍÍÕ•Ñ¼Ñ¡”ÝÉ½¹œÍ¥Ñ”•¹¥¹••È¸œ¤ì(€€€•áÁ•Ð¡‰½‘ä¹É•Á±…•µ•¹Ð¹¥ÍÍÕ•‘Q½9…µ”¤¹Ñ½	” MM½]½É­Ì½•±¡¤œ¤ì(€€€•áÁ•Ð¡‰½‘ä¹É•Á±…•µ•¹Ð¹µ½Ù•µ•¹ÑQåÁ”¤¹Ñ½	” ¥ÍÍÕ”œ¤ì(€€€•áÁ•Ð¡‰½‘ä¹É•Á±…•µ•¹Ð¹±¥¹•Ì¹±•¹Ñ ¤¹Ñ½	•É•…Ñ•ÉQ¡…¸ À¤ì(€ô¤ì((€¥Ð ÍÕÉ™…•Ì…¸…±É•…‘äµÁ•¹‘¥¹œ½ÉÉ•Ñ¥½¸É•ÅÕ•ÍÐ¥¹ÍÑ•…½˜Ñ¡”™½É´œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ±¥ÍÑ]½É­µ•¹‘µ•¹ÑÌ€ôÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ”¡l(€€€€€ì(€€€€€€€¥è€œääääääää´ääää´Ðäää´àäää´ääääääääääääœ°(€€€€€€€•¹Ñ¥ÑåQåÁ”è€¥ÍÍÕ•}¡…±±…¹}…¹•±}É•Á±…”œ…Ì½¹ÍÐ°(€€€€€€€•¹Ñ¥Ñå%è!119}%°(€€€€€€€Ý½É­%è]=I-}%°(€€€€€€€Ý½É­½‘”è€\´Äœ°(€€€€€€€¥Ñ•µ9Õµ‰•Èè¹Õ±°°(€€€€€€€‘½Õµ•¹Ñ9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€ÁÉ½Á½Í•èì­¥¹è€…¹•±}É•Á±…•}¥ÍÍÕ•}¡…±±…¸œô°(€€€€€€€‘¥™˜èmì™¥•±è€¥ÍÍÕ•‘Q½9…µ”œ°‰•™½É”è€œ°…™Ñ•Èè€œõt°(€€€€€€€É•…Í½¸è€%ÍÍÕ•Ñ¼Ñ¡”ÝÉ½¹œ•¹¥¹••È¸œ°(€€€€€€€ÍÑ…ÑÕÌè€Á•¹‘¥¹œœ…Ì½¹ÍÐ°(€€€€€€€É•ÅÕ•ÍÑ•‘	åUÍ•É%è€ÕÍ•Èµˆœ°(€€€€€€€‘•¥‘•‘	åUÍ•É%è¹Õ±°°(€€€€€€€‘•¥‘•‘Ðè¹Õ±°°(€€€€€€€‘•¥Í¥½¹9½Ñ”è¹Õ±°°(€€€€€€€É•…Ñ•‘Ðè€œÈÀÈØ´Àà´ÀåPÀÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€ô°(€€€t¤ì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€ô¤°(€€€€€€¤°(€€€€€±¥ÍÑ]½É­µ•¹‘µ•¹ÑÌ°(€€€ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€¡…±±…¹%õí!119}%ô(€€€€€€€…¹5½‘¥™ä(€€€€€€€…¹%ÍÍÕ”õí™…±Í•ô(€€€€€€€…¹…¹•°õí™…±Í•ô(€€€€€€€½¹‘¥ÐõíÙ¤¹™¸ ¥ô(€€€€€€€½¹•±•Ñ•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì((€€€•áÁ•Ð (€€€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åQ•áÐ (€€€€€€€€½ÉÉ•Ñ¥½¸É•ÅÕ•ÍÐ™½ÈÑ¡¥Ì%ÍÍÕ”¡…±±…¸¥Ì…±É•…‘ä…Ý…¥Ñ¥¹œ„‘•¥Í¥½¸¥¸Ñ¡”…ÁÁÉ½Ù…±ÌÅÕ•Õ”¸œ°(€€€€€€¤°(€€€€¤¹Ñ½	•QÉÕÑ¡ä ¤ì(€€€•áÁ•Ð¡±¥ÍÑ]½É­µ•¹‘µ•¹ÑÌ¤¹Ñ½!…Ù•	••¹…±±•‘]¥Ñ ¡=I}%°]=I-}%¤ì(€€€€¼¼Q¡”™¥±¥¹œ™½É´ÍÑ…åÌ¡¥‘‘•¸Ý¡¥±”Ñ¡”É•ÅÕ•ÍÐ¥ÌÁ•¹‘¥¹œ¸(€€€•áÁ•Ð (€€€€€ÍÉ••¸¹ÅÕ•Éå	åI½±” ‰ÕÑÑ½¸œ°ì¹…µ”è€I•ÅÕ•ÍÐ…¹•°€˜É•Á±…”œô¤°(€€€€¤¹Ñ½	•9Õ±° ¤ì(€ô¤ì((€¥Ð ¡¥‘•ÌÑ¡”½ÉÉ•Ñ¥½¸™½É´Ý¥Ñ¡½ÕÐµ½‘¥™äÉ¥¡ÑÌœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍÐ…Á¤€ôÍÑÕ‰Á¤¡ì(€€€€€•Ñ%ÍÍÕ•¡…±±…¸èÙ¤¹™¸ ¤¹µ½­I•Í½±Ù•‘Y…±Õ” (€€€€€€€¥ÍÍÕ•¡…±±…¹•Ñ…¥°¡ì(€€€€€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€€€€€¡…±±…¹9Õµ‰•Èè€\´Äµ%¼Äœ°(€€€€€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€€€€€¥ÍÍÕ•‘Ðè€œÈÀÈØ´ÀÄ´ÄÕPÄÀèÀÀèÀÀ¸ÀÀÁhœ°(€€€€€€€ô¤°(€€€€€€¤°(€€€ô¤ì(€€€É•¹‘•È (€€€€€€ñ%ÍÍÕ•¡…±±…¹•Ñ…¥°(€€€€€€€…Á¤õí…Á¥ô(€€€€€€€½É…¹¥Í…Ñ¥½¹%õí=I}%ô(€€€€€€€¡…±±…¹%õí!119}%ô(€€€€€€€…¹5½‘¥™äõí™…±Í•ô(€€€€€€€…¹%ÍÍÕ”õí™…±Í•ô(€€€€€€€…¹…¹•°õí™…±Í•ô(€€€€€€€½¹‘¥ÐõíÙ¤¹™¸ ¥ô(€€€€€€€½¹•±•Ñ•õíÙ¤¹™¸ ¥ô(€€€€€€€½¹	…¬õíÙ¤¹™¸ ¥ô(€€€€€€¼ø°(€€€€¤ì(€€€…Ý…¥ÐÍÉ••¸¹™¥¹‘	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€%ÍÍÕ”¡…±±…¸\´Äµ%¼Äœô¤ì(€€€•áÁ•Ð¡ÍÉ••¸¹ÅÕ•Éå	åI½±” ¡•…‘¥¹œœ°ì¹…µ”è€I•ÅÕ•ÍÐ½ÉÉ•Ñ¥½¸œô¤¤¹Ñ½	•9Õ±° ¤ì(€ô¤ì)ô¤ì
+    fireEvent.change(screen.getByLabelText('Unit for manual line 1'), {
+      target: { value: 'Pkt' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity for manual line 1'), {
+      target: { value: '12' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(CHALLAN_ID);
+    });
+    const [, , body] = createIssueChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveIssueChallanRequest,
+    ];
+    expect(body.movementType).toBe('loan');
+    expect(body.issuedToName).toBe('SSE/Signal/Delhi');
+    expect(body.lines).toEqual([
+      { workItemId: ITEM_A, quantity: '50' },
+      { description: 'Cable ties (site consumables)', unit: 'Pkt', quantity: '12' },
+    ]);
+  });
+
+  it('refuses to save an empty Issue Challan', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('at least one item');
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+  });
+
+  it('keeps the surviving manual lines intact when an earlier line is removed', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    const descriptions = ['Cable ties', 'Gland kits', 'Ferrules'];
+    for (const [index, description] of descriptions.entries()) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add manual line' }));
+      fireEvent.change(
+        screen.getByLabelText(`Description for manual line ${String(index + 1)}`),
+        { target: { value: description } },
+      );
+    }
+    const third = screen.getByLabelText<HTMLInputElement>(
+      'Description for manual line 3',
+    );
+    third.focus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove manual line 1' }));
+
+    // Removing a line removes THAT line: the rows below keep their values
+    // and, because they keep their DOM identity, the box being typed in
+    // keeps focus even though its visible ordinal moved up.
+    expect(screen.queryByLabelText('Description for manual line 3')).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Description for manual line 1').value,
+    ).toBe('Gland kits');
+    const survivor = screen.getByLabelText<HTMLInputElement>(
+      'Description for manual line 2',
+    );
+    expect(survivor.value).toBe('Ferrules');
+    expect(document.activeElement).toBe(survivor);
+    expect(survivor).toBe(third);
+  });
+
+  it('binds an incomplete manual line to its own fields and focuses the first', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createIssueChallan: vi.fn().mockResolvedValue(issueChallanDetail()),
+    });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    // A quantity with no description and no unit is what the server rejects.
+    fireEvent.click(screen.getByRole('button', { name: 'Add manual line' }));
+    fireEvent.change(screen.getByLabelText('Quantity for manual line 1'), {
+      target: { value: '12' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(api.createIssueChallan).not.toHaveBeenCalled();
+    const description = screen.getByLabelText('Description for manual line 1');
+    const unit = screen.getByLabelText('Unit for manual line 1');
+    expect(description.getAttribute('aria-invalid')).toBe('true');
+    expect(unit.getAttribute('aria-invalid')).toBe('true');
+    const descriptionMessage = screen.getByText(
+      'Describe the material in at least 3 characters.',
+    );
+    expect(description.getAttribute('aria-describedby')).toBe(descriptionMessage.id);
+    // Per-field messages stay silent; the summary carries the announcement.
+    expect(descriptionMessage.getAttribute('role')).toBeNull();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'at least 3 characters',
+    );
+    expect(document.activeElement).toBe(description);
+
+    // Completing the line clears the block on the next attempt.
+    fireEvent.change(description, { target: { value: 'Cable ties' } });
+    fireEvent.change(unit, { target: { value: 'Pkt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(api.createIssueChallan).toHaveBeenCalled();
+    });
+    expect(
+      screen.queryByText('Describe the material in at least 3 characters.'),
+    ).toBeNull();
+  });
+
+  it('focuses the first quantity box when nothing has been entered', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'at least one item',
+    );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText('Quantity of A/1 on this Issue Challan'),
+    );
+  });
+
+  it('confirms before discarding an edited draft and leaves a pristine one at once', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    const onCancel = vi.fn();
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+
+    // Nothing typed yet: Cancel leaves without asking.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    const discard = screen.getByRole('button', { name: 'Discard and leave' });
+    expect(document.activeElement).toBe(discard);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('button', { name: 'Discard and leave' })).toBeNull();
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this Issue Challan')
+        .value,
+    ).toBe('2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes to the existing draft on a DRAFT_EXISTS conflict', async () => {
+    const existingId = 'bbbb4444-4444-4444-8444-444444444444';
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      createIssueChallan: vi.fn().mockRejectedValue(
+        new RequestFailedError(409, 'DRAFT_EXISTS', 'A draft already exists.', {
+          existingRecordId: existingId,
+        }),
+      ),
+    });
+    const onSaved = vi.fn();
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={onSaved}
+        onCancel={vi.fn()}
+      />,
+    );
+    await screen.findByText('Main switchboard');
+    fireEvent.change(screen.getByLabelText('Issued to (name)'), {
+      target: { value: 'SSE/Signal/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith(existingId);
+    });
+  });
+});
+
+describe('IssueChallanDetail', () => {
+  it('issues a draft when the member holds the issue authority', async () => {
+    const issueIssueChallan = vi.fn().mockResolvedValue(
+      issueChallanDetail({
+        status: 'issued',
+        challanNumber: 'DCW-1-IC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-01-15T10:00:00.000Z',
+      }),
+    );
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(issueChallanDetail()),
+      issueIssueChallan,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    // Manual lines render with their placeholder item marker.
+    expect(await screen.findByText('Cable ties (site consumables)')).toBeTruthy();
+    expect(screen.getByText('Manual')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Issue challan' }));
+    await waitFor(() => {
+      expect(issueIssueChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID);
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' }),
+    ).toBeTruthy();
+  });
+
+  it('annotates loan movements and cancels with a note under the cancel authority', async () => {
+    const cancelIssueChallan = vi.fn().mockResolvedValue(
+      issueChallanDetail({
+        status: 'cancelled',
+        movementType: 'loan',
+        challanNumber: 'DCW-1-IC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-01-15T10:00:00.000Z',
+        cancelledAt: '2026-01-16T10:00:00.000Z',
+        cancellationNote: 'Wrong site.',
+      }),
+    );
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          movementType: 'loan',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+      cancelIssueChallan,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+    expect(screen.getByText('Loan movement: the material is returnable.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
+    // Read-only member without modify rights sees no signed-copy upload.
+    expect(screen.queryByRole('button', { name: 'Upload signed copy' })).toBeNull();
+
+    await openForm('Cancel challan');
+    fireEvent.change(screen.getByLabelText('Cancellation note'), {
+      target: { value: 'Wrong site.' },
+    });
+    fireEvent.click(submitButton('Cancel challan'));
+    await waitFor(() => {
+      expect(cancelIssueChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
+        note: 'Wrong site.',
+      });
+    });
+    expect(await screen.findByText(/Cancelled: Wrong site\./)).toBeTruthy();
+  });
+});
+
+/** The Work page splits its areas across tabs, so a test that asserts on one
+ * area opens it first â€” exactly as an operator does. The tab's accessible
+ * name carries its count, so match on the label prefix. */
+async function openWorkTab(label: string) {
+  // Scoped to the tab strip: the Overview summary offers a button per area
+  // too, and both carry the same label.
+  const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+  fireEvent.click(
+    within(tabs).getByRole('button', {
+      name: (accessibleName: string) => accessibleName.startsWith(label),
+    }),
+  );
+}
+
+describe('WorkDetail Issue Challans section', () => {
+  const WORK_DETAIL = {
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+          },
+        ],
+      },
+    ],
+  };
+
+  function renderWorkDetail(
+    api: ApiClient,
+    handlers: {
+      onNewIssueChallan?: (workId: string) => void;
+      onOpenIssueChallan?: (challanId: string) => void;
+    } = {},
+  ) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove={false}
+        isOwner={false}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onNewIssueChallan={handlers.onNewIssueChallan ?? vi.fn()}
+        onOpenIssueChallan={handlers.onOpenIssueChallan ?? vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('lists Issue Challans and routes opening one', async () => {
+    const issued = issueChallanDetail({
+      status: 'issued',
+      challanNumber: 'DCW-1-IC/1',
+      sequenceNumber: 1,
+      issuedAt: '2026-01-15T10:00:00.000Z',
+    }).issueChallan;
+    const onOpenIssueChallan = vi.fn();
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(WORK_DETAIL),
+      listIssueChallans: vi.fn().mockResolvedValue([issued]),
+    });
+    renderWorkDetail(api, { onOpenIssueChallan });
+    await openWorkTab('Issues');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-IC/1' }));
+    expect(onOpenIssueChallan).toHaveBeenCalledWith(CHALLAN_ID);
+    // No draft exists, so the primary action starts a new Issue Challan.
+    expect(screen.getByRole('button', { name: 'New Issue Challan' })).toBeTruthy();
+  });
+
+  it('offers the open-draft action when a draft Issue Challan exists', async () => {
+    const draft = issueChallanDetail().issueChallan;
+    const onOpenIssueChallan = vi.fn();
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(WORK_DETAIL),
+      listIssueChallans: vi.fn().mockResolvedValue([draft]),
+    });
+    renderWorkDetail(api, { onOpenIssueChallan });
+    await openWorkTab('Issues');
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open draft Issue Challan' }),
+    );
+    expect(onOpenIssueChallan).toHaveBeenCalledWith(CHALLAN_ID);
+    expect(screen.queryByRole('button', { name: 'New Issue Challan' })).toBeNull();
+  });
+});
+
+describe('Issue Challan correction flow', () => {
+  it('files a cancel-and-replace correction for an issued Issue Challan', async () => {
+    const proposeIssueChallanCancelReplace = vi.fn().mockResolvedValue({});
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+      proposeIssueChallanCancelReplace,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Request correction' }),
+    ).toBeTruthy();
+    await openForm('Request cancel & replace');
+    fireEvent.change(screen.getByLabelText('Issued to'), {
+      target: { value: 'SSE/Works/Delhi' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason for correction'), {
+      target: { value: 'Issued to the wrong site engineer.' },
+    });
+    fireEvent.click(submitButton('Request cancel & replace'));
+
+    await waitFor(() => {
+      expect(proposeIssueChallanCancelReplace).toHaveBeenCalled();
+    });
+    const [, , body] = proposeIssueChallanCancelReplace.mock.calls[0] as [
+      string,
+      string,
+      {
+        reason: string;
+        replacement: {
+          issuedToName: string;
+          movementType: string;
+          lines: readonly Record<string, string>[];
+        };
+      },
+    ];
+    expect(body.reason).toBe('Issued to the wrong site engineer.');
+    expect(body.replacement.issuedToName).toBe('SSE/Works/Delhi');
+    expect(body.replacement.movementType).toBe('issue');
+    expect(body.replacement.lines.length).toBeGreaterThan(0);
+  });
+
+  it('surfaces an already-pending correction request instead of the form', async () => {
+    const listWorkAmendments = vi.fn().mockResolvedValue([
+      {
+        id: '99999999-9999-4999-8999-999999999999',
+        entityType: 'issue_challan_cancel_replace' as const,
+        entityId: CHALLAN_ID,
+        workId: WORK_ID,
+        workCode: 'DCW-1',
+        itemNumber: null,
+        documentNumber: 'DCW-1-IC/1',
+        proposed: { kind: 'cancel_replace_issue_challan' },
+        diff: [{ field: 'issuedToName', before: 'A', after: 'B' }],
+        reason: 'Issued to the wrong engineer.',
+        status: 'pending' as const,
+        requestedByUserId: 'user-b',
+        decidedByUserId: null,
+        decidedAt: null,
+        decisionNote: null,
+        createdAt: '2026-08-09T00:00:00.000Z',
+      },
+    ]);
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+      listWorkAmendments,
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        'A correction request for this Issue Challan is already awaiting a decision in the approvals queue.',
+      ),
+    ).toBeTruthy();
+    expect(listWorkAmendments).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    // The filing form stays hidden while the request is pending.
+    expect(
+      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+    ).toBeNull();
+  });
+
+  it('hides the correction form without modify rights', async () => {
+    const api = stubApi({
+      getIssueChallan: vi.fn().mockResolvedValue(
+        issueChallanDetail({
+          status: 'issued',
+          challanNumber: 'DCW-1-IC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-01-15T10:00:00.000Z',
+        }),
+      ),
+    });
+    render(
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+    expect(screen.queryByRole('heading', { name: 'Request correction' })).toBeNull();
+  });
+});

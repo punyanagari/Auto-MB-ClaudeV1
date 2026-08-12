@@ -429,4 +429,648 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
             </FieldRow>
             <FieldRow>
               <Field>
-                <ÛNü¶‰žËkºwµçE¹5½‘¥™ä€˜˜€ (€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡É½Ü¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€‘¥Ð(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ùìœ€ô(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøÙ½¥Í•ÑÑ¥Ù”¡É½Ü°€…É½Ü¹…Ñ¥Ù”¥ô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€íÉ½Ü¹…Ñ¥Ù”€ü€I•Ñ¥É”œ€è€I•…Ñ¥Ù…Ñ”ô(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€¤¥ô(€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€ð½…Ñ…Q…‰±”ø(€€€€€€¥ô((€€€€€í…¹5½‘¥™ä€˜˜É½ÝÌ€„ôô¹Õ±°€˜˜€ (€€€€€€€€ñ5…ÍÑ•É½É´(€€€€€€€€€±…‰•°ô‰‘±½…Ñ¥½¸ˆ(€€€€€€€€€•‘¥Ñ¥¹Q¥Ñ±”õí•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü¹Õ±°€è‘¥Ð€‘í•‘¥Ñ¥¹œ¹¹…µ•õô(€€€€€€€€€ÍÑ…ÉÑ=Á•¸õíÉ½ÝÌ¹±•¹Ñ €ôôô€Áô(€€€€€€€€ø(€€€€€€€€€€ñ™½É´­•äõí•‘¥Ñ¥¹œü¹¥€üü€¹•Üô½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøÙ½¥Í…Ù”¡•Ù•¹Ð¥ôø(€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰±½…Ñ¥½¸µ¹…µ”ˆù9…µ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€¥ô‰±½…Ñ¥½¸µ¹…µ”ˆ(€€€€€€€€€€€€€€€€€¹…µ”ô‰¹…µ”ˆ(€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÉô(€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÁô(€€€€€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”õí•‘¥Ñ¥¹œü¹¹…µ”€üü€œô(€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰±½…Ñ¥½¸µ­¥¹ˆù-¥¹ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñÍ•±•Ð(€€€€€€€€€€€€€€€€€¥ô‰±½…Ñ¥½¸µ­¥¹ˆ(€€€€€€€€€€€€€€€€€¹…µ”ô‰­¥¹ˆ(€€€€€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”õí•‘¥Ñ¥¹œü¹­¥¹€üü€ÍÑ…Ñ¥½¸ô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰ÍÑ…Ñ¥½¸ˆùMÑ…Ñ¥½¸ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰¥¹ÍÑ…±±…Ñ¥½¹}Á½¥¹Ðˆù%¹ÍÑ…±±…Ñ¥½¸Á½¥¹Ðð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰ÍÑ½É”ˆùMÑ½É”ð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€€€ñ½ÁÑ¥½¸Ù…±Õ”ô‰½Ñ¡•Èˆù=Ñ¡•Èð½½ÁÑ¥½¸ø(€€€€€€€€€€€€€€€€ð½Í•±•Ðø(€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü€‘±½…Ñ¥½¸œ€è€M…Ù”¡…¹•Ìô(€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€„ôô¹Õ±°€˜˜€ (€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡¹Õ±°¤ì(€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€…¹•°•‘¥Ð(€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€ð½™½É´ø(€€€€€€€€ð½5…ÍÑ•É½É´ø(€€€€€€¥ô((€€€€€í¹½Ñ¥”€„ôô¹Õ±°€˜˜€ñ½Éµ9½Ñ¥”ùí¹½Ñ¥•ôð½½Éµ9½Ñ¥”ùô(€€€€€í•ÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½Èùí•ÉÉ½Éôð½½ÉµÉÉ½Èùô(€€€€ð¼ø(€€¤ì)ô()™Õ¹Ñ¥½¸U¹¥ÑÍQ…ˆ¡ì…Á¤°½É…¹¥Í…Ñ¥½¹%°…¹5½‘¥™äôè5…ÍÑ•ÉÍAÉ½ÁÌ¤ì(€½¹ÍÐm¥¹±Õ‘•I•Ñ¥É•°Í•Ñ%¹±Õ‘•I•Ñ¥É•‘t€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍÐm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œð¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍÐm¹½Ñ¥”°Í•Ñ9½Ñ¥•t€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œð¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍÐmÁ•¹‘¥¹œ°Í•ÑA•¹‘¥¹t€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍÐm•‘¥Ñ¥¹œ°Í•Ñ‘¥Ñ¥¹t€ôÕÍ•MÑ…Ñ”ñU¹¥Ñ5…ÍÑ•Èð¹Õ±°ø¡¹Õ±°¤ì((€½¹ÍÐ±½…€ôÕÍ•…±±‰…¬ (€€€€¡É•Ñ¥É•è‰½½±•…¸¤€ôø…Á¤¹±¥ÍÑU¹¥Ñ5…ÍÑ•ÉÌ¡½É…¹¥Í…Ñ¥½¹%°É•Ñ¥É•¤°(€€€m…Á¤°½É…¹¥Í…Ñ¥½¹%‘t°(€€¤ì(€½¹ÍÐìÉ½ÝÌ°É•±½…ô€ôÕÍ•5…ÍÑ•É1¥ÍÐ¡±½…°¥¹±Õ‘•I•Ñ¥É•°Í•ÑÉÉ½È¤ì((€…Íå¹Œ™Õ¹Ñ¥½¸Í…Ù”¡•Ù•¹Ðè½ÉµÙ•¹Ðñ!Q51½Éµ±•µ•¹Ðø¤ì(€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€½¹ÍÐ™½É´€ô•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ðì(€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡™½É´¤ì(€€€Í•ÑA•¹‘¥¹œ¡ÑÉÕ”¤ì(€€€Í•ÑÉÉ½È¡¹Õ±°¤ì(€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€ÑÉäì(€€€€€…Ý…¥Ð…Á¤¹Í…Ù•U¹¥Ñ5…ÍÑ•È¡½É…¹¥Í…Ñ¥½¹%°•‘¥Ñ¥¹œü¹¥€üü¹Õ±°°ì(€€€€€€€¹…µ”è™½ÉµY…±Õ”¡‘…Ñ„°€¹…µ”œ¤¹ÑÉ¥´ ¤°(€€€€€ô¤ì(€€€€€Í•Ñ9½Ñ¥”¡•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü€U¹¥Ð…‘‘•¸œ€è€U¹¥ÐÕÁ‘…Ñ•¸œ¤ì(€€€€€Í•Ñ‘¥Ñ¥¹œ¡¹Õ±°¤ì(€€€€€™½É´¹É•Í•Ð ¤ì(€€€€€É•±½… ¤ì(€€€ô…Ñ €¡…ÕÍ”¤ì(€€€€€Í•ÑÉÉ½È¡•ÉÉ½É5•ÍÍ…”¡…ÕÍ”°€Q¡”Õ¹¥Ð½Õ±¹½Ð‰”Í…Ù•¸œ¤¤ì(€€€ô™¥¹…±±äì(€€€€€Í•ÑA•¹‘¥¹œ¡™…±Í”¤ì(€€€ô(€ô((€…Íå¹Œ™Õ¹Ñ¥½¸Í•ÑÑ¥Ù”¡É½ÜèU¹¥Ñ5…ÍÑ•È°…Ñ¥Ù”è‰½½±•…¸¤ì(€€€Í•ÑA•¹‘¥¹œ¡ÑÉÕ”¤ì(€€€Í•ÑÉÉ½È¡¹Õ±°¤ì(€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€ÑÉäì(€€€€€…Ý…¥Ð…Á¤¹Í•ÑU¹¥Ñ5…ÍÑ•ÉÑ¥Ù”¡½É…¹¥Í…Ñ¥½¹%°É½Ü¹¥°…Ñ¥Ù”¤ì(€€€€€Í•Ñ9½Ñ¥”¡…Ñ¥Ù”€ü€‘íÉ½Ü¹¹…µ•ôÉ•…Ñ¥Ù…Ñ•¹€€è€‘íÉ½Ü¹¹…µ•ôÉ•Ñ¥É•¹€¤ì(€€€€€É•±½… ¤ì(€€€ô…Ñ €¡…ÕÍ”¤ì(€€€€€Í•ÑÉÉ½È¡•ÉÉ½É5•ÍÍ…”¡…ÕÍ”°€Q¡”¡…¹”½Õ±¹½Ð‰”Í…Ù•¸œ¤¤ì(€€€ô™¥¹…±±äì(€€€€€Í•ÑA•¹‘¥¹œ¡™…±Í”¤ì(€€€ô(€ô((€É•ÑÕÉ¸€ (€€€€ðø(€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€Q¡”ÍÑ…¹‘…ÉÕ¹¥ÑÌ…É”…‘‘•…ÕÑ½µ…Ñ¥…±±ä½¸™¥ÉÍÐÕÍ”ìÉ•Ñ¥É”Ñ¡”½¹•ÌÑ¡¥Ì(€€€€€€€½É…¹¥Í…Ñ¥½¸¹•Ù•ÈÕÍ•Ì…¹…‘…¹äµ¥ÍÍ¥¹œ½¹•Ì¸(€€€€€€ð½Àø(€€€€€€ñI•Ñ¥É•‘¥±Ñ•È(€€€€€€€¥ô‰Õ¹¥ÑÌµÉ•Ñ¥É•ˆ(€€€€€€€¥¹±Õ‘•I•Ñ¥É•õí¥¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€€½¹¡…¹”õíÍ•Ñ%¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€¼ø(€€€€€íÉ½ÝÌ€ôôô¹Õ±°€ü€ (€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆÉ½±”ô‰ÍÑ…ÑÕÌˆø(€€€€€€€€€1½…‘¥¹œÕ¹¥ÑÏŠ˜(€€€€€€€€ð½Àø(€€€€€€¤€èÉ½ÝÌ¹±•¹Ñ €ôôô€À€ü€ (€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆù9¼Õ¹¥ÑÌå•Ð¸ð½Àø(€€€€€€¤€è€ (€€€€€€€€ñ…Ñ…Q…‰±”ø(€€€€€€€€€€ñ…ÁÑ¥½¸±…ÍÍ9…µ”ô‰ÍÈµ½¹±äˆùU¹¥Ðµ…ÍÑ•ÉÌð½…ÁÑ¥½¸ø(€€€€€€€€€€ñÑ¡•…ø(€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùU¹¥Ðð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùMÑ…ÑÕÌð½Ñ ø(€€€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€ñÑ Í½Á”ô‰½°ˆùÑ¥½¹Ìð½Ñ ùô(€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€ð½Ñ¡•…ø(€€€€€€€€€€ñÑ‰½‘äø(€€€€€€€€€€€íÉ½ÝÌ¹µ…À ¡É½Ü¤€ôø€ (€€€€€€€€€€€€€€ñÑÈ­•äõíÉ½Ü¹¥‘ôø(€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰É½ÜˆùíÉ½Ü¹¹…µ•ôð½Ñ ø(€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥À…Ñ¥Ù”õíÉ½Ü¹…Ñ¥Ù•ô€¼ø(€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€ (€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡É½Ü¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€‘¥Ð(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ùìœ€ô(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøÙ½¥Í•ÑÑ¥Ù”¡É½Ü°€…É½Ü¹…Ñ¥Ù”¥ô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€íÉ½Ü¹…Ñ¥Ù”€ü€I•Ñ¥É”œ€è€I•…Ñ¥Ù…Ñ”ô(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€¤¥ô(€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€ð½…Ñ…Q…‰±”ø(€€€€€€¥ô((€€€€€í…¹5½‘¥™ä€˜˜É½ÝÌ€„ôô¹Õ±°€˜˜€ (€€€€€€€€ñ5…ÍÑ•É½É´(€€€€€€€€€±…‰•°ô‰‘Õ¹¥Ðˆ(€€€€€€€€€•‘¥Ñ¥¹Q¥Ñ±”õí•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü¹Õ±°€è‘¥Ð€‘í•‘¥Ñ¥¹œ¹¹…µ•õô(€€€€€€€€€ÍÑ…ÉÑ=Á•¸õíÉ½ÝÌ¹±•¹Ñ €ôôô€Áô(€€€€€€€€ø(€€€€€€€€€€ñ™½É´­•äõí•‘¥Ñ¥¹œü¹¥€üü€¹•Üô½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøÙ½¥Í…Ù”¡•Ù•¹Ð¥ôø(€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Õ¹¥Ðµ¹…µ”ˆùU¹¥Ð¹…µ”ð½±…‰•°ø(€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€¥ô‰Õ¹¥Ðµ¹…µ”ˆ(€€€€€€€€€€€€€€€¹…µ”ô‰¹…µ”ˆ(€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÅô(€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÄÀÁô(€€€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”õí•‘¥Ñ¥¹œü¹¹…µ”€üü€œô(€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü€‘Õ¹¥Ðœ€è€M…Ù”¡…¹•Ìô(€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€„ôô¹Õ±°€˜˜€ (€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡¹Õ±°¤ì(€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€…¹•°•‘¥Ð(€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€ð½™½É´ø(€€€€€€€€ð½5…ÍÑ•É½É´ø(€€€€€€¥ô((€€€€€í¹½Ñ¥”€„ôô¹Õ±°€˜˜€ñ½Éµ9½Ñ¥”ùí¹½Ñ¥•ôð½½Éµ9½Ñ¥”ùô(€€€€€í•ÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½Èùí•ÉÉ½Éôð½½ÉµÉÉ½Èùô(€€€€ð¼ø(€€¤ì)ô()™Õ¹Ñ¥½¸M¥¹…Ñ½É¥•ÍQ…ˆ¡ì…Á¤°½É…¹¥Í…Ñ¥½¹%°…¹5½‘¥™äôè5…ÍÑ•ÉÍAÉ½ÁÌ¤ì(€½¹ÍÐm¥¹±Õ‘•I•Ñ¥É•°Í•Ñ%¹±Õ‘•I•Ñ¥É•‘t€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍÐm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œð¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍÐm¹½Ñ¥”°Í•Ñ9½Ñ¥•t€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œð¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍÐmÁ•¹‘¥¹œ°Í•ÑA•¹‘¥¹t€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍÐm•‘¥Ñ¥¹œ°Í•Ñ‘¥Ñ¥¹t€ôÕÍ•MÑ…Ñ”ñM¥¹…Ñ½Éäð¹Õ±°ø¡¹Õ±°¤ì((€½¹ÍÐ±½…€ôÕÍ•…±±‰…¬ (€€€€¡É•Ñ¥É•è‰½½±•…¸¤€ôø…Á¤¹±¥ÍÑM¥¹…Ñ½É¥•Ì¡½É…¹¥Í…Ñ¥½¹%°É•Ñ¥É•¤°(€€€m…Á¤°½É…¹¥Í…Ñ¥½¹%‘t°(€€¤ì(€½¹ÍÐìÉ½ÝÌ°É•±½…ô€ôÕÍ•5…ÍÑ•É1¥ÍÐ¡±½…°¥¹±Õ‘•I•Ñ¥É•°Í•ÑÉÉ½È¤ì((€…Íå¹Œ™Õ¹Ñ¥½¸Í…Ù”¡•Ù•¹Ðè½ÉµÙ•¹Ðñ!Q51½Éµ±•µ•¹Ðø¤ì(€€€•Ù•¹Ð¹ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤ì(€€€½¹ÍÐ™½É´€ô•Ù•¹Ð¹ÕÉÉ•¹ÑQ…É•Ðì(€€€½¹ÍÐ‘…Ñ„€ô¹•Ü½Éµ…Ñ„¡™½É´¤ì(€€€Í•ÑA•¹‘¥¹œ¡ÑÉÕ”¤ì(€€€Í•ÑÉÉ½È¡¹Õ±°¤ì(€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€ÑÉäì(€€€€€…Ý…¥Ð…Á¤¹Í…Ù•M¥¹…Ñ½Éä¡½É…¹¥Í…Ñ¥½¹%°•‘¥Ñ¥¹œü¹¥€üü¹Õ±°°ì(€€€€€€€¹…µ”è™½ÉµY…±Õ”¡‘…Ñ„°€¹…µ”œ¤¹ÑÉ¥´ ¤°(€€€€€€€‘•Í¥¹…Ñ¥½¸è™½ÉµY…±Õ”¡‘…Ñ„°€‘•Í¥¹…Ñ¥½¸œ¤¹ÑÉ¥´ ¤°(€€€€€ô¤ì(€€€€€Í•Ñ9½Ñ¥”¡•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü€M¥¹…Ñ½Éä…‘‘•¸œ€è€M¥¹…Ñ½ÉäÕÁ‘…Ñ•¸œ¤ì(€€€€€Í•Ñ‘¥Ñ¥¹œ¡¹Õ±°¤ì(€€€€€™½É´¹É•Í•Ð ¤ì(€€€€€É•±½… ¤ì(€€€ô…Ñ €¡…ÕÍ”¤ì(€€€€€Í•ÑÉÉ½È¡•ÉÉ½É5•ÍÍ…”¡…ÕÍ”°€Q¡”Í¥¹…Ñ½Éä½Õ±¹½Ð‰”Í…Ù•¸œ¤¤ì(€€€ô™¥¹…±±äì(€€€€€Í•ÑA•¹‘¥¹œ¡™…±Í”¤ì(€€€ô(€ô((€…Íå¹Œ™Õ¹Ñ¥½¸Í•ÑÑ¥Ù”¡É½ÜèM¥¹…Ñ½Éä°…Ñ¥Ù”è‰½½±•…¸¤ì(€€€Í•ÑA•¹‘¥¹œ¡ÑÉÕ”¤ì(€€€Í•ÑÉÉ½È¡¹Õ±°¤ì(€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€ÑÉäì(€€€€€…Ý…¥Ð…Á¤¹Í•ÑM¥¹…Ñ½ÉåÑ¥Ù”¡½É…¹¥Í…Ñ¥½¹%°É½Ü¹¥°…Ñ¥Ù”¤ì(€€€€€Í•Ñ9½Ñ¥”¡…Ñ¥Ù”€ü€‘íÉ½Ü¹¹…µ•ôÉ•…Ñ¥Ù…Ñ•¹€€è€‘íÉ½Ü¹¹…µ•ôÉ•Ñ¥É•¹€¤ì(€€€€€É•±½… ¤ì(€€€ô…Ñ €¡…ÕÍ”¤ì(€€€€€Í•ÑÉÉ½È¡•ÉÉ½É5•ÍÍ…”¡…ÕÍ”°€Q¡”¡…¹”½Õ±¹½Ð‰”Í…Ù•¸œ¤¤ì(€€€ô™¥¹…±±äì(€€€€€Í•ÑA•¹‘¥¹œ¡™…±Í”¤ì(€€€ô(€ô((€É•ÑÕÉ¸€ (€€€€ðø(€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆø(€€€€€€€Q¡”Á•½Á±”Ý¡¼Í¥¸•¹•É…Ñ•‘½Õµ•¹ÑÌ™½ÈÑ¡¥Ì½É…¹¥Í…Ñ¥½¸¸½Õµ•¹ÑÌ(€€€€€€€Í¹…ÁÍ¡½ÐÑ¡”¡½Í•¸Í¥¹…Ñ½Éä°Í¼É•Ñ¥É¥¹œ½¹”¹•Ù•È…±Ñ•ÉÌÁ…ÍÐÉ•½É‘Ì¸(€€€€€€ð½Àø(€€€€€€ñI•Ñ¥É•‘¥±Ñ•È(€€€€€€€¥ô‰Í¥¹…Ñ½É¥•ÌµÉ•Ñ¥É•ˆ(€€€€€€€¥¹±Õ‘•I•Ñ¥É•õí¥¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€€½¹¡…¹”õíÍ•Ñ%¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€¼ø(€€€€€íÉ½ÝÌ€ôôô¹Õ±°€ü€ (€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆÉ½±”ô‰ÍÑ…ÑÕÌˆø(€€€€€€€€€1½…‘¥¹œÍ¥¹…Ñ½É¥•ÏŠ˜(€€€€€€€€ð½Àø(€€€€€€¤€èÉ½ÝÌ¹±•¹Ñ €ôôô€À€ü€ (€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµµÕÑ•µ™½É•É½Õ¹ˆù9¼Í¥¹…Ñ½É¥•Ìå•Ð¸ð½Àø(€€€€€€¤€è€ (€€€€€€€€ñ…Ñ…Q…‰±”ø(€€€€€€€€€€ñ…ÁÑ¥½¸±…ÍÍ9…µ”ô‰ÍÈµ½¹±äˆù=É…¹¥Í…Ñ¥½¸Í¥¹…Ñ½É¥•Ìð½…ÁÑ¥½¸ø(€€€€€€€€€€ñÑ¡•…ø(€€€€€€€€€€€€ñÑÈø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù9…µ”ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆù•Í¥¹…Ñ¥½¸ð½Ñ ø(€€€€€€€€€€€€€€ñÑ Í½Á”ô‰½°ˆùMÑ…ÑÕÌð½Ñ ø(€€€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€ñÑ Í½Á”ô‰½°ˆùÑ¥½¹Ìð½Ñ ùô(€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€ð½Ñ¡•…ø(€€€€€€€€€€ñÑ‰½‘äø(€€€€€€€€€€€íÉ½ÝÌ¹µ…À ¡É½Ü¤€ôø€ (€€€€€€€€€€€€€€ñÑÈ­•äõíÉ½Ü¹¥‘ôø(€€€€€€€€€€€€€€€€ñÑ Í½Á”ô‰É½ÜˆùíÉ½Ü¹¹…µ•ôð½Ñ ø(€€€€€€€€€€€€€€€€ñÑùíÉ½Ü¹‘•Í¥¹…Ñ¥½¹ôð½Ñø(€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€ñMÑ…ÑÕÍ¡¥À…Ñ¥Ù”õíÉ½Ü¹…Ñ¥Ù•ô€¼ø(€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€í…¹5½‘¥™ä€˜˜€ (€€€€€€€€€€€€€€€€€€ñÑø(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡É½Ü¤ì(€€€€€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€‘¥Ð(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ùìœ€ô(€€€€€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€€€€€‘¥Í…‰±•õíÁ•¹‘¥¹ô(€€€€€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøÙ½¥Í•ÑÑ¥Ù”¡É½Ü°€…É½Ü¹…Ñ¥Ù”¥ô(€€€€€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€€€€€íÉ½Ü¹…Ñ¥Ù”€ü€I•Ñ¥É”œ€è€I•…Ñ¥Ù…Ñ”ô(€€€€€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ð½Ñø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½ÑÈø(€€€€€€€€€€€€¤¥ô(€€€€€€€€€€ð½Ñ‰½‘äø(€€€€€€€€ð½…Ñ…Q…‰±”ø(€€€€€€¥ô((€€€€€í…¹5½‘¥™ä€˜˜É½ÝÌ€„ôô¹Õ±°€˜˜€ (€€€€€€€€ñ5…ÍÑ•É½É´(€€€€€€€€€±…‰•°ô‰‘Í¥¹…Ñ½Éäˆ(€€€€€€€€€•‘¥Ñ¥¹Q¥Ñ±”õí•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü¹Õ±°€è‘¥Ð€‘í•‘¥Ñ¥¹œ¹¹…µ•õô(€€€€€€€€€ÍÑ…ÉÑ=Á•¸õíÉ½ÝÌ¹±•¹Ñ €ôôô€Áô(€€€€€€€€ø(€€€€€€€€€€ñ™½É´­•äõí•‘¥Ñ¥¹œü¹¥€üü€¹•Üô½¹MÕ‰µ¥Ðõì¡•Ù•¹Ð¤€ôøÙ½¥Í…Ù”¡•Ù•¹Ð¥ôø(€€€€€€€€€€€€ñ¥•±‘I½Üø(€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Í¥¹…Ñ½Éäµ¹…µ”ˆù9…µ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€¥ô‰Í¥¹…Ñ½Éäµ¹…µ”ˆ(€€€€€€€€€€€€€€€€€¹…µ”ô‰¹…µ”ˆ(€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÉô(€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÁô(€€€€€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”õí•‘¥Ñ¥¹œü¹¹…µ”€üü€œô(€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€€€ñ¥•±ø(€€€€€€€€€€€€€€€€ñ±…‰•°¡Ñµ±½Èô‰Í¥¹…Ñ½Éäµ‘•Í¥¹…Ñ¥½¸ˆù•Í¥¹…Ñ¥½¸ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐ(€€€€€€€€€€€€€€€€€¥ô‰Í¥¹…Ñ½Éäµ‘•Í¥¹…Ñ¥½¸ˆ(€€€€€€€€€€€€€€€€€¹…µ”ô‰‘•Í¥¹…Ñ¥½¸ˆ(€€€€€€€€€€€€€€€€€É•ÅÕ¥É•(€€€€€€€€€€€€€€€€€µ¥¹1•¹Ñ õìÉô(€€€€€€€€€€€€€€€€€µ…á1•¹Ñ õìÈÀÁô(€€€€€€€€€€€€€€€€€‘•™…Õ±ÑY…±Õ”õí•‘¥Ñ¥¹œü¹‘•Í¥¹…Ñ¥½¸€üü€œô(€€€€€€€€€€€€€€€€¼ø(€€€€€€€€€€€€€€ð½¥•±ø(€€€€€€€€€€€€ð½¥•±‘I½Üø(€€€€€€€€€€€€ñÑ¥½¹Ìø(€€€€€€€€€€€€€€ñ	ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ‘¥Í…‰±•õíÁ•¹‘¥¹ôø(€€€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€ôôô¹Õ±°€ü€‘Í¥¹…Ñ½Éäœ€è€M…Ù”¡…¹•Ìô(€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€í•‘¥Ñ¥¹œ€„ôô¹Õ±°€˜˜€ (€€€€€€€€€€€€€€€€ñ	ÕÑÑ½¸(€€€€€€€€€€€€€€€€€Ù…É¥…¹Ðô‰½ÕÑ±¥¹”ˆ(€€€€€€€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€€€€€€€Í•Ñ‘¥Ñ¥¹œ¡¹Õ±°¤ì(€€€€€€€€€€€€€€€€€õô(€€€€€€€€€€€€€€€€ø(€€€€€€€€€€€€€€€€€…¹•°•‘¥Ð(€€€€€€€€€€€€€€€€ð½	ÕÑÑ½¸ø(€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€ð½Ñ¥½¹Ìø(€€€€€€€€€€ð½™½É´ø(€€€€€€€€ð½5…ÍÑ•É½É´ø(€€€€€€¥ô((€€€€€í¹½Ñ¥”€„ôô¹Õ±°€˜˜€ñ½Éµ9½Ñ¥”ùí¹½Ñ¥•ôð½½Éµ9½Ñ¥”ùô(€€€€€í•ÉÉ½È€„ôô¹Õ±°€˜˜€ñ½ÉµÉÉ½Èùí•ÉÉ½Éôð½½ÉµÉÉ½Èùô(€€€€ð¼ø(€€¤ì)ô((¼¨¨5…ÍÑ•È‘…Ñ„èÑ¡”É•ÕÍ…‰±”Á¥¬µ±¥ÍÑÌ‰•¡¥¹‘½Õµ•¹Ð™½ÉµÌ¸Ù•ÉåÑ¡¥¹œ(€¨¡•É”¥Ì„Á¥­•È½¹±äƒŠP‘½Õµ•¹ÑÌÍ¹…ÁÍ¡½ÐÝ¡…ÐÝ…Ì¡½Í•¸°Í¼µ…ÍÑ•È(€¨•‘¥ÑÌ¹•Ù•ÈÉ•ÝÉ¥Ñ”¡¥ÍÑ½ÉäìÉ½ÝÌÉ•Ñ¥É”¥¹ÍÑ•…½˜‰•¥¹œ‘•±•Ñ•¸€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸5…ÍÑ•ÉÌ¡ì(€…Á¤°(€½É…¹¥Í…Ñ¥½¹%°(€…¹5½‘¥™ä°(€Ñ…ˆè½¹ÑÉ½±±•‘Q…ˆ°(€½¹Q…‰¡…¹”°)ôè5…ÍÑ•ÉÍAÉ½ÁÌ¤ì(€½¹ÍÐm½Ý¹Q…ˆ°Í•Ñ=Ý¹Q…‰t€ôÕÍ•MÑ…Ñ”ñ5…ÍÑ•ÉÍQ…ˆø ½¹Ñ…ÑÌœ¤ì(€½¹ÍÐÑ…ˆ€ô½¹ÑÉ½±±•‘Q…ˆ€üü½Ý¹Q…ˆì(€½¹ÍÐÍ•ÑQ…ˆ€ô½¹Q…‰¡…¹”€üüÍ•Ñ=Ý¹Q…ˆì((€É•ÑÕÉ¸€ (€€€€ñ…É±…ÍÍ9…µ”ô‰Üµ™Õ±°ˆ…É¥„µ±…‰•±±•‘‰äô‰µ…ÍÑ•ÉÌµÑ¥Ñ±”ˆø(€€€€€€ñ Ä(€€€€€€€¥ô‰µ…ÍÑ•ÉÌµÑ¥Ñ±”ˆ(€€€€€€€Ñ…‰%¹‘•àõì´Åô(€€€€€€€±…ÍÍ9…µ”ô‰µˆ´ÈÑ•áÐ´Éá°±•…‘¥¹œ´à™½¹ÐµÍ•µ¥‰½±ÑÉ…­¥¹œµÑ¥¡ÐÑ•áÐµ‰…±…¹”ˆ(€€€€€€ø(€€€€€€€5…ÍÑ•ÉÌ(€€€€€€ð½ Äø(€€€€€€ñ‘¥Ø(€€€€€€€±…ÍÍ9…µ”ô‰µˆ´Ð™±•à…À´È‰½É‘•Èµˆ‰½É‘•Èµ‰½É‘•Èˆ(€€€€€€€É½±”ô‰Ñ…‰±¥ÍÐˆ(€€€€€€€…É¥„µ±…‰•°ô‰5…ÍÑ•È‘…Ñ„…Ñ•½É¥•Ìˆ(€€€€€€ø(€€€€€€€íQ	L¹µ…À ¡…¹‘¥‘…Ñ”¤€ôø€ (€€€€€€€€€€ñ‰ÕÑÑ½¸(€€€€€€€€€€€­•äõí…¹‘¥‘…Ñ”¹­•åô(€€€€€€€€€€€ÑåÁ”ô‰‰ÕÑÑ½¸ˆ(€€€€€€€€€€€É½±”ô‰Ñ…ˆˆ(€€€€€€€€€€€…É¥„µÍ•±•Ñ•õíÑ…ˆ€ôôô…¹‘¥‘…Ñ”¹­•åô(€€€€€€€€€€€±…ÍÍ9…µ”ôˆµµˆµÁà‰½É‘•Èµˆ´È‰½É‘•ÈµÑÉ…¹ÍÁ…É•¹ÐÁà´ÌÁä´È™½¹Ðµµ•‘¥Õ´Ñ•áÐµµÕÑ•µ™½É•É½Õ¹¡½Ù•ÈéÑ•áÐµ™½É•É½Õ¹…É¥„µÍ•±•Ñ•é‰½É‘•ÈµÁÉ¥µ…Éä…É¥„µÍ•±•Ñ•éÑ•áÐµÁÉ¥µ…Éäˆ(€€€€€€€€€€€½¹±¥¬õì ¤€ôøì(€€€€€€€€€€€€€Í•ÑQ…ˆ¡…¹‘¥‘…Ñ”¹­•ä¤ì(€€€€€€€€€€€õô(€€€€€€€€€€ø(€€€€€€€€€€€í…¹‘¥‘…Ñ”¹±…‰•±ô(€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€¤¥ô(€€€€€€ð½‘¥Øø(€€€€€íÑ…ˆ€ôôô€½¹Ñ…ÑÌœ€˜˜€ (€€€€€€€€ñ½¹Ñ…ÑÍQ…ˆ…Á¤õí…Á¥ô½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô…¹5½‘¥™äõí…¹5½‘¥™åô€¼ø(€€€€€€¥ô(€€€€€íÑ…ˆ€ôôô€±½…Ñ¥½¹Ìœ€˜˜€ (€€€€€€€€ñ1½…Ñ¥½¹ÍQ…ˆ…Á¤õí…Á¥ô½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô…¹5½‘¥™äõí…¹5½‘¥™åô€¼ø(€€€€€€¥ô(€€€€€íÑ…ˆ€ôôô€Õ¹¥ÑÌœ€˜˜€ (€€€€€€€€ñU¹¥ÑÍQ…ˆ…Á¤õí…Á¥ô½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô…¹5½‘¥™äõí…¹5½‘¥™åô€¼ø(€€€€€€¥ô(€€€€€íÑ…ˆ€ôôô€Í¥¹…Ñ½É¥•Ìœ€˜˜€ (€€€€€€€€ñM¥¹…Ñ½É¥•ÍQ…ˆ(€€€€€€€€€…Á¤õí…Á¥ô(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%õí½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€€€…¹5½‘¥™äõí…¹5½‘¥™åô(€€€€€€€€¼ø(€€€€€€¥ô(€€€€ð½…Éø(€€¤ì)ô
+                <label htmlFor="contact-phone">Phone (optional)</label>
+                <input
+                  id="contact-phone"
+                  name="phone"
+                  maxLength={30}
+                  defaultValue={editing?.phone ?? ''}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="contact-email">Email (optional)</label>
+                <input
+                  id="contact-email"
+                  name="email"
+                  type="email"
+                  maxLength={200}
+                  defaultValue={editing?.email ?? ''}
+                />
+              </Field>
+            </FieldRow>
+            <fieldset className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium">
+              <legend>Roles</legend>
+              {/* Consignee is a create-time fact, never a request field: a
+               * new contact is one exactly when neither procurement role is
+               * asked for, and an edit cannot change it â€” so the box only
+               * reports, live against the two boxes that decide it. */}
+              <label htmlFor="contact-role-consignee">
+                <input
+                  id="contact-role-consignee"
+                  type="checkbox"
+                  checked={
+                    editing === null ? !roleVendor && !roleClient : editing.isConsignee
+                  }
+                  disabled
+                  readOnly
+                />{' '}
+                Consignee
+              </label>{' '}
+              <label htmlFor="contact-role-vendor">
+                <input
+                  id="contact-role-vendor"
+                  type="checkbox"
+                  checked={roleVendor}
+                  onChange={(event) => {
+                    setRoleVendor(event.currentTarget.checked);
+                  }}
+                />{' '}
+                Vendor
+              </label>{' '}
+              <label htmlFor="contact-role-client">
+                <input
+                  id="contact-role-client"
+                  type="checkbox"
+                  checked={roleClient}
+                  onChange={(event) => {
+                    setRoleClient(event.currentTarget.checked);
+                  }}
+                />{' '}
+                Client
+              </label>
+              <p className="text-muted-foreground">
+                Vendors take purchase orders; clients buy under tax invoices. A new
+                contact with neither role is a consignee for railway document flows â€”
+                fixed at creation.
+              </p>
+            </fieldset>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                {editing === null ? 'Add contact' : 'Save changes'}
+              </Button>
+              {editing !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    startEditing(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
+function LocationsTab({ api, organisationId, canModify }: MastersProps) {
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState<LocationMaster | null>(null);
+
+  const load = useCallback(
+    (retired: boolean) => api.listLocationMasters(organisationId, retired),
+    [api, organisationId],
+  );
+  const { rows, reload } = useMasterList(load, includeRetired, setError);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.saveLocationMaster(organisationId, editing?.id ?? null, {
+        name: formValue(data, 'name').trim(),
+        kind: (formValue(data, 'kind') || 'other') as LocationKind,
+      });
+      setNotice(editing === null ? 'Location added.' : 'Location updated.');
+      setEditing(null);
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The location could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function setActive(row: LocationMaster, active: boolean) {
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.setLocationMasterActive(organisationId, row.id, active);
+      setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The change could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-muted-foreground">
+        Stations, installation points, and stores referenced during delivery and
+        installation work.
+      </p>
+      <RetiredFilter
+        id="locations-retired"
+        includeRetired={includeRetired}
+        onChange={setIncludeRetired}
+      />
+      {rows === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading locationsâ€¦
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="text-muted-foreground">No locations yet.</p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Location masters</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Status</th>
+              {canModify && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.name}</th>
+                <td>{LOCATION_KIND_LABELS[row.kind]}</td>
+                <td>
+                  <StatusChip active={row.active} />
+                </td>
+                {canModify && (
+                  <td>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        setEditing(row);
+                      }}
+                    >
+                      Edit
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => void setActive(row, !row.active)}
+                    >
+                      {row.active ? 'Retire' : 'Reactivate'}
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add location"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
+          <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
+            <FieldRow>
+              <Field>
+                <label htmlFor="location-name">Name</label>
+                <input
+                  id="location-name"
+                  name="name"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                  defaultValue={editing?.name ?? ''}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="location-kind">Kind</label>
+                <select
+                  id="location-kind"
+                  name="kind"
+                  defaultValue={editing?.kind ?? 'station'}
+                >
+                  <option value="station">Station</option>
+                  <option value="installation_point">Installation point</option>
+                  <option value="store">Store</option>
+                  <option value="other">Other</option>
+                </select>
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                {editing === null ? 'Add location' : 'Save changes'}
+              </Button>
+              {editing !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditing(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
+function UnitsTab({ api, organisationId, canModify }: MastersProps) {
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState<UnitMaster | null>(null);
+
+  const load = useCallback(
+    (retired: boolean) => api.listUnitMasters(organisationId, retired),
+    [api, organisationId],
+  );
+  const { rows, reload } = useMasterList(load, includeRetired, setError);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.saveUnitMaster(organisationId, editing?.id ?? null, {
+        name: formValue(data, 'name').trim(),
+      });
+      setNotice(editing === null ? 'Unit added.' : 'Unit updated.');
+      setEditing(null);
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The unit could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function setActive(row: UnitMaster, active: boolean) {
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.setUnitMasterActive(organisationId, row.id, active);
+      setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The change could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-muted-foreground">
+        The standard units are added automatically on first use; retire the ones this
+        organisation never uses and add any missing ones.
+      </p>
+      <RetiredFilter
+        id="units-retired"
+        includeRetired={includeRetired}
+        onChange={setIncludeRetired}
+      />
+      {rows === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading unitsâ€¦
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="text-muted-foreground">No units yet.</p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Unit masters</caption>
+          <thead>
+            <tr>
+              <th scope="col">Unit</th>
+              <th scope="col">Status</th>
+              {canModify && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.name}</th>
+                <td>
+                  <StatusChip active={row.active} />
+                </td>
+                {canModify && (
+                  <td>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        setEditing(row);
+                      }}
+                    >
+                      Edit
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => void setActive(row, !row.active)}
+                    >
+                      {row.active ? 'Retire' : 'Reactivate'}
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add unit"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
+          <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
+            <Field>
+              <label htmlFor="unit-name">Unit name</label>
+              <input
+                id="unit-name"
+                name="name"
+                required
+                minLength={1}
+                maxLength={100}
+                defaultValue={editing?.name ?? ''}
+              />
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                {editing === null ? 'Add unit' : 'Save changes'}
+              </Button>
+              {editing !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditing(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
+function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState<Signatory | null>(null);
+
+  const load = useCallback(
+    (retired: boolean) => api.listSignatories(organisationId, retired),
+    [api, organisationId],
+  );
+  const { rows, reload } = useMasterList(load, includeRetired, setError);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.saveSignatory(organisationId, editing?.id ?? null, {
+        name: formValue(data, 'name').trim(),
+        designation: formValue(data, 'designation').trim(),
+      });
+      setNotice(editing === null ? 'Signatory added.' : 'Signatory updated.');
+      setEditing(null);
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The signatory could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function setActive(row: Signatory, active: boolean) {
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.setSignatoryActive(organisationId, row.id, active);
+      setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The change could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-muted-foreground">
+        The people who sign generated documents for this organisation. Documents
+        snapshot the chosen signatory, so retiring one never alters past records.
+      </p>
+      <RetiredFilter
+        id="signatories-retired"
+        includeRetired={includeRetired}
+        onChange={setIncludeRetired}
+      />
+      {rows === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading signatoriesâ€¦
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="text-muted-foreground">No signatories yet.</p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">Organisation signatories</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Designation</th>
+              <th scope="col">Status</th>
+              {canModify && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">{row.name}</th>
+                <td>{row.designation}</td>
+                <td>
+                  <StatusChip active={row.active} />
+                </td>
+                {canModify && (
+                  <td>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        setEditing(row);
+                      }}
+                    >
+                      Edit
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => void setActive(row, !row.active)}
+                    >
+                      {row.active ? 'Retire' : 'Reactivate'}
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {canModify && rows !== null && (
+        <MasterForm
+          label="Add signatory"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
+          <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
+            <FieldRow>
+              <Field>
+                <label htmlFor="signatory-name">Name</label>
+                <input
+                  id="signatory-name"
+                  name="name"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                  defaultValue={editing?.name ?? ''}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="signatory-designation">Designation</label>
+                <input
+                  id="signatory-designation"
+                  name="designation"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                  defaultValue={editing?.designation ?? ''}
+                />
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                {editing === null ? 'Add signatory' : 'Save changes'}
+              </Button>
+              {editing !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditing(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
+/** Master data: the reusable pick-lists behind document forms. Everything
+ * here is a picker only â€” documents snapshot what was chosen, so master
+ * edits never rewrite history; rows retire instead of being deleted. */
+export function Masters({
+  api,
+  organisationId,
+  canModify,
+  tab: controlledTab,
+  onTabChange,
+}: MastersProps) {
+  const [ownTab, setOwnTab] = useState<MastersTab>('contacts');
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
+
+  return (
+    <Card className="w-full" aria-labelledby="masters-title">
+      <h1
+        id="masters-title"
+        tabIndex={-1}
+        className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
+      >
+        Masters
+      </h1>
+      <div
+        className="mb-4 flex gap-2 border-b border-border"
+        role="tablist"
+        aria-label="Master data categories"
+      >
+        {TABS.map((candidate) => (
+          <button
+            key={candidate.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === candidate.key}
+            className="-mb-px border-b-2 border-transparent px-3 py-2 font-medium text-muted-foreground hover:text-foreground aria-selected:border-primary aria-selected:text-primary"
+            onClick={() => {
+              setTab(candidate.key);
+            }}
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'contacts' && (
+        <ContactsTab api={api} organisationId={organisationId} canModify={canModify} />
+      )}
+      {tab === 'locations' && (
+        <LocationsTab api={api} organisationId={organisationId} canModify={canModify} />
+      )}
+      {tab === 'units' && (
+        <UnitsTab api={api} organisationId={organisationId} canModify={canModify} />
+      )}
+      {tab === 'signatories' && (
+        <SignatoriesTab
+          api={api}
+          organisationId={organisationId}
+          canModify={canModify}
+        />
+      )}
+    </Card>
+  );
+}

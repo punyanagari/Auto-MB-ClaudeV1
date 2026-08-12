@@ -414,4 +414,1024 @@ async function seedTenantGraph(
     `;
     await tx`
       insert into bill_counters (organisation_id, work_id)
-      values (${organisationId}, ${work.idïÍ½¶‰Ëkºwµçd¹Ñ½	•É•…Ñ•ÉQ¡…¹=ÉÅÕ…° È¤ì((€€€€€€¼¼ƒŠ™‰ÕĞÑ¡”…ÁÁ±¥…Ñ¥½¸É½±”Í••Ì¹½¹”½˜¥Ğİ¥Ñ¡½ÕĞÑ•¹…¹Ğ½¹Ñ•áĞ¸(€€€€€½¹ÍĞÉ½İÌ€ô€¡…İ…¥Ğ…ÁÀ¹Õ¹Í…™” (€€€€€€€Í•±•Ğ½Õ¹Ğ ¨¤èé¥¹Ğ…Ì½Õ¹Ğ™É½´€‘íÑ…‰±•õ€°(€€€€€€¤¤…ÌÕ¹­¹½İ¸…Ìì½Õ¹Ğè¹Õµ‰•Èõmtì(€€€€€•áÁ•Ğ¡É½İÍlÁtü¹½Õ¹Ğ°Ñ…‰±”¤¹Ñ½	” À¤ì(€€€ô(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” É½ÍÌµÑ•¹…¹Ğ¥Í½±…Ñ¥½¸½¸•Ù•ÉäÑ•¹…¹ĞÑ…‰±”œ°€ ¤€ôøì(€¥Ğ ¡¥‘•Ì=É…¹¥Í…Ñ¥½¸É½İÌ™É½´=É…¹¥Í…Ñ¥½¸É•…‘Ì½¸•Ù•ÉäÑ•¹…¹ĞÑ…‰±”œ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€™½È€¡½¹ÍĞÑ…‰±”½˜Q99Q}Q	1L¤ì(€€€€€€€€€•áÁ•Ğ (€€€€€€€€€€€…İ…¥Ğ½Õ¹ÑÌ¡Ñà…ÌÕ¹­¹½İ¸…ÌMÅ°°Ñ…‰±”°½É…¹¥Í…Ñ¥½¹¹¥¤°(€€€€€€€€€€€€‘íÑ…‰±•ô½İ¸É½İÍ€°(€€€€€€€€€€¤¹Ñ½	•É•…Ñ•ÉQ¡…¹=ÉÅÕ…° Ä¤ì(€€€€€€€€€•áÁ•Ğ (€€€€€€€€€€€…İ…¥Ğ½Õ¹ÑÌ¡Ñà…ÌÕ¹­¹½İ¸…ÌMÅ°°Ñ…‰±”°½É…¹¥Í…Ñ¥½¹¹¥¤°(€€€€€€€€€€€€‘íÑ…‰±•ô™½É•¥¸É½İÍ€°(€€€€€€€€€€¤¹Ñ½	” À¤ì(€€€€€€€ô((€€€€€€€½¹ÍĞİ½É­Ì€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtùÍ•±•Ğ¥™É½´İ½É­Í€ì(€€€€€€€•áÁ•Ğ¡İ½É­Ì¹µ…À ¡É½Ü¤€ôøÉ½Ü¹¥¤¤¹Ñ½ÅÕ…°¡mÉ…Á¡¹İ½É­%‘t¤ì(€€€€€ô°(€€€€¤ì(€ô¤ì((€¥Ğ µ…­•Ì=É…¹¥Í…Ñ¥½¸É½İÌÕ¹É•…¡…‰±”™½È=É…¹¥Í…Ñ¥½¸ÕÁ‘…Ñ•Ì…¹‘•±•Ñ•Ìœ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€™½È€¡½¹ÍĞÑ…‰±”½˜9I%}UAQ}Q	1L¤ì(€€€€€€€€€½¹ÍĞ½±Õµ¸€ô½É…¹¥Í…Ñ¥½¹½±Õµ¸¡Ñ…‰±”¤ì(€€€€€€€€€½¹ÍĞÕÁ‘…Ñ•€ô…İ…¥ĞÑà¹Õ¹Í…™” (€€€€€€€€€€€ÕÁ‘…Ñ”€‘íÑ…‰±•ôÍ•Ğ€‘í½±Õµ¹ô€ô€‘í½±Õµ¹ôİ¡•É”€‘í½±Õµ¹ô€ô€Å€°(€€€€€€€€€€€m½É…¹¥Í…Ñ¥½¹¹¥‘t°(€€€€€€€€€€¤ì(€€€€€€€€€•áÁ•Ğ¡ÕÁ‘…Ñ•¹½Õ¹Ğ°€‘íÑ…‰±•ôÕÁ‘…Ñ•€¤¹Ñ½	” À¤ì(€€€€€€€ô((€€€€€€€™½È€¡½¹ÍĞÑ…‰±”½˜1Q}11=]}Q	1L¤ì(€€€€€€€€€½¹ÍĞ½±Õµ¸€ô½É…¹¥Í…Ñ¥½¹½±Õµ¸¡Ñ…‰±”¤ì(€€€€€€€€€½¹ÍĞ‘•±•Ñ•€ô…İ…¥ĞÑà¹Õ¹Í…™”¡‘•±•Ñ”™É½´€‘íÑ…‰±•ôİ¡•É”€‘í½±Õµ¹ô€ô€Å€°l(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹¹¥°(€€€€€€€€€t¤ì(€€€€€€€€€•áÁ•Ğ¡‘•±•Ñ•¹½Õ¹Ğ°€‘íÑ…‰±•ô‘•±•Ñ•€¤¹Ñ½	” À¤ì(€€€€€€€ô(€€€€€ô°(€€€€¤ì((€€€½¹ÍĞmÕ¹Ñ½Õ¡•‘t€ô…İ…¥Ğ…‘µ¥¸ğ(€€€€€ìÑ¥Ñ±”èÍÑÉ¥¹œõmt(€€€€ùÍ•±•ĞÑ¥Ñ±”™É½´İ½É­Ìİ¡•É”¥€ô€‘íÉ…Á¡¹İ½É­%‘õ€ì(€€€•áÁ•Ğ¡Õ¹Ñ½Õ¡•ü¹Ñ¥Ñ±”¤¹Ñ½	” %¹Ñ•É…Ñ¥½¸Ñ•ÍĞİ½É¬™½ÈÑ•¹…¹Ğ¥Í½±…Ñ¥½¸œ¤ì(€€€•áÁ•Ğ¡…İ…¥Ğ½Õ¹ÑÌ¡…‘µ¥¸°€‘•±¥Ù•Éå}¡…±±…¹}¥Ñ•µÌœ°½É…¹¥Í…Ñ¥½¹¹¥¤¤¹Ñ½	” Ä¤ì(€ô¤ì((€¥Ğ É•™ÕÍ•Ì1Q½ÕÑÉ¥¡Ğ½¸É•Í•ÉÙ…Ñ¥½¸µ…¹¡½ÈÑ…‰±•Ì°•Ù•¸¥¹Í¥‘”Ñ¡”½İ¸Ñ•¹…¹Ğœ°…Íå¹Œ€ ¤€ôøì(€€€™½È€¡½¹ÍĞÑ…‰±”½˜1Q}IY=-}Q	1L¤ì(€€€€€½¹ÍĞ½±Õµ¸€ô½É…¹¥Í…Ñ¥½¹½±Õµ¸¡Ñ…‰±”¤ì(€€€€€…İ…¥Ğ•áÁ•Ğ (€€€€€€€İ¥Ñ¡Q•¹…¹Ğ¡…ÁÀ°ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°€¡Ñà¤€ôø(€€€€€€€€€Ñà¹Õ¹Í…™”¡‘•±•Ñ”™É½´€‘íÑ…‰±•ôİ¡•É”€‘í½±Õµ¹ô€ô€Å€°m½É…¹¥Í…Ñ¥½¹¹¥‘t¤°(€€€€€€€€¤°(€€€€€€€€‘íÑ…‰±•ô‘•±•Ñ•€°(€€€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì(€€€ô(€ô¤ì((€¥Ğ µ…¥¹Ñ…¥¹ÌÕÁ‘…Ñ•‘}…Ğ½¸µ½‘¥™¥…Ñ¥½¸Ñ¡É½Õ Ñ¡”Ñ½Õ ÑÉ¥•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ‰•™½É”€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞmÉ½İt€ô…İ…¥ĞÑàñìÕÁ‘…Ñ•‘}…ĞèÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•ĞÕÁ‘…Ñ•‘}…Ğ™É½´İ½É­Ìİ¡•É”¥€ô€‘íÉ…Á¡¹İ½É­%‘ô(€€€€€€€€ì(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€ÕÁ‘…Ñ”İ½É­ÌÍ•ĞÑ¥Ñ±”€ô€%¹Ñ•É…Ñ¥½¸Ñ•ÍĞİ½É¬™½ÈÑ•¹…¹Ğ¥Í½±…Ñ¥½¸œ(€€€€€€€€€İ¡•É”¥€ô€‘íÉ…Á¡¹İ½É­%‘ô(€€€€€€€€ì(€€€€€€€É•ÑÕÉ¸É½Üü¹ÕÁ‘…Ñ•‘}…Ğì(€€€€€ô°(€€€€¤ì((€€€½¹ÍĞm…™Ñ•Ét€ô…İ…¥Ğ…‘µ¥¸ñì¹•İ•Èè‰½½±•…¸õmtù€(€€€€€Í•±•ĞÕÁ‘…Ñ•‘}…Ğ€ø€‘í‰•™½É”€üü¹Õ±±ôèéÑ¥µ•ÍÑ…µÁÑè…Ì¹•İ•È(€€€€€™É½´İ½É­Ìİ¡•É”¥€ô€‘íÉ…Á¡¹İ½É­%‘ô(€€€€ì(€€€•áÁ•Ğ¡…™Ñ•Èü¹¹•İ•È¤¹Ñ½	”¡ÑÉÕ”¤ì(€ô¤ì((€¥Ğ É•©•ÑÌİÉ¥Ñ¥¹œÉ½İÌÍÑ…µÁ•İ¥Ñ …¹½Ñ¡•È½É…¹¥Í…Ñ¥½¸¥œ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼İ½É­Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°İ½É­}½‘”°±•ÑÑ•É}¹Õµ‰•È°±•ÑÑ•É}‘…Ñ”°Ñ¥Ñ±”°(€€€€€€€€€€€…‘Ù•ÉÑ¥Í•‘}Ù…±Õ”°½¹ÑÉ…Ñ}Ù…±Õ”°ÁÉ¥¥¹}Í¡…Á”°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€%9PµµY%0œ°€1=½%9PµµY%0œ°€œÈÀÈØ´ÀÄ´ÄÔœ°(€€€€€€€€€€€€ÑÑ•µÁÑ•É½ÍÌµÑ•¹…¹Ğ¥¹Í•ÉĞœ°€œÄ¸ÀÀœ°€œÄ¸ÀÀœ°€Á•É}Í¡•‘Õ±”œ°€‘íÕÍ•Éô(€€€€€€€€€€¤(€€€€€€€€ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì((€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼…Õ‘¥Ñ}•Ù•¹ÑÌ€¡½É…¹¥Í…Ñ¥½¹}¥°…Ñ¥½¸°•¹Ñ¥Ñå}ÑåÁ”¤(€€€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€¥¹Ñ•É…Ñ¥½¸¹•Ù¥°œ°€İ½É­Ìœ¤(€€€€€€€€€€ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” ÍÑ…ÑÕÑ½Éä‘½Õµ•¹Ğ‘•±•Ñ”Õ…É‘Ìœ°€ ¤€ôøì(€¥Ğ …±±½İÌÁÉ¥ÍÑ¥¹”‘É…™ÑÌ‰ÕĞÉ•©•ÑÌ¥ÍÍÕ•½ÈÁÉ½Ù¥‘•ÈµÑ½Õ¡•É•½É‘ÌÑ¡É½Õ Ñ¡”…ÁÀÉ½±”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÁÉ¥ÍÑ¥¹•É…™Ñ%€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm‰Õå•Ét€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥™É½´½¹Ñ…ÑÌ½É‘•È‰äÉ•…Ñ•‘}…Ğ°¥±¥µ¥Ğ€Ä(€€€€€€€€ì(€€€€€€€¥˜€ …‰Õå•È¤Ñ¡É½Ü¹•ÜÉÉ½È Í••‰Õå•Èµ¥ÍÍ¥¹œœ¤ì(€€€€€€€½¹ÍĞm‘É…™Ñt€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼Ñ…á}¥¹Ù½¥•Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°¥¹Ù½¥•}‘…Ñ”°Í…}½‘”°Í•ÉÙ¥•}‘•ÍÉ¥ÁÑ¥½¸°(€€€€€€€€€€€ÍÑ}É…Ñ”°Á±…•}½™}ÍÕÁÁ±ä°É•Ù•ÉÍ•}¡…É•}…ÁÁ±¥…‰±”°(€€€€€€€€€€€ÍÑ…Ñ•‘}Ñ…á…‰±•}Ù…±Õ”°‰Õå•É}½¹Ñ…Ñ}¥°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€œÈÀÈØ´ÀÈ´Ààœ°€œääàÜÌĞœ°(€€€€€€€€€€€€AÉ¥ÍÑ¥¹”‘¥É•Ğ‘É…™Ğ™½È‘•±•Ñ”ÁÉ½½˜œ°€œÄà¸ÀÀœ°€œÈÜœ°™…±Í”°(€€€€€€€€€€€€œÄÀÀ¸ÀÀœ°€‘í‰Õå•È¹¥‘ô°€‘íÕÍ•Éô(€€€€€€€€€€¤(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥(€€€€€€€€ì(€€€€€€€¥˜€ …‘É…™Ğ¤Ñ¡É½Ü¹•ÜÉÉ½È ‘É…™Ğ¥¹Í•ÉĞÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€½¹ÍĞ‘•±•Ñ•€ô…İ…¥ĞÑá‘•±•Ñ”™É½´Ñ…á}¥¹Ù½¥•Ìİ¡•É”¥€ô€‘í‘É…™Ğ¹¥‘õ€ì(€€€€€€€•áÁ•Ğ¡‘•±•Ñ•¹½Õ¹Ğ¤¹Ñ½	” Ä¤ì(€€€€€€€É•ÑÕÉ¸‘É…™Ğ¹¥ì(€€€€€ô°(€€€€¤ì(€€€½¹ÍĞm½¹•t€ô…İ…¥Ğ…‘µ¥¸ñì¥èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ğ¥™É½´Ñ…á}¥¹Ù½¥•Ìİ¡•É”¥€ô€‘íÁÉ¥ÍÑ¥¹•É…™Ñ%‘ô(€€€€ì(€€€•áÁ•Ğ¡½¹”¤¹Ñ½	•U¹‘•™¥¹• ¤ì((€€€½¹ÍĞÑ½Õ¡•‘É…™Ñ%€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm‰Õå•Ét€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥™É½´½¹Ñ…ÑÌ½É‘•È‰äÉ•…Ñ•‘}…Ğ°¥±¥µ¥Ğ€Ä(€€€€€€€€ì(€€€€€€€¥˜€ …‰Õå•È¤Ñ¡É½Ü¹•ÜÉÉ½È Í••‰Õå•Èµ¥ÍÍ¥¹œœ¤ì(€€€€€€€½¹ÍĞm‘É…™Ñt€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼Ñ…á}¥¹Ù½¥•Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°¥¹Ù½¥•}‘…Ñ”°Í…}½‘”°Í•ÉÙ¥•}‘•ÍÉ¥ÁÑ¥½¸°(€€€€€€€€€€€ÍÑ}É…Ñ”°Á±…•}½™}ÍÕÁÁ±ä°É•Ù•ÉÍ•}¡…É•}…ÁÁ±¥…‰±”°(€€€€€€€€€€€ÍÑ…Ñ•‘}Ñ…á…‰±•}Ù…±Õ”°‰Õå•É}½¹Ñ…Ñ}¥°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€œÈÀÈØ´ÀÈ´Ààœ°€œääàÜÌĞœ°(€€€€€€€€€€€€AÉ½Ù¥‘•ÈµÑ½Õ¡•‘¥É•Ğ‘É…™Ğ™½È‘•±•Ñ”ÁÉ½½˜œ°€œÄà¸ÀÀœ°€œÈÜœ°(€€€€€€€€€€€™…±Í”°€œÄÀÀ¸ÀÀœ°€‘í‰Õå•È¹¥‘ô°€‘íÕÍ•Éô(€€€€€€€€€€¤(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥(€€€€€€€€ì(€€€€€€€¥˜€ …‘É…™Ğ¤Ñ¡É½Ü¹•ÜÉÉ½È Ñ½Õ¡•‘É…™Ğ¥¹Í•ÉĞÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼ÍÑ…ÑÕÑ½Éå}ÁÉ½Ù¥‘•É}½Á•É…Ñ¥½¹Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°Ñ…á}¥¹Ù½¥•}¥°ÁÉ½Ù¥‘•È°•¹Ù¥É½¹µ•¹Ğ°(€€€€€€€€€€€½Á•É…Ñ¥½¸°ÍÑ…ÑÕÌ°É•ÅÕ•ÍÑ}Í¡„ÈÔØ°ÁÉ½Ù¥‘•É}½‘”°(€€€€€€€€€€€É•…Ñ•‘}‰å}ÕÍ•É}¥°½µÁ±•Ñ•‘}…Ğ(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€‘í‘É…™Ğ¹¥‘ô°€İ¡¥Ñ•‰½½­Ìœ°€Í…¹‘‰½àœ°(€€€€€€€€€€€€É•¥ÍÑ•É}¥ÉÀœ°€™…¥±•œ°€‘ìœ¹É•Á•…Ğ ØĞ¥ô°€QMQ}%1UIœ°(€€€€€€€€€€€€‘íÕÍ•Éô°¹½Ü ¤(€€€€€€€€€€¤(€€€€€€€€ì(€€€€€€€É•ÑÕÉ¸‘É…™Ğ¹¥ì(€€€€€ô°(€€€€¤ì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€€¡Ñà¤€ôøÑá‘•±•Ñ”™É½´Ñ…á}¥¹Ù½¥•Ìİ¡•É”¥€ô€‘íÑ½Õ¡•‘É…™Ñ%‘õ€°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œÈÌÔÄĞœô¤ì((€€€½¹ÍĞì¥¹Ù½¥•%°ÁÉ¥ÍÑ¥¹•İ…å	¥±±%ô€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm¥¹Ù½¥•t€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥™É½´Ñ…á}¥¹Ù½¥•Ìİ¡•É”ÍÑ…ÑÕÌ€ô€ÍÕ‰µ¥ÑÑ•œ(€€€€€€€€€½É‘•È‰äÉ•…Ñ•‘}…Ğ°¥±¥µ¥Ğ€Ä(€€€€€€€€ì(€€€€€€€¥˜€ …¥¹Ù½¥”¤Ñ¡É½Ü¹•ÜÉÉ½È Í••ÍÕ‰µ¥ÑÑ•¥¹Ù½¥”µ¥ÍÍ¥¹œœ¤ì(€€€€€€€½¹ÍĞm•İ…å	¥±±t€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥™É½´•İ…å}‰¥±±Ìİ¡•É”Ñ…á}¥¹Ù½¥•}¥€ô€‘í¥¹Ù½¥”¹¥‘ô(€€€€€€€€ì(€€€€€€€¥˜€ …•İ…å	¥±°¤Ñ¡É½Ü¹•ÜÉÉ½È Í••ÁÉ¥ÍÑ¥¹””µİ…ä‰¥±°µ¥ÍÍ¥¹œœ¤ì(€€€€€€€½¹ÍĞ‘•±•Ñ•€ô…İ…¥ĞÑá‘•±•Ñ”™É½´•İ…å}‰¥±±Ìİ¡•É”¥€ô€‘í•İ…å	¥±°¹¥‘õ€ì(€€€€€€€•áÁ•Ğ¡‘•±•Ñ•¹½Õ¹Ğ¤¹Ñ½	” Ä¤ì(€€€€€€€É•ÑÕÉ¸ì¥¹Ù½¥•%è¥¹Ù½¥”¹¥°ÁÉ¥ÍÑ¥¹•İ…å	¥±±%è•İ…å	¥±°¹¥ôì(€€€€€ô°(€€€€¤ì(€€€•áÁ•Ğ¡ÁÉ¥ÍÑ¥¹•İ…å	¥±±%¤¹Ñ½	••™¥¹• ¤ì((€€€½¹ÍĞÑ½Õ¡•‘İ…å	¥±±%€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm•İ…å	¥±±t€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼•İ…å}‰¥±±Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°Ñ…á}¥¹Ù½¥•}¥°‘¥ÍÑ…¹•}­´°™É½µ}Á¥¹½‘”°(€€€€€€€€€€€Ñ½}Á¥¹½‘”°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€‘í¥¹Ù½¥•%‘ô°€ÄÈÀ°€œĞÈÈÀÄÀœ°€œĞÀÀÀÀÄœ°€‘íÕÍ•Éô(€€€€€€€€€€¤(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥(€€€€€€€€ì(€€€€€€€¥˜€ …•İ…å	¥±°¤Ñ¡É½Ü¹•ÜÉÉ½È É•Á±…•µ•¹Ğ”µİ…ä‰¥±°µ¥ÍÍ¥¹œœ¤ì(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼ÍÑ…ÑÕÑ½Éå}ÁÉ½Ù¥‘•É}½Á•É…Ñ¥½¹Ì€ (€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°•İ…å}‰¥±±}¥°ÁÉ½Ù¥‘•È°•¹Ù¥É½¹µ•¹Ğ°(€€€€€€€€€€€½Á•É…Ñ¥½¸°ÍÑ…ÑÕÌ°É•ÅÕ•ÍÑ}Í¡„ÈÔØ°ÁÉ½Ù¥‘•É}½‘”°(€€€€€€€€€€€É•…Ñ•‘}‰å}ÕÍ•É}¥°½µÁ±•Ñ•‘}…Ğ(€€€€€€€€€€¤(€€€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€‘í•İ…å	¥±°¹¥‘ô°€İ¡¥Ñ•‰½½­Ìœ°€Í…¹‘‰½àœ°(€€€€€€€€€€€€•¹•É…Ñ•}•İ…å}‰¥±°œ°€™…¥±•œ°€‘ì”œ¹É•Á•…Ğ ØĞ¥ô°€QMQ}%1UIœ°(€€€€€€€€€€€€‘íÕÍ•Éô°¹½Ü ¤(€€€€€€€€€€¤(€€€€€€€€ì(€€€€€€€É•ÑÕÉ¸•İ…å	¥±°¹¥ì(€€€€€ô°(€€€€¤ì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€€¡Ñà¤€ôøÑá‘•±•Ñ”™É½´•İ…å}‰¥±±Ìİ¡•É”¥€ô€‘íÑ½Õ¡•‘İ…å	¥±±%‘õ€°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œÈÌÔÄĞœô¤ì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€€¡Ñà¤€ôøÑá‘•±•Ñ”™É½´Ñ…á}¥¹Ù½¥•Ìİ¡•É”¥€ô€‘í¥¹Ù½¥•%‘õ€°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œÈÌÔÄĞœô¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” µ•µ‰•ÉÍ¡¥À™±½½Èœ°€ ¤€ôøì(€¥Ğ ‘½•Ì¹½Ğ‰¥¹Ñ•¹…¹Ğ½¹Ñ•áĞ™½È„¹½¸µµ•µ‰•È°•Ù•¸İ¥Ñ „Ù…±¥½É…¹¥Í…Ñ¥½¸¥œ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼ÕÍ•É¥Ì¹½Ğ„µ•µ‰•È½˜½É…¹¥Í…Ñ¥½¸è•Ù•ÉäÉ•…¥Ì•µÁÑä…¹(€€€€¼¼•Ù•ÉäİÉ¥Ñ”¥Ì‘•¹¥•°¹¼µ…ÑÑ•Èİ¡…ĞÑ¡”¡…¹‘±•ÈÍÑ…µÁ•¸(€€€…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm‰½Õ¹‘t€ô…İ…¥ĞÑàñì½É…¹¥Í…Ñ¥½¹}¥èÍÑÉ¥¹œğ¹Õ±°õmtù€(€€€€€€€€€Í•±•Ğ…ÁÁ}ÁÉ¥Ù…Ñ”¹ÕÉÉ•¹Ñ}½É…¹¥Í…Ñ¥½¹}¥ ¤…Ì½É…¹¥Í…Ñ¥½¹}¥(€€€€€€€€ì(€€€€€€€•áÁ•Ğ¡‰½Õ¹ü¹½É…¹¥Í…Ñ¥½¹}¥¤¹Ñ½	•9Õ±° ¤ì((€€€€€€€™½È€¡½¹ÍĞÑ…‰±”½˜Q99Q}Q	1L¤ì(€€€€€€€€€•áÁ•Ğ (€€€€€€€€€€€…İ…¥Ğ½Õ¹ÑÌ¡Ñà…ÌÕ¹­¹½İ¸…ÌMÅ°°Ñ…‰±”°½É…¹¥Í…Ñ¥½¹¹¥¤°(€€€€€€€€€€€Ñ…‰±”°(€€€€€€€€€€¤¹Ñ½	” À¤ì(€€€€€€€ô(€€€€€ô°(€€€€¤ì((€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€€¡Ñà¤€ôøÑá€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼…Õ‘¥Ñ}•Ù•¹ÑÌ€¡½É…¹¥Í…Ñ¥½¹}¥°…Ñ¥½¸°•¹Ñ¥Ñå}ÑåÁ”¤(€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€¥¹Ñ•É…Ñ¥½¸¹™±½½Èµ‰É•… œ°€İ½É­Ìœ¤(€€€€€€€€°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì(€ô¤ì((€¥Ğ ‘½•Ì¹½Ğ‰¥¹Ñ•¹…¹Ğ½¹Ñ•áĞ™½È„‘¥Í…‰±•µ•µ‰•ÉÍ¡¥Àœ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğ…‘µ¥¹€(€€€€€ÕÁ‘…Ñ”½É…¹¥Í…Ñ¥½¹}µ•µ‰•ÉÍ¡¥ÁÌÍ•ĞÍÑ…ÑÕÌ€ô€‘¥Í…‰±•œ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô…¹ÕÍ•É}¥€ô€‘íÕÍ•É	ô(€€€€ì(€€€ÑÉäì(€€€€€…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€½¹ÍĞİ½É­Ì€ô…İ…¥ĞÑáÍ•±•Ğ¥™É½´İ½É­Í€ì(€€€€€€€€€•áÁ•Ğ¡İ½É­Ì¤¹Ñ½!…Ù•1•¹Ñ  À¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€ô™¥¹…±±äì(€€€€€…İ…¥Ğ…‘µ¥¹€(€€€€€€€ÕÁ‘…Ñ”½É…¹¥Í…Ñ¥½¹}µ•µ‰•ÉÍ¡¥ÁÌÍ•ĞÍÑ…ÑÕÌ€ô€…Ñ¥Ù”œ(€€€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô…¹ÕÍ•É}¥€ô€‘íÕÍ•É	ô(€€€€€€ì(€€€ô(€ô¤ì((€¥Ğ É•™ÕÍ•Ì½É…¹¥Í…Ñ¥½¸‰½½ÑÍÑÉ…Àİ¥Ñ¡½ÕĞ„ÕÍ•È½¹Ñ•áĞœ°…Íå¹Œ€ ¤€ôøì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…ÁÀ¹‰•¥¸ (€€€€€€€€¡Ñà¤€ôøÑá€(€€€€€€€Í•±•Ğ…ÁÁ}ÁÉ¥Ù…Ñ”¹É•…Ñ•}½É…¹¥Í…Ñ¥½¹}İ¥Ñ¡}½İ¹•È 9¼UÍ•È=Éœœ°€¹¼µÕÍ•Èµ½Éœœ¤(€€€€€€°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œÈàÀÀÀœô¤ì(€ô¤ì((€¥Ğ ±•ÑÌ„µ•µ‰•È±¥ÍĞÑ¡•¥È½É…¹¥Í…Ñ¥½¹Ì‰•™½É”Í•±•Ñ¥¹œ½¹”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹Ì€ô…İ…¥Ğİ¥Ñ¡UÍ•É½¹Ñ•áĞ (€€€€€…ÁÀ°(€€€€€ÕÍ•É°(€€€€€€¡Ñà¤€ôø(€€€€€€€Ñàñì¥èÍÑÉ¥¹œì¹…µ”èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥°¹…µ”™É½´½É…¹¥Í…Ñ¥½¹Ì½É‘•È‰ä¥(€€€€€€€€°(€€€€¤ì(€€€•áÁ•Ğ¡½É…¹¥Í…Ñ¥½¹Ì¤¹Ñ½ÅÕ…°¡mì¥è½É…¹¥Í…Ñ¥½¹¹¥°¹…µ”è½É…¹¥Í…Ñ¥½¹¹¹…µ”õt¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” µ•µ‰•ÉÍ¡¥À±¥ÍÑ¥¹œ‰•™½É”½É…¹¥Í…Ñ¥½¸Í•±•Ñ¥½¸œ°€ ¤€ôøì(€¥Ğ ±•ÑÌ„ÕÍ•ÈÍ•”½¹±äÑ¡•¥È½İ¸µ•µ‰•ÉÍ¡¥ÁÌİ¥Ñ ¹¼½É…¹¥Í…Ñ¥½¸½¹Ñ•áĞœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞµ•µ‰•ÉÍ¡¥ÁÌ€ô…İ…¥Ğİ¥Ñ¡UÍ•É½¹Ñ•áĞ (€€€€€…ÁÀ°(€€€€€ÕÍ•É°(€€€€€€¡Ñà¤€ôø(€€€€€€€Ñàñì½É…¹¥Í…Ñ¥½¹}¥èÍÑÉ¥¹œìÕÍ•É}¥èÍÑÉ¥¹œõmtù€(€€€€€€€Í•±•Ğ½É…¹¥Í…Ñ¥½¹}¥°ÕÍ•É}¥™É½´½É…¹¥Í…Ñ¥½¹}µ•µ‰•ÉÍ¡¥ÁÌ(€€€€€€°(€€€€¤ì(€€€•áÁ•Ğ¡µ•µ‰•ÉÍ¡¥ÁÌ¤¹Ñ½ÅÕ…°¡l(€€€€€ì½É…¹¥Í…Ñ¥½¹}¥è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É}¥èÕÍ•Éô°(€€€t¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” …Õ‘¥ĞÑÉ…¥°…ÁÁ•¹µ½¹±äÕ…É…¹Ñ•”œ°€ ¤€ôøì(€¥Ğ …•ÁÑÌ¥¹Í•ÉÑÌ‰ÕĞÉ•™ÕÍ•ÌÕÁ‘…Ñ”°‘•±•Ñ”°…¹ÑÉÕ¹…Ñ”™É½´Ñ¡”…ÁÁ±¥…Ñ¥½¸É½±”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ•Ù•¹Ñ%€ô…İ…¥Ğİ¥Ñ¡Q•¹…¹Ğ (€€€€€…ÁÀ°(€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍĞm•Ù•¹Ñt€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼…Õ‘¥Ñ}•Ù•¹ÑÌ€¡½É…¹¥Í…Ñ¥½¹}¥°…Ñ½É}ÕÍ•É}¥°…Ñ¥½¸°•¹Ñ¥Ñå}ÑåÁ”°•¹Ñ¥Ñå}¥¤(€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹¹¥‘ô°€‘íÕÍ•Éô°€¥¹Ñ•É…Ñ¥½¸¹Ñ•ÍĞœ°€İ½É­Ìœ°€‘íÉ…Á¡¹İ½É­%‘ô¤(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥(€€€€€€€€ì(€€€€€€€¥˜€ …•Ù•¹Ğ¤Ñ¡É½Ü¹•ÜÉÉ½È …Õ‘¥Ğ¥¹Í•ÉĞÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€É•ÑÕÉ¸•Ù•¹Ğ¹¥ì(€€€€€ô°(€€€€¤ì((€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…İ…¥ĞÑáÕÁ‘…Ñ”…Õ‘¥Ñ}•Ù•¹ÑÌÍ•Ğ…Ñ¥½¸€ô€¥¹Ñ•É…Ñ¥½¸¹Ñ…µÁ•É•œİ¡•É”¥€ô€‘í•Ù•¹Ñ%‘õ€ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì((€€€…İ…¥Ğ•áÁ•Ğ (€€€€€İ¥Ñ¡Q•¹…¹Ğ (€€€€€€€…ÁÀ°(€€€€€€€ì½É…¹¥Í…Ñ¥½¹%è½É…¹¥Í…Ñ¥½¹¹¥°ÕÍ•É%èÕÍ•Éô°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…İ…¥ĞÑá‘•±•Ñ”™É½´…Õ‘¥Ñ}•Ù•¹ÑÌİ¡•É”¥€ô€‘í•Ù•¹Ñ%‘õ€ì(€€€€€€€ô°(€€€€€€¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì((€€€€¼¼]É…ÁÁ•¥¸„ÑÉ…¹Í…Ñ¥½¸Ñ¡…Ğ…±İ…åÌÑ¡É½İÌè¥˜Ñ¡”QIU9QÉ•Ù½­”(€€€€¼¼•Ù•ÈÉ•É•ÍÍ•Ì°Ñ¡”‘…Ñ„¥ÌÉ½±±•‰…¬…¹Ñ¡”Ñ•ÍĞ™…¥±Ì½¸Ñ¡”(€€€€¼¼İÉ½¹œÉ•©•Ñ¥½¸¥¹ÍÑ•…½˜‘•ÍÑÉ½å¥¹œÑ¡”Í¡…É•…Õ‘¥ĞÑ…‰±”¸(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…ÁÀ¹‰•¥¸¡…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…İ…¥ĞÑà¹Õ¹Í…™” ÑÉÕ¹…Ñ”…Õ‘¥Ñ}•Ù•¹ÑÌœ¤ì(€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È ÑÉÕ¹…Ñ”Õ¹•áÁ•Ñ•‘±äÍÕ••‘•œ¤ì(€€€€€ô¤°(€€€€¤¹É•©•ÑÌ¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€œĞÈÔÀÄœô¤ì(€ô¤ì)ô¤ì(
+      values (${organisationId}, ${work.id})
+    `;
+    await tx`
+      insert into bills (
+        organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+        prepared_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 1, '[]'::jsonb, 0, ${userId})
+    `;
+    await tx`
+      insert into mb_entries (
+        organisation_id, work_id, work_item_id, measured_quantity,
+        measured_on, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${workItem.id}, '1.000',
+              '2026-02-03', ${userId})
+    `;
+    const [approvalRequest] = await tx<{ id: string }[]>`
+      insert into approval_requests (
+        organisation_id, entity_type, entity_id, work_id, proposed, diff,
+        reason, requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'work_item_amendment', ${workItem.id}, ${work.id},
+        '{"kind":"change_item"}'::jsonb, '[]'::jsonb,
+        'Integration seed amendment', ${userId}
+      )
+      returning id
+    `;
+    if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // Milestone 7 correction-flow tables: one row each.
+    await tx`
+      insert into correction_notices (
+        organisation_id, work_id, delivery_challan_id, approval_request_id,
+        notice_number, sequence_number, snapshot, template_version,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${challan.id}, ${approvalRequest.id},
+        ${`${workCode}-CN-01`}, 1, '{}'::jsonb, 'correction-notice-v1',
+        ${userId}
+      )
+    `;
+    await tx`
+      insert into correction_notice_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 masters tables (contacts since 0028): one row each,
+    // plus the Work<->consignee association.
+    const [consigneeContact] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, address, is_consignee,
+        created_by_user_id
+      )
+      values (${organisationId}, ${`Sr. DEE ${workCode}`},
+              'Integration division office', true, ${userId})
+      returning id
+    `;
+    if (!consigneeContact) throw new Error('seed contact insert returned no row');
+    await tx`
+      insert into work_consignees (
+        organisation_id, work_id, contact_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id}, ${userId})
+    `;
+    const [locationMaster] = await tx<{ id: string }[]>`
+      insert into location_masters (organisation_id, name, kind, created_by_user_id)
+      values (${organisationId}, ${`Station ${workCode}`}, 'station', ${userId})
+      returning id
+    `;
+    if (!locationMaster) throw new Error('seed location insert returned no row');
+    await tx`
+      insert into unit_masters (organisation_id, name, created_by_user_id)
+      values (${organisationId}, ${`Unit-${workCode}`}, ${userId})
+    `;
+    await tx`
+      insert into organisation_signatories (
+        organisation_id, name, designation, created_by_user_id
+      )
+      values (${organisationId}, ${`Signatory ${workCode}`}, 'Director', ${userId})
+    `;
+
+    // Milestone 6 completion/extension tables: the one-time completion
+    // date set (allowed by the works guard), then a draft extension.
+    await tx`
+      update works
+      set original_completion_date = '2026-12-31',
+          current_completion_date = '2026-12-31'
+      where id = ${work.id}
+    `;
+    await tx`
+      insert into extension_requests (
+        organisation_id, work_id, proposed_completion_date, reason,
+        addressee, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2027-03-31',
+              'Integration test extension reason', 'Sr. DEE (G)', ${userId})
+    `;
+    await tx`
+      insert into extension_request_counters (organisation_id, work_id)
+      values (${organisationId}, ${work.id})
+    `;
+
+    // Milestone 7 installation tables: one recorded installation with a
+    // serial attachment, the location name snapshotted from the master.
+    const [installation] = await tx<{ id: string }[]>`
+      insert into installations (
+        organisation_id, work_id, work_item_id, quantity, installed_on,
+        location_id, location_name, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${workItem.id}, '1.000', '2026-02-03',
+        ${locationMaster.id}, ${`Station ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!installation) throw new Error('seed installation insert returned no row');
+    await tx`
+      insert into installation_serials (
+        organisation_id, installation_id, work_id, challan_item_serial_id
+      )
+      select ${organisationId}, ${installation.id}, ${work.id}, s.id
+      from challan_item_serials s
+      where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
+    `;
+
+    // Milestone 8 payment matrix: one row.
+    await tx`
+      insert into payment_matrices (
+        organisation_id, work_id, category, pct_supply, pct_installation,
+        pct_pac, pct_final_bill, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'SUPPLY', 80.00, 10.00, 0.00,
+              10.00, ${userId})
+    `;
+
+    // Milestone 8 phase 1 PAC tables: one recorded certificate with one
+    // certified line, the consignee designation snapshotted from the
+    // contact (consignee_master_id references contacts since 0028).
+    const [pacCertificate] = await tx<{ id: string }[]>`
+      insert into pac_certificates (
+        organisation_id, work_id, reference, issue_date, consignee_master_id,
+        consignee_designation, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${`PAC-${workCode}`}, '2026-02-04',
+        ${consigneeContact.id}, ${`Sr. DEE ${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!pacCertificate) throw new Error('seed PAC certificate insert returned no row');
+    await tx`
+      insert into pac_certificate_items (
+        organisation_id, pac_certificate_id, work_id, work_item_id,
+        certified_quantity
+      )
+      values (${organisationId}, ${pacCertificate.id}, ${work.id},
+              ${workItem.id}, '1.000')
+    `;
+
+    // Milestone 8 phase 2 Measurement Book tables: a draft claiming the
+    // recorded installation, one snapshot line written while draft (the
+    // line guard requires it), then the finalize-shaped update.
+    const [measurementBook] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, '2026-02-05', ${userId})
+      returning id
+    `;
+    if (!measurementBook)
+      throw new Error('seed measurement book insert returned no row');
+    await tx`
+      insert into mb_sources (
+        organisation_id, measurement_book_id, work_id, source_type, source_id
+      )
+      values (${organisationId}, ${measurementBook.id}, ${work.id},
+              'installation', ${installation.id})
+    `;
+    await tx`
+      insert into measurement_book_lines (
+        organisation_id, measurement_book_id, work_id, work_item_id,
+        item_number, description, unit_code, payment_category,
+        resolved_category, pct_supply, pct_installation, pct_pac,
+        pct_final_bill, effective_rate, delta_installed, prior_supplied,
+        amount_supply, amount_installation, amount_pac, amount_final_bill,
+        line_total, remark
+      )
+      values (
+        ${organisationId}, ${measurementBook.id}, ${work.id}, ${workItem.id},
+        '1', 'Integration test item', 'Nos', 'SUPPLY', 'SUPPLY',
+        80.00, 10.00, 0.00, 10.00, '100.00', '1.000', '1.000',
+        '0.00', '10.00', '0.00', '0.00', '10.00',
+        'Prepaid 80% for 1 Nos. Now to pay 10% for 1 Nos.'
+      )
+    `;
+    await tx`
+      update measurement_books
+      set status = 'finalized', mb_number = ${`${workCode}-MB-01`},
+          sequence_number = 1, total_amount = '10.00',
+          remark_template_version = 'mb-remark-v1',
+          finalized_by_user_id = ${userId}, finalized_at = now()
+      where id = ${measurementBook.id}
+    `;
+    await tx`
+      insert into measurement_book_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 1)
+    `;
+
+    // 0045 normalized merge provenance: a live target plus one selected
+    // record that had no own source (the NULL pair is its membership sentinel).
+    const [mergeTarget] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, kind, created_by_user_id
+      ) values (${organisationId}, ${work.id}, '2026-02-05', 'on_account', ${userId})
+      returning id
+    `;
+    if (!mergeTarget) throw new Error('seed merge target insert returned no row');
+    const [mergedRecord] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, mb_date, kind,
+        consignee_contact_id, created_by_user_id
+      ) values (
+        ${organisationId}, ${work.id}, '2026-02-05', 'record',
+        ${consigneeContact.id}, ${userId}
+      )
+      returning id
+    `;
+    if (!mergedRecord) throw new Error('seed merged record insert returned no row');
+    await tx`
+      insert into measurement_book_merge_provenance (
+        organisation_id, target_measurement_book_id,
+        record_measurement_book_id, work_id, source_type, source_id,
+        created_by_user_id
+      ) values (
+        ${organisationId}, ${mergeTarget.id}, ${mergedRecord.id}, ${work.id},
+        null, null, ${userId}
+      )
+    `;
+    await tx`
+      update measurement_books
+      set status = 'merged', merged_into_id = ${mergeTarget.id}
+      where id = ${mergedRecord.id}
+    `;
+
+    // Wave 5 cutover provenance tables: one batch with one record.
+    const [importBatch] = await tx<{ id: string }[]>`
+      insert into import_batches (
+        organisation_id, source_system, importer_version, input_digest, dry_run
+      )
+      values (${organisationId}, 'auto-mb-v1', 'integration-test',
+              ${shaFill.repeat(64)}, false)
+      returning id
+    `;
+    if (!importBatch) throw new Error('seed import batch insert returned no row');
+    await tx`
+      insert into import_records (
+        organisation_id, entity_type, source_system, source_id, target_id,
+        batch_id, payload_fingerprint
+      )
+      values (${organisationId}, 'work', 'auto-mb-v1', ${`w-${workCode}`},
+              ${work.id}, ${importBatch.id}, ${shaFill.repeat(64)})
+    `;
+
+    // Wave 6 procurement (0033): one issued purchase order with a line and
+    // its counter, and one issued budgetary quotation with a line and its
+    // counter. Issued rather than draft so the shape CHECKs are exercised
+    // and the one-draft-per-Work index cannot collide across the two
+    // organisations this seed runs for.
+    const [purchaseOrder] = await tx<{ id: string }[]>`
+      insert into purchase_orders (
+        organisation_id, work_id, vendor_contact_id, po_date,
+        created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${consigneeContact.id},
+              '2026-02-01', ${userId})
+      returning id
+    `;
+    if (!purchaseOrder) throw new Error('seed purchase order insert returned no row');
+    await tx`
+      insert into purchase_order_lines (
+        organisation_id, purchase_order_id, work_item_id, line_number,
+        description, unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${purchaseOrder.id}, ${workItem.id}, 1,
+              'Seeded purchase order line', 'Nos', '10.000', '100.000000',
+              '1000.00')
+    `;
+    // Lines first, then issue: the 0033 guard fixes an issued order's lines.
+    await tx`
+      update purchase_orders
+         set status = 'issued', po_number = ${`${workCode}-PO-01`},
+             sequence_number = 1,
+             vendor_snapshot = ${tx.json({ designation: 'Vendor' })},
+             total_amount = '1000.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${purchaseOrder.id}
+    `;
+    await tx`
+      insert into purchase_order_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+
+    const [quotation] = await tx<{ id: string }[]>`
+      insert into budgetary_quotations (
+        organisation_id, addressed_to, subject, bq_date, created_by_user_id
+      )
+      values (${organisationId}, 'Sr. DEE (G) CR', 'Budgetary quotation',
+              '2026-01-20', ${userId})
+      returning id
+    `;
+    if (!quotation) throw new Error('seed budgetary quotation insert returned no row');
+    await tx`
+      insert into budgetary_quotation_lines (
+        organisation_id, budgetary_quotation_id, line_number, description,
+        unit_code, quantity, rate, line_amount
+      )
+      values (${organisationId}, ${quotation.id}, 1, 'Seeded quotation line',
+              'Nos', '5.000', '100.000000', '500.00')
+    `;
+    await tx`
+      update budgetary_quotations
+         set status = 'issued', bq_number = ${`BQ-${workCode}-01`},
+             sequence_number = 1, total_amount = '500.00', issued_at = now(),
+             issued_by_user_id = ${userId}
+       where id = ${quotation.id}
+    `;
+    await tx`
+      insert into budgetary_quotation_counters (organisation_id, next_value)
+      values (${organisationId}, 2)
+    `;
+    await tx`
+      insert into document_number_series (organisation_id, document_type, template)
+      values (${organisationId}, 'tax_invoice', 'P{DIV}{FY2}{SEQ:3}')
+    `;
+
+    // Wave 6 tax documents (0035). The 0035 insert guards demand a
+    // finalized MB behind an invoice and a submitted invoice behind an
+    // e-way bill, so the seed writes exactly that chain.
+    const [finalizedMb] = await tx<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, kind, status, mb_date, mb_number,
+        sequence_number, total_amount, remark_template_version,
+        finalized_at, finalized_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'on_account', 'finalized',
+              '2026-02-06', ${`${workCode}-MB-99`}, 99, '118.00', 'v1',
+              now(), ${userId}, ${userId})
+      returning id
+    `;
+    if (!finalizedMb) throw new Error('seed finalized MB insert returned no row');
+    const [taxInvoice] = await tx<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, work_id, measurement_book_id, status,
+        invoice_number, number_prefix, sequence_number, fy_label,
+        invoice_date, sac_code,
+        service_description, gst_rate, place_of_supply, buyer_contact_id,
+        buyer_snapshot,
+        taxable_value, cgst_amount, sgst_amount, igst_amount, round_off,
+        total_amount, issued_snapshot, reverse_charge_applicable,
+        submitted_at, submitted_by_user_id, created_by_user_id
+      )
+      values (${organisationId}, ${work.id}, ${finalizedMb.id}, 'submitted',
+              ${`TI/2026-27/${workCode}`}, 'TI', 1, '2026-27', '2026-02-07',
+              '995461', 'Works contract services per MB', '18.00', '27',
+              ${consigneeContact.id},
+              ${tx.json({ name: 'Sr. DEE (G) CR', stateCode: '27' })},
+              '100.00', '9.00', '9.00', '0.00', '0.00', '118.00',
+              ${tx.json({ templateVersion: 'ti-v1' })}, false, now(), ${userId},
+              ${userId})
+      returning id
+    `;
+    if (!taxInvoice) throw new Error('seed tax invoice insert returned no row');
+    await tx`
+      insert into tax_invoice_renders (
+        organisation_id, tax_invoice_id, version, template_version,
+        source_sha256, object_key, pdf_sha256, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, 1, 'ti-v1', ${'b'.repeat(64)},
+        ${`${organisationId}/ti/${taxInvoice.id}-seed.pdf`}, ${'c'.repeat(64)},
+        ${userId}
+      )
+    `;
+    await tx`
+      insert into statutory_provider_operations (
+        organisation_id, tax_invoice_id, provider, environment, operation,
+        status, request_sha256, created_by_user_id, completed_at
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, 'whitebooks', 'sandbox',
+        'reconcile_irp', 'unknown', ${'a'.repeat(64)}, ${userId}, now()
+      )
+    `;
+    await tx`
+      insert into tax_invoice_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    await tx`
+      insert into eway_bills (
+        organisation_id, tax_invoice_id, distance_km, from_pincode,
+        to_pincode, created_by_user_id
+      )
+      values (${organisationId}, ${taxInvoice.id}, 120, '422010', '400001',
+              ${userId})
+    `;
+
+    return {
+      workId: work.id,
+      scheduleId: schedule.id,
+      workItemId: workItem.id,
+      challanId: challan.id,
+      auditEventId: auditEvent.id,
+    };
+  });
+}
+
+beforeAll(async () => {
+  admin = createDatabasePool({
+    url: adminUrl,
+    max: 1,
+    applicationName: 'auto-mb-db-integration-admin',
+  });
+
+  try {
+    await admin`select 1 as ready`;
+  } catch (error) {
+    throw new Error(
+      'PostgreSQL is not reachable for integration tests. Start it with ' +
+        '`docker compose up -d postgres` (or point DATABASE_ADMIN_URL and ' +
+        `DATABASE_URL at a running instance). Underlying error: ${String(error)}`,
+    );
+  }
+
+  // The docker-compose init script creates the application role on first
+  // boot; CI service containers and bare instances do not run it, so the
+  // suite converges the role itself before migrating.
+  const escapedPassword = appPassword.replaceAll("'", "''");
+  await admin.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
+        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+      END IF;
+    END
+    $$;
+  `);
+
+  await runMigrations(admin, migrationsDirectory);
+
+  app = createDatabasePool({
+    url: appUrl,
+    max: 5,
+    applicationName: 'auto-mb-db-integration-app',
+  });
+
+  // Remove residue from earlier runs, children first (admin bypasses RLS).
+  // The fixed fixture UUIDs make the suite deterministic and self-cleaning,
+  // at the documented cost that two invocations must not run concurrently
+  // against the same database.
+  await removeSeedResidue();
+
+  graphA = await seedTenantGraph(
+    organisationA.id,
+    organisationA.name,
+    'integration-org-a',
+    userA,
+    'INT-A-1',
+    'a',
+  );
+  graphB = await seedTenantGraph(
+    organisationB.id,
+    organisationB.name,
+    'integration-org-b',
+    userB,
+    'INT-B-1',
+    'b',
+  );
+});
+
+afterAll(async () => {
+  try {
+    // beforeAll may have failed before the admin pool existed.
+    if ((admin as Sql | undefined) !== undefined) await removeSeedResidue();
+  } finally {
+    await app?.end();
+    await admin?.end();
+  }
+});
+
+describe('application role security posture', () => {
+  it('is not superuser and cannot bypass RLS', async () => {
+    const [role] = await app<
+      { rolsuper: boolean; rolbypassrls: boolean }[]
+    >`select rolsuper, rolbypassrls from pg_roles where rolname = current_user`;
+    expect(role).toEqual({ rolsuper: false, rolbypassrls: false });
+  });
+
+  it('does not own any tenant table', async () => {
+    const rows = await admin<{ tablename: string; tableowner: string }[]>`
+      select tablename, tableowner from pg_tables
+      where schemaname = 'public' and tablename = any(${admin.array([...TENANT_TABLES])})
+      order by tablename
+    `;
+    expect(rows.map((row) => row.tablename).sort()).toEqual([...TENANT_TABLES].sort());
+    for (const row of rows) {
+      expect(row.tableowner).not.toBe('auto_mb_app');
+    }
+  });
+
+  it('has RLS enabled and forced on every public table except the ledger, live in the catalog', async () => {
+    const rows = await admin<
+      { relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }[]
+    >`
+      select relname, relrowsecurity, relforcerowsecurity
+      from pg_class
+      where relnamespace = 'public'::regnamespace
+        and relkind = 'r'
+        and relname <> 'schema_migrations'
+      order by relname
+    `;
+    expect(rows.length).toBeGreaterThanOrEqual(TENANT_TABLES.length);
+    for (const table of TENANT_TABLES) {
+      expect(rows.map((row) => row.relname)).toContain(table);
+    }
+    for (const row of rows) {
+      expect(row, row.relname).toMatchObject({
+        relrowsecurity: true,
+        relforcerowsecurity: true,
+      });
+    }
+  });
+
+  it('covers every organisation-scoped table in the database with this suite', async () => {
+    // If a new table with an organisation_id column lands without being
+    // added to TENANT_TABLES, this fails instead of silently narrowing the
+    // proofs below. Restricted to BASE TABLES: the consignee_masters
+    // compatibility VIEW (0028) also exposes organisation_id, but a view
+    // has no RLS of its own â€” with security_invoker the base table's
+    // policy applies, and that base table (contacts) is in the list.
+    const rows = await admin<{ table_name: string }[]>`
+      select c.table_name
+      from information_schema.columns c
+      join information_schema.tables t
+        on t.table_schema = c.table_schema and t.table_name = c.table_name
+      where c.table_schema = 'public' and c.column_name = 'organisation_id'
+        and t.table_type = 'BASE TABLE'
+      order by c.table_name
+    `;
+    const expected = TENANT_TABLES.filter((table) => table !== 'organisations');
+    expect(rows.map((row) => row.table_name).sort()).toEqual([...expected].sort());
+  });
+
+  it('keeps the consignee_masters compatibility view invoker-scoped over contacts', async () => {
+    // The 0028 view must stay security_invoker (the caller's own RLS and
+    // grants apply underneath) â€” a definer view would read contacts with
+    // the view owner's privileges and could leak across tenants.
+    const [view] = await admin<{ options: string[] | null }[]>`
+      select reloptions as options from pg_class
+      where relname = 'consignee_masters' and relkind = 'v'
+    `;
+    expect(view).toBeDefined();
+    expect(view?.options ?? []).toContain('security_invoker=true');
+
+    // Behavioural proof: the view answers nothing without a bound tenant
+    // and only the caller's rows with one â€” the contacts policy applied
+    // through the view.
+    const bare = (await app.unsafe(
+      `select count(*)::int as count from consignee_masters`,
+    )) as unknown as { count: number }[];
+    expect(bare[0]?.count).toBe(0);
+
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const rows = await tx<{ organisation_id: string }[]>`
+          select organisation_id from consignee_masters
+        `;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const row of rows) {
+          expect(row.organisation_id).toBe(organisationA.id);
+        }
+      },
+    );
+  });
+});
+
+describe('no-context behaviour on every tenant table', () => {
+  it('returns zero rows from every tenant table without organisation context', async () => {
+    for (const table of TENANT_TABLES) {
+      // The data exists (verified through the admin connection)â€¦
+      const adminVisible =
+        (await countAs(admin, table, organisationA.id)) +
+        (await countAs(admin, table, organisationB.id));
+      expect(adminVisible, `${table} seed data`).toBeGreaterThanOrEqual(2);
+
+      // â€¦but the application role sees none of it without tenant context.
+      const rows = (await app.unsafe(
+        `select count(*)::int as count from ${table}`,
+      )) as unknown as { count: number }[];
+      expect(rows[0]?.count, table).toBe(0);
+    }
+  });
+});
+
+describe('cross-tenant isolation on every tenant table', () => {
+  it('hides Organisation B rows from Organisation A reads on every tenant table', async () => {
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        for (const table of TENANT_TABLES) {
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationA.id),
+            `${table} own rows`,
+          ).toBeGreaterThanOrEqual(1);
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationB.id),
+            `${table} foreign rows`,
+          ).toBe(0);
+        }
+
+        const works = await tx<{ id: string }[]>`select id from works`;
+        expect(works.map((row) => row.id)).toEqual([graphA.workId]);
+      },
+    );
+  });
+
+  it('makes Organisation B rows unreachable for Organisation A updates and deletes', async () => {
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        for (const table of GENERIC_UPDATE_TABLES) {
+          const column = organisationColumn(table);
+          const updated = await tx.unsafe(
+            `update ${table} set ${column} = ${column} where ${column} = $1`,
+            [organisationB.id],
+          );
+          expect(updated.count, `${table} update`).toBe(0);
+        }
+
+        for (const table of DELETE_ALLOWED_TABLES) {
+          const column = organisationColumn(table);
+          const deleted = await tx.unsafe(`delete from ${table} where ${column} = $1`, [
+            organisationB.id,
+          ]);
+          expect(deleted.count, `${table} delete`).toBe(0);
+        }
+      },
+    );
+
+    const [untouched] = await admin<
+      { title: string }[]
+    >`select title from works where id = ${graphB.workId}`;
+    expect(untouched?.title).toBe('Integration test work for tenant isolation');
+    expect(await countAs(admin, 'delivery_challan_items', organisationB.id)).toBe(1);
+  });
+
+  it('refuses DELETE outright on reservation-anchor tables, even inside the own tenant', async () => {
+    for (const table of DELETE_REVOKED_TABLES) {
+      const column = organisationColumn(table);
+      await expect(
+        withTenant(app, { organisationId: organisationA.id, userId: userA }, (tx) =>
+          tx.unsafe(`delete from ${table} where ${column} = $1`, [organisationA.id]),
+        ),
+        `${table} delete`,
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+  });
+
+  it('maintains updated_at on modification through the touch trigger', async () => {
+    const before = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [row] = await tx<{ updated_at: string }[]>`
+          select updated_at from works where id = ${graphA.workId}
+        `;
+        await tx`
+          update works set title = 'Integration test work for tenant isolation'
+          where id = ${graphA.workId}
+        `;
+        return row?.updated_at;
+      },
+    );
+
+    const [after] = await admin<{ newer: boolean }[]>`
+      select updated_at > ${before ?? null}::timestamptz as newer
+      from works where id = ${graphA.workId}
+    `;
+    expect(after?.newer).toBe(true);
+  });
+
+  it('rejects writing rows stamped with another organisation id', async () => {
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          await tx`
+          insert into works (
+            organisation_id, work_code, letter_number, letter_date, title,
+            advertised_value, contract_value, pricing_shape, created_by_user_id
+          )
+          values (
+            ${organisationB.id}, 'INT-A-EVIL', 'LOA/INT-A-EVIL', '2026-01-15',
+            'Attempted cross-tenant insert', '1.00', '1.00', 'per_schedule', ${userA}
+          )
+        `;
+        },
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          await tx`
+            insert into audit_events (organisation_id, action, entity_type)
+            values (${organisationB.id}, 'integration.evil', 'works')
+          `;
+        },
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('statutory document delete guards', () => {
+  it('allows pristine drafts but rejects issued or provider-touched records through the app role', async () => {
+    const pristineDraftId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [buyer] = await tx<{ id: string }[]>`
+          select id from contacts order by created_at, id limit 1
+        `;
+        if (!buyer) throw new Error('seed buyer missing');
+        const [draft] = await tx<{ id: string }[]>`
+          insert into tax_invoices (
+            organisation_id, invoice_date, sac_code, service_description,
+            gst_rate, place_of_supply, reverse_charge_applicable,
+            stated_taxable_value, buyer_contact_id, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, '2026-02-08', '998734',
+            'Pristine direct draft for delete proof', '18.00', '27', false,
+            '100.00', ${buyer.id}, ${userA}
+          )
+          returning id
+        `;
+        if (!draft) throw new Error('draft insert returned no row');
+        const deleted = await tx`delete from tax_invoices where id = ${draft.id}`;
+        expect(deleted.count).toBe(1);
+        return draft.id;
+      },
+    );
+    const [gone] = await admin<{ id: string }[]>`
+      select id from tax_invoices where id = ${pristineDraftId}
+    `;
+    expect(gone).toBeUndefined();
+
+    const touchedDraftId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [buyer] = await tx<{ id: string }[]>`
+          select id from contacts order by created_at, id limit 1
+        `;
+        if (!buyer) throw new Error('seed buyer missing');
+        const [draft] = await tx<{ id: string }[]>`
+          insert into tax_invoices (
+            organisation_id, invoice_date, sac_code, service_description,
+            gst_rate, place_of_supply, reverse_charge_applicable,
+            stated_taxable_value, buyer_contact_id, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, '2026-02-08', '998734',
+            'Provider-touched direct draft for delete proof', '18.00', '27',
+            false, '100.00', ${buyer.id}, ${userA}
+          )
+          returning id
+        `;
+        if (!draft) throw new Error('touched draft insert returned no row');
+        await tx`
+          insert into statutory_provider_operations (
+            organisation_id, tax_invoice_id, provider, environment,
+            operation, status, request_sha256, provider_code,
+            created_by_user_id, completed_at
+          )
+          values (
+            ${organisationA.id}, ${draft.id}, 'whitebooks', 'sandbox',
+            'register_irp', 'failed', ${'d'.repeat(64)}, 'TEST_FAILURE',
+            ${userA}, now()
+          )
+        `;
+        return draft.id;
+      },
+    );
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from tax_invoices where id = ${touchedDraftId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+
+    const { invoiceId, pristineEwayBillId } = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [invoice] = await tx<{ id: string }[]>`
+          select id from tax_invoices where status = 'submitted'
+          order by created_at, id limit 1
+        `;
+        if (!invoice) throw new Error('seed submitted invoice missing');
+        const [ewayBill] = await tx<{ id: string }[]>`
+          select id from eway_bills where tax_invoice_id = ${invoice.id}
+        `;
+        if (!ewayBill) throw new Error('seed pristine e-way bill missing');
+        const deleted = await tx`delete from eway_bills where id = ${ewayBill.id}`;
+        expect(deleted.count).toBe(1);
+        return { invoiceId: invoice.id, pristineEwayBillId: ewayBill.id };
+      },
+    );
+    expect(pristineEwayBillId).toBeDefined();
+
+    const touchedEwayBillId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [ewayBill] = await tx<{ id: string }[]>`
+          insert into eway_bills (
+            organisation_id, tax_invoice_id, distance_km, from_pincode,
+            to_pincode, created_by_user_id
+          )
+          values (
+            ${organisationA.id}, ${invoiceId}, 120, '422010', '400001', ${userA}
+          )
+          returning id
+        `;
+        if (!ewayBill) throw new Error('replacement e-way bill missing');
+        await tx`
+          insert into statutory_provider_operations (
+            organisation_id, eway_bill_id, provider, environment,
+            operation, status, request_sha256, provider_code,
+            created_by_user_id, completed_at
+          )
+          values (
+            ${organisationA.id}, ${ewayBill.id}, 'whitebooks', 'sandbox',
+            'generate_eway_bill', 'failed', ${'e'.repeat(64)}, 'TEST_FAILURE',
+            ${userA}, now()
+          )
+        `;
+        return ewayBill.id;
+      },
+    );
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from eway_bills where id = ${touchedEwayBillId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        (tx) => tx`delete from tax_invoices where id = ${invoiceId}`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+describe('membership floor', () => {
+  it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
+    // userB is not a member of organisation A: every read is empty and
+    // every write is denied, no matter what the handler stamped.
+    await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userB },
+      async (tx) => {
+        const [bound] = await tx<{ organisation_id: string | null }[]>`
+          select app_private.current_organisation_id() as organisation_id
+        `;
+        expect(bound?.organisation_id).toBeNull();
+
+        for (const table of TENANT_TABLES) {
+          expect(
+            await countAs(tx as unknown as Sql, table, organisationA.id),
+            table,
+          ).toBe(0);
+        }
+      },
+    );
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userB },
+        (tx) => tx`
+          insert into audit_events (organisation_id, action, entity_type)
+          values (${organisationA.id}, 'integration.floor-breach', 'works')
+        `,
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('does not bind tenant context for a disabled membership', async () => {
+    await admin`
+      update organisation_memberships set status = 'disabled'
+      where organisation_id = ${organisationB.id} and user_id = ${userB}
+    `;
+    try {
+      await withTenant(
+        app,
+        { organisationId: organisationB.id, userId: userB },
+        async (tx) => {
+          const works = await tx`select id from works`;
+          expect(works).toHaveLength(0);
+        },
+      );
+    } finally {
+      await admin`
+        update organisation_memberships set status = 'active'
+        where organisation_id = ${organisationB.id} and user_id = ${userB}
+      `;
+    }
+  });
+
+  it('refuses organisation bootstrap without a user context', async () => {
+    await expect(
+      app.begin(
+        (tx) => tx`
+        select app_private.create_organisation_with_owner('No User Org', 'no-user-org')
+      `,
+      ),
+    ).rejects.toMatchObject({ code: '28000' });
+  });
+
+  it('lets a member list their organisations before selecting one', async () => {
+    const organisations = await withUserContext(
+      app,
+      userA,
+      (tx) =>
+        tx<{ id: string; name: string }[]>`
+          select id, name from organisations order by id
+        `,
+    );
+    expect(organisations).toEqual([{ id: organisationA.id, name: organisationA.name }]);
+  });
+});
+
+describe('membership listing before organisation selection', () => {
+  it('lets a user see only their own memberships with no organisation context', async () => {
+    const memberships = await withUserContext(
+      app,
+      userB,
+      (tx) =>
+        tx<{ organisation_id: string; user_id: string }[]>`
+        select organisation_id, user_id from organisation_memberships
+      `,
+    );
+    expect(memberships).toEqual([
+      { organisation_id: organisationB.id, user_id: userB },
+    ]);
+  });
+});
+
+describe('audit trail append-only guarantee', () => {
+  it('accepts inserts but refuses update, delete, and truncate from the application role', async () => {
+    const eventId = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      async (tx) => {
+        const [event] = await tx<{ id: string }[]>`
+          insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id)
+          values (${organisationA.id}, ${userA}, 'integration.test', 'works', ${graphA.workId})
+          returning id
+        `;
+        if (!event) throw new Error('audit insert returned no row');
+        return event.id;
+      },
+    );
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          await tx`update audit_events set action = 'integration.tampered' where id = ${eventId}`;
+        },
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+
+    await expect(
+      withTenant(
+        app,
+        { organisationId: organisationA.id, userId: userA },
+        async (tx) => {
+          await tx`delete from audit_events where id = ${eventId}`;
+        },
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+
+    // Wrapped in a transaction that always throws: if the TRUNCATE revoke
+    // ever regresses, the data is rolled back and the test fails on the
+    // wrong rejection instead of destroying the shared audit table.
+    await expect(
+      app.begin(async (tx) => {
+        await tx.unsafe('truncate audit_events');
+        throw new Error('truncate unexpectedly succeeded');
+      }),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+});

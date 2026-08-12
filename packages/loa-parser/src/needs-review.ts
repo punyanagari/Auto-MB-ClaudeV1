@@ -322,16 +322,577 @@ export function detectQtyDecomposition(
   items: readonly ParsedItem[],
 ): readonly ReviewFlag[] {
   const flags: ReviewFlag[] = [];
-  for (const item of items)ßŽ¹¶‰žËkºwµçl(€½¹ÍÐ™±…ÌèI•Ù¥•Ý±…mt€ômtì(€™½È€¡½¹ÍÐ¥Ñ•´½˜¥Ñ•µÌ¤ì(€€€½¹ÍÐ‘¥É•Ñ½Éä€ô¥Ñ•´¹Í¡•‘Õ±”ü¹‘¥É•Ñ½Éä€üü¹Õ±°ì(€€€¥˜€¡‘¥É•Ñ½Éä€„ôô¹Õ±°ñð€…M=I}M!A}=}I¹Ñ•ÍÐ¡¥Ñ•´¹¥Ñ•µ½‘”¤¤ì(€€€€€½¹Ñ¥¹Õ”ì(€€€ô(€€€™±…Ì¹ÁÕÍ ¡ì(€€€€€½‘”è€¥Ñ•µ}½‘•}¹…µ•ÍÁ…•}µ¥Íµ…Ñ œ°(€€€€€Í½Á”è€¥Ñ•´œ°(€€€€€Ñ…É•Ñ%è¥Ñ•µQ…É•Ñ%¡¥Ñ•´¤°(€€€€€É…Ý	±½¬è¥Ñ•´¹É…Ü¹…¹¡½É1¥¹”°(€€€€€µ•ÍÍ…”è%Ñ•´½‘”€ˆ‘í¥Ñ•´¹¥Ñ•µ½‘•ôˆ¥Ì€àµ‘¥¥ÐM=HµÍ¡…Á•‰ÕÐ¥ÑÌÍ¡•‘Õ±”Ì‘¥É•Ñ½Éä¥Ì€‰9½ÐÁÁ±¥…‰±”ˆ€¡¹½¸µM=H¤€´´½‘•Ì…É”Õ¹¥ÅÕ”½¹±äÝ¥Ñ¡¥¸„‘¥É•Ñ½Éä€¡É•Í•…É ƒ
-œÐ¸Ô¤ìÑ¡¥ÌÍ¡…Á”½‘¥É•Ñ½ÉäÁ…¥É¥¹œ¥Ì„¹…µ•ÍÁ…”µ¥Íµ…Ñ ¹€°(€€€€€‘•Ñ…¥°èì¥Ñ•µ½‘”è¥Ñ•´¹¥Ñ•µ½‘”°‘¥É•Ñ½Éäô°(€€€ô¤ì(€ô(€É•ÑÕÉ¸™±…Ìì)ô((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼É¥Ñ•É¥½¸€ØƒŠP±…å½ÕÐ©Õ¹¬€¼Õ¹Á…ÉÍ•…‰±”Ñ½­•¸°‘•ÍÉ¥ÁÑ¥½¸½È¹Õµ•É¥Œ½±Õµ¸(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((¼¼½ÉÁÕÌµ‘•É¥Ù•°9=P„•¹•É…°€‰…¹ä¹½¸µM%$¡…É…Ñ•Èˆ™¥±Ñ•È€´´Ñ¡…Ð(¼¼Ý½Õ±µ¥Í™¥É”½¸±•¥Ñ¥µ…Ñ”Ñ•¡¹¥…°µÍÁ•ŒÕ¹¥½‘”…±É•…‘äÁÉ•Í•¹Ð…¹(¼¼YI%%=9Q9P¥¸Ñ¡”É•…°½ÉÁÕÌèA0ÈÜÔÌ€ˆÌƒ
-ø‘¥¥Ðˆ±…µÀµµ•Ñ•È(¼¼™É…Ñ¥½¸°…¹A0ÈÜØÌ€‹Šˆˆ‰Õ±±•Ñ•™•…ÑÕÉ”±¥ÍÑÌ€¡„É•…°°øÄÐµ½ÕÉÉ•¹”(¼¼‰Õ±±•Ñ•µ±¥ÍÐÉ•¹‘•É¥¹œ°¹½Ð©Õ¹¬¤¸€‹
-¤ˆ¥ÌÑ¡”½¹”±åÁ µ•…ÍÕÉ•…É½ÍÌ(¼¼Ñ¡”Í¥àµ±•ÑÑ•È½ÉÁÕÌÑ¡…Ð¥Ì¹½Ð±•¥Ñ¥µ…Ñ”½¹Ñ•¹Ð€´´A0ÈÜÔM¡•‘Õ±”(¼¼¥Ñ•´€ÄÌ‘•ÍÉ¥ÁÑ¥½¸°µ¥µÍ•¹Ñ•¹”°…±µ½ÍÐ•ÉÑ…¥¹±ä„Á‘™Ñ½Ñ•áÐ€µ±…å½ÕÐ(¼¼µ¥ÌµÉ•¹‘•É¥¹œ½˜„€ˆ¡Œ¤ˆ±¥ÍÐµ…É­•È€¡Ñ¡”¥Ñ•´Ì½Ñ¡•È±¥ÍÐµ…É­•ÉÌÉ•…(¼¼€ˆ¡„¤ˆ°€ˆ¡ˆ¤ˆ°€ˆ¡¤ˆ°€ˆ¡”¤ˆƒŠP€ˆ¡Œ¤ˆ¥ÌÑ¡”½¹”µ¥ÍÍ¥¹œ°•á…Ñ±äÝ¡•É”€‹
-¤ˆ(¼¼Í¥ÑÌ¤¸¥Ñ•µÌ¹ÑÌÌ½Ý¸µ½‘Õ±”‘½Œ…±É•…‘ä¹…µ•ÌÑ¡¥Ì•á…Ð¡…É…Ñ•È…Ì(¼¼Ñ¡”½ÉÁÕÌÌÍÑÉ…äµÑ½­•¸•á…µÁ±”¸)½¹ÍÐ1e=UQ})U9-}1eA!M}I€ô€½o
-¥t¼ì((¼¨¨(€¨É¥Ñ•É¥½¸€Ø°‰½Ñ ¡…±Ù•Ì¸Q¡”‘•ÍÉ¥ÁÑ¥½¸¡…±˜¥Ì•á•É¥Í•‰äÑ¡”É•…°(€¨½ÉÁÕÌ€¡A0ÈÜÔ¥Ñ•´€Ä°…‰½Ù”¤¸Q¡”¹Õµ•É¥Œµ½±Õµ¸¡…±˜ƒŠP…¸…¹¡½È±¥¹”(€¨Ý¡½Í”¹Õµ•É¥Œ½±Õµ¹Ì½Õ±¹½Ð‰”‘•½µÁ½Í•…Ð…±°ƒŠP¥ÌU9aI%M‰ä(€¨Ñ¡”É•…°½ÉÁÕÌ€¡¥Ñ•µÌ¹ÑÌÌ½Ý¸µ½‘Õ±”‘½Œè…±°€ÈàÄÉ•…°…¹¡½È±¥¹•Ì(€¨‘•½µÁ½Í”±•…¹±ä¤…¹¥ÌÁÉ½Ù•‰ä„Ñ…É•Ñ•°¥¸µµ•µ½ÉäµÕÑ…Ñ¥½¸½˜„(€¨É•…°…¹¡½È±¥¹”Ìµ½¹•äµ™¥ÕÉ”™½Éµ…Ð€¡‰É•…­¥¹œ¥Ñ•µÌ¹ÑÍ€Ì(€¨9!=I}Q%1}I€¤°µ¥ÉÉ½É¥¹œÑ¡”Í…µ”€‰•¹¥¹••È„…Í”™É½´É•…°Ñ•áÐ°(€¨¹•Ù•È™…‰É¥…Ñ”„™¥áÑÕÉ”ˆÁÉ••‘•¹Ð¥Ñ•µÌ¹ÑÌÌ½Ý¸‘ÕÁ±¥…Ñ”µ½‘”Ñ•ÍÐ(€¨ÕÍ•Ì¸I•…‘Ì¥Ñ•´¹¥Ñ•µ½‘”€ôôô€œ€…ÌÑ¡”Í¥¹…°è¥Ñ•µÌ¹ÑÌÌ(€¨µ…±™½Éµ•‘%Ñ•µ€™…±±‰…¬¥ÌÑ¡”=91dÁ…Ñ Ñ¡…ÐÁÉ½‘Õ•Ì…¸•µÁÑä(€¨¥Ñ•µ½‘•€€¡Á••±¹¡½ÉQ…¥±€ÌÍÕ•ÍÍ™Õ°Á…Ñ …±Ý…åÌÉ•ÑÕÉ¹Ì„(€¨¹½¸µ•µÁÑäÑ½­•¸°‰ä½¹ÍÑÉÕÑ¥½¸½˜¥ÑÌÑ½­•¸µ™¥±Ñ•É¥¹œ¤¸Q¡”É…Ü(€¨…¹¡½È±¥¹”¥ÌÉ•Ñ…¥¹••¥Ñ¡•ÈÝ…äìÑ¡”‘•ÍÉ¥ÁÑ¥½¸°Ý¡•¸ÁÉ•Í•¹Ð°¥Ì(€¨¹•Ù•È±•…¹•¸(€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•Ñ1…å½ÕÑ)Õ¹¬¡¥Ñ•µÌèÉ•…‘½¹±äA…ÉÍ•‘%Ñ•µmt¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€½¹ÍÐ™±…ÌèI•Ù¥•Ý±…mt€ômtì(€™½È€¡½¹ÍÐ¥Ñ•´½˜¥Ñ•µÌ¤ì(€€€¥˜€¡1e=UQ})U9-}1eA!M}I¹Ñ•ÍÐ¡¥Ñ•´¹‘•ÍÉ¥ÁÑ¥½¸¤¤ì(€€€€€™±…Ì¹ÁÕÍ ¡ì(€€€€€€€½‘”è€±…å½ÕÑ}©Õ¹¬œ°(€€€€€€€Í½Á”è€¥Ñ•´œ°(€€€€€€€Ñ…É•Ñ%è¥Ñ•µQ…É•Ñ%¡¥Ñ•´¤°(€€€€€€€É…Ý	±½¬è¥Ñ•´¹‘•ÍÉ¥ÁÑ¥½¸°(€€€€€€€µ•ÍÍ…”è(€€€€€€€€€€•ÍÉ¥ÁÑ¥½¸½¹Ñ…¥¹Ì„±…å½ÕÐµ©Õ¹¬±åÁ €¡„Á‘™Ñ½Ñ•áÐ€µ±…å½ÕÐÉ•¹‘•É¥¹œ…ÉÑ¥™…Ð°”¹œ¸„…É‰±•±¥ÍÐµ…É­•È¤€´´É•Ñ…¥¹•Ù•É‰…Ñ¥´°¹•Ù•È±•…¹•¸œ°(€€€€€ô¤ì(€€€ô(€€€¥˜€¡¥Ñ•´¹¥Ñ•µ½‘”€ôôô€œœ¤ì(€€€€€™±…Ì¹ÁÕÍ ¡ì(€€€€€€€½‘”è€±…å½ÕÑ}©Õ¹¬œ°(€€€€€€€Í½Á”è€¥Ñ•´œ°(€€€€€€€Ñ…É•Ñ%è¥Ñ•µQ…É•Ñ%¡¥Ñ•´¤°(€€€€€€€É…Ý	±½¬è¥Ñ•´¹É…Ü¹…¹¡½É1¥¹”°(€€€€€€€µ•ÍÍ…”è(€€€€€€€€€€‰Q¡”…¹¡½È±¥¹”Ì¹Õµ•É¥Œ½±Õµ¹Ì½Õ±¹½Ð‰”Á…ÉÍ•€¡±…å½ÕÐ©Õ¹¬€¼…¸Õ¹Á…ÉÍ•…‰±”Ñ½­•¸¤€´´É…Ü‰±½¬É•Ñ…¥¹•°¥Ñ•´™±…•°¹½Ñ¡¥¹œÕ•ÍÍ•¸ˆ°(€€€€€ô¤ì(€€€ô(€ô(€É•ÑÕÉ¸™±…Ìì)ô((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼€‰‘‘¥Ñ¥½¹…°É•ÅÕ¥É•‰•¡…Ù¥½ÕÈˆƒŠPÕ¹•á•É¥Í•‘•™•¹Í¥Ù”Ñ•µÁ±…Ñ”‰É…¹¡•Ì(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()½¹ÍÐ%Q5}	I-UA}1	1}I€ô€½y%Ñ•´	É•…­ÕÁqˆ½¤ì)½¹ÍÐ%Q5}	I-UA}aAQ€ô€¹¼‰É•…¬ÕÀ¥Ñ•´…‘‘•œì((¼¨¨%Ñ•´	É•…­ÕÁ€É•…‘Ì€‰9¼‰É•…¬ÕÀ¥Ñ•´…‘‘•ˆ¥¸…±°Í¥àÉ•…°±•ÑÑ•ÉÌ(€¨€¡É•Í•…É ƒ
-œÔ¤¸±…Ì½¹±äÝ¡•¸Ñ¡”Í•Ñ¥½¸¥ÌAIM9PÝ¥Ñ ‘¥™™•É•¹Ð(€¨½¹Ñ•¹ÐƒŠP…‰Í•¹”¥Ì¹½Ð¥ÑÍ•±˜„ÑÉ…À€¡Ñ¡”Ñ¥­•Ðè€‰É…¥Í•Ì¹••‘ÍI•Ù¥•Ý€(€¨Ý¡•¸¥Ð…ÁÁ•…ÉÌÝ¥Ñ Õ¹•áÁ•Ñ•½¹Ñ•¹Ðˆ°¹½Ð½¸…‰Í•¹”¤¸U¹•á•É¥Í•‰ä(€¨Ñ¡”É•…°½ÉÁÕÌìÁÉ½Ù•‰ä…¸¥¸µµ•µ½ÉäÍÕ‰ÍÑ¥ÑÕÑ¥½¸½˜„É•…°™¥áÑÕÉ”Ì(€¨Ñ•áÐ¸€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•ÑU¹•áÁ•Ñ•‘%Ñ•µ	É•…­ÕÀ (€É…ÝQ•áÐèÍÑÉ¥¹œ°(€±•ÑÑ•ÉQ…É•Ñ%èÍÑÉ¥¹œ°(¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€½¹ÍÐÍÑÉ¥ÁÁ•€ôÍÑÉ¥ÁAÉ¥¹ÑÕÉ¹¥ÑÕÉ”¡É…ÝQ•áÐ¤ì(€½¹ÍÐÁ…É„€ôÁ…É…É…Á¡Ì¡ÍÑÉ¥ÁÁ•¤¹™¥¹ ¡À¤€ôø%Q5}	I-UA}1	1}I¹Ñ•ÍÐ¡À¤¤ì(€¥˜€¡Á…É„€ôôôÕ¹‘•™¥¹•¤ì(€€€É•ÑÕÉ¸mtì(€ô(€½¹ÍÐÉ•µ…¥¹‘•È€ôÁ…É„¹É•Á±…”¡%Q5}	I-UA}1	1}I°€œœ¤¹ÑÉ¥´ ¤ì(€¥˜€¡É•µ…¥¹‘•È¹Ñ½1½Ý•É…Í” ¤€ôôô%Q5}	I-UA}aAQ¤ì(€€€É•ÑÕÉ¸mtì(€ô(€É•ÑÕÉ¸l(€€€ì(€€€€€½‘”è€Õ¹•áÁ•Ñ•‘}¥Ñ•µ}‰É•…­ÕÀœ°(€€€€€Í½Á”è€±•ÑÑ•Èœ°(€€€€€Ñ…É•Ñ%è±•ÑÑ•ÉQ…É•Ñ%°(€€€€€É…Ý	±½¬èÁ…É„°(€€€€€µ•ÍÍ…”è€‰%Ñ•´	É•…­ÕÀˆÉ•…‘Ì€‘í)M=8¹ÍÑÉ¥¹¥™ä¡É•µ…¥¹‘•È¥ô¥¹ÍÑ•…½˜Ñ¡”Ñ•µÁ±…Ñ”ÌÕ¹¥Ù•ÉÍ…°€‰9¼‰É•…¬ÕÀ¥Ñ•´…‘‘•ˆ€ Ø¼Ø¥¸Ñ¡”É•…°½ÉÁÕÌ¤€´´Õ¹•á•É¥Í•‰äÉ•…°‘…Ñ„°¥µÁ±•µ•¹Ñ•‘•™•¹Í¥Ù•±äìÉ•Ù¥•Ü‰•™½É”½¹™¥É´¹€°(€€€ô°(€tì)ô((¼¨¨I•‰…Ñ”½¸Q½Ñ…°Y…±Õ”€ ”¥€É•…‘Ì€À¸ÀÁ€¥¸…±°Í¥àÉ•…°±•ÑÑ•ÉÌ(€¨€¡É•Í•…É ƒ
-œÄÌ‘•½ä™¥•±°ƒ
-œÔ¤¸I•ÕÍ•ÌÁÉ¥¥¹M¡…Á”¹É•‰…Ñ•=¹Q½Ñ…±Y…±Õ•€(€¨€¡…±É•…‘ä•áÑÉ…Ñ•‰äÁÉ¥¥¹œµÍ¡…Á”¹ÑÌ¤É…Ñ¡•ÈÑ¡…¸É”µÁ…ÉÍ¥¹œ¥Ð°Í¼(€¨Ñ¡¥Ì…¸¹•Ù•È‘É¥™Ð™É½´Ñ¡”±…ÍÍ¥™¥•ÈÌ½Ý¸É•…‘¥¹œ½˜Ñ¡”Í…µ”(€¨™¥ÕÉ”¸±…Ì½¹±äÝ¡•¸™½Õ¹9¹½¸µé•É¼ƒŠP„¹Õ±±€€¡¹½Ð±½…Ñ•¤¥Ì(€¨ÁÉ¥¥¹œµÍ¡…Á”¹ÑÌÌ½Ý¸¹••‘ÍI•Ù¥•Ý€½¹•É¸°¹½ÐÑ¡¥ÌÑÉ¥•ÈÌ¸€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•ÑU¹•áÁ•Ñ•‘I•‰…Ñ” (€ÁÉ¥¥¹M¡…Á”èAÉ¥¥¹M¡…Á•I•ÍÕ±Ð°(€±•ÑÑ•ÉQ…É•Ñ%èÍÑÉ¥¹œ°(¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€½¹ÍÐìÉ•‰…Ñ•=¹Q½Ñ…±Y…±Õ”°É…ÝQ½Ñ…±Í	±½¬ô€ôÁÉ¥¥¹M¡…Á”ì(€¥˜€¡É•‰…Ñ•=¹Q½Ñ…±Y…±Õ”€ôôô¹Õ±°ñðÉ•‰…Ñ•=¹Q½Ñ…±Y…±Õ”€ôôô€À¤ì(€€€É•ÑÕÉ¸mtì(€ô(€É•ÑÕÉ¸l(€€€ì(€€€€€½‘”è€Õ¹•áÁ•Ñ•‘}É•‰…Ñ”œ°(€€€€€Í½Á”è€±•ÑÑ•Èœ°(€€€€€Ñ…É•Ñ%è±•ÑÑ•ÉQ…É•Ñ%°(€€€€€É…Ý	±½¬èÉ…ÝQ½Ñ…±Í	±½¬€üü€œœ°(€€€€€µ•ÍÍ…”è€‰I•‰…Ñ”½¸Q½Ñ…°Y…±Õ”€ ”¤ˆÉ•…‘Ì€‘íMÑÉ¥¹œ¡É•‰…Ñ•=¹Q½Ñ…±Y…±Õ”¥ô¥¹ÍÑ•…½˜Ñ¡”Ñ•µÁ±…Ñ”ÌÕ¹¥Ù•ÉÍ…°€À¸ÀÀ€ Ø¼Ø¥¸Ñ¡”É•…°½ÉÁÕÌ¤€´´Õ¹•á•É¥Í•‰äÉ•…°‘…Ñ„°¥µÁ±•µ•¹Ñ•‘•™•¹Í¥Ù•±äìÉ•Ù¥•Ü‰•™½É”½¹™¥É´€¡É•Í•…É ƒ
-œÄÌ‘•½ä™¥•±¤¹€°(€€€ô°(€tì)ô((¼¨¨Q¡”¥Ñ•´µÉ½Ü‰½Ù”A…É€Ñ½­•¸ƒŠP¹•Ù•È½‰Í•ÉÙ•¥¸Ñ¡”É•…°½ÉÁÕÌ(€¨€ ÈàÄ¼ÈàÄÉ•…ÐA…É€°É•Í•…É ƒ
-œÔ¤¸U¹•á•É¥Í•‰äÉ•…°‘…Ñ„ìÁÉ½Ù•‰ä(€¨µÕÑ…Ñ¥¹œ„É•…°…¹¡½È±¥¹”ÌÁ…ÈÑ½­•¸¥¸µµ•µ½Éä¸€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•ÑU¹•áÁ•Ñ•‘‰½Ù•A…È (€¥Ñ•µÌèÉ•…‘½¹±äA…ÉÍ•‘%Ñ•µmt°(¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€É•ÑÕÉ¸¥Ñ•µÌ(€€€€¹™¥±Ñ•È ¡¥Ñ•´¤€ôø¥Ñ•´¹Á…ÉQ½­•¸€ôôô€‰½Ù”A…Èœ¤(€€€€¹µ…À ¡¥Ñ•´¤€ôø€¡ì(€€€€€½‘”è€Õ¹•áÁ•Ñ•‘}…‰½Ù•}Á…Èœ…Ì½¹ÍÐ°(€€€€€Í½Á”è€¥Ñ•´œ…Ì½¹ÍÐ°(€€€€€Ñ…É•Ñ%è¥Ñ•µQ…É•Ñ%¡¥Ñ•´¤°(€€€€€É…Ý	±½¬è¥Ñ•´¹É…Ü¹…¹¡½É1¥¹”°(€€€€€µ•ÍÍ…”è(€€€€€€€€œ‰‰½Ù”A…Èˆ¥Ñ•´µÉ½ÜÑ½­•¸€´´¹•Ù•È½‰Í•ÉÙ•¥¸Ñ¡”É•…°½ÉÁÕÌ€ ÈàÄ¼ÈàÄÉ•…€‰ÐA…Èˆ¤°¥µÁ±•µ•¹Ñ•‘•™•¹Í¥Ù•±äìÉ•Ù¥•Ü‰•™½É”½¹™¥É´¸œ°(€€€ô¤¤ì)ô((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼€‰‘‘¥Ñ¥½¹…°É•ÅÕ¥É•‰•¡…Ù¥½ÕÈˆƒŠP	…¹¹•µ¥Ñ•µÌ‰±½¬°‰½Ñ ÍÁ•±±¥¹Ì(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()•áÁ½ÉÐÑåÁ”	…¹¹•‘	±½­MÁ•±±¥¹œ€ô€½±½¸œð€¥Ñ•´œì()•áÁ½ÉÐ¥¹Ñ•É™…”	…¹¹•‘%Ñ•µÍ	±½­•Ñ•Ñ¥½¸ì(€€¼¨¨]¡¥ ½˜Ñ¡”ÑÝ¼•Ù¥‘•¹•±…‰•°ÍÁ•±±¥¹Ìµ…Ñ¡•€¡µ½‘Õ±”‘½Œ(€€€¨‰•±½Ü¤¸€¨¼(€É•…‘½¹±äÍÁ•±±¥¹œè	…¹¹•‘	±½­MÁ•±±¥¹œì(€€¼¨¨™…±Í•€™½ÈÑ¡”‘½Õµ•¹Ñ••µÁÑä…Í”€¡Ñ¡”Á…É…É…Á Ì½¹Ñ•¹Ð¥Ì(€€€¨•á…Ñ±ä9%1€¤€´´ÑÉÕ•€™½È„•¹Õ¥¹•±äÁ½ÁÕ±…Ñ•‰±½¬¸€¨¼(€É•…‘½¹±äÁ½ÁÕ±…Ñ•è‰½½±•…¸ì(€É•…‘½¹±äÉ…Ý	±½¬èÍÑÉ¥¹œì)ô((¼¼A0ÈàÄÌÍÁ•±±¥¹œè€‰	…¹¹•¥Ñ•´èI…Ñ•Ì½˜¥Ñ•´¹¼€È°Ø°à°ÄØ°ÄÜ°Äà½˜(¼¼Í¡•‘Õ±”Ä€˜É…Ñ•Ì½˜¥Ñ•´¹¼€à°ÄÔ½˜Í¡•‘Õ±”È…É”‰…¹••™½È™ÕÑÕÉ”(¼¼É•™•É•¹”¸ˆ€¡™¥áÑÕÉ”±¥¹•Ì€ÄÀÀ´ÄÀÄ°Í¥Œ½¸€‰‰…¹••ˆ€´´Ñ¡”±•ÑÑ•ÈÌ½Ý¸(¼¼ÑåÁ¼°ÁÉ•Í•ÉÙ•Ù•É‰…Ñ¥´¥¸É…Ý	±½¬¤¸¡•­•%IMP°‘•±¥‰•É…Ñ•±äè¥Ð(¼¼É•ÅÕ¥É•ÌÑ¡”Ý½É€‰¥Ñ•´ˆ‰•ÑÝ••¸€‰	…¹¹•ˆ…¹€ˆèˆ°Í¼¥Ð…¸¹•Ù•Èµ…Ñ (¼¼A0ÈàÀÌ€‰	…¹¹•€èˆ±¥¹”€¡Ý¡½Í”½±½¸™½±±½ÝÌ€‰	…¹¹•ˆ‘¥É•Ñ±ä°Ý¥Ñ ½¹±ä(¼¼Ý¡¥Ñ•ÍÁ…”‰•ÑÝ••¸¤¸)½¹ÍÐ	99}%Q5}1	1}I€ô€½	…¹¹•‘qÌ­¥Ñ•µqÌ¨è½¤ì((¼¼A0ÈàÀÌÍÁ•±±¥¹œè€‰	…¹¹•€èI…Ñ•Ì½˜Ñ¡”™½±±½Ý¥¹œ¥Ñ•µÌ…É”‰…¹¹•™½È(¼¼™ÕÑÕÉ”É•™•É•¹”M¡•‘Õ±”´9%0ˆ€¡™¥áÑÕÉ”±¥¹•Ì€ÄÐÀ´ÄÐÄ¤¸…¹¹½Ðµ…Ñ (¼¼€‰	…¹¹•¥Ñ•´èˆÑ•áÐ€¡µ½‘Õ±”‘½Œ…‰½Ù”¤€´´Ñ¡”ÑÝ¼…ÉµÌ…É”µÕÑÕ…±±ä(¼¼•á±ÕÍ¥Ù”‰ä½¹ÍÑÉÕÑ¥½¸°¹½Ð‰ä¡•¬½É‘•È¸)½¹ÍÐ	99}=1=9}1	1}I€ô€½	…¹¹•‘qÌ¨è½¤ì((¼¼Q¡”‘½Õµ•¹Ñ••µÁÑä…Í”€¡A0ÈàÀ¤èÑ¡”Á…É…É…Á ÌÑÉ…¥±¥¹œ½¹Ñ•¹Ð¥Ì(¼¼•á…Ñ±ä€‰9%0ˆ¸¹äÁ½ÁÕ±…Ñ•½¹Ñ•¹Ð€´´„É•…°¥Ñ•´±¥ÍÐ°É•Í•…É ƒ
-œÔÌ(¼¼A0ÈàÄ…Í”€´´¹•Ù•È½¹Ñ…¥¹ÌÑ¡¥ÌÑ½­•¸¥¸Ñ¡”½ÉÁÕÌ¸)½¹ÍÐ9%1}]=I}I€ô€½q‰9%1qˆ½¤ì((¼¨¨(€¨I•½¹¥Í•Ì%Q!HÍÁ•±±¥¹œ½˜Ñ¡”	…¹¹•µ¥Ñ•µÌ‰±½¬€¡É•Í•…É ƒ
-œÔ°(€¨½ÉÉ•Ñ•€ÈÀÈØ´Àà´ÀÔ€´´€‰¹¼±½¹•ÈÕ¹•á•É¥Í•ˆ¤°Í…¹¹¥¹œÑ¡”¡•…‘•È¼(€¨ÁÉ½Í”É•¥½¸½¹±ä€¡‰½Ñ É•…°½ÕÉÉ•¹•ÌÍ¥Ð‰•™½É”Ñ¡”(€¨Ý…É‘•EÕ…¹Ñ¥Ñ¥•Ì¹I…Ñ•Í€µ…É­•ÈèA0ÈàÀ±¥¹•Ì€ÄÐÀ´ÄÐÄ°A0ÈàÄ±¥¹•Ì(€¨€ÄÀÀ´ÄÀÄ¤¸I•ÑÕÉ¹Ì¹Õ±±€¥˜9%Q!HÍÁ•±±¥¹œ¥ÌÁÉ•Í•¹Ð…Ð…±°€´´•áÁ½Í•(€¨Í•Á…É…Ñ•±ä™É½´Ñ¡”™±…œµÁÉ½‘Õ¥¹œÝÉ…ÁÁ•È‰•±½ÜÍ¼(€¨Ñ•ÍÐ½¹••‘ÌµÉ•Ù¥•Ü¹Ñ•ÍÐ¹ÑÍ€…¸ÁÉ½Ù”‰½Ñ ÍÁ•±±¥¹œ…ÉµÌ¥¹‘•Á•¹‘•¹Ñ±ä(€¨€¡‘¥Í…‰±¥¹œ•¥Ñ¡•ÈÉ••àÑÕÉ¹Ì•á…Ñ±ä½¹”É•…°±•ÑÑ•ÈÌ‘•Ñ•Ñ¥½¸É•ÍÕ±Ð(€¨¹Õ±±€°Á•ÈÑ¡”Ñ¥­•ÐÌ½Ý¸¹•…Ñ¥Ù”µÁÉ½½˜É•ÅÕ¥É•µ•¹Ð¤°¹½Ð©ÕÍÐÁÉ½Ù”(€¨Ñ¡”™±…œ½ÕÑ½µ”°Ý¡¥ ¥Ì%9Q%0€ ‰¹¼™±…œˆ¤™½ÈA0ÈàÀÝ¡•Ñ¡•È½È¹½Ð(€¨Ñ¡”½±½¸…É´•Ù•¸ÉÕ¹Ì€¡¥ÑÌ½¹Ñ•¹Ð¥Ì9%0•¥Ñ¡•ÈÝ…ä¤…¹Ý½Õ±¹½Ð‰ä(€¨¥ÑÍ•±˜…Ñ Ñ¡…Ð…É´‰•¥¹œ‘¥Í…‰±•¸(€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•Ñ	…¹¹•‘%Ñ•µÍ	±½¬ (€É…ÝQ•áÐèÍÑÉ¥¹œ°(¤è	…¹¹•‘%Ñ•µÍ	±½­•Ñ•Ñ¥½¸ð¹Õ±°ì(€½¹ÍÐÉ•¥½¸€ô¡•…‘•ÉI•¥½¸¡É…ÝQ•áÐ¤ì(€½¹ÍÐÁ…É…Ì€ôÁ…É…É…Á¡Ì¡É•¥½¸¤ì((€½¹ÍÐ¥Ñ•µA…É„€ôÁ…É…Ì¹™¥¹ ¡À¤€ôø	99}%Q5}1	1}I¹Ñ•ÍÐ¡À¤¤ì(€¥˜€¡¥Ñ•µA…É„€„ôôÕ¹‘•™¥¹•¤ì(€€€É•ÑÕÉ¸ì(€€€€€ÍÁ•±±¥¹œè€¥Ñ•´œ°(€€€€€Á½ÁÕ±…Ñ•è€…9%1}]=I}I¹Ñ•ÍÐ¡¥Ñ•µA…É„¤°(€€€€€É…Ý	±½¬è¥Ñ•µA…É„°(€€€ôì(€ô((€½¹ÍÐ½±½¹A…É„€ôÁ…É…Ì¹™¥¹ ¡À¤€ôø	99}=1=9}1	1}I¹Ñ•ÍÐ¡À¤¤ì(€¥˜€¡½±½¹A…É„€„ôôÕ¹‘•™¥¹•¤ì(€€€É•ÑÕÉ¸ì(€€€€€ÍÁ•±±¥¹œè€½±½¸œ°(€€€€€Á½ÁÕ±…Ñ•è€…9%1}]=I}I¹Ñ•ÍÐ¡½±½¹A…É„¤°(€€€€€É…Ý	±½¬è½±½¹A…É„°(€€€ôì(€ô((€É•ÑÕÉ¸¹Õ±°ì)ô((¼¨¨±…Ì„A=AU1Q‰…¹¹•µ¥Ñ•µÌ‰±½¬™½ÈÉ•Ù¥•Ü€¡Ñ¥­•Ð°Ù•É‰…Ñ¥´è€‰™±…œ(€¨„Á½ÁÕ±…Ñ•‰…¹¹•µ¥Ñ•µÌ‰±½¬™½ÈÉ•Ù¥•Üˆ¤¸I%9!=M8™½ÈÑ¡”(€¨9%0½•µÁÑä…Í”€¡Ñ¥­•Ðè€‰É…Ñ¡•ÈÑ¡…¸ÑÉ•…Ñ¥¹œÑ¡”‰É…¹ …ÌÕ¹Ñ•ÍÑ•ˆ€´´(€¨…µ‰¥Õ½ÕÌ½¸Ý¡•Ñ¡•È9%0¥ÑÍ•±˜Í¡½Õ±…±Í¼™±…œ¤è9%0¥Ì‘½Õµ•¹Ñ•¡•É”(€¨…ÌÑ¡”5AQd…Í”°Íåµµ•ÑÉ¥ŒÝ¥Ñ ‘•Ñ•ÑU¹•áÁ•Ñ•‘%Ñ•µ	É•…­ÕÁ€€¼(€¨‘•Ñ•ÑU¹•áÁ•Ñ•‘I•‰…Ñ•€…‰½Ù”€¡‰½Ñ ™±…œ½¹±ä½¸Õ¹•áÁ•Ñ•½Á½ÁÕ±…Ñ•(€¨½¹Ñ•¹Ð°¹•Ù•È½¸Ñ¡”Ñ•µÁ±…Ñ”Ì¹½Éµ…°½•µÁÑäÍÑ…Ñ”¤€´´Í¼A0ÈàÀÌ9%0(€¨‰±½¬¥ÌÉ•½¹¥Í•€¡ÁÉ½Ù¥¹œÑ¡”½±½¸ÍÁ•±±¥¹œ…É´Ý½É­Ì¤‰ÕÐ¹•Ù•È(€¨™±…•°Ý¡¥±”A0ÈàÄÌÁ½ÁÕ±…Ñ•‰±½¬¥Ì‰½Ñ É•½¹¥Í•9™±…•¸€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸‘•Ñ•Ñ	…¹¹•‘%Ñ•µÍ	É…¹  (€É…ÝQ•áÐèÍÑÉ¥¹œ°(€±•ÑÑ•ÉQ…É•Ñ%èÍÑÉ¥¹œ°(¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€½¹ÍÐ‘•Ñ•Ñ¥½¸€ô‘•Ñ•Ñ	…¹¹•‘%Ñ•µÍ	±½¬¡É…ÝQ•áÐ¤ì(€¥˜€¡‘•Ñ•Ñ¥½¸€ôôô¹Õ±°ñð€…‘•Ñ•Ñ¥½¸¹Á½ÁÕ±…Ñ•¤ì(€€€É•ÑÕÉ¸mtì(€ô(€½¹ÍÐÍÁ•±±¥¹1…‰•°€ô‘•Ñ•Ñ¥½¸¹ÍÁ•±±¥¹œ€ôôô€¥Ñ•´œ€ü€œ‰	…¹¹•¥Ñ•´èˆœ€è€œ‰	…¹¹•€èˆœì(€É•ÑÕÉ¸l(€€€ì(€€€€€½‘”è€‰…¹¹•‘}¥Ñ•µÍ}‰±½¬œ°(€€€€€Í½Á”è€±•ÑÑ•Èœ°(€€€€€Ñ…É•Ñ%è±•ÑÑ•ÉQ…É•Ñ%°(€€€€€É…Ý	±½¬è‘•Ñ•Ñ¥½¸¹É…Ý	±½¬°(€€€€€µ•ÍÍ…”è	…¹¹•µ¥Ñ•µÌ‰±½¬¥ÌÁ½ÁÕ±…Ñ•€¡É•½¹¥Í•Ù¥„Ñ¡”€‘íÍÁ•±±¥¹1…‰•±ôÍÁ•±±¥¹œ¤€´´É•Ù¥•ÜÑ¡”¹…µ•¥Ñ•µÌ‰•™½É”½¹™¥É´ìÉ…Ñ•Ì™½ÈÑ¡•Í”¥Ñ•µÌ…É”‰…¹¹•™½È™ÕÑÕÉ”É•™•É•¹”¹€°(€€€ô°(€tì)ô((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼É½±°µÕÀ(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´()™Õ¹Ñ¥½¸É½±±UÀ¡™±…ÌèÉ•…‘½¹±äI•Ù¥•Ý±…mt¤è9••‘ÍI•Ù¥•ÝI½±±ÕÀì(€½¹ÍÐ‰å½‘”èI•½ÉñÍÑÉ¥¹œ°¹Õµ‰•Èø€ôíôì(€™½È€¡½¹ÍÐ™±…œ½˜™±…Ì¤ì(€€€‰å½‘•m™±…œ¹½‘•t€ô€¡‰å½‘•m™±…œ¹½‘•t€üü€À¤€¬€Äì(€ô(€É•ÑÕÉ¸ì(€€€Ñ½Ñ…°è™±…Ì¹±•¹Ñ °(€€€‰å½‘”°(€€€…¹å1•ÑÑ•É1•Ù•°è™±…Ì¹Í½µ” ¡™±…œ¤€ôø™±…œ¹Í½Á”€ôôô€±•ÑÑ•Èœ¤°(€ôì)ô((¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(¼¼•¹ÑÉäÁ½¥¹Ð(¼¼€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((¼¨¨Q¡”±•ÑÑ•Èµ±•Ù•°Ñ…É•Ñ%‘€•Ù•Éä±•ÑÑ•ÈµÍ½Á•™±…œ‰•±½ÜÕÍ•ÌèÑ¡”(€¨…±É•…‘äµ•áÑÉ…Ñ•±•ÑÑ•È¹Õµ‰•È€¡¡•…‘•È¹ÑÌ¤°½È„™¥á•Í•¹Ñ¥¹•°½¸Ñ¡”(€¨Õ¹•á•É¥Í•µ‰äµÑ¡”µ½ÉÁÕÌ…Í”Ý¡•É”¡•…‘•È¹ÑÌ¥ÑÍ•±˜½Õ±¹½Ð±½…Ñ”(€¨½¹”¸€¨¼)™Õ¹Ñ¥½¸±•ÑÑ•ÉQ…É•Ñ%‘=˜¡¡•…‘•Èè1½…!•…‘•È¤èÍÑÉ¥¹œì(€É•ÑÕÉ¸¡•…‘•È¹±•ÑÑ•É9Õµ‰•È¹Ù…±Õ”€üü€U9-9=]9}1QQHœì)ô()™Õ¹Ñ¥½¸‘•Ñ•ÑU¹É•Í½±Ù•‘%Ñ•µ•ÍÉ¥ÁÑ¥½¸ (€¥Ñ•µÌèÉ•…‘½¹±äA…ÉÍ•‘%Ñ•µmt°(€É…Ý%Ñ•µQ•áÑ]…ÍAÉ½Ù¥‘•è‰½½±•…¸°(€±•ÑÑ•ÉQ…É•Ñ%èÍÑÉ¥¹œ°(¤èÉ•…‘½¹±äI•Ù¥•Ý±…mtì(€¥˜€ (€€€€…É…Ý%Ñ•µQ•áÑ]…ÍAÉ½Ù¥‘•ñð(€€€¥Ñ•µÌ¹±•¹Ñ €ôôô€Àñð(€€€¥Ñ•µÌ¹•Ù•Éä ¡¥Ñ•´¤€ôø¥Ñ•´¹‘•ÍÉ¥ÁÑ¥½¹M½ÕÉ”€ôôô€É…Üµ•á…Ðœ¤(€€¤ì(€€€É•ÑÕÉ¸mtì(€ô(€É•ÑÕÉ¸l(€€€ì(€€€€€½‘”è€Õ¹É•Í½±Ù•‘}¥Ñ•µ}‘•ÍÉ¥ÁÑ¥½¸œ°(€€€€€Í½Á”è€±•ÑÑ•Èœ°(€€€€€Ñ…É•Ñ%è±•ÑÑ•ÉQ…É•Ñ%°(€€€€€É…Ý	±½¬è¥Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôø¥Ñ•´¹É…Ü¹…¹¡½É1¥¹”¤¹©½¥¸ q¸œ¤°(€€€€€µ•ÍÍ…”è(€€€€€€€€á…ÐÁ•Èµ¥Ñ•´‘•ÍÉ¥ÁÑ¥½¸‰½Õ¹‘…É¥•Ì½Õ±¹½Ð‰”Ù•É¥™¥•™É½´Ñ¡”AÉ•…‘¥¹œ½É‘•È¸½¹Í•ÉÙ…Ñ¥Ù”±…å½ÕÐÑ•áÐÝ…ÌÉ•Ñ…¥¹•ìÉ•Ù¥•Ü¥Ñ•´‘•ÍÉ¥ÁÑ¥½¹Ì‰•™½É”½¹™¥Éµ…Ñ¥½¸¸œ°(€€€ô°(€tì)ô((¼¨¨(€¨Q¡”Í¥¹±”ÁÕ‰±¥Œ•¹ÑÉäÁ½¥¹Ð€¡Ñ¥­•Ðè€‰Ñ¡”Á…ÉÍ•ÈÌÁÕ‰±¥ŒA$É•ÑÕÉ¹Ì„(€¨É•Ù¥•ÜÁ…å±½…ˆ¤¸½µÁ½Í•Ì•áÑÉ…Ñ!•…‘•É€°Á…ÉÍ•%Ñ•µÍ€…¹(€¨±…ÍÍ¥™åAÉ¥¥¹M¡…Á•€€¡¹•Ù•ÈÉ”µ¥µÁ±•µ•¹Ñ¥¹œ…¹ä½˜Ñ¡•¥È™¥•±‘Ì¤°Ñ¡•¸(€¨ÉÕ¹Ì•Ù•ÉäÑÉ¥•È¥¸Ñ¡¥Ìµ½‘Õ±”……¥¹ÍÐÑ¡…Ð…±É•…‘äµÁ…ÉÍ•½ÕÑÁÕÐÁ±ÕÌ(€¨Ñ¡”É…ÜÑ•áÐÑÉ¥•ÉÌ¹••™½ÈÑ¡•¥È½Ý¸Ñ•áÐµÍ…¹Ì¸AÕÉ”è¹¼$½<°¹¼(€¨‘…Ñ…‰…Í”°¹¼Ý½É¬•Ù•ÈÝÉ¥ÑÑ•¸€¡µ½‘Õ±”‘½Œ…‰½Ù”¤¸(€¨¼)•áÁ½ÉÐ™Õ¹Ñ¥½¸É•Ù¥•Ý1½…1•ÑÑ•È (€É…ÝQ•áÐèÍÑÉ¥¹œ°(€½ÁÑ¥½¹ÌèI•Ù¥•Ý1½…=ÁÑ¥½¹Ì€ôíô°(¤è1½…I•Ù¥•ÝA…å±½…ì(€½¹ÍÐ¡•…‘•È€ô•áÑÉ…Ñ!•…‘•È¡É…ÝQ•áÐ¤ì(€½¹ÍÐ¥Ñ•µÌ€ô(€€€½ÁÑ¥½¹Ì¹É…Ý%Ñ•µQ•áÐ€ôôôÕ¹‘•™¥¹•(€€€€€€üÁ…ÉÍ•%Ñ•µÌ¡É…ÝQ•áÐ¤(€€€€€€èÁ…ÉÍ•%Ñ•µÌ¡É…ÝQ•áÐ°ìÉ…Ý%Ñ•µQ•áÐè½ÁÑ¥½¹Ì¹É…Ý%Ñ•µQ•áÐô¤ì(€½¹ÍÐÁÉ¥¥¹M¡…Á”€ô±…ÍÍ¥™åAÉ¥¥¹M¡…Á”¡É…ÝQ•áÐ¤ì(€½¹ÍÐ±•ÑÑ•ÉQ…É•Ñ%€ô±•ÑÑ•ÉQ…É•Ñ%‘=˜¡¡•…‘•È¤ì((€½¹ÍÐ™±…ÌèI•Ù¥•Ý±…mt€ôl(€€€€¸¸¹‘•Ñ•Ñ½ÉÉ¥•¹‘Õµ-•åÝ½É¡É…ÝQ•áÐ°±•ÑÑ•ÉQ…É•Ñ%¤°(€€€€¸¸¹‘•Ñ•Ñ½ÉÉ¥•¹‘Õµ%Ñ•µU¹¥Ñ½ÉÉ•Ñ¥½¹Ì¡É…ÝQ•áÐ°¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•ÑEÑå•½µÁ½Í¥Ñ¥½¸¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•ÑA…åµ•¹ÑQ•ÉµÍAÉ½Í”¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•ÑU¹É•Í½±Ù•‘%Ñ•µ•ÍÉ¥ÁÑ¥½¸ (€€€€€¥Ñ•µÌ°(€€€€€½ÁÑ¥½¹Ì¹É…Ý%Ñ•µQ•áÐ€„ôôÕ¹‘•™¥¹•°(€€€€€±•ÑÑ•ÉQ…É•Ñ%°(€€€€¤°(€€€€¸¸¹‘•Ñ•ÑU¹É•Í½±Ù•‘U¹¥ÑÌ¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•Ñ%Ñ•µ½‘•9…µ•ÍÁ…•5¥Íµ…Ñ ¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•Ñ1…å½ÕÑ)Õ¹¬¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•ÑU¹•áÁ•Ñ•‘%Ñ•µ	É•…­ÕÀ¡É…ÝQ•áÐ°±•ÑÑ•ÉQ…É•Ñ%¤°(€€€€¸¸¹‘•Ñ•ÑU¹•áÁ•Ñ•‘I•‰…Ñ”¡ÁÉ¥¥¹M¡…Á”°±•ÑÑ•ÉQ…É•Ñ%¤°(€€€€¸¸¹‘•Ñ•ÑU¹•áÁ•Ñ•‘‰½Ù•A…È¡¥Ñ•µÌ¤°(€€€€¸¸¹‘•Ñ•Ñ	…¹¹•‘%Ñ•µÍ	É…¹ ¡É…ÝQ•áÐ°±•ÑÑ•ÉQ…É•Ñ%¤°(€tì((€É•ÑÕÉ¸ì(€€€¡•…‘•È°(€€€¥Ñ•µÌ°(€€€ÁÉ¥¥¹M¡…Á”°(€€€™±…Ì°(€€€¹••‘ÍI•Ù¥•ÜèÉ½±±UÀ¡™±…Ì¤°(€ôì)ô(
+  for (const item of items) {
+    const matches = [...item.description.matchAll(QTY_DECOMPOSITION_RE)];
+    const last = matches[matches.length - 1];
+    if (last === undefined) {
+      continue;
+    }
+    const baseQty = Number.parseInt(last[1] ?? '', 10);
+    const baseUnit = (last[2] ?? '').trim();
+    const multiplier = Number.parseInt(last[3] ?? '', 10);
+    const detail: QtyDecomposition = {
+      multiplier,
+      base_qty: baseQty,
+      base_unit: baseUnit,
+      source: 'prose',
+    };
+    flags.push({
+      code: 'prose_qty_decomposition',
+      scope: 'item',
+      targetId: itemTargetId(item),
+      rawBlock: last[0],
+      message: `Printed Qty column (${item.qty} ${item.qtyUnit ?? ''}) is a decomposed prose product: ${String(baseQty)} ${baseUnit} x ${String(multiplier)} -- the deliverable is ${String(baseQty)} ${baseUnit}, not the printed Qty column; R4's delivery cap must read against the deliverable.`,
+      detail,
+    });
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
+// criterion 3 â€” payment terms embedded in description prose
+// ---------------------------------------------------------------------------
+
+const PAYMENT_TERMS_PROSE_RE = /Payment\s*Terms\s*:/i;
+
+/** Criterion 3. Deliberately a presence check, not an extraction: PL275
+ * embeds a `Payment Terms: NN%` clause in nearly every one of its 45 items'
+ * own description prose (42/45, self-consistently re-measured in
+ * `test/needs-review.test.ts` from the same `parseItems` output this
+ * function reads, never a hand-copied count) -- R10's payment matrix must
+ * sum to 100 and its source here is prose, not a column, so every item
+ * whose payment terms are stated only in prose is flagged for the reviewer
+ * to set the category. Unlike criterion 2, over-inclusion from the
+ * above/below description overlap (module doc, `detectQtyDecomposition`) is
+ * not a correctness risk here -- the flag's job is "there is payment-terms
+ * prose near this item, resolve it", not "extract an exact percentage", so
+ * a neighbour's leaked clause still points the reviewer at real, relevant
+ * prose. */
+export function detectPaymentTermsProse(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  const flags: ReviewFlag[] = [];
+  for (const item of items) {
+    if (!PAYMENT_TERMS_PROSE_RE.test(item.description)) {
+      continue;
+    }
+    flags.push({
+      code: 'prose_payment_terms',
+      scope: 'item',
+      targetId: itemTargetId(item),
+      rawBlock: item.description,
+      message:
+        'Payment terms are stated in item-description prose, not a column -- R10 requires the payment matrix to sum to 100; the reviewer must set the payment category for this item.',
+    });
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
+// criterion 4 â€” dirty unit vocabulary (design choice documented below)
+// ---------------------------------------------------------------------------
+
+/**
+ * DESIGN CHOICE (ticket criterion 4, "pick the design that keeps
+ * normalisation OUT of the parser; document the choice"): `packages/loa-parser`
+ * cannot import `packages/db` (this package's purity contract,
+ * `test/corpus-manifest.test.ts`'s purity block), so "resolves against the
+ * units master" cannot mean querying it. Of the two designs the ticket
+ * names, this module takes the FIRST: it carries the 12 canonical DISPLAY
+ * spellings as the recognition set (mirroring
+ * `packages/db/migrations/0020_create_units.sql`'s `INSERT INTO units
+ * (code, name) VALUES ...` seed verbatim â€” that migration is the sole
+ * authority this list must track), and resolves a printed unit ONLY on an
+ * EXACT match against one of those twelve strings. It is NOT a synonym
+ * table: `Mtr`, `Nos`, `Km`, and the wrapped `Route Kilo Meter (RKM)`
+ * spelling are description-prose / wrap-harvest aliases that deliberately
+ * do NOT appear as keys or values anywhere below, and deliberately do NOT
+ * resolve here â€” resolving them is `packages/db/src/units.ts`'s
+ * `resolveUnit` (via the `unit_aliases` table), never this package's.
+ * `test/needs-review.test.ts` proves this two ways: behaviourally
+ * (`resolveCanonicalUnitCode('Mtr')` etc. all return `null`) and by
+ * source-scan (this file, comments stripped, contains none of those alias
+ * spellings as a quoted string literal).
+ *
+ * The second design the ticket names ("emits null for anything non-canonical
+ * and leaves resolution entirely to the db layer") collapses to the same
+ * OBSERVABLE behaviour here: this module already emits `null` for every
+ * printed unit that is not one of the twelve exact canonical strings
+ * (including every alias spelling) â€” there is no code path in this module
+ * that treats an alias as anything other than unresolved. The choice
+ * actually made is which POSITIVE information survives on the flag: this
+ * design keeps the resolved CODE (`'METRE'`, ...) for the items that DO
+ * match exactly, so a reviewer/consumer never has to re-derive "this one
+ * resolved cleanly" by re-running the check.
+ */
+const CANONICAL_UNIT_CODES: ReadonlyMap<string, string> = new Map([
+  ['Numbers', 'NUMBERS'],
+  ['Metre', 'METRE'],
+  ['RMT', 'RMT'],
+  ['Year', 'YEAR'],
+  ['Month', 'MONTH'],
+  ['Pair', 'PAIR'],
+  ['Kilometre', 'KILOMETRE'],
+  ['Set', 'SET'],
+  ['Lumpsum', 'LUMPSUM'],
+  ['Lot', 'LOT'],
+  ['Job', 'JOB'],
+  ['Route Kilometre', 'ROUTE_KILOMETRE'],
+]);
+
+/** The twelve canonical DISPLAY spellings this module recognises, in the
+ * same order as the DC-45 migration's seed â€” exposed so a test can assert
+ * `.length === 12` against DC-45's own count without hand-copying the
+ * list twice. */
+export const CANONICAL_UNIT_NAMES: readonly string[] = [...CANONICAL_UNIT_CODES.keys()];
+
+/** Resolves `printedUnit` to its DC-45 canonical CODE on an EXACT match
+ * only, or `null` â€” never a guess, never an alias lookup (module doc
+ * above). `null` input (the unresolved-wrapped-unit-harvest case items.ts
+ * itself can produce) resolves to `null`, not a thrown error. */
+export function resolveCanonicalUnitCode(printedUnit: string | null): string | null {
+  if (printedUnit === null) {
+    return null;
+  }
+  return CANONICAL_UNIT_CODES.get(printedUnit) ?? null;
+}
+
+/** Criterion 4. Flags every item whose printed unit column does not resolve
+ * against the canonical recognition set above. Exercised by the real
+ * corpus on exactly one item, corpus-wide: PL276-GTL's RKM item (schedule
+ * B1, item 13) â€” its wrapped-harvest printed unit reads verbatim `"Route
+ * Kilo Meter (RKM)"`, a DIFFERENT literal string from the canonical
+ * `"Route Kilometre"` display spelling, so it is (correctly, per research
+ * Â§4.4's own framing: "the wrapped unit is itself a `needsReview`-grade
+ * trap") unresolved here even though a human -- or the units master's
+ * alias table -- can read it unambiguously. */
+export function detectUnresolvedUnits(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  const flags: ReviewFlag[] = [];
+  for (const item of items) {
+    const resolved = resolveCanonicalUnitCode(item.qtyUnit);
+    if (resolved !== null) {
+      continue;
+    }
+    flags.push({
+      code: 'unresolved_unit',
+      scope: 'item',
+      targetId: itemTargetId(item),
+      rawBlock: item.raw.anchorLine,
+      message: `Printed unit ${JSON.stringify(item.qtyUnit)} does not exactly match a canonical unit spelling -- select the intended unit from your organisation's Units master or confirm it during review.`,
+      detail: { printedUnit: item.qtyUnit },
+    });
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
+// criterion 5 â€” item-code namespace mismatch
+// ---------------------------------------------------------------------------
+
+// research Â§4.5: SOR schedules carry 8-digit codes (13010300); non-SOR carry
+// short alphanumeric codes (S01) or a bare serial. "Codes are unique only
+// within a directory" (DC-25's own module doc, same citation).
+const SOR_SHAPED_CODE_RE = /^\d{8}$/;
+
+/**
+ * READING CHOSEN, RATIFIED (originally an implementer reading under ticket
+ * ambiguity per AGENTS.md non-negotiable 6 -- a data-quality heuristic, not
+ * a numbering/challan/invoice/approval decision, so resolved here rather
+ * than escalated to the CEO; the manager RATIFIED this reading 2026-08-05
+ * and amended legacy ticket DC-26 criterion 5 to state it directly, replacing
+ * the originally ambiguous disjunctive sentence): the trigger is ONE
+ * condition -- an 8-digit SOR-shaped code found under a schedule whose
+ * `Item Directory` is null (`Not Applicable`) or otherwise non-SOR -- never
+ * "any code under a Not Applicable directory" as an independent condition
+ * of its own. The rejected literal reading was MEASURED before rejection
+ * (re-verified at ratification): 260 of the corpus's 281 items (92.5%) sit
+ * under a "Not Applicable" directory -- every schedule except PL275's one
+ * genuine SOR schedule, including PL276's schedules literally NAMED
+ * "(SOR Items)" that nonetheless print `Item Directory - Not Applicable`
+ * and carry no 8-digit codes at all. A trigger firing on 92.5% of the
+ * corpus is noise, not review signal, inconsistent with every other DC-26
+ * trigger's narrow, corpus-proven-trap shape (criterion 4 flags 1/281; the
+ * rejected reading here would flag 260/281 -- both figures re-measured
+ * independently in `test/needs-review.test.ts`'s per-letter regression, not
+ * asserted on faith). The ratified reading also matches DC-25's OWN
+ * precedent test ("item codes are unique only within a directory",
+ * item-anchor.test.ts) which engineers exactly this shape -- an SOR-shaped
+ * code mutated onto a non-SOR (`directory: null`) schedule -- as its
+ * regression case.
+ *
+ * Unexercised by the real corpus under the ratified reading (measured:
+ * every one of the corpus's 21 genuine 8-digit codes sits under PL275's one
+ * real SOR directory, "SOR SNT NWR-Ver-2020"; zero natural collisions
+ * exist; the corpus raises ZERO criterion-5 flags, per-letter, under this
+ * trigger) -- proved instead by the amendment's required synthetic case: the
+ * same real-fixture, single-token, in-memory mutation DC-25's own test uses
+ * (`test/needs-review.test.ts`), never a wholly fabricated fixture.
+ */
+export function detectItemCodeNamespaceMismatch(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  const flags: ReviewFlag[] = [];
+  for (const item of items) {
+    const directory = item.schedule?.directory ?? null;
+    if (directory !== null || !SOR_SHAPED_CODE_RE.test(item.itemCode)) {
+      continue;
+    }
+    flags.push({
+      code: 'item_code_namespace_mismatch',
+      scope: 'item',
+      targetId: itemTargetId(item),
+      rawBlock: item.raw.anchorLine,
+      message: `Item code "${item.itemCode}" is 8-digit SOR-shaped but its schedule's directory is "Not Applicable" (non-SOR) -- codes are unique only within a directory (research Â§4.5); this shape/directory pairing is a namespace mismatch.`,
+      detail: { itemCode: item.itemCode, directory },
+    });
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
+// criterion 6 â€” layout junk / unparseable token, description or numeric column
+// ---------------------------------------------------------------------------
+
+// Corpus-derived, NOT a general "any non-ASCII character" filter -- that
+// would misfire on legitimate technical-spec unicode already present and
+// VERIFIED CONTENT in the real corpus: PL275's "3 Â¾ digit" clamp-meter
+// fraction, and PL276's "â€¢" bulleted feature lists (a real, ~14-occurrence
+// bulleted-list rendering, not junk). "Â©" is the one glyph measured across
+// the six-letter corpus that is not legitimate content -- PL275 Schedule A
+// item 1's description, mid-sentence, almost certainly a pdftotext -layout
+// mis-rendering of a "(c)" list marker (the item's other list markers read
+// "(a)", "(b)", "(d)", "(e)" â€” "(c)" is the one missing, exactly where "Â©"
+// sits). items.ts's own module doc already names this exact character as
+// the corpus's stray-token example.
+const LAYOUT_JUNK_GLYPHS_RE = /[Â©]/;
+
+/**
+ * Criterion 6, both halves. The description half is exercised by the real
+ * corpus (PL275 item 1, above). The numeric-column half â€” an anchor line
+ * whose numeric columns could not be decomposed at all â€” is UNEXERCISED by
+ * the real corpus (items.ts's own module doc: all 281 real anchor lines
+ * decompose cleanly) and is proved by a targeted, in-memory mutation of a
+ * real anchor line's money-figure format (breaking `items.ts`'s
+ * `ANCHOR_TAIL_RE`), mirroring the same "engineer a case from real text,
+ * never fabricate a fixture" precedent items.ts's own duplicate-code test
+ * uses. Reads `item.itemCode === ''` as the signal: items.ts's
+ * `malformedItem` fallback is the ONLY path that produces an empty
+ * `itemCode` (`peelAnchorTail`'s successful path always returns a
+ * non-empty token, by construction of its token-filtering). The raw
+ * anchor line is retained either way; the description, when present, is
+ * never cleaned.
+ */
+export function detectLayoutJunk(items: readonly ParsedItem[]): readonly ReviewFlag[] {
+  const flags: ReviewFlag[] = [];
+  for (const item of items) {
+    if (LAYOUT_JUNK_GLYPHS_RE.test(item.description)) {
+      flags.push({
+        code: 'layout_junk',
+        scope: 'item',
+        targetId: itemTargetId(item),
+        rawBlock: item.description,
+        message:
+          'Description contains a layout-junk glyph (a pdftotext -layout rendering artifact, e.g. a garbled list marker) -- retained verbatim, never cleaned.',
+      });
+    }
+    if (item.itemCode === '') {
+      flags.push({
+        code: 'layout_junk',
+        scope: 'item',
+        targetId: itemTargetId(item),
+        rawBlock: item.raw.anchorLine,
+        message:
+          "The anchor line's numeric columns could not be parsed (layout junk / an unparseable token) -- raw block retained, item flagged, nothing guessed.",
+      });
+    }
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
+// "Additional required behaviour" â€” unexercised defensive template branches
+// ---------------------------------------------------------------------------
+
+const ITEM_BREAKUP_LABEL_RE = /^Item Breakup\b/i;
+const ITEM_BREAKUP_EXPECTED = 'no break up item added';
+
+/** `Item Breakup` reads "No break up item added" in all six real letters
+ * (research Â§5). Flags only when the section is PRESENT with different
+ * content â€” absence is not itself a trap (the ticket: "raises `needsReview`
+ * when it appears with unexpected content", not on absence). Unexercised by
+ * the real corpus; proved by an in-memory substitution of a real fixture's
+ * text. */
+export function detectUnexpectedItemBreakup(
+  rawText: string,
+  letterTargetId: string,
+): readonly ReviewFlag[] {
+  const stripped = stripPrintFurniture(rawText);
+  const para = paragraphs(stripped).find((p) => ITEM_BREAKUP_LABEL_RE.test(p));
+  if (para === undefined) {
+    return [];
+  }
+  const remainder = para.replace(ITEM_BREAKUP_LABEL_RE, '').trim();
+  if (remainder.toLowerCase() === ITEM_BREAKUP_EXPECTED) {
+    return [];
+  }
+  return [
+    {
+      code: 'unexpected_item_breakup',
+      scope: 'letter',
+      targetId: letterTargetId,
+      rawBlock: para,
+      message: `"Item Breakup" reads ${JSON.stringify(remainder)} instead of the template's universal "No break up item added" (6/6 in the real corpus) -- unexercised by real data, implemented defensively; review before confirm.`,
+    },
+  ];
+}
+
+/** `Rebate on Total Value (%)` reads `0.00` in all six real letters
+ * (research Â§1's decoy field, Â§5). Reuses `pricingShape.rebateOnTotalValue`
+ * (already extracted by pricing-shape.ts) rather than re-parsing it, so
+ * this can never drift from the classifier's own reading of the same
+ * figure. Flags only when found AND non-zero â€” a `null` (not located) is
+ * pricing-shape.ts's own `needsReview` concern, not this trigger's. */
+export function detectUnexpectedRebate(
+  pricingShape: PricingShapeResult,
+  letterTargetId: string,
+): readonly ReviewFlag[] {
+  const { rebateOnTotalValue, rawTotalsBlock } = pricingShape;
+  if (rebateOnTotalValue === null || rebateOnTotalValue === 0) {
+    return [];
+  }
+  return [
+    {
+      code: 'unexpected_rebate',
+      scope: 'letter',
+      targetId: letterTargetId,
+      rawBlock: rawTotalsBlock ?? '',
+      message: `"Rebate on Total Value (%)" reads ${String(rebateOnTotalValue)} instead of the template's universal 0.00 (6/6 in the real corpus) -- unexercised by real data, implemented defensively; review before confirm (research Â§1's decoy field).`,
+    },
+  ];
+}
+
+/** The item-row `Above Par` token â€” never observed in the real corpus
+ * (281/281 read `At Par`, research Â§5). Unexercised by real data; proved by
+ * mutating a real anchor line's par token in-memory. */
+export function detectUnexpectedAbovePar(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  return items
+    .filter((item) => item.parToken === 'Above Par')
+    .map((item) => ({
+      code: 'unexpected_above_par' as const,
+      scope: 'item' as const,
+      targetId: itemTargetId(item),
+      rawBlock: item.raw.anchorLine,
+      message:
+        '"Above Par" item-row token -- never observed in the real corpus (281/281 read "At Par"), implemented defensively; review before confirm.',
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// "Additional required behaviour" â€” Banned-items block, both spellings
+// ---------------------------------------------------------------------------
+
+export type BannedBlockSpelling = 'colon' | 'item';
+
+export interface BannedItemsBlockDetection {
+  /** Which of the two evidenced label spellings matched (module doc
+   * below). */
+  readonly spelling: BannedBlockSpelling;
+  /** `false` for the documented empty case (the paragraph's content is
+   * exactly `NIL`) -- `true` for a genuinely populated block. */
+  readonly populated: boolean;
+  readonly rawBlock: string;
+}
+
+// PL281's spelling: "Banned item: Rates of item no 2,6,8,16,17,18 of
+// schedule A1 & rates of item no 8,15 of schedule A2 are baneed for future
+// reference." (fixture lines 100-101, sic on "baneed" -- the letter's own
+// typo, preserved verbatim in rawBlock). Checked FIRST, deliberately: it
+// requires the word "item" between "Banned" and ":", so it can never match
+// PL280's "Banned :" line (whose colon follows "Banned" directly, with only
+// whitespace between).
+const BANNED_ITEM_LABEL_RE = /Banned\s+item\s*:/i;
+
+// PL280's spelling: "Banned : Rates of the following items are banned for
+// future reference Schedule AB- NIL" (fixture lines 140-141). Cannot match
+// "Banned item:" text (module doc above) -- the two arms are mutually
+// exclusive by construction, not by check order.
+const BANNED_COLON_LABEL_RE = /Banned\s*:/i;
+
+// The documented empty case (PL280): the paragraph's trailing content is
+// exactly "NIL". Any populated content -- a real item list, research Â§5's
+// PL281 case -- never contains this token in the corpus.
+const NIL_WORD_RE = /\bNIL\b/i;
+
+/**
+ * Recognises EITHER spelling of the Banned-items block (research Â§5,
+ * corrected 2026-08-05 -- "no longer unexercised"), scanning the header/
+ * prose region only (both real occurrences sit before the
+ * `Awarded Quantities And Rates` marker: PL280 lines 140-141, PL281 lines
+ * 100-101). Returns `null` if NEITHER spelling is present at all -- exposed
+ * separately from the flag-producing wrapper below so
+ * `test/needs-review.test.ts` can prove both spelling arms independently
+ * (disabling either regex turns exactly one real letter's detection result
+ * `null`, per the ticket's own negative-proof requirement), not just prove
+ * the flag outcome, which is IDENTICAL ("no flag") for PL280 whether or not
+ * the colon arm even runs (its content is NIL either way) and would not by
+ * itself catch that arm being disabled.
+ */
+export function detectBannedItemsBlock(
+  rawText: string,
+): BannedItemsBlockDetection | null {
+  const region = headerRegion(rawText);
+  const paras = paragraphs(region);
+
+  const itemPara = paras.find((p) => BANNED_ITEM_LABEL_RE.test(p));
+  if (itemPara !== undefined) {
+    return {
+      spelling: 'item',
+      populated: !NIL_WORD_RE.test(itemPara),
+      rawBlock: itemPara,
+    };
+  }
+
+  const colonPara = paras.find((p) => BANNED_COLON_LABEL_RE.test(p));
+  if (colonPara !== undefined) {
+    return {
+      spelling: 'colon',
+      populated: !NIL_WORD_RE.test(colonPara),
+      rawBlock: colonPara,
+    };
+  }
+
+  return null;
+}
+
+/** Flags a POPULATED banned-items block for review (ticket, verbatim: "flag
+ * a populated banned-items block for review"). READING CHOSEN for the
+ * NIL/empty case (ticket: "rather than treating the branch as untested" --
+ * ambiguous on whether NIL itself should also flag): NIL is documented here
+ * as the EMPTY case, symmetric with `detectUnexpectedItemBreakup` /
+ * `detectUnexpectedRebate` above (both flag only on unexpected/populated
+ * content, never on the template's normal/empty state) -- so PL280's NIL
+ * block is recognised (proving the colon spelling arm works) but never
+ * flagged, while PL281's populated block is both recognised AND flagged. */
+export function detectBannedItemsBranch(
+  rawText: string,
+  letterTargetId: string,
+): readonly ReviewFlag[] {
+  const detection = detectBannedItemsBlock(rawText);
+  if (detection === null || !detection.populated) {
+    return [];
+  }
+  const spellingLabel = detection.spelling === 'item' ? '"Banned item:"' : '"Banned :"';
+  return [
+    {
+      code: 'banned_items_block',
+      scope: 'letter',
+      targetId: letterTargetId,
+      rawBlock: detection.rawBlock,
+      message: `Banned-items block is populated (recognised via the ${spellingLabel} spelling) -- review the named items before confirm; rates for these items are banned for future reference.`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// roll-up
+// ---------------------------------------------------------------------------
+
+function rollUp(flags: readonly ReviewFlag[]): NeedsReviewRollup {
+  const byCode: Record<string, number> = {};
+  for (const flag of flags) {
+    byCode[flag.code] = (byCode[flag.code] ?? 0) + 1;
+  }
+  return {
+    total: flags.length,
+    byCode,
+    anyLetterLevel: flags.some((flag) => flag.scope === 'letter'),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// entry point
+// ---------------------------------------------------------------------------
+
+/** The letter-level `targetId` every letter-scoped flag below uses: the
+ * already-extracted letter number (header.ts), or a fixed sentinel on the
+ * unexercised-by-the-corpus case where header.ts itself could not locate
+ * one. */
+function letterTargetIdOf(header: LoaHeader): string {
+  return header.letterNumber.value ?? 'UNKNOWN_LETTER';
+}
+
+function detectUnresolvedItemDescription(
+  items: readonly ParsedItem[],
+  rawItemTextWasProvided: boolean,
+  letterTargetId: string,
+): readonly ReviewFlag[] {
+  if (
+    !rawItemTextWasProvided ||
+    items.length === 0 ||
+    items.every((item) => item.descriptionSource === 'raw-exact')
+  ) {
+    return [];
+  }
+  return [
+    {
+      code: 'unresolved_item_description',
+      scope: 'letter',
+      targetId: letterTargetId,
+      rawBlock: items.map((item) => item.raw.anchorLine).join('\n'),
+      message:
+        'Exact per-item description boundaries could not be verified from the PDF reading order. Conservative layout text was retained; review item descriptions before confirmation.',
+    },
+  ];
+}
+
+/**
+ * The single public entry point (ticket: "the parser's public API returns a
+ * review payload"). Composes `extractHeader`, `parseItems` and
+ * `classifyPricingShape` (never re-implementing any of their fields), then
+ * runs every trigger in this module against that already-parsed output plus
+ * the raw text triggers need for their own text-scans. Pure: no I/O, no
+ * database, no work ever written (module doc above).
+ */
+export function reviewLoaLetter(
+  rawText: string,
+  options: ReviewLoaOptions = {},
+): LoaReviewPayload {
+  const header = extractHeader(rawText);
+  const items =
+    options.rawItemText === undefined
+      ? parseItems(rawText)
+      : parseItems(rawText, { rawItemText: options.rawItemText });
+  const pricingShape = classifyPricingShape(rawText);
+  const letterTargetId = letterTargetIdOf(header);
+
+  const flags: ReviewFlag[] = [
+    ...detectCorrigendumKeyword(rawText, letterTargetId),
+    ...detectCorrigendumItemUnitCorrections(rawText, items),
+    ...detectQtyDecomposition(items),
+    ...detectPaymentTermsProse(items),
+    ...detectUnresolvedItemDescription(
+      items,
+      options.rawItemText !== undefined,
+      letterTargetId,
+    ),
+    ...detectUnresolvedUnits(items),
+    ...detectItemCodeNamespaceMismatch(items),
+    ...detectLayoutJunk(items),
+    ...detectUnexpectedItemBreakup(rawText, letterTargetId),
+    ...detectUnexpectedRebate(pricingShape, letterTargetId),
+    ...detectUnexpectedAbovePar(items),
+    ...detectBannedItemsBranch(rawText, letterTargetId),
+  ];
+
+  return {
+    header,
+    items,
+    pricingShape,
+    flags,
+    needsReview: rollUp(flags),
+  };
+}

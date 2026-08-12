@@ -416,4 +416,764 @@ export function registerCorrectionRoutes(
             challan.consignee_snapshot,
           ) as Consignee;
 
-          const diff: AmßÎù¶‰žËkºwµçA½ÉÉ•Ñ¥½¹9½Ñ¥•¹ÑÉåmt€ô€¡‰½‘ä¹½ÉÉ•Ñ¥½¹Ì€üümt¤¹µ…À (€€€€€€€€¡•¹ÑÉä¤€ôø€¡ì™¥•±è•¹ÑÉä¹™¥•±¹ÑÉ¥´ ¤°½ÉÉ•Ñ•è•¹ÑÉä¹½ÉÉ•Ñ•¹ÑÉ¥´ ¤ô¤°(€€€€€€¤ì(€€€€€½¹ÍÐÍÑ…Ñ•µ•¹Ð€ô‰½‘ä¹ÍÑ…Ñ•µ•¹Ðü¹ÑÉ¥´ ¤€üü€œœì(€€€€€¥˜€ (€€€€€€€½ÉÉ•Ñ¥½¹Ì¹Í½µ” (€€€€€€€€€€¡•¹ÑÉä¤€ôø•¹ÑÉä¹™¥•±¹±•¹Ñ €ôôô€Àñð•¹ÑÉä¹½ÉÉ•Ñ•¹±•¹Ñ €ôôô€À°(€€€€€€€€¤(€€€€€€¤ì(€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€ÐÀÀ°(€€€€€€€€€€=IIQ%=9}%9Y1%œ°(€€€€€€€€€€Ù•Éä™¥•±½ÉÉ•Ñ¥½¸¹••‘Ì‰½Ñ „™¥•±…¹„½ÉÉ•Ñ•É•…‘¥¹œ¸œ°(€€€€€€€€¤ì(€€€€€ô(€€€€€¥˜€¡½ÉÉ•Ñ¥½¹Ì¹±•¹Ñ €ôôô€À€˜˜ÍÑ…Ñ•µ•¹Ð¹±•¹Ñ €ôôô€À¤ì(€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€ÐÀÀ°(€€€€€€€€€€=IIQ%=9}5AQdœ°(€€€€€€€€€€½ÉÉ•Ñ¥½¸¹½Ñ¥”¹••‘Ì…Ð±•…ÍÐ½¹”™¥•±½ÉÉ•Ñ¥½¸½È„½ÉÉ•Ñ¥½¸ÍÑ…Ñ•µ•¹Ð¸œ°(€€€€€€€€¤ì(€€€€€ô((€€€€€½¹ÍÐ…ÁÁÉ½Ù…°€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€€€½¹ÍÐ¡…±±…¸€ô…Ý…¥Ð±½­•±¥Ù•Éå¡…±±…¸¡Ñà°¥¤ì(€€€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°¡…±±…¸¹Ý½É­}¥¤ì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•Ñ¥Ù•]½É¬¡Ñà°¡…±±…¸¹Ý½É­}¥¤ì(€€€€€€€€€¥˜€¡¡…±±…¸¹ÍÑ…ÑÕÌ€„ôô€¥ÍÍÕ•œ¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€!119}MQQUM}=91%Pœ°(€€€€€€€€€€€€€€½ÉÉ•Ñ¥½¸¹½Ñ¥•ÌÑ…É•Ð%MMU¡…±±…¹Ì¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€€¼¼A…Ñ •á¥ÍÑÌ™½È¡…±±…¹ÌÝ¡½Í”…¹•±±…Ñ¥½¸Ñ¡”•Ù¥‘•¹”(€€€€€€€€€€¼¼±…Ý™Õ±±ä‰±½­Ìì…¸•Ù¥‘•¹”µ™É•”¡…±±…¸Ñ…­•ÌA…Ñ Í¼Ñ¡”(€€€€€€€€€€¼¼ÝÉ½¹œ‘½Õµ•¹Ð‘½•Ì¹½ÐÍÑ…ä¥¸™½É”¸(€€€€€€€€€½¹ÍÐ•Ù¥‘•¹”€ô…Ý…¥Ð¡…±±…¹Ù¥‘•¹•½Õ¹ÑÌ¡Ñà°¥¤ì(€€€€€€€€€¥˜€ (€€€€€€€€€€€•Ù¥‘•¹”¹É••¥ÁÑÌ€ôôô€À€˜˜(€€€€€€€€€€€•Ù¥‘•¹”¹Í•É¥…±Ì€ôôô€À€˜˜(€€€€€€€€€€€•Ù¥‘•¹”¹µ•…ÍÕÉ•µ•¹ÑÌ€ôôô€À(€€€€€€€€€€¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€=IIQ%=9}UM}91}IA1œ°(€€€€€€€€€€€€€€Q¡¥Ì¡…±±…¸¡…Ì¹¼‘½Ý¹ÍÑÉ•…´•Ù¥‘•¹”ì½ÉÉ•Ð¥Ð‰ä…¹•°µ…¹µÉ•Á±…”¥¹ÍÑ•…¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô((€€€€€€€€€½¹ÍÐ‘¥™˜èµ•¹‘µ•¹Ñ¥™™¹ÑÉåmt€ô½ÉÉ•Ñ¥½¹Ì¹µ…À ¡•¹ÑÉä¤€ôø€¡ì(€€€€€€€€€€€™¥•±è•¹ÑÉä¹™¥•±°(€€€€€€€€€€€‰•™½É”è¹Õ±°°(€€€€€€€€€€€…™Ñ•Èè•¹ÑÉä¹½ÉÉ•Ñ•°(€€€€€€€€€ô¤¤ì(€€€€€€€€€¥˜€¡ÍÑ…Ñ•µ•¹Ð¹±•¹Ñ €ø€À¤ì(€€€€€€€€€€€‘¥™˜¹ÁÕÍ ¡ì™¥•±è€ÍÑ…Ñ•µ•¹Ðœ°‰•™½É”è¹Õ±°°…™Ñ•ÈèÍÑ…Ñ•µ•¹Ðô¤ì(€€€€€€€€€ô((€€€€€€€€€½¹ÍÐÁÉ½Á½Í•è½ÉÉ•Ñ¥½¹9½Ñ¥•AÉ½Á½Í…°€ôì(€€€€€€€€€€€­¥¹è€½ÉÉ•Ñ¥½¹}¹½Ñ¥”œ°(€€€€€€€€€€€¡…±±…¹%è¥°(€€€€€€€€€€€¡…±±…¹9Õµ‰•Èè¡…±±…¸¹¡…±±…¹}¹Õµ‰•È€üü€œœ°(€€€€€€€€€€€½ÉÉ•Ñ¥½¹Ì°(€€€€€€€€€€€ÍÑ…Ñ•µ•¹ÐèÍÑ…Ñ•µ•¹Ð¹±•¹Ñ €ø€À€üÍÑ…Ñ•µ•¹Ð€è¹Õ±°°(€€€€€€€€€€€É•…Í½¸è‰½‘ä¹É•…Í½¸°(€€€€€€€€€ôì(€€€€€€€€€½¹ÍÐÉ•…Ñ•€ô…Ý…¥Ð¥¹Í•ÉÑ½ÉÉ•Ñ¥½¹I•ÅÕ•ÍÐ (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€€¡…±±…¹}½ÉÉ•Ñ¥½¹}¹½Ñ¥”œ°(€€€€€€€€€€€¥°(€€€€€€€€€€€¡…±±…¸¹Ý½É­}¥°(€€€€€€€€€€€ÁÉ½Á½Í•°(€€€€€€€€€€€‘¥™˜°(€€€€€€€€€€€‰½‘ä¹É•…Í½¸°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€¤ì(€€€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€½ÉÉ•Ñ¥½¸¹ÁÉ½Á½Í•œ°(€€€€€€€€€€€€…ÁÁÉ½Ù…±}É•ÅÕ•ÍÑÌœ°(€€€€€€€€€€€É•…Ñ•¹¥°(€€€€€€€€€€€ì(€€€€€€€€€€€€€ÑåÁ”è€¡…±±…¹}½ÉÉ•Ñ¥½¹}¹½Ñ¥”œ°(€€€€€€€€€€€€€Ý½É­%è¡…±±…¸¹Ý½É­}¥°(€€€€€€€€€€€€€¡…±±…¹%è¥°(€€€€€€€€€€€€€¡…±±…¹9Õµ‰•Èè¡…±±…¸¹¡…±±…¹}¹Õµ‰•È°(€€€€€€€€€€€€€‘¥™˜°(€€€€€€€€€€€€€É•…Í½¸è‰½‘ä¹É•…Í½¸°(€€€€€€€€€€€ô°(€€€€€€€€€€¤ì(€€€€€€€€€¥˜€¡…Ý…¥Ð¥ÍÁÁÉ½Ù•È¡Ñà°ÕÍ•È¹¥¤¤ì(€€€€€€€€€€€…Ý…¥Ð…ÁÁ±åÁÁÉ½Ù…° (€€€€€€€€€€€€€Ñà°(€€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€€ì€¸¸¹É•…Ñ•°ÁÉ½Á½Í•°‘¥™˜ô°(€€€€€€€€€€€€€¹Õ±°°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€É•ÑÕÉ¸É•…‘ÁÁÉ½Ù…°¡Ñà°É•…Ñ•¹¥¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÄ¤¹Í•¹¡…ÁÁÉ½Ù…°¤ì(€€€ô°(€€¤ì((€€¼¼€´´´½ÉÉ•Ñ¥½¸¹½Ñ¥”É•…‘Ì€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´(€…ÁÀ¹•Ð (€€€€œ½…Á¤½Ý½É­Ì¼é¥½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè½ÉÉ•Ñ¥½¹9½Ñ¥•1¥ÍÑI•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥èÝ½É­%ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐÉ½ÝÌ€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°Ý½É­%¤ì(€€€€€€€€€½¹ÍÐmÝ½É­t€ô…Ý…¥ÐÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€€€Í•±•Ð¥™É½´Ý½É­ÌÝ¡•É”¥€ô€‘íÝ½É­%‘ô…¹‘•±•Ñ•‘}…Ð¥Ì¹Õ±°(€€€€€€€€€€ì(€€€€€€€€€¥˜€ …Ý½É¬¤Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€]=I-}9=Q}=U9œ°€9¼ÍÕ ]½É¬¸œ¤ì(€€€€€€€€€É•ÑÕÉ¸Ñàñ9½Ñ¥•I½Ýmtù€(€€€€€€€€€€€Í•±•Ð€‘íÑà¹Õ¹Í…™”¡9=Q%}=1U59L¥ô(€€€€€€€€€€€™É½´½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ì(€€€€€€€€€€€Ý¡•É”Ý½É­}¥€ô€‘íÝ½É­%‘ô(€€€€€€€€€€€½É‘•È‰äÉ•…Ñ•‘}…Ð‘•ÍŒ°¥(€€€€€€€€€€ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ì¹½Ñ¥•ÌèÉ½ÝÌ¹µ…À¡Ñ½9½Ñ¥”¤ôì(€€€ô°(€€¤ì((€…ÁÀ¹•Ð (€€€€œ½…Á¤½¡…±±…¹Ì¼é¥½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè½ÉÉ•Ñ¥½¹9½Ñ¥•1¥ÍÑI•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐÉ½ÝÌ€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€½¹ÍÐm¡…±±…¹t€ô…Ý…¥ÐÑàñìÝ½É­}¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€€€Í•±•ÐÝ½É­}¥™É½´‘•±¥Ù•Éå}¡…±±…¹ÌÝ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€€ì(€€€€€€€€€¥˜€ …¡…±±…¸¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€!119}9=Q}=U9œ°€9¼ÍÕ •±¥Ù•Éä¡…±±…¸¸œ¤ì(€€€€€€€€€ô(€€€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°¡…±±…¸¹Ý½É­}¥¤ì(€€€€€€€€€É•ÑÕÉ¸Ñàñ9½Ñ¥•I½Ýmtù€(€€€€€€€€€€€Í•±•Ð€‘íÑà¹Õ¹Í…™”¡9=Q%}=1U59L¥ô(€€€€€€€€€€€™É½´½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ì(€€€€€€€€€€€Ý¡•É”‘•±¥Ù•Éå}¡…±±…¹}¥€ô€‘í¥‘ô(€€€€€€€€€€€½É‘•È‰äÉ•…Ñ•‘}…Ð‘•ÍŒ°¥(€€€€€€€€€€ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ì¹½Ñ¥•ÌèÉ½ÝÌ¹µ…À¡Ñ½9½Ñ¥”¤ôì(€€€ô°(€€¤ì((€…ÁÀ¹•Ð (€€€€œ½…Á¤½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ì¼é¥œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè½ÉÉ•Ñ¥½¹9½Ñ¥••Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍÐmÉ•™t€ô…Ý…¥ÐÑàñìÝ½É­}¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•ÐÝ½É­}¥™É½´½ÉÉ•Ñ¥½¹}¹½Ñ¥•ÌÝ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€ì(€€€€€€€¥˜€ …É•˜¤(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€9=Q%}9=Q}=U9œ°€9¼ÍÕ ½ÉÉ•Ñ¥½¸¹½Ñ¥”¸œ¤ì(€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°É•˜¹Ý½É­}¥¤ì(€€€€€€€É•ÑÕÉ¸É•…‘9½Ñ¥••Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€€¼¼€´´´Q¡”¹½Ñ¥”A€¡•á¥ÍÑ¥¹œ½Ñ•¹‰•ÉœÁ¥Á•±¥¹”¤€´´´´´´´´´´´´´´´´´´´´´´´´´(€…ÁÀ¹Á½ÍÐ (€€€€œ½…Á¤½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ì¼é¥½É•¹‘•Èœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè½ÉÉ•Ñ¥½¹9½Ñ¥••Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì((€€€€€€¼¼M¹…ÁÍ¡½ÐÉ•……¹AÝÉ¥Ñ”±¥Ù”¥¸Í•Á…É…Ñ”ÑÉ…¹Í…Ñ¥½¹ÌÍ¼Ñ¡”(€€€€€€¼¼Í±½Ü•áÑ•É¹…°…±°¡½±‘Ì¹¼‘…Ñ…‰…Í”±½­ÌìÑ¡”±•…°½¹Ñ•¹Ð¥Ì(€€€€€€¼¼Ñ¡”¥µµÕÑ…‰±”Í¹…ÁÍ¡½Ð°Í¼É”µÉ•¹‘•É¥¹œÉ•ÁÉ½‘Õ•ÌÑ¡”¹½Ñ¥”¸(€€€€€½¹ÍÐìÍ¹…ÁÍ¡½Ð°‰É…¹‘¥¹œô€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€€€½¹ÍÐ¹½Ñ¥”€ô…Ý…¥Ð±½­9½Ñ¥”¡Ñà°¥¤ì(€€€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°¹½Ñ¥”¹Ý½É­}¥¤ì(€€€€€€€€€¥˜€¡¹½Ñ¥”¹ÍÑ…ÑÕÌ€„ôô€¥ÍÍÕ•œ¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€9=Q%}MQQUM}=91%Pœ°(€€€€€€€€€€€€€Q¡¥Ì½Á•É…Ñ¥½¸É•ÅÕ¥É•Ì…¸¥ÍÍÕ•½ÉÉ•Ñ¥½¸¹½Ñ¥”€¡ÕÉÉ•¹ÐÍÑ…ÑÕÌè€‘í¹½Ñ¥”¹ÍÑ…ÑÕÍô¤¹€°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñìÍ¹…ÁÍ¡½ÐèÕ¹­¹½Ý¸õmtù€(€€€€€€€€€€€Í•±•ÐÍ¹…ÁÍ¡½Ð™É½´½ÉÉ•Ñ¥½¹}¹½Ñ¥•ÌÝ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€€ì(€€€€€€€€€½¹ÍÐm½É…¹¥Í…Ñ¥½¹t€ô…Ý…¥ÐÑàð(€€€€€€€€€€€ì(€€€€€€€€€€€€€…‘‘É•ÍÌèÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€€€ÍÑ¥¸èÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€€€½¹Ñ…Ñ}Á¡½¹”èÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€€€½¹Ñ…Ñ}•µ…¥°èÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€€€±½½}½‰©•Ñ}­•äèÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€€€±½½}µ•‘¥…}ÑåÁ”èÍÑÉ¥¹œð¹Õ±°ì(€€€€€€€€€€€õmt(€€€€€€€€€€ù€(€€€€€€€€€€€Í•±•Ð…‘‘É•ÍÌ°ÍÑ¥¸°½¹Ñ…Ñ}Á¡½¹”°½¹Ñ…Ñ}•µ…¥°°(€€€€€€€€€€€€€€€€€€±½½}½‰©•Ñ}­•ä°±½½}µ•‘¥…}ÑåÁ”(€€€€€€€€€€€™É½´½É…¹¥Í…Ñ¥½¹Ì(€€€€€€€€€€ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€Í¹…ÁÍ¡½ÐèÁ…ÉÍ•)Í½¹‰½±Õµ¸¡É½Üü¹Í¹…ÁÍ¡½Ð¤…Ì½ÉÉ•Ñ¥½¹9½Ñ¥•M¹…ÁÍ¡½Ð°(€€€€€€€€€€€‰É…¹‘¥¹œè½É…¹¥Í…Ñ¥½¸€üü¹Õ±°°(€€€€€€€€€ôì(€€€€€€€ô°(€€€€€€¤ì((€€€€€±•Ð±½½…Ñ…UÉ¤èÍÑÉ¥¹œðÕ¹‘•™¥¹•ì(€€€€€¥˜€¡‰É…¹‘¥¹œü¹±½½}½‰©•Ñ}­•ä€˜˜‰É…¹‘¥¹œ¹±½½}µ•‘¥…}ÑåÁ”¤ì(€€€€€€€ÑÉäì(€€€€€€€€€½¹ÍÐ±½¼€ô…Ý…¥ÐÍÑ½É…”¹•Ð¡‰É…¹‘¥¹œ¹±½½}½‰©•Ñ}­•ä¤ì(€€€€€€€€€±½½…Ñ…UÉ¤€ô‘…Ñ„è‘í‰É…¹‘¥¹œ¹±½½}µ•‘¥…}ÑåÁ•ôí‰…Í”ØÐ°‘í±½¼¹Ñ½MÑÉ¥¹œ ‰…Í”ØÐœ¥õ€ì(€€€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€€€€¼¼µ¥ÍÍ¥¹œ±½¼½‰©•ÐµÕÍÐ¹½Ð‰±½¬…¸¥ÍÍÕ•‘½Õµ•¹Ð¸(€€€€€€€€€É•ÅÕ•ÍÐ¹±½œ¹Ý…É¸ (€€€€€€€€€€€ì•ÉÈè•ÉÉ½Èô°(€€€€€€€€€€€€½ÉÉ•Ñ¥½¸¹½Ñ¥”É•¹‘•Èè±½¼Õ¹…Ù…¥±…‰±”œ°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€ô(€€€€€½¹ÍÐ¡Ñµ°€ôÉ•¹‘•É½ÉÉ•Ñ¥½¹9½Ñ¥•!Ñµ°¡Í¹…ÁÍ¡½Ð°ì(€€€€€€€€¸¸¸¡±½½…Ñ…UÉ¤€„ôôÕ¹‘•™¥¹•€üì±½½…Ñ…UÉ¤ô€èíô¤°(€€€€€€€…‘‘É•ÍÌè‰É…¹‘¥¹œü¹…‘‘É•ÍÌ€üü¹Õ±°°(€€€€€€€ÍÑ¥¸è‰É…¹‘¥¹œü¹ÍÑ¥¸€üü¹Õ±°°(€€€€€€€½¹Ñ…ÑA¡½¹”è‰É…¹‘¥¹œü¹½¹Ñ…Ñ}Á¡½¹”€üü¹Õ±°°(€€€€€€€½¹Ñ…Ñµ…¥°è‰É…¹‘¥¹œü¹½¹Ñ…Ñ}•µ…¥°€üü¹Õ±°°(€€€€€ô¤ì(€€€€€½¹ÍÐ™½É´€ô¹•Ü½Éµ…Ñ„ ¤ì(€€€€€™½É´¹…ÁÁ•¹ ™¥±•Ìœ°¹•Ü	±½ˆ¡m¡Ñµ±t°ìÑåÁ”è€Ñ•áÐ½¡Ñµ°œô¤°€¥¹‘•à¹¡Ñµ°œ¤ì(€€€€€±•ÐÁ‘˜è	Õ™™•Èì(€€€€€ÑÉäì(€€€€€€€½¹ÍÐÉ•ÍÁ½¹Í”€ô…Ý…¥Ð™•Ñ ¡€‘í½Ñ•¹‰•ÉUÉ±ô½™½ÉµÌ½¡É½µ¥Õ´½½¹Ù•ÉÐ½¡Ñµ±€°ì(€€€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€€€‰½‘äè™½É´°(€€€€€€€ô¤ì(€€€€€€€¥˜€ …É•ÍÁ½¹Í”¹½¬¤ì(€€€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È¡½Ñ•¹‰•Éœ…¹ÍÝ•É•€‘íMÑÉ¥¹œ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÌ¥õ€¤ì(€€€€€€€ô(€€€€€€€Á‘˜€ô	Õ™™•È¹™É½´¡…Ý…¥ÐÉ•ÍÁ½¹Í”¹…ÉÉ…å	Õ™™•È ¤¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€É•ÅÕ•ÍÐ¹±½œ¹•ÉÉ½È¡ì•ÉÈè•ÉÉ½Èô°€½ÉÉ•Ñ¥½¸¹½Ñ¥”É•¹‘•È™…¥±•œ¤ì(€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€ÔÀÈ°(€€€€€€€€€€I9I}%1œ°(€€€€€€€€€€Q¡”AÍ•ÉÙ¥”¥ÌÕ¹…Ù…¥±…‰±”ìÑ¡”¥ÍÍÕ•¹½Ñ¥”¥ÌÕ¹…™™•Ñ•ƒŠPÉ•ÑÉä±…Ñ•È¸œ°(€€€€€€€€¤ì(€€€€€ô(€€€€€½¹ÍÐÍ¡„ÈÔØ€ôÉ•…Ñ•!…Í  Í¡„ÈÔØœ¤¹ÕÁ‘…Ñ”¡Á‘˜¤¹‘¥•ÍÐ ¡•àœ¤ì(€€€€€½¹ÍÐ½‰©•Ñ-•ä€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô½¸¼‘í¥‘ô¹Á‘™€ì(€€€€€…Ý…¥ÐÍÑ½É…”¹ÁÕÐ¡½‰©•Ñ-•ä°Á‘˜¤ì((€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€½¹ÍÐÕÁ‘…Ñ•€ô…Ý…¥ÐÑá€(€€€€€€€€€ÕÁ‘…Ñ”½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ì(€€€€€€€€€Í•ÐÉ•¹‘•É•‘}½‰©•Ñ}­•ä€ô€‘í½‰©•Ñ-•åô°É•¹‘•É•‘}Í¡„ÈÔØ€ô€‘íÍ¡„ÈÔÙô(€€€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô…¹ÍÑ…ÑÕÌ€ô€¥ÍÍÕ•œ(€€€€€€€€ì(€€€€€€€¥˜€¡ÕÁ‘…Ñ•¹½Õ¹Ð€ôôô€À¤ì(€€€€€€€€€€¼¼Q¡”¹½Ñ¥”ÍÑ½ÁÁ•‰•¥¹œ¥ÍÍÕ•Ý¡¥±”½Ñ•¹‰•ÉœÉ•¹‘•É•ìÑ¡”(€€€€€€€€€€¼¼ÍÑ½É•A¥Ì…¸½ÉÁ¡…¸°¹½Ð•Ù¥‘•¹”ƒŠP¹¼…Õ‘¥Ð•¹ÑÉä¸(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€9=Q%}MQQUM}=91%Pœ°(€€€€€€€€€€€€Q¡”½ÉÉ•Ñ¥½¸¹½Ñ¥”¥Ì¹¼±½¹•È¥ÍÍÕ•ìÑ¡”É•¹‘•ÈÝ…Ì‘¥Í…É‘•¸œ°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€½ÉÉ•Ñ¥½¹}¹½Ñ¥”¹É•¹‘•É•œ°(€€€€€€€€€€½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ìœ°(€€€€€€€€€¥°(€€€€€€€€€ìÍ¡„ÈÔØô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘9½Ñ¥••Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€…ÁÀ¹•Ð (€€€€œ½…Á¤½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ì¼é¥½Á‘˜œ°(€€€ì(€€€€€Í¡•µ„èìÁ…É…µÌè%‘A…É…µÍM¡•µ„ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ°É•Á±ä¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐ­•ä€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàð(€€€€€€€€€€€ìÝ½É­}¥èÍÑÉ¥¹œìÉ•¹‘•É•‘}½‰©•Ñ}­•äèÍÑÉ¥¹œð¹Õ±°õmt(€€€€€€€€€€ù€(€€€€€€€€€€€Í•±•ÐÝ½É­}¥°É•¹‘•É•‘}½‰©•Ñ}­•ä(€€€€€€€€€€€™É½´½ÉÉ•Ñ¥½¹}¹½Ñ¥•ÌÝ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€€ì(€€€€€€€€€¥˜€ …É½Ü¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€9=Q%}9=Q}=U9œ°€9¼ÍÕ ½ÉÉ•Ñ¥½¸¹½Ñ¥”¸œ¤ì(€€€€€€€€€ô(€€€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°É½Ü¹Ý½É­}¥¤ì(€€€€€€€€€¥˜€¡É½Ü¹É•¹‘•É•‘}½‰©•Ñ}­•ä€ôôô¹Õ±°¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀÐ°(€€€€€€€€€€€€€€A}9=Q}Y%1	1œ°(€€€€€€€€€€€€€€Q¡¥Ì½ÉÉ•Ñ¥½¸¹½Ñ¥”¡…Ì¹½Ð‰••¸É•¹‘•É•å•Ð¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€É•ÑÕÉ¸É½Ü¹É•¹‘•É•‘}½‰©•Ñ}­•äì(€€€€€€€ô°(€€€€€€¤ì(€€€€€½¹ÍÐ‰åÑ•Ì€ô…Ý…¥ÐÍÑ½É…”¹•Ð¡­•ä¤ì(€€€€€Ù½¥É•Á±ä¹ÑåÁ” …ÁÁ±¥…Ñ¥½¸½Á‘˜œ¤ì(€€€€€Ù½¥É•Á±ä¹¡•…‘•È (€€€€€€€€½¹Ñ•¹Ðµ‘¥ÍÁ½Í¥Ñ¥½¸œ°(€€€€€€€¥¹±¥¹”ì™¥±•¹…µ”ô‰½ÉÉ•Ñ¥½¸µ¹½Ñ¥”´‘í¥‘ô¹Á‘˜‰€°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹Í•¹¡‰åÑ•Ì¤ì(€€€ô°(€€¤ì((€€¼¼€´´´9½Ñ¥”…¹•°€¡Í…µ”½¹Ù•¹Ñ¥½¹Ì…Ì¥¹ÍÑÉÕµ•¹Ð½¡…±±…¸…¹•±Ì¤€´´´´´´´(€…ÁÀ¹Á½ÍÐ (€€€€œ½…Á¤½½ÉÉ•Ñ¥½¸µ¹½Ñ¥•Ì¼é¥½…¹•°œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äè…¹•±½ÉÉ•Ñ¥½¹9½Ñ¥•I•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè½ÉÉ•Ñ¥½¹9½Ñ¥••Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…Ì…¹•±½ÉÉ•Ñ¥½¹9½Ñ¥•I•ÅÕ•ÍÐì(€€€€€½¹ÍÐ¹½Ñ”€ô…¹•±±…Ñ¥½¹9½Ñ”¡‰½‘ä¹¹½Ñ”¤ì(€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•ÕÑ¡½É¥Ñä¡Ñà°ÕÍ•È¹¥°€…¹•°œ¤ì(€€€€€€€½¹ÍÐ¹½Ñ¥”€ô…Ý…¥Ð±½­9½Ñ¥”¡Ñà°¥¤ì(€€€€€€€…Ý…¥Ð…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°¹½Ñ¥”¹Ý½É­}¥¤ì(€€€€€€€¥˜€¡¹½Ñ¥”¹ÍÑ…ÑÕÌ€„ôô€¥ÍÍÕ•œ¤ì(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€9=Q%}MQQUM}=91%Pœ°(€€€€€€€€€€€Q¡¥Ì½Á•É…Ñ¥½¸É•ÅÕ¥É•Ì…¸¥ÍÍÕ•½ÉÉ•Ñ¥½¸¹½Ñ¥”€¡ÕÉÉ•¹ÐÍÑ…ÑÕÌè€‘í¹½Ñ¥”¹ÍÑ…ÑÕÍô¤¹€°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€€€…Ý…¥ÐÑá€(€€€€€€€€€ÕÁ‘…Ñ”½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ì(€€€€€€€€€Í•ÐÍÑ…ÑÕÌ€ô€…¹•±±•œ°…¹•±±•‘}‰å}ÕÍ•É}¥€ô€‘íÕÍ•È¹¥‘ô°(€€€€€€€€€€€€€…¹•±±•‘}…Ð€ô¹½Ü ¤°…¹•±±…Ñ¥½¹}¹½Ñ”€ô€‘í¹½Ñ•ô(€€€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€€ì(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€½ÉÉ•Ñ¥½¹}¹½Ñ¥”¹…¹•±±•œ°(€€€€€€€€€€½ÉÉ•Ñ¥½¹}¹½Ñ¥•Ìœ°(€€€€€€€€€¥°(€€€€€€€€€ì¹½Ñ¥•9Õµ‰•Èè¹½Ñ¥”¹¹½Ñ¥•}¹Õµ‰•È°¹½Ñ”ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘9½Ñ¥••Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì)ô(
+          const diff: AmendmentDiffEntry[] = [];
+          if (challan.challan_date !== body.replacement.challanDate) {
+            diff.push({
+              field: 'challanDate',
+              before: challan.challan_date,
+              after: body.replacement.challanDate,
+            });
+          }
+          if (challan.prefix !== body.replacement.prefix) {
+            diff.push({
+              field: 'prefix',
+              before: challan.prefix,
+              after: body.replacement.prefix,
+            });
+          }
+          const consigneeBefore = summariseConsignee(currentConsignee);
+          const consigneeAfter = summariseConsignee(replacementConsignee);
+          if (consigneeBefore !== consigneeAfter) {
+            diff.push({
+              field: 'consignee',
+              before: consigneeBefore,
+              after: consigneeAfter,
+            });
+          }
+          const itemsBefore = summariseItems(
+            currentItems.map((row) => ({
+              label: row.item_number,
+              quantity: row.quantity,
+            })),
+          );
+          const itemsAfter = summariseItems(replacementLabels);
+          if (itemsBefore !== itemsAfter) {
+            diff.push({ field: 'items', before: itemsBefore, after: itemsAfter });
+          }
+          if (diff.length === 0) {
+            throw httpError(
+              400,
+              'CORRECTION_EMPTY',
+              'The replacement is identical to the issued challan.',
+            );
+          }
+
+          const proposed: ChallanCancelReplaceProposal = {
+            kind: 'cancel_replace_challan',
+            challanId: id,
+            challanNumber: challan.challan_number ?? '',
+            replacement: {
+              challanDate: body.replacement.challanDate,
+              prefix: body.replacement.prefix,
+              consignee: replacementConsignee,
+              items: replacementItems,
+            },
+          };
+          const created = await insertCorrectionRequest(
+            tx,
+            organisationId,
+            'challan_cancel_replace',
+            id,
+            challan.work_id,
+            proposed,
+            diff,
+            body.reason,
+            user.id,
+          );
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'correction.proposed',
+            'approval_requests',
+            created.id,
+            {
+              type: 'challan_cancel_replace',
+              workId: challan.work_id,
+              challanId: id,
+              challanNumber: challan.challan_number,
+              diff,
+              reason: body.reason,
+            },
+          );
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Path A: propose cancel-and-replace for an Issue Challan --------------
+  app.post(
+    '/api/issue-challans/:id/corrections/cancel-replace',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ProposeIssueChallanCancelReplaceRequestSchema,
+        response: { 201: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as ProposeIssueChallanCancelReplaceRequest;
+      const header = normaliseHeader(body.replacement);
+
+      const approval = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const [challan] = await tx<
+            {
+              id: string;
+              work_id: string;
+              status: string;
+              challan_number: string | null;
+              challan_date: string;
+              movement_type: string;
+              issued_to_name: string;
+              issued_to_role: string | null;
+              location: string | null;
+              remarks: string | null;
+            }[]
+          >`
+            select id, work_id, status, challan_number,
+                   challan_date::text as challan_date, movement_type,
+                   issued_to_name, issued_to_role, location, remarks
+            from issue_challans where id = ${id}
+            for update
+          `;
+          if (!challan) {
+            throw httpError(404, 'ISSUE_CHALLAN_NOT_FOUND', 'No such Issue Challan.');
+          }
+          await assertWorkAccess(tx, user.id, challan.work_id);
+          await requireActiveWork(tx, challan.work_id);
+          if (challan.status !== 'issued') {
+            throw httpError(
+              409,
+              'ISSUE_CHALLAN_STATUS_CONFLICT',
+              'Corrections target ISSUED Issue Challans; edit or delete drafts directly.',
+            );
+          }
+          await assertChallanDate(tx, challan.work_id, body.replacement.challanDate);
+
+          // Validate lines: work-item lines must belong to this Work;
+          // quantities must be positive (looser IC content rules keep
+          // manual lines and un-ceilinged quantities by design). EVERY
+          // quantity â€” manual lines included â€” normalises through the
+          // same numeric(18,3) cast, so the diff below compares
+          // like-for-like against the stored numeric columns and the
+          // stored proposal carries exactly what apply will write.
+          const labels: { label: string; quantity: string }[] = [];
+          const normalisedLines: typeof body.replacement.lines = [];
+          for (const line of body.replacement.lines) {
+            if (line.quantity.startsWith('-') || Number(line.quantity) === 0) {
+              throw httpError(
+                400,
+                'QUANTITY_INVALID',
+                'Every replacement quantity must be greater than zero.',
+              );
+            }
+            if ('workItemId' in line) {
+              const [row] = await tx<{ item_number: string; quantity: string }[]>`
+                select wi.item_number, ${line.quantity}::numeric(18,3)::text as quantity
+                from work_items wi
+                where wi.id = ${line.workItemId} and wi.work_id = ${challan.work_id}
+                  and wi.deleted_at is null
+              `;
+              if (!row) {
+                throw httpError(
+                  404,
+                  'WORK_ITEM_NOT_FOUND',
+                  'A replacement line does not belong to this Work.',
+                );
+              }
+              labels.push({ label: row.item_number, quantity: row.quantity });
+              normalisedLines.push({ ...line, quantity: row.quantity });
+            } else {
+              const [normalised] = await tx<{ quantity: string }[]>`
+                select ${line.quantity}::numeric(18,3)::text as quantity
+              `;
+              if (!normalised) throw new Error('normalisation returned no row');
+              labels.push({
+                label: line.description.trim(),
+                quantity: normalised.quantity,
+              });
+              normalisedLines.push({ ...line, quantity: normalised.quantity });
+            }
+          }
+
+          const currentLines = await tx<
+            {
+              description_snapshot: string;
+              item_number: string | null;
+              quantity: string;
+            }[]
+          >`
+            select icl.description_snapshot, wi.item_number,
+                   icl.quantity::text as quantity
+            from issue_challan_lines icl
+            left join work_items wi on wi.id = icl.work_item_id
+            where icl.issue_challan_id = ${id}
+            order by icl.position
+          `;
+
+          const diff: AmendmentDiffEntry[] = [];
+          const push = (field: string, before: string | null, after: string | null) => {
+            if (before !== after) diff.push({ field, before, after });
+          };
+          push('challanDate', challan.challan_date, body.replacement.challanDate);
+          push('movementType', challan.movement_type, body.replacement.movementType);
+          push('issuedToName', challan.issued_to_name, header.issuedToName);
+          push('issuedToRole', challan.issued_to_role, header.issuedToRole);
+          push('location', challan.location, header.location);
+          push('remarks', challan.remarks, header.remarks);
+          push(
+            'lines',
+            summariseItems(
+              currentLines.map((row) => ({
+                label: row.item_number ?? row.description_snapshot,
+                quantity: row.quantity,
+              })),
+            ),
+            summariseItems(labels),
+          );
+          if (diff.length === 0) {
+            throw httpError(
+              400,
+              'CORRECTION_EMPTY',
+              'The replacement is identical to the issued Issue Challan.',
+            );
+          }
+
+          const proposed: IssueChallanCancelReplaceProposal = {
+            kind: 'cancel_replace_issue_challan',
+            issueChallanId: id,
+            challanNumber: challan.challan_number ?? '',
+            replacement: {
+              ...body.replacement,
+              lines: normalisedLines,
+              issuedToName: header.issuedToName,
+              ...(header.issuedToRole !== null
+                ? { issuedToRole: header.issuedToRole }
+                : {}),
+              ...(header.location !== null ? { location: header.location } : {}),
+              ...(header.remarks !== null ? { remarks: header.remarks } : {}),
+            },
+          };
+          const created = await insertCorrectionRequest(
+            tx,
+            organisationId,
+            'issue_challan_cancel_replace',
+            id,
+            challan.work_id,
+            proposed,
+            diff,
+            body.reason,
+            user.id,
+          );
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'correction.proposed',
+            'approval_requests',
+            created.id,
+            {
+              type: 'issue_challan_cancel_replace',
+              workId: challan.work_id,
+              issueChallanId: id,
+              challanNumber: challan.challan_number,
+              diff,
+              reason: body.reason,
+            },
+          );
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Path B: propose a numbered correction notice -------------------------
+  app.post(
+    '/api/challans/:id/corrections/notice',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: ProposeCorrectionNoticeRequestSchema,
+        response: { 201: ApprovalRequestSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as ProposeCorrectionNoticeRequest;
+      const corrections: CorrectionNoticeEntry[] = (body.corrections ?? []).map(
+        (entry) => ({ field: entry.field.trim(), corrected: entry.corrected.trim() }),
+      );
+      const statement = body.statement?.trim() ?? '';
+      if (
+        corrections.some(
+          (entry) => entry.field.length === 0 || entry.corrected.length === 0,
+        )
+      ) {
+        throw httpError(
+          400,
+          'CORRECTION_INVALID',
+          'Every field correction needs both a field and a corrected reading.',
+        );
+      }
+      if (corrections.length === 0 && statement.length === 0) {
+        throw httpError(
+          400,
+          'CORRECTION_EMPTY',
+          'A correction notice needs at least one field correction or a correction statement.',
+        );
+      }
+
+      const approval = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const challan = await lockDeliveryChallan(tx, id);
+          await assertWorkAccess(tx, user.id, challan.work_id);
+          await requireActiveWork(tx, challan.work_id);
+          if (challan.status !== 'issued') {
+            throw httpError(
+              409,
+              'CHALLAN_STATUS_CONFLICT',
+              'Correction notices target ISSUED challans.',
+            );
+          }
+          // Path B exists for challans whose cancellation the evidence
+          // lawfully blocks; an evidence-free challan takes Path A so the
+          // wrong document does not stay in force.
+          const evidence = await challanEvidenceCounts(tx, id);
+          if (
+            evidence.receipts === 0 &&
+            evidence.serials === 0 &&
+            evidence.measurements === 0
+          ) {
+            throw httpError(
+              409,
+              'CORRECTION_USE_CANCEL_REPLACE',
+              'This challan has no downstream evidence; correct it by cancel-and-replace instead.',
+            );
+          }
+
+          const diff: AmendmentDiffEntry[] = corrections.map((entry) => ({
+            field: entry.field,
+            before: null,
+            after: entry.corrected,
+          }));
+          if (statement.length > 0) {
+            diff.push({ field: 'statement', before: null, after: statement });
+          }
+
+          const proposed: CorrectionNoticeProposal = {
+            kind: 'correction_notice',
+            challanId: id,
+            challanNumber: challan.challan_number ?? '',
+            corrections,
+            statement: statement.length > 0 ? statement : null,
+            reason: body.reason,
+          };
+          const created = await insertCorrectionRequest(
+            tx,
+            organisationId,
+            'challan_correction_notice',
+            id,
+            challan.work_id,
+            proposed,
+            diff,
+            body.reason,
+            user.id,
+          );
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'correction.proposed',
+            'approval_requests',
+            created.id,
+            {
+              type: 'challan_correction_notice',
+              workId: challan.work_id,
+              challanId: id,
+              challanNumber: challan.challan_number,
+              diff,
+              reason: body.reason,
+            },
+          );
+          if (await isApprover(tx, user.id)) {
+            await applyApproval(
+              tx,
+              organisationId,
+              user.id,
+              { ...created, proposed, diff },
+              null,
+            );
+          }
+          return readApproval(tx, created.id);
+        },
+      );
+      return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Correction notice reads ----------------------------------------------
+  app.get(
+    '/api/works/:id/correction-notices',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: CorrectionNoticeListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ id: string }[]>`
+            select id from works where id = ${workId} and deleted_at is null
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          return tx<NoticeRow[]>`
+            select ${tx.unsafe(NOTICE_COLUMNS)}
+            from correction_notices
+            where work_id = ${workId}
+            order by created_at desc, id
+          `;
+        },
+      );
+      return { notices: rows.map(toNotice) };
+    },
+  );
+
+  app.get(
+    '/api/challans/:id/correction-notices',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: CorrectionNoticeListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [challan] = await tx<{ work_id: string }[]>`
+            select work_id from delivery_challans where id = ${id}
+          `;
+          if (!challan) {
+            throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+          }
+          await assertWorkAccess(tx, user.id, challan.work_id);
+          return tx<NoticeRow[]>`
+            select ${tx.unsafe(NOTICE_COLUMNS)}
+            from correction_notices
+            where delivery_challan_id = ${id}
+            order by created_at desc, id
+          `;
+        },
+      );
+      return { notices: rows.map(toNotice) };
+    },
+  );
+
+  app.get(
+    '/api/correction-notices/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: CorrectionNoticeDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [ref] = await tx<{ work_id: string }[]>`
+          select work_id from correction_notices where id = ${id}
+        `;
+        if (!ref)
+          throw httpError(404, 'NOTICE_NOT_FOUND', 'No such correction notice.');
+        await assertWorkAccess(tx, user.id, ref.work_id);
+        return readNoticeDetail(tx, id);
+      });
+    },
+  );
+
+  // --- The notice PDF (existing Gotenberg pipeline) -------------------------
+  app.post(
+    '/api/correction-notices/:id/render',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: CorrectionNoticeDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+
+      // Snapshot read and PDF write live in separate transactions so the
+      // slow external call holds no database locks; the legal content is
+      // the immutable snapshot, so re-rendering reproduces the notice.
+      const { snapshot, branding } = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const notice = await lockNotice(tx, id);
+          await assertWorkAccess(tx, user.id, notice.work_id);
+          if (notice.status !== 'issued') {
+            throw httpError(
+              409,
+              'NOTICE_STATUS_CONFLICT',
+              `This operation requires an issued correction notice (current status: ${notice.status}).`,
+            );
+          }
+          const [row] = await tx<{ snapshot: unknown }[]>`
+            select snapshot from correction_notices where id = ${id}
+          `;
+          const [organisation] = await tx<
+            {
+              address: string | null;
+              gstin: string | null;
+              contact_phone: string | null;
+              contact_email: string | null;
+              logo_object_key: string | null;
+              logo_media_type: string | null;
+            }[]
+          >`
+            select address, gstin, contact_phone, contact_email,
+                   logo_object_key, logo_media_type
+            from organisations
+          `;
+          return {
+            snapshot: parseJsonbColumn(row?.snapshot) as CorrectionNoticeSnapshot,
+            branding: organisation ?? null,
+          };
+        },
+      );
+
+      let logoDataUri: string | undefined;
+      if (branding?.logo_object_key && branding.logo_media_type) {
+        try {
+          const logo = await storage.get(branding.logo_object_key);
+          logoDataUri = `data:${branding.logo_media_type};base64,${logo.toString('base64')}`;
+        } catch (error) {
+          // A missing logo object must not block an issued document.
+          request.log.warn(
+            { err: error },
+            'correction notice render: logo unavailable',
+          );
+        }
+      }
+      const html = renderCorrectionNoticeHtml(snapshot, {
+        ...(logoDataUri !== undefined ? { logoDataUri } : {}),
+        address: branding?.address ?? null,
+        gstin: branding?.gstin ?? null,
+        contactPhone: branding?.contact_phone ?? null,
+        contactEmail: branding?.contact_email ?? null,
+      });
+      const form = new FormData();
+      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
+      let pdf: Buffer;
+      try {
+        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
+          method: 'POST',
+          body: form,
+        });
+        if (!response.ok) {
+          throw new Error(`Gotenberg answered ${String(response.status)}`);
+        }
+        pdf = Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        request.log.error({ err: error }, 'correction notice render failed');
+        throw httpError(
+          502,
+          'RENDER_FAILED',
+          'The PDF service is unavailable; the issued notice is unaffected â€” retry later.',
+        );
+      }
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const objectKey = `${organisationId}/cn/${id}.pdf`;
+      await storage.put(objectKey, pdf);
+
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const updated = await tx`
+          update correction_notices
+          set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
+          where id = ${id} and status = 'issued'
+        `;
+        if (updated.count === 0) {
+          // The notice stopped being issued while Gotenberg rendered; the
+          // stored PDF is an orphan, not evidence â€” no audit entry.
+          throw httpError(
+            409,
+            'NOTICE_STATUS_CONFLICT',
+            'The correction notice is no longer issued; the render was discarded.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'correction_notice.rendered',
+          'correction_notices',
+          id,
+          { sha256 },
+        );
+        return readNoticeDetail(tx, id);
+      });
+    },
+  );
+
+  app.get(
+    '/api/correction-notices/:id/pdf',
+    {
+      schema: { params: IdParamsSchema },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const key = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [row] = await tx<
+            { work_id: string; rendered_object_key: string | null }[]
+          >`
+            select work_id, rendered_object_key
+            from correction_notices where id = ${id}
+          `;
+          if (!row) {
+            throw httpError(404, 'NOTICE_NOT_FOUND', 'No such correction notice.');
+          }
+          await assertWorkAccess(tx, user.id, row.work_id);
+          if (row.rendered_object_key === null) {
+            throw httpError(
+              404,
+              'PDF_NOT_AVAILABLE',
+              'This correction notice has not been rendered yet.',
+            );
+          }
+          return row.rendered_object_key;
+        },
+      );
+      const bytes = await storage.get(key);
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename="correction-notice-${id}.pdf"`,
+      );
+      return reply.send(bytes);
+    },
+  );
+
+  // --- Notice cancel (same conventions as instrument/challan cancels) -------
+  app.post(
+    '/api/correction-notices/:id/cancel',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CancelCorrectionNoticeRequestSchema,
+        response: { 200: CorrectionNoticeDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as CancelCorrectionNoticeRequest;
+      const note = cancellationNote(body.note);
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireAuthority(tx, user.id, 'cancel');
+        const notice = await lockNotice(tx, id);
+        await assertWorkAccess(tx, user.id, notice.work_id);
+        if (notice.status !== 'issued') {
+          throw httpError(
+            409,
+            'NOTICE_STATUS_CONFLICT',
+            `This operation requires an issued correction notice (current status: ${notice.status}).`,
+          );
+        }
+        await tx`
+          update correction_notices
+          set status = 'cancelled', cancelled_by_user_id = ${user.id},
+              cancelled_at = now(), cancellation_note = ${note}
+          where id = ${id}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'correction_notice.cancelled',
+          'correction_notices',
+          id,
+          { noticeNumber: notice.notice_number, note },
+        );
+        return readNoticeDetail(tx, id);
+      });
+    },
+  );
+}

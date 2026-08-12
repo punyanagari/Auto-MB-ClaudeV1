@@ -466,4 +466,500 @@ describe('budgetary quotation lifecycle', () => {
   });
 
   it('only accepts an active client contact as the addressee', async () => {
-    c×My¶‰Ëkºwµç}‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í•µÁÑå%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡½¹”¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀĞ¤ì(€€€•áÁ•Ğ¡½¹”¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€	UQIe}EU=QQ%=9}9=Q}=U9œô¤ì(€ô¤ì((€¥Ğ ¥ÍÍÕ•Ìİ¥Ñ „…Á±•ÍÌ	Dµ98…¹™É••é•ÌÑ¡”Ñ½Ñ…°œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ôÉ•ÍÁ½¹Í”¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€‰Å9Õµ‰•Èè€	D´ÀÄœ°(€€€€€Í•ÅÕ•¹•9Õµ‰•Èè€Ä°(€€€€€Ñ½Ñ…±µ½Õ¹ĞèQ=Q1}5=U9P°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹¥ÍÍÕ•‘Ğ¤¹¹½Ğ¹Ñ½	•9Õ±° ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÁÉ•Ù¥•İQ½Ñ…°¤¹Ñ½	”¡Q=Q1}5=U9P¤ì(€€€€¼¼‘‘É•ÍÍ•Ñ¼„ÍÑÉ…¹•ÈèÑ¡•É”¥Ì¹¼½¹Ñ…ĞÑ¼Í¹…ÁÍ¡½Ğ°…¹(€€€€¼¼…‘‘É•ÍÍ•‘Q½€¥ÌÑ¡”İ¡½±”É•½É½˜İ¡¼¥Ğİ•¹ĞÑ¼¸(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÕÍÑ½µ•ÉM¹…ÁÍ¡½Ğ¤¹Ñ½	•9Õ±° ¤ì(€ô¤ì((€¥Ğ Í¹…ÁÍ¡½ÑÌÑ¡”ÕÍÑ½µ•È…Ğ¥ÍÍÕ”°¥µµÕ¹”Ñ¼±…Ñ•Èµ…ÍÑ•È•‘¥ÑÌœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±¥•¹Ñ‘‘É•ÍÍ•‘%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ôÉ•ÍÁ½¹Í”¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹‰Å9Õµ‰•È¤¹Ñ½	” 	D´ÀÈœ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹Í•ÅÕ•¹•9Õµ‰•È¤¹Ñ½	” È¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹ÕÍÑ½µ•ÉM¹…ÁÍ¡½Ğ¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€½¹Ñ…Ñ%è±¥•¹Ñ½¹Ñ…Ñ%°(€€€€€‘•Í¥¹…Ñ¥½¸è	D±¥•¹Ğ€‘íÉÕ¹%‘õ€°(€€€€€ÍÑ¥¸è€œÀá ÜĞÀåHÅihœ°(€€€€€ÍÑ…Ñ•½‘”è€œÀàœ°(€€€ô¤ì((€€€€¼¼I•Ñ¥É¥¹œ…¹É•¹…µ¥¹œÑ¡”µ…ÍÑ•ÈµÕÍĞ¹•Ù•ÈÉ•İÉ¥Ñ”Ñ¡”‘½Õµ•¹Ğ¸(€€€…İ…¥Ğ…‘µ¥¹€(€€€€€ÕÁ‘…Ñ”½¹Ñ…ÑÌ(€€€€€Í•Ğ‘•Í¥¹…Ñ¥½¸€ô€‘í	D±¥•¹ĞI•¹…µ•€‘íÉÕ¹%‘õô°…Ñ¥Ù”€ô™…±Í”(€€€€€İ¡•É”¥€ô€‘í±¥•¹Ñ½¹Ñ…Ñ%‘ô(€€€€ì(€€€½¹ÍĞÉ•É•…€ô…İ…¥Ğ…ÕÑ¡•¡Ù¥•İ•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±¥•¹Ñ‘‘É•ÍÍ•‘%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•É•…¹ÍÑ…ÑÕÍ½‘”°É•É•…¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ (€€€€€É•É•…¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹ÕÍÑ½µ•ÉM¹…ÁÍ¡½Ğ°(€€€€¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì‘•Í¥¹…Ñ¥½¸è	D±¥•¹Ğ€‘íÉÕ¹%‘õ€ô¤ì(€ô¤ì((€¥Ğ ­••ÁÌ…¸¥ÍÍÕ•ÅÕ½Ñ…Ñ¥½¸¥µµÕÑ…‰±”Ñ¡É½Õ Ñ¡”A$…¹Ñ¡”‘…Ñ…‰…Í”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ•‘¥Ñ1¥¹•Ì€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘ô½±¥¹•Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…è1%9L°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ñ1¥¹•Ì¹ÍÑ…ÑÕÍ½‘”°•‘¥Ñ1¥¹•Ì¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡•‘¥Ñ1¥¹•Ì¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€	E}MQQUM}=91%Pœô¤ì((€€€½¹ÍĞ•‘¥Ñ!•…‘•È€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…è‘É…™Ñ	½‘ä¡ìÍÕ‰©•Ğè€I•İÉ¥ÑÑ•¸…™Ñ•È¥ÍÍÕ”œô¤°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ñ!•…‘•È¹ÍÑ…ÑÕÍ½‘”°•‘¥Ñ!•…‘•È¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì((€€€½¹ÍĞÉ•µ½Ù•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€1Qœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•µ½Ù•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀä¤ì((€€€€¼¼Q¡”€ÀÀÌÌÑÉ¥•È¡½±‘ÌÑ¡”Í…µ”ÉÕ±”……¥¹ÍĞ„İÉ¥Ñ•ÈÑ¡…Ğ¹•Ù•È(€€€€¼¼Á…ÍÍ•ÌÑ¡É½Õ Ñ¡”É½ÕÑ”…Ğ…±°¸(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…‘µ¥¹€(€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹}±¥¹•Ì€ (€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹}¥°±¥¹•}¹Õµ‰•È°‘•ÍÉ¥ÁÑ¥½¸°(€€€€€€€€€Õ¹¥Ñ}½‘”°ÅÕ…¹Ñ¥Ñä°É…Ñ”°±¥¹•}…µ½Õ¹Ğ(€€€€€€€€¤(€€€€€€€Ù…±Õ•Ì€ (€€€€€€€€€€‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í™É••Q•áÑ%‘ô°€ää°€M¹•…­•¥¸…™Ñ•È¥ÍÍÕ”œ°(€€€€€€€€€€9½Ìœ°€Ä°€Ä°€Ä(€€€€€€€€¤(€€€€€€°(€€€€¤¹É•©•ÑÌ¹Ñ½Q¡É½İÉÉ½È ½±¥¹•Ì…É”™¥á•½¹”¥Ğ¥Ì¥ÍÍÕ•¼¤ì(€€€…İ…¥Ğ•áÁ•Ğ (€€€€€…‘µ¥¹€(€€€€€€€ÕÁ‘…Ñ”‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹ÌÍ•ĞÍÕ‰©•Ğ€ô€I•İÉ¥ÑÑ•¸Ñ¡É½Õ É…ÜME0œ(€€€€€€€İ¡•É”¥€ô€‘í™É••Q•áÑ%‘ô(€€€€€€°(€€€€¤¹É•©•ÑÌ¹Ñ½Q¡É½İÉÉ½È ½‰ÕÍ¥¹•ÍÌ‘…Ñ„¥Ì¥µµÕÑ…‰±”¼¤ì((€€€€¼¼9½Ñ¡¥¹œ…‰½Ù”‘¥ÍÑÕÉ‰•Ñ¡”¥ÍÍÕ•É•½É¸(€€€½¹ÍĞÉ•É•…€ô…İ…¥Ğ…ÕÑ¡•¡Ù¥•İ•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€½¹ÍĞ‘•Ñ…¥°€ôÉ•É•…¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€¥ÍÍÕ•œ°(€€€€€‰Å9Õµ‰•Èè€	D´ÀÄœ°(€€€€€ÍÕ‰©•Ğè€	Õ‘•Ñ…Éä½™™•È™½È€ÈÕ­XÍİ¥Ñ¡•…Èœ°(€€€€€Ñ½Ñ…±µ½Õ¹ĞèQ=Q1}5=U9P°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•Ñ…¥°¹±¥¹•Ì¤¹Ñ½!…Ù•1•¹Ñ  È¤ì(€ô¤ì((€¥Ğ É•½É‘ÌÑ¡”Ñ¡É•”½ÕÑ½µ•Ì°…Ñ•‰äÑ¡”É¥¡Ğ…ÕÑ¡½É¥Ñäœ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼]¥Ñ¡‘É…İ…°¥ÌÑ¡”½¹ÑÉ…Ñ½ÈÑ…­¥¹œ„‘½Õµ•¹Ğ‰…¬ƒŠPÑ¡”…¹•°(€€€€¼¼…ÕÑ¡½É¥ÑäÌ©½ˆ¸¸½™™¥”µ•µ‰•Èİ¥Ñ¡½ÕĞ¥Ğµ…ä¹½Ğ¸(€€€½¹ÍĞ‘•¹¥•€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±¥•¹Ñ‘‘É•ÍÍ•‘%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€İ¥Ñ¡‘É…İ¸œô°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•¹¥•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡‘•¹¥•¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€UQ!=I%Qe}IEU%Iœô¤ì((€€€€¼¼I•½É‘¥¹œÑ¡…Ğ…¸½™™•È]=8¥Ì½É‘¥¹…Éä‰½½­­••Á¥¹œ¸(€€€½¹ÍĞ½¹Ù•ÉÑ•€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€½¹Ù•ÉÑ•œô°(€€€ô¤ì(€€€•áÁ•Ğ¡½¹Ù•ÉÑ•¹ÍÑ…ÑÕÍ½‘”°½¹Ù•ÉÑ•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ½¹Ù•ÉÑ•‘•Ñ…¥°€ô½¹Ù•ÉÑ•¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤ì(€€€•áÁ•Ğ¡½¹Ù•ÉÑ•‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹ÍÑ…ÑÕÌ¤¹Ñ½	” ½¹Ù•ÉÑ•œ¤ì(€€€€¼¼Q¡”¹Õµ‰•È…¹Ñ¡”Ñ½Ñ…°ÍÕÉÙ¥Ù”Ñ¡”ÑÉ…¹Í¥Ñ¥½¸°™½É•Ù•È¸(€€€•áÁ•Ğ¡½¹Ù•ÉÑ•‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹‰Å9Õµ‰•È¤¹Ñ½	” 	D´ÀÄœ¤ì(€€€•áÁ•Ğ¡½¹Ù•ÉÑ•‘•Ñ…¥°¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹Ñ½Ñ…±µ½Õ¹Ğ¤¹Ñ½	”¡Q=Q1}5=U9P¤ì((€€€€¼¼ÅÕ½Ñ…Ñ¥½¸Ñ¡…Ğ¡…Ì…±É•…‘ä±•™Ğ¥ÍÍÕ•‘€Ñ…­•Ì¹¼Í•½¹½ÕÑ½µ”¸(€€€½¹ÍĞ……¥¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™É••Q•áÑ%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€•áÁ¥É•œô°(€€€ô¤ì(€€€•áÁ•Ğ¡……¥¸¹ÍÑ…ÑÕÍ½‘”°……¥¸¹‰½‘ä¤¹Ñ½	” ĞÀä¤ì(€€€•áÁ•Ğ¡……¥¸¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€	E}MQQUM}=91%Pœô¤ì((€€€½¹ÍĞİ¥Ñ¡‘É…İ¸€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±¥•¹Ñ‘‘É•ÍÍ•‘%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€İ¥Ñ¡‘É…İ¸œô°(€€€ô¤ì(€€€•áÁ•Ğ¡İ¥Ñ¡‘É…İ¸¹ÍÑ…ÑÕÍ½‘”°İ¥Ñ¡‘É…İ¸¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ (€€€€€İ¥Ñ¡‘É…İ¸¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸°(€€€€¤¹Ñ½5…Ñ¡=‰©•Ğ¡ìÍÑ…ÑÕÌè€İ¥Ñ¡‘É…İ¸œ°‰Å9Õµ‰•Èè€	D´ÀÈœô¤ì((€€€€¼¼¹…¸½™™•ÈÑ¡…ĞÍ¥µÁ±ä±…ÁÍ•¥Ì•áÁ¥É•‘€¸(€€€½¹ÍĞ±…ÁÍ¥¹%€ô…İ…¥Ğ‘É…™Ñ]¥Ñ¡1¥¹•Ì¡½É…¹¥Í…Ñ¥½¹%°ì(€€€€€ÍÕ‰©•Ğè€	Õ‘•Ñ…Éä½™™•ÈÑ¡…Ğİ¥±°±…ÁÍ”œ°(€€€ô¤ì(€€€½¹ÍĞ¥ÍÍÕ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±…ÁÍ¥¹%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¥ÍÍÕ•¹ÍÑ…ÑÕÍ½‘”°¥ÍÍÕ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€•áÁ•Ğ (€€€€€¥ÍÍÕ•¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹‰Å9Õµ‰•È°(€€€€¤¹Ñ½	” 	D´ÀÌœ¤ì(€€€½¹ÍĞ•áÁ¥É•€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±…ÁÍ¥¹%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€•áÁ¥É•œô°(€€€ô¤ì(€€€•áÁ•Ğ¡•áÁ¥É•¹ÍÑ…ÑÕÍ½‘”°•áÁ¥É•¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ (€€€€€•áÁ¥É•¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹ÍÑ…ÑÕÌ°(€€€€¤¹Ñ½	” •áÁ¥É•œ¤ì((€€€½¹ÍĞ‘•¹¥…±½ÉY¥•İ•È€ô…İ…¥Ğ…ÕÑ¡•¡Ù¥•İ•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í±…ÁÍ¥¹%‘ô½½ÕÑ½µ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…èì½ÕÑ½µ”è€½¹Ù•ÉÑ•œô°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•¹¥…±½ÉY¥•İ•È¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡‘•¹¥…±½ÉY¥•İ•È¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€I=1}=I	%8œô¤ì(€ô¤ì((€¥Ğ ±¥ÍÑÌÑ¡”½É…¹¥Í…Ñ¥½¸ÅÕ½Ñ…Ñ¥½¹Ì™½È•Ù•Éäµ•µ‰•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ…ÕÑ¡•¡Ù¥•İ•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€œ½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ìœ°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€½¹ÍĞ±¥ÍĞ€ôÉ•ÍÁ½¹Í”¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹1¥ÍÑI•ÍÁ½¹Í”ø ¤ì(€€€½¹ÍĞ¹Õµ‰•ÉÌ€ô±¥ÍĞ¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹Ì(€€€€€€¹µ…À ¡ÅÕ½Ñ…Ñ¥½¸¤€ôøÅÕ½Ñ…Ñ¥½¸¹‰Å9Õµ‰•È¤(€€€€€€¹™¥±Ñ•È ¡¹Õµ‰•È¤è¹Õµ‰•È¥ÌÍÑÉ¥¹œ€ôø¹Õµ‰•È€„ôô¹Õ±°¤(€€€€€€¹Í½ÉĞ ¤ì(€€€•áÁ•Ğ¡¹Õµ‰•ÉÌ¤¹Ñ½ÅÕ…°¡l	D´ÀÄœ°€	D´ÀÈœ°€	D´ÀÌt¤ì(€ô¤ì((€¥Ğ İÉ¥Ñ•ÌÑ¡”…Õ‘¥ĞÑÉ…¥°™½ÈÑ¡”İ¡½±”±¥™•å±”œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ•Ù•¹ÑÌ€ô…İ…¥Ğ…‘µ¥¸ñì…Ñ¥½¸èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ğ…Ñ¥½¸™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô…¹•¹Ñ¥Ñå}¥€ô€‘í™É••Q•áÑ%‘ô(€€€€€½É‘•È‰ä½ÕÉÉ•‘}…Ğ(€€€€ì(€€€•áÁ•Ğ¡•Ù•¹ÑÌ¹µ…À ¡•Ù•¹Ğ¤€ôø•Ù•¹Ğ¹…Ñ¥½¸¤¤¹Ñ½ÅÕ…°¡l(€€€€€€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹É•…Ñ•œ°(€€€€€€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹±¥¹•Í}Í…Ù•œ°(€€€€€€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹±¥¹•Í}Í…Ù•œ°(€€€€€€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹¥ÍÍÕ•œ°(€€€€€€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹½¹Ù•ÉÑ•œ°(€€€t¤ì((€€€½¹ÍĞİ¥Ñ¡‘É…İ…±Ì€ô…İ…¥Ğ…‘µ¥¸ñì…Ñ¥½¸èÍÑÉ¥¹œõmtù€(€€€€€Í•±•Ğ…Ñ¥½¸™É½´…Õ‘¥Ñ}•Ù•¹ÑÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘í½É…¹¥Í…Ñ¥½¹%‘ô(€€€€€€€…¹•¹Ñ¥Ñå}¥€ô€‘í±¥•¹Ñ‘‘É•ÍÍ•‘%‘ô(€€€€€€€…¹…Ñ¥½¸€ô€‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¸¹İ¥Ñ¡‘É…İ¸œ(€€€€ì(€€€•áÁ•Ğ¡İ¥Ñ¡‘É…İ…±Ì¤¹Ñ½!…Ù•1•¹Ñ  Ä¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” É½ÍÌµÑ•¹…¹Ğ…•ÍÌœ°€ ¤€ôøì(€±•Ğ™½É•¥¹%èÍÑÉ¥¹œì((€‰•™½É•±°¡…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ•…Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€œ½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ìœ°(€€€€€½É…¹¥Í…Ñ¥½¹%è½Ñ¡•É=É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…è‘É…™Ñ	½‘ä¡ìÍÕ‰©•Ğè€=™™•ÈÑ¡…Ğ‰•±½¹ÌÑ¼Ñ¡”½Ñ¡•ÈÑ•¹…¹Ğœô¤°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…Ñ•¹ÍÑ…ÑÕÍ½‘”°É•…Ñ•¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€™½É•¥¹%€ôÉ•…Ñ•¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸¹¥ì(€ô°€ÌÁ|ÀÀÀ¤ì((€¥Ğ …¹Íİ•ÉÌ€ĞÀĞ™½È…¹½Ñ¡•È½É…¹¥Í…Ñ¥½¸ÅÕ½Ñ…Ñ¥½¸°½¸•Ù•ÉäÙ•Éˆœ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼Q¡”½İ¹•È¥Ì„µ•µ‰•È½˜	=Q ½É…¹¥Í…Ñ¥½¹Ì°Í¼Ñ¡”µ•µ‰•ÉÍ¡¥À™±½½È(€€€€¼¼±•ÑÌÑ¡”É•ÅÕ•ÍĞ¥¸è¥Ğ¥ÌI1L°…¹½¹±äI1L°Ñ¡…Ğ¡¥‘•ÌÑ¡”É½ÜƒŠP(€€€€¼¼…¹Ñ¡”…¹Íİ•È¥Ì€ĞÀĞ°¹•Ù•È€ĞÀÌ°Í¼„Õ•ÍÍ•¥…¹¹½Ğ½¹™¥É´Ñ¡”(€€€€¼¼‘½Õµ•¹Ğ•á¥ÍÑÌÍ½µ•İ¡•É”•±Í”¸(€€€½¹ÍĞÉ•…€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•…¹ÍÑ…ÑÕÍ½‘”°É•…¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì(€€€•áÁ•Ğ¡É•…¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€	UQIe}EU=QQ%=9}9=Q}=U9œô¤ì((€€€½¹ÍĞ•‘¥Ñ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…è‘É…™Ñ	½‘ä¡ìÍÕ‰©•Ğè€Q…­•¸½Ù•È™É½´…¹½Ñ¡•ÈÑ•¹…¹Ğœô¤°(€€€ô¤ì(€€€•áÁ•Ğ¡•‘¥Ñ•¹ÍÑ…ÑÕÍ½‘”°•‘¥Ñ•¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞ±¥¹•Ì€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€AUPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘ô½±¥¹•Í€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€Á…å±½…è1%9L°(€€€ô¤ì(€€€•áÁ•Ğ¡±¥¹•Ì¹ÍÑ…ÑÕÍ½‘”°±¥¹•Ì¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞ¥ÍÍÕ•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘ô½¥ÍÍÕ•€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¥ÍÍÕ•¹ÍÑ…ÑÕÍ½‘”°¥ÍÍÕ•¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì((€€€½¹ÍĞÉ•µ½Ù•€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€1Qœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡É•µ½Ù•¹ÍÑ…ÑÕÍ½‘”°É•µ½Ù•¹‰½‘ä¤¹Ñ½	” ĞÀĞ¤ì((€€€€¼¼9½Ñ¡¥¹œ±•…­•¥¹Ñ¼Ñ¡”½Ñ¡•ÈÑ•¹…¹ĞÌ±¥ÍĞ•¥Ñ¡•ËŠ˜(€€€½¹ÍĞ±¥ÍĞ€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€œ½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ìœ°(€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ (€€€€€±¥ÍĞ(€€€€€€€€¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹1¥ÍÑI•ÍÁ½¹Í”ø ¤(€€€€€€€€¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹Ì¹µ…À ¡ÅÕ½Ñ…Ñ¥½¸¤€ôøÅÕ½Ñ…Ñ¥½¸¹¥¤°(€€€€¤¹¹½Ğ¹Ñ½½¹Ñ…¥¸¡™½É•¥¹%¤ì((€€€€¼¼ƒŠ™…¹Ñ¡”É•½É¥ÑÍ•±˜¥ÌÕ¹Ñ½Õ¡•İ¡•É”¥Ğ‘½•Ì‰•±½¹œ¸(€€€½¹ÍĞ¡½µ”€ô…İ…¥Ğ…ÕÑ¡•¡½İ¹•È°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½Ñ¡•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡¡½µ”¹ÍÑ…ÑÕÍ½‘”°¡½µ”¹‰½‘ä¤¹Ñ½	” ÈÀÀ¤ì(€€€•áÁ•Ğ (€€€€€¡½µ”¹©Í½¸ñ	Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¹•Ñ…¥±I•ÍÁ½¹Í”ø ¤¹‰Õ‘•Ñ…ÉåEÕ½Ñ…Ñ¥½¸°(€€€€¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì(€€€€€ÍÑ…ÑÕÌè€‘É…™Ğœ°(€€€€€ÍÕ‰©•Ğè€=™™•ÈÑ¡…Ğ‰•±½¹ÌÑ¼Ñ¡”½Ñ¡•ÈÑ•¹…¹Ğœ°(€€€ô¤ì(€ô¤ì((€¥Ğ É•™ÕÍ•Ì„µ•µ‰•È½˜¹•¥Ñ¡•È½É…¹¥Í…Ñ¥½¸‰•™½É”…¹äÉ½Ü¥ÌÉ•…œ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞ‘•¹¥•€ô…İ…¥Ğ…ÕÑ¡•¡±•É¬°ì(€€€€€µ•Ñ¡½è€Pœ°(€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í™½É•¥¹%‘õ€°(€€€€€½É…¹¥Í…Ñ¥½¹%è½Ñ¡•É=É…¹¥Í…Ñ¥½¹%°(€€€ô¤ì(€€€•áÁ•Ğ¡‘•¹¥•¹ÍÑ…ÑÕÍ½‘”¤¹Ñ½	” ĞÀÌ¤ì(€€€•áÁ•Ğ¡‘•¹¥•¹©Í½¸ ¤¤¹Ñ½5…Ñ¡=‰©•Ğ¡ì½‘”è€9=Q}}55	Hœô¤ì(€ô¤ì)ô¤ì()‘•ÍÉ¥‰” 	D¹Õµ‰•É¥¹œÕ¹‘•È½¹ÕÉÉ•¹äœ°€ ¤€ôøì(€¥Ğ ¹Õµ‰•ÉÌ™½ÕÈÍ¥µÕ±Ñ…¹•½ÕÌ¥ÍÍÕ•Ì…Á±•ÍÍ±ä°½¹”¹Õµ‰•È•… œ°…Íå¹Œ€ ¤€ôøì(€€€€¼¼™É•Í ½É…¹¥Í…Ñ¥½¸°Í¼¥ÑÌ½Õ¹Ñ•ÈÍÑ…ÉÑÌ…Ğ½¹”…¹Ñ¡”¹Õµ‰•ÉÌ(€€€€¼¼…¸‰”¹…µ••á…Ñ±ä¸(€€€½¹ÍĞ¥‘Ì€ô…İ…¥ĞAÉ½µ¥Í”¹…±°¡l(€€€€€‘É…™Ñ]¥Ñ¡1¥¹•Ì¡É…•=É…¹¥Í…Ñ¥½¹%°ìÍÕ‰©•Ğè€I…”½™™•Èœô¤°(€€€€€‘É…™Ñ]¥Ñ¡1¥¹•Ì¡É…•=É…¹¥Í…Ñ¥½¹%°ìÍÕ‰©•Ğè€I…”½™™•Èœô¤°(€€€€€‘É…™Ñ]¥Ñ¡1¥¹•Ì¡É…•=É…¹¥Í…Ñ¥½¹%°ìÍÕ‰©•Ğè€I…”½™™•Èœô¤°(€€€€€‘É…™Ñ]¥Ñ¡1¥¹•Ì¡É…•=É…¹¥Í…Ñ¥½¹%°ìÍÕ‰©•Ğè€I…”½™™•Èœô¤°(€€€t¤ì((€€€½¹ÍĞÉ•ÍÁ½¹Í•Ì€ô…İ…¥ĞAÉ½µ¥Í”¹…±° (€€€€€¥‘Ì¹µ…À¡…Íå¹Œ€¡¥¤€ôø(€€€€€€€…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘í¥‘ô½¥ÍÍÕ•€°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%èÉ…•=É…¹¥Í…Ñ¥½¹%°(€€€€€€€ô¤°(€€€€€€¤°(€€€€¤ì(€€€™½È€¡½¹ÍĞÉ•ÍÁ½¹Í”½˜É•ÍÁ½¹Í•Ì¤ì(€€€€€•áÁ•Ğ¡É•ÍÁ½¹Í”¹ÍÑ…ÑÕÍ½‘”°É•ÍÁ½¹Í”¹‰½‘ä¤¹Ñ½	” ÈÀÄ¤ì(€€€ô((€€€½¹ÍĞÉ½İÌ€ô…İ…¥Ğ…‘µ¥¸ñì‰Å}¹Õµ‰•ÈèÍÑÉ¥¹œìÍ•ÅÕ•¹•}¹Õµ‰•Èè¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ‰Å}¹Õµ‰•È°Í•ÅÕ•¹•}¹Õµ‰•È™É½´‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹Ì(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘íÉ…•=É…¹¥Í…Ñ¥½¹%‘ô…¹ÍÑ…ÑÕÌ€ô€¥ÍÍÕ•œ(€€€€€½É‘•È‰äÍ•ÅÕ•¹•}¹Õµ‰•È(€€€€ì(€€€•áÁ•Ğ¡É½İÌ¹µ…À ¡É½Ü¤€ôøÉ½Ü¹‰Å}¹Õµ‰•È¤¤¹Ñ½ÅÕ…°¡l(€€€€€€	D´ÀÄœ°(€€€€€€	D´ÀÈœ°(€€€€€€	D´ÀÌœ°(€€€€€€	D´ÀĞœ°(€€€t¤ì(€€€•áÁ•Ğ¡É½İÌ¹µ…À ¡É½Ü¤€ôøÉ½Ü¹Í•ÅÕ•¹•}¹Õµ‰•È¤¤¹Ñ½ÅÕ…°¡lÄ°€È°€Ì°€Ñt¤ì(€ô°€ÌÁ|ÀÀÀ¤ì((€¥Ğ ±•ÑÌ•á…Ñ±ä½¹”½˜Ñİ¼Í¥µÕ±Ñ…¹•½ÕÌ¥ÍÍÕ•Ìİ¥¸°½¹ÍÕµ¥¹œ½¹”¹Õµ‰•Èœ°…Íå¹Œ€ ¤€ôøì(€€€½¹ÍĞÉ…•%€ô…İ…¥Ğ‘É…™Ñ]¥Ñ¡1¥¹•Ì¡É…•=É…¹¥Í…Ñ¥½¹%°ì(€€€€€ÍÕ‰©•Ğè€I…”½™™•Èœ°(€€€ô¤ì(€€€½¹ÍĞm™¥ÉÍĞ°Í•½¹‘t€ô…İ…¥ĞAÉ½µ¥Í”¹…±°¡l(€€€€€…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘íÉ…•%‘ô½¥ÍÍÕ•€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%èÉ…•=É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤°(€€€€€…ÕÑ¡•¡½İ¹•È°ì(€€€€€€€µ•Ñ¡½è€A=MPœ°(€€€€€€€ÕÉ°è€½…Á¤½‰Õ‘•Ñ…ÉäµÅÕ½Ñ…Ñ¥½¹Ì¼‘íÉ…•%‘ô½¥ÍÍÕ•€°(€€€€€€€½É…¹¥Í…Ñ¥½¹%èÉ…•=É…¹¥Í…Ñ¥½¹%°(€€€€€ô¤°(€€€t¤ì(€€€•áÁ•Ğ¡m™¥ÉÍĞ¹ÍÑ…ÑÕÍ½‘”°Í•½¹¹ÍÑ…ÑÕÍ½‘•t¹Í½ÉĞ ¤¤¹Ñ½ÅÕ…°¡lÈÀÄ°€ĞÀåt¤ì((€€€½¹ÍĞmÉ½İt€ô…İ…¥Ğ…‘µ¥¸ñì‰Å}¹Õµ‰•ÈèÍÑÉ¥¹œìÍ•ÅÕ•¹•}¹Õµ‰•Èè¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ‰Å}¹Õµ‰•È°Í•ÅÕ•¹•}¹Õµ‰•È™É½´‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹Ì(€€€€€İ¡•É”¥€ô€‘íÉ…•%‘ô…¹ÍÑ…ÑÕÌ€ô€¥ÍÍÕ•œ(€€€€ì(€€€•áÁ•Ğ¡É½Üü¹‰Å}¹Õµ‰•È¤¹Ñ½	” 	D´ÀÔœ¤ì((€€€€¼¼Q¡”±½Í•ÈÌÑÉ…¹Í…Ñ¥½¸É½±±•¥ÑÌ½Õ¹Ñ•È¥¹É•µ•¹Ğ‰…¬İ¥Ñ ¥Ğ°(€€€€¼¼Í¼Ñ¡”Í•ÅÕ•¹”¥ÌÍÑ¥±°…Á±•ÍÌèÑ¡”½Õ¹Ñ•ÈÍÑ…¹‘Ì…Ğ•á…Ñ±äÑ¡”(€€€€¼¼¹Õµ‰•ÈÑ¡…Ğİ…Ì…ÑÕ…±±ä¡…¹‘•½ÕĞ¸(€€€½¹ÍĞm½Õ¹Ñ•Ét€ô…İ…¥Ğ…‘µ¥¸ñì¹•áÑ}Ù…±Õ”è¹Õµ‰•Èõmtù€(€€€€€Í•±•Ğ¹•áÑ}Ù…±Õ”™É½´‰Õ‘•Ñ…Éå}ÅÕ½Ñ…Ñ¥½¹}½Õ¹Ñ•ÉÌ(€€€€€İ¡•É”½É…¹¥Í…Ñ¥½¹}¥€ô€‘íÉ…•=É…¹¥Í…Ñ¥½¹%‘ô(€€€€ì(€€€•áÁ•Ğ¡½Õ¹Ñ•Èü¹¹•áÑ}Ù…±Õ”¤¹Ñ½	” Ô¤ì(€ô°€ÌÁ|ÀÀÀ¤ì)ô¤ì(
+    const notClient = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId,
+      payload: draftBody({ customerContactId: consigneeOnlyContactId }),
+    });
+    expect(notClient.statusCode, notClient.body).toBe(409);
+    expect(notClient.json()).toMatchObject({ code: 'CONTACT_NOT_CLIENT' });
+
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId,
+      payload: draftBody({ customerContactId: retiredClientContactId }),
+    });
+    expect(retired.statusCode, retired.body).toBe(409);
+    expect(retired.json()).toMatchObject({ code: 'CONTACT_RETIRED' });
+
+    const missing = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId,
+      payload: draftBody({ customerContactId: randomUUID() }),
+    });
+    expect(missing.statusCode, missing.body).toBe(404);
+    expect(missing.json()).toMatchObject({ code: 'CONTACT_NOT_FOUND' });
+
+    const accepted = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId,
+      payload: draftBody({
+        customerContactId: clientContactId,
+        subject: 'Budgetary offer for feeder cables',
+      }),
+    });
+    expect(accepted.statusCode, accepted.body).toBe(201);
+    clientAddressedId =
+      accepted.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.id;
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${clientAddressedId}/lines`,
+      organisationId,
+      payload: LINES,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+  });
+
+  it('requires explicit issue authority', async () => {
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${freeTextId}/issue`,
+      organisationId,
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+  });
+
+  it('refuses to issue a quotation with nothing to offer', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId,
+      payload: draftBody({ subject: 'Empty offer' }),
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const emptyId =
+      created.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.id;
+
+    const blocked = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${emptyId}/issue`,
+      organisationId,
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json()).toMatchObject({ code: 'BQ_EMPTY' });
+
+    // A draft is not a document: it deletes, and takes nothing with it.
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/budgetary-quotations/${emptyId}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+    const gone = await authed(owner, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${emptyId}`,
+      organisationId,
+    });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json()).toMatchObject({ code: 'BUDGETARY_QUOTATION_NOT_FOUND' });
+  });
+
+  it('issues with a gapless BQ-NN and freezes the total', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${freeTextId}/issue`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const detail = response.json<BudgetaryQuotationDetailResponse>();
+    expect(detail.budgetaryQuotation).toMatchObject({
+      status: 'issued',
+      bqNumber: 'BQ-01',
+      sequenceNumber: 1,
+      totalAmount: TOTAL_AMOUNT,
+    });
+    expect(detail.budgetaryQuotation.issuedAt).not.toBeNull();
+    expect(detail.previewTotal).toBe(TOTAL_AMOUNT);
+    // Addressed to a stranger: there is no contact to snapshot, and
+    // `addressedTo` is the whole record of who it went to.
+    expect(detail.customerSnapshot).toBeNull();
+  });
+
+  it('snapshots the customer at issue, immune to later master edits', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${clientAddressedId}/issue`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const detail = response.json<BudgetaryQuotationDetailResponse>();
+    expect(detail.budgetaryQuotation.bqNumber).toBe('BQ-02');
+    expect(detail.budgetaryQuotation.sequenceNumber).toBe(2);
+    expect(detail.customerSnapshot).toMatchObject({
+      contactId: clientContactId,
+      designation: `BQ Client ${runId}`,
+      gstin: '08AAACH7409R1ZZ',
+      stateCode: '08',
+    });
+
+    // Retiring and renaming the master must never rewrite the document.
+    await admin`
+      update contacts
+      set designation = ${`BQ Client Renamed ${runId}`}, active = false
+      where id = ${clientContactId}
+    `;
+    const reread = await authed(viewer, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${clientAddressedId}`,
+      organisationId,
+    });
+    expect(reread.statusCode, reread.body).toBe(200);
+    expect(
+      reread.json<BudgetaryQuotationDetailResponse>().customerSnapshot,
+    ).toMatchObject({ designation: `BQ Client ${runId}` });
+  });
+
+  it('keeps an issued quotation immutable through the API and the database', async () => {
+    const editLines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${freeTextId}/lines`,
+      organisationId,
+      payload: LINES,
+    });
+    expect(editLines.statusCode, editLines.body).toBe(409);
+    expect(editLines.json()).toMatchObject({ code: 'BQ_STATUS_CONFLICT' });
+
+    const editHeader = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${freeTextId}`,
+      organisationId,
+      payload: draftBody({ subject: 'Rewritten after issue' }),
+    });
+    expect(editHeader.statusCode, editHeader.body).toBe(409);
+
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/budgetary-quotations/${freeTextId}`,
+      organisationId,
+    });
+    expect(removed.statusCode).toBe(409);
+
+    // The 0033 trigger holds the same rule against a writer that never
+    // passes through the route at all.
+    await expect(
+      admin`
+        insert into budgetary_quotation_lines (
+          organisation_id, budgetary_quotation_id, line_number, description,
+          unit_code, quantity, rate, line_amount
+        )
+        values (
+          ${organisationId}, ${freeTextId}, 99, 'Sneaked in after issue',
+          'Nos', 1, 1, 1
+        )
+      `,
+    ).rejects.toThrowError(/lines are fixed once it is issued/);
+    await expect(
+      admin`
+        update budgetary_quotations set subject = 'Rewritten through raw SQL'
+        where id = ${freeTextId}
+      `,
+    ).rejects.toThrowError(/business data is immutable/);
+
+    // Nothing above disturbed the issued record.
+    const reread = await authed(viewer, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${freeTextId}`,
+      organisationId,
+    });
+    const detail = reread.json<BudgetaryQuotationDetailResponse>();
+    expect(detail.budgetaryQuotation).toMatchObject({
+      status: 'issued',
+      bqNumber: 'BQ-01',
+      subject: 'Budgetary offer for 25kV switchgear',
+      totalAmount: TOTAL_AMOUNT,
+    });
+    expect(detail.lines).toHaveLength(2);
+  });
+
+  it('records the three outcomes, gated by the right authority', async () => {
+    // Withdrawal is the contractor taking a document back â€” the cancel
+    // authority's job. An office member without it may not.
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${clientAddressedId}/outcome`,
+      organisationId,
+      payload: { outcome: 'withdrawn' },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'AUTHORITY_REQUIRED' });
+
+    // Recording that an offer WON is ordinary bookkeeping.
+    const converted = await authed(clerk, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${freeTextId}/outcome`,
+      organisationId,
+      payload: { outcome: 'converted' },
+    });
+    expect(converted.statusCode, converted.body).toBe(200);
+    const convertedDetail = converted.json<BudgetaryQuotationDetailResponse>();
+    expect(convertedDetail.budgetaryQuotation.status).toBe('converted');
+    // The number and the total survive the transition, forever.
+    expect(convertedDetail.budgetaryQuotation.bqNumber).toBe('BQ-01');
+    expect(convertedDetail.budgetaryQuotation.totalAmount).toBe(TOTAL_AMOUNT);
+
+    // A quotation that has already left `issued` takes no second outcome.
+    const again = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${freeTextId}/outcome`,
+      organisationId,
+      payload: { outcome: 'expired' },
+    });
+    expect(again.statusCode, again.body).toBe(409);
+    expect(again.json()).toMatchObject({ code: 'BQ_STATUS_CONFLICT' });
+
+    const withdrawn = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${clientAddressedId}/outcome`,
+      organisationId,
+      payload: { outcome: 'withdrawn' },
+    });
+    expect(withdrawn.statusCode, withdrawn.body).toBe(200);
+    expect(
+      withdrawn.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation,
+    ).toMatchObject({ status: 'withdrawn', bqNumber: 'BQ-02' });
+
+    // And an offer that simply lapsed is `expired`.
+    const lapsingId = await draftWithLines(organisationId, {
+      subject: 'Budgetary offer that will lapse',
+    });
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${lapsingId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    expect(
+      issued.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.bqNumber,
+    ).toBe('BQ-03');
+    const expired = await authed(clerk, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${lapsingId}/outcome`,
+      organisationId,
+      payload: { outcome: 'expired' },
+    });
+    expect(expired.statusCode, expired.body).toBe(200);
+    expect(
+      expired.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.status,
+    ).toBe('expired');
+
+    const denialForViewer = await authed(viewer, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${lapsingId}/outcome`,
+      organisationId,
+      payload: { outcome: 'converted' },
+    });
+    expect(denialForViewer.statusCode).toBe(403);
+    expect(denialForViewer.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
+  });
+
+  it('lists the organisation quotations for every member', async () => {
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/budgetary-quotations',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const list = response.json<BudgetaryQuotationListResponse>();
+    const numbers = list.budgetaryQuotations
+      .map((quotation) => quotation.bqNumber)
+      .filter((number): number is string => number !== null)
+      .sort();
+    expect(numbers).toEqual(['BQ-01', 'BQ-02', 'BQ-03']);
+  });
+
+  it('writes the audit trail for the whole lifecycle', async () => {
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${freeTextId}
+      order by occurred_at
+    `;
+    expect(events.map((event) => event.action)).toEqual([
+      'budgetary_quotation.created',
+      'budgetary_quotation.lines_saved',
+      'budgetary_quotation.lines_saved',
+      'budgetary_quotation.issued',
+      'budgetary_quotation.converted',
+    ]);
+
+    const withdrawals = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId}
+        and entity_id = ${clientAddressedId}
+        and action = 'budgetary_quotation.withdrawn'
+    `;
+    expect(withdrawals).toHaveLength(1);
+  });
+});
+
+describe('cross-tenant access', () => {
+  let foreignId: string;
+
+  beforeAll(async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/budgetary-quotations',
+      organisationId: otherOrganisationId,
+      payload: draftBody({ subject: 'Offer that belongs to the other tenant' }),
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    foreignId = created.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation.id;
+  }, 30_000);
+
+  it('answers 404 for another organisation quotation, on every verb', async () => {
+    // The owner is a member of BOTH organisations, so the membership floor
+    // lets the request in: it is RLS, and only RLS, that hides the row â€”
+    // and the answer is 404, never 403, so a guessed id cannot confirm the
+    // document exists somewhere else.
+    const read = await authed(owner, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${foreignId}`,
+      organisationId,
+    });
+    expect(read.statusCode, read.body).toBe(404);
+    expect(read.json()).toMatchObject({ code: 'BUDGETARY_QUOTATION_NOT_FOUND' });
+
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${foreignId}`,
+      organisationId,
+      payload: draftBody({ subject: 'Taken over from another tenant' }),
+    });
+    expect(edited.statusCode, edited.body).toBe(404);
+
+    const lines = await authed(owner, {
+      method: 'PUT',
+      url: `/api/budgetary-quotations/${foreignId}/lines`,
+      organisationId,
+      payload: LINES,
+    });
+    expect(lines.statusCode, lines.body).toBe(404);
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/budgetary-quotations/${foreignId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(404);
+
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/budgetary-quotations/${foreignId}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(404);
+
+    // Nothing leaked into the other tenant's list eitherâ€¦
+    const list = await authed(owner, {
+      method: 'GET',
+      url: '/api/budgetary-quotations',
+      organisationId,
+    });
+    expect(
+      list
+        .json<BudgetaryQuotationListResponse>()
+        .budgetaryQuotations.map((quotation) => quotation.id),
+    ).not.toContain(foreignId);
+
+    // â€¦and the record itself is untouched where it does belong.
+    const home = await authed(owner, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${foreignId}`,
+      organisationId: otherOrganisationId,
+    });
+    expect(home.statusCode, home.body).toBe(200);
+    expect(
+      home.json<BudgetaryQuotationDetailResponse>().budgetaryQuotation,
+    ).toMatchObject({
+      status: 'draft',
+      subject: 'Offer that belongs to the other tenant',
+    });
+  });
+
+  it('refuses a member of neither organisation before any row is read', async () => {
+    const denied = await authed(clerk, {
+      method: 'GET',
+      url: `/api/budgetary-quotations/${foreignId}`,
+      organisationId: otherOrganisationId,
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'NOT_A_MEMBER' });
+  });
+});
+
+describe('BQ numbering under concurrency', () => {
+  it('numbers four simultaneous issues gaplessly, one number each', async () => {
+    // A fresh organisation, so its counter starts at one and the numbers
+    // can be named exactly.
+    const ids = await Promise.all([
+      draftWithLines(raceOrganisationId, { subject: 'Race offer A' }),
+      draftWithLines(raceOrganisationId, { subject: 'Race offer B' }),
+      draftWithLines(raceOrganisationId, { subject: 'Race offer C' }),
+      draftWithLines(raceOrganisationId, { subject: 'Race offer D' }),
+    ]);
+
+    const responses = await Promise.all(
+      ids.map(async (id) =>
+        authed(owner, {
+          method: 'POST',
+          url: `/api/budgetary-quotations/${id}/issue`,
+          organisationId: raceOrganisationId,
+        }),
+      ),
+    );
+    for (const response of responses) {
+      expect(response.statusCode, response.body).toBe(201);
+    }
+
+    const rows = await admin<{ bq_number: string; sequence_number: number }[]>`
+      select bq_number, sequence_number from budgetary_quotations
+      where organisation_id = ${raceOrganisationId} and status = 'issued'
+      order by sequence_number
+    `;
+    expect(rows.map((row) => row.bq_number)).toEqual([
+      'BQ-01',
+      'BQ-02',
+      'BQ-03',
+      'BQ-04',
+    ]);
+    expect(rows.map((row) => row.sequence_number)).toEqual([1, 2, 3, 4]);
+  }, 30_000);
+
+  it('lets exactly one of two simultaneous issues win, consuming one number', async () => {
+    const raceId = await draftWithLines(raceOrganisationId, {
+      subject: 'Race offer E',
+    });
+    const [first, second] = await Promise.all([
+      authed(owner, {
+        method: 'POST',
+        url: `/api/budgetary-quotations/${raceId}/issue`,
+        organisationId: raceOrganisationId,
+      }),
+      authed(owner, {
+        method: 'POST',
+        url: `/api/budgetary-quotations/${raceId}/issue`,
+        organisationId: raceOrganisationId,
+      }),
+    ]);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 409]);
+
+    const [row] = await admin<{ bq_number: string; sequence_number: number }[]>`
+      select bq_number, sequence_number from budgetary_quotations
+      where id = ${raceId} and status = 'issued'
+    `;
+    expect(row?.bq_number).toBe('BQ-05');
+
+    // The loser's transaction rolled its counter increment back with it,
+    // so the sequence is still gapless: the counter stands at exactly the
+    // number that was actually handed out.
+    const [counter] = await admin<{ next_value: number }[]>`
+      select next_value from budgetary_quotation_counters
+      where organisation_id = ${raceOrganisationId}
+    `;
+    expect(counter?.next_value).toBe(5);
+  }, 30_000);
+});

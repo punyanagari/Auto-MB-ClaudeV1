@@ -178,6 +178,376 @@ Remaining:
   amount, submission and extension windows, penal-interest terms, source
   evidence, parser-proposed versus reviewer-corrected) onto the Work at
   confirmation, and derive submission-due dates from the LOA date. The
-  requirement (what the LOA demands) stays distinct from the insÛO|¶‰ËkºwµçEÍ¡‰½…É½µÁ±•Ñ¥½¸…±•ÉÑÌ¸HÄÔÌ)Ñ¡¥ÉÍÑ…ÑÕÌ°…¹•±±•‘€°ÍÑ…åÌ‘•±¥‰•É…Ñ•±äÕ¹É•…¡…‰±”èÑ¡”)ÑÉ…¹Í¥Ñ¥½¸Õ…ÉÉ•™ÕÍ•Ì…¹äµ½Ù”¥¹Ñ¼½È½ÕĞ½˜…¹•±±•‘€É…Ñ¡•È)Ñ¡…¸±•…Ù¥¹œ…¸Õ¹¥µÁ±•µ•¹Ñ•ÍÑ…Ñ”É•…¡…‰±”Ñ¡É½Õ ME0¸]½É¬¡…Ì)¹¼É•µ½Ù…°Á…Ñ …Ğ…±°Ñ½‘…äƒŠPİ½É­Ì¹‘•±•Ñ•‘}…Ñ€•á¥ÍÑÌ™É½´µ¥É…Ñ¥½¸(ÀÀÀÄ…¹•Ù•ÉäÉ•…¡½¹½ÕÉÌ¥Ğ°‰ÕĞ¹½Ñ¡¥¹œİÉ¥Ñ•Ì¥ĞƒŠPÍ¼…¹•±±•‘€)ÍÑ…åÌÉ•™ÕÍ•Õ¹Ñ¥°İ½É¬É•µ½Ù…°¥Ì‰Õ¥±Ğİ¥Ñ ¥ÑÌ½İ¸ÉÕ±•Ì…¹)•Ù¥‘•¹”É•™ÕÍ…±Ì¸()I•ÑÉ½™¥Ğ°±½Í¥¹œ¡…É‘•¹¥¹œ€ ÈÀÈØ´Àà´Àä°µ¥É…Ñ¥½¸€ÀÀÌÈ¤èÑ¡”™É••é”½¸)„½µÁ±•Ñ•]½É¬¹½ÜÉÕ¹Ì¥¸‰½Ñ ‘¥É•Ñ¥½¹Ì¸€ÀÀÌÄ±½Í••Ù•ÉäÁ…Ñ )Ñ¡…ĞL„‘½Õµ•¹Ğì¹½Ñ¡¥¹œÍÑ½ÁÁ•Ñ¡”•Ù¥‘•¹”Ñ¡”ÁÉ•‘¥…Ñ”İ…Ì)µ•…ÍÕÉ•……¥¹ÍĞ‰•¥¹œ…¹•±±•½ÕĞ™É½´Õ¹‘•È¥Ğ…™Ñ•Éİ…É‘Ì°Í¼„)]½É¬½Õ±Í¥Ğ…Ğ½µÁ±•Ñ•‘€İ¡¥±”¥ÑÌ‘•±¥Ù•É•…¹¥¹ÍÑ…±±•ÍÕµÌ)¡…™…±±•¸‰•±½ÜÑ¡”ÅÕ…¹Ñ¥Ñ¥•ÌÑ¡…Ğ…‘µ¥ÑÑ•¥Ğ¸…¹•±±¥¹œ„‘•±¥Ù•Éä)¡…±±…¸°…¸¥ÍÍÕ”¡…±±…¸°…¸¥¹ÍÑ…±±…Ñ¥½¸É•½É°„A•ÉÑ¥™¥…Ñ”½È)„5•…ÍÕÉ•µ•¹Ğ	½½¬½¸„½µÁ±•Ñ•]½É¬¥Ì¹½ÜÉ•™ÕÍ•…ĞÑ¡”É½ÕÑ”(¡Õ¹‘•ÈÑ¡”İ½É­ÌÉ½Ü±½¬°Ñ…­•¸…™Ñ•ÈÑ¡”‘½Õµ•¹ĞÉ½ÜÍ¼…¹•°…¹)½µÁ±•Ñ¥½¸Í•É¥…±¥Í”¤…¹…ĞÑ¡”‘…Ñ…‰…Í”°•… ¹…µ¥¹œÑ¡”É•½Á•¸ìÑ¡”)‘•¥Í¥½¸¥ÌÉ•™ÕÍ”°¹½Ğ…ÕÑ¼µÉ•½Á•¸°Í¼Ñ¡”½Á•É…Ñ½ÈÍÑ…Ñ•Ìİ¡äÑ¡”)±½ÍÕÉ”İ…ÌİÉ½¹œ¥¸Ñ¡”¹½Ñ”Hà…±É•…‘ä…Õ‘¥ÑÌ¸	¥±°ÍÑ…ÑÕÌÑÉ…¹Í¥Ñ¥½¹Ì(¡ÁÉ•Á…É•ƒŠHÍÕ‰µ¥ÑÑ•ƒŠHÁ…¥¤ÍÑ…ä½Á•¸‰ä‘•Í¥¸èÁ…åµ•¹Ğ½¹Ñ¥¹Õ•Ì)±½¹œ…™Ñ•È•á•ÕÑ¥½¸™¥¹¥Í¡•Ì…¹µ½Ù•Ì¹¼ÅÕ…¹Ñ¥Ñä¸Q¡”HÜ¥Ñ•´µÉ•µ½Ù…°)ÁÉ½Á½Í…°É½ÕÑ”°İ¡¥ Ñ¡”Ñİ¼É•ÑÉ½™¥ĞÑÉ…­Ìµ•É•Á…ÍĞİ¥Ñ¡½ÕĞ)½¹Ù•ÉÑ¥¹œ°¹½ÜÑ…­•ÌÑ¡”Í…µ”İ½É­Ì±½¬…¹Ñ¡”Í…µ”Í¡…É•É•™ÕÍ…°…Ì)¥ÑÌÍ¥‰±¥¹œÁÉ½Á½Í…°É½ÕÑ•Ì¸Q¡”Õ¹™¥¹¥Í¡•µ¥Ñ•´İ½É­±¥ÍĞ…ÉÉ¥•ÌÑ¡”)%IQ%=8½˜•… ¥Ñ•´ÌÉ•µ•‘äƒŠP„]½É¬İ¥Ñ Ñ¡”•á•ÍÌµ‘•±¥Ù•ÉäÑ½±”)½¸…¸‰”½Ù•Èµ‘•±¥Ù•É•°…¹Ñ¡”HÜ™±½½ÈÉ•™ÕÍ•Ì…µ•¹‘¥¹œ‘½İ¸°Í¼)Ñ¡½Í”É½İÌ…É”Ñ½±Ñ¼…µ•¹Ñ¡”Í…¹Ñ¥½¹•ÅÕ…¹Ñ¥ÑäU@Ñ¼µ…Ñ Ñ¡”)‘•±¥Ù•Éä¥¹ÍÑ•…¸%¸Ñ¡”İ•ˆ±¥•¹Ğ°€‰=µ¥Ğ…¸¥Ñ•´ˆ™¥±•ÌÑ¡É½Õ Ñ¡”HÜ)É•µ½Ù…°Á…Ñ É…Ñ¡•ÈÑ¡…¸„ÅÕ…¹Ñ¥Ñä´À¡…¹”°…¹…¸¥Ñ•´…ÉÉå¥¹œ…¸)Õ¹‘•¥‘•½µ¥ÍÍ¥½¸Í¡½İÌ¥Ğ¸((ŒŒ5¥±•ÍÑ½¹”€ÜƒŠPÍ¥Ñ”µ…Ñ•É¥…°µ½Ù•µ•¹Ğ…¹‘½Õµ•¹Ğ½¹ÑÉ½°()M½Á”è((´%ÍÍÕ”¡…±±…¹Ì…Ì„™¥ÉÍĞµ±…ÍÌ‘½Õµ•¹Ğ€¡±•…ä±¥™•å±”è‘É…™ĞƒŠH(€¥ÍÍÕ•ƒŠH…¹•±±•°Á±ÕÌ±½…¸½É•ÑÕÉ¸ÑåÁ”ì¥¹‘•Á•¹‘•¹ĞÁ•Èµ]½É¬(€¹Õµ‰•É¥¹œìµ…¹Õ…°±¥¹•ÌÁ•Éµ¥ÑÑ•‰ä‘•Í¥¸¤É•½É‘¥¹œµ…Ñ•É¥…°µ½Ù¥¹œ(€™É½´ÍÑ½É”½½¹Í¥¹•”ÕÍÑ½‘äÑ¼Í¥Ñ”°‘¥ÍÑ¥¹Õ¥Í¡¥¹œÉ…¥±İ…äµ¥ÍÍÕ•(€™É½´½¹ÑÉ…Ñ½ÈµÁÉ½Ù¥‘•µ…Ñ•É¥…°ì(´ÅÕ…¹Ñ¥Ñäµ±•Ù•°¥¹ÍÑ…±±…Ñ¥½¸É•½É‘Ìİ¥Ñ ±½…Ñ¥½¸°…±½¹Í¥‘”Ñ¡”(€•á¥ÍÑ¥¹œÁ•ÈµÍ•É¥…°¥¹ÍÑ…±±…Ñ¥½¸™…ÑÌì(´½¹Í¥¹•”°±½…Ñ¥½¸°…¹Õ¹¥Ğµ…ÍÑ•ÉÌƒŠP­•ÁĞ¥¸Ñ¡¥Ìµ¥±•ÍÑ½¹”‰•…ÕÍ”(€¥¹ÍÑ…±±…Ñ¥½¸…¹%ÍÍÕ”¡…±±…¹Ì½¹ÍÕµ”Ñ¡•´€¡±•…ä¥¹ÍÑ…±±…Ñ¥½¸Á¥­Ì(€¥ÑÌ±½…Ñ¥½¸™É½´Ñ¡”µ…ÍÑ•È°¥¹±¥¹”µÉ•…Ñ…‰±”¤èÉ•Ñ¥É”µ¹½Ğµ‘•±•Ñ”°(€…±İ…åÌÍ¹…ÁÍ¡½Ğµ½¸µÕÍ”Í¼¥ÍÍÕ•‘½Õµ•¹ÑÌÍÑ…ä™É½é•¸ìÕ¹¥ÑÌÍ••‘•(€™É½´Ñ¡”Á…ÉÍ•ÈÌ…¹½¹¥…°±¥ÍĞìÍ¥¹…Ñ½Éä¹…µ•Ì©½¥¸Ñ¡”½É…¹¥Í…Ñ¥½¸(€ÁÉ½™¥±”ì(´İ…ÉÉ…¹Ñä½Õ…É…¹Ñ•”•ÉÑ¥™¥…Ñ”Á…”½¸Ñ¡”•±¥Ù•Éä¡…±±…¸è½Éœµ±•Ù•°(€Ñ•µÁ±…Ñ”Ñ•áĞ°É•¹‘•É•™É½´Ñ¡”¥ÍÍÕ•Í¹…ÁÍ¡½Ğ°Ñ•µÁ±…Ñ”Ù•ÉÍ¥½¸…¹(€½¹Ñ•¹Ğ¡…Í É•½É‘•ì(´Ñ¡”5¥±•ÍÑ½¹”€Ø…µ•¹‘µ•¹Ğ½…ÁÁÉ½Ù…°µ•¡…¹¥Í´•áÑ•¹‘ÌÑ¼¥ÍÍÕ•(€‘½Õµ•¹ÑÌè„İÉ½¹œ¡…±±…¸İ¥Ñ ‘½İ¹ÍÑÉ•…´•Ù¥‘•¹”€¡Õ¹™¥á…‰±”Í¥¹”(€Ñ¡”€ÈÀÈØ´Àà´Àà…¹•±±…Ñ¥½¸Á½±¥ä¤•ÑÌ…¸…ÁÁÉ½Ù…°µ…Ñ•(€…¹•°µ…¹µÉ•Á±…”½È…‘©ÕÍÑµ•¹Ğ‘½Õµ•¹ĞƒŠPÑ¡”ÁÉ½µ¥Í”µ¥É…Ñ¥½¸€ÀÀÀà(€…±É•…‘äµ…­•ÌƒŠP¹•Ù•È…¸•‘¥Ğ½˜Ñ¡”¥ÍÍÕ•Í¹…ÁÍ¡½Ğì(´Í•ÑÑ±•Í½Á”¹…ÉÉ½İ¥¹œè¥¹ÍÑ…±±…Ñ¥½¸µÉ•½ÉÅÕ…¹Ñ¥Ñä•‘¥ÑÌ…É”(€‘•±¥‰•É…Ñ•±ä…¹•°µ…¹µÉ”µÉ•½É¥¸Ñ¡¥Ìµ¥±•ÍÑ½¹”ƒŠPÑ¡•É”¥Ì¹¼(€…ÁÁÉ½Ù…°µ…Ñ•¥¸µÁ±…”¥¹ÍÑ…±±…Ñ¥½¸•‘¥ĞìÑ¡”…ÁÁÉ½Ù…°µ…Ñ•Ù…É¥…¹Ğ(€€¡±•…äƒ
-œÔ¸Ğ¿
-œÔ¸Ø°‰±½­•İ¡¥±”Í•É¥…±Ì…É”…ÑÑ…¡•¤¥Ì‘•™•ÉÉ•Ñ¼(€Ñ¡”5¥±•ÍÑ½¹”€Ø¼ÜÉ•ÑÉ½™¥Ğİ…Ù”ì(´Ñ•¹…¹Ğµİ¥‘”Í•É¥…°±½½­ÕÀ€¡İ½É¬µÍ½Á”™¥±Ñ•É•¤İ¥Ñ Ñ¡”™Õ±°ÑÉ…”°(€…¹•¹™½É•µ•¹Ğ½˜Ñ¡”É•ÅÕ¥É•Í}Í•É¥…±Í€™±…œ€¡ÍÑ½É•Í¥¹”µ¥É…Ñ¥½¸(€€ÀÀÀÄ°¹•Ù•È•¹™½É•¤èÍ•É¥…°½Õ¹ĞµÕÍĞ•ÅÕ…°Í¡¥ÁÁ•ÅÕ…¹Ñ¥Ñä…Ğ(€¥ÍÍÕ”¸5Õ±Ñ¥±¥¹”‰…Ñ …ÁÑÕÉ”…±É•…‘äÍ¡¥ÁÁ•¥¸5¥±•ÍÑ½¹”€ÔìÉ…¹”(€•áÁ…¹Í¥½¸…¹ÍÁÉ•…‘Í¡••Ğ¥µÁ½ÉĞÍÑ…ä•Ù¥‘•¹”µ…Ñ•¥¸5¥±•ÍÑ½¹”€ä¸()•±¥Ù•É•€ ÈÀÈØ´Àà´Àä°µ¥É…Ñ¥½¹Ì€ÀÀÄßŠLÀÀÄäÁ±ÕÌÑ¡”É•Ù¥•Üµ¡…É‘•¹¥¹œ)Á…ÍÌ¥¸€ÀÀÈÌ¤èÅÕ…¹Ñ¥Ñäµ±•Ù•°¥¹ÍÑ…±±…Ñ¥½¸É•½É‘Ìİ¥Ñ ¥¹±¥¹”µÉ•…Ñ…‰±”)±½…Ñ¥½¸Í¹…ÁÍ¡½ÑÌ°Í•É¥…°…ÑÑ…¡µ•¹Ğ……¥¹ÍĞÑ¡”‘•±¥Ù•É•Á½½°°…¹)•á…Ğµ…É¥Ñ¡µ•Ñ¥Œ…ÁÌÕ¹‘•ÈÉ½Ü±½­ÌìÑ¡”İ…ÉÉ…¹Ñä½Õ…É…¹Ñ•”)•ÉÑ¥™¥…Ñ”…ÌÁ…”€È½˜Ñ¡”•±¥Ù•Éä¡…±±…¸°™É½é•¸¥¹Ñ¼Ñ¡”¥ÍÍÕ•)Í¹…ÁÍ¡½Ğİ¥Ñ Ñ•µÁ±…Ñ”Ù•ÉÍ¥½¸…¹½¹Ñ•¹Ğ¡…Í ìÑ¡”½ÉÉ•Ñ¥½¸™±½Ü)Ñ¡É½Õ Ñ¡”5¥±•ÍÑ½¹”€Ø…ÁÁÉ½Ù…°•¹¥¹”ƒŠP•Ù¥‘•¹”µ™É•”¥ÍÍÕ•)‘½Õµ•¹ÑÌ•Ğ…ÁÁÉ½Ù…°µ…Ñ•…¹•°µ…¹µÉ•Á±…”İ¥Ñ ÁÉ½Ù•¹…¹”°)•Ù¥‘•¹”µ±½­•½¹•Ì•Ğ…Á±•ÍÌ¹Õµ‰•É•½ÉÉ•Ñ¥½¸¹½Ñ¥•Ì°…¹)‘•¥‘•ÉÌÉ•Ù…±¥‘…Ñ”Ñ¡”‘½Õµ•¹Ğ…ÕÑ¡½É¥Ñ¥•Ì…Ğ…ÁÁ±äÑ¥µ”ì¥ÍÍÕ”)¡…±±…¹Ì©½¥¹•Ñ¡”Ñ¥µ•±¥¹”…¹•áÁ½ÉĞìÑ¡”…µ•¹‘µ•¹Ğ™±½½È¥¹±Õ‘•Ì)¥¹ÍÑ…±±•ÅÕ…¹Ñ¥Ñ¥•Ì¸Q¡”½¹Ñ…ÑÌÕ¹¥™¥…Ñ¥½¸€ ÈÀÈØ´Àà´Àä°µ¥É…Ñ¥½¸€ÀÀÈà¤ÕÁÉ…‘•Ñ¡”½¹Í¥¹•”µ…ÍÑ•È¥¹Ñ¼Ñ¡”É½±”µ™±…•½¹Ñ…ÑÌ)µ½‘•°ƒŠP½¹Í¥¹•”É½±”…Ñ¥Ù”°Ù•¹‘½È½±¥•¹Ğ‘½Éµ…¹ĞÕ¹Ñ¥°ÁÉ½ÕÉ•µ•¹Ğ+ŠPİ¥Ñ MQ%8Ù…±¥‘…Ñ¥½¸€¡‘•‘ÕÑ½ÈƒŠ™€…•ÁÑ•¤°HÄØ…ÕÑ¡½É¥Ñä)É•™ÕÍ…°°…¹Á•Èµ]½É¬½¹Í¥¹•”…ÍÍ½¥…Ñ¥½¹Ì¸()á¥Ğè„µ…Ñ•É¥…°Õ¹¥Ğ…¸‰”ÑÉ…•…İ…É‘•ƒŠH‘•±¥Ù•É•ƒŠHÉ••¥Ù•ƒŠH)¥ÍÍÕ•Ñ¼Í¥Ñ”ƒŠH¥¹ÍÑ…±±•°¥¹±Õ‘¥¹œ¥ÑÌ‘½Õµ•¹ÑÌ°ÕÍÑ½‘ä°Í•É¥…°)¥‘•¹Ñ¥Ñä°…¹±½…Ñ¥½¸°…¹„İÉ½¹œ¥ÍÍÕ•‘½Õµ•¹Ğ¡…Ì„±…İ™Õ°)½ÉÉ•Ñ¥½¸Á…Ñ Ñ¡…ĞÁÉ•Í•ÉÙ•ÌÑ¡”½É¥¥¹…°ƒŠPµ•Ğ(¡…ÁÁÌ½Í•ÉÙ•È½Ñ•ÍĞ½¥¹ÍÑ…±±…Ñ¥½¹Ì¹¥¹Ñ•É…Ñ¥½¸¹Ñ•ÍĞ¹ÑÍ€°)½ÉÉ•Ñ¥½¹Ì¹¥¹Ñ•É…Ñ¥½¸¹Ñ•ÍĞ¹ÑÍ€°¡…±±…¹Ì¹¥¹Ñ•É…Ñ¥½¸¹Ñ•ÍĞ¹ÑÍ€¤¸((ŒŒ5¥±•ÍÑ½¹”€àƒŠPÍÑ…”µİ¥Í”5•…ÍÕÉ•µ•¹Ğ	½½¬±¥™•å±”…¹Á…åµ•¹Ğ•±¥¥‰¥±¥Ñä((¡I•¹…µ•™É½´€‰ÍÑ…”µİ¥Í”Á…åµ•¹Ğ•±¥¥‰¥±¥Ñäˆ…™Ñ•ÈÑ¡”Í•½¹…Õ‘¥Ñ½È)É•Ù¥•ÜèÑ¡”±•…äÍÁ•Œ‘•™¥¹•Ì„5•…ÍÕÉ•µ•¹Ğ	½½¬±¥™•å±”°¹½Ğ©ÕÍĞ„)‰¥±°™½ÉµÕ±„¸H´ÀÀÀØÉ•½É‘ÌÑ¡”Í•ÑÑ±•‘•Í¥¸¸¤()M½Á”è((´¥Ñ•´Á…åµ•¹Ğ…Ñ•½É¥•Ì…ÍÍ¥¹•…Ğ1=É•Ù¥•Ü°…¹„Á•Èµ]½É¬Á…åµ•¹Ğ(€µ…ÑÉ¥à­•å•‰ä…Ñ•½ÉäƒŠP•… …Ñ•½Éä‘•™¥¹•ÌÍÕÁÁ±ä°¥¹ÍÑ…±±…Ñ¥½¸°(€A°…¹™¥¹…°µ‰¥±°Á•É•¹Ñ…•ÌÍÕµµ¥¹œ•á…Ñ±äÑ¼€ÄÀÀìÁ•ÈÑ¡”±•…ä(€Í•ÑÑ±•‘•¥Í¥½¸Ñ¡•É”¥Ì‘•±¥‰•É…Ñ•±ä¹¼Á•Èµ¥Ñ•´Á•É•¹Ñ…”µ•¹ÑÉä(€¥¹Ñ•É™…”ì(´A•ÉÑ¥™¥…Ñ•ÌÉ•½É‘¥¹œ•ÉÑ¥™¥•ÅÕ…¹Ñ¥Ñ¥•ÌÁ•È¥Ñ•´°…ÁÁ•…Ğ(€¥¹ÍÑ…±±•µµ¥¹ÕÌµ…±É•…‘äµ•ÉÑ¥™¥•ì(´ÍÑ…”µİ¥Í”‰¥±°ÁÉ•Á…É…Ñ¥½¸è•±¥¥‰±”ÍÑ…”ÅÕ…¹Ñ¥Ñäƒ\…ÕÑ¡½É¥Ñ…Ñ¥Ù”(€É…Ñ”ƒ\ÍÑ…”Á•É•¹Ñ…”ƒŠ"HÁÉ•Ù¥½ÕÍ±ä‰¥±±•™½ÈÑ¡…ĞÍÑ…”°¥¸•á…Ğ(€‘•¥µ…°…É¥Ñ¡µ•Ñ¥Œ°İ¥Ñ Á•ÈµÍÑ…”‰¥±±•µ•µ½ÉäÍ¼¹¼ÍÑ…”…¸‰”(€‰¥±±•Ñİ¥”ì(´•Ù•Éä™¥¹…±¥Í•5…¹‰¥±°Í¹…ÁÍ¡½ÑÌÑ¡”¥Ñ•´Ì…Ñ•½Éä…ÍÍ¥¹µ•¹Ğ°(€Ñ¡”É•Í½±Ù•Á•É•¹Ñ…•Ì°•±¥¥‰±”ÍÑ…”ÅÕ…¹Ñ¥Ñ¥•Ì°É…Ñ•Ì°…¹ÁÉ¥½È(€‰¥±±•…µ½Õ¹ÑÌƒŠP¡…¹¥¹œÑ¡”]½É¬µ…ÑÉ¥à±…Ñ•È¹•Ù•È…±Ñ•ÉÌ„(€™¥¹…±¥Í•É•½Éì(´½µÁ•¹Í…Ñ¥¹œ•¹ÑÉ¥•Ì™½È½ÉÉ•Ñ¥½¹ÌƒŠPÁ…¥‰¥±±Ì…É”¹•Ù•ÈÉ•İÉ¥ÑÑ•¸¸()Q¡”µ…ÑÉ¥àÍ¡•µ„±…¹‘Ì‰•™½É”Ñ¡”™¥ÉÍĞ‘•Í¥¸Á…ÉÑ¹•ÈÁÉ•Á…É•Ì„‰¥±°è)‰¥±±Ì…É”¥µµÕÑ…‰±”…¹Õ¹‘•±•Ñ…‰±”°Í¼„€ÄÀÀ”µ½˜µµ•…ÍÕÉ•‰¥±°½¸„)ÍÑ…•½¹ÑÉ…Ğİ½Õ±‰”„Á•Éµ…¹•¹Ñ±äİÉ½¹œ™¥¹…¹¥…°É•½É¸Q¡”)É¥¡•Èµ…Ñ¡Ì…±É•…‘ä‘•™•ÉÉ•€¡Í•ÕÉ¥Ñä‘•Á½Í¥Ğ‘•‘ÕÑ¥½¹Ì°ÁÉ¥”)Ù…É¥…Ñ¥½¸¤ÍÑ¥±°İ…¥Ğ™½È„Á…ÉÑ¹•ÈÌÉ•…°‰¥±°™½Éµ…Ğ¸()•±¥Ù•É•€ ÈÀÈØ´Àà´Àä°µ¥É…Ñ¥½¹Ì€ÀÀÈÇŠLÀÀÈÜ¤è¥Ñ•´Á…åµ•¹Ğ…Ñ•½É¥•Ì)İ¥Ñ Ñ¡”Á•Èµ]½É¬µ…ÑÉ¥à€¡™½ÕÈ…Ñ•½É¥•ÌÁ±ÕÌ…¸½ÁÑ¥½¹…°U9Q=I%M)É½Üì™¥¹…±¥é…Ñ¥½¸¹…µ•Ì•Ù•ÉäÕ¹É•Í½±Ù•¥Ñ•´ìHÄÀ¡½¹½ÕÉ•ƒŠP¹¼)Á•Èµ¥Ñ•´Á•É•¹Ñ…•Ì¤ìA•ÉÑ¥™¥…Ñ•Ìİ¥Ñ Ñ¡”HÄà)¥¹ÍÑ…±±•µµ¥¹ÕÌµ½Ù•É•…ÀÕ¹‘•ÈÉ½Ü±½­Ì°½¹Í¥¹•”Í¹…ÁÍ¡½ÑÌ°…¹)‘¥ÍÁ±…äµ½¹±äÉ•±•…Í•Ù…±Õ•ÌìÑ¡”5•…ÍÕÉ•µ•¹Ğ	½½¬±¥™•å±”Á•È)H´ÀÀÀØƒŠP‘…Ñ…‰…Í”µ•¹™½É•½¹”µ±¥Ù”µ5µÁ•ÈµÍ½ÕÉ”°‘É…™ĞÉ•½µÁÕÑ”°)…Á±•ÍÌ€ñİ½É­}½‘”øµ5µ99€™¥¹…±¥Í…Ñ¥½¸Í¹…ÁÍ¡½ÑÑ¥¹œ…Ñ•½É¥•Ì°)Á•É•¹Ñ…•Ì°É…Ñ•Ì°Á•ÈµÍÑ…”‘•±Ñ…Ì…¹ÑÉÕ”µÕµÕ±…Ñ¥Ù”ÁÉ¥½ÉÌ°)¹•İ•ÍĞµ±¥Ù”µ½¹±ä…¹•°€¡İ½É­ÌµÉ½ÜÍ•É¥…±¥Í•İ¥Ñ ‰…­ÍÑ½ÁÌ¤°)™¥¹…°µ5Íİ••À•¹™½É•µ•¹Ğİ¥Ñ „Á½ÍĞµ™¥¹…°Í½ÕÉ”™É••é”°…¹HÄä)½¡•É•¹”Õ…É‘Ì‰½Ñ ‘¥É•Ñ¥½¹Ì…ĞA$…¹‘…Ñ…‰…Í”±•Ù•°ì‰¥±±Ì)ÁÉ•Á…É•€ÄèÄ™É½´™¥¹…±¥é•5	Ì€¡Ñ¡”5¥±•ÍÑ½¹”€Ôµ•…ÍÕÉ•µÅÕ…¹Ñ¥Ñä)Íİ••À¥ÌÉ•Ñ¥É•¤ìÑ¡”½¹ÑÉ…ÑÕ…°5É•µ…É¬…±½É¥Ñ¡´ÁÉ½Ù•¸)¡…É…Ñ•Èµ™½Èµ¡…É…Ñ•È……¥¹ÍĞÑ¡”…•¹äİ½É­‰½½¬™¥áÑÕÉ”ìÑ¡”5)‘½Õµ•¹Ğİ¥Ñ IPİ…Ñ•Éµ…É¬°%90	%10‰…¹¹•È°…¹%¹‘¥…¸µÍåÍÑ•´)…µ½Õ¹Ğ¥¸İ½É‘ÌìÉ…Ñ•Ì…ĞÍ¥àµ‘•¥µ…°ÁÉ•¥Í¥½¸•¹Ñ¼•¹€¡…µ½Õ¹ÑÌ)ÍÑ…äÑİ¼µ‘•¥µ…°Á•ÈHÄÌ¤¸()á¥ĞèÑ¡”™¥ÉÍĞÍÑ…”µ‰…Í•‰¥±°¥Ì½µÁÕÑ••¹Ñ¥É•±ä™É½´É•½É‘•)½¹ÑÉ…ĞÑ•ÉµÌ…¹½Á•É…Ñ¥½¹…°•Ù¥‘•¹”°İ¥Ñ ¹¼Á…åµ•¹ĞÁ•É•¹Ñ…•Ì)…±Õ±…Ñ•¥¸…¸•áÑ•É¹…°ÍÁÉ•…‘Í¡••ĞƒŠPµ•Ğ(¡…ÁÁÌ½Í•ÉÙ•È½Ñ•ÍĞ½µ•…ÍÕÉ•µ•¹Ğµ‰½½­Ì¹¥¹Ñ•É…Ñ¥½¸¹Ñ•ÍĞ¹ÑÍ€°)µˆµÉ•µ…É¬¹Ñ•ÍĞ¹ÑÍ€……¥¹ÍĞ)…ÁÁÌ½Í•ÉÙ•È½Ñ•ÍĞ½™¥áÑÕÉ•Ì½µˆµÉ•µ…É¬µİ½É­‰½½¬¹ØÄ¹©Í½¹€¤¸((ŒŒ1•…äØÄÕÑ½Ù•È()Q¡”±¥Ù”ØÄÍåÍÑ•´€¡ME1¥Ñ”¤¡½±‘ÌÉ•…°ÁÉ½‘ÕÑ¥½¸‘…Ñ„ƒŠP€ÌĞİ½É­Ì°(ØÔÀ‘•±¥Ù•Éä¡…±±…¹Ìİ¥Ñ Í•É¥…±Ì…É½ÍÌÑİ¼±•…°•¹Ñ¥Ñ¥•ÌƒŠP…¹)ÍÑ½ÁÌ…Ğ±…Õ¹ ¸•±¥Ù•É•€ ÈÀÈØ´Àà´Àä°µ¥É…Ñ¥½¸€ÀÀÈÔ¤èÑ¡”¥‘•µÁ½Ñ•¹Ğ)ÕÑ½Ù•È¥µÁ½ÉÑ•È€¡ÍÉ¥ÁÑÌ½¥µÁ½ÉĞµØÄ¹ÑÍ€¤İ¥Ñ …ÁÁ•¹µ½¹±ä¥µÁ½ÉĞ)ÁÉ½Ù•¹…¹”°•á…ĞÁÉ•Í•ÉÙ…Ñ¥½¸½˜ÁÉ¥¹Ñ•¡…±±…¸¹Õµ‰•ÉÌ€¡¥¹±Õ‘¥¹œ)ÍÕ™™¥á•½¹•Ì¤°¡¥ÍÑ½É¥…°Ñ¥µ•ÍÑ…µÁÌ°½Õ¹Ñ•È½¹Ñ¥¹Õ¥Ñä…™Ñ•ÈÑ¡”)¡¥¡•ÍĞ¡¥ÍÑ½É¥…°¹Õµ‰•È°Í•É¥…°Á…ÉÍ¥¹œİ¥Ñ ¹…µ••á•ÁÑ¥½¹Ì(¡¹•Ù•ÈÍ¥±•¹Ğ‘•‘ÕÀ°É…¹•Ì¹•Ù•È™…‰É¥…Ñ•¤°‘•Ñ•Éµ¥¹¥ÍÑ¥Œ)ÅÕ…¹Ñ¥é…Ñ¥½¸İ¥Ñ ¡½¹•ÍĞ‘É¥™Ğ…½Õ¹Ñ¥¹œ°Á•Èµ½É…¹¥Í…Ñ¥½¸)É•½¹¥±¥…Ñ¥½¸É•Á½ÉÑÌ°…¹‘ÉäµÉÕ¸É½±±‰…¬¸Q¡”ÕÑ½Ù•ÈÉÕ¹‰½½¬¥Ì)¥¸‘½Ì½=AIQ%=9L¹µè‘ÉäµÉÕ¸¹½Ü°™É••é”ØÄ…Ğ±…Õ¹ °™¥¹…°‰…­ÕÀ°)…ÁÁ±ä°É•½¹¥±”°¥¹Ù¥Ñ”ÕÍ•ÉÌ¸…Ñ„µÅÕ…±¥Ñä•á•ÁÑ¥½¹Ì™½Õ¹¥¸Ñ¡”)É•…°‰…­ÕÀİ•É”‘•±¥Ù•É•Ñ¼Ñ¡”½Á•É…Ñ½È™½È½ÉÉ•Ñ¥½¸¥¸ØÄ‰•™½É”)Ñ¡”™¥¹…°ÉÕ¸¸((ŒŒ5¥±•ÍÑ½¹”€äƒŠPÁÉ½ÕÉ•µ•¹Ğ…¹Á…É…±±•°µ•…ÍÕÉ•µ•¹Ğ()•±¥Ù•É•€ ÈÀÈØ´Àà´ÄÀ°µ¥É…Ñ¥½¹Ì€ÀÀÌÏŠLÀÀÌĞ¤è((´Ù•¹‘½È½¹Ñ…ÑÌ°ÁÕÉ¡…Í”½É‘•ÉÌİ¥Ñ ]½É¬µ¥Ñ•´±¥¹•Ì°…Á±•ÍÌ¥ÍÍÕ”°(€¥µµÕÑ…‰±”Ù•¹‘½È½±¥¹”Í¹…ÁÍ¡½ÑÌ°É••¥ÁĞµ…İ…É”±½ÍÕÉ”°…¹…¹•±±…Ñ¥½¸ì(´]½É¬µ¥¹‘•Á•¹‘•¹Ğ‰Õ‘•Ñ…ÉäÅÕ½Ñ…Ñ¥½¹Ìİ¥Ñ ‘É…™Ğ°¥ÍÍÕ”°½ÕÑ½µ”°…¹(€…¹•±±…Ñ¥½¸±¥™•å±•Ìì(´ÍÕÁÁ±¥•ÈÍÑ…Ñ”Á±ÕÌ½ÁÑ¥½¹…°]½É¬µ¥Ñ•´!M8½M°MPÉ…Ñ”°…¹½½‘Ì½Í•ÉÙ¥”(€™…ÑÌ¹••‘•‰äÁÉ½ÕÉ•µ•¹Ğ…¹ÍÑ…ÑÕÑ½Éä‘½Õµ•¹ÑÌì(´É•½É5•…ÍÕÉ•µ•¹Ğ	½½­Ì™½ÈÁ…É…±±•°½¹Í¥¹•”µ•…ÍÕÉ•µ•¹Ğ°µ•É”¥¹Ñ¼…¸(€½¸µ…½Õ¹Ğ‘É…™Ğ°…¹™¥¹…°5•…ÍÕÉ•µ•¹Ğ	½½­ÌÑ¡…Ğ±½Í”™ÕÉÑ¡•Èµ•…ÍÕÉ•µ•¹Ğ¸((ŒŒ5¥±•ÍÑ½¹”€ÄÀƒŠPMP¥¹Ù½¥•Ì…¹”µİ…ä‰¥±±Ì()•±¥Ù•É•±½…±±ä€ ÈÀÈØ´Àà´ÄÀÑ¡É½Õ €ÈÀÈØ´Àà´ÄÈ°µ¥É…Ñ¥½¹Ì€ÀÀÌ×ŠLÀÀĞÔ¤è((´‘¥É•Ğ…¹™¥¹…±¥é•µ5µ‰…­•MP¥¹Ù½¥•Ìİ¥Ñ ‘É…™Ğ°ÍÕ‰µ¥ÑÑ•°…¹(€…¹•±±•±¥™•å±•Ìì(´½¹™¥ÕÉ…‰±”½É…¹¥Í…Ñ¥½¸¹Õµ‰•É¥¹œÑ•µÁ±…Ñ•Ì°™¥¹…¹¥…°µå•…È½Õ¹Ñ•ÉÌ°(€‰Õå•È‘¥Ù¥Í¥½¸Ñ½­•¹Ì°‘¥É•Ğµ¥¹Ù½¥”Ù…±Õ•Ì°…¹¡½ÕÍ”‘•™…Õ±ÑÌì(´•á…Ğ¥¹ÑÉ„µÍÑ…Ñ”MP½MMP½È¥¹Ñ•ÈµÍÑ…Ñ”%MPÍÁ±¥Ğ°İ¡½±”µÉÕÁ•”É½Õ¹‘¥¹œ°(€¥µµÕÑ…‰±”ÍÕÁÁ±¥•È½‰Õå•È½Í¡¥ÀµÑ¼Í¹…ÁÍ¡½ÑÌ°…µ½Õ¹Ğ¥¸İ½É‘Ì°…¹(€É•¹‘•ÈµÉ•…‘ä¥¹Ù½¥”‘…Ñ„¸I•Ù•ÉÍ”¡…É”¥Ì…¸•áÁ±¥¥Ğ™…Ğì¥ÍÍÕ”…•ÁÑÌ(€½¹™¥Éµ•™½Éİ…É¡…É”…¹É•™ÕÍ•ÌÑ¡”Õ¹ÍÕÁÁ½ÉÑ•É•Ù•ÉÍ”µ¡…É”‰É…¹ ì(´‘•Ñ•Éµ¥¹¥ÍÑ¥Œ%I@Í¡•µ„€Ä¸Ä…¹9%”µİ…äµ‰¥±°Á…å±½…‘Ì°…ÁÁ•¹µ½¹±ä%I8¼(€…­¹½İ±•‘•µ•¹Ğ½Í¥¹•µEH•Ù¥‘•¹”°”µİ…ä¹Õµ‰•È½Ù…±¥‘¥Ñä•Ù¥‘•¹”°…¹(€…¹•±±…Ñ¥½¸½É‘•É¥¹œÑ¡…ĞÉ•™ÕÍ•Ì…¸¥¹Ù½¥”…¹•±±…Ñ¥½¸İ¡¥±”„±¥Ù”(€”µİ…ä‰¥±°•á¥ÍÑÌì(´•áÁ±¥¥ĞÍ•±±•È°‰Õå•È°…¹Í¡¥ÀµÑ¼9%±½…±¥Ñä°¹•Ù•È¥¹™•ÉÉ•™É½´…¸(€…‘‘É•ÍÌì(´ÁÉ½Ù¥‘•Èµ¹•ÕÑÉ…°ÑÉ…¹ÍÁ½ÉĞÁ±ÕÌÑ¡”½Á•É…Ñ½ÈµÑÉ¥•É•]¡¥Ñ•‰½½­ÌÉ%I@(€É•¥ÍÑ•È°‘½Õµ•¹Ğ±½½­ÕÀ°…¹…¹•±±…Ñ¥½¸…‘…ÁÑ•Èì(´‘ÕÉ…‰±”ÁÉ½Ù¥‘•Èµ½Á•É…Ñ¥½¸±•…Í•Ì°½ÉÉ•±…Ñ¥½¸¥‘Ì°É•ÅÕ•ÍĞ¡…Í¡•Ì°™…¥±•(€…¹Õ¹­¹½İ¸ÍÑ…Ñ•Ì°±½½­ÕÀµ½¹±äÉ•½¹¥±¥…Ñ¥½¸°ÍÑ…±”µ½Á•É…Ñ¥½¸É•½Ù•Éä°(€…¹•áÁ±¥¥Ğµ…¹Õ…°µÕ¹Ù•É¥™¥•…¹•±±…Ñ¥½¸½¹™¥Éµ…Ñ¥½¸ì(´Í•Á…É…Ñ”µİ…ä	¥±°A$…ÕÑ¡•¹Ñ¥…Ñ¥½¸…¹±¥•¹ĞÉ•‘•¹Ñ¥…±Ì™½ÈÍÑ…¹‘…±½¹”(€]…¹•±±…Ñ¥½¸ì(´½¹Í•ÉÙ…Ñ¥Ù”±•…äµ•Ù¥‘•¹”µ…É­•ÉÌİ¡•É”µ¥É…Ñ•Á½ÉÑ…°Ñ•áĞ…¹¹½Ğ‰”(€ÁÉ½Ù••á…Ğì(´™É•Í ]•¹•É…Ñ¥½¸…¹9%Á…å±½…•áÁ½ÍÕÉ”‰±½­•™½ÈÑ¡”ÕÉÉ•¹Ğ(€ÕµÕ±…Ñ¥Ù”MÍ•ÉÙ¥”¥¹Ù½¥”°İ¡¥±”¡¥ÍÑ½É¥…°É•½É‘ÌÉ•µ…¥¸É•…‘…‰±”°(€É•½¹¥±…‰±”°…¹…¹•±±…‰±”ì(´‘•Ñ•Éµ¥¹¥ÍÑ¥ŒÑ…àµ¥¹Ù½¥”!Q50½AÉ•¹‘•É¥¹œ™É½´™É½é•¸™…ÑÌ°É•…°MYEH(€•¹½‘¥¹œ½˜Í¥¹•%I@•Ù¥‘•¹”°…ÁÁ•¹µ½¹±äÉ•¹‘•ÈÙ•ÉÍ¥½¹Ì°™É½é•¸µ±½¼…¹(€Í½ÕÉ”½A¡…Í¡•Ì°Ñ•¹…¹Ğµ­•ä‘…Ñ…‰…Í”Õ…É‘Ì°Ù•É¥™¥•‘½İ¹±½…‘Ì°…¹(€É•Ñ…¥¹•É•……•ÍÌ…™Ñ•È…¹•±±…Ñ¥½¸ì(´‘…Ñ…‰…Í”‘•±•Ñ”Õ…É‘ÌÁÉ•Í•ÉÙ”¥ÍÍÕ•½µ…¹Õ…°½ÁÉ½Ù¥‘•ÈµÑ½Õ¡•ÍÑ…ÑÕÑ½Éä(€É•½É‘Ì°…¹Ñ¡”±•…äµ•Ù¥‘•¹”±…ÍÍ¥™¥•È¥ÌÁÉ½Ù•¸…É½ÍÌÑ¡”ÍÑ…•(€€ÀÀĞËŠHÀÀĞÏŠHÀÀĞĞÕÁÉ…‘”Á…Ñ İ¥Ñ ¥ÑÌÕÁ‘…Ñ”Õ…É‘ÌÉ”µ•¹…‰±•ì(´¹½Éµ…±¥é•5•…ÍÕÉ•µ•¹Ğ	½½¬µ•É”ÁÉ½Ù•¹…¹”°Á•Èµ]½É¬½Ù•¹‘½ÈA<‘É…™ÑÌ°(€¥µµÕÑ…‰±”¥ÍÍÕ•A<½	DÁ…É•¹ÑÌ°…¹…ÕÑ½µ…Ñ¥ŒA<É•½Á•¹¥¹œİ¡•¸„±¥¹­•(€¡…±±…¸…¹•±±…Ñ¥½¸É•±•…Í•ÌÉ••¥ÁĞÅÕ…¹Ñ¥Ñäì(´•áÁ½ÉĞµØá€°¥¹±Õ‘¥¹œÕÉÉ•¹Ğµ…ÍÑ•ÉÌ°ÁÉ½ÕÉ•µ•¹Ğ°ÍÑ…ÑÕÑ½Éä‘½Õµ•¹ÑÌ°(€ÁÉ½Ù¥‘•Èµ½Á•É…Ñ¥½¸…¹5µµ•É”¡¥ÍÑ½Éä°¥µÁ½ÉĞÁÉ½Ù•¹…¹”°•Ù•ÉäÉ•Ñ…¥¹•(€É•¹‘•È°¹Õµ‰•È½Õ¹Ñ•ÉÌ°…¹½‰©•Ğ•Ù¥‘•¹”ì(´™Õ±°I1L°İ½É¬µÍ½Á”°…ÕÑ¡½É¥Ñä°…Õ‘¥Ğ°½¹ÕÉÉ•¹ä°±¥™•å±”°…¹‘…Ñ…‰…Í”(€‰…­ÍÑ½ÀÑ•ÍÑÌ™½ÈÑ¡”¹•ÜÉ•½É‘Ì¸()I•µ…¥¹¥¹œè±¥Ù”]¡¥Ñ•‰½½­ÌÍ…¹‘‰½à½ÁÉ½‘ÕÑ¥½¸•ÉÑ¥™¥…Ñ¥½¸°ÁÉ½Ù¥‘•ÈµÍÁ•¥™¥Œ)µ•ÑÉ¥Ì…¹…±•ÉÑÌ°…¸½É…¹¥Í…Ñ¥½¸µİ¥‘”İ½É­ÍÁ…”™½È‘¥É•Ğ¥¹Ù½¥•Ì°Ñ¡”)ÍÑ…¥¹œ½Ñ•¹‰•ÉœÁÉ½½˜°…¹Ñ¡”™½ÕÍ•ÁÉ½‘ÕÑ¥½¸Í•ÕÉ¥ÑäÉ•Ù¥•Ü¸AÉ½Ù¥‘•È)…Ñ¥½¹ÌÉ•µ…¥¸½Á•É…Ñ½ÈµÑÉ¥•É•…¹…Õ‘¥Ñ…‰±”°¹•Ù•ÈÕ¹…ÑÑ•¹‘•™¥±¥¹œ¸((ŒŒ5¥±•ÍÑ½¹”€ÄÄƒŠP½¹ÑÉ…ĞµÍ½ÕÉ”¥¹Ñ…­”…¹ÁÉ½‘ÕĞ•áÁ•É¥•¹”()•±¥Ù•É•½¸Ñ¡”€ÈÀÈØ´Àà´ÄÄµ•É”…¹‘¥‘…Ñ”€¡µ¥É…Ñ¥½¸€ÀÀĞÀ¤è((´½ÁÑ¥½¹…°9%P°½¹ÑÉ…ĞÉ••µ•¹Ğ°…¹Ñ•¹‘•È½ÍÁ•¥™¥…Ñ¥½¸AÌÕ¹‘•ÈÑ¡”(€1=Á…­…”°…•ÁÑ•½¹±äİ¡•¸Ñ•¹‘•È¹Õµ‰•È…¹¹…µ”½˜İ½É¬µ…Ñ ì(´½µÁ±•µ•¹Ñ…ÉäA½ÁÁ±•È±…å½ÕĞ½É…Ü•áÑÉ…Ñ¥½¸Ñ¡…ĞÁÉ•Í•ÉÙ•Ì•á…Ğ1=¥Ñ•´(€‘•ÍÉ¥ÁÑ¥½¹Ì…É½ÍÌİÉ…ÁÁ•±¥¹•Ì…¹Á…”‰É•…­Ìì(´…‘Ù•ÉÑ¥Í•µÙ…±Õ”É•½¹¥±¥…Ñ¥½¸™½ÈÁÉ¥¹Ñ•¥Ñ•´É½İÌ°İ¥Ñ Á•É•¹Ñ…”…¹(€Í¡•‘Õ±”ÁÉ¥¥¹œ•áÁ±…¥¹¥¹œ…•ÁÑ•½¹ÑÉ…ĞÙ…±Õ”¥¹ÍÑ•…½˜™…±Í”µ¥ÍÍ¥¹œ(€µ½¹•äì(´Ñ…Í¬µ™¥ÉÍĞ¹…Ù¥…Ñ¥½¸°]½É¬µ•¹ÑÉ••á•ÕÑ¥½¸°É•ÍÁ½¹Í¥Ù”½µ½‰¥±”Í¡•±±Ì°…¹(€•áÁ±¥¥Ğ±½…‘¥¹œ°•µÁÑä°•ÉÉ½È°É•ÑÉä°Á•Éµ¥ÍÍ¥½¸°…¹‰±½­•µ…Ñ¥½¸ÍÑ…Ñ•Ìì(´Í…™”‘…Ñ…‰…Í”µÕ¹…Ù…¥±…‰±”É•ÍÁ½¹Í•ÌÑ¡…ĞÁÉ•Í•ÉÙ”É•Ù¥•Ü•‘¥ÑÌ…¹¥¹±Õ‘”„(€É•ÅÕ•ÍĞÉ•™•É•¹”¸((ŒŒI•µ…¥¹¥¹œ•Ù¥‘•¹”µ…Ñ•‘•ÁÑ ((´á•°]½É¬µ¥Ñ•´¥µÁ½ÉĞİ¥Ñ Ù…±¥‘…Ñ¥½¸°µ…ÁÁ¥¹œÁÉ•Ù¥•Ü°…¹(€É•Ù¥•Üµ‰•™½É”µ…•ÁĞƒŠP™¥ÉÍĞÉ•…°±•ÑÑ•È½È	=DÑ¡”AÁ…Ñ …¹¹½ĞÍ•ÉÙ”ì(´½É…¹¥Í…Ñ¥½¸µİ¥‘”…Õ‘¥ĞÍ•…É ƒŠP™¥ÉÍĞ¥¹Ù•ÍÑ¥…Ñ¥½¸Ñ¡”Á•Èµ]½É¬Ñ¥µ•±¥¹”(€…¹¹½Ğ…¹Íİ•Èì(´ÍÑ…¹‘…±½¹”½¹½¸µ]½É¬µ…Ñ•É¥…°µ½Ù•µ•¹ÑÌƒŠPÉ•…°‘•µ…¹½¹±äìÑ¡¥Ì™½É­Ì]½É¬(€Í½Á”°¹Õµ‰•É¥¹œ°…¹1=µ‘…Ñ”¥¹Ù…É¥…¹ÑÌì(´‰É½…É•Á½ÉÑ¥¹œ°‘•Á…ÉÑµ•¹Ğ•áÁ…¹Í¥½¸°…¹Á•Èµ‘½Õµ•¹ĞÍ¥¹…Ñ½ÉäÍ•±•Ñ¥½¸(€İ¡•¸Á…ÉÑ¹•È•Ù¥‘•¹”‘•™¥¹•ÌÑ¡”É•ÅÕ¥É•½ÕÑÁÕÑÌ¸((ŒŒ•™•ÉÉ•Õ¹Ñ¥°ÕÍ…”ÁÉ½Ù•Ì‘•µ…¹((´Õ¹…ÑÑ•¹‘•½‰…­É½Õ¹ÍÑ…ÑÕÑ½Éä™¥±¥¹œİ¥Ñ¡½ÕĞ…¸½Á•É…Ñ½ÈµÙ¥Í¥‰±”ÁÉ½Ù¥‘•ÈÉ•ÅÕ•ÍĞ°(€É•ÍÁ½¹Í”°…¹…Õ‘¥ĞÑÉ…¥°ì(´‰É½…É•Á½ÉÑ¥¹œì(´‘•Á…ÉÑµ•¹Ğ•áÁ…¹Í¥½¸ì(´•¹Ñ•ÉÁÉ¥Í”MM<½ÕÍÑ½´Á½±¥ä•¹¥¹”ì(´½™™±¥¹”Íå¹Œ…¹¹…Ñ¥Ù”µ½‰¥±”ì(´•µ‰•‘‘•™¥¹…¹”ì(´…¸¥¸µ…ÁÀ‰…­ÕÀ½¹Í½±”ƒŠPÉ•©•Ñ•¥¸H´ÀÀÀÔìÑ¡”‰…­ÕÀµ…”…Õ”(€¥¸5¥±•ÍÑ½¹”€ĞÌÉ•µ…¥¹¥¹œ±¥ÍĞ¥ÌÑ¡”…•ÁÑ•Í±¥”¸
+  requirement (what the LOA demands) stays distinct from the instrument
+  (what the contractor submitted), enabling required-but-missing,
+  under-value, window-missed, and expiring alerts beside the existing
+  instrument expiry alerts.
+
+## Milestone 6 â€” contract administration and change control
+
+Scope (from the 2026-08-08 legacy UI audit as corrected by its author â€”
+adr/0005-legacy-ui-audit-disposition.md records the dispositions):
+
+- original and current completion dates on the Work, with approaching and
+  overdue alerts â€” the works table currently has no completion date,
+  which blocks every validity-versus-completion rule downstream; the
+  current date changes only through a recorded extension or amendment
+  event, never a free-form Work edit;
+- DOC extension requests as first-class records: draft â†’ finalised â†’
+  responded, sequential `<work_code>-Extension-NN` numbering, generated
+  request PDF, railway response attachment, full history retained;
+- controlled baseline amendments â€” add or omit an item, change quantity,
+  description, unit, or a legally authorised rate â€” with reason and
+  evidence, preserving original LOA values so the original, amended, and
+  effective baselines each stay visible; plus a real setter for
+  `allow_excess_delivery`, dead code since migration 0001;
+- the issued-record amendment and edit-approval workflow guarding those
+  amendments: immutable proposed snapshot with a structured before/after
+  diff, one pending request per record, mandatory reason, revalidation of
+  authority and business invariants at apply time, an approvals holder
+  may apply directly with the self-approval automatically recorded,
+  rejection takes a note, and the new revision links back to the
+  untouched original;
+- add/remove-row editing on the LOA review screen, so a letter the parser
+  cannot fully serve still has a path to a confirmed Work;
+- audit writers start capturing before/after values (today only
+  changed-key names are recorded, so diff evidence is being lost daily),
+  and a per-Work/entity timeline read API and view make the trail
+  inspectable in the product â€” organisation-wide search waits for
+  Milestone 9.
+
+Discovery gates (partner paperwork required before these enter committed
+scope): the Contract Agreement register and a formal Variation Order
+register â€” the operative change-control mechanics above ship without
+them, and real agreements and variation orders from a design partner
+settle their reference fields, legal precedence, and lifecycle.
+
+Exit: a reviewer can reconstruct original LOA baseline â†’ every approved
+amendment â†’ every completion extension â†’ current effective baseline with
+no historical record overwritten, and every change shows who proposed it
+and who applied it.
+
+Retrofit, first half (2026-08-09, migration 0029): extension-letter
+completeness against the legacy Â§5.5 list â€” manual back-fill of paper
+letters occupying the next sequence slot as final (top-of-sequence
+deletion only, by an approvals holder, counter rolled back under the
+lock so the slot is reused), DRAFT-watermarked draft previews streamed
+without stored render state, and exit tests pinning every
+already-held invariant (uniform draft-conflict shape, date ordering,
+response-preserves-request, permanent undeletability of software
+letters, alerts on the current effective completion date). Remaining
+retrofit (second half, scheduled): the full R7 amendment floors
+including the PAC certified floor and omission rules, work
+completion/reopen/short-closure (R8) with per-category executed value,
+approval-concurrency exit tests, and installation/Issue-Challan
+invariant exit suites.
+
+Retrofit, second half â€” R7 complete (2026-08-09, migration 0030): the
+amendment floor now names delivered, installed AND PAC-certified
+quantities and is enforced by a work_items trigger, so no writer can
+lower a sanctioned quantity beneath its own evidence; item OMISSION
+exists as an approval-engine path (`POST
+/api/works/:id/amendments/removals`) that soft-deletes, refuses while
+any delivery, installation, PAC certificate, or quantity-bearing
+Measurement Book line references the item, and keeps the retired item
+number reserved forever; and `requires_serials` became genuinely
+one-way. Two real defects surfaced and were fixed: the
+`requires-serials` toggle allowed switching serial tracking OFF with
+serials already recorded (R7's last sentence, unenforced anywhere), and
+the amendment floor was applied to quantity INCREASES as well as
+reductions, which on an excess-delivery Work refused the exact remedy
+R5 prescribes. Exit suites pin the atomic decision claim under a real
+simultaneous double-decide, the audit-shape equivalence of the
+one-party and two-party approval flows, the excess-delivery toggle
+lifting the delivery ceiling but never the installation ceiling, the
+absence of an in-place installation edit, and the Issue Challan
+counter's independence from the Delivery Challan counter on the same
+Work.
+
+Retrofit, second half â€” work completion (2026-08-09, migration 0031):
+the R8/R15 status lifecycle, which migration 0001 modelled in a CHECK
+constraint and no writer ever reached. Completion computes the
+100%-executed predicate in exact SQL per payment category over EFFECTIVE
+quantities â€” supply categories owe full delivery, pure installation owes
+full installation, supply-and-installation owes both, and an
+uncategorised item owes installation when its description says so â€”
+with numeric equality and no tolerance, soft-deleted items excluded; a
+short Work is refused with the operator's worklist naming every item and
+what it still owes, and the short-closure instruction to amend the
+quantities down through the approval path first. Completion also refuses
+while anything live still holds a claim (draft delivery/issue challans,
+draft extension requests, draft Measurement Books, pending approval
+requests), naming each. A completed Work then accepts no new operational
+document â€” every creation route refuses with WORK_COMPLETED and every
+refusal has a database guard behind it, so raw SQL is refused too â€” and
+reopen (same authority, mandatory note, no predicate) restores every
+path. Both transitions take a note the database enforces in both
+directions, are audited with before/after, and ride the Work timeline;
+completed Works stop raising the dashboard completion alerts. R15's
+third status, `cancelled`, stays deliberately unreachable: the
+transition guard refuses any move into or out of `cancelled` rather
+than leaving an unimplemented state reachable through SQL. A Work has
+no removal path at all today â€” `works.deleted_at` exists from migration
+0001 and every read honours it, but nothing writes it â€” so `cancelled`
+stays refused until work removal is built with its own rules and
+evidence refusals.
+
+Retrofit, closing hardening (2026-08-09, migration 0032): the freeze on
+a completed Work now runs in both directions. 0031 closed every path
+that ADDS a document; nothing stopped the evidence the predicate was
+measured against being cancelled out from under it afterwards, so a
+Work could sit at `completed` while its delivered and installed sums
+had fallen below the quantities that admitted it. Cancelling a delivery
+challan, an issue challan, an installation record, a PAC certificate or
+a Measurement Book on a completed Work is now refused at the route
+(under the works row lock, taken after the document row so cancel and
+completion serialise) and at the database, each naming the reopen; the
+decision is refuse, not auto-reopen, so the operator states why the
+closure was wrong in the note R8 already audits. Bill status transitions
+(prepared â†’ submitted â†’ paid) stay open by design: payment continues
+long after execution finishes and moves no quantity. The R7 item-removal
+proposal route, which the two retrofit tracks merged past without
+converting, now takes the same works lock and the same shared refusal as
+its sibling proposal routes. The unfinished-item worklist carries the
+DIRECTION of each item's remedy â€” a Work with the excess-delivery toggle
+on can be over-delivered, and the R7 floor refuses amending down, so
+those rows are told to amend the sanctioned quantity UP to match the
+delivery instead. In the web client, "Omit an item" files through the R7
+removal path rather than a quantity-0 change, and an item carrying an
+undecided omission shows it.
+
+## Milestone 7 â€” site material movement and document control
+
+Scope:
+
+- Issue Challans as a first-class document (legacy lifecycle: draft â†’
+  issued â†’ cancelled, plus loan/return type; independent per-Work
+  numbering; manual lines permitted by design) recording material moving
+  from store/consignee custody to site, distinguishing railway-issued
+  from contractor-provided material;
+- quantity-level installation records with location, alongside the
+  existing per-serial installation facts;
+- consignee, location, and unit masters â€” kept in this milestone because
+  installation and Issue Challans consume them (legacy installation picks
+  its location from the master, inline-creatable): retire-not-delete,
+  always snapshot-on-use so issued documents stay frozen; units seeded
+  from the parser's canonical list; signatory names join the organisation
+  profile;
+- warranty/guarantee certificate page on the Delivery Challan: org-level
+  template text, rendered from the issued snapshot, template version and
+  content hash recorded;
+- the Milestone 6 amendment/approval mechanism extends to issued
+  documents: a wrong challan with downstream evidence (unfixable since
+  the 2026-08-08 cancellation policy) gets an approval-gated
+  cancel-and-replace or adjustment document â€” the promise migration 0008
+  already makes â€” never an edit of the issued snapshot;
+- settled scope narrowing: installation-record quantity edits are
+  deliberately cancel-and-re-record in this milestone â€” there is no
+  approval-gated in-place installation edit; the approval-gated variant
+  (legacy Â§5.4/Â§5.6, blocked while serials are attached) is deferred to
+  the Milestone 6/7 retrofit wave;
+- tenant-wide serial lookup (work-scope filtered) with the full trace,
+  and enforcement of the `requires_serials` flag (stored since migration
+  0001, never enforced): serial count must equal shipped quantity at
+  issue. Multiline batch capture already shipped in Milestone 5; range
+  expansion and spreadsheet import stay evidence-gated in Milestone 9.
+
+Delivered (2026-08-09, migrations 0017â€“0019 plus the review-hardening
+pass in 0023): quantity-level installation records with inline-creatable
+location snapshots, serial attachment against the delivered pool, and
+exact-arithmetic caps under row locks; the warranty/guarantee
+certificate as page 2 of the Delivery Challan, frozen into the issued
+snapshot with template version and content hash; the correction flow
+through the Milestone 6 approval engine â€” evidence-free issued
+documents get approval-gated cancel-and-replace with provenance,
+evidence-locked ones get gapless numbered correction notices, and
+deciders revalidate the document authorities at apply time; issue
+challans joined the timeline and export; the amendment floor includes
+installed quantities. The Contacts unification (2026-08-09, migration 0028) upgraded the consignee master into the role-flagged Contacts
+model â€” consignee role active, vendor/client dormant until procurement
+â€” with GSTIN validation (deductor `â€¦D` accepted), R16 authority
+refusal, and per-Work consignee associations.
+
+Exit: a material unit can be traced awarded â†’ delivered â†’ received â†’
+issued to site â†’ installed, including its documents, custody, serial
+identity, and location, and a wrong issued document has a lawful
+correction path that preserves the original â€” met
+(`apps/server/test/installations.integration.test.ts`,
+`corrections.integration.test.ts`, `challans.integration.test.ts`).
+
+## Milestone 8 â€” stage-wise Measurement Book lifecycle and payment eligibility
+
+(Renamed from "stage-wise payment eligibility" after the second auditor
+review: the legacy spec defines a Measurement Book lifecycle, not just a
+bill formula. ADR-0006 records the settled design.)
+
+Scope:
+
+- item payment categories assigned at LOA review, and a per-Work payment
+  matrix keyed by category â€” each category defines supply, installation,
+  PAC, and final-bill percentages summing exactly to 100; per the legacy
+  settled decision there is deliberately no per-item percentage-entry
+  interface;
+- PAC certificates recording certified quantities per item, capped at
+  installed-minus-already-certified;
+- stage-wise bill preparation: eligible stage quantity Ã— authoritative
+  rate Ã— stage percentage âˆ’ previously billed for that stage, in exact
+  decimal arithmetic, with per-stage billed memory so no stage can be
+  billed twice;
+- every finalised MB and bill snapshots the item's category assignment,
+  the resolved percentages, eligible stage quantities, rates, and prior
+  billed amounts â€” changing the Work matrix later never alters a
+  finalised record;
+- compensating entries for corrections â€” paid bills are never rewritten.
+
+The matrix schema lands before the first design partner prepares a bill:
+bills are immutable and undeletable, so a 100%-of-measured bill on a
+staged contract would be a permanently wrong financial record. The
+richer maths already deferred (security deposit deductions, price
+variation) still wait for a partner's real bill format.
+
+Delivered (2026-08-09, migrations 0021â€“0027): item payment categories
+with the per-Work matrix (four categories plus an optional UNCATEGORISED
+row; finalization names every unresolved item; R10 honoured â€” no
+per-item percentages); PAC certificates with the R18
+installed-minus-covered cap under row locks, consignee snapshots, and
+display-only released values; the Measurement Book lifecycle per
+ADR-0006 â€” database-enforced one-live-MB-per-source, draft recompute,
+gapless `<work_code>-MB-NN` finalisation snapshotting categories,
+percentages, rates, per-stage deltas and true-cumulative priors,
+newest-live-only cancel (works-row serialised with DB backstops),
+final-MB sweep enforcement with a post-final source freeze, and R19
+coherence guards both directions at API and database level; bills
+prepared 1:1 from finalized MBs (the Milestone 5 measured-quantity
+sweep is retired); the contractual MB remark algorithm proven
+character-for-character against the agency workbook fixture; the MB
+document with DRAFT watermark, FINAL BILL banner, and Indian-system
+amount in words; rates at six-decimal precision end to end (amounts
+stay two-decimal per R13).
+
+Exit: the first stage-based bill is computed entirely from recorded
+contract terms and operational evidence, with no payment percentages
+calculated in an external spreadsheet â€” met
+(`apps/server/test/measurement-books.integration.test.ts`,
+`mb-remark.test.ts` against
+`apps/server/test/fixtures/mb-remark-workbook.v1.json`).
+
+## Legacy v1 cutover
+
+The live v1 system (SQLite) holds real production data â€” 34 works,
+650 delivery challans with serials across two legal entities â€” and
+stops at launch. Delivered (2026-08-09, migration 0025): the idempotent
+cutover importer (`scripts/import-v1.ts`) with append-only import
+provenance, exact preservation of printed challan numbers (including
+suffixed ones), historical timestamps, counter continuity after the
+highest historical number, serial parsing with named exceptions
+(never silent dedup, ranges never fabricated), deterministic
+quantization with honest drift accounting, per-organisation
+reconciliation reports, and dry-run rollback. The cutover runbook is
+in docs/OPERATIONS.md: dry-run now, freeze v1 at launch, final backup,
+apply, reconcile, invite users. Data-quality exceptions found in the
+real backup were delivered to the operator for correction in v1 before
+the final run.
+
+## Milestone 9 â€” procurement and parallel measurement
+
+Delivered (2026-08-10, migrations 0033â€“0034):
+
+- vendor contacts, purchase orders with Work-item lines, gapless issue,
+  immutable vendor/line snapshots, receipt-aware closure, and cancellation;
+- Work-independent budgetary quotations with draft, issue, outcome, and
+  cancellation lifecycles;
+- supplier state plus optional Work-item HSN/SAC, GST rate, and goods/service
+  facts needed by procurement and statutory documents;
+- record Measurement Books for parallel consignee measurement, merge into an
+  on-account draft, and final Measurement Books that close further measurement.
+
+## Milestone 10 â€” GST invoices and e-way bills
+
+Delivered locally (2026-08-10 through 2026-08-12, migrations 0035â€“0045):
+
+- direct and finalized-MB-backed GST invoices with draft, submitted, and
+  cancelled lifecycles;
+- configurable organisation numbering templates, financial-year counters,
+  buyer division tokens, direct-invoice values, and house defaults;
+- exact intra-state CGST/SGST or inter-state IGST split, whole-rupee rounding,
+  immutable supplier/buyer/ship-to snapshots, amount in words, and
+  render-ready invoice data. Reverse charge is an explicit fact; issue accepts
+  confirmed forward charge and refuses the unsupported reverse-charge branch;
+- deterministic IRP schema 1.1 and NIC e-way-bill payloads, append-only IRN/
+  acknowledgement/signed-QR evidence, e-way number/validity evidence, and
+  cancellation ordering that refuses an invoice cancellation while a live
+  e-way bill exists;
+- explicit seller, buyer, and ship-to NIC locality, never inferred from an
+  address;
+- provider-neutral transport plus the operator-triggered Whitebooks B2B IRP
+  register, document lookup, and cancellation adapter;
+- durable provider-operation leases, correlation ids, request hashes, failed
+  and unknown states, lookup-only reconciliation, stale-operation recovery,
+  and explicit manual-unverified cancellation confirmation;
+- separate E-way Bill API authentication and client credentials for standalone
+  EWB cancellation;
+- conservative legacy-evidence markers where migrated portal text cannot be
+  proved exact;
+- fresh EWB generation and NIC payload exposure blocked for the current
+  cumulative SAC service invoice, while historical records remain readable,
+  reconcilable, and cancellable;
+- deterministic tax-invoice HTML/PDF rendering from frozen facts, real SVG QR
+  encoding of signed IRP evidence, append-only render versions, frozen-logo and
+  source/PDF hashes, tenant-key database guards, verified downloads, and
+  retained read access after cancellation;
+- database delete guards preserve issued/manual/provider-touched statutory
+  records, and the legacy-evidence classifier is proven across the staged
+  0042â†’0043â†’0044 upgrade path with its update guards re-enabled;
+- normalized Measurement Book merge provenance, per-Work/vendor PO drafts,
+  immutable issued PO/BQ parents, and automatic PO reopening when a linked
+  challan cancellation releases receipt quantity;
+- `export-v8`, including current masters, procurement, statutory documents,
+  provider-operation and MB-merge history, import provenance, every retained
+  render, number counters, and object evidence;
+- full RLS, work-scope, authority, audit, concurrency, lifecycle, and database
+  backstop tests for the new records.
+
+Remaining: live Whitebooks sandbox/production certification, provider-specific
+metrics and alerts, an organisation-wide workspace for direct invoices, the
+staging Gotenberg proof, and the focused production security review. Provider
+actions remain operator-triggered and auditable, never unattended filing.
+
+## Milestone 11 â€” contract-source intake and product experience
+
+Delivered on the 2026-08-11 merge candidate (migration 0040):
+
+- optional NIT, Contract Agreement, and tender/specification PDFs under the
+  LOA package, accepted only when tender number and name of work match;
+- complementary Poppler layout/raw extraction that preserves exact LOA item
+  descriptions across wrapped lines and page breaks;
+- advertised-value reconciliation for printed item rows, with percentage and
+  schedule pricing explaining accepted contract value instead of false missing
+  money;
+- task-first navigation, Work-centred execution, responsive/mobile shells, and
+  explicit loading, empty, error, retry, permission, and blocked-action states;
+- safe database-unavailable responses that preserve review edits and include a
+  request reference.
+
+## Remaining evidence-gated depth
+
+- Excel Work-item import with validation, mapping preview, and
+  review-before-accept â€” first real letter or BOQ the PDF path cannot serve;
+- organisation-wide audit search â€” first investigation the per-Work timeline
+  cannot answer;
+- standalone/non-Work material movements â€” real demand only; this forks Work
+  scope, numbering, and LOA-date invariants;
+- broad reporting, department expansion, and per-document signatory selection
+  when partner evidence defines the required outputs.
+
+## Deferred until usage proves demand
+
+- unattended/background statutory filing without an operator-visible provider request,
+  response, and audit trail;
+- broad reporting;
+- department expansion;
+- enterprise SSO/custom policy engine;
+- offline sync and native mobile;
+- embedded finance;
+- an in-app backup console â€” rejected in ADR-0005; the backup-age gauge
+  in Milestone 4's remaining list is the accepted slice.

@@ -425,4 +425,770 @@ function isNumericOverflow(error: unknown): boolean {
 async function writeLines(
   tx: TransactionSql,
   organisationId: string,
-  purchaseOrdeãw¶‰Ëkºwµç`°½É‘•È¹İ½É­}¥°‰½‘ä¹Á½…Ñ”¤ì(€€€€€€€½¹ÍĞÙ•¹‘½È€ô…İ…¥ĞÉ•ÅÕ¥É•Y•¹‘½È¡Ñà°‰½‘ä¹Ù•¹‘½É½¹Ñ…Ñ%¤ì(€€€€€€€½¹ÍĞm•á¥ÍÑ¥¹É…™Ñt€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€Í•±•Ğ¥™É½´ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€İ¡•É”İ½É­}¥€ô€‘í½É‘•È¹İ½É­}¥‘ô(€€€€€€€€€€€…¹Ù•¹‘½É}½¹Ñ…Ñ}¥€ô€‘í‰½‘ä¹Ù•¹‘½É½¹Ñ…Ñ%‘ô(€€€€€€€€€€€…¹ÍÑ…ÑÕÌ€ô€‘É…™Ğœ…¹¥€ğø€‘í¥‘ô(€€€€€€€€ì(€€€€€€€¥˜€¡•á¥ÍÑ¥¹É…™Ğ¤ì(€€€€€€€€€Ñ¡É½Ü‘É…™Ñ½¹™±¥ÑÉÉ½È (€€€€€€€€€€€€A=}IQ}a%MQLœ°(€€€€€€€€€€€€Q¡¥ÌÙ•¹‘½È…±É•…‘ä¡…Ì„‘É…™ĞÁÕÉ¡…Í”½É‘•È½¸Ñ¡¥Ì]½É¬ì¥ÍÍÕ”½È‘•±•Ñ”¥Ğ™¥ÉÍĞ¸œ°(€€€€€€€€€€€•á¥ÍÑ¥¹É…™Ğ¹¥°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€ÕÁ‘…Ñ”ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€Í•ĞÙ•¹‘½É}½¹Ñ…Ñ}¥€ô€‘í‰½‘ä¹Ù•¹‘½É½¹Ñ…Ñ%‘ô°Á½}‘…Ñ”€ô€‘í‰½‘ä¹Á½…Ñ•ô°(€€€€€€€€€€€€€•áÁ•Ñ•‘}½¸€ô€‘í‰½‘ä¹•áÁ•Ñ•‘=¸€üü¹Õ±±ô°Ñ•ÉµÌ€ô€‘íÑ•ÉµÍô(€€€€€€€€€İ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½İ¸¤€ôøì(€€€€€€€€€¥˜€¡•ÉÉ½È¥¹ÍÑ…¹•½˜ÉÉ½È€˜˜€½‘”œ¥¸•ÉÉ½È€˜˜•ÉÉ½È¹½‘”€ôôô€œÈÌÔÀÔœ¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ĞÀä°(€€€€€€€€€€€€€€A=}IQ}a%MQLœ°(€€€€€€€€€€€€€€Q¡¥ÌÙ•¹‘½È…±É•…‘ä¡…Ì„‘É…™ĞÁÕÉ¡…Í”½É‘•È½¸Ñ¡¥Ì]½É¬ì¥ÍÍÕ”½È‘•±•Ñ”¥Ğ™¥ÉÍĞ¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€ô¤ì(€€€€€€€½¹ÍĞ¡…¹•Ì€ô…Õ‘¥Ñ¥™˜ (€€€€€€€€€ì(€€€€€€€€€€€Ù•¹‘½É½¹Ñ…Ñ%è½É‘•È¹Ù•¹‘½É}½¹Ñ…Ñ}¥°(€€€€€€€€€€€Á½…Ñ”è½É‘•È¹Á½}‘…Ñ”°(€€€€€€€€€€€•áÁ•Ñ•‘=¸è½É‘•È¹•áÁ•Ñ•‘}½¸°(€€€€€€€€€€€Ñ•ÉµÌè½É‘•È¹Ñ•ÉµÌ°(€€€€€€€€€ô°(€€€€€€€€€ì(€€€€€€€€€€€Ù•¹‘½É½¹Ñ…Ñ%è‰½‘ä¹Ù•¹‘½É½¹Ñ…Ñ%°(€€€€€€€€€€€Á½…Ñ”è‰½‘ä¹Á½…Ñ”°(€€€€€€€€€€€•áÁ•Ñ•‘=¸è‰½‘ä¹•áÁ•Ñ•‘=¸€üü¹Õ±°°(€€€€€€€€€€€Ñ•ÉµÌ°(€€€€€€€€€ô°(€€€€€€€€¤ì(€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹ÕÁ‘…Ñ•œ°(€€€€€€€€€¥°(€€€€€€€€€ì‰•™½É”è¡…¹•Ì¹‰•™½É”°…™Ñ•Èè¡…¹•Ì¹…™Ñ•È°Ù•¹‘½ÈèÙ•¹‘½È¹‘•Í¥¹…Ñ¥½¸ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘•Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤¹…Ñ ¡…Íå¹Œ€¡•ÉÉ½ÈèÕ¹­¹½İ¸¤€ôøì(€€€€€€€Ñ¡É½Ü…İ…¥Ğ¹…µ•É…™Ñ½¹™±¥Ğ¡•ÉÉ½È°€A=}IQ}a%MQLœ°€ ¤€ôø(€€€€€€€€€İ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€€€½¹ÍĞmÉ½İt€ô…İ…¥ĞÑàñì¥èÍÑÉ¥¹œõmtù€(€€€€€€€€€€€€€Í•±•Ğ¥™É½´ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€€€€€İ¡•É”İ½É­}¥€ô€ (€€€€€€€€€€€€€€€Í•±•Ğİ½É­}¥™É½´ÁÕÉ¡…Í•}½É‘•ÉÌİ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€…¹Ù•¹‘½É}½¹Ñ…Ñ}¥€ô€‘í‰½‘ä¹Ù•¹‘½É½¹Ñ…Ñ%‘ô(€€€€€€€€€€€€€€€…¹ÍÑ…ÑÕÌ€ô€‘É…™Ğœ…¹¥€ğø€‘í¥‘ô(€€€€€€€€€€€€ì(€€€€€€€€€€€É•ÑÕÉ¸É½Üü¹¥€üü¹Õ±°ì(€€€€€€€€€ô¤°(€€€€€€€€¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€…ÁÀ¹ÁÕĞ (€€€€œ½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼é¥½±¥¹•Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äèM…Ù•AÕÉ¡…Í•=É‘•É1¥¹•ÍI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍĞ¤€ôøì(€€€€€½¹ÍĞÕÍ•È€ô…İ…¥ĞÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍĞ¤ì(€€€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍĞ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍĞì¥ô€ôÉ•ÅÕ•ÍĞ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍĞ‰½‘ä€ôÉ•ÅÕ•ÍĞ¹‰½‘ä…ÌM…Ù•AÕÉ¡…Í•=É‘•É1¥¹•ÍI•ÅÕ•ÍĞì(€€€€€É•ÑÕÉ¸İ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…İ…¥ĞÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍĞ½É‘•È€ô…İ…¥Ğ±½­AÕÉ¡…Í•=É‘•È¡Ñà°¥¤ì(€€€€€€€…İ…¥Ğ…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°½É‘•È¹İ½É­}¥¤ì(€€€€€€€É•ÅÕ¥É•MÑ…ÑÕÌ¡½É‘•È°€‘É…™Ğœ¤ì(€€€€€€€½¹ÍĞ±¥¹•Í	•™½É”€ô…İ…¥ĞÉ•…‘1¥¹•%¹ÁÕÑÌ¡Ñà°¥¤ì(€€€€€€€…İ…¥ĞİÉ¥Ñ•1¥¹•Ì¡Ñà°½É…¹¥Í…Ñ¥½¹%°¥°½É‘•È¹İ½É­}¥°‰½‘ä¹±¥¹•Ì¤ì(€€€€€€€½¹ÍĞ¡…¹•Ì€ô…Õ‘¥Ñ¥™˜ (€€€€€€€€€ì±¥¹•Ìè±¥¹•Í	•™½É”ô°(€€€€€€€€€ì±¥¹•Ìè…İ…¥ĞÉ•…‘1¥¹•%¹ÁÕÑÌ¡Ñà°¥¤ô°(€€€€€€€€¤ì(€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹±¥¹•Í}Í…Ù•œ°(€€€€€€€€€¥°(€€€€€€€€€ì(€€€€€€€€€€€‰•™½É”è¡…¹•Ì¹‰•™½É”°(€€€€€€€€€€€…™Ñ•Èè¡…¹•Ì¹…™Ñ•È°(€€€€€€€€€€€±¥¹•½Õ¹Ğè‰½‘ä¹±¥¹•Ì¹±•¹Ñ °(€€€€€€€€€ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘•Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€…ÁÀ¹‘•±•Ñ” (€€€€œ½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼é¥œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀĞèQåÁ”¹9Õ±° ¤°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍĞ°É•Á±ä¤€ôøì(€€€€€½¹ÍĞÕÍ•È€ô…İ…¥ĞÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍĞ¤ì(€€€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍĞ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍĞì¥ô€ôÉ•ÅÕ•ÍĞ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€…İ…¥Ğİ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…İ…¥ĞÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍĞ½É‘•È€ô…İ…¥Ğ±½­AÕÉ¡…Í•=É‘•È¡Ñà°¥¤ì(€€€€€€€…İ…¥Ğ…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°½É‘•È¹İ½É­}¥¤ì(€€€€€€€€¼¼IÕ±”€àè„‘É…™Ğ¥Ì¹½Ğå•Ğ„‘½Õµ•¹Ğ°Í¼¥Ğ¥Ì‘•±•Ñ•É…Ñ¡•È(€€€€€€€€¼¼Ñ¡…¸…¹•±±•¸¹åÑ¡¥¹œ¥ÍÍÕ•­••ÁÌ¥ÑÌ¹Õµ‰•È™½É•Ù•È¸(€€€€€€€É•ÅÕ¥É•MÑ…ÑÕÌ¡½É‘•È°€‘É…™Ğœ¤ì(€€€€€€€€¼¼Q¡”±¥¹•Ì¼%IMP…¹•áÁ±¥¥Ñ±äèÑ¡”€ÀÀÌÌ±¥¹”Õ…ÉÉ•…‘ÌÑ¡”(€€€€€€€€¼¼Á…É•¹ĞÌÍÑ…ÑÕÌ°…¹„…Í…‘”™É½´Ñ¡”‘•±•Ñ•Á…É•¹Ğİ½Õ±(€€€€€€€€¼¼™¥¹¹¼Á…É•¹ĞÉ½Ü…¹É…¥Í”¸(€€€€€€€…İ…¥ĞÑá‘•±•Ñ”™É½´ÁÕÉ¡…Í•}½É‘•É}±¥¹•Ìİ¡•É”ÁÕÉ¡…Í•}½É‘•É}¥€ô€‘í¥‘õ€ì(€€€€€€€…İ…¥ĞÑá‘•±•Ñ”™É½´ÁÕÉ¡…Í•}½É‘•ÉÌİ¡•É”¥€ô€‘í¥‘õ€ì(€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹‘•±•Ñ•œ°(€€€€€€€€€¥°(€€€€€€€€€ìİ½É­%è½É‘•È¹İ½É­}¥ô°(€€€€€€€€¤ì(€€€€€ô¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀĞ¤¹Í•¹ ¤ì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍĞ (€€€€œ½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼é¥½¥ÍÍÕ”œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÄèAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍĞ°É•Á±ä¤€ôøì(€€€€€½¹ÍĞÕÍ•È€ô…İ…¥ĞÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍĞ¤ì(€€€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍĞ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍĞì¥ô€ôÉ•ÅÕ•ÍĞ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍĞ‘•Ñ…¥°€ô…İ…¥Ğİ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…İ…¥ĞÉ•ÅÕ¥É•ÕÑ¡½É¥Ñä¡Ñà°ÕÍ•È¹¥°€¥ÍÍÕ”œ¤ì(€€€€€€€€€½¹ÍĞ½É‘•È€ô…İ…¥Ğ±½­AÕÉ¡…Í•=É‘•È¡Ñà°¥¤ì(€€€€€€€€€…İ…¥Ğ…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°½É‘•È¹İ½É­}¥¤ì(€€€€€€€€€É•ÅÕ¥É•MÑ…ÑÕÌ¡½É‘•È°€‘É…™Ğœ¤ì((€€€€€€€€€€¼¼1½¬½É‘•Èİ½É­Ì€´ø½Õ¹Ñ•Èµ…Ñ¡•Ì•Ù•Éä½Ñ¡•È¹Õµ‰•É¥¹œ(€€€€€€€€€€¼¼İÉ¥Ñ•È°Í¼…¸¥ÍÍÕ”…¹„]½É¬½µÁ±•Ñ¥½¸Í•É¥…±¥Í”¥¹ÍÑ•…½˜(€€€€€€€€€€¼¼‘•…‘±½­¥¹œ¸(€€€€€€€€€½¹ÍĞmİ½É­t€ô…İ…¥ĞÑàñìİ½É­}½‘”èÍÑÉ¥¹œìÍÑ…ÑÕÌèÍÑÉ¥¹œõmtù€(€€€€€€€€€€€Í•±•Ğİ½É­}½‘”°ÍÑ…ÑÕÌ™É½´İ½É­Ì(€€€€€€€€€€€İ¡•É”¥€ô€‘í½É‘•È¹İ½É­}¥‘ô…¹‘•±•Ñ•‘}…Ğ¥Ì¹Õ±°(€€€€€€€€€€€™½ÈÕÁ‘…Ñ”(€€€€€€€€€€ì(€€€€€€€€€¥˜€ …İ½É¬¤Ñ¡É½Ü¡ÑÑÁÉÉ½È ĞÀĞ°€]=I-}9=Q}=U9œ°€9¼ÍÕ ]½É¬¸œ¤ì(€€€€€€€€€€¼¼Hàè„½µÁ±•Ñ•]½É¬…•ÁÑÌ¹¼¹•ÜÁÉ½ÕÉ•µ•¹Ğ¸(€€€€€€€€€…ÍÍ•ÉÑ]½É­=Á•É…‰±”¡İ½É¬¹ÍÑ…ÑÕÌ°€¥ÍÍÕ¥¹œ„ÁÕÉ¡…Í”½É‘•Èœ¤ì((€€€€€€€€€½¹ÍĞm±¥¹•½Õ¹Ñt€ô…İ…¥ĞÑàñìÑ½Ñ…°èÍÑÉ¥¹œõmtù€(€€€€€€€€€€€Í•±•Ğ½Õ¹Ğ ¨¤èéÑ•áĞ…ÌÑ½Ñ…°™É½´ÁÕÉ¡…Í•}½É‘•É}±¥¹•Ì(€€€€€€€€€€€İ¡•É”ÁÕÉ¡…Í•}½É‘•É}¥€ô€‘í¥‘ô(€€€€€€€€€€ì(€€€€€€€€€¥˜€¡±¥¹•½Õ¹Ğü¹Ñ½Ñ…°€ôôô€œÀœ¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ĞÀä°(€€€€€€€€€€€€€€A=}5AQdœ°(€€€€€€€€€€€€€€ÁÕÉ¡…Í”½É‘•È¹••‘Ì…Ğ±•…ÍĞ½¹”±¥¹”‰•™½É”¥Ğ…¸‰”¥ÍÍÕ•¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô((€€€€€€€€€€¼¼I”µ¡•­•Õ¹‘•ÈÑ¡”±½¬èÑ¡”Ù•¹‘½Èµ…ä¡…Ù”‰••¸É•Ñ¥É•(€€€€€€€€€€¼¼Í¥¹”Ñ¡”‘É…™Ğ¹…µ•¥Ğ°…¹…¸½É‘•È¥ÍÍÕ•Ñ½‘…äµÕÍĞ¹½Ğ(€€€€€€€€€€¼¼¼Ñ¼„ÍÕÁÁ±¥•ÈÑ¡”½É…¹¥Í…Ñ¥½¸¡…ÌÍÑ½ÁÁ•ÕÍ¥¹œ¸(€€€€€€€€€½¹ÍĞÙ•¹‘½È€ô…İ…¥ĞÉ•ÅÕ¥É•Y•¹‘½È¡Ñà°½É‘•È¹Ù•¹‘½É}½¹Ñ…Ñ}¥¤ì((€€€€€€€€€½¹ÍĞmÑ½Ñ…±t€ô…İ…¥ĞÑàñì…µ½Õ¹ĞèÍÑÉ¥¹œõmtù€(€€€€€€€€€€€Í•±•Ğ½…±•Í”¡ÍÕ´¡±¥¹•}…µ½Õ¹Ğ¤°€À¤èé¹Õµ•É¥Œ Äà°È¤èéÑ•áĞ…Ì…µ½Õ¹Ğ(€€€€€€€€€€€™É½´ÁÕÉ¡…Í•}½É‘•É}±¥¹•Ìİ¡•É”ÁÕÉ¡…Í•}½É‘•É}¥€ô€‘í¥‘ô(€€€€€€€€€€ì((€€€€€€€€€€¼¼M•É¥…±¥Í•Á•Èµ]½É¬¹Õµ‰•É¥¹œèÑ¡”½Õ¹Ñ•ÈÉ½Ü±½¬½É‘•ÉÌ(€€€€€€€€€€¼¼½¹ÕÉÉ•¹Ğ¥ÍÍÕ•Ì°…¹„É½±±•µ‰…¬ÑÉ…¹Í…Ñ¥½¸É½±±ÌÑ¡”(€€€€€€€€€€¼¼½Õ¹Ñ•È‰…¬İ¥Ñ ¥Ğ°Í¼¹Õµ‰•ÉÌ…É”…Á±•ÍÌÁ•È]½É¬¸(€€€€€€€€€½¹ÍĞm½Õ¹Ñ•Ét€ô…İ…¥ĞÑàñì¹•áÑ}Ù…±Õ”è¹Õµ‰•Èõmtù€(€€€€€€€€€€€¥¹Í•ÉĞ¥¹Ñ¼ÁÕÉ¡…Í•}½É‘•É}½Õ¹Ñ•ÉÌ€¡½É…¹¥Í…Ñ¥½¹}¥°İ½É­}¥¤(€€€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í½É‘•È¹İ½É­}¥‘ô¤(€€€€€€€€€€€½¸½¹™±¥Ğ€¡½É…¹¥Í…Ñ¥½¹}¥°İ½É­}¥¤(€€€€€€€€€€€‘¼ÕÁ‘…Ñ”Í•Ğ¹•áÑ}Ù…±Õ”€ôÁÕÉ¡…Í•}½É‘•É}½Õ¹Ñ•ÉÌ¹¹•áÑ}Ù…±Õ”€¬€Ä(€€€€€€€€€€€É•ÑÕÉ¹¥¹œ¹•áÑ}Ù…±Õ”(€€€€€€€€€€ì(€€€€€€€€€¥˜€ …½Õ¹Ñ•È¤Ñ¡É½Ü¹•ÜÉÉ½È ½Õ¹Ñ•ÈÕÁÍ•ÉĞÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€€€½¹ÍĞÍ•ÅÕ•¹”€ô½Õ¹Ñ•È¹¹•áÑ}Ù…±Õ”ì(€€€€€€€€€½¹ÍĞÁ½9Õµ‰•È€ô€‘íİ½É¬¹İ½É­}½‘•ôµA<´‘íMÑÉ¥¹œ¡Í•ÅÕ•¹”¤¹Á…‘MÑ…ÉĞ È°€œÀœ¥õ€ì((€€€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€€€ÕÁ‘…Ñ”ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€€€Í•ĞÍÑ…ÑÕÌ€ô€¥ÍÍÕ•œ°Á½}¹Õµ‰•È€ô€‘íÁ½9Õµ‰•Éô°(€€€€€€€€€€€€€€€Í•ÅÕ•¹•}¹Õµ‰•È€ô€‘íÍ•ÅÕ•¹•ô°(€€€€€€€€€€€€€€€Ù•¹‘½É}Í¹…ÁÍ¡½Ğ€ô€‘í©Í½¹ˆ¡Ñà°Ù•¹‘½ÉM¹…ÁÍ¡½Ğ¡Ù•¹‘½È¤¥ô°(€€€€€€€€€€€€€€€Ñ½Ñ…±}…µ½Õ¹Ğ€ô€‘íÑ½Ñ…°ü¹…µ½Õ¹Ğ€üü€œÀ¸ÀÀô°(€€€€€€€€€€€€€€€¥ÍÍÕ•‘}‰å}ÕÍ•É}¥€ô€‘íÕÍ•È¹¥‘ô°¥ÍÍÕ•‘}…Ğ€ô¹½Ü ¤(€€€€€€€€€€€İ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½İ¸¤€ôøì(€€€€€€€€€€€¥˜€¡•ÉÉ½È¥¹ÍÑ…¹•½˜ÉÉ½È€˜˜€½‘”œ¥¸•ÉÉ½È€˜˜•ÉÉ½È¹½‘”€ôôô€œÈÌÔÀÔœ¤ì(€€€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€€€ĞÀä°(€€€€€€€€€€€€€€€€A=}9U5	I}=91%Pœ°(€€€€€€€€€€€€€€€AÕÉ¡…Í”½É‘•È¹Õµ‰•È€‘íÁ½9Õµ‰•Éô…±É•…‘ä•á¥ÍÑÌ¥¸Ñ¡¥Ì½É…¹¥Í…Ñ¥½¸¹€°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô(€€€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€€€ô¤ì((€€€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹¥ÍÍÕ•œ°(€€€€€€€€€€€¥°(€€€€€€€€€€€ì(€€€€€€€€€€€€€Á½9Õµ‰•È°(€€€€€€€€€€€€€Í•ÅÕ•¹”°(€€€€€€€€€€€€€Ñ½Ñ…±µ½Õ¹ĞèÑ½Ñ…°ü¹…µ½Õ¹Ğ€üü€œÀ¸ÀÀœ°(€€€€€€€€€€€€€Ù•¹‘½É½¹Ñ…Ñ%èÙ•¹‘½È¹¥°(€€€€€€€€€€€ô°(€€€€€€€€€€¤ì(€€€€€€€€€É•ÑÕÉ¸É•…‘•Ñ…¥°¡Ñà°¥¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÄ¤¹Í•¹¡‘•Ñ…¥°¤ì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍĞ (€€€€œ½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼é¥½…¹•°œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äè…¹•±AÕÉ¡…Í•=É‘•ÉI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍĞ¤€ôøì(€€€€€½¹ÍĞÕÍ•È€ô…İ…¥ĞÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍĞ¤ì(€€€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍĞ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍĞì¥ô€ôÉ•ÅÕ•ÍĞ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍĞ‰½‘ä€ôÉ•ÅÕ•ÍĞ¹‰½‘ä…Ì…¹•±AÕÉ¡…Í•=É‘•ÉI•ÅÕ•ÍĞì(€€€€€½¹ÍĞ¹½Ñ”€ô…¹•±±…Ñ¥½¹9½Ñ”¡‰½‘ä¹¹½Ñ”¤ì(€€€€€É•ÑÕÉ¸İ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…İ…¥ĞÉ•ÅÕ¥É•ÕÑ¡½É¥Ñä¡Ñà°ÕÍ•È¹¥°€…¹•°œ¤ì(€€€€€€€½¹ÍĞ½É‘•È€ô…İ…¥Ğ±½­AÕÉ¡…Í•=É‘•È¡Ñà°¥¤ì(€€€€€€€…İ…¥Ğ…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°½É‘•È¹İ½É­}¥¤ì(€€€€€€€€¼¼=¹±ä…¸¥ÍÍÕ•½É‘•È…¹•±Ìè„‘É…™Ğ¥Ì‘•±•Ñ•€¡ÉÕ±”€à¤°…¹„(€€€€€€€€¼¼±½Í•½¹”¥Ì™¥¹¥Í¡•¸I••¥ÁÑÌ…±É•…‘äÉ•½É‘•……¥¹ÍĞÑ¡”(€€€€€€€€¼¼½É‘•ÈÌ±¥¹•Ì…É”9=P‘¥ÍÑÕÉ‰•ƒŠPÑ¡”‘•±¥Ù•É•µ…Ñ•É¥…°¥ÌÑ¡”(€€€€€€€€¼¼¡…±±…¸Ì™…Ğ°¹½ĞÑ¡”½É‘•ÈÌ°…¹Ñ¡”]½É¬ÌÅÕ…¹Ñ¥Ñä±•‘•È(€€€€€€€€¼¼¹•Ù•ÈÉ•…Ñ¡¥Ì½É‘•È¸…¹•±±¥¹œÍ…åÌ½¹±äÑ¡…ĞÑ¡”É•ÍĞ½˜¥Ğ(€€€€€€€€¼¼¥Ì¹•Ù•È½µ¥¹œ¸(€€€€€€€É•ÅÕ¥É•MÑ…ÑÕÌ¡½É‘•È°€¥ÍÍÕ•œ¤ì(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€ÕÁ‘…Ñ”ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€Í•ĞÍÑ…ÑÕÌ€ô€…¹•±±•œ°…¹•±±•‘}‰å}ÕÍ•É}¥€ô€‘íÕÍ•È¹¥‘ô°(€€€€€€€€€€€€€…¹•±±•‘}…Ğ€ô¹½Ü ¤°…¹•±±…Ñ¥½¹}¹½Ñ”€ô€‘í¹½Ñ•ô(€€€€€€€€€İ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€ì(€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹…¹•±±•œ°(€€€€€€€€€¥°(€€€€€€€€€ìÁ½9Õµ‰•Èè½É‘•È¹Á½}¹Õµ‰•È°¹½Ñ”ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘•Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍĞ (€€€€œ½…Á¤½ÁÕÉ¡…Í”µ½É‘•ÉÌ¼é¥½±½Í”œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèAÕÉ¡…Í•=É‘•É•Ñ…¥±I•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍĞ¤€ôøì(€€€€€½¹ÍĞÕÍ•È€ô…İ…¥ĞÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍĞ¤ì(€€€€€½¹ÍĞ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍĞ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍĞì¥ô€ôÉ•ÅÕ•ÍĞ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€É•ÑÕÉ¸İ¥Ñ¡	½Õ¹‘Q•¹…¹Ğ¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€¼¼±½Í¥¹œ…ÍÍ•ÉÑÌ¹½Ñ¡¥¹œ…¸½Á•É…Ñ½È½Õ±¥¹Ù•¹Ğè¥ĞÍÕ••‘Ì(€€€€€€€€¼¼½¹±äİ¡•¸Ñ¡”É••¥ÁÑÌ…±É•…‘äÍ…äÑ¡”½É‘•È¥Ì½µÁ±•Ñ”°Í¼¥Ğ(€€€€€€€€¼¼¥Ì„İÉ¥Ñ•È…Ñ¥½¸É…Ñ¡•ÈÑ¡…¸…¸¥ÍÍÕ”½…¹•°…ÕÑ¡½É¥Ñä¸(€€€€€€€…İ…¥ĞÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍĞ½É‘•È€ô…İ…¥Ğ±½­AÕÉ¡…Í•=É‘•È¡Ñà°¥¤ì(€€€€€€€…İ…¥Ğ…ÍÍ•ÉÑ]½É­•ÍÌ¡Ñà°ÕÍ•È¹¥°½É‘•È¹İ½É­}¥¤ì(€€€€€€€É•ÅÕ¥É•MÑ…ÑÕÌ¡½É‘•È°€¥ÍÍÕ•œ¤ì((€€€€€€€€¼¼I½Üµ±½¬•Ù•Éä¡…±±…¸Ñ¡…Ğ¡…Ì™•Ñ¡¥Ì½É‘•È°Í¼„É••¥ÁĞ(€€€€€€€€¼¼…¹¹½Ğ‰”É•±•…Í•€¡¥ÑÌ¡…±±…¸…¹•±±•¤¡…±™İ…äÑ¡É½Õ Ñ¡”(€€€€€€€€¼¼‰…±…¹”‰•±½Ü¸1½¬½É‘•È¥ÌÁÕÉ¡…Í•}½É‘•ÉÌ€´ø‘•±¥Ù•Éå}¡…±±…¹Ì(€€€€€€€€¼¼…¹Ñ¡”¡…±±…¸…¹•°Á…Ñ Ñ…­•Ì‘•±¥Ù•Éå}¡…±±…¹Ì€´øİ½É­Ì°Í¼(€€€€€€€€¼¼Ñ¡”Ñİ¼…¹¹½Ğå±”¸]¡…Ğ¹¼±½¬…¸ÁÉ•Ù•¹Ğ¥Ì„¡…±±…¸(€€€€€€€€¼¼…¹•±±•QHÑ¡¥Ì½µµ¥ÑÌìÑ¡”‰…±…¹”¥ÌÑ¡•É•™½É”(€€€€€€€€¼¼É•½µÁÕÑ•±¥Ù”½¸•Ù•ÉäÉ•…°…¹„±½Í•½É‘•Èİ¡½Í”É••¥ÁĞ(€€€€€€€€¼¼İ…Ì±…Ñ•ÈÉ•±•…Í•Í¡½İÌ¥ÑÌ±¥¹•ÌÁ•¹‘¥¹œ……¥¸¸(€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€Í•±•Ğ‘Œ¹¥™É½´‘•±¥Ù•Éå}¡…±±…¹Ì‘Œ(€€€€€€€€€İ¡•É”‘Œ¹¥¥¸€ (€€€€€€€€€€€Í•±•Ğ‘¤¹‘•±¥Ù•Éå}¡…±±…¹}¥(€€€€€€€€€€€™É½´‘•±¥Ù•Éå}¡…±±…¹}¥Ñ•µÌ‘¤(€€€€€€€€€€€©½¥¸ÁÕÉ¡…Í•}½É‘•É}±¥¹•ÌÁ½°½¸Á½°¹¥€ô‘¤¹ÁÕÉ¡…Í•}½É‘•É}±¥¹•}¥(€€€€€€€€€€€İ¡•É”Á½°¹ÁÕÉ¡…Í•}½É‘•É}¥€ô€‘í¥‘ô(€€€€€€€€€€¤(€€€€€€€€€½É‘•È‰ä‘Œ¹¥(€€€€€€€€€™½ÈÕÁ‘…Ñ”(€€€€€€€€ì((€€€€€€€½¹ÍĞ±¥¹•Ì€ô…İ…¥ĞÉ•…‘1¥¹•Ì¡Ñà°¥¤ì(€€€€€€€½¹ÍĞ½ÕÑÍÑ…¹‘¥¹œ€ô±¥¹•Ì¹™¥±Ñ•È ¡±¥¹”¤€ôø±¥¹”¹Á•¹‘¥¹}ÅÕ…¹Ñ¥Ñä€„ôô€œÀ¸ÀÀÀœ¤ì(€€€€€€€¥˜€¡½ÕÑÍÑ…¹‘¥¹œ¹±•¹Ñ €ø€À¤ì(€€€€€€€€€½¹ÍĞ‘•Ñ…¥±ÌèAÕÉ¡…Í•=É‘•É9½ÑÕ±±åI••¥Ù•‘•Ñ…¥±Ì€ôì(€€€€€€€€€€€½ÕÑÍÑ…¹‘¥¹1¥¹•Ìè½ÕÑÍÑ…¹‘¥¹œ¹µ…À ¡±¥¹”¤€ôø€¡ì(€€€€€€€€€€€€€ÁÕÉ¡…Í•=É‘•É1¥¹•%è±¥¹”¹¥°(€€€€€€€€€€€€€±¥¹•9Õµ‰•Èè±¥¹”¹±¥¹•}¹Õµ‰•È°(€€€€€€€€€€€€€‘•ÍÉ¥ÁÑ¥½¸è±¥¹”¹‘•ÍÉ¥ÁÑ¥½¸°(€€€€€€€€€€€€€½É‘•É•‘EÕ…¹Ñ¥Ñäè±¥¹”¹ÅÕ…¹Ñ¥Ñä°(€€€€€€€€€€€€€É••¥Ù•‘EÕ…¹Ñ¥Ñäè±¥¹”¹É••¥Ù•‘}ÅÕ…¹Ñ¥Ñä°(€€€€€€€€€€€€€Á•¹‘¥¹EÕ…¹Ñ¥Ñäè±¥¹”¹Á•¹‘¥¹}ÅÕ…¹Ñ¥Ñä°(€€€€€€€€€€€ô¤¤°(€€€€€€€€€ôì(€€€€€€€€€½¹ÍĞ¹…µ•Ì€ô½ÕÑÍÑ…¹‘¥¹œ(€€€€€€€€€€€€¹µ…À (€€€€€€€€€€€€€€¡±¥¹”¤€ôø(€€€€€€€€€€€€€€€±¥¹”€‘íMÑÉ¥¹œ¡±¥¹”¹±¥¹•}¹Õµ‰•È¥ô€ ‘í±¥¹”¹É••¥Ù•‘}ÅÕ…¹Ñ¥Ñåô½˜€‘í±¥¹”¹ÅÕ…¹Ñ¥Ñåô€‘í±¥¹”¹Õ¹¥Ñ}½‘•ôÉ••¥Ù•¥€°(€€€€€€€€€€€€¤(€€€€€€€€€€€€¹©½¥¸ œì€œ¤ì(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€ĞÀä°(€€€€€€€€€€€€A=}9=Q}U11e}I%Yœ°(€€€€€€€€€€€ÁÕÉ¡…Í”½É‘•È±½Í•Ì½¹±äİ¡•¸•Ù•Éä±¥¹”¡…Ì‰••¸É••¥Ù•……¥¹ÍĞ…¸¥ÍÍÕ•‘•±¥Ù•Éä¡…±±…¸ƒŠPÍÑ¥±°½Á•¸è€‘í¹…µ•Íô¹€°(€€€€€€€€€€€‘•Ñ…¥±Ì°(€€€€€€€€€€¤ì(€€€€€€€ô((€€€€€€€…İ…¥ĞÑá€(€€€€€€€€€ÕÁ‘…Ñ”ÁÕÉ¡…Í•}½É‘•ÉÌ(€€€€€€€€€Í•ĞÍÑ…ÑÕÌ€ô€±½Í•œ°±½Í•‘}…Ğ€ô¹½Ü ¤(€€€€€€€€€İ¡•É”¥€ô€‘í¥‘ô(€€€€€€€€ì(€€€€€€€…İ…¥Ğ…Õ‘¥ÑAÕÉ¡…Í•=É‘•È (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€ÁÕÉ¡…Í•}½É‘•È¹±½Í•œ°(€€€€€€€€€¥°(€€€€€€€€€ìÁ½9Õµ‰•Èè½É‘•È¹Á½}¹Õµ‰•È°±¥¹•½Õ¹Ğè±¥¹•Ì¹±•¹Ñ ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸É•…‘•Ñ…¥°¡Ñà°¥¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì)ô(
+  purchaseOrderId: string,
+  workId: string,
+  lines: readonly PurchaseOrderLineInput[],
+): Promise<void> {
+  await tx`
+    delete from purchase_order_lines where purchase_order_id = ${purchaseOrderId}
+  `;
+  for (const [index, line] of lines.entries()) {
+    const lineNumber = index + 1;
+    const label = `Line ${String(lineNumber)}`;
+    const description = trimmedText(
+      line.description,
+      3,
+      1000,
+      'PO_LINE_INVALID',
+      `${label}: the description`,
+    );
+    const unitCode = trimmedText(
+      line.unitCode,
+      1,
+      20,
+      'PO_LINE_INVALID',
+      `${label}: the unit`,
+    );
+    const hsnCode = line.hsnCode ?? null;
+    const gstRate = line.gstRate ?? null;
+    const inserted = await (
+      line.workItemId === undefined
+        ? tx<{ id: string }[]>`
+          insert into purchase_order_lines (
+            organisation_id, purchase_order_id, work_item_id, line_number,
+            description, hsn_code, unit_code, quantity, rate, gst_rate,
+            line_amount
+          )
+          values (
+            ${organisationId}, ${purchaseOrderId}, null, ${lineNumber},
+            ${description}, ${hsnCode}, ${unitCode}, ${line.quantity},
+            ${line.rate}, ${gstRate},
+            (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,6))
+              ::numeric(18,2)
+          )
+          returning id
+        `
+        : tx<{ id: string }[]>`
+          insert into purchase_order_lines (
+            organisation_id, purchase_order_id, work_item_id, line_number,
+            description, hsn_code, unit_code, quantity, rate, gst_rate,
+            line_amount
+          )
+          select ${organisationId}, ${purchaseOrderId}, wi.id, ${lineNumber},
+                 ${description}, coalesce(${hsnCode}::text, wi.hsn_code),
+                 ${unitCode}, ${line.quantity}, ${line.rate},
+                 coalesce(${gstRate}::numeric(5,2), wi.gst_rate),
+                 (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,6))
+                   ::numeric(18,2)
+          from work_items wi
+          where wi.id = ${line.workItemId} and wi.work_id = ${workId}
+            and wi.deleted_at is null
+          returning id
+        `
+    ).catch((error: unknown) => {
+      // quantity x rate wider than the numeric(18,2) amount column: a
+      // 22003 carries no HTTP status, so it would reach the operator as
+      // 'The request could not be completed.' Name the line instead.
+      if (isNumericOverflow(error)) {
+        throw httpError(
+          400,
+          'PO_LINE_INVALID',
+          `${label}: the quantity and rate multiply out to an amount too large to record â€” check for a mistyped digit.`,
+        );
+      }
+      throw error;
+    });
+    if (inserted.length === 0) {
+      throw httpError(
+        404,
+        'WORK_ITEM_NOT_FOUND',
+        `${label}: the selected item does not belong to this Work.`,
+      );
+    }
+  }
+}
+
+/** The lines in request-input shape for audit diffing; the numbers come
+ * back normalised from their columns so before/after compare like for
+ * like. */
+async function readLineInputs(
+  tx: TransactionSql,
+  purchaseOrderId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await tx<
+    {
+      work_item_id: string | null;
+      description: string;
+      hsn_code: string | null;
+      unit_code: string;
+      quantity: string;
+      rate: string;
+      gst_rate: string | null;
+    }[]
+  >`
+    select work_item_id, description, hsn_code, unit_code,
+           quantity::text as quantity, rate::text as rate,
+           gst_rate::text as gst_rate
+    from purchase_order_lines
+    where purchase_order_id = ${purchaseOrderId}
+    order by line_number
+  `;
+  return rows.map((row) => ({
+    workItemId: row.work_item_id,
+    description: row.description,
+    hsnCode: row.hsn_code,
+    unitCode: row.unit_code,
+    quantity: row.quantity,
+    rate: row.rate,
+    gstRate: row.gst_rate,
+  }));
+}
+
+async function auditPurchaseOrder(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  action: string,
+  purchaseOrderId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    values (
+      ${organisationId}, ${userId}, ${action}, 'purchase_orders',
+      ${purchaseOrderId}, ${jsonb(tx, details)}
+    )
+  `;
+}
+
+// --- Routes -----------------------------------------------------------------
+
+export function registerPurchaseOrderRoutes(
+  app: FastifyInstance,
+  auth: Auth,
+  database: Sql,
+): void {
+  app.get(
+    '/api/works/:id/purchase-orders',
+    {
+      schema: {
+        params: IdParamsSchema,
+        querystring: ListQuerySchema,
+        response: { 200: PurchaseOrderListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const { status } = request.query as { status?: 'open' | PurchaseOrderStatus };
+      // 'open' is issued PLUS the derived "still owed something" test; a
+      // literal status filters literally; no filter lists everything.
+      const statusFilter = status === 'open' ? 'issued' : (status ?? null);
+      const openOnly = status === 'open';
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return (await tx.unsafe(
+            `select ${PO_COLUMNS} ${PO_FROM}
+             where po.work_id = $1
+               and ($2::text is null or po.status = $2)
+               and (
+                 not $3::boolean
+                 or exists (
+                   select 1 from purchase_order_lines pol
+                   where pol.purchase_order_id = po.id
+                     and pol.quantity > coalesce((
+                       select sum(dci.quantity)
+                       from delivery_challan_items dci
+                       join delivery_challans dc
+                         on dc.id = dci.delivery_challan_id
+                       where dci.purchase_order_line_id = pol.id
+                         and dc.status = 'issued'
+                     ), 0)
+                 )
+               )
+             order by po.po_date desc, po.created_at desc, po.id`,
+            [workId, statusFilter, openOnly],
+          )) as unknown as PurchaseOrderRow[];
+        },
+      );
+      return { purchaseOrders: rows.map(toPurchaseOrder) };
+    },
+  );
+
+  app.post(
+    '/api/works/:id/purchase-orders',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CreatePurchaseOrderRequestSchema,
+        response: { 201: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as CreatePurchaseOrderRequest;
+      const terms =
+        body.terms === undefined
+          ? null
+          : trimmedText(body.terms, 3, 4000, 'PO_TERMS_INVALID', 'The terms');
+
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds, so a draft created here can
+          // never appear behind a completed Work's refusals; the 0033
+          // insert guard backstops it in the database.
+          const [work] = await tx<{ status: string }[]>`
+            select status from works where id = ${workId} and deleted_at is null
+            for update
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          assertWorkOperable(work.status, 'drafting a purchase order');
+          await assertPurchaseOrderDate(tx, workId, body.poDate);
+          await requireVendor(tx, body.vendorContactId);
+
+          // One open draft per Work and vendor (0045 partial unique index):
+          // independent vendors may be drafted in parallel, while the 409
+          // names a duplicate for the same vendor.
+          const [existingDraft] = await tx<{ id: string }[]>`
+            select id from purchase_orders
+            where work_id = ${workId} and vendor_contact_id = ${body.vendorContactId}
+              and status = 'draft'
+          `;
+          if (existingDraft) {
+            throw draftConflictError(
+              'PO_DRAFT_EXISTS',
+              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+              existingDraft.id,
+            );
+          }
+
+          const [created] = await tx<{ id: string }[]>`
+            insert into purchase_orders (
+              organisation_id, work_id, vendor_contact_id, po_date, expected_on,
+              terms, created_by_user_id
+            )
+            values (
+              ${organisationId}, ${workId}, ${body.vendorContactId},
+              ${body.poDate}, ${body.expectedOn ?? null}, ${terms}, ${user.id}
+            )
+            returning id
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              // A concurrent create won between the pre-check and this
+              // insert; the transaction is aborted, so the route-level
+              // catch names the winner from a fresh read.
+              throw httpError(
+                409,
+                'PO_DRAFT_EXISTS',
+                'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+              );
+            }
+            throw error;
+          });
+          if (!created) throw new Error('purchase order insert returned no row');
+
+          await auditPurchaseOrder(
+            tx,
+            organisationId,
+            user.id,
+            'purchase_order.created',
+            created.id,
+            {
+              workId,
+              vendorContactId: body.vendorContactId,
+              poDate: body.poDate,
+            },
+          );
+          return readDetail(tx, created.id);
+        },
+      ).catch(async (error: unknown) => {
+        throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from purchase_orders
+              where work_id = ${workId}
+                and vendor_contact_id = ${body.vendorContactId}
+                and status = 'draft'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
+  app.get(
+    '/api/purchase-orders/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [ref] = await tx<{ work_id: string }[]>`
+          select work_id from purchase_orders where id = ${id}
+        `;
+        if (!ref) {
+          throw httpError(404, 'PURCHASE_ORDER_NOT_FOUND', 'No such purchase order.');
+        }
+        await assertWorkAccess(tx, user.id, ref.work_id);
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.put(
+    '/api/purchase-orders/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CreatePurchaseOrderRequestSchema,
+        response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as CreatePurchaseOrderRequest;
+      const terms =
+        body.terms === undefined
+          ? null
+          : trimmedText(body.terms, 3, 4000, 'PO_TERMS_INVALID', 'The terms');
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        // An issued order is a document that left the building: no edits,
+        // ever (rule 7). The 0033 line trigger backstops the same rule for
+        // the lines against every writer.
+        requireStatus(order, 'draft');
+        await assertPurchaseOrderDate(tx, order.work_id, body.poDate);
+        const vendor = await requireVendor(tx, body.vendorContactId);
+        const [existingDraft] = await tx<{ id: string }[]>`
+          select id from purchase_orders
+          where work_id = ${order.work_id}
+            and vendor_contact_id = ${body.vendorContactId}
+            and status = 'draft' and id <> ${id}
+        `;
+        if (existingDraft) {
+          throw draftConflictError(
+            'PO_DRAFT_EXISTS',
+            'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            existingDraft.id,
+          );
+        }
+        await tx`
+          update purchase_orders
+          set vendor_contact_id = ${body.vendorContactId}, po_date = ${body.poDate},
+              expected_on = ${body.expectedOn ?? null}, terms = ${terms}
+          where id = ${id}
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PO_DRAFT_EXISTS',
+              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
+        const changes = auditDiff(
+          {
+            vendorContactId: order.vendor_contact_id,
+            poDate: order.po_date,
+            expectedOn: order.expected_on,
+            terms: order.terms,
+          },
+          {
+            vendorContactId: body.vendorContactId,
+            poDate: body.poDate,
+            expectedOn: body.expectedOn ?? null,
+            terms,
+          },
+        );
+        await auditPurchaseOrder(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.updated',
+          id,
+          { before: changes.before, after: changes.after, vendor: vendor.designation },
+        );
+        return readDetail(tx, id);
+      }).catch(async (error: unknown) => {
+        throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from purchase_orders
+              where work_id = (
+                select work_id from purchase_orders where id = ${id}
+              )
+                and vendor_contact_id = ${body.vendorContactId}
+                and status = 'draft' and id <> ${id}
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+    },
+  );
+
+  app.put(
+    '/api/purchase-orders/:id/lines',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SavePurchaseOrderLinesRequestSchema,
+        response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SavePurchaseOrderLinesRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        requireStatus(order, 'draft');
+        const linesBefore = await readLineInputs(tx, id);
+        await writeLines(tx, organisationId, id, order.work_id, body.lines);
+        const changes = auditDiff(
+          { lines: linesBefore },
+          { lines: await readLineInputs(tx, id) },
+        );
+        await auditPurchaseOrder(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.lines_saved',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+            lineCount: body.lines.length,
+          },
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.delete(
+    '/api/purchase-orders/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 204: Type.Null(), ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        // Rule 8: a draft is not yet a document, so it is deleted rather
+        // than cancelled. Anything issued keeps its number forever.
+        requireStatus(order, 'draft');
+        // The lines go FIRST and explicitly: the 0033 line guard reads the
+        // parent's status, and a cascade from the deleted parent would
+        // find no parent row and raise.
+        await tx`delete from purchase_order_lines where purchase_order_id = ${id}`;
+        await tx`delete from purchase_orders where id = ${id}`;
+        await auditPurchaseOrder(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.deleted',
+          id,
+          { workId: order.work_id },
+        );
+      });
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    '/api/purchase-orders/:id/issue',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 201: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'issue');
+          const order = await lockPurchaseOrder(tx, id);
+          await assertWorkAccess(tx, user.id, order.work_id);
+          requireStatus(order, 'draft');
+
+          // Lock order works -> counter matches every other numbering
+          // writer, so an issue and a Work completion serialise instead of
+          // deadlocking.
+          const [work] = await tx<{ work_code: string; status: string }[]>`
+            select work_code, status from works
+            where id = ${order.work_id} and deleted_at is null
+            for update
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          // R8: a completed Work accepts no new procurement.
+          assertWorkOperable(work.status, 'issuing a purchase order');
+
+          const [lineCount] = await tx<{ total: string }[]>`
+            select count(*)::text as total from purchase_order_lines
+            where purchase_order_id = ${id}
+          `;
+          if (lineCount?.total === '0') {
+            throw httpError(
+              409,
+              'PO_EMPTY',
+              'A purchase order needs at least one line before it can be issued.',
+            );
+          }
+
+          // Re-checked under the lock: the vendor may have been retired
+          // since the draft named it, and an order issued today must not
+          // go to a supplier the organisation has stopped using.
+          const vendor = await requireVendor(tx, order.vendor_contact_id);
+
+          const [total] = await tx<{ amount: string }[]>`
+            select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
+            from purchase_order_lines where purchase_order_id = ${id}
+          `;
+
+          // Serialised per-Work numbering: the counter row lock orders
+          // concurrent issues, and a rolled-back transaction rolls the
+          // counter back with it, so numbers are gapless per Work.
+          const [counter] = await tx<{ next_value: number }[]>`
+            insert into purchase_order_counters (organisation_id, work_id)
+            values (${organisationId}, ${order.work_id})
+            on conflict (organisation_id, work_id)
+            do update set next_value = purchase_order_counters.next_value + 1
+            returning next_value
+          `;
+          if (!counter) throw new Error('counter upsert returned no row');
+          const sequence = counter.next_value;
+          const poNumber = `${work.work_code}-PO-${String(sequence).padStart(2, '0')}`;
+
+          await tx`
+            update purchase_orders
+            set status = 'issued', po_number = ${poNumber},
+                sequence_number = ${sequence},
+                vendor_snapshot = ${jsonb(tx, vendorSnapshot(vendor))},
+                total_amount = ${total?.amount ?? '0.00'},
+                issued_by_user_id = ${user.id}, issued_at = now()
+            where id = ${id}
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'PO_NUMBER_CONFLICT',
+                `Purchase order number ${poNumber} already exists in this organisation.`,
+              );
+            }
+            throw error;
+          });
+
+          await auditPurchaseOrder(
+            tx,
+            organisationId,
+            user.id,
+            'purchase_order.issued',
+            id,
+            {
+              poNumber,
+              sequence,
+              totalAmount: total?.amount ?? '0.00',
+              vendorContactId: vendor.id,
+            },
+          );
+          return readDetail(tx, id);
+        },
+      );
+      return reply.status(201).send(detail);
+    },
+  );
+
+  app.post(
+    '/api/purchase-orders/:id/cancel',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CancelPurchaseOrderRequestSchema,
+        response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as CancelPurchaseOrderRequest;
+      const note = cancellationNote(body.note);
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireAuthority(tx, user.id, 'cancel');
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        // Only an issued order cancels: a draft is deleted (rule 8), and a
+        // closed one is finished. Receipts already recorded against the
+        // order's lines are NOT disturbed â€” the delivered material is the
+        // challan's fact, not the order's, and the Work's quantity ledger
+        // never read this order. Cancelling says only that the rest of it
+        // is never coming.
+        requireStatus(order, 'issued');
+        await tx`
+          update purchase_orders
+          set status = 'cancelled', cancelled_by_user_id = ${user.id},
+              cancelled_at = now(), cancellation_note = ${note}
+          where id = ${id}
+        `;
+        await auditPurchaseOrder(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.cancelled',
+          id,
+          { poNumber: order.po_number, note },
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.post(
+    '/api/purchase-orders/:id/close',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        // Closing asserts nothing an operator could invent: it succeeds
+        // only when the receipts already say the order is complete, so it
+        // is a writer action rather than an issue/cancel authority.
+        await requireWriterRole(tx, user.id);
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        requireStatus(order, 'issued');
+
+        // Row-lock every challan that has fed this order, so a receipt
+        // cannot be released (its challan cancelled) halfway through the
+        // balance below. Lock order is purchase_orders -> delivery_challans
+        // and the challan cancel path takes delivery_challans -> works, so
+        // the two cannot cycle. What no lock can prevent is a challan
+        // cancelled AFTER this commits; the balance is therefore
+        // recomputed live on every read, and a closed order whose receipt
+        // was later released shows its lines pending again.
+        await tx`
+          select dc.id from delivery_challans dc
+          where dc.id in (
+            select dci.delivery_challan_id
+            from delivery_challan_items dci
+            join purchase_order_lines pol on pol.id = dci.purchase_order_line_id
+            where pol.purchase_order_id = ${id}
+          )
+          order by dc.id
+          for update
+        `;
+
+        const lines = await readLines(tx, id);
+        const outstanding = lines.filter((line) => line.pending_quantity !== '0.000');
+        if (outstanding.length > 0) {
+          const details: PurchaseOrderNotFullyReceivedDetails = {
+            outstandingLines: outstanding.map((line) => ({
+              purchaseOrderLineId: line.id,
+              lineNumber: line.line_number,
+              description: line.description,
+              orderedQuantity: line.quantity,
+              receivedQuantity: line.received_quantity,
+              pendingQuantity: line.pending_quantity,
+            })),
+          };
+          const names = outstanding
+            .map(
+              (line) =>
+                `line ${String(line.line_number)} (${line.received_quantity} of ${line.quantity} ${line.unit_code} received)`,
+            )
+            .join('; ');
+          throw httpError(
+            409,
+            'PO_NOT_FULLY_RECEIVED',
+            `A purchase order closes only when every line has been received against an issued delivery challan â€” still open: ${names}.`,
+            details,
+          );
+        }
+
+        await tx`
+          update purchase_orders
+          set status = 'closed', closed_at = now()
+          where id = ${id}
+        `;
+        await auditPurchaseOrder(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.closed',
+          id,
+          { poNumber: order.po_number, lineCount: lines.length },
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+}

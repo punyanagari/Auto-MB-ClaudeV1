@@ -450,4 +450,798 @@ export function registerMasterRoutes(
               ${organisationId}, ${body.designation},
               ${body.contactPerson ?? null}, ${body.address ?? null},
               ${body.phone ?? null}, ${email}, ${gstin},
-          ßÍ=¶‰žËkºwµç}É­}¥€ô€‘íÝ½É­%‘ô…¹½¹Ñ…Ñ}¥€ô€‘í½¹Ñ…Ñ%‘ô(€€€€€€€€ì(€€€€€€€¥˜€¡É•µ½Ù•¹½Õ¹Ð€ôôô€À¤ì(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€ÐÀÐ°(€€€€€€€€€€€€]=I-}=9M%9}9=Q}=U9œ°(€€€€€€€€€€€€Q¡¥Ì½¹Í¥¹•”¥Ì¹½Ð±¥¹­•Ñ¼Ñ¡”]½É¬¸œ°(€€€€€€€€€€¤ì(€€€€€€€ô(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€Ý½É¬¹½¹Í¥¹••}Õ¹±¥¹­•œ°(€€€€€€€€€€Ý½É­Ìœ°(€€€€€€€€€Ý½É­%°(€€€€€€€€€ì½¹Ñ…Ñ%ô°(€€€€€€€€¤ì(€€€€€ô¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÐ¤¹Í•¹ ¤ì(€€€ô°(€€¤ì((€€¼¼€´´´1½…Ñ¥½¸µ…ÍÑ•ÉÌ€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((€…ÁÀ¹•Ð (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½±½…Ñ¥½¹Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€ÅÕ•ÉåÍÑÉ¥¹œè1¥ÍÑEÕ•ÉåM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè1½…Ñ¥½¹5…ÍÑ•É1¥ÍÑI•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥¹±Õ‘•I•Ñ¥É•€ô™…±Í”ô€ôÉ•ÅÕ•ÍÐ¹ÅÕ•Éä…Ìì(€€€€€€€¥¹±Õ‘•I•Ñ¥É•üè‰½½±•…¸ì(€€€€€ôì(€€€€€½¹ÍÐÉ½ÝÌ€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøÑàñ1½…Ñ¥½¹I½Ýmtù€(€€€€€€€€€Í•±•Ð¥°¹…µ”°­¥¹°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€™É½´±½…Ñ¥½¹}µ…ÍÑ•ÉÌ(€€€€€€€€€Ý¡•É”…Ñ¥Ù”½È€‘í¥¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€€€€½É‘•È‰ä±½Ý•È¡¹…µ”¤°­¥¹(€€€€€€€€°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ì±½…Ñ¥½¹ÌèÉ½ÝÌ¹µ…À¡Ñ½1½…Ñ¥½¸¤ôì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½±½…Ñ¥½¹Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€‰½‘äèM…Ù•1½…Ñ¥½¹5…ÍÑ•ÉI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÄè1½…Ñ¥½¹5…ÍÑ•ÉM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ°É•Á±ä¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•1½…Ñ¥½¹5…ÍÑ•ÉI•ÅÕ•ÍÐì(€€€€€½¹ÍÐ±½…Ñ¥½¸€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñ1½…Ñ¥½¹I½Ýmtù€(€€€€€€€€€€€¥¹Í•ÉÐ¥¹Ñ¼±½…Ñ¥½¹}µ…ÍÑ•ÉÌ€ (€€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°¹…µ”°­¥¹°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€€€¤(€€€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í‰½‘ä¹¹…µ•ô°€‘í‰½‘ä¹­¥¹‘ô°€‘íÕÍ•È¹¥‘ô¤(€€€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°­¥¹°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€€€1=Q%=9}5MQI}a%MQLœ°(€€€€€€€€€€€€€€€€±½…Ñ¥½¸Ý¥Ñ Ñ¡¥Ì¹…µ”…¹­¥¹…±É•…‘ä•á¥ÍÑÌ€¡¥Ðµ…ä‰”É•Ñ¥É•ƒŠPÉ•…Ñ¥Ù…Ñ”¥Ð¥¹ÍÑ•…¤¸œ°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô(€€€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€€€ô¤ì(€€€€€€€€€¥˜€ …É½Ü¤Ñ¡É½Ü¹•ÜÉÉ½È ±½…Ñ¥½¸µ…ÍÑ•È¥¹Í•ÉÐÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€±½…Ñ¥½¹}µ…ÍÑ•È¹É•…Ñ•œ°(€€€€€€€€€€€€±½…Ñ¥½¹}µ…ÍÑ•ÉÌœ°(€€€€€€€€€€€É½Ü¹¥°(€€€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”°­¥¹è‰½‘ä¹­¥¹ô°(€€€€€€€€€€¤ì(€€€€€€€€€É•ÑÕÉ¸Ñ½1½…Ñ¥½¸¡É½Ü¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÄ¤¹Í•¹¡±½…Ñ¥½¸¤ì(€€€ô°(€€¤ì((€…ÁÀ¹ÁÕÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½±½…Ñ¥½¹Ì¼é¥œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äèM…Ù•1½…Ñ¥½¹5…ÍÑ•ÉI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀè1½…Ñ¥½¹5…ÍÑ•ÉM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•1½…Ñ¥½¹5…ÍÑ•ÉI•ÅÕ•ÍÐì(€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñ1½…Ñ¥½¹I½Ýmtù€(€€€€€€€€€ÕÁ‘…Ñ”±½…Ñ¥½¹}µ…ÍÑ•ÉÌ(€€€€€€€€€Í•Ð¹…µ”€ô€‘í‰½‘ä¹¹…µ•ô°­¥¹€ô€‘í‰½‘ä¹­¥¹‘ô(€€€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°­¥¹°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€1=Q%=9}5MQI}a%MQLœ°(€€€€€€€€€€€€€€¹½Ñ¡•È±½…Ñ¥½¸…±É•…‘ä…ÉÉ¥•ÌÑ¡¥Ì¹…µ”…¹­¥¹¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€ô¤ì(€€€€€€€¥˜€ …É½Ü¤ì(€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€1=Q%=9}5MQI}9=Q}=U9œ°€9¼ÍÕ ±½…Ñ¥½¸¸œ¤ì(€€€€€€€ô(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€±½…Ñ¥½¹}µ…ÍÑ•È¹ÕÁ‘…Ñ•œ°(€€€€€€€€€€±½…Ñ¥½¹}µ…ÍÑ•ÉÌœ°(€€€€€€€€€¥°(€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”°­¥¹è‰½‘ä¹­¥¹ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸Ñ½1½…Ñ¥½¸¡É½Ü¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€É•¥ÍÑ•ÉÑ¥Ù•Q½±”ñ1½…Ñ¥½¹I½Ü°1½…Ñ¥½¹5…ÍÑ•Èø¡ì(€€€Á…Ñ è€œ½…Á¤½µ…ÍÑ•ÉÌ½±½…Ñ¥½¹Ìœ°(€€€•¹Ñ¥Ñäè€±½…Ñ¥½¹}µ…ÍÑ•Èœ°(€€€•¹Ñ¥ÑåQåÁ”è€±½…Ñ¥½¹}µ…ÍÑ•ÉÌœ°(€€€¹½Ñ½Õ¹‘½‘”è€1=Q%=9}5MQI}9=Q}=U9œ°(€€€¹½Ñ½Õ¹‘5•ÍÍ…”è€9¼ÍÕ ±½…Ñ¥½¸¸œ°(€€€ÕÁ‘…Ñ”è…Íå¹Œ€¡Ñà°¥°…Ñ¥Ù”¤€ôøì(€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñ1½…Ñ¥½¹I½Ýmtù€(€€€€€€€ÕÁ‘…Ñ”±½…Ñ¥½¹}µ…ÍÑ•ÉÌÍ•Ð…Ñ¥Ù”€ô€‘í…Ñ¥Ù•ô(€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°­¥¹°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€ì(€€€€€É•ÑÕÉ¸É½Üì(€€€ô°(€€€µ…ÀèÑ½1½…Ñ¥½¸°(€€€É•ÍÁ½¹Í•M¡•µ„è1½…Ñ¥½¹5…ÍÑ•ÉM¡•µ„°(€ô¤ì((€€¼¼€´´´U¹¥Ðµ…ÍÑ•ÉÌ€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((€…ÁÀ¹•Ð (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Õ¹¥ÑÌœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€ÅÕ•ÉåÍÑÉ¥¹œè1¥ÍÑEÕ•ÉåM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèU¹¥Ñ5…ÍÑ•É1¥ÍÑI•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥¹±Õ‘•I•Ñ¥É•€ô™…±Í”ô€ôÉ•ÅÕ•ÍÐ¹ÅÕ•Éä…Ìì(€€€€€€€¥¹±Õ‘•I•Ñ¥É•üè‰½½±•…¸ì(€€€€€ôì(€€€€€½¹ÍÐÉ½ÝÌ€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€€¼¼•™…Õ±ÑÌ…ÁÁ•…È½¸™¥ÉÍÐÉ•…°™½È…¹äµ•µ‰•ÈèÍ••‘¥¹œ¥Ì(€€€€€€€€€€¼¼¥‘•µÁ½Ñ•¹ÐÍåÍÑ•´ÁÉ½Ù¥Í¥½¹¥¹œ°¹½ÐÕÍ•È½¹Ñ•¹ÐƒŠPÍ•”(€€€€€€€€€€¼¼•¹ÍÕÉ••™…Õ±ÑU¹¥ÑÌ¸(€€€€€€€€€…Ý…¥Ð•¹ÍÕÉ••™…Õ±ÑU¹¥ÑÌ¡Ñà°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥¤ì(€€€€€€€€€É•ÑÕÉ¸ÑàñU¹¥ÑI½Ýmtù€(€€€€€€€€€€€Í•±•Ð¥°¹…µ”°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€€€™É½´Õ¹¥Ñ}µ…ÍÑ•ÉÌ(€€€€€€€€€€€Ý¡•É”…Ñ¥Ù”½È€‘í¥¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€€€€€€½É‘•È‰ä±½Ý•È¡¹…µ”¤(€€€€€€€€€€ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ìÕ¹¥ÑÌèÉ½ÝÌ¹µ…À¡Ñ½U¹¥Ð¤ôì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Õ¹¥ÑÌœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€‰½‘äèM…Ù•U¹¥Ñ5…ÍÑ•ÉI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÄèU¹¥Ñ5…ÍÑ•ÉM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ°É•Á±ä¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•U¹¥Ñ5…ÍÑ•ÉI•ÅÕ•ÍÐì(€€€€€½¹ÍÐÕ¹¥Ð€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñU¹¥ÑI½Ýmtù€(€€€€€€€€€€€¥¹Í•ÉÐ¥¹Ñ¼Õ¹¥Ñ}µ…ÍÑ•ÉÌ€¡½É…¹¥Í…Ñ¥½¹}¥°¹…µ”°É•…Ñ•‘}‰å}ÕÍ•É}¥¤(€€€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í‰½‘ä¹¹…µ•ô°€‘íÕÍ•È¹¥‘ô¤(€€€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€€€U9%Q}5MQI}a%MQLœ°(€€€€€€€€€€€€€€€€Õ¹¥ÐÝ¥Ñ Ñ¡¥Ì¹…µ”…±É•…‘ä•á¥ÍÑÌ€¡¥Ðµ…ä‰”É•Ñ¥É•ƒŠPÉ•…Ñ¥Ù…Ñ”¥Ð¥¹ÍÑ•…¤¸œ°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô(€€€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€€€ô¤ì(€€€€€€€€€¥˜€ …É½Ü¤Ñ¡É½Ü¹•ÜÉÉ½È Õ¹¥Ðµ…ÍÑ•È¥¹Í•ÉÐÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€Õ¹¥Ñ}µ…ÍÑ•È¹É•…Ñ•œ°(€€€€€€€€€€€€Õ¹¥Ñ}µ…ÍÑ•ÉÌœ°(€€€€€€€€€€€É½Ü¹¥°(€€€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”ô°(€€€€€€€€€€¤ì(€€€€€€€€€É•ÑÕÉ¸Ñ½U¹¥Ð¡É½Ü¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÄ¤¹Í•¹¡Õ¹¥Ð¤ì(€€€ô°(€€¤ì((€…ÁÀ¹ÁÕÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Õ¹¥ÑÌ¼é¥œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äèM…Ù•U¹¥Ñ5…ÍÑ•ÉI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèU¹¥Ñ5…ÍÑ•ÉM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•U¹¥Ñ5…ÍÑ•ÉI•ÅÕ•ÍÐì(€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñU¹¥ÑI½Ýmtù€(€€€€€€€€€ÕÁ‘…Ñ”Õ¹¥Ñ}µ…ÍÑ•ÉÌÍ•Ð¹…µ”€ô€‘í‰½‘ä¹¹…µ•ô(€€€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€U9%Q}5MQI}a%MQLœ°(€€€€€€€€€€€€€€¹½Ñ¡•ÈÕ¹¥Ð…±É•…‘ä…ÉÉ¥•ÌÑ¡¥Ì¹…µ”¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€ô¤ì(€€€€€€€¥˜€ …É½Ü¤Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€U9%Q}5MQI}9=Q}=U9œ°€9¼ÍÕ Õ¹¥Ð¸œ¤ì(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€Õ¹¥Ñ}µ…ÍÑ•È¹ÕÁ‘…Ñ•œ°(€€€€€€€€€€Õ¹¥Ñ}µ…ÍÑ•ÉÌœ°(€€€€€€€€€¥°(€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸Ñ½U¹¥Ð¡É½Ü¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€É•¥ÍÑ•ÉÑ¥Ù•Q½±”ñU¹¥ÑI½Ü°U¹¥Ñ5…ÍÑ•Èø¡ì(€€€Á…Ñ è€œ½…Á¤½µ…ÍÑ•ÉÌ½Õ¹¥ÑÌœ°(€€€•¹Ñ¥Ñäè€Õ¹¥Ñ}µ…ÍÑ•Èœ°(€€€•¹Ñ¥ÑåQåÁ”è€Õ¹¥Ñ}µ…ÍÑ•ÉÌœ°(€€€¹½Ñ½Õ¹‘½‘”è€U9%Q}5MQI}9=Q}=U9œ°(€€€¹½Ñ½Õ¹‘5•ÍÍ…”è€9¼ÍÕ Õ¹¥Ð¸œ°(€€€ÕÁ‘…Ñ”è…Íå¹Œ€¡Ñà°¥°…Ñ¥Ù”¤€ôøì(€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñU¹¥ÑI½Ýmtù€(€€€€€€€ÕÁ‘…Ñ”Õ¹¥Ñ}µ…ÍÑ•ÉÌÍ•Ð…Ñ¥Ù”€ô€‘í…Ñ¥Ù•ô(€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€ì(€€€€€É•ÑÕÉ¸É½Üì(€€€ô°(€€€µ…ÀèÑ½U¹¥Ð°(€€€É•ÍÁ½¹Í•M¡•µ„èU¹¥Ñ5…ÍÑ•ÉM¡•µ„°(€ô¤ì((€€¼¼€´´´=É…¹¥Í…Ñ¥½¸Í¥¹…Ñ½É¥•Ì€´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´´((€…ÁÀ¹•Ð (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Í¥¹…Ñ½É¥•Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€ÅÕ•ÉåÍÑÉ¥¹œè1¥ÍÑEÕ•ÉåM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèM¥¹…Ñ½Éå1¥ÍÑI•ÍÁ½¹Í•M¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥¹±Õ‘•I•Ñ¥É•€ô™…±Í”ô€ôÉ•ÅÕ•ÍÐ¹ÅÕ•Éä…Ìì(€€€€€€€¥¹±Õ‘•I•Ñ¥É•üè‰½½±•…¸ì(€€€€€ôì(€€€€€½¹ÍÐÉ½ÝÌ€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøÑàñM¥¹…Ñ½ÉåI½Ýmtù€(€€€€€€€€€Í•±•Ð¥°¹…µ”°‘•Í¥¹…Ñ¥½¸°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€™É½´½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ì(€€€€€€€€€Ý¡•É”…Ñ¥Ù”½È€‘í¥¹±Õ‘•I•Ñ¥É•‘ô(€€€€€€€€€½É‘•È‰ä±½Ý•È¡¹…µ”¤°±½Ý•È¡‘•Í¥¹…Ñ¥½¸¤(€€€€€€€€°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ìÍ¥¹…Ñ½É¥•ÌèÉ½ÝÌ¹µ…À¡Ñ½M¥¹…Ñ½Éä¤ôì(€€€ô°(€€¤ì((€…ÁÀ¹Á½ÍÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Í¥¹…Ñ½É¥•Ìœ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€‰½‘äèM…Ù•M¥¹…Ñ½ÉåI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÄèM¥¹…Ñ½ÉåM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ°É•Á±ä¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•M¥¹…Ñ½ÉåI•ÅÕ•ÍÐì(€€€€€½¹ÍÐÍ¥¹…Ñ½Éä€ô…Ý…¥ÐÝ¥Ñ¡	½Õ¹‘Q•¹…¹Ð (€€€€€€€‘…Ñ…‰…Í”°(€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€ÕÍ•È¹¥°(€€€€€€€…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñM¥¹…Ñ½ÉåI½Ýmtù€(€€€€€€€€€€€¥¹Í•ÉÐ¥¹Ñ¼½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ì€ (€€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}¥°¹…µ”°‘•Í¥¹…Ñ¥½¸°É•…Ñ•‘}‰å}ÕÍ•É}¥(€€€€€€€€€€€€¤(€€€€€€€€€€€Ù…±Õ•Ì€ ‘í½É…¹¥Í…Ñ¥½¹%‘ô°€‘í‰½‘ä¹¹…µ•ô°€‘í‰½‘ä¹‘•Í¥¹…Ñ¥½¹ô°€‘íÕÍ•È¹¥‘ô¤(€€€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°‘•Í¥¹…Ñ¥½¸°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€€€M%9Q=Ie}a%MQLœ°(€€€€€€€€€€€€€€€€Í¥¹…Ñ½ÉäÝ¥Ñ Ñ¡¥Ì¹…µ”…¹‘•Í¥¹…Ñ¥½¸…±É•…‘ä•á¥ÍÑÌ€¡Ñ¡•äµ…ä‰”É•Ñ¥É•ƒŠPÉ•…Ñ¥Ù…Ñ”Ñ¡•´¥¹ÍÑ•…¤¸œ°(€€€€€€€€€€€€€€¤ì(€€€€€€€€€€€ô(€€€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€€€ô¤ì(€€€€€€€€€¥˜€ …É½Ü¤Ñ¡É½Ü¹•ÜÉÉ½È Í¥¹…Ñ½Éä¥¹Í•ÉÐÉ•ÑÕÉ¹•¹¼É½Üœ¤ì(€€€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€€€Ñà°(€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€€€Í¥¹…Ñ½Éä¹É•…Ñ•œ°(€€€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ìœ°(€€€€€€€€€€€É½Ü¹¥°(€€€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”°‘•Í¥¹…Ñ¥½¸è‰½‘ä¹‘•Í¥¹…Ñ¥½¸ô°(€€€€€€€€€€¤ì(€€€€€€€€€É•ÑÕÉ¸Ñ½M¥¹…Ñ½Éä¡É½Ü¤ì(€€€€€€€ô°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸É•Á±ä¹ÍÑ…ÑÕÌ ÈÀÄ¤¹Í•¹¡Í¥¹…Ñ½Éä¤ì(€€€ô°(€€¤ì((€…ÁÀ¹ÁÕÐ (€€€€œ½…Á¤½µ…ÍÑ•ÉÌ½Í¥¹…Ñ½É¥•Ì¼é¥œ°(€€€ì(€€€€€Í¡•µ„èì(€€€€€€€Á…É…µÌè%‘A…É…µÍM¡•µ„°(€€€€€€€‰½‘äèM…Ù•M¥¹…Ñ½ÉåI•ÅÕ•ÍÑM¡•µ„°(€€€€€€€É•ÍÁ½¹Í”èì€ÈÀÀèM¥¹…Ñ½ÉåM¡•µ„°€¸¸¹•ÉÉ½ÉI•ÍÁ½¹Í•Ìô°(€€€€€ô°(€€€ô°(€€€…Íå¹Œ€¡É•ÅÕ•ÍÐ¤€ôøì(€€€€€½¹ÍÐÕÍ•È€ô…Ý…¥ÐÉ•ÅÕ¥É•UÍ•È¡…ÕÑ °É•ÅÕ•ÍÐ¤ì(€€€€€½¹ÍÐ½É…¹¥Í…Ñ¥½¹%€ôÉ•ÅÕ¥É•=É…¹¥Í…Ñ¥½¹!•…‘•È (€€€€€€€É•ÅÕ•ÍÐ¹¡•…‘•ÉÍlàµ½É…¹¥Í…Ñ¥½¸µ¥t°(€€€€€€¤ì(€€€€€½¹ÍÐì¥ô€ôÉ•ÅÕ•ÍÐ¹Á…É…µÌ…Ìì¥èÍÑÉ¥¹œôì(€€€€€½¹ÍÐ‰½‘ä€ôÉ•ÅÕ•ÍÐ¹‰½‘ä…ÌM…Ù•M¥¹…Ñ½ÉåI•ÅÕ•ÍÐì(€€€€€É•ÑÕÉ¸Ý¥Ñ¡	½Õ¹‘Q•¹…¹Ð¡‘…Ñ…‰…Í”°½É…¹¥Í…Ñ¥½¹%°ÕÍ•È¹¥°…Íå¹Œ€¡Ñà¤€ôøì(€€€€€€€…Ý…¥ÐÉ•ÅÕ¥É•]É¥Ñ•ÉI½±”¡Ñà°ÕÍ•È¹¥¤ì(€€€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñM¥¹…Ñ½ÉåI½Ýmtù€(€€€€€€€€€ÕÁ‘…Ñ”½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ì(€€€€€€€€€Í•Ð¹…µ”€ô€‘í‰½‘ä¹¹…µ•ô°‘•Í¥¹…Ñ¥½¸€ô€‘í‰½‘ä¹‘•Í¥¹…Ñ¥½¹ô(€€€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°‘•Í¥¹…Ñ¥½¸°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€€€¹…Ñ  ¡•ÉÉ½ÈèÕ¹­¹½Ý¸¤€ôøì(€€€€€€€€€¥˜€¡¥ÍU¹¥ÅÕ•Y¥½±…Ñ¥½¸¡•ÉÉ½È¤¤ì(€€€€€€€€€€€Ñ¡É½Ü¡ÑÑÁÉÉ½È (€€€€€€€€€€€€€€ÐÀä°(€€€€€€€€€€€€€€M%9Q=Ie}a%MQLœ°(€€€€€€€€€€€€€€¹½Ñ¡•ÈÍ¥¹…Ñ½Éä…±É•…‘ä…ÉÉ¥•ÌÑ¡¥Ì¹…µ”…¹‘•Í¥¹…Ñ¥½¸¸œ°(€€€€€€€€€€€€¤ì(€€€€€€€€€ô(€€€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€€€ô¤ì(€€€€€€€¥˜€ …É½Ü¤Ñ¡É½Ü¡ÑÑÁÉÉ½È ÐÀÐ°€M%9Q=Ie}9=Q}=U9œ°€9¼ÍÕ Í¥¹…Ñ½Éä¸œ¤ì(€€€€€€€…Ý…¥Ð…Õ‘¥Ð (€€€€€€€€€Ñà°(€€€€€€€€€½É…¹¥Í…Ñ¥½¹%°(€€€€€€€€€ÕÍ•È¹¥°(€€€€€€€€€€Í¥¹…Ñ½Éä¹ÕÁ‘…Ñ•œ°(€€€€€€€€€€½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ìœ°(€€€€€€€€€¥°(€€€€€€€€€ì¹…µ”è‰½‘ä¹¹…µ”°‘•Í¥¹…Ñ¥½¸è‰½‘ä¹‘•Í¥¹…Ñ¥½¸ô°(€€€€€€€€¤ì(€€€€€€€É•ÑÕÉ¸Ñ½M¥¹…Ñ½Éä¡É½Ü¤ì(€€€€€ô¤ì(€€€ô°(€€¤ì((€É•¥ÍÑ•ÉÑ¥Ù•Q½±”ñM¥¹…Ñ½ÉåI½Ü°M¥¹…Ñ½Éäø¡ì(€€€Á…Ñ è€œ½…Á¤½µ…ÍÑ•ÉÌ½Í¥¹…Ñ½É¥•Ìœ°(€€€•¹Ñ¥Ñäè€Í¥¹…Ñ½Éäœ°(€€€•¹Ñ¥ÑåQåÁ”è€½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•Ìœ°(€€€¹½Ñ½Õ¹‘½‘”è€M%9Q=Ie}9=Q}=U9œ°(€€€¹½Ñ½Õ¹‘5•ÍÍ…”è€9¼ÍÕ Í¥¹…Ñ½Éä¸œ°(€€€ÕÁ‘…Ñ”è…Íå¹Œ€¡Ñà°¥°…Ñ¥Ù”¤€ôøì(€€€€€½¹ÍÐmÉ½Ýt€ô…Ý…¥ÐÑàñM¥¹…Ñ½ÉåI½Ýmtù€(€€€€€€€ÕÁ‘…Ñ”½É…¹¥Í…Ñ¥½¹}Í¥¹…Ñ½É¥•ÌÍ•Ð…Ñ¥Ù”€ô€‘í…Ñ¥Ù•ô(€€€€€€€Ý¡•É”¥€ô€‘í¥‘ô(€€€€€€€É•ÑÕÉ¹¥¹œ¥°¹…µ”°‘•Í¥¹…Ñ¥½¸°…Ñ¥Ù”°É•…Ñ•‘}…Ð(€€€€€€ì(€€€€€É•ÑÕÉ¸É½Üì(€€€ô°(€€€µ…ÀèÑ½M¥¹…Ñ½Éä°(€€€É•ÍÁ½¹Í•M¡•µ„èM¥¹…Ñ½ÉåM¡•µ„°(€ô¤ì)ô(
+              ${body.pincode ?? null}, ${body.stateCode ?? null}, ${locality},
+              ${body.divisionCode ?? null},
+              ${isConsignee}, ${isVendor}, ${isClient},
+              ${user.id}
+            )
+            returning ${tx.unsafe(CONTACT_COLUMNS)}
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'CONTACT_EXISTS',
+                'An active contact with this designation and address already exists.',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('contact insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'contact.created',
+            'contacts',
+            row.id,
+            { designation: body.designation, roles },
+          );
+          return toContact(row);
+        },
+      );
+      return reply.status(201).send(contact);
+    },
+  );
+
+  app.put(
+    '/api/masters/contacts/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveContactRequestSchema,
+        response: { 200: ContactSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SaveContactRequest;
+      const gstin = normaliseGstin(body.gstin);
+      const email = normaliseEmail(body.email);
+      const locality = body.locality?.trim() ?? null;
+      if (body.locality !== undefined && body.locality.trim().length < 2) {
+        throw httpError(
+          400,
+          'LOCALITY_INVALID',
+          'Locality must contain at least two non-space characters.',
+        );
+      }
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        // The consignee role is a create-time fact an update never
+        // changes, and the R16 refusal follows it: a rename must not
+        // smuggle an authority designation onto a consignee-role contact,
+        // while a vendor/client keeps whatever name its letterhead
+        // carries. The stored flag decides, so it is read first.
+        const [existing] = await tx<{ is_consignee: boolean }[]>`
+          select is_consignee from contacts where id = ${id}
+        `;
+        if (!existing) {
+          throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+        }
+        if (existing.is_consignee) assertNotAuthorityDesignation(body.designation);
+        // Vendor/client are membership, not profile text: an omitted flag
+        // keeps its stored value (the web profile form need not know
+        // about roles to be safe), an explicit false clears it.
+        const [row] = await tx<ContactRow[]>`
+          update contacts
+          set designation = ${body.designation},
+              contact_person = ${body.contactPerson ?? null},
+              address = ${body.address ?? null}, phone = ${body.phone ?? null},
+              email = ${email}, gstin = ${gstin},
+              pincode = ${body.pincode ?? null},
+              state_code = ${body.stateCode ?? null},
+              locality = ${locality},
+              division_code = ${body.divisionCode ?? null},
+              is_vendor = coalesce(${body.isVendor ?? null}, is_vendor),
+              is_client = coalesce(${body.isClient ?? null}, is_client)
+          where id = ${id}
+          returning ${tx.unsafe(CONTACT_COLUMNS)}
+        `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'CONTACT_EXISTS',
+              'Another active contact already carries this designation and address.',
+            );
+          }
+          throw error;
+        });
+        if (!row) {
+          throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+        }
+        await audit(tx, organisationId, user.id, 'contact.updated', 'contacts', id, {
+          designation: body.designation,
+          ...(body.isVendor !== undefined ? { isVendor: body.isVendor } : {}),
+          ...(body.isClient !== undefined ? { isClient: body.isClient } : {}),
+        });
+        return toContact(row);
+      });
+    },
+  );
+
+  registerActiveToggle<ContactRow, Contact>({
+    path: '/api/masters/contacts',
+    entity: 'contact',
+    entityType: 'contacts',
+    notFoundCode: 'CONTACT_NOT_FOUND',
+    notFoundMessage: 'No such contact.',
+    update: async (tx, id, active) => {
+      // Uniqueness is scoped to ACTIVE rows (0028), so reactivating can
+      // collide with a live twin created meanwhile â€” answer 409 rather
+      // than resurrecting a duplicate.
+      const [row] = await tx<ContactRow[]>`
+        update contacts set active = ${active}
+        where id = ${id}
+        returning ${tx.unsafe(CONTACT_COLUMNS)}
+      `.catch((error: unknown) => {
+        if (isUniqueViolation(error)) {
+          throw httpError(
+            409,
+            'CONTACT_EXISTS',
+            'An active contact with this designation and address already exists; retire it first or edit this one.',
+          );
+        }
+        throw error;
+      });
+      return row;
+    },
+    map: toContact,
+    responseSchema: ContactSchema,
+  });
+
+  // --- Work <-> consignee association (R16) ---------------------------------
+  //
+  // "A work may have many consignees; the challan picks one." The linked
+  // set is offered FIRST in the challan and PAC pickers; any active
+  // consignee contact remains selectable â€” the association is
+  // organisational convenience, never a restriction (legacy allowed any
+  // consignee on any challan). Removing a link deletes nothing but the
+  // preference: every issued document keeps its own snapshot.
+
+  const WorkConsigneeParamsSchema = Type.Object(
+    {
+      id: Type.String({
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      }),
+      contactId: Type.String({
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      }),
+    },
+    { additionalProperties: false },
+  );
+
+  async function requireWork(tx: TransactionSql, workId: string): Promise<void> {
+    const [work] = await tx<{ id: string }[]>`
+      select id from works where id = ${workId} and deleted_at is null
+    `;
+    if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  }
+
+  app.get(
+    '/api/works/:id/consignees',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: WorkConsigneeListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          await requireWork(tx, workId);
+          return tx<ContactRow[]>`
+            select c.id, c.designation, c.contact_person, c.address, c.phone,
+                   c.email, c.gstin, c.pincode, c.state_code, c.locality,
+                   c.division_code,
+                   c.is_consignee, c.is_vendor, c.is_client, c.active,
+                   c.created_at
+            from work_consignees wc
+            join contacts c on c.organisation_id = wc.organisation_id
+              and c.id = wc.contact_id
+            where wc.work_id = ${workId}
+            order by lower(c.designation), lower(coalesce(c.address, ''))
+          `;
+        },
+      );
+      return { consignees: rows.map(toContact) };
+    },
+  );
+
+  app.post(
+    '/api/works/:id/consignees',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: LinkWorkConsigneeRequestSchema,
+        response: { 201: ContactSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as LinkWorkConsigneeRequest;
+      const contact = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          await requireWork(tx, workId);
+          const [row] = await tx<ContactRow[]>`
+            select ${tx.unsafe(CONTACT_COLUMNS)} from contacts
+            where id = ${body.contactId}
+          `;
+          if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+          if (!row.is_consignee) {
+            // Vendor/client-role contacts exist now (procurement wave) and
+            // must not join a Work's consignee list; the 0028 trigger
+            // backstops the same rule (R16) in the database.
+            throw httpError(
+              409,
+              'CONTACT_NOT_CONSIGNEE',
+              'Only consignee-role contacts can be linked to a Work (R16).',
+            );
+          }
+          if (!row.active) {
+            throw httpError(
+              409,
+              'CONTACT_RETIRED',
+              'This contact is retired â€” reactivate it or pick another.',
+            );
+          }
+          await tx`
+            insert into work_consignees (
+              organisation_id, work_id, contact_id, created_by_user_id
+            )
+            values (${organisationId}, ${workId}, ${body.contactId}, ${user.id})
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'WORK_CONSIGNEE_EXISTS',
+                'This consignee is already linked to the Work.',
+              );
+            }
+            throw error;
+          });
+          // Audited against the Work so the link shows up in the Work's
+          // timeline alongside the documents that used it.
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work.consignee_linked',
+            'works',
+            workId,
+            { contactId: body.contactId, designation: row.designation },
+          );
+          return toContact(row);
+        },
+      );
+      return reply.status(201).send(contact);
+    },
+  );
+
+  app.delete(
+    '/api/works/:id/consignees/:contactId',
+    {
+      schema: {
+        params: WorkConsigneeParamsSchema,
+        response: { 204: Type.Null(), ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId, contactId } = request.params as {
+        id: string;
+        contactId: string;
+      };
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertWorkAccess(tx, user.id, workId);
+        const removed = await tx`
+          delete from work_consignees
+          where work_id = ${workId} and contact_id = ${contactId}
+        `;
+        if (removed.count === 0) {
+          throw httpError(
+            404,
+            'WORK_CONSIGNEE_NOT_FOUND',
+            'This consignee is not linked to the Work.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'work.consignee_unlinked',
+          'works',
+          workId,
+          { contactId },
+        );
+      });
+      return reply.status(204).send();
+    },
+  );
+
+  // --- Location masters -----------------------------------------------------
+
+  app.get(
+    '/api/masters/locations',
+    {
+      schema: {
+        querystring: ListQuerySchema,
+        response: { 200: LocationMasterListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { includeRetired = false } = request.query as {
+        includeRetired?: boolean;
+      };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => tx<LocationRow[]>`
+          select id, name, kind, active, created_at
+          from location_masters
+          where active or ${includeRetired}
+          order by lower(name), kind
+        `,
+      );
+      return { locations: rows.map(toLocation) };
+    },
+  );
+
+  app.post(
+    '/api/masters/locations',
+    {
+      schema: {
+        body: SaveLocationMasterRequestSchema,
+        response: { 201: LocationMasterSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const body = request.body as SaveLocationMasterRequest;
+      const location = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const [row] = await tx<LocationRow[]>`
+            insert into location_masters (
+              organisation_id, name, kind, created_by_user_id
+            )
+            values (${organisationId}, ${body.name}, ${body.kind}, ${user.id})
+            returning id, name, kind, active, created_at
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'LOCATION_MASTER_EXISTS',
+                'A location with this name and kind already exists (it may be retired â€” reactivate it instead).',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('location master insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'location_master.created',
+            'location_masters',
+            row.id,
+            { name: body.name, kind: body.kind },
+          );
+          return toLocation(row);
+        },
+      );
+      return reply.status(201).send(location);
+    },
+  );
+
+  app.put(
+    '/api/masters/locations/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveLocationMasterRequestSchema,
+        response: { 200: LocationMasterSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SaveLocationMasterRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const [row] = await tx<LocationRow[]>`
+          update location_masters
+          set name = ${body.name}, kind = ${body.kind}
+          where id = ${id}
+          returning id, name, kind, active, created_at
+        `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'LOCATION_MASTER_EXISTS',
+              'Another location already carries this name and kind.',
+            );
+          }
+          throw error;
+        });
+        if (!row) {
+          throw httpError(404, 'LOCATION_MASTER_NOT_FOUND', 'No such location.');
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'location_master.updated',
+          'location_masters',
+          id,
+          { name: body.name, kind: body.kind },
+        );
+        return toLocation(row);
+      });
+    },
+  );
+
+  registerActiveToggle<LocationRow, LocationMaster>({
+    path: '/api/masters/locations',
+    entity: 'location_master',
+    entityType: 'location_masters',
+    notFoundCode: 'LOCATION_MASTER_NOT_FOUND',
+    notFoundMessage: 'No such location.',
+    update: async (tx, id, active) => {
+      const [row] = await tx<LocationRow[]>`
+        update location_masters set active = ${active}
+        where id = ${id}
+        returning id, name, kind, active, created_at
+      `;
+      return row;
+    },
+    map: toLocation,
+    responseSchema: LocationMasterSchema,
+  });
+
+  // --- Unit masters ---------------------------------------------------------
+
+  app.get(
+    '/api/masters/units',
+    {
+      schema: {
+        querystring: ListQuerySchema,
+        response: { 200: UnitMasterListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { includeRetired = false } = request.query as {
+        includeRetired?: boolean;
+      };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          // Defaults appear on first read, for any member: seeding is
+          // idempotent system provisioning, not user content â€” see
+          // ensureDefaultUnits.
+          await ensureDefaultUnits(tx, organisationId, user.id);
+          return tx<UnitRow[]>`
+            select id, name, active, created_at
+            from unit_masters
+            where active or ${includeRetired}
+            order by lower(name)
+          `;
+        },
+      );
+      return { units: rows.map(toUnit) };
+    },
+  );
+
+  app.post(
+    '/api/masters/units',
+    {
+      schema: {
+        body: SaveUnitMasterRequestSchema,
+        response: { 201: UnitMasterSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const body = request.body as SaveUnitMasterRequest;
+      const unit = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const [row] = await tx<UnitRow[]>`
+            insert into unit_masters (organisation_id, name, created_by_user_id)
+            values (${organisationId}, ${body.name}, ${user.id})
+            returning id, name, active, created_at
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'UNIT_MASTER_EXISTS',
+                'A unit with this name already exists (it may be retired â€” reactivate it instead).',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('unit master insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'unit_master.created',
+            'unit_masters',
+            row.id,
+            { name: body.name },
+          );
+          return toUnit(row);
+        },
+      );
+      return reply.status(201).send(unit);
+    },
+  );
+
+  app.put(
+    '/api/masters/units/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveUnitMasterRequestSchema,
+        response: { 200: UnitMasterSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SaveUnitMasterRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const [row] = await tx<UnitRow[]>`
+          update unit_masters set name = ${body.name}
+          where id = ${id}
+          returning id, name, active, created_at
+        `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'UNIT_MASTER_EXISTS',
+              'Another unit already carries this name.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw httpError(404, 'UNIT_MASTER_NOT_FOUND', 'No such unit.');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'unit_master.updated',
+          'unit_masters',
+          id,
+          { name: body.name },
+        );
+        return toUnit(row);
+      });
+    },
+  );
+
+  registerActiveToggle<UnitRow, UnitMaster>({
+    path: '/api/masters/units',
+    entity: 'unit_master',
+    entityType: 'unit_masters',
+    notFoundCode: 'UNIT_MASTER_NOT_FOUND',
+    notFoundMessage: 'No such unit.',
+    update: async (tx, id, active) => {
+      const [row] = await tx<UnitRow[]>`
+        update unit_masters set active = ${active}
+        where id = ${id}
+        returning id, name, active, created_at
+      `;
+      return row;
+    },
+    map: toUnit,
+    responseSchema: UnitMasterSchema,
+  });
+
+  // --- Organisation signatories ---------------------------------------------
+
+  app.get(
+    '/api/masters/signatories',
+    {
+      schema: {
+        querystring: ListQuerySchema,
+        response: { 200: SignatoryListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { includeRetired = false } = request.query as {
+        includeRetired?: boolean;
+      };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => tx<SignatoryRow[]>`
+          select id, name, designation, active, created_at
+          from organisation_signatories
+          where active or ${includeRetired}
+          order by lower(name), lower(designation)
+        `,
+      );
+      return { signatories: rows.map(toSignatory) };
+    },
+  );
+
+  app.post(
+    '/api/masters/signatories',
+    {
+      schema: {
+        body: SaveSignatoryRequestSchema,
+        response: { 201: SignatorySchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const body = request.body as SaveSignatoryRequest;
+      const signatory = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const [row] = await tx<SignatoryRow[]>`
+            insert into organisation_signatories (
+              organisation_id, name, designation, created_by_user_id
+            )
+            values (${organisationId}, ${body.name}, ${body.designation}, ${user.id})
+            returning id, name, designation, active, created_at
+          `.catch((error: unknown) => {
+            if (isUniqueViolation(error)) {
+              throw httpError(
+                409,
+                'SIGNATORY_EXISTS',
+                'A signatory with this name and designation already exists (they may be retired â€” reactivate them instead).',
+              );
+            }
+            throw error;
+          });
+          if (!row) throw new Error('signatory insert returned no row');
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'signatory.created',
+            'organisation_signatories',
+            row.id,
+            { name: body.name, designation: body.designation },
+          );
+          return toSignatory(row);
+        },
+      );
+      return reply.status(201).send(signatory);
+    },
+  );
+
+  app.put(
+    '/api/masters/signatories/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveSignatoryRequestSchema,
+        response: { 200: SignatorySchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SaveSignatoryRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const [row] = await tx<SignatoryRow[]>`
+          update organisation_signatories
+          set name = ${body.name}, designation = ${body.designation}
+          where id = ${id}
+          returning id, name, designation, active, created_at
+        `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'SIGNATORY_EXISTS',
+              'Another signatory already carries this name and designation.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw httpError(404, 'SIGNATORY_NOT_FOUND', 'No such signatory.');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'signatory.updated',
+          'organisation_signatories',
+          id,
+          { name: body.name, designation: body.designation },
+        );
+        return toSignatory(row);
+      });
+    },
+  );
+
+  registerActiveToggle<SignatoryRow, Signatory>({
+    path: '/api/masters/signatories',
+    entity: 'signatory',
+    entityType: 'organisation_signatories',
+    notFoundCode: 'SIGNATORY_NOT_FOUND',
+    notFoundMessage: 'No such signatory.',
+    update: async (tx, id, active) => {
+      const [row] = await tx<SignatoryRow[]>`
+        update organisation_signatories set active = ${active}
+        where id = ${id}
+        returning id, name, designation, active, created_at
+      `;
+      return row;
+    },
+    map: toSignatory,
+    responseSchema: SignatorySchema,
+  });
+}

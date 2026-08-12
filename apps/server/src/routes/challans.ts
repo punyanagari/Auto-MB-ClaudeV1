@@ -415,4 +415,1231 @@ export async function reopenClosedPurchaseOrders(
 ): Promise<void> {
   for (const order of linkedOrders) {
     if (order.status !== 'closed') continue;
-    awa×^yîÚ$z{-®éÜj×&—F–öå÷6æ6†÷BÀ¢Væ—C¢Æ–æRçVæ—E÷6æ6†÷BÀ¢VçF—G“¢Æ–æRçVçF—G’À¢&FS¢6æöæ–6Å&FUFW‡B†Æ–æRç&FU÷6æ6†÷B’À¢Æ–æTÖ÷VçC¢Æ–æRæÆ–æUöÖ÷VçBÀ¢Ò’’À¢F÷FÄÖ÷VçC¢F÷FÃòæÖ÷VçBóòsãrÀ¢âââ‡v'&çG’ÓÒVæFVf–æVBò²v'&çG’Ò¢·Ò’À¢Ó° ¢v—BG† ¢WFFRFVÆ—fW'•ö6†ÆÆç0¢6WB7FGW2Òv—77VVBrÂ6†ÆÆåöçVÖ&W"ÒG¶6†ÆÆäçVÖ&W'ÒÀ¢6WVVæ6UöçVÖ&W"ÒG·6WVVæ6WÒÀ¢—77VVE÷6æ6†÷BÒG¶§6öæ"‡G‚Â6æ6†÷B—ÒÀ¢—77VVEö'•÷W6W%ö–BÒG·W6W"æ–GÒÂ—77VVEöBÒG¶—77VVDGÒÀ¢FV×ÆFU÷fW'6–öâÒG´4„ÄÄåõDTÕÄDUõdU%4”ôçÒÀ¢v'&çG•÷FV×ÆFU÷fW'6–öâÒG·v'&çG“òçFV×ÆFUfW'6–öâóòçVÆÇÒÀ¢v'&çG•÷FW‡E÷6†#SbÒG·v'&çG“òçFW‡E6†#SbóòçVÆÇĞ¢v†W&R–BÒG¶–GĞ¢æ6F6‚‚†W'&÷#¢Væ¶æ÷vâ’Óâ°¢–b†W'&÷"–ç7Fæ6VöbW'&÷"bbv6öFRr–âW'&÷"bbW'&÷"æ6öFRÓÓÒs#3SRr’°¢F‡&÷r‡GGW'&÷"€¢C’À¢tåTÔ$U%ô4ôädÄ”5BrÀ¢6†ÆÆâçVÖ&W"G¶6†ÆÆäçVÖ&W'ÒÇ&VG’W†—7G2–âF†—2÷&væ—6F–öã²W6RF—7F–æ7B&Vf—‚f÷"F†—2v÷&²æÀ¢“°¢Ğ¢F‡&÷rW'&÷#°¢Ò“° ¢v—BVF—D6†ÆÆâ‡G‚Â÷&væ—6F–öä–BÂW6W"æ–BÂv6†ÆÆâæ—77VVBrÂ–BÂ°¢6†ÆÆäçVÖ&W"À¢6WVVæ6RÀ¢F÷FÄÖ÷VçC¢6æ6†÷BçF÷FÄÖ÷VçBÀ¢Ò“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢ÒÀ¢“°¢&WGW&â&WÇ’ç7FGW2ƒ#’ç6VæB†FWF–Â“°¢ÒÀ¢“° ¢ç÷7B€¢rö’ö6†ÆÆç2ó¦–Bö6æ6VÂrÀ¢°¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&öG“¢6æ6VÄ6†ÆÆå&WVW7E66†VÖÀ¢&W7öç6S¢²#¢6†ÆÆäFWF–Å&W7öç6U66†VÖÂââæW'&÷%&W7öç6W2ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7B’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B&öG’Ò&WVW7Bæ&öG’26æ6VÄ6†ÆÆå&WVW7C°¢6öç7Bæ÷FRÒ6æ6VÆÆF–öäæ÷FR†&öG’ææ÷FR“°¢&WGW&âv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢v—B&WV—&TWF†÷&—G’‡G‚ÂW6W"æ–BÂv6æ6VÂr“°¢6öç7B¶6†ÆÆå&VeÒÒv—BGƒÇ²v÷&µö–C¢7G&–ærÕµÓæ ¢6VÆV7Bv÷&µö–Bg&öÒFVÆ—fW'•ö6†ÆÆç2v†W&R–BÒG¶–GĞ¢°¢–b‚6†ÆÆå&Vb’°¢F‡&÷r‡GGW'&÷"ƒCBÂt4„ÄÄåôäõEôdõTäBrÂtæò7V6‚FVÆ—fW'’6†ÆÆââr“°¢Ğ¢v—B76W'Ev÷&´66W72‡G‚ÂW6W"æ–BÂ6†ÆÆå&Vbçv÷&µö–B“°¢òò6Æ÷6–æròÆö6·2W&6†6Uö÷&FW'2ÓâÆ–æ¶VBFVÆ—fW'•ö6†ÆÆç2à¢òòF¶RF†R–FVçF–6Â÷&FW"†W&R&Vf÷&RÆö6¶–ærF†—26†ÆÆâÂ6ò¢òò&V6V—B&VÆV6R6â&V÷VâWfW'’ffV7FVBòv—F†÷WBFVFÆö6²à¢òò—77VVB6†ÆÆâÆ–æW2&R–Ö×WF&ÆS²F†R6V6öæB&VB&VÆ÷rFWFV7G0¢òòâW†6WF–öæÂ6öæ7W'&VçB&rÕ5ÂÆ–æ²6†ævRæBf–Ç2Fò&WG'’à¢6öç7BÆ–æ¶VD÷&FW'2Òv—BÆö6´Æ–æ¶VEW&6†6T÷&FW'4f÷$6†ÆÆâ‡G‚Â–B“°¢6öç7B6†ÆÆâÒv—BÆö6´6†ÆÆâ‡G‚Â–B“°¢v—B76W'Ev÷&´66W72‡G‚ÂW6W"æ–BÂ6†ÆÆâçv÷&µö–B“°¢&WV—&U7FGW2†6†ÆÆâÂv—77VVBr“°¢v—B76W'DÆ–æ¶VEW&6†6T÷&FW$Æö6·47W'&VçB‡G‚Â–BÂÆ–æ¶VD÷&FW'2“°¢òò#ƒ¢6æ6VÆÆ–ærF†—26†ÆÆâv÷VÆBG&÷F†RFVÆ—fW&VBVçF—G¢òòF†R6ö×ÆWF–öâ&VF–6FRv2ÖV7W&VBv–ç7BÂÆVf–ærv÷&°¢òòF†B6—2v6ö×ÆWFVBr&VÆ÷rRW†V7WFVBâÆö6²÷&FW"—2F†P¢òò7&VF–öâF‡2r(	BFö7VÖVçB&÷rf—'7BÂF†Vâv÷&·2(	B6ò6æ6VÀ¢òòæB6ö×ÆWF–öâ6W&–Æ—6R–ç7FVBöbFVFÆö6¶–ærÂæBF†R3 ¢òò6†ÆÆâ×WFFRwV&B&6·7F÷2F†R&VgW6Â–âF†RFF&6Rà¢6öç7B·v÷&µÒÒv—BGƒÇ²7FGW3¢7G&–ærÕµÓæ ¢6VÆV7B7FGW2g&öÒv÷&·0¢v†W&R–BÒG¶6†ÆÆâçv÷&µö–GÒæBFVÆWFVEöB—2çVÆÀ¢f÷"WFFP¢°¢–b‚v÷&²’F‡&÷r‡GGW'&÷"ƒCBÂutõ$µôäõEôdõTäBrÂtæò7V6‚v÷&²âr“°¢76W'Ev÷&´÷W&&ÆR‡v÷&²ç7FGW2Âv6æ6VÆÆ–ærFVÆ—fW'’6†ÆÆâr“°¢òò&V6V—fVBvööG26ææ÷B&RVâÖFVÆ—fW&VC¢öæ6R&V6V—BÂ6W&–ÂÀ¢òò÷"ÖV7W&VÖVçB&öö²VçG'’&VfW&Væ6W2F†—26†ÆÆâÂ6æ6VÆÆF–öà¢òò—2f÷&&–FFVâ‡öÆ–7’##bÓ‚Óƒ²F†RD"G&–vvW"&6·2F†—2W’à¢6öç7B¶Wf–FVæ6UÒÒv—BGƒÀ¢²&V6V—G3¢7G&–æs²6W&–Ç3¢7G&–æs²ÖV7W&VÖVçG3¢7G&–ærÕµĞ¢æ ¢6VÆV7@¢‡6VÆV7B6÷VçB‚¢’g&öÒ6†ÆÆå÷&V6V—G0¢v†W&RFVÆ—fW'•ö6†ÆÆåö–BÒG¶–GÒ“£§FW‡B2&V6V—G2À¢‡6VÆV7B6÷VçB‚¢’g&öÒ6†ÆÆåö—FVÕ÷6W&–Ç0¢v†W&RFVÆ—fW'•ö6†ÆÆåö–BÒG¶–GÒ“£§FW‡B26W&–Ç2À¢‡6VÆV7B6÷VçB‚¢’g&öÒÖ%öVçG&–W0¢v†W&RFVÆ—fW'•ö6†ÆÆåö–BÒG¶–GÒ“£§FW‡B2ÖV7W&VÖVçG0¢°¢–b€¢Wf–FVæ6Rb`¢†Wf–FVæ6Rç&V6V—G2ÓÒsrÇÀ¢Wf–FVæ6Rç6W&–Ç2ÓÒsrÇÀ¢Wf–FVæ6RæÖV7W&VÖVçG2ÓÒsr¢’°¢F‡&÷r‡GGW'&÷"€¢C’À¢t4„ÄÄåô„5ôUd”DTä4RrÀ¢uF†—26†ÆÆâ†2&V6÷&FVB&V6V—BÂ6W&–Ç2Â÷"ÖV7W&VÖVçG2æB6âæòÆöævW"&R6æ6VÆÆVBârÀ¢“°¢Ğ¢òò#“¢6†ÆÆâ&–ÆÆVB–âÆ—fRÖV7W&VÖVçB&öö²6ææ÷B&P¢òò6æ6VÆÆVB(	BF†RÔ"×W7B&R6æ6VÆÆVBf—'7B‡F†R#BFF&6P¢òòwV&B&6·7F÷2F†—2v–ç7BWfW'’w&—FW"’à¢v—B76W'E6÷W&6Tæ÷D&–ÆÆVB‡G‚ÂvFVÆ—fW'•ö6†ÆÆârÂ–B“°¢v—BG† ¢WFFRFVÆ—fW'•ö6†ÆÆç0¢6WB7FGW2Òv6æ6VÆÆVBrÂ6æ6VÆÆVEö'•÷W6W%ö–BÒG·W6W"æ–GÒÀ¢6æ6VÆÆVEöBÒæ÷r‚’Â6æ6VÆÆF–öåöæ÷FRÒG¶æ÷FWĞ¢v†W&R–BÒG¶–GĞ¢°¢v—BVF—D6†ÆÆâ‡G‚Â÷&væ—6F–öä–BÂW6W"æ–BÂv6†ÆÆâæ6æ6VÆÆVBrÂ–BÂ°¢6†ÆÆäçVÖ&W#¢6†ÆÆâæ6†ÆÆåöçVÖ&W"À¢æ÷FRÀ¢Ò“°¢òò6Æ÷6VBòv†÷6R&V6V—Bv2§W7B&VÆV6VB×W7B&V6öÖR&V6V—f&ÆP¢òòv–ââ÷F†W'v—6R—G2Æ—fR&Ææ6R6†÷w2VæF–ærÖFW&–Âv†–ÆRF†P¢òò6†ÆÆâVF—F÷"&VgW6W2F†R&WÆ6VÖVçB&V6V—B2õôäõEô•55TTBà¢v—B&V÷Vä6Æ÷6VEW&6†6T÷&FW'2€¢G‚À¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢²–BÂ6†ÆÆåöçVÖ&W#¢6†ÆÆâæ6†ÆÆåöçVÖ&W"ÒÀ¢æ÷FRÀ¢Æ–æ¶VD÷&FW'2À¢“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢Ò“°¢ÒÀ¢“° ¢ç÷7B€¢rö’ö6†ÆÆç2ó¦–B÷&VæFW"rÀ¢°¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&W7öç6S¢²#¢6†ÆÆäFWF–Å&W7öç6U66†VÖÂââæW'&÷%&W7öç6W2ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7B’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ° ¢òò6æ6†÷B&VBæBDbw&—FRÆ—fR–â6W&FRG&ç67F–öç26òF†P¢òò6Æ÷rW‡FW&æÂ6ÆÂ†öÆG2æòFF&6RÆö6·3²F†RÆVvÂ6öçFVçB—0¢òòF†R–Ö×WF&ÆR—77VVB6æ6†÷BÂ6ò&R×&VæFW&–ær&W&öGV6W2F†P¢òò&V6÷&Bâ'&æF–ær†ÆövòÂ6ö×ç’FWF–Ç2’—2&W6VçFF–öâæ@¢òò6öÖW2g&öÒF†R÷&væ—6F–öâw27W'&VçB&öf–ÆRà¢6öç7B²6æ6†÷BÂ'&æF–ærÒÒv—Bv—F„&÷VæEFVæçB€¢FF&6RÀ¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢7–æ2‡G‚’Óâ°¢v—B&WV—&Uw&—FW%&öÆR‡G‚ÂW6W"æ–B“°¢6öç7B6†ÆÆâÒv—BÆö6´6†ÆÆâ‡G‚Â–B“°¢v—B76W'Ev÷&´66W72‡G‚ÂW6W"æ–BÂ6†ÆÆâçv÷&µö–B“°¢&WV—&U7FGW2†6†ÆÆâÂv—77VVBr“°¢6öç7B·&÷uÒÒv—BGƒÇ²—77VVE÷6æ6†÷C¢Væ¶æ÷vâÕµÓæ ¢6VÆV7B—77VVE÷6æ6†÷Bg&öÒFVÆ—fW'•ö6†ÆÆç2v†W&R–BÒG¶–GĞ¢°¢6öç7B¶÷&væ—6F–öåÒÒv—BGƒÀ¢°¢FG&W73¢7G&–ærÂçVÆÃ°¢w7F–ã¢7G&–ærÂçVÆÃ°¢6öçF7E÷†öæS¢7G&–ærÂçVÆÃ°¢6öçF7EöVÖ–Ã¢7G&–ærÂçVÆÃ°¢Æövõöö&¦V7Eö¶W“¢7G&–ærÂçVÆÃ°¢ÆövõöÖVF–÷G—S¢7G&–ærÂçVÆÃ°¢ÕµĞ¢æ ¢6VÆV7BFG&W72Âw7F–âÂ6öçF7E÷†öæRÂ6öçF7EöVÖ–ÂÀ¢Æövõöö&¦V7Eö¶W’ÂÆövõöÖVF–÷G—P¢g&öÒ÷&væ—6F–öç0¢°¢&WGW&â°¢6æ6†÷C¢'6T§6öæ$6öÇVÖâ‡&÷sòæ—77VVE÷6æ6†÷B’26†ÆÆå6æ6†÷BÀ¢'&æF–æs¢÷&væ—6F–öâóòçVÆÂÀ¢Ó°¢ÒÀ¢“° ¢ÆWBÆövôFFW&“¢7G&–ærÂVæFVf–æVC°¢–b†'&æF–æsòæÆövõöö&¦V7Eö¶W’bb'&æF–æræÆövõöÖVF–÷G—R’°¢G'’°¢6öç7BÆövòÒv—B7F÷&vRævWB†'&æF–æræÆövõöö&¦V7Eö¶W’“°¢ÆövôFFW&’ÒFF¢G¶'&æF–æræÆövõöÖVF–÷G—WÓ¶&6ScBÂG¶ÆövòçFõ7G&–ær‚v&6ScBr—Ö°¢Ò6F6‚†W'&÷"’°¢òòÖ—76–ærÆövòö&¦V7B×W7Bæ÷B&Æö6²â—77VVBFö7VÖVçBà¢&WVW7BæÆörçv&â‡²W'#¢W'&÷"ÒÂv6†ÆÆâ&VæFW#¢ÆövòVæf–Æ&ÆRr“°¢Ğ¢Ğ¢6öç7B‡FÖÂÒ&VæFW$6†ÆÆä‡FÖÂ‡6æ6†÷BÂ°¢âââ†ÆövôFFW&’ÓÒVæFVf–æVBò²ÆövôFFW&’Ò¢·Ò’À¢FG&W73¢'&æF–æsòæFG&W72óòçVÆÂÀ¢w7F–ã¢'&æF–æsòæw7F–âóòçVÆÂÀ¢6öçF7E†öæS¢'&æF–æsòæ6öçF7E÷†öæRóòçVÆÂÀ¢6öçF7DVÖ–Ã¢'&æF–æsòæ6öçF7EöVÖ–ÂóòçVÆÂÀ¢Ò“°¢6öç7Bf÷&ÒÒæWrf÷&ÔFF‚“°¢f÷&ÒæVæB‚vf–ÆW2rÂæWr&Æö"…¶‡FÖÅÒÂ²G—S¢wFW‡Bö‡FÖÂrÒ’Âv–æFW‚æ‡FÖÂr“°¢ÆWBFc¢'VffW#°¢G'’°¢6öç7B&W7öç6RÒv—BfWF6‚†G¶v÷FVæ&W&uW&ÇÒöf÷&×2ö6‡&öÖ—VÒö6öçfW'Bö‡FÖÆÂ°¢ÖWF†öC¢uõ5BrÀ¢&öG“¢f÷&ÒÀ¢Ò“°¢–b‚&W7öç6Ræö²’°¢F‡&÷ræWrW'&÷"†v÷FVæ&W&rç7vW&VBGµ7G&–ær‡&W7öç6Rç7FGW2—Ö“°¢Ğ¢FbÒ'VffW"æg&öÒ†v—B&W7öç6Ræ'&”'VffW"‚’“°¢Ò6F6‚†W'&÷"’°¢&WVW7BæÆöræW'&÷"‡²W'#¢W'&÷"ÒÂv6†ÆÆâ&VæFW"f–ÆVBr“°¢F‡&÷r‡GGW'&÷"€¢S"À¢u$TäDU%ôd”ÄTBrÀ¢uF†RDb6W'f–6R—2Væf–Æ&ÆS²F†R—77VVB6†ÆÆâ—2VæffV7FVB(	B&WG'’ÆFW"ârÀ¢“°¢Ğ¢6öç7B6†#SbÒ7&VFT†6‚‚w6†#Sbr’çWFFR‡Fb’æF–vW7B‚v†W‚r“°¢6öç7Bö&¦V7D¶W’ÒG¶÷&væ—6F–öä–GÒöF2òG¶–GÒçFf°¢v—B7F÷&vRçWB†ö&¦V7D¶W’ÂFb“° ¢&WGW&âv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢6öç7BWFFVBÒv—BG† ¢WFFRFVÆ—fW'•ö6†ÆÆç0¢6WB&VæFW&VEöö&¦V7Eö¶W’ÒG¶ö&¦V7D¶W—ÒÂ&VæFW&VE÷6†#SbÒG·6†#SgĞ¢v†W&R–BÒG¶–GÒæB7FGW2Òv—77VVBp¢°¢–b‡WFFVBæ6÷VçBÓÓÒ’°¢òòF†R6†ÆÆâ7F÷VB&V–ær—77VVBv†–ÆRv÷FVæ&W&r&VæFW&VC²F†P¢òò7F÷&VBDb—2â÷'†âÂæ÷BWf–FVæ6R(	BæòVF—BVçG'’à¢F‡&÷r‡GGW'&÷"€¢C’À¢t4„ÄÄåõ5DEU5ô4ôädÄ”5BrÀ¢uF†R6†ÆÆâ—2æòÆöævW"—77VVC²F†R&VæFW"v2F—66&FVBârÀ¢“°¢Ğ¢v—BVF—D6†ÆÆâ‡G‚Â÷&væ—6F–öä–BÂW6W"æ–BÂv6†ÆÆâç&VæFW&VBrÂ–BÂ°¢6†#SbÀ¢Ò“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢Ò“°¢ÒÀ¢“° ¢ç÷7B€¢rö’ö6†ÆÆç2ó¦–B÷6–væVBÖ6÷’rÀ¢°¢&öG”Æ–Ö—C¢Ô…õDeô%•DU2À¢66†VÖ¢°¢&×3¢–E&×566†VÖÀ¢&W7öç6S¢²#¢6†ÆÆäFWF–Å&W7öç6U66†VÖÂââæW'&÷%&W7öç6W2ÒÀ¢ÒÀ¢ÒÀ¢7–æ2‡&WVW7B’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B&öG’Ò&WVW7Bæ&öG“°¢–b‚'VffW"æ—4'VffW"†&öG’’ÇÂ&öG’æÆVæwF‚ÓÓÒ’°¢F‡&÷r‡GGW'&÷"€¢CÀ¢uDeõ$UT•$TBrÀ¢u6VæBF†R6–væVB6÷’2âÆ–6F–öâ÷Fb&WVW7B&öG’ârÀ¢“°¢Ğ¢–b‚&öG’ç7V&'&’ƒÂDeôÔt”2æÆVæwF‚’æWVÇ2…DeôÔt”2’’°¢F‡&÷r‡GGW'&÷"ƒCÂtäõEôõDbrÂuF†RWÆöFVBf–ÆR—2æ÷BDbâr“°¢Ğ¢òòWF†÷&—6F–öâ&Vf÷&RF†RW‡Vç6—fR66â†÷2&F6‚“¢à¢òòVæWF†÷&—6VB6ÆÆW"×W7Bæ÷B7VæB66ææW"66—G’à¢v—Bv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢v—B&WV—&Uw&—FW%&öÆR‡G‚ÂW6W"æ–B“°¢Ò“°¢v—B76W'Dæ÷DÖÇv&R‡66ææW"Â&öG’“°¢òò6öçFVçBÖFG&W76VB¶W“¢&WÆ6VÖVçBWÆöBvWG2æWrö&¦V7Bæ@¢òòæWfW"÷fW'w&—FW2V&Æ–W"Wf–FVæ6S²F†R†6‚—2&V6÷&FVBÆ–¶RF†P¢òò&VæFW&VBDbw2à¢6öç7B6–væVE6†#SbÒ7&VFT†6‚‚w6†#Sbr’çWFFR†&öG’’æF–vW7B‚v†W‚r“°¢6öç7Bö&¦V7D¶W’ÒG¶÷&væ—6F–öä–GÒ÷6–væVBòG¶–GÒÒG·6–væVE6†#Sbç6Æ–6RƒÂb—ÒçFf°¢&WGW&âv—F„&÷VæEFVæçB†FF&6RÂ÷&væ—6F–öä–BÂW6W"æ–BÂ7–æ2‡G‚’Óâ°¢v—B&WV—&Uw&—FW%&öÆR‡G‚ÂW6W"æ–B“°¢6öç7B6†ÆÆâÒv—BÆö6´6†ÆÆâ‡G‚Â–B“°¢v—B76W'Ev÷&´66W72‡G‚ÂW6W"æ–BÂ6†ÆÆâçv÷&µö–B“°¢&WV—&U7FGW2†6†ÆÆâÂv—77VVBr“°¢v—B7F÷&vRçWB†ö&¦V7D¶W’Â&öG’“°¢v—BG† ¢WFFRFVÆ—fW'•ö6†ÆÆç0¢6WB6–væVEö6÷•öö&¦V7Eö¶W’ÒG¶ö&¦V7D¶W—ÒÀ¢6–væVEö6÷•÷6†#SbÒG·6–væVE6†#SgĞ¢v†W&R–BÒG¶–GĞ¢°¢v—BVF—D6†ÆÆâ€¢G‚À¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢v6†ÆÆâç6–væVEö6÷•÷WÆöFVBrÀ¢–BÀ¢²6—¦T'—FW3¢&öG’æÆVæwF‚Â6†#Sc¢6–væVE6†#SbÒÀ¢“°¢&WGW&â&VDFWF–Â‡G‚Â–B“°¢Ò“°¢ÒÀ¢“° ¢ævWB€¢rö’ö6†ÆÆç2ó¦–B÷FbrÀ¢°¢66†VÖ¢²&×3¢–E&×566†VÖÂVW'—7G&–æs¢FeVW'•66†VÖÒÀ¢ÒÀ¢7–æ2‡&WVW7BÂ&WÇ’’Óâ°¢6öç7BW6W"Òv—B&WV—&UW6W"†WF‚Â&WVW7B“°¢6öç7B÷&væ—6F–öä–BÒ&WV—&T÷&væ—6F–öä†VFW"€¢&WVW7Bæ†VFW'5²w‚Ö÷&væ—6F–öâÖ–BuÒÀ¢“°¢6öç7B²–BÒÒ&WVW7Bç&×22²–C¢7G&–ærÓ°¢6öç7B²¶–æBÒw&VæFW&VBrÒÒ&WVW7BçVW'’2²¶–æCó¢w&VæFW&VBrÂw6–væVBrÓ°¢6öç7B¶W’Òv—Bv—F„&÷VæEFVæçB€¢FF&6RÀ¢÷&væ—6F–öä–BÀ¢W6W"æ–BÀ¢7–æ2‡G‚’Óâ°¢6öç7B·&÷uÒÒv—BGƒÀ¢°¢v÷&µö–C¢7G&–æs°¢&VæFW&VEöö&¦V7Eö¶W“¢7G&–ærÂçVÆÃ°¢6–væVEö6÷•öö&¦V7Eö¶W“¢7G&–ærÂçVÆÃ°¢ÕµĞ¢æ ¢6VÆV7Bv÷&µö–BÂ&VæFW&VEöö&¦V7Eö¶W’Â6–væVEö6÷•öö&¦V7Eö¶W¢g&öÒFVÆ—fW'•ö6†ÆÆç2v†W&R–BÒG¶–GĞ¢°¢–b‚&÷r’°¢F‡&÷r‡GGW'&÷"ƒCBÂt4„ÄÄåôäõEôdõTäBrÂtæò7V6‚FVÆ—fW'’6†ÆÆââr“°¢Ğ¢v—B76W'Ev÷&´66W72‡G‚ÂW6W"æ–BÂ&÷rçv÷&µö–B“°¢6öç7Bf÷VæBĞ¢¶–æBÓÓÒw&VæFW&VBrò&÷rç&VæFW&VEöö&¦V7Eö¶W’¢&÷rç6–væVEö6÷•öö&¦V7Eö¶W“°¢–b†f÷VæBÓÓÒçVÆÂ’°¢F‡&÷r‡GGW'&÷"€¢CBÀ¢uDeôäõEôd”Ä$ÄRrÀ¢¶–æBÓÓÒw&VæFW&VBp¢òuF†—26†ÆÆâ†2æ÷B&VVâ&VæFW&VB–WBâp¢¢tæò6–væVB6÷’†2&VVâWÆöFVBf÷"F†—26†ÆÆâârÀ¢“°¢Ğ¢&WGW&âf÷VæC°¢ÒÀ¢“°¢6öç7B'—FW2Òv—B7F÷&vRævWB†¶W’“°¢fö–B&WÇ’çG—R‚vÆ–6F–öâ÷Fbr“°¢fö–B&WÇ’æ†VFW"€¢v6öçFVçBÖF—7÷6—F–öârÀ¢–æÆ–æS²f–ÆVæÖSÒ&6†ÆÆâÒG¶–GÒÒG¶¶–æGÒçFb&À¢“°¢&WGW&â&WÇ’ç6VæB†'—FW2“°¢ÒÀ¢“°§Ğ
+    await tx`
+      update purchase_orders
+      set status = 'issued', closed_at = null, updated_at = now()
+      where id = ${order.id} and status = 'closed'
+    `;
+    await tx`
+      insert into audit_events (
+        organisation_id, actor_user_id, action, entity_type, entity_id, details
+      ) values (
+        ${organisationId}, ${userId},
+        'purchase_order.reopened_after_challan_cancellation',
+        'purchase_orders', ${order.id},
+        ${jsonb(tx, {
+          poNumber: order.po_number,
+          challanId: challan.id,
+          challanNumber: challan.challan_number,
+          cancellationNote: note,
+        })}
+      )
+    `;
+  }
+}
+
+function requireStatus(row: ChallanRow, status: Challan['status']): void {
+  if (row.status !== status) {
+    throw httpError(
+      409,
+      'CHALLAN_STATUS_CONFLICT',
+      `This operation requires a ${status} challan (current status: ${row.status}).`,
+    );
+  }
+}
+
+/** Replaces the challan's lines from the request, snapshotting
+ * description/unit/rate from the live work items and computing the line
+ * amount in exact SQL numeric arithmetic. (Exported for the correction
+ * flow, which writes replacement drafts through the same path.) */
+export async function writeLines(
+  tx: TransactionSql,
+  organisationId: string,
+  challanId: string,
+  workId: string,
+  body: SaveChallanRequest,
+): Promise<void> {
+  // Draft-time serials hang off the line rows being replaced (serial
+  // lineage FK); they are draft-stage records â€” deletable by rule â€” and
+  // cannot outlive their lines, so a line rewrite clears them and they
+  // are re-recorded against the new lines before issue.
+  await tx`
+    delete from challan_item_serials where delivery_challan_id = ${challanId}
+  `;
+  await tx`
+    delete from delivery_challan_items where delivery_challan_id = ${challanId}
+  `;
+  for (const [index, item] of body.items.entries()) {
+    // The column reads `numeric(18,3) NOT NULL CHECK (quantity > 0)`,
+    // while the shared DecimalString shape admits '0', '-5' and a
+    // sixteen-digit typo. Each of those reaches Postgres as a 23514 or a
+    // 22003, neither of which carries an HTTP status, so the operator
+    // reads 'The request could not be completed.' and the logs record a
+    // false 5xx. Refused here instead, naming the line â€” the same answer
+    // the correction path already gives (corrections.ts QUANTITY_INVALID).
+    const lineNumber = String(index + 1);
+    if (!isPositiveDecimal(item.quantity)) {
+      throw httpError(
+        400,
+        'QUANTITY_INVALID',
+        `Line ${lineNumber}: the delivered quantity must be greater than zero (received ${item.quantity}).`,
+      );
+    }
+    if (integerDigitCount(item.quantity) > 15) {
+      throw httpError(
+        400,
+        'QUANTITY_INVALID',
+        `Line ${lineNumber}: the delivered quantity ${item.quantity} is too large to record â€” check for a mistyped digit.`,
+      );
+    }
+    // The receipt link (0033): a line may name the purchase-order line it
+    // fulfils. The named line must belong to an ISSUED order of THIS Work
+    // â€” a draft order has not been placed yet, a closed or cancelled one
+    // takes no further receipts, and another Work's procurement answers
+    // exactly like an unknown id (the same posture RLS gives another
+    // tenant's). What is deliberately NOT checked here is the quantity:
+    // over-receipt against the ordered amount is a warning on the read
+    // model (readOverReceiptWarnings), never a refusal â€” vendors
+    // over-ship, and the challan must record what actually arrived. The
+    // composite FK on (organisation_id, purchase_order_line_id) backstops
+    // the existence check in the database.
+    if (item.purchaseOrderLineId !== undefined) {
+      const [poLine] = await tx<{ status: string; work_id: string }[]>`
+        select po.status, po.work_id
+        from purchase_order_lines pol
+        join purchase_orders po on po.id = pol.purchase_order_id
+        where pol.id = ${item.purchaseOrderLineId}
+      `;
+      if (!poLine || poLine.work_id !== workId) {
+        throw httpError(
+          404,
+          'PO_LINE_NOT_FOUND',
+          `Line ${lineNumber}: the named purchase-order line does not belong to this Work.`,
+        );
+      }
+      if (poLine.status !== 'issued') {
+        throw httpError(
+          409,
+          'PO_NOT_ISSUED',
+          `Line ${lineNumber}: deliveries are received against an ISSUED purchase order (current status: ${poLine.status}).`,
+        );
+      }
+    }
+    const [inserted] = await tx<{ id: string }[]>`
+      insert into delivery_challan_items (
+        organisation_id, delivery_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, rate_snapshot,
+        line_amount, position, purchase_order_line_id
+      )
+      select ${organisationId}, ${challanId}, ${workId}, wi.id,
+             coalesce(wi.effective_description, wi.description),
+             coalesce(wi.effective_unit, wi.unit_code), ${item.quantity},
+             coalesce(wi.effective_unit_rate, wi.effective_rate),
+             (${item.quantity}::numeric(18,3)
+               * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
+             ${index + 1}, ${item.purchaseOrderLineId ?? null}
+      from work_items wi
+      where wi.id = ${item.workItemId} and wi.work_id = ${workId}
+        and wi.deleted_at is null
+      returning id
+    `.catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === '23505') {
+        throw httpError(
+          409,
+          'DUPLICATE_ITEM',
+          'The same Work item appears more than once on this challan.',
+        );
+      }
+      throw error;
+    });
+    if (!inserted) {
+      throw httpError(
+        404,
+        'WORK_ITEM_NOT_FOUND',
+        'A selected item does not belong to this Work.',
+      );
+    }
+  }
+}
+
+/** The challan's lines in request-input shape ({workItemId, quantity,
+ * purchaseOrderLineId}) for audit diffing; quantity text comes normalised
+ * from the numeric column so before/after compare like for like. */
+async function readLineInputs(
+  tx: TransactionSql,
+  challanId: string,
+): Promise<
+  { workItemId: string; quantity: string; purchaseOrderLineId: string | null }[]
+> {
+  const rows = await tx<
+    { work_item_id: string; quantity: string; purchase_order_line_id: string | null }[]
+  >`
+    select work_item_id, quantity::text as quantity, purchase_order_line_id
+    from delivery_challan_items
+    where delivery_challan_id = ${challanId}
+    order by position
+  `;
+  return rows.map((row) => ({
+    workItemId: row.work_item_id,
+    quantity: row.quantity,
+    purchaseOrderLineId: row.purchase_order_line_id,
+  }));
+}
+
+async function auditChallan(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  action: string,
+  challanId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    values (
+      ${organisationId}, ${userId}, ${action}, 'delivery_challans',
+      ${challanId}, ${jsonb(tx, details)}
+    )
+  `;
+}
+
+export function registerChallanRoutes(
+  app: FastifyInstance,
+  auth: Auth,
+  database: Sql,
+  storage: ObjectStorage,
+  gotenbergUrl: string,
+  scanner: MalwareScanner,
+): void {
+  app.get(
+    '/api/works/:id/balance',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: WorkBalanceResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const [work] = await tx<{ allow_excess_delivery: boolean; today: string }[]>`
+          select w.allow_excess_delivery,
+                 (now() at time zone o.timezone)::date::text as today
+          from works w
+          join organisations o on o.id = w.organisation_id
+          where w.id = ${workId} and w.deleted_at is null
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // The delivery ceiling is COALESCE(effective_quantity,
+        // awarded_quantity): approved amendments (Milestone 6) raise or
+        // lower it, and the rate/description an amendment changed is what
+        // new challan lines will snapshot.
+        const rows = await tx<
+          {
+            work_item_id: string;
+            item_number: string;
+            description: string;
+            unit_code: string;
+            awarded: string;
+            effective: string | null;
+            delivered: string;
+            remaining: string;
+            rate: string;
+          }[]
+        >`
+          select wi.id as work_item_id, wi.item_number,
+                 coalesce(wi.effective_description, wi.description) as description,
+                 coalesce(wi.effective_unit, wi.unit_code) as unit_code,
+                 wi.awarded_quantity::text as awarded,
+                 wi.effective_quantity::text as effective,
+                 coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)::text as delivered,
+                 (coalesce(wi.effective_quantity, wi.awarded_quantity)
+                   - coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0))::text as remaining,
+                 coalesce(wi.effective_unit_rate, wi.effective_rate)::text as rate
+          from work_items wi
+          left join delivery_challan_items dci on dci.work_item_id = wi.id
+          left join delivery_challans dc on dc.id = dci.delivery_challan_id
+          where wi.work_id = ${workId} and wi.deleted_at is null
+          group by wi.id
+          order by wi.item_number
+        `;
+        return {
+          allowExcessDelivery: work.allow_excess_delivery,
+          today: work.today,
+          items: rows.map((row) => ({
+            workItemId: row.work_item_id,
+            itemNumber: row.item_number,
+            description: row.description,
+            unitCode: row.unit_code,
+            awardedQuantity: row.awarded,
+            effectiveQuantity: row.effective,
+            deliveredQuantity: row.delivered,
+            remainingQuantity: row.remaining,
+            effectiveRate: canonicalRateText(row.rate),
+          })),
+        };
+      });
+    },
+  );
+
+  app.get(
+    '/api/works/:id/challans',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ChallanListResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const rows = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return tx<ChallanRow[]>`
+            select ${tx.unsafe(CHALLAN_COLUMNS)}
+            from delivery_challans
+            where work_id = ${workId}
+            order by created_at desc, id
+          `;
+        },
+      );
+      return { challans: rows.map(toChallan) };
+    },
+  );
+
+  app.post(
+    '/api/works/:id/challans',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveChallanRequestSchema,
+        response: { 201: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id: workId } = request.params as { id: string };
+      const body = request.body as SaveChallanRequest;
+      const consignee = normaliseConsignee(body.consignee);
+
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await assertWorkAccess(tx, user.id, workId);
+          // The works row lock pairs with the one POST
+          // /api/works/:id/complete holds: a draft created here and a
+          // completion on the same Work serialise, so a draft can never
+          // appear behind a completed Work's refusals (the 0031 insert
+          // guard backstops it in the database).
+          const [work] = await tx<{ status: string }[]>`
+            select status from works where id = ${workId} and deleted_at is null
+            for update
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          assertWorkOperable(work.status, 'drafting a delivery challan');
+          await assertChallanDate(tx, workId, body.challanDate);
+
+          // One open draft per Work (the partial unique index is the
+          // arbiter): the 409 names the existing draft so the client can
+          // open it instead of parsing the message.
+          const [existingDraft] = await tx<{ id: string }[]>`
+            select id from delivery_challans
+            where work_id = ${workId} and status = 'draft'
+          `;
+          if (existingDraft) {
+            throw draftConflictError(
+              'DRAFT_EXISTS',
+              'This Work already has a draft challan; issue or delete it first.',
+              existingDraft.id,
+            );
+          }
+
+          const [created] = await tx<{ id: string }[]>`
+            insert into delivery_challans (
+              organisation_id, work_id, challan_date, prefix,
+              consignee_snapshot, created_by_user_id
+            )
+            values (
+              ${organisationId}, ${workId}, ${body.challanDate}, ${body.prefix},
+              ${jsonb(tx, consignee)}, ${user.id}
+            )
+            returning id
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              // A concurrent create won between the pre-check and this
+              // insert; the transaction is aborted, so the route-level
+              // catch names the winner from a fresh read.
+              throw httpError(
+                409,
+                'DRAFT_EXISTS',
+                'This Work already has a draft challan; issue or delete it first.',
+              );
+            }
+            throw error;
+          });
+          if (!created) throw new Error('challan insert returned no row');
+
+          await writeLines(tx, organisationId, created.id, workId, body);
+          await auditChallan(
+            tx,
+            organisationId,
+            user.id,
+            'challan.created',
+            created.id,
+            {
+              workId,
+              itemCount: body.items.length,
+            },
+          );
+          return readDetail(tx, created.id);
+        },
+      ).catch(async (error: unknown) => {
+        // The unique-index race path could not name the winning draft
+        // inside its aborted transaction; do it from a fresh read.
+        throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
+          withBoundTenant(database, organisationId, user.id, async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from delivery_challans
+              where work_id = ${workId} and status = 'draft'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
+  app.get(
+    '/api/challans/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const [ref] = await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${id}
+        `;
+        if (!ref) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, ref.work_id);
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.put(
+    '/api/challans/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: SaveChallanRequestSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as SaveChallanRequest;
+      const consignee = normaliseConsignee(body.consignee);
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'draft');
+        await assertChallanDate(tx, challan.work_id, body.challanDate);
+        const linesBefore = await readLineInputs(tx, id);
+        await tx`
+          update delivery_challans
+          set challan_date = ${body.challanDate}, prefix = ${body.prefix},
+              consignee_snapshot = ${jsonb(tx, consignee)}
+          where id = ${id}
+        `;
+        await writeLines(tx, organisationId, id, challan.work_id, body);
+        // Milestone 6: the trail records what each changed field was and
+        // became. Lines round-trip through the database on both sides so
+        // quantities compare in the same normalised numeric text.
+        const changes = auditDiff(
+          {
+            challanDate: challan.challan_date,
+            prefix: challan.prefix,
+            consignee: parseJsonbColumn(challan.consignee_snapshot),
+            items: linesBefore,
+          },
+          {
+            challanDate: body.challanDate,
+            prefix: body.prefix,
+            consignee,
+            items: await readLineInputs(tx, id),
+          },
+        );
+        await auditChallan(tx, organisationId, user.id, 'challan.updated', id, {
+          before: changes.before,
+          after: changes.after,
+        });
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.delete(
+    '/api/challans/:id',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 204: Type.Null(), ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'draft');
+        // A deleted draft takes its draft-stage serials with it (they
+        // reference the lines and would otherwise orphan the delete).
+        await tx`delete from challan_item_serials where delivery_challan_id = ${id}`;
+        await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
+        await tx`delete from delivery_challans where id = ${id}`;
+        await auditChallan(tx, organisationId, user.id, 'challan.deleted', id, {
+          workId: challan.work_id,
+        });
+      });
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    '/api/challans/:id/issue',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 201: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const detail = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireAuthority(tx, user.id, 'issue');
+          const challan = await lockChallan(tx, id);
+          await assertWorkAccess(tx, user.id, challan.work_id);
+          requireStatus(challan, 'draft');
+
+          // The works row lock pairs with the one the MB finalize
+          // transaction holds: an issue and a final-MB finalize on the
+          // same Work serialise here, so whichever commits second sees
+          // the other â€” a challan issued first is caught by the final
+          // sweep, and a final MB finalized first makes this issue fail
+          // the FINAL_MB_EXISTS check below (the 0027 challan-update
+          // guard backstops it in the database). Lock order works ->
+          // work_items matches every other writer taking both.
+          const [work] = await tx<
+            {
+              allow_excess_delivery: boolean;
+              work_code: string;
+              title: string;
+              letter_number: string;
+              letter_date: string;
+              status: string;
+            }[]
+          >`
+            select allow_excess_delivery, work_code, title, letter_number,
+                   letter_date::text as letter_date, status
+            from works where id = ${challan.work_id}
+            for update
+          `;
+          if (!work) throw new Error('challan without a Work');
+
+          // R8: a completed Work accepts no new operational documents.
+          // The works lock above serialises this against completion, and
+          // the 0031 challan-update guard backstops it in the database.
+          assertWorkOperable(work.status, 'issuing a delivery challan');
+
+          // A live final Measurement Book closes the Work's payment
+          // cycle (spec Â§5.9): a challan issued after it could never be
+          // billed, so the issue is refused outright.
+          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+            select id, mb_number from measurement_books
+            where work_id = ${challan.work_id} and is_final
+              and status <> 'cancelled'
+          `;
+          if (finalBook) {
+            throw httpError(
+              409,
+              'FINAL_MB_EXISTS',
+              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a challan issued now could never be billed.`,
+            );
+          }
+
+          // Concurrency-safe quantity validation: this challan's lines plus
+          // everything already ISSUED must stay within the delivery ceiling
+          // COALESCE(effective_quantity, awarded_quantity) â€” exact numeric
+          // arithmetic in SQL. The challan row lock above serialises
+          // competing issues of this work's single draft, and the item row
+          // locks below serialise against amendment apply (Milestone 6),
+          // which takes the same locks before lowering a ceiling.
+          await tx`
+            select wi.id from work_items wi
+            where wi.id in (
+              select dci.work_item_id from delivery_challan_items dci
+              where dci.delivery_challan_id = ${id}
+            )
+            for update
+          `;
+          if (!work.allow_excess_delivery) {
+            const exceeded = await tx<{ item_number: string }[]>`
+              select wi.item_number
+              from delivery_challan_items dci
+              join work_items wi on wi.id = dci.work_item_id
+              where dci.delivery_challan_id = ${id}
+                and dci.quantity + coalesce((
+                  select sum(q.quantity)
+                  from delivery_challan_items q
+                  join delivery_challans dc on dc.id = q.delivery_challan_id
+                  where q.work_item_id = dci.work_item_id
+                    and dc.status = 'issued'
+                ), 0) > coalesce(wi.effective_quantity, wi.awarded_quantity)
+              order by wi.item_number
+            `;
+            if (exceeded.length > 0) {
+              throw httpError(
+                409,
+                'QUANTITY_EXCEEDED',
+                `Issuing would exceed the permitted quantity for: ${exceeded
+                  .map((row) => row.item_number)
+                  .join(', ')}.`,
+              );
+            }
+          }
+
+          // requires_serials enforcement. The challan's work_items rows
+          // are locked FOR UPDATE (no flag predicate) so a concurrent
+          // flag toggle serialises with this check in both orders: a
+          // toggle that committed first is visible in the locked read;
+          // a toggle waiting on these locks re-validates against the
+          // now-issued lines after we commit. Serial recording/deletion
+          // already serialises against issue through the challan row
+          // lock taken above.
+          const challanWorkItems = await tx<
+            { id: string; item_number: string; requires_serials: boolean }[]
+          >`
+            select wi.id, wi.item_number, wi.requires_serials
+            from work_items wi
+            where wi.id in (
+              select work_item_id from delivery_challan_items
+              where delivery_challan_id = ${id}
+            )
+            order by wi.id
+            for update of wi
+          `;
+
+          // R7 / rule 7: issue freezes the line snapshots written at
+          // DRAFT-SAVE time (description, unit, rate) into the immutable
+          // snapshot and the PDF handed to the consignee. An amendment
+          // approved since then moved work_items.effective_* and never
+          // touched the open draft, so issuing now would carry the
+          // superseded reading forever â€” the quantity ledger and the
+          // bill maths stay right (both read the live item), the printed
+          // document does not. Silently re-snapshotting here would change
+          // amounts the operator reviewed on screen a moment ago, so the
+          // draft is sent back to be re-saved instead. This runs under
+          // the work_items row locks taken just above, which are the same
+          // locks amendment apply takes before writing effective_*, so an
+          // amendment either committed before this read or waits behind
+          // the issue.
+          const stale = await tx<{ item_number: string; fields: string[] }[]>`
+            select wi.item_number,
+                   array_remove(array[
+                     case when dci.description_snapshot
+                       is distinct from coalesce(wi.effective_description, wi.description)
+                       then 'description'::text end,
+                     case when dci.unit_snapshot
+                       is distinct from coalesce(wi.effective_unit, wi.unit_code)
+                       then 'unit'::text end,
+                     case when dci.rate_snapshot
+                       is distinct from coalesce(wi.effective_unit_rate, wi.effective_rate)
+                       then 'rate'::text end
+                   ], null) as fields
+            from delivery_challan_items dci
+            join work_items wi on wi.id = dci.work_item_id
+            where dci.delivery_challan_id = ${id}
+              and (
+                dci.description_snapshot
+                  is distinct from coalesce(wi.effective_description, wi.description)
+                or dci.unit_snapshot
+                  is distinct from coalesce(wi.effective_unit, wi.unit_code)
+                or dci.rate_snapshot
+                  is distinct from coalesce(wi.effective_unit_rate, wi.effective_rate)
+              )
+            order by wi.item_number
+          `;
+          if (stale.length > 0) {
+            const changed = stale
+              .map((line) => `${line.item_number} (${line.fields.join(', ')})`)
+              .join('; ');
+            throw httpError(
+              409,
+              'DRAFT_STALE',
+              `These items were amended after this draft was saved: ${changed}. Reopen the draft and save it to pick up the new values, then issue.`,
+            );
+          }
+
+          const flaggedItemIds = challanWorkItems
+            .filter((item) => item.requires_serials)
+            .map((item) => item.id);
+          if (flaggedItemIds.length > 0) {
+            // Exact count check in SQL: recorded serials must equal the
+            // line quantity (numeric comparison, no floats).
+            const incomplete = await tx<
+              { item_number: string; quantity: string; recorded: string }[]
+            >`
+              select wi.item_number, dci.quantity::text as quantity,
+                     (
+                       select count(*) from challan_item_serials s
+                       where s.delivery_challan_item_id = dci.id
+                     )::text as recorded
+              from delivery_challan_items dci
+              join work_items wi on wi.id = dci.work_item_id
+              where dci.delivery_challan_id = ${id}
+                and dci.work_item_id = any(${flaggedItemIds}::uuid[])
+                and (
+                  select count(*) from challan_item_serials s
+                  where s.delivery_challan_item_id = dci.id
+                ) <> dci.quantity
+              order by wi.item_number
+            `;
+            if (incomplete.length > 0) {
+              const detail = incomplete
+                .map(
+                  (line) =>
+                    `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,
+                )
+                .join('; ');
+              throw httpError(
+                409,
+                'SERIALS_INCOMPLETE',
+                `These items require one serial per unit before issue: ${detail}.`,
+              );
+            }
+          }
+
+          // Serialised per-Work numbering: the counter row lock orders
+          // concurrent issues; a rolled-back transaction rolls the counter
+          // back with it, so numbers are gapless per Work.
+          const [counter] = await tx<{ next_value: number }[]>`
+            insert into delivery_challan_counters (organisation_id, work_id)
+            values (${organisationId}, ${challan.work_id})
+            on conflict (organisation_id, work_id)
+            do update set next_value = delivery_challan_counters.next_value + 1,
+                          updated_at = now()
+            returning next_value
+          `;
+          if (!counter) throw new Error('counter upsert returned no row');
+          const sequence = counter.next_value;
+          // The organisation's own format; the default is the
+          // prefix/serial this route used to build by hand.
+          // The Work code is a template token, so it is read here rather
+          // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
+          // needs it, and the default never asks for it.
+          const [numberWork] = await tx<{ work_code: string }[]>`
+            select work_code from works where id = ${challan.work_id}
+          `;
+          const template = await loadNumberTemplate(tx, 'delivery_challan');
+          let challanNumber: string;
+          try {
+            challanNumber = renderNumberTemplate(template, {
+              prefix: challan.prefix,
+              work: numberWork?.work_code ?? null,
+              documentDate: challan.challan_date,
+              sequence,
+            });
+          } catch (cause) {
+            if (cause instanceof NumberTemplateError) {
+              throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
+            }
+            throw cause;
+          }
+
+          const [organisation] = await tx<
+            { name: string; warranty_template_text: string | null }[]
+          >`
+            select name, warranty_template_text from organisations
+          `;
+          const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
+            select dci.id, dci.work_item_id, dci.description_snapshot,
+                   dci.unit_snapshot, dci.quantity::text as quantity,
+                   dci.rate_snapshot::text as rate_snapshot,
+                   dci.line_amount::text as line_amount, dci.position,
+                   wi.item_number
+            from delivery_challan_items dci
+            join work_items wi on wi.id = dci.work_item_id
+            where dci.delivery_challan_id = ${id}
+            order by dci.position
+          `;
+          const [total] = await tx<{ amount: string }[]>`
+            select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
+            from delivery_challan_items where delivery_challan_id = ${id}
+          `;
+
+          // Legacy Â§11: the warranty/guarantee certificate page is
+          // optional â€” it exists exactly when the organisation has
+          // template text at issue time. The FULL text is frozen into
+          // the immutable snapshot (with the certificate template
+          // version and the SHA-256 of the exact text), so later
+          // profile edits never change an issued certificate.
+          const warrantyText = organisation?.warranty_template_text ?? null;
+          const warranty =
+            warrantyText !== null
+              ? {
+                  templateVersion: WARRANTY_TEMPLATE_VERSION,
+                  textSha256: createHash('sha256')
+                    .update(warrantyText, 'utf8')
+                    .digest('hex'),
+                  text: warrantyText,
+                }
+              : undefined;
+
+          const issuedAt = new Date().toISOString();
+          const snapshot: ChallanSnapshot = {
+            templateVersion: CHALLAN_TEMPLATE_VERSION,
+            organisationName: organisation?.name ?? '',
+            challanNumber,
+            challanDate: challan.challan_date,
+            issuedAt,
+            work: {
+              workCode: work.work_code,
+              title: work.title,
+              letterNumber: work.letter_number,
+              letterDate: work.letter_date,
+            },
+            consignee: parseJsonbColumn(challan.consignee_snapshot) as Consignee,
+            items: lines.map((line) => ({
+              position: line.position,
+              itemNumber: line.item_number,
+              description: line.description_snapshot,
+              unit: line.unit_snapshot,
+              quantity: line.quantity,
+              rate: canonicalRateText(line.rate_snapshot),
+              lineAmount: line.line_amount,
+            })),
+            totalAmount: total?.amount ?? '0.00',
+            ...(warranty !== undefined ? { warranty } : {}),
+          };
+
+          await tx`
+            update delivery_challans
+            set status = 'issued', challan_number = ${challanNumber},
+                sequence_number = ${sequence},
+                issued_snapshot = ${jsonb(tx, snapshot)},
+                issued_by_user_id = ${user.id}, issued_at = ${issuedAt},
+                template_version = ${CHALLAN_TEMPLATE_VERSION},
+                warranty_template_version = ${warranty?.templateVersion ?? null},
+                warranty_text_sha256 = ${warranty?.textSha256 ?? null}
+            where id = ${id}
+          `.catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === '23505') {
+              throw httpError(
+                409,
+                'NUMBER_CONFLICT',
+                `Challan number ${challanNumber} already exists in this organisation; use a distinct prefix for this Work.`,
+              );
+            }
+            throw error;
+          });
+
+          await auditChallan(tx, organisationId, user.id, 'challan.issued', id, {
+            challanNumber,
+            sequence,
+            totalAmount: snapshot.totalAmount,
+          });
+          return readDetail(tx, id);
+        },
+      );
+      return reply.status(201).send(detail);
+    },
+  );
+
+  app.post(
+    '/api/challans/:id/cancel',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: CancelChallanRequestSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body as CancelChallanRequest;
+      const note = cancellationNote(body.note);
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireAuthority(tx, user.id, 'cancel');
+        const [challanRef] = await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${id}
+        `;
+        if (!challanRef) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, challanRef.work_id);
+        // Closing a PO locks purchase_orders -> linked delivery_challans.
+        // Take the identical order here before locking this challan, so a
+        // receipt release can reopen every affected PO without a deadlock.
+        // Issued challan lines are immutable; the second read below detects
+        // an exceptional concurrent raw-SQL link change and fails to retry.
+        const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'issued');
+        await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
+        // R8: cancelling this challan would drop the delivered quantity
+        // the completion predicate was measured against, leaving a Work
+        // that says 'completed' below 100% executed. Lock order is the
+        // creation paths' â€” document row first, then works â€” so cancel
+        // and completion serialise instead of deadlocking, and the 0032
+        // challan-update guard backstops the refusal in the database.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works
+          where id = ${challan.work_id} and deleted_at is null
+          for update
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'cancelling a delivery challan');
+        // Received goods cannot be un-delivered: once a receipt, serial,
+        // or Measurement Book entry references this challan, cancellation
+        // is forbidden (policy 2026-08-08; the DB trigger backs this up).
+        const [evidence] = await tx<
+          { receipts: string; serials: string; measurements: string }[]
+        >`
+          select
+            (select count(*) from challan_receipts
+              where delivery_challan_id = ${id})::text as receipts,
+            (select count(*) from challan_item_serials
+              where delivery_challan_id = ${id})::text as serials,
+            (select count(*) from mb_entries
+              where delivery_challan_id = ${id})::text as measurements
+        `;
+        if (
+          evidence &&
+          (evidence.receipts !== '0' ||
+            evidence.serials !== '0' ||
+            evidence.measurements !== '0')
+        ) {
+          throw httpError(
+            409,
+            'CHALLAN_HAS_EVIDENCE',
+            'This challan has a recorded receipt, serials, or measurements and can no longer be cancelled.',
+          );
+        }
+        // R19: a challan billed in a live Measurement Book cannot be
+        // cancelled â€” the MB must be cancelled first (the 0024 database
+        // guard backstops this against every writer).
+        await assertSourceNotBilled(tx, 'delivery_challan', id);
+        await tx`
+          update delivery_challans
+          set status = 'cancelled', cancelled_by_user_id = ${user.id},
+              cancelled_at = now(), cancellation_note = ${note}
+          where id = ${id}
+        `;
+        await auditChallan(tx, organisationId, user.id, 'challan.cancelled', id, {
+          challanNumber: challan.challan_number,
+          note,
+        });
+        // A closed PO whose receipt was just released must become receivable
+        // again. Otherwise its live balance shows pending material while the
+        // challan editor refuses the replacement receipt as PO_NOT_ISSUED.
+        await reopenClosedPurchaseOrders(
+          tx,
+          organisationId,
+          user.id,
+          { id, challan_number: challan.challan_number },
+          note,
+          linkedOrders,
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.post(
+    '/api/challans/:id/render',
+    {
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+
+      // Snapshot read and PDF write live in separate transactions so the
+      // slow external call holds no database locks; the legal content is
+      // the immutable issued snapshot, so re-rendering reproduces the
+      // record. Branding (logo, company details) is presentation and
+      // comes from the organisation's current profile.
+      const { snapshot, branding } = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          await requireWriterRole(tx, user.id);
+          const challan = await lockChallan(tx, id);
+          await assertWorkAccess(tx, user.id, challan.work_id);
+          requireStatus(challan, 'issued');
+          const [row] = await tx<{ issued_snapshot: unknown }[]>`
+            select issued_snapshot from delivery_challans where id = ${id}
+          `;
+          const [organisation] = await tx<
+            {
+              address: string | null;
+              gstin: string | null;
+              contact_phone: string | null;
+              contact_email: string | null;
+              logo_object_key: string | null;
+              logo_media_type: string | null;
+            }[]
+          >`
+            select address, gstin, contact_phone, contact_email,
+                   logo_object_key, logo_media_type
+            from organisations
+          `;
+          return {
+            snapshot: parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot,
+            branding: organisation ?? null,
+          };
+        },
+      );
+
+      let logoDataUri: string | undefined;
+      if (branding?.logo_object_key && branding.logo_media_type) {
+        try {
+          const logo = await storage.get(branding.logo_object_key);
+          logoDataUri = `data:${branding.logo_media_type};base64,${logo.toString('base64')}`;
+        } catch (error) {
+          // A missing logo object must not block an issued document.
+          request.log.warn({ err: error }, 'challan render: logo unavailable');
+        }
+      }
+      const html = renderChallanHtml(snapshot, {
+        ...(logoDataUri !== undefined ? { logoDataUri } : {}),
+        address: branding?.address ?? null,
+        gstin: branding?.gstin ?? null,
+        contactPhone: branding?.contact_phone ?? null,
+        contactEmail: branding?.contact_email ?? null,
+      });
+      const form = new FormData();
+      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
+      let pdf: Buffer;
+      try {
+        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
+          method: 'POST',
+          body: form,
+        });
+        if (!response.ok) {
+          throw new Error(`Gotenberg answered ${String(response.status)}`);
+        }
+        pdf = Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        request.log.error({ err: error }, 'challan render failed');
+        throw httpError(
+          502,
+          'RENDER_FAILED',
+          'The PDF service is unavailable; the issued challan is unaffected â€” retry later.',
+        );
+      }
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const objectKey = `${organisationId}/dc/${id}.pdf`;
+      await storage.put(objectKey, pdf);
+
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        const updated = await tx`
+          update delivery_challans
+          set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
+          where id = ${id} and status = 'issued'
+        `;
+        if (updated.count === 0) {
+          // The challan stopped being issued while Gotenberg rendered; the
+          // stored PDF is an orphan, not evidence â€” no audit entry.
+          throw httpError(
+            409,
+            'CHALLAN_STATUS_CONFLICT',
+            'The challan is no longer issued; the render was discarded.',
+          );
+        }
+        await auditChallan(tx, organisationId, user.id, 'challan.rendered', id, {
+          sha256,
+        });
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.post(
+    '/api/challans/:id/signed-copy',
+    {
+      bodyLimit: MAX_PDF_BYTES,
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        throw httpError(
+          400,
+          'PDF_REQUIRED',
+          'Send the signed copy as an application/pdf request body.',
+        );
+      }
+      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
+        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
+      }
+      // Authorisation before the expensive scan (ops batch): an
+      // unauthorised caller must not spend scanner capacity.
+      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+      });
+      await assertNotMalware(scanner, body);
+      // Content-addressed key: a replacement upload gets a new object and
+      // never overwrites earlier evidence; the hash is recorded like the
+      // rendered PDF's.
+      const signedSha256 = createHash('sha256').update(body).digest('hex');
+      const objectKey = `${organisationId}/signed/${id}-${signedSha256.slice(0, 16)}.pdf`;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'issued');
+        await storage.put(objectKey, body);
+        await tx`
+          update delivery_challans
+          set signed_copy_object_key = ${objectKey},
+              signed_copy_sha256 = ${signedSha256}
+          where id = ${id}
+        `;
+        await auditChallan(
+          tx,
+          organisationId,
+          user.id,
+          'challan.signed_copy_uploaded',
+          id,
+          { sizeBytes: body.length, sha256: signedSha256 },
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+
+  app.get(
+    '/api/challans/:id/pdf',
+    {
+      schema: { params: IdParamsSchema, querystring: PdfQuerySchema },
+    },
+    async (request, reply) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const { kind = 'rendered' } = request.query as { kind?: 'rendered' | 'signed' };
+      const key = await withBoundTenant(
+        database,
+        organisationId,
+        user.id,
+        async (tx) => {
+          const [row] = await tx<
+            {
+              work_id: string;
+              rendered_object_key: string | null;
+              signed_copy_object_key: string | null;
+            }[]
+          >`
+            select work_id, rendered_object_key, signed_copy_object_key
+            from delivery_challans where id = ${id}
+          `;
+          if (!row) {
+            throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+          }
+          await assertWorkAccess(tx, user.id, row.work_id);
+          const found =
+            kind === 'rendered' ? row.rendered_object_key : row.signed_copy_object_key;
+          if (found === null) {
+            throw httpError(
+              404,
+              'PDF_NOT_AVAILABLE',
+              kind === 'rendered'
+                ? 'This challan has not been rendered yet.'
+                : 'No signed copy has been uploaded for this challan.',
+            );
+          }
+          return found;
+        },
+      );
+      const bytes = await storage.get(key);
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename="challan-${id}-${kind}.pdf"`,
+      );
+      return reply.send(bytes);
+    },
+  );
+}
