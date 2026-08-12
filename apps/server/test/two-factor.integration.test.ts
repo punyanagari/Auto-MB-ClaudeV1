@@ -283,20 +283,29 @@ describe('finding 36: MFA hard wall for privilege holders', () => {
   let ownerSecret: Buffer;
   let ownerBackupCodes: string[];
 
-  it('signs up the actors and creates the organisation', async () => {
-    owner = await signUp(ownerEmail, 'Mfa Owner');
-    viewer = await signUp(viewerEmail, 'Mfa Viewer');
-    promoted = await signUp(promotedEmail, 'Mfa Promoted');
-    await signUp(lockyEmail, 'Mfa Locky');
+  // Four scrypt password hashes plus organisation creation: heavy setup
+  // that the default 5s test budget does not survive when the whole
+  // suite runs in parallel (every other suite does this work inside a
+  // beforeAll with a 60-90s budget). Everything downstream depends on
+  // this test, so a timeout here cascades into false failures.
+  it(
+    'signs up the actors and creates the organisation',
+    { timeout: 60_000 },
+    async () => {
+      owner = await signUp(ownerEmail, 'Mfa Owner');
+      viewer = await signUp(viewerEmail, 'Mfa Viewer');
+      promoted = await signUp(promotedEmail, 'Mfa Promoted');
+      await signUp(lockyEmail, 'Mfa Locky');
 
-    const created = await authed(owner, {
-      method: 'POST',
-      url: '/api/organisations',
-      payload: { name: 'MFA Constructions', slug: `mfa-org-${runId}` },
-    });
-    expect(created.statusCode, created.body).toBe(201);
-    organisationId = created.json<{ id: string }>().id;
-  });
+      const created = await authed(owner, {
+        method: 'POST',
+        url: '/api/organisations',
+        payload: { name: 'MFA Constructions', slug: `mfa-org-${runId}` },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      organisationId = created.json<{ id: string }>().id;
+    },
+  );
 
   it('refuses tenant-scoped requests to a privileged, unenrolled user', async () => {
     const refused = await authed(owner, {

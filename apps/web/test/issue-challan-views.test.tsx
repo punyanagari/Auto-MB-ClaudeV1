@@ -765,7 +765,7 @@ describe('IssueChallanDetail', () => {
     // Read-only member without modify rights sees no signed-copy upload.
     expect(screen.queryByRole('button', { name: 'Upload signed copy' })).toBeNull();
 
-    await openForm('Cancel challan');
+    await openForm('Cancel challan…');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong site.' },
     });
@@ -927,7 +927,7 @@ describe('Issue Challan correction flow', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
-    await openForm('Request cancel & replace');
+    await openForm('Request cancel & replace…');
     fireEvent.change(screen.getByLabelText('Issued to'), {
       target: { value: 'SSE/Works/Delhi' },
     });

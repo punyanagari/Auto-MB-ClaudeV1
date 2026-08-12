@@ -153,7 +153,7 @@ describe('Installations', () => {
   it('shows the per-item installed summary and the records', async () => {
     renderInstallations(installationsApi());
 
-    await screen.findByRole('button', { name: 'Record installation' });
+    await screen.findByRole('button', { name: 'New installation' });
     // Summary rows: the authoritative installed quantity per item.
     expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
     expect(screen.getByText('0.000')).toBeTruthy();
@@ -176,12 +176,12 @@ describe('Installations', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(
       /location master could not be loaded/i,
     );
-    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New installation' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry locations' }));
 
     expect(
-      await screen.findByRole('button', { name: 'Record installation' }),
+      await screen.findByRole('button', { name: 'New installation' }),
     ).toBeTruthy();
     expect(listLocationMasters).toHaveBeenCalledTimes(2);
   });
@@ -199,7 +199,7 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    await openForm('Record installation');
+    await openForm('New installation');
     fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_PLAIN },
     });
@@ -233,7 +233,7 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation, listLocationMasters });
     renderInstallations(api);
 
-    await openForm('Record installation');
+    await openForm('New installation');
     fireEvent.change(screen.getByLabelText('Quantity installed'), {
       target: { value: '1' },
     });
@@ -252,7 +252,7 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    await openForm('Record installation');
+    await openForm('New installation');
     fireEvent.change(screen.getByLabelText('Work item'), {
       target: { value: ITEM_SERIAL },
     });
@@ -329,7 +329,7 @@ describe('Installations', () => {
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
-    await openForm('Record installation');
+    await openForm('New installation');
     fireEvent.change(screen.getByLabelText('Quantity installed'), {
       target: { value: '99' },
     });
@@ -347,7 +347,7 @@ describe('Installations', () => {
 
     await screen.findByRole('heading', { name: 'Installations' });
     expect(screen.getByText('SN-003')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Record installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New installation' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel record' })).toBeNull();
   });
 });
@@ -465,7 +465,7 @@ describe('PAC certificates', () => {
   it('shows the per-item certified summary and a null released value as a dash', async () => {
     renderPac(pacApi());
 
-    await screen.findByRole('button', { name: 'Record PAC certificate' });
+    await screen.findByRole('button', { name: 'New PAC certificate' });
     // Summary: installed / certified / available per item.
     expect(screen.getByText('3.000')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
@@ -490,7 +490,7 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    await openForm('Record PAC certificate');
+    await openForm('New PAC certificate');
     fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/02' },
     });
@@ -532,7 +532,7 @@ describe('PAC certificates', () => {
     const api = pacApi({ recordWorkPacCertificate });
     renderPac(api);
 
-    await openForm('Record PAC certificate');
+    await openForm('New PAC certificate');
     fireEvent.change(screen.getByLabelText('Certificate reference'), {
       target: { value: 'PAC/2026/03' },
     });
@@ -560,7 +560,7 @@ describe('PAC certificates', () => {
     const api = pacApi({ cancelPacCertificate });
     renderPac(api);
 
-    await openForm('Cancel certificate');
+    await openForm('Cancel certificate…');
     fireEvent.change(screen.getByLabelText('Cancellation note for PAC PAC/2026/01'), {
       target: { value: 'Superseded by the railway' },
     });
@@ -612,7 +612,7 @@ describe('PAC certificates', () => {
     expect(
       screen.getByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Record PAC certificate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New PAC certificate' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel certificate' })).toBeNull();
     expect(
       screen.queryByRole('button', { name: 'Upload scanned certificate' }),
@@ -1104,7 +1104,7 @@ describe('MeasurementBooks workspace', () => {
       fireEvent.change(screen.getByLabelText(/Cancellation note/), {
         target: { value: 'Wrong measurement basis.' },
       });
-      fireEvent.click(submitButton('Cancel Measurement Book…'));
+      fireEvent.click(submitButton('Continue to confirmation'));
 
       // Cancelling a numbered record is irreversible, so the confirm echoes
       // the number before anything is sent.
@@ -1136,7 +1136,7 @@ describe('MeasurementBooks workspace', () => {
     await openForm('Cancel Measurement Book…');
     const note = screen.getByLabelText(/Cancellation note/);
     fireEvent.change(note, { target: { value: 'Wrong measurement basis.' } });
-    fireEvent.click(submitButton('Cancel Measurement Book…'));
+    fireEvent.click(submitButton('Continue to confirmation'));
     await screen.findByRole('button', { name: 'Cancel DCW-1-MB-02 now' });
 
     // What was confirmed must be the wording that gets stored, so rewording

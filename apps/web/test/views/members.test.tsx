@@ -18,7 +18,7 @@ describe('Members', () => {
 
     expect(await screen.findByRole('table')).toBeTruthy();
     expect(screen.getByText('You')).toBeTruthy();
-    await openForm('Add member');
+    await openForm('New member');
     expect(screen.getByLabelText('Account email')).toBeTruthy();
   });
 
@@ -48,7 +48,7 @@ describe('Members', () => {
     });
     render(<Members api={api} organisationId={ORG_ID} currentUserId="user-a" />);
 
-    await openForm('Add member');
+    await openForm('New member');
     fireEvent.change(screen.getByLabelText('Account email'), {
       target: { value: 'viewer@example.test' },
     });

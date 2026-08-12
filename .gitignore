@@ -28,5 +28,11 @@ fixtures-raw/
 # changing the committed default for everyone else.
 .claude/hooks/.caveman-off
 
+# Heavy third-party design skills arrive by `node scripts/fetch-skills.mjs`
+# at the commits pinned in .claude/skills/PROVENANCE.md, not from git.
+# The small skills (caveman, the ux-ui-agent-skills wrapper) stay tracked.
+.claude/skills/impeccable/
+.claude/skills/ux-designer/
+
 # Agent worktrees are session-local working copies, never content.
 .claude/worktrees/

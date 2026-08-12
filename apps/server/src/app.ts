@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -22,6 +23,8 @@ import { createMetricsRegistry } from './metrics.js';
 import {
   accountLockoutKey,
   createAccountLockout,
+  createPgAccountLockout,
+  createPgRateLimiter,
   createRateLimiter,
   type AccountLockoutRule,
   type RateLimitRule,
@@ -93,6 +96,16 @@ export interface BuildAppOptions {
     readonly upload?: RateLimitRule;
     readonly accountLockout?: AccountLockoutRule;
   };
+  /** Namespace for the PostgreSQL-backed throttle state (finding 38,
+   * migration 0054). Every production replica keeps the default, so all
+   * instances count the same attempts. Under an explicit test NODE_ENV an
+   * unconfigured instance gets a random namespace of its own instead —
+   * parallel suites share one database and one loopback address, and an
+   * accidentally shared window would let one suite's sign-ins throttle
+   * another's; this reproduces the per-process scope the in-memory maps
+   * had and every existing suite was written against. The cross-instance
+   * sharing proof passes an explicit shared namespace. */
+  readonly throttleNamespace?: string;
   /** Turns the finding-36 MFA refusals on: privilege-holding users without
    * enrolled TOTP are refused tenant-scoped requests and refused two-factor
    * disable. The gate itself is always computed and reported by /api/me;
@@ -359,7 +372,21 @@ export async function buildApp(
         ? { backupMarkerPath: options.backupMarkerPath }
         : {},
     );
-    const token = options.metricsToken;
+    // Constant-time bearer comparison: both sides are folded through
+    // SHA-256 so the buffers timingSafeEqual compares always have equal
+    // length — neither the token's length nor its bytes leak through
+    // response timing (a plain `===` short-circuits on the first
+    // mismatching character).
+    const expectedAuthorization = createHash('sha256')
+      .update(`Bearer ${options.metricsToken}`)
+      .digest();
+    const authorizationMatches = (header: string | undefined): boolean =>
+      timingSafeEqual(
+        createHash('sha256')
+          .update(header ?? '')
+          .digest(),
+        expectedAuthorization,
+      );
     app.addHook('onResponse', (request, reply, done) => {
       registry.observe(
         request.method,
@@ -370,7 +397,7 @@ export async function buildApp(
       done();
     });
     app.get('/metrics', (request, reply) => {
-      if (request.headers.authorization !== `Bearer ${token}`) {
+      if (!authorizationMatches(request.headers.authorization)) {
         void reply.status(401);
         return { code: 'UNAUTHENTICATED', message: 'Metrics require the token.' };
       }
@@ -389,24 +416,34 @@ export async function buildApp(
     message: 'Too many attempts; wait a few minutes and try again.',
     requestId,
   });
-  const authLimiter = createRateLimiter(
-    options.rateLimits?.auth ?? { windowMs: 5 * 60_000, max: 20 },
-  );
-  const uploadLimiter = createRateLimiter(
-    options.rateLimits?.upload ?? { windowMs: 10 * 60_000, max: 30 },
-  );
+  // Database-configured instances share the throttle state through
+  // PostgreSQL (finding 38, migration 0054), so a second replica divides
+  // nothing; only a database-less instance — which exposes no login or
+  // upload surface — falls back to the in-process maps.
+  const authRule = options.rateLimits?.auth ?? { windowMs: 5 * 60_000, max: 20 };
+  const uploadRule = options.rateLimits?.upload ?? { windowMs: 10 * 60_000, max: 30 };
+  const throttleNamespace =
+    options.throttleNamespace ??
+    (process.env.NODE_ENV === 'test' ? crypto.randomUUID() : 'deployment');
+  const authLimiter = database
+    ? createPgRateLimiter(database, 'auth', authRule, throttleNamespace)
+    : createRateLimiter(authRule);
+  const uploadLimiter = database
+    ? createPgRateLimiter(database, 'upload', uploadRule, throttleNamespace)
+    : createRateLimiter(uploadRule);
   // Second throttling dimension for sign-in only: the per-address window
   // above is trivially bypassed by rotating source addresses, so repeated
   // failures against ONE account (keyed by a hash of the normalised
   // email, never the raw address) earn a temporary account lock that is
   // checked in the auth route handler where the parsed body is available.
-  const accountLockout = createAccountLockout(
-    options.rateLimits?.accountLockout ?? {
-      windowMs: 15 * 60_000,
-      maxFailures: 10,
-      lockMs: 15 * 60_000,
-    },
-  );
+  const accountLockoutRule = options.rateLimits?.accountLockout ?? {
+    windowMs: 15 * 60_000,
+    maxFailures: 10,
+    lockMs: 15 * 60_000,
+  };
+  const accountLockout = database
+    ? createPgAccountLockout(database, accountLockoutRule, throttleNamespace)
+    : createAccountLockout(accountLockoutRule);
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0] ?? '';
     // Two-factor endpoints join the sign-in window: verify-totp and
@@ -431,7 +468,10 @@ export async function buildApp(
         (path.startsWith('/api/pac-certificates/') && path.endsWith('/document')) ||
         path.endsWith('/response-document'));
     const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
-    if (limiter !== null && !limiter.allow(request.ip)) {
+    // Fail closed: a database failure here throws, and the error handler
+    // answers 503 — the protected endpoints could not have served the
+    // request without the database anyway.
+    if (limiter !== null && !(await limiter.allow(request.ip))) {
       return reply.status(429).send(rateLimitedBody(request.id));
     }
     return undefined;
@@ -470,7 +510,9 @@ export async function buildApp(
           const email = (request.body as { email?: unknown } | null | undefined)?.email;
           if (typeof email === 'string' && email.trim() !== '') {
             lockoutKey = accountLockoutKey(email);
-            if (accountLockout.isLocked(lockoutKey)) {
+            // Fail closed like the per-address hook above: a database
+            // failure throws into the standard 503.
+            if (await accountLockout.isLocked(lockoutKey)) {
               return reply.status(429).send(rateLimitedBody(request.id));
             }
           }
@@ -529,21 +571,31 @@ export async function buildApp(
         const response = await authInstance.handler(toWebRequest(request));
 
         if (lockoutKey !== null) {
-          if (response.status < 400) {
-            accountLockout.clear(lockoutKey);
-          } else if (accountLockout.recordFailure(lockoutKey)) {
-            // The lockout just engaged: audit it once per episode. Only
-            // the email hash is recorded — never the raw email or any
-            // password material — and a lost audit row must not turn
-            // into a different response for the caller.
-            try {
-              await recordLoginLockout(database, {
-                emailHash: lockoutKey,
-                requestId: request.id,
-              });
-            } catch (error) {
-              request.log.error({ err: error }, 'login lockout audit write failed');
+          // The auth response above already exists; this is bookkeeping,
+          // and a lost update must not turn into a different response for
+          // the caller (the pre-request isLocked gate stays fail-closed).
+          try {
+            if (response.status < 400) {
+              await accountLockout.clear(lockoutKey);
+            } else if (await accountLockout.recordFailure(lockoutKey)) {
+              // The lockout just engaged: audit it once per episode. Only
+              // the email hash is recorded — never the raw email or any
+              // password material — and a lost audit row must not turn
+              // into a different response for the caller.
+              try {
+                await recordLoginLockout(database, {
+                  emailHash: lockoutKey,
+                  requestId: request.id,
+                });
+              } catch (error) {
+                request.log.error({ err: error }, 'login lockout audit write failed');
+              }
             }
+          } catch (error) {
+            request.log.error(
+              { err: error },
+              'account lockout bookkeeping failed after the auth response',
+            );
           }
         }
         reply.status(response.status);

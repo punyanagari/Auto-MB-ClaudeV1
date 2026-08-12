@@ -473,14 +473,10 @@ export function Quotations({
     <>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="mb-1 text-[11px] font-semibold tracking-widest text-primary uppercase">
+          <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
             Outward offers
           </p>
-          <h1
-            id="quotations-title"
-            tabIndex={-1}
-            className="text-2xl font-semibold tracking-tight text-balance"
-          >
+          <h1 id="quotations-title" tabIndex={-1}>
             Quotations
           </h1>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
@@ -524,10 +520,10 @@ export function Quotations({
                 {candidate.label}
                 <span
                   className={cn(
-                    'rounded px-1.5 text-[11px] tnum',
+                    'rounded px-1.5 text-xs tnum',
                     filter === candidate.id
-                      ? 'bg-primary-foreground/20'
-                      : 'bg-muted-foreground/15',
+                      ? 'bg-foreground/10'
+                      : 'bg-secondary text-secondary-foreground',
                   )}
                 >
                   {counts[candidate.id]}
@@ -596,8 +592,17 @@ export function Quotations({
             <p className="text-muted-foreground">No quotations yet.</p>
           ))}
 
+        {/* The register's primary action, and distinct from the submit
+            inside it: the opener names what will exist ("New quotation"),
+            the submit commits it ("Create quotation"). They used to carry
+            the same words, so on an empty register — where the panel is
+            already open — pressing the header looked inert. */}
         {quotations !== null && canModify && (
-          <Disclosure label="Create quotation" startOpen={quotations.length === 0}>
+          <Disclosure
+            label="New quotation"
+            variant="default"
+            startOpen={quotations.length === 0}
+          >
             <form
               noValidate
               onSubmit={(event) => {
@@ -953,7 +958,7 @@ export function Quotations({
               /* Issued and settled quotations are read-only records: the
                  number, the lines, and the total stay exactly as issued. */
               <>
-                <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+                <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
                   <div>
                     <dt>Addressed to</dt>
                     <dd>{quotation.addressedTo}</dd>

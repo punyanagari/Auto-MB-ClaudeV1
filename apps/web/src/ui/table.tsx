@@ -15,16 +15,15 @@ const CORNERS = [
 /* The largest work in the corpus carries 129 items, so the headings have to
  * survive the scroll — otherwise Awarded, Delivered, Remaining and This
  * challan are four unlabelled numeric columns by the time you reach row 60.
- * The background is opaque so scrolled rows cannot read through it, and
- * border-separate keeps the bottom rule on the cell where it travels with
- * the heading. The literal near-white predates the Signal retarget, which
- * moved the palette around it. */
+ * The background is the table-header token — opaque in both themes so
+ * scrolled rows cannot read through it — and border-separate keeps the
+ * bottom rule on the cell where it travels with the heading. */
 const HEAD = [
   '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1',
-  '[&_thead_th]:bg-[oklch(0.986_0.002_250)]',
+  '[&_thead_th]:bg-table-header',
   '[&_thead_th]:border-b [&_thead_th]:border-border',
   '[&_thead_th]:px-4 [&_thead_th]:py-3 [&_thead_th]:text-left',
-  '[&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:tracking-[0.025em]',
+  '[&_thead_th]:text-xs [&_thead_th]:font-semibold [&_thead_th]:tracking-[0.025em]',
   '[&_thead_th]:text-muted-foreground [&_thead_th]:uppercase',
 ].join(' ');
 

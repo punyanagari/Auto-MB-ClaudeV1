@@ -301,6 +301,7 @@ function irpEvidence(seed: string, ackDate: string) {
     ackDate,
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
+    rawResponse: `{"status_cd":"1","seed":"${seed}"}`,
   };
 }
 
@@ -614,6 +615,7 @@ describe('stage 1: the 24-hour IRN cancellation window', () => {
     cancelInvoiceProvider.mockResolvedValueOnce({
       cancelledAtText: '2026-08-12 15:00:00',
       cancelledAt: new Date().toISOString(),
+      rawResponse: '{"status_cd":"1","CancelDate":"2026-08-12 15:00:00"}',
     });
     const cancel = await authedOn(providerApp, owner, {
       method: 'POST',
@@ -628,6 +630,11 @@ describe('stage 1: the 24-hour IRN cancellation window', () => {
   });
 
   it('treats legacy manual evidence with no provable ack instant as window-closed', async () => {
+    // Since migration 0053 a legacy manual row stands in
+    // registered_unverified — the pair manual + 'registered' is
+    // constitutionally forbidden (tax_invoices_manual_unverified_shape),
+    // and this insert is exactly what 0053's reclassification leaves
+    // behind for pre-0053 legacy evidence.
     const legacyId = randomUUID();
     await admin`
       insert into tax_invoices (
@@ -646,7 +653,7 @@ describe('stage 1: the 24-hour IRN cancellation window', () => {
         ${buyerContactId}, ${admin.json({ name: 'Legacy buyer' })}, '1000.00',
         '1000.00', '90.00', '90.00', '0.00', '0.00', '1180.00',
         ${admin.json({ templateVersion: 'ti-v1' })},
-        ${'f'.repeat(64)}, 'manual', 'registered', true,
+        ${'f'.repeat(64)}, 'manual', 'registered_unverified', true,
         now(), ${ownerUserId}, ${ownerUserId}
       )
     `;
@@ -1026,6 +1033,7 @@ describe('the CRN transport under the 0049 gates and the provider ledger', () =>
     cancelInvoiceProvider.mockResolvedValueOnce({
       cancelledAtText: '2026-08-12 16:00:00',
       cancelledAt: new Date().toISOString(),
+      rawResponse: '{"status_cd":"1","CancelDate":"2026-08-12 16:00:00"}',
     });
     const cancel = await authedOn(providerApp, owner, {
       method: 'POST',

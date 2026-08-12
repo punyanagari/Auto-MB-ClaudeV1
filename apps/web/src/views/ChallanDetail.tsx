@@ -279,11 +279,7 @@ export function ChallanDetail({
   if (loadError !== null) {
     return (
       <Card aria-labelledby="challan-title">
-        <h1
-          id="challan-title"
-          tabIndex={-1}
-          className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
-        >
+        <h1 id="challan-title" tabIndex={-1}>
           Delivery Challan
         </h1>
         <FormError>{loadError}</FormError>
@@ -294,11 +290,7 @@ export function ChallanDetail({
   if (detail === null) {
     return (
       <Card aria-labelledby="challan-title">
-        <h1
-          id="challan-title"
-          tabIndex={-1}
-          className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
-        >
+        <h1 id="challan-title" tabIndex={-1}>
           Delivery Challan
         </h1>
         <p className="text-muted-foreground" role="status">
@@ -327,16 +319,12 @@ export function ChallanDetail({
 
   return (
     <Card className="w-full" aria-labelledby="challan-title">
-      <h1
-        id="challan-title"
-        tabIndex={-1}
-        className="mb-2 text-2xl leading-8 font-semibold tracking-tight text-balance"
-      >
+      <h1 id="challan-title" tabIndex={-1}>
         {challan.status === 'draft'
           ? 'Draft Delivery Challan'
           : `Delivery Challan ${challan.challanNumber ?? ''}`}
       </h1>
-      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
           <dt>Status</dt>
           <dd>
@@ -569,7 +557,10 @@ export function ChallanDetail({
             </tbody>
           </DataTable>
           {canRecordEvidence ? (
-            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+            <Disclosure
+              label="New serial numbers"
+              startOpen={(serials ?? []).length === 0}
+            >
               <RecordSerialsForm
                 lines={trackedLines.map((line) => line.item)}
                 pending={pending}
@@ -606,7 +597,7 @@ export function ChallanDetail({
         <>
           <h2 className="mt-6 mb-2 text-sm font-semibold">Delivery receipt</h2>
           {receipt !== null ? (
-            <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+            <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
               <div>
                 <dt>Received on</dt>
                 <dd>{receipt.receivedOn}</dd>
@@ -708,7 +699,10 @@ export function ChallanDetail({
           )}
 
           {canRecordEvidence && (
-            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+            <Disclosure
+              label="New serial numbers"
+              startOpen={(serials ?? []).length === 0}
+            >
               <RecordSerialsForm
                 lines={items}
                 pending={pending}
@@ -735,7 +729,7 @@ export function ChallanDetail({
           )}
 
           {canRecordEvidence && uninstalled.length > 0 && (
-            <Disclosure label="Record installation">
+            <Disclosure label="New installation">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -797,7 +791,7 @@ export function ChallanDetail({
       )}
 
       {challan.status === 'issued' && canModify && (
-        <Disclosure label="Upload signed copy">
+        <Disclosure label="Upload signed copy…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -917,7 +911,7 @@ export function ChallanDetail({
               the approvals queue.
             </p>
           ) : eligibility.path === 'cancel_replace' ? (
-            <Disclosure label="Request cancel & replace">
+            <Disclosure label="Request cancel & replace…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1032,7 +1026,7 @@ export function ChallanDetail({
               </form>
             </Disclosure>
           ) : (
-            <Disclosure label="Request correction notice">
+            <Disclosure label="Request correction notice…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1126,7 +1120,7 @@ export function ChallanDetail({
       )}
 
       {challan.status === 'issued' && canCancel && cancelClosed === null && (
-        <Disclosure label="Cancel challan">
+        <Disclosure label="Cancel challan…">
           <form
             onSubmit={(event) => {
               event.preventDefault();

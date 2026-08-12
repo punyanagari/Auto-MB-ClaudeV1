@@ -86,7 +86,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         <div className="rounded-lg border border-border bg-card p-5">
-          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <span className="mb-1 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Works
           </span>
           <span className="block text-2xl font-semibold tracking-tight tabular-nums">
@@ -94,7 +94,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           </span>
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
-          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <span className="mb-1 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Contract value
           </span>
           <span className="block text-2xl font-semibold tracking-tight tabular-nums">
@@ -102,7 +102,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           </span>
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
-          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <span className="mb-1 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Delivered value
           </span>
           <span className="block text-2xl font-semibold tracking-tight tabular-nums">
@@ -110,7 +110,7 @@ export function Dashboard({ api, organisationId, onOpenWork }: DashboardProps) {
           </span>
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
-          <span className="mb-1 block text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <span className="mb-1 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Billed value
           </span>
           <span className="block text-2xl font-semibold tracking-tight tabular-nums">

@@ -130,6 +130,8 @@ describe('Whitebooks IRP transport', () => {
       ackDate: '2026-08-12T09:00:00.000Z',
       signedQr: 'signed-qr',
       signedInvoice: 'signed-invoice',
+      // The full response body verbatim, for the 0053 evidence ledger.
+      rawResponse: `{"status_cd":"1","data":{"Irn":"${'A'.repeat(64)}","AckNo":${ackNumber},"AckDt":"12/08/2026 14:30:00","SignedQRCode":"signed-qr","SignedInvoice":"signed-invoice"}}`,
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -193,6 +195,10 @@ describe('Whitebooks IRP transport', () => {
     ).resolves.toEqual({
       cancelledAtText: '12/08/2026 15:00:00',
       cancelledAt: '2026-08-12T09:30:00.000Z',
+      rawResponse: JSON.stringify({
+        status_cd: '1',
+        data: { CancelDate: '12/08/2026 15:00:00' },
+      }),
     });
   });
 

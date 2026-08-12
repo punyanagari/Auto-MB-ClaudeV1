@@ -124,7 +124,7 @@ export function WorkMeasurement({
             <p className="text-muted-foreground">No measurements recorded yet.</p>
           )}
           {canRecordSiteEvidence && workItems.length > 0 && (
-            <Disclosure label="Record measurement" startOpen={mbEntries.length === 0}>
+            <Disclosure label="New measurement" startOpen={mbEntries.length === 0}>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();

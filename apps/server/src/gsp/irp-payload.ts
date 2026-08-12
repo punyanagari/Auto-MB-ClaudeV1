@@ -74,13 +74,6 @@ export function formatNicDate(dateOnly: string): string {
   return `${day ?? ''}/${month ?? ''}/${year ?? ''}`;
 }
 
-/** Last standalone six-digit PIN in a legacy address. New snapshots store PIN
- * explicitly; this remains for old non-statutory call sites and migrations. */
-export function extractPincode(address: string): string | null {
-  const matches = address.match(/(?<![0-9])[0-9]{6}(?![0-9])/g);
-  return matches === null ? null : (matches[matches.length - 1] ?? null);
-}
-
 interface WirePartyAddress {
   LglNm: string;
   Addr1: string;

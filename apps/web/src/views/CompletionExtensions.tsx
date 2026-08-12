@@ -132,7 +132,7 @@ export function CompletionExtensions({
       {actionError !== null && <FormError>{actionError}</FormError>}
 
       {dates.currentCompletionDate !== null ? (
-        <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
+        <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
           <div>
             <dt>Original completion date</dt>
             <dd>{dates.originalCompletionDate}</dd>
@@ -259,10 +259,7 @@ export function CompletionExtensions({
       )}
 
       {canModify && dates.currentCompletionDate !== null && draft === undefined && (
-        <Disclosure
-          label="Save draft extension request"
-          startOpen={extensions.length === 0}
-        >
+        <Disclosure label="New extension request" startOpen={extensions.length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -332,7 +329,7 @@ export function CompletionExtensions({
       )}
 
       {canIssue && dates.currentCompletionDate !== null && (
-        <Disclosure label="Record paper letter as final">
+        <Disclosure label="Record paper letter as final…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -492,7 +489,7 @@ function FinalisedExtensionActions({
         </Actions>
       )}
       {!extension.responseDocumentAvailable && (
-        <Disclosure label="Upload response">
+        <Disclosure label="Upload response…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -529,7 +526,7 @@ function FinalisedExtensionActions({
         </Disclosure>
       )}
       {extension.responseDocumentAvailable && (
-        <Disclosure label="Record response">
+        <Disclosure label="Record response…">
           <form
             onSubmit={(event) => {
               event.preventDefault();

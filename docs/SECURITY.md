@@ -37,10 +37,25 @@ Primary risks:
   submitted email (never the raw address), which decays over its window,
   clears on successful login, and answers with the same 429 envelope for
   existing and non-existing accounts (no account-existence oracle).
-  Lockouts are audited by email hash only. Both limiters hold in-process
-  state, so this protection is single-instance only — the current
-  single-host topology; scaling to multiple API instances requires
-  moving this state into PostgreSQL or a shared store first;
+  Lockouts are audited by email hash only. Both limiters keep their state
+  in PostgreSQL (migration 0054, finding 38): every API instance counts
+  the same attempts, so adding a replica no longer divides the windows.
+  The tables are UNLOGGED (the state is reconstructible and must not pay
+  WAL on the sign-in path) and hold only SHA-256 hashes — the client
+  address and the already-hashed email never rest raw in the database.
+  Per-key mutations serialise on a transaction-scoped advisory lock, so
+  the count-and-record step stays exact under concurrency; expired rows
+  are swept opportunistically as windows roll over. The pre-request
+  checks fail CLOSED — a database failure answers the standard 503, and
+  the protected endpoints could not have served the request without the
+  database anyway. Production replicas all share the default throttle
+  namespace; an explicitly-test process without explicit configuration
+  gets an instance-scoped namespace so parallel suites sharing one
+  database cannot throttle each other, and the cross-instance sharing
+  proof passes a shared namespace explicitly
+  (`apps/server/test/ops.integration.test.ts`). Only a database-less
+  instance — which exposes no login or upload surface — falls back to
+  the in-process maps;
 - MFA for privilege holders: any user holding, in any organisation, an
   active owner membership or a document authority (issue, cancel, approve
   amendments) must have TOTP two-factor enabled. The requirement is
@@ -54,7 +69,13 @@ Primary risks:
   out-of-band procedure in docs/RUNBOOK.md. The refusals deploy dark
   behind `MFA_ENFORCE=true` (the gate itself always computes and is
   reported by `/api/me`); production compose defaults it to true, and it
-  must be on before the first design-partner account exists;
+  must be on before the first design-partner account exists. Because the
+  whole wall hangs on that one variable, boot asserts it: when
+  `NODE_ENV` is not explicitly `development` or `test`, the server
+  refuses to start unless `MFA_ENFORCE` is exactly `true`
+  (`assertProductionMfaEnforcement`, mirroring the auth-secret gate
+  below), so a production process can no longer come up one unset or
+  mistyped environment variable away from an open gate;
 - sensitive issue/cancel actions require explicit authority;
 - every membership read that runs inside a bound-tenant transaction
   filters on `app_private.current_organisation_id()` as well as the user.
@@ -121,7 +142,36 @@ Enforced by CI today, with what each control proves:
 - TypeScript type check, lint, and format check — static correctness only;
 - static security analysis (`eslint-plugin-security` at zero warnings) —
   catches known-dangerous JavaScript patterns; it is not a full SAST and
-  proves nothing about logic-level vulnerabilities;
+  proves nothing about logic-level vulnerabilities.
+
+  **Narrowed lint ruleset.** Five of the plugin's rules are disabled in
+  `eslint.config.js`, and the narrowing is part of this baseline's honest
+  scope rather than an accident:
+  - `security/detect-object-injection` (repo-wide) — fires on every
+    computed member access; with strict TypeScript and
+    `noUncheckedIndexedAccess` the signal is almost entirely noise;
+  - `security/detect-non-literal-fs-filename` (repo-wide) — the
+    migration runner and tests legitimately read paths built at runtime
+    from repository-controlled directories; upload paths are guarded by
+    their own validation and tests instead;
+  - `security/detect-unsafe-regex`, `security/detect-possible-timing-attacks`,
+    and `security/detect-non-literal-regexp` (`packages/loa-parser` only)
+    — the parser's corpus-tested extraction regexes trip the static
+    ReDoS heuristic, its value comparisons trip the timing heuristic
+    (they guard no secrets), and its regexes are composed from
+    module-internal constants, never parsed input. Text from uploaded
+    LOA PDFs DOES reach these regexes (the upload route runs
+    `reviewLoaLetter` on extracted text after magic-byte, size, and
+    malware validation) — the config's earlier claim that only pinned
+    fixtures did was stale and is corrected with this disclosure — so
+    the ReDoS exemption rests on review of the regexes themselves and
+    the corpus tests, not on input provenance, and deserves re-audit if
+    the extraction grammar grows.
+
+  Everything else in the plugin's recommended set runs at zero warnings;
+  timing-sensitive comparisons outside the parser (the /metrics bearer
+  token) use `crypto.timingSafeEqual` rather than relying on the lint;
+
 - secret scan (`secretlint` with the recommend preset; `.secretlintignore`
   excludes the lockfile, the imported LOA fixtures, historical reference
   docs, and the untracked local `.env`) — catches committed credentials
@@ -211,7 +261,10 @@ Activated with Milestone 4 (pilot engineering):
   executed);
 - metrics — Prometheus text format behind a bearer token, refused at the
   public edge; route templates as labels, never raw URLs, so tenant and
-  document ids cannot leak into label values;
+  document ids cannot leak into label values. The bearer comparison is
+  constant-time: both sides fold through SHA-256 and compare with
+  `crypto.timingSafeEqual`, so neither the token's length nor its bytes
+  leak through response timing;
 - export — owner-only full-organisation export, audit-logged, as the
   incident procedure's evidence snapshot and the contractor's data
   portability;
@@ -240,7 +293,20 @@ Activated with contract administration, procurement, and tax documents:
 - IRN, acknowledgement, signed QR, e-way-bill number, and validity are never
   minted locally. Local document status stays distinct from provider status;
   unknown registration or generation is lookup-only and is never blindly
-  replayed. Manual compatibility evidence is labelled unverified;
+  replayed. Manual compatibility evidence carries its own provider state,
+  `registered_unverified` (migration 0053): it behaves as registered for
+  local rules (the cancel interlock, the reporting window) but renders
+  distinctly, is excluded from every provider-verified claim, and a CHECK
+  constraint refuses a manual row ever claiming the provider-verified
+  `registered` state — even under raw SQL with triggers suspended;
+- the provider operation ledger retains the raw request and response
+  bodies beside the request hash, provider code, and status (migration
+  0053): the request body is part of the operation's immutable identity,
+  the response body lands exactly once when the operation completes, and
+  both are bounded at 256 KiB with an explicit truncation marker rather
+  than silent loss. Provider AUTHENTICATION calls never open ledger
+  operations, so auth tokens and credentials cannot land in the ledger,
+  and auth failures are re-wrapped without their response bodies;
 - provider credentials belong only in server-side secret configuration. The
   e-invoice client pair and the separate E-way Bill API client pair are distinct
   secrets and are never substituted for one another.

@@ -230,7 +230,7 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ respondExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    await openForm('Record response');
+    await openForm('Record response…');
     fireEvent.change(screen.getByLabelText('Outcome'), {
       target: { value: 'modified' },
     });
@@ -322,7 +322,7 @@ describe('CompletionExtensions', () => {
     const api = stubApi({ backfillExtensionRequest, getWorkCompletion });
     renderCompletion(api);
 
-    await openForm('Record paper letter as final');
+    await openForm('Record paper letter as final…');
     fireEvent.change(screen.getByLabelText('Paper letter reference'), {
       target: { value: 'REF/EXT/7' },
     });
@@ -436,7 +436,7 @@ describe('WorkConsignees panel', () => {
     );
 
     expect(await screen.findByText('SSE (Signal) GZB')).toBeTruthy();
-    await openForm('Link consignee');
+    await openForm('New consignee link');
     // Only contacts not yet linked are offered.
     const picker = screen.getByLabelText<HTMLSelectElement>('Link a consignee contact');
     expect(Array.from(picker.options).map((option) => option.value)).toEqual([

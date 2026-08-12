@@ -74,7 +74,7 @@ describe('IssueChallanDetail on a completed Work', () => {
     expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
     expect(screen.queryByLabelText('Cancellation note')).toBeNull();
     expect(
-      screen.queryByRole('button', { name: 'Request cancel & replace' }),
+      screen.queryByRole('button', { name: 'Request cancel & replace…' }),
     ).toBeNull();
     expect(screen.getAllByText(/Reopen the Work from its page/).length).toBe(2);
     expect(api.cancelIssueChallan).not.toHaveBeenCalled();
@@ -83,10 +83,10 @@ describe('IssueChallanDetail on a completed Work', () => {
   it('leaves both forms open while the Work is active', async () => {
     renderIc(true);
 
-    await openForm('Cancel challan');
+    await openForm('Cancel challan…');
     expect(screen.getByLabelText('Cancellation note')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: 'Request cancel & replace' }),
+      screen.getByRole('button', { name: 'Request cancel & replace…' }),
     ).toBeTruthy();
     expect(screen.queryByText(/Reopen the Work from its page/)).toBeNull();
   });

@@ -92,16 +92,6 @@ export function formatTimestamp(iso: string): string {
   });
 }
 
-/** First letters of the first two words — the avatar monogram. */
-export function initials(nameOrEmail: string): string {
-  return nameOrEmail
-    .split(/[\s@._-]+/)
-    .filter((part) => part.length > 0)
-    .slice(0, 2)
-    .map((part) => (part[0] ?? '').toUpperCase())
-    .join('');
-}
-
 /** Rupee display for RATES, which carry up to six fraction digits
  * (numeric(18,6)): at least the conventional two decimals, trailing
  * zeros beyond them trimmed — ₹100.00, ₹0.8517, ₹3.175636. */

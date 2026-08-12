@@ -189,7 +189,9 @@ export function IrpPanel({
             <StatusChip status={invoice.irpProviderState}>
               {invoice.irpProvider === 'whitebooks'
                 ? `Whitebooks · ${invoice.irpProviderState}`
-                : `Manual evidence · ${invoice.irpProviderState} · unverified`}
+                : invoice.irpProviderState === 'registered_unverified'
+                  ? 'manual — unverified'
+                  : `manual — ${invoice.irpProviderState} · unverified`}
             </StatusChip>
           </p>
           <dl>
@@ -299,7 +301,7 @@ export function IrpPanel({
             )}
           {canCancel &&
             ((invoice.irpProvider === 'manual' &&
-              invoice.irpProviderState === 'registered') ||
+              invoice.irpProviderState === 'registered_unverified') ||
               invoice.irpProviderState === 'cancellation_unknown') && (
               <Disclosure label="Record externally confirmed IRP cancellation (unverified)">
                 <form

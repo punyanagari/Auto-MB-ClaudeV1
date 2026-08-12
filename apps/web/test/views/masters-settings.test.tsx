@@ -195,7 +195,7 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
-    await openForm('Add contact');
+    await openForm('New contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'SSE (Signal) GZB' },
     });
@@ -234,7 +234,7 @@ describe('Masters', () => {
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
-    await openForm('Add contact');
+    await openForm('New contact');
     const consigneeRole = screen.getByLabelText<HTMLInputElement>('Consignee');
     // A create naming no role makes a consignee, so the box starts checked
     // — and stays read-only, because isConsignee is a create-time fact.
@@ -322,7 +322,7 @@ describe('Masters', () => {
       expect(setContactActive).toHaveBeenCalledWith(ORG_ID, CONSIGNEE.id, false);
     });
 
-    await openForm('Add contact');
+    await openForm('New contact');
     fireEvent.change(screen.getByLabelText('Designation / name'), {
       target: { value: 'Sr. DEE (G) NR' },
     });

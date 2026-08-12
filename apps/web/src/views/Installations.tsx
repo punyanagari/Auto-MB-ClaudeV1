@@ -323,7 +323,7 @@ export function Installations({
         locationsState === 'ready' &&
         selectableItems.length > 0 && (
           <Disclosure
-            label="Record installation"
+            label="New installation"
             startOpen={data.installations.length === 0}
           >
             <form

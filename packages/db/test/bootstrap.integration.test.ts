@@ -69,13 +69,16 @@ beforeAll(async () => {
   }
 }, 60_000);
 
+// Dropping a whole database and draining two pools can exceed the 10s
+// default hook budget when every suite runs in parallel on one cluster;
+// same explicit budget as the setup hook above.
 afterAll(async () => {
   if (bootAdmin) await bootAdmin.end();
   if (admin) {
     await admin.unsafe(`drop database if exists ${bootDbName} with (force)`);
     await admin.end();
   }
-});
+}, 60_000);
 
 describe('production bootstrap', () => {
   it('converges a grant-stripped database to the canonical matrix', async () => {

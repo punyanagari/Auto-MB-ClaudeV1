@@ -55,10 +55,16 @@ export function InvoiceList({ invoices, pending, onOpen }: InvoiceListProps) {
             <td>
               <StatusChip status={row.status}>{row.status}</StatusChip>
               {row.irn !== null && (
-                <StatusChip status="issued">
+                <StatusChip
+                  status={
+                    row.irpProvider === 'whitebooks'
+                      ? 'issued'
+                      : 'registered_unverified'
+                  }
+                >
                   {row.irpProvider === 'whitebooks'
                     ? 'IRP registered'
-                    : 'manual IRP evidence · unverified'}
+                    : 'manual — unverified'}
                 </StatusChip>
               )}
               {/* The frozen reporting window (migration 0049): amber
@@ -69,7 +75,8 @@ export function InvoiceList({ invoices, pending, onOpen }: InvoiceListProps) {
                   <StatusChip status="expired">IRP overdue</StatusChip>
                 ) : (
                   row.irpReportingDeadline !== null &&
-                  row.irpProviderState !== 'registered' && (
+                  row.irpProviderState !== 'registered' &&
+                  row.irpProviderState !== 'registered_unverified' && (
                     <StatusChip status="review">
                       IRP due {formatDate(row.irpReportingDeadline)}
                     </StatusChip>

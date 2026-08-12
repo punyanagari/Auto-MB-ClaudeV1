@@ -5,6 +5,7 @@ import {
   type EwayBillProviderEvidence,
   type IrpDocumentIdentity,
   type IrpRegistrationEvidence,
+  type ProviderCancellationEvidence,
   type StatutoryEnvironment,
   type StatutoryProvider,
 } from './statutory-provider.js';
@@ -245,6 +246,27 @@ function exactNumericField(
   return textValue(parsed, names);
 }
 
+/** Attaches the raw response body to a StatutoryProviderError thrown while
+ * normalising it, so the evidence ledger (migration 0053) retains what the
+ * provider actually said even when it could not be understood. Errors that
+ * already carry a body keep it. */
+function withRawResponse<T>(raw: string, normalise: () => T): T {
+  try {
+    return normalise();
+  } catch (error) {
+    if (error instanceof StatutoryProviderError && error.rawResponse === null) {
+      throw new StatutoryProviderError(
+        error.code,
+        error.outcome,
+        error.providerCode,
+        error.httpStatus,
+        raw,
+      );
+    }
+    throw error;
+  }
+}
+
 function statusSucceeded(value: unknown): boolean {
   const status = textValue(value, ['status_cd', 'statusCd', 'status']);
   return (
@@ -342,7 +364,7 @@ function boundedText(value: string | null, code: string, max: number): string {
 function normaliseIrp(
   rawTexts: readonly string[],
   value: unknown,
-): IrpRegistrationEvidence {
+): Omit<IrpRegistrationEvidence, 'rawResponse'> {
   const irn = boundedText(
     textValue(value, ['Irn', 'irn']),
     'WHITEBOOKS_IRN_MISSING',
@@ -382,7 +404,7 @@ function normaliseIrp(
 function normaliseEway(
   rawTexts: readonly string[],
   value: unknown,
-): EwayBillProviderEvidence {
+): Omit<EwayBillProviderEvidence, 'rawResponse'> {
   const providerStatus = textValue(value, ['Status']);
   if (providerStatus === null) {
     throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
@@ -452,6 +474,8 @@ export class WhitebooksProvider implements StatutoryProvider {
   ): Promise<{
     readonly parsed: unknown;
     readonly rawTexts: readonly string[];
+    /** The full response body verbatim, for the 0053 evidence ledger. */
+    readonly raw: string;
   } | null> {
     const url = new URL(path, this.#baseUrl);
     for (const [key, value] of Object.entries(options.query ?? {})) {
@@ -489,6 +513,7 @@ export class WhitebooksProvider implements StatutoryProvider {
         'unknown',
         null,
         response.status,
+        raw,
       );
     }
     const data = decodeJson(valueByKey(parsed, ['data'])) ?? parsed;
@@ -511,9 +536,10 @@ export class WhitebooksProvider implements StatutoryProvider {
         uncertain ? 'unknown' : 'failed',
         providerCode(parsed),
         response.status,
+        raw,
       );
     }
-    return { parsed: data, rawTexts };
+    return { parsed: data, rawTexts, raw };
   }
 
   #commonHeaders(gstin: string): Record<string, string> {
@@ -671,7 +697,10 @@ export class WhitebooksProvider implements StatutoryProvider {
       },
     );
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_IRP_EMPTY', 'unknown');
-    return normaliseIrp(result.rawTexts, result.parsed);
+    return withRawResponse(result.raw, () => ({
+      ...normaliseIrp(result.rawTexts, result.parsed),
+      rawResponse: result.raw,
+    }));
   }
 
   async findInvoiceByDocument(
@@ -698,7 +727,12 @@ export class WhitebooksProvider implements StatutoryProvider {
         notFoundIsNull: true,
       },
     );
-    return result === null ? null : normaliseIrp(result.rawTexts, result.parsed);
+    return result === null
+      ? null
+      : withRawResponse(result.raw, () => ({
+          ...normaliseIrp(result.rawTexts, result.parsed),
+          rawResponse: result.raw,
+        }));
   }
 
   async cancelInvoice(input: {
@@ -706,7 +740,7 @@ export class WhitebooksProvider implements StatutoryProvider {
     readonly irn: string;
     readonly reasonCode: string;
     readonly remark: string;
-  }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }> {
+  }): Promise<ProviderCancellationEvidence> {
     const result = await this.#request('POST', '/einvoice/type/CANCEL/version/V1_03', {
       query: { email: this.config.email, irp: this.config.irp },
       headers: await this.#irpHeaders(input.gstin),
@@ -718,15 +752,18 @@ export class WhitebooksProvider implements StatutoryProvider {
       mutation: true,
     });
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_CANCEL_EMPTY', 'unknown');
-    const cancelledAtText = boundedText(
-      textValue(result.parsed, ['CancelDate', 'cancelDate', 'CnlDt']),
-      'WHITEBOOKS_CANCEL_DATE_MISSING',
-      100,
-    );
-    return {
-      cancelledAtText,
-      cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
-    };
+    return withRawResponse(result.raw, () => {
+      const cancelledAtText = boundedText(
+        textValue(result.parsed, ['CancelDate', 'cancelDate', 'CnlDt']),
+        'WHITEBOOKS_CANCEL_DATE_MISSING',
+        100,
+      );
+      return {
+        cancelledAtText,
+        cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
+        rawResponse: result.raw,
+      };
+    });
   }
 
   async generateEwayBillByIrn(input: {
@@ -746,7 +783,10 @@ export class WhitebooksProvider implements StatutoryProvider {
       },
     );
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_EMPTY', 'unknown');
-    return normaliseEway(result.rawTexts, result.parsed);
+    return withRawResponse(result.raw, () => ({
+      ...normaliseEway(result.rawTexts, result.parsed),
+      rawResponse: result.raw,
+    }));
   }
 
   async findEwayBillByIrn(input: {
@@ -767,7 +807,12 @@ export class WhitebooksProvider implements StatutoryProvider {
         notFoundIsNull: true,
       },
     );
-    return result === null ? null : normaliseEway(result.rawTexts, result.parsed);
+    return result === null
+      ? null
+      : withRawResponse(result.raw, () => ({
+          ...normaliseEway(result.rawTexts, result.parsed),
+          rawResponse: result.raw,
+        }));
   }
 
   async cancelEwayBill(input: {
@@ -775,7 +820,7 @@ export class WhitebooksProvider implements StatutoryProvider {
     readonly ewbNumber: string;
     readonly reasonCode: string;
     readonly remark: string;
-  }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }> {
+  }): Promise<ProviderCancellationEvidence> {
     await this.#authenticateEway(input.gstin);
     const result = await this.#request('POST', '/ewaybillapi/v1.03/ewayapi/canewb', {
       query: { email: this.config.email, irp: this.config.irp },
@@ -789,15 +834,18 @@ export class WhitebooksProvider implements StatutoryProvider {
     });
     if (!result)
       throw new StatutoryProviderError('WHITEBOOKS_EWB_CANCEL_EMPTY', 'unknown');
-    const cancelledAtText = boundedText(
-      textValue(result.parsed, ['cancelDate', 'CancelDate']),
-      'WHITEBOOKS_EWB_CANCEL_DATE_MISSING',
-      100,
-    );
-    return {
-      cancelledAtText,
-      cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
-    };
+    return withRawResponse(result.raw, () => {
+      const cancelledAtText = boundedText(
+        textValue(result.parsed, ['cancelDate', 'CancelDate']),
+        'WHITEBOOKS_EWB_CANCEL_DATE_MISSING',
+        100,
+      );
+      return {
+        cancelledAtText,
+        cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
+        rawResponse: result.raw,
+      };
+    });
   }
 
   #assertIrpPayloadIdentity(identity: IrpDocumentIdentity, payloadJson: string): void {

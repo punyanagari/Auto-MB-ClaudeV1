@@ -407,7 +407,7 @@ export function MeasurementBooks({
       )}
 
       {canModify && !liveFinal && (
-        <Disclosure label="Create draft" startOpen={books.length === 0}>
+        <Disclosure label="New Measurement Book" startOpen={books.length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -1141,7 +1141,7 @@ export function MeasurementBooks({
                   </Field>
                   {!confirmingCancel && (
                     <Button type="submit" variant="outline" disabled={pending}>
-                      Cancel Measurement Book…
+                      Continue to confirmation
                     </Button>
                   )}
                 </form>

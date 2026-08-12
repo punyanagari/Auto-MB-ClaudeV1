@@ -51,7 +51,7 @@ export function WorkInstruments({
       <h2>Contract instruments</h2>
       {typeof work.pbgRequiredAmount === 'string' ? (
         <dl
-          className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-[11px] [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium"
+          className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium"
           aria-label="PBG requirement from the letter"
         >
           <div>
@@ -149,7 +149,7 @@ export function WorkInstruments({
         </p>
       )}
       {canModify && (
-        <Disclosure label="Add instrument" startOpen={instruments.length === 0}>
+        <Disclosure label="New instrument" startOpen={instruments.length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();

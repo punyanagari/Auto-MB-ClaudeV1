@@ -59,7 +59,8 @@ export function InvoiceDetail({
             </>
           ) : (
             invoice.irpReportingDeadline !== null &&
-            invoice.irpProviderState !== 'registered' && (
+            invoice.irpProviderState !== 'registered' &&
+            invoice.irpProviderState !== 'registered_unverified' && (
               <>
                 {' '}
                 <StatusChip status="review">

@@ -95,7 +95,7 @@ describe('ChallanDetail', () => {
     await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
     expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
 
-    await openForm('Cancel challan');
+    await openForm('Cancel challan…');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong consignee.' },
     });
@@ -215,7 +215,7 @@ describe('ChallanDetail', () => {
     // The serial shows in the table and in the installation picker.
     expect((await screen.findAllByText('SN-001')).length).toBeGreaterThan(0);
 
-    await openForm('Record installation');
+    await openForm('New installation');
     fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-06' },
     });
@@ -372,7 +372,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
-    await openForm('Request cancel & replace');
+    await openForm('Request cancel & replace…');
     // The lawful path and why it applies are stated.
     expect(
       screen.getByText(/no recorded receipt, serials, or measurements/),
@@ -417,7 +417,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
-    await openForm('Request correction notice');
+    await openForm('Request correction notice…');
     expect(screen.getByText(/can no\s+longer be cancelled/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Correction statement'), {
@@ -621,7 +621,7 @@ describe('ChallanDetail cancel surface', () => {
     });
     renderIssued(api);
 
-    await openForm('Cancel challan');
+    await openForm('Cancel challan…');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong consignee.' },
     });

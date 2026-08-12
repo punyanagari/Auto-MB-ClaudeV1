@@ -120,14 +120,10 @@ export function Works({
     <>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="mb-1 text-[11px] font-semibold tracking-widest text-primary uppercase">
+          <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
             Works registry
           </p>
-          <h1
-            id="works-title"
-            tabIndex={-1}
-            className="text-2xl font-semibold tracking-tight text-balance"
-          >
+          <h1 id="works-title" tabIndex={-1}>
             Works
           </h1>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
@@ -179,10 +175,10 @@ export function Works({
                     {candidate.label}
                     <span
                       className={cn(
-                        'rounded px-1.5 text-[11px] tnum',
+                        'rounded px-1.5 text-xs tnum',
                         filter === candidate.id
-                          ? 'bg-primary-foreground/20'
-                          : 'bg-muted-foreground/15',
+                          ? 'bg-foreground/10'
+                          : 'bg-secondary text-secondary-foreground',
                       )}
                     >
                       {counts[candidate.id]}
@@ -216,7 +212,7 @@ export function Works({
                     Works with letter reference, contract value, and status
                   </caption>
                   <thead>
-                    <tr className="border-b border-border bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                       <th className="px-4 py-3">Work</th>
                       <th className="px-4 py-3">Letter</th>
                       <th className="px-4 py-3 text-right">Contract value</th>
@@ -302,7 +298,7 @@ export function Works({
                   Uploaded Letter of Acceptance documents and their extraction status
                 </caption>
                 <thead>
-                  <tr className="border-b border-border bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     <th className="px-4 py-3">File</th>
                     <th className="px-4 py-3">Uploaded</th>
                     <th className="px-4 py-3">Status</th>

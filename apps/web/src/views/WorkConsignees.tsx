@@ -163,7 +163,7 @@ export function WorkConsignees({
         </p>
       )}
       {canModify && linkable.length > 0 && (
-        <Disclosure label="Link consignee" startOpen={(linked ?? []).length === 0}>
+        <Disclosure label="New consignee link" startOpen={(linked ?? []).length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();

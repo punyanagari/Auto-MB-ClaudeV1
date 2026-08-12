@@ -332,7 +332,7 @@ describe('WorkDetail retention', () => {
     renderWorkDetail(api);
     await openWorkTab('Measurement');
 
-    await openForm('Record measurement');
+    await openForm('New measurement');
     fireEvent.change(screen.getByLabelText('Measured quantity'), {
       target: { value: '1.000' },
     });
