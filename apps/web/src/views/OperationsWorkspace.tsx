@@ -34,6 +34,7 @@ import { OperationsDashboard } from './OperationsDashboard.js';
 import { Quotations } from './Quotations.js';
 import { ReviewLoa } from './ReviewLoa.js';
 import { SerialLookup } from './SerialLookup.js';
+import { AccountSecurity } from './AccountSecurity.js';
 import { Settings } from './Settings.js';
 import { OrganisationAccessSettings } from './OrganisationAccessSettings.js';
 import { UploadLoa } from './UploadLoa.js';
@@ -844,6 +845,7 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 isOwner={membership?.role === 'owner'}
               />
+              <AccountSecurity api={api} />
               <OrganisationAccessSettings
                 api={api}
                 currentOrganisation={organisation}

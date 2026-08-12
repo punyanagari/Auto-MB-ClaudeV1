@@ -7,6 +7,7 @@ import { OperationsWorkspace } from './views/OperationsWorkspace.js';
 import { OrganisationOnboarding } from './views/OrganisationOnboarding.js';
 import { OrgPicker } from './views/OrgPicker.js';
 import { SignIn } from './views/SignIn.js';
+import { TwoFactorEnrolment } from './views/TwoFactorEnrolment.js';
 
 /** The active organisation is session navigation state, not authority.
  * PostgreSQL's membership floor and RLS still decide every scoped request.
@@ -18,6 +19,7 @@ type Phase =
   | { name: 'loading' }
   | { name: 'session-error'; message: string }
   | { name: 'signed-out' }
+  | { name: 'mfa-enrolment'; me: MeResponse }
   | { name: 'no-organisation'; me: MeResponse }
   | {
       name: 'pick-organisation';
@@ -94,6 +96,15 @@ export function App({ api: providedApi }: AppProps) {
       const me = await api.me();
       if (me === null) {
         return { name: 'signed-out' };
+      }
+
+      // Finding 36: an account holding document authority must enrol in
+      // two-factor authentication before any workspace opens. The server
+      // refuses tenant requests anyway; this renders the enrolment wall
+      // instead of a wall of 403s. Only while the server is enforcing —
+      // while the policy deploys dark, the workspace stays usable.
+      if (me.mfaRequired && !me.twoFactorEnabled && me.mfaEnforced) {
+        return { name: 'mfa-enrolment', me };
       }
 
       const organisations = activeOrganisations(me, await api.listOrganisations());
@@ -258,7 +269,9 @@ export function App({ api: providedApi }: AppProps) {
             </span>
           </span>
         </span>
-        {(phase.name === 'pick-organisation' || phase.name === 'no-organisation') && (
+        {(phase.name === 'pick-organisation' ||
+          phase.name === 'no-organisation' ||
+          phase.name === 'mfa-enrolment') && (
           <div className="flex min-w-0 items-center gap-3">
             <span className="hidden max-w-64 truncate text-xs text-muted-foreground sm:inline">
               {phase.me.user.email}
@@ -291,6 +304,23 @@ export function App({ api: providedApi }: AppProps) {
         )}
         {phase.name === 'no-organisation' && (
           <OrganisationOnboarding api={api} onCreated={() => void refreshSession()} />
+        )}
+        {phase.name === 'mfa-enrolment' && (
+          <div className="mx-auto mt-[8vh] mb-8 w-full max-w-[30rem] px-4">
+            <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h1 tabIndex={-1}>Two-factor authentication required</h1>
+              <p className="text-sm text-muted-foreground text-pretty">
+                Your account can issue, cancel, or approve legal documents, so it must
+                be protected by an authenticator app before the workspace opens.
+              </p>
+              <TwoFactorEnrolment
+                api={api}
+                onEnrolled={() =>
+                  void refreshSession({ forceOrganisationChoice: true })
+                }
+              />
+            </section>
+          </div>
         )}
       </main>
     </div>

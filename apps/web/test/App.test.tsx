@@ -39,9 +39,13 @@ describe('App session loading', () => {
           canIssueDocuments: true,
           canCancelDocuments: true,
           canApproveAmendments: false,
+          twoFactorEnabled: true,
           status: 'active',
         },
       ],
+      twoFactorEnabled: true,
+      mfaRequired: true,
+      mfaEnforced: true,
     };
     const api = {
       me: vi
@@ -80,9 +84,13 @@ describe('App session loading', () => {
           canIssueDocuments: true,
           canCancelDocuments: true,
           canApproveAmendments: false,
+          twoFactorEnabled: true,
           status: 'active',
         },
       ],
+      twoFactorEnabled: true,
+      mfaRequired: true,
+      mfaEnforced: true,
     };
     const oldOrganisations =
       deferred<readonly { id: string; name: string; slug: string }[]>();
@@ -114,6 +122,79 @@ describe('App session loading', () => {
 
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(sessionStorage.getItem('auto-mb.organisation-id')).toBeNull();
+  });
+
+  it('walls a required, unenrolled account behind MFA enrolment while the server enforces', async () => {
+    const me: MeResponse = {
+      user: { id: 'user-a', email: 'owner@example.test' },
+      memberships: [
+        {
+          organisationId: '11111111-1111-4111-8111-111111111111',
+          userId: 'user-a',
+          role: 'owner',
+          workScope: 'all',
+          canIssueDocuments: true,
+          canCancelDocuments: true,
+          canApproveAmendments: false,
+          twoFactorEnabled: false,
+          status: 'active',
+        },
+      ],
+      twoFactorEnabled: false,
+      mfaRequired: true,
+      mfaEnforced: true,
+    };
+    const listOrganisations = vi.fn();
+    const api = {
+      me: vi.fn<() => Promise<MeResponse | null>>().mockResolvedValue(me),
+      listOrganisations,
+      signOut: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ApiClient;
+
+    render(<App api={api} />);
+
+    await screen.findByRole('heading', {
+      name: 'Two-factor authentication required',
+    });
+    // The wall replaces the workspace outright — no organisation is even
+    // fetched — but signing out stays available.
+    expect(listOrganisations).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
+  });
+
+  it('does not wall the same account while enforcement is dark', async () => {
+    const me: MeResponse = {
+      user: { id: 'user-a', email: 'owner@example.test' },
+      memberships: [
+        {
+          organisationId: '11111111-1111-4111-8111-111111111111',
+          userId: 'user-a',
+          role: 'owner',
+          workScope: 'all',
+          canIssueDocuments: true,
+          canCancelDocuments: true,
+          canApproveAmendments: false,
+          twoFactorEnabled: false,
+          status: 'active',
+        },
+      ],
+      twoFactorEnabled: false,
+      mfaRequired: true,
+      mfaEnforced: false,
+    };
+    const api = {
+      me: vi.fn<() => Promise<MeResponse | null>>().mockResolvedValue(me),
+      listOrganisations: vi.fn().mockResolvedValue([]),
+    } as unknown as ApiClient;
+
+    render(<App api={api} />);
+
+    // No active organisation in the stub, so the onboarding screen —
+    // not the enrolment wall — is what renders.
+    await screen.findByRole('heading', { name: 'Start your first workspace' });
+    expect(
+      screen.queryByRole('heading', { name: 'Two-factor authentication required' }),
+    ).toBeNull();
   });
 
   it('ignores an older session error after a newer refresh succeeds', async () => {
