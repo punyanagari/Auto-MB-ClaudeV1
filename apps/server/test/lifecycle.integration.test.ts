@@ -295,6 +295,7 @@ afterAll(async () => {
           'tax_invoices',
           'tax_invoice_counters',
           'document_number_series',
+          'measurement_book_merge_provenance',
           'mb_sources',
           'measurement_book_lines',
           'measurement_book_counters',
