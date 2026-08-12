@@ -15,6 +15,9 @@
       }
     ]
   },
+  "permissions": {
+    "allow": ["Bash(git:*)"]
+  },
   "extraKnownMarketplaces": {
     "thedotmack": {
       "source": {
