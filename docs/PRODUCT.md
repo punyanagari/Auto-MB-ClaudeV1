@@ -144,6 +144,12 @@ The current product also includes:
   explicit NIC locality and forward-charge confirmation, deterministic IRP
   payloads, and append-only downloadable PDF versions rendered from frozen
   invoice facts, frozen branding, and append-only IRP evidence;
+- an org-editable GST rate master of Government-notified rates with
+  effective-date windows: invoices, quotation lines, and stated purchase-order
+  line rates must carry a rate the master notifies on the document date
+  (re-checked when the invoice is submitted, and enforced again by a database
+  trigger); rates retire by end-dating only, and changes are owner-only and
+  audited;
 - optional, operator-triggered Whitebooks B2B IRP registration, document-detail
   lookup, and cancellation, with a durable provider-operation ledger and
   explicit failed, unknown, and recovery states;
@@ -157,6 +163,21 @@ Unknown registration results become lookup-only and are never blindly
 submitted again. Stale in-progress operations become unknown after their
 two-minute lease and require reconciliation. Manual registration evidence
 cannot overwrite a Whitebooks attempt.
+
+The IRP transport is additionally gated by the owner's e-invoicing
+declaration on the organisation profile: whether e-invoicing applies
+(mandatory permanently once aggregate turnover has ever crossed ₹5 crore),
+from what date, and — where the 30-day rule binds the organisation — the
+reporting window in days. Registration (provider and manual evidence alike)
+is refused while the declaration is missing, refused outright where
+e-invoicing is declared not applicable (voluntary registration below the
+mandate is not provided for), and refused for a fresh registration after
+the invoice's reporting deadline. That deadline is frozen onto each invoice
+at submit from the declaration then in force and never moves afterwards;
+invoices issued before the model existed carry no deadline. Reconciling an
+earlier attempt with an unknown outcome stays allowed, and local submit and
+local cancellation are never blocked by any of this — the invoice screens
+and the dashboard signal due and overdue reporting windows instead.
 
 The current invoice model is one cumulative SAC service line. The UI does not
 offer fresh e-way-bill generation, and the provider-generation and NIC-payload

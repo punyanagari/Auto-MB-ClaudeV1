@@ -44,6 +44,7 @@ import type {
   IrpRegistrationEvidence,
   StatutoryProvider,
 } from '../gsp/statutory-provider.js';
+import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -202,6 +203,13 @@ interface InvoiceRow {
   irp_cancelled_at_text: string | null;
   irp_cancel_reason_code: string | null;
   irp_cancel_remark: string | null;
+  /** Frozen at submit from the organisation's e-invoicing declaration
+   * then in force (migration 0049); NULL when no window applied. */
+  irp_reporting_deadline: string | null;
+  /** Derived in SQL, never stored: the frozen deadline has passed in
+   * the organisation's own timezone and the invoice is still not
+   * registered at the IRP. */
+  irp_reporting_overdue: boolean;
   /** A DIRECT invoice's taxable value — the one raised against a private
    * customer, which has no Measurement Book to take a total from.
    * Exactly one of this and measurement_book_id is ever set (0039). */
@@ -236,6 +244,13 @@ const TI_COLUMNS = `
   ti.rendered_object_key,
   ti.irp_legacy_evidence_missing, ti.irp_cancelled_at,
   ti.irp_cancelled_at_text, ti.irp_cancel_reason_code, ti.irp_cancel_remark,
+  ti.irp_reporting_deadline::text as irp_reporting_deadline,
+  (ti.irp_reporting_deadline is not null
+     and ti.irp_provider_state <> 'registered'
+     and ti.irp_reporting_deadline <
+       (select (now() at time zone o.timezone)::date from organisations o
+        where o.id = ti.organisation_id))
+    as irp_reporting_overdue,
   ti.stated_taxable_value::text as stated_taxable_value,
   ti.irn, ti.ack_number, ti.ack_date, ti.cancellation_note,
   ti.created_at, ti.submitted_at, ti.cancelled_at
@@ -290,6 +305,8 @@ function toInvoice(row: InvoiceRow): TaxInvoice {
     irpCancelledAtText: row.irp_cancelled_at_text,
     irpCancelReasonCode: row.irp_cancel_reason_code,
     irpCancelRemark: row.irp_cancel_remark,
+    irpReportingDeadline: row.irp_reporting_deadline,
+    irpReportingOverdue: row.irp_reporting_overdue,
     cancellationNote: row.cancellation_note,
     createdAt: row.created_at.toISOString(),
     submittedAt: row.submitted_at?.toISOString() ?? null,
@@ -544,6 +561,7 @@ async function assertInvoiceDateNotFuture(
   const [row] = await tx<{ today: string }[]>`
     select (now() at time zone timezone)::date::text as today
     from organisations
+    where id = app_private.current_organisation_id()
   `;
   if (!row) throw new Error('bound organisation disappeared');
   if (invoiceDate > row.today) {
@@ -571,6 +589,69 @@ async function assertBookUninvoiced(
       'TAX_INVOICE_EXISTS',
       `This Measurement Book already has a live tax invoice${live.invoice_number === null ? '' : ` (${live.invoice_number})`}; cancel or delete it before raising another.`,
       live.id,
+    );
+  }
+}
+
+/**
+ * The e-invoicing applicability gate (finding 20, migration 0049): the
+ * IRP transport — provider registration and manual evidence alike — is
+ * refused until the owner has declared whether e-invoicing applies, and
+ * refused outright where it does not, because voluntary registration
+ * below the mandate is not provided for. The declaration is the owner's
+ * assertion of the legal facts; this gate enforces its consequence and
+ * never auto-sends anything.
+ *
+ * Returns today in the organisation's own timezone, for the window gate
+ * below — one read serves both.
+ */
+async function requireEinvoiceDeclared(tx: TransactionSql): Promise<string> {
+  const [row] = await tx<
+    {
+      einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
+      today: string;
+    }[]
+  >`
+    select einvoice_applicability,
+           (now() at time zone timezone)::date::text as today
+    from organisations
+    where id = app_private.current_organisation_id()
+  `;
+  if (!row) throw new Error('bound organisation disappeared');
+  if (row.einvoice_applicability === 'undeclared') {
+    throw httpError(
+      409,
+      'E_INVOICE_APPLICABILITY_UNDECLARED',
+      'Declare e-invoicing applicability on the organisation profile before using the IRP transport.',
+    );
+  }
+  if (row.einvoice_applicability === 'not_applicable') {
+    throw httpError(
+      409,
+      'E_INVOICE_NOT_APPLICABLE',
+      'E-invoicing is declared not applicable to this organisation, and voluntary registration below the mandate is not provided for. If aggregate turnover has crossed ₹5 crore, update the declaration on the organisation profile first.',
+    );
+  }
+  return row.today;
+}
+
+/**
+ * The frozen reporting window (finding 20): a FRESH registration after
+ * the stamped deadline is refused, because the IRP no longer lawfully
+ * accepts the document. Reconciling an earlier attempt whose outcome is
+ * unknown is NOT gated — fetching the truth about something already
+ * sent is not a new report. A NULL deadline means no window applied
+ * when the invoice was submitted, and nothing is gated.
+ */
+function assertReportingWindowOpen(invoice: InvoiceRow, today: string): void {
+  if (
+    invoice.irp_reporting_deadline !== null &&
+    today > invoice.irp_reporting_deadline
+  ) {
+    throw httpError(
+      409,
+      'IRP_REPORTING_WINDOW_CLOSED',
+      `The IRP reporting window for this invoice closed on ${invoice.irp_reporting_deadline}; the IRP no longer accepts a fresh report of it. The invoice remains valid locally. The lawful remedy is to cancel it locally with a note and raise a corrected invoice dated within its reporting window.`,
     );
   }
 }
@@ -677,6 +758,11 @@ export function registerTaxInvoiceRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+          // The rate must be one the Government had notified on the
+          // invoice date (gst_rates master, finding 19) — checked here so
+          // a 1.8-instead-of-18 typo is a named 400, and re-checked at
+          // submit because the date can change until then.
+          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
           await assertWorkAccess(tx, user.id, workId);
           const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
           assertInvoiceDate(body.invoiceDate, book);
@@ -782,6 +868,7 @@ export function registerTaxInvoiceRoutes(
         async (tx) => {
           await requireWriterRole(tx, user.id);
           await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+          await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
           await requireBuyer(tx, body.buyerContactId);
           const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
@@ -888,6 +975,7 @@ export function registerTaxInvoiceRoutes(
             { logo_object_key: string | null; logo_media_type: string | null }[]
           >`
             select logo_object_key, logo_media_type from organisations
+            where id = app_private.current_organisation_id()
           `;
           if (!source) throw new Error('tax invoice render source disappeared');
           const snapshot = parseTaxInvoiceIssuedSnapshot(
@@ -1169,6 +1257,7 @@ export function registerTaxInvoiceRoutes(
       return withBoundTenant(database, organisationId, user.id, async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
+        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'draft');
@@ -1303,6 +1392,12 @@ export function registerTaxInvoiceRoutes(
           await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
           requireStatus(invoice, 'draft');
           await assertInvoiceDateNotFuture(tx, invoice.invoice_date);
+          // Re-checked at the money moment: the rate and the date were
+          // both checked when the draft was written, but either may have
+          // been edited since, and the rate master itself may have been
+          // end-dated between drafting and submit. Nothing is computed
+          // from a rate the Government had not notified on this date.
+          await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
 
           if (invoice.reverse_charge_applicable === null) {
             throw httpError(
@@ -1337,12 +1432,18 @@ export function registerTaxInvoiceRoutes(
               contact_phone: string | null;
               invoice_number_prefix: string | null;
               invoice_notes: string | null;
+              einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
+              einvoice_applicable_from: string | null;
+              irp_reporting_window_days: number | null;
             }[]
           >`
             select name, state_code, gstin, address, pincode, locality, trade_name,
                    msme_number, contact_phone, invoice_number_prefix,
-                   invoice_notes
+                   invoice_notes, einvoice_applicability,
+                   einvoice_applicable_from::text as einvoice_applicable_from,
+                   irp_reporting_window_days
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           if (!organisation?.state_code) {
             throw httpError(
@@ -1618,7 +1719,24 @@ export function registerTaxInvoiceRoutes(
             amountInWords: amountInWords(money.total),
           };
 
-          await tx`
+          // THE REPORTING WINDOW, frozen with the rest (migration 0049):
+          // the organisation's e-invoicing declaration as it stands at
+          // this money moment decides whether this invoice ever had an
+          // IRP reporting deadline, and the consequence is stamped on
+          // the row so a later declaration edit cannot rewrite which
+          // invoices were lawfully reportable. Date-only arithmetic in
+          // SQL (rule 6): invoice date + window days. An invoice dated
+          // before the applicable-from date carries NULL — the mandate
+          // did not cover it — as does any invoice submitted while no
+          // window is declared. Submit itself is NEVER refused by this:
+          // the local document is valid regardless of IRP reporting.
+          const reportingWindowApplies =
+            organisation.einvoice_applicability === 'applicable' &&
+            organisation.einvoice_applicable_from !== null &&
+            invoice.invoice_date >= organisation.einvoice_applicable_from &&
+            organisation.irp_reporting_window_days !== null;
+
+          const [stamped] = await tx<{ irp_reporting_deadline: string | null }[]>`
             update tax_invoices
             set status = 'submitted', invoice_number = ${invoiceNumber},
                 number_prefix = ${prefix},
@@ -1629,8 +1747,13 @@ export function registerTaxInvoiceRoutes(
                 taxable_value = ${money.taxable}, cgst_amount = ${money.cgst},
                 sgst_amount = ${money.sgst}, igst_amount = ${money.igst},
                 round_off = ${money.round_off}, total_amount = ${money.total},
+                irp_reporting_deadline = case when ${reportingWindowApplies}
+                  then ${invoice.invoice_date}::date
+                    + ${organisation.irp_reporting_window_days ?? 0}::int
+                  else null end,
                 submitted_by_user_id = ${user.id}, submitted_at = now()
             where id = ${id}
+            returning irp_reporting_deadline::text as irp_reporting_deadline
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               throw httpError(
@@ -1657,6 +1780,7 @@ export function registerTaxInvoiceRoutes(
             placeOfSupply: invoice.place_of_supply,
             reverseChargeApplicable: invoice.reverse_charge_applicable,
             intraState,
+            irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
           });
           return readDetail(tx, id);
         },
@@ -1894,6 +2018,15 @@ export function registerTaxInvoiceRoutes(
             documentDate: snapshot.invoiceDate,
           };
           const reconcileOnly = invoice.irp_provider_state === 'registration_unknown';
+          // The applicability and window gates (finding 20), before any
+          // provider operation is opened: undeclared and not-applicable
+          // organisations never reach the transport at all, and a fresh
+          // registration past the frozen deadline is refused — but a
+          // reconcile-by-lookup of an unknown earlier attempt still
+          // runs, because learning what already happened is not a new
+          // report.
+          const today = await requireEinvoiceDeclared(tx);
+          if (!reconcileOnly) assertReportingWindowOpen(invoice, today);
           const requestSha256 = sha256Hex(
             reconcileOnly ? stringifyStatutoryJson(identity) : payloadJson,
           );
@@ -2306,6 +2439,14 @@ export function registerTaxInvoiceRoutes(
             'Manual IRP evidence cannot replace or complete an existing provider attempt.',
           );
         }
+        // The same applicability and window gates as the provider route
+        // (finding 20): the manual compatibility door is still the IRP
+        // transport, and must not become the way around the declaration.
+        // This path only ever records a FRESH registration (the state
+        // conflict above pins not_requested), so the window gate is
+        // unconditional here.
+        const today = await requireEinvoiceDeclared(tx);
+        assertReportingWindowOpen(invoice, today);
         await tx`
           update tax_invoices
           set irn = ${body.irn}, ack_number = ${body.ackNumber.trim()},

@@ -119,7 +119,16 @@ export type HsnCode = Static<typeof HsnCodeSchema>;
  * is the numeric(5,2) column's own scale — and a real bound, not a
  * formality: 0.25% and 1.5% are both notified rates, while a third digit
  * would be rounded away silently on the way in. Zero is legitimate
- * (exempt and nil-rated supply), a negative rate is not. */
+ * (exempt and nil-rated supply), a negative rate is not.
+ *
+ * This SHAPE deliberately stays 0..100 and is NOT narrowed to the
+ * notified rates: whether a rate is valid depends on the document DATE
+ * (the org-editable `gst_rates` master, migration 0048, holds each
+ * notified rate with its effective window — 12% and 28% ended
+ * 21 Sep 2025, 40% began 22 Sep 2025), and read paths must keep
+ * accepting every rate history stores — exactly the GST_STATE_NAMES
+ * reasoning below. The server checks writes against the master and the
+ * 0048 trigger backstops it in the database. */
 export const GstRateSchema = Type.String({
   pattern: '^(?:100(?:\\.0{1,2})?|0(?:\\.\\d{1,2})?|[1-9]\\d?(?:\\.\\d{1,2})?)$',
   description:

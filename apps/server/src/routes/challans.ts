@@ -1269,6 +1269,7 @@ export function registerChallanRoutes(
             { name: string; warranty_template_text: string | null }[]
           >`
             select name, warranty_template_text from organisations
+            where id = app_private.current_organisation_id()
           `;
           const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
             select dci.id, dci.work_item_id, dci.description_snapshot,
@@ -1514,6 +1515,7 @@ export function registerChallanRoutes(
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           return {
             snapshot: parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot,

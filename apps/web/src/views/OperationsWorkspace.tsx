@@ -129,6 +129,7 @@ const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
   { key: 'locations', label: 'Locations' },
   { key: 'units', label: 'Units' },
   { key: 'signatories', label: 'Signatories' },
+  { key: 'gst-rates', label: 'GST rates' },
 ];
 
 function defaultViewOf(key: ModuleKey): WorkspaceView {
@@ -1036,6 +1037,7 @@ export function OperationsWorkspace({
               api={api}
               organisationId={organisation.id}
               canModify={canModify}
+              isOwner={isOwner}
               tab={mastersTab}
               onTabChange={setMastersTab}
             />

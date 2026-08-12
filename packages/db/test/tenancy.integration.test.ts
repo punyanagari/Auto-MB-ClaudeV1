@@ -85,6 +85,8 @@ const TENANT_TABLES = [
   'statutory_provider_operations',
   // Number formats the organisation defines for itself (0039).
   'document_number_series',
+  // The GST rate master (0048).
+  'gst_rates',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -162,6 +164,8 @@ const DELETE_REVOKED_TABLES = [
   // Invoice numbering is a GST rule-46 serial; the invoice itself
   // cancels, never deletes, once submitted (0035).
   'tax_invoice_counters',
+  // The GST rate master retires rows by end-dating; no DELETE (0048).
+  'gst_rates',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -750,6 +754,18 @@ async function seedTenantGraph(
     await tx`
       insert into document_number_series (organisation_id, document_type, template)
       values (${organisationId}, 'tax_invoice', 'P{DIV}{FY2}{SEQ:3}')
+    `;
+
+    // The GST rate master (0048). This organisation was created AFTER the
+    // migration ran, so the migration's per-organisation seed did not
+    // reach it; one row proves the isolation posture. 18% from GST
+    // introduction covers the seeded tax invoice below (2026-02-07),
+    // which the 0048 guard trigger now demands.
+    await tx`
+      insert into gst_rates (
+        organisation_id, rate, label, effective_from, created_by_user_id
+      )
+      values (${organisationId}, '18.00', 'Standard 18%', '2017-07-01', ${userId})
     `;
 
     // Wave 6 tax documents (0035). The 0035 insert guards demand a

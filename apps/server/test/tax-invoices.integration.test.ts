@@ -8,6 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
   MeasurementBookDetailResponse,
+  OrganisationProfile,
   TaxInvoiceDetailResponse,
   TaxInvoiceListResponse,
 } from '@auto-mb/contracts';
@@ -80,6 +81,9 @@ let providerApp: FastifyInstance;
 let storageDir: string;
 let organisationId: string;
 let outsiderOrganisationId: string;
+/** Dedicated organisation for the finding-20 applicability describe —
+ * its declaration changes must not disturb the shared fixture. */
+let applicabilityOrganisationId: string;
 let ownerUserId: string;
 let workId: string;
 let itemId: string;
@@ -422,6 +426,15 @@ beforeAll(async () => {
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 
+  // The owner's e-invoicing declaration (finding 20, migration 0049):
+  // applicable with NO reporting window, so this organisation's
+  // invoices stamp NULL deadlines and the IRP routes stay reachable.
+  // The window itself is proved in its own describe, against a
+  // dedicated organisation whose declaration it controls.
+  await patchProfile({
+    einvoiceApplicability: 'applicable',
+    einvoiceApplicableFrom: '2017-07-01',
+  });
   workId = randomUUID();
   const scheduleId = randomUUID();
   itemId = randomUUID();
@@ -483,7 +496,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const org of [organisationId, outsiderOrganisationId]) {
+    for (const org of [
+      organisationId,
+      outsiderOrganisationId,
+      applicabilityOrganisationId,
+    ]) {
       if (!org) continue;
       await admin.unsafe(`set session_replication_role = 'replica'`);
       try {
@@ -513,6 +530,7 @@ afterAll(async () => {
           'work_items',
           'work_schedules',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -679,6 +697,9 @@ describe('drafting against a Measurement Book', () => {
     });
     expect(blank.statusCode).toBe(400);
 
+    // 5% here, not 12%: the invoice is dated after the 22 Sep 2025 GST 2.0
+    // reform, so 12% is no longer a notified rate on that date (the master
+    // refusal has its own tests below).
     const edited = await authed(owner, {
       method: 'PUT',
       url: `/api/tax-invoices/${invoice1Id}`,
@@ -687,7 +708,7 @@ describe('drafting against a Measurement Book', () => {
         invoiceDate: '2026-03-15',
         sacCode: '995422',
         serviceDescription: `  ${SERVICE_DESCRIPTION}  `,
-        gstRate: '12',
+        gstRate: '5',
         placeOfSupply: '09',
         reverseChargeApplicable: false,
         buyerContactId,
@@ -696,7 +717,7 @@ describe('drafting against a Measurement Book', () => {
     expect(edited.statusCode, edited.body).toBe(200);
     const detail = edited.json<TaxInvoiceDetailResponse>();
     expect(detail.invoice.sacCode).toBe('995422');
-    expect(detail.invoice.gstRate).toBe('12.00');
+    expect(detail.invoice.gstRate).toBe('5.00');
     expect(detail.invoice.placeOfSupply).toBe('09');
     // Stored trimmed, exactly as the column measures it.
     expect(detail.invoice.serviceDescription).toBe(SERVICE_DESCRIPTION);
@@ -2338,5 +2359,490 @@ describe('numbering scope across financial years (finding 8)', () => {
       numbers.push(number ?? '');
     }
     expect(new Set(numbers).size).toBe(2);
+  });
+});
+
+describe('GST rate master enforcement (finding 19)', () => {
+  /* The org-editable gst_rates master (migration 0048) decides which
+   * (rate, date) pairs an invoice may carry: rates are notifications with
+   * effective windows, not free numbers. What has to hold: a live rate is
+   * accepted today; an abolished rate is accepted only inside its window;
+   * a rate outside its window — or a 1.8-instead-of-18 typo — is a named
+   * 400; and the check runs AGAIN at submit, because both the invoice
+   * date and the master itself can change between drafting and the money
+   * moment. */
+
+  async function draftDirect(overrides: Record<string, unknown> = {}) {
+    return authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-15',
+        sacCode: '998734',
+        serviceDescription: 'GST rate master proof invoice.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        taxableValue: '500.00',
+        ...overrides,
+      },
+    });
+  }
+
+  it('accepts a live rate today and an abolished rate inside its window', async () => {
+    const live = await draftDirect();
+    expect(live.statusCode, live.body).toBe(201);
+    expect(live.json<TaxInvoiceDetailResponse>().invoice.gstRate).toBe('18.00');
+
+    // 12% ended 21 Sep 2025 (GST 2.0); an invoice dated before that is
+    // still legitimate history and must keep working.
+    const historic = await draftDirect({ invoiceDate: '2025-09-01', gstRate: '12' });
+    expect(historic.statusCode, historic.body).toBe(201);
+    expect(historic.json<TaxInvoiceDetailResponse>().invoice.gstRate).toBe('12.00');
+  });
+
+  it('refuses an abolished rate after its window, naming rate, date, and the live rates', async () => {
+    const refused = await draftDirect({ gstRate: '12' });
+    expect(refused.statusCode).toBe(400);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('GST_RATE_NOT_NOTIFIED');
+    expect(body.message).toContain('12%');
+    expect(body.message).toContain('2026-02-15');
+    expect(body.message).toContain('18.00%');
+  });
+
+  it('refuses the 1.8-instead-of-18 typo as a named 400', async () => {
+    const refused = await draftDirect({ gstRate: '1.8' });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+  });
+
+  it('refuses a date edit that carries the rate out of its window', async () => {
+    const created = await draftDirect({ invoiceDate: '2025-09-01', gstRate: '12' });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+    const moved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/tax-invoices/${invoiceId}`,
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-15',
+        sacCode: '998734',
+        serviceDescription: 'GST rate master proof invoice.',
+        gstRate: '12',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+      },
+    });
+    expect(moved.statusCode).toBe(400);
+    expect(moved.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+  });
+
+  it('re-checks at submit, so an end-dated rate is never monetised', async () => {
+    // The owner records a bespoke open-ended rate, drafts against it,
+    // then ends it BEFORE submitting: the draft passed every write-time
+    // check, so only a submit-time re-check can stop the money.
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '7.5',
+        label: 'Transitional 7.5% (proof rate)',
+        effectiveFrom: '2017-07-01',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const rateId = recorded.json<{ id: string }>().id;
+
+    const created = await draftDirect({ gstRate: '7.5' });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const ended = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${rateId}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2025-12-31' },
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+
+    const submitted = await submitInvoice(invoiceId);
+    expect(submitted.statusCode).toBe(400);
+    expect(submitted.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+
+    // The draft survives the refusal, un-numbered and un-monetised.
+    const [row] = await admin<{ status: string; invoice_number: string | null }[]>`
+      select status, invoice_number from tax_invoices where id = ${invoiceId}
+    `;
+    expect(row).toEqual({ status: 'draft', invoice_number: null });
+  });
+});
+
+describe('e-invoice applicability and the IRP reporting window (finding 20)', () => {
+  // A dedicated organisation whose declaration these tests own. Its
+  // invoices are DIRECT (no Work, no MB) so the fixture is exactly the
+  // profile, one buyer, and the owner's authorities.
+  let orgId: string;
+  let buyerId: string;
+
+  async function patchOrgProfile(payload: Record<string, unknown>) {
+    return authed(owner, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId: orgId,
+      payload,
+    });
+  }
+
+  /** One submitted direct invoice on the dedicated organisation. */
+  async function submittedInvoice(
+    invoiceDate: string,
+    suffix: string,
+  ): Promise<TaxInvoiceDetailResponse> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId: orgId,
+      payload: {
+        invoiceDate,
+        sacCode: '998734',
+        serviceDescription: `Applicability probe ${suffix}.`,
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId: buyerId,
+        taxableValue: '1000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${created.json<TaxInvoiceDetailResponse>().invoice.id}/submit`,
+      organisationId: orgId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    return submitted.json<TaxInvoiceDetailResponse>();
+  }
+
+  beforeAll(async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations',
+      payload: { name: 'TI Applicability', slug: `ti-f20-${runId}` },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    orgId = created.json<{ id: string }>().id;
+    applicabilityOrganisationId = orgId;
+    await admin`
+      update organisation_memberships
+      set can_issue_documents = true, can_cancel_documents = true
+      where organisation_id = ${orgId} and user_id = ${ownerUserId}
+    `;
+    // Tax facts only — deliberately NO e-invoicing declaration yet.
+    const profiled = await patchOrgProfile({
+      stateCode: '07',
+      gstin: ORG_GSTIN,
+      address: ORG_ADDRESS,
+      pincode: '110002',
+      locality: 'New Delhi',
+    });
+    expect(profiled.statusCode, profiled.body).toBe(200);
+    buyerId = randomUUID();
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, contact_person, address, gstin,
+        pincode, state_code, locality, is_consignee, active, created_by_user_id
+      )
+      values (${buyerId}, ${orgId}, 'Sr. DEE (G) NR', 'S K Verma',
+              ${BUYER_ADDRESS}, ${BUYER_GSTIN}, '110055', '07', 'New Delhi',
+              true, true, ${ownerUserId})
+    `;
+  }, 60_000);
+
+  it('holds the declaration coherent and owner-only', async () => {
+    // Non-owner writes are refused before anything else — the clerk is
+    // an office member of the shared organisation.
+    const denied = await authed(clerk, {
+      method: 'PATCH',
+      url: '/api/organisation/profile',
+      organisationId,
+      payload: { einvoiceApplicability: 'not_applicable' },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json<{ code: string }>().code).toBe('OWNER_REQUIRED');
+
+    // Applicable without its date, a date without applicable, and a
+    // window without applicable are each a 400, not a silent fix-up.
+    for (const payload of [
+      { einvoiceApplicability: 'applicable' },
+      { einvoiceApplicableFrom: '2026-01-01' },
+      { irpReportingWindowDays: 30 },
+    ]) {
+      const incoherent = await patchOrgProfile(payload);
+      expect(incoherent.statusCode, incoherent.body).toBe(400);
+      expect(incoherent.json<{ code: string }>().code).toBe(
+        'E_INVOICE_DECLARATION_INCOHERENT',
+      );
+    }
+
+    // The profile read reports the untouched declaration.
+    const read = await authed(owner, {
+      method: 'GET',
+      url: '/api/organisation/profile',
+      organisationId: orgId,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json<OrganisationProfile>()).toMatchObject({
+      einvoiceApplicability: 'undeclared',
+      einvoiceApplicableFrom: null,
+      irpReportingWindowDays: null,
+    });
+  });
+
+  it('submits locally while undeclared but refuses the IRP transport', async () => {
+    resetProviderMocks();
+    // Local submit is NEVER blocked by the declaration.
+    const detail = await submittedInvoice('2026-02-15', 'undeclared');
+    expect(detail.invoice.irpReportingDeadline).toBeNull();
+    expect(detail.invoice.irpReportingOverdue).toBe(false);
+
+    const registered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId: orgId,
+    });
+    expect(registered.statusCode).toBe(409);
+    expect(registered.json<{ code: string }>().code).toBe(
+      'E_INVOICE_APPLICABILITY_UNDECLARED',
+    );
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+
+    // The manual compatibility door is the same transport.
+    const manual = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-response`,
+      organisationId: orgId,
+      payload: irpEvidence('d'),
+    });
+    expect(manual.statusCode).toBe(409);
+    expect(manual.json<{ code: string }>().code).toBe(
+      'E_INVOICE_APPLICABILITY_UNDECLARED',
+    );
+
+    // No provider operation was ever opened.
+    const operations = await admin<{ id: string }[]>`
+      select id from statutory_provider_operations
+      where tax_invoice_id = ${detail.invoice.id}
+    `;
+    expect(operations).toHaveLength(0);
+  });
+
+  it('refuses the transport where e-invoicing is declared not applicable', async () => {
+    resetProviderMocks();
+    const declared = await patchOrgProfile({
+      einvoiceApplicability: 'not_applicable',
+    });
+    expect(declared.statusCode, declared.body).toBe(200);
+
+    const detail = await submittedInvoice('2026-02-15', 'not applicable');
+    expect(detail.invoice.irpReportingDeadline).toBeNull();
+
+    const registered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId: orgId,
+    });
+    expect(registered.statusCode).toBe(409);
+    expect(registered.json<{ code: string }>().code).toBe('E_INVOICE_NOT_APPLICABLE');
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+
+    const manual = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-response`,
+      organisationId: orgId,
+      payload: irpEvidence('e'),
+    });
+    expect(manual.statusCode).toBe(409);
+    expect(manual.json<{ code: string }>().code).toBe('E_INVOICE_NOT_APPLICABLE');
+  });
+
+  it('freezes the reporting deadline at submit from the declaration in force', async () => {
+    const declared = await patchOrgProfile({
+      einvoiceApplicability: 'applicable',
+      einvoiceApplicableFrom: '2026-01-01',
+      irpReportingWindowDays: 30,
+    });
+    expect(declared.statusCode, declared.body).toBe(200);
+    expect(declared.json<OrganisationProfile>()).toMatchObject({
+      einvoiceApplicability: 'applicable',
+      einvoiceApplicableFrom: '2026-01-01',
+      irpReportingWindowDays: 30,
+    });
+
+    // 2026-02-15 + 30 days = 2026-03-17, stamped in the submit
+    // transaction, derived overdue against today.
+    const windowed = await submittedInvoice('2026-02-15', 'windowed');
+    expect(windowed.invoice.irpReportingDeadline).toBe('2026-03-17');
+    expect(windowed.invoice.irpReportingOverdue).toBe(true);
+
+    // Boundary: an invoice dated BEFORE the applicable-from date was
+    // never covered by the mandate and stamps NULL.
+    const preMandate = await submittedInvoice('2025-12-20', 'pre-mandate');
+    expect(preMandate.invoice.irpReportingDeadline).toBeNull();
+    expect(preMandate.invoice.irpReportingOverdue).toBe(false);
+
+    // The stamp is FROZEN: widening the declared window afterwards does
+    // not move an already-issued invoice's deadline.
+    const widened = await patchOrgProfile({ irpReportingWindowDays: 365 });
+    expect(widened.statusCode, widened.body).toBe(200);
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${windowed.invoice.id}`,
+      organisationId: orgId,
+    });
+    expect(reread.statusCode, reread.body).toBe(200);
+    expect(reread.json<TaxInvoiceDetailResponse>().invoice.irpReportingDeadline).toBe(
+      '2026-03-17',
+    );
+    const narrowed = await patchOrgProfile({ irpReportingWindowDays: 30 });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+  });
+
+  it('refuses a fresh registration past the deadline but still reconciles an unknown one', async () => {
+    resetProviderMocks();
+    const detail = await submittedInvoice('2026-02-15', 'past deadline');
+    expect(detail.invoice.irpReportingDeadline).toBe('2026-03-17');
+
+    // Fresh registration: the window has lawfully closed.
+    const refused = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId: orgId,
+    });
+    expect(refused.statusCode).toBe(409);
+    const refusal = refused.json<{ code: string; message: string }>();
+    expect(refusal.code).toBe('IRP_REPORTING_WINDOW_CLOSED');
+    expect(refusal.message).toContain('2026-03-17');
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+
+    // The manual compatibility door is gated identically.
+    const manual = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-response`,
+      organisationId: orgId,
+      payload: irpEvidence('f'),
+    });
+    expect(manual.statusCode).toBe(409);
+    expect(manual.json<{ code: string }>().code).toBe('IRP_REPORTING_WINDOW_CLOSED');
+
+    // An attempt made before the window closed whose outcome was lost:
+    // reconciling it is a lookup of what already happened, not a new
+    // report, and stays allowed. Simulated directly (triggers bypassed
+    // exactly as the stale-operation helper does) because the window
+    // has already closed by wall clock.
+    await admin.unsafe(`set session_replication_role = 'replica'`);
+    try {
+      await admin`
+        update tax_invoices
+        set irp_provider = 'whitebooks', irp_provider_state = 'registration_unknown'
+        where id = ${detail.invoice.id}
+      `;
+    } finally {
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
+    const evidence = irpEvidence('9');
+    findInvoiceProvider.mockResolvedValueOnce(evidence);
+    const reconciled = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId: orgId,
+    });
+    expect(reconciled.statusCode, reconciled.body).toBe(200);
+    expect(reconciled.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      irn: evidence.irn,
+      irpProviderState: 'registered',
+      irpReportingOverdue: false,
+    });
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+    expect(findInvoiceProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('still cancels an overdue never-registered invoice locally', async () => {
+    const detail = await submittedInvoice('2026-02-15', 'overdue cancel');
+    expect(detail.invoice.irpReportingDeadline).toBe('2026-03-17');
+    expect(detail.invoice.irpReportingOverdue).toBe(true);
+
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/cancel`,
+      organisationId: orgId,
+      payload: { note: 'Reporting window missed; reissuing with a current date.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json<TaxInvoiceDetailResponse>().invoice.status).toBe('cancelled');
+  });
+
+  it('counts due and overdue reporting windows on the dashboard', async () => {
+    // One invoice whose window is still open: dated today in the
+    // organisation timezone under the 365-day window.
+    const widened = await patchOrgProfile({ irpReportingWindowDays: 365 });
+    expect(widened.statusCode, widened.body).toBe(200);
+    const [clock] = await admin<{ today: string }[]>`
+      select (now() at time zone timezone)::date::text as today
+      from organisations where id = ${orgId}
+    `;
+    if (!clock) throw new Error('organisation clock unavailable');
+    const open = await submittedInvoice(clock.today, 'open window');
+    expect(open.invoice.irpReportingDeadline).not.toBeNull();
+    expect(open.invoice.irpReportingOverdue).toBe(false);
+
+    const dashboard = await authed(owner, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId: orgId,
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const body = dashboard.json<{
+      totals: { irpReportingDue: number; irpReportingOverdue: number };
+      alerts: { kind: string; severity: string }[];
+    }>();
+    // Due: the invoice just issued. Overdue: the windowed invoice from
+    // the freeze test — the reconciled one is registered and the
+    // cancelled one is cancelled, so neither counts.
+    expect(body.totals.irpReportingDue).toBe(1);
+    expect(body.totals.irpReportingOverdue).toBe(1);
+    const kinds = body.alerts.map((alert) => alert.kind);
+    expect(kinds).toContain('irp_reporting_due');
+    expect(kinds).toContain('irp_reporting_overdue');
+  });
+
+  it('rejects raw SQL moving a frozen reporting deadline on an issued row', async () => {
+    // The dashboard test above widened the window to 365 days; restore
+    // the 30-day declaration so this stamp is the familiar one.
+    const narrowed = await patchOrgProfile({ irpReportingWindowDays: 30 });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+    const detail = await submittedInvoice('2026-02-15', 'raw sql');
+    expect(detail.invoice.irpReportingDeadline).toBe('2026-03-17');
+
+    // Even the table owner cannot move the frozen consequence: the 0049
+    // guard recreation pins irp_reporting_deadline with the other
+    // issued business facts (model:
+    // packages/db/test/quantity-ceilings.integration.test.ts).
+    const refusal = await admin`
+      update tax_invoices
+      set irp_reporting_deadline = '2099-01-01'
+      where id = ${detail.invoice.id}
+    `
+      .then(() => null)
+      .catch((error: unknown) => error as { code?: string; message: string });
+    expect(refusal).not.toBeNull();
+    expect(refusal?.code).toBe('23514');
+    expect(refusal?.message).toContain(
+      'submitted tax invoice business facts are immutable',
+    );
   });
 });

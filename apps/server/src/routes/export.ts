@@ -63,6 +63,7 @@ export function registerExportRoutes(
 
         const [organisation] = await tx<Record<string, unknown>[]>`
           select * from organisations
+          where id = app_private.current_organisation_id()
         `;
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,
@@ -212,6 +213,9 @@ export function registerExportRoutes(
         `;
         const organisationSignatories = await tx<Record<string, unknown>[]>`
           select * from organisation_signatories order by created_at, id
+        `;
+        const gstRates = await tx<Record<string, unknown>[]>`
+          select * from gst_rates order by rate, effective_from, id
         `;
         const purchaseOrders = parseColumns(
           await tx<Record<string, unknown>[]>`
@@ -427,7 +431,8 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
-          formatVersion: 'export-v8',
+          // export-v9: the GST rate master (0048) joins the record.
+          formatVersion: 'export-v9',
           organisation,
           members,
           workAssignments: assignments,
@@ -465,6 +470,7 @@ export function registerExportRoutes(
           workConsignees,
           locationMasters,
           unitMasters,
+          gstRates,
           organisationSignatories,
           purchaseOrders,
           purchaseOrderLines,

@@ -17,7 +17,7 @@ export const ExportObjectManifestEntrySchema = Type.Object(
 export const OrganisationExportSchema = Type.Object(
   {
     exportedAt: Type.String({ format: 'date-time' }),
-    formatVersion: Type.Literal('export-v8'),
+    formatVersion: Type.Literal('export-v9'),
     organisation: Type.Union([ExportRowSchema, Type.Null()]),
     members: ExportRowsSchema,
     workAssignments: ExportRowsSchema,
@@ -52,6 +52,7 @@ export const OrganisationExportSchema = Type.Object(
     workConsignees: ExportRowsSchema,
     locationMasters: ExportRowsSchema,
     unitMasters: ExportRowsSchema,
+    gstRates: ExportRowsSchema,
     organisationSignatories: ExportRowsSchema,
     purchaseOrders: ExportRowsSchema,
     purchaseOrderLines: ExportRowsSchema,

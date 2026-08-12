@@ -132,6 +132,27 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('RAISE EXCEPTION');
   });
 
+  it('binds the GST rate master guard in 0048', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0048_gst_rate_master.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain('CREATE TABLE gst_rates');
+    // Rates retire by end-dating; a window must not end before it starts.
+    expect(sql).toMatch(/effective_to IS NULL OR effective_to >= effective_from/);
+    // One row per notified (rate, start) pair per organisation.
+    expect(sql).toContain('UNIQUE (organisation_id, rate, effective_from)');
+    // The guard is SECURITY DEFINER, so it must scope its read to the row's
+    // own tenant — the 0046 review found a definer guard reading across
+    // tenants once, and this trigger must not repeat it.
+    expect(sql).toContain('tax_invoices_gst_rate_guard');
+    expect(sql).toContain('g.organisation_id = NEW.organisation_id');
+    // The preflight names offenders before the trigger could strand them.
+    expect(sql).toContain('RAISE EXCEPTION');
+  });
+
   it('normalizes merge provenance and narrows PO draft scope in 0045', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0045_audit_integrity_followup.sql'),
