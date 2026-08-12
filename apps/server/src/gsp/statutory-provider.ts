@@ -7,6 +7,11 @@ export class StatutoryProviderError extends Error {
     readonly outcome: ProviderOutcome,
     readonly providerCode: string | null = null,
     readonly httpStatus: number | null = null,
+    /** Raw provider response body when one was received (migration 0053
+     * evidence ledger); null when the failure produced no body. Never set
+     * on authentication failures — auth responses carry tokens and must
+     * not reach the ledger. */
+    readonly rawResponse: string | null = null,
   ) {
     super(code);
     this.name = 'StatutoryProviderError';
@@ -30,6 +35,9 @@ export interface IrpRegistrationEvidence {
   readonly ackDate: string;
   readonly signedQr: string;
   readonly signedInvoice: string;
+  /** The raw provider response body the evidence above was normalised
+   * from, verbatim (migration 0053 evidence ledger). */
+  readonly rawResponse: string;
 }
 
 export interface EwayBillProviderEvidence {
@@ -38,6 +46,16 @@ export interface EwayBillProviderEvidence {
   readonly ewbDate: string;
   readonly validUntilText: string;
   readonly validUntil: string;
+  /** The raw provider response body the evidence above was normalised
+   * from, verbatim (migration 0053 evidence ledger). */
+  readonly rawResponse: string;
+}
+
+export interface ProviderCancellationEvidence {
+  readonly cancelledAtText: string;
+  readonly cancelledAt: string;
+  /** The raw provider response body, verbatim (migration 0053). */
+  readonly rawResponse: string;
 }
 
 export interface GenerateEwayBillByIrnRequest {
@@ -62,7 +80,7 @@ export interface StatutoryProvider {
     readonly irn: string;
     readonly reasonCode: string;
     readonly remark: string;
-  }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }>;
+  }): Promise<ProviderCancellationEvidence>;
   generateEwayBillByIrn(
     input: GenerateEwayBillByIrnRequest,
   ): Promise<EwayBillProviderEvidence>;
@@ -75,5 +93,5 @@ export interface StatutoryProvider {
     readonly ewbNumber: string;
     readonly reasonCode: string;
     readonly remark: string;
-  }): Promise<{ readonly cancelledAtText: string; readonly cancelledAt: string }>;
+  }): Promise<ProviderCancellationEvidence>;
 }

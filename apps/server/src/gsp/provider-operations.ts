@@ -24,10 +24,36 @@ export interface ProviderFailure {
   readonly providerCode: string | null;
   readonly httpStatus: number | null;
   readonly publicCode: string;
+  /** Raw provider response body when one was received (migration 0053);
+   * null for network-level failures that produced no body. */
+  readonly rawResponse: string | null;
 }
 
 export function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+/** Ledger bodies are bounded at 256 KiB (migration 0053). An over-bound
+ * body is kept as a truncated prefix with an explicit marker — never
+ * silently cut, never dropped. Truncation walks back from the byte bound
+ * so a multi-byte character is never split. */
+export const LEDGER_BODY_MAX_BYTES = 262144;
+
+export function boundedLedgerBody(body: string | null | undefined): {
+  readonly body: string | null;
+  readonly truncated: boolean;
+} {
+  if (body === null || body === undefined) return { body: null, truncated: false };
+  if (Buffer.byteLength(body, 'utf8') <= LEDGER_BODY_MAX_BYTES) {
+    return { body, truncated: false };
+  }
+  // Characters never take fewer bytes than one, so slicing to the byte
+  // bound in characters is always long enough; then walk back to fit.
+  let candidate = body.slice(0, LEDGER_BODY_MAX_BYTES);
+  while (Buffer.byteLength(candidate, 'utf8') > LEDGER_BODY_MAX_BYTES) {
+    candidate = candidate.slice(0, -1024);
+  }
+  return { body: candidate, truncated: true };
 }
 
 export function providerFailure(error: unknown): ProviderFailure {
@@ -42,6 +68,7 @@ export function providerFailure(error: unknown): ProviderFailure {
       providerCode: providerError.providerCode,
       httpStatus: providerError.httpStatus,
       publicCode: providerError.code,
+      rawResponse: providerError.rawResponse,
     };
   }
   return {
@@ -49,6 +76,7 @@ export function providerFailure(error: unknown): ProviderFailure {
     providerCode: null,
     httpStatus: null,
     publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+    rawResponse: null,
   };
 }
 
@@ -60,6 +88,9 @@ export async function startStatutoryOperation(
     readonly provider: StatutoryProvider;
     readonly operation: StatutoryOperation;
     readonly requestSha256: string;
+    /** The exact bytes requestSha256 hashes (migration 0053); stored on
+     * the ledger row as immutable identity, bounded at 256 KiB. */
+    readonly requestBody: string;
     readonly taxInvoiceId?: string;
     readonly ewayBillId?: string;
     readonly creditNoteId?: string;
@@ -83,11 +114,13 @@ export async function startStatutoryOperation(
   if (provided.length !== 1 || provided[0] !== target) {
     throw new Error('statutory operation does not match its target');
   }
+  const request = boundedLedgerBody(input.requestBody);
   try {
     const [row] = await tx<{ id: string }[]>`
       insert into statutory_provider_operations (
         organisation_id, tax_invoice_id, eway_bill_id, credit_note_id,
         provider, environment, operation, request_sha256,
+        request_body, request_body_truncated,
         created_by_user_id
       )
       values (
@@ -95,7 +128,9 @@ export async function startStatutoryOperation(
         ${input.ewayBillId ?? null}, ${input.creditNoteId ?? null},
         ${input.provider.name},
         ${input.provider.environment}, ${input.operation},
-        ${input.requestSha256}, ${input.userId}
+        ${input.requestSha256},
+        ${request.body}, ${request.truncated},
+        ${input.userId}
       )
       returning id
     `;
@@ -120,13 +155,19 @@ export async function finishStatutoryOperation(
     readonly status: StatutoryOperationStatus;
     readonly providerCode?: string | null;
     readonly httpStatus?: number | null;
+    /** Raw provider response body (migration 0053), landed exactly once
+     * with the completion; bounded at 256 KiB with a truncation marker. */
+    readonly responseBody?: string | null;
   },
 ): Promise<void> {
+  const response = boundedLedgerBody(input.responseBody);
   const rows = await tx<{ id: string }[]>`
     update statutory_provider_operations
     set status = ${input.status},
         provider_code = ${input.providerCode ?? null},
         http_status = ${input.httpStatus ?? null},
+        response_body = ${response.body},
+        response_body_truncated = ${response.truncated},
         completed_at = now()
     where id = ${operationId} and status = 'pending'
     returning id

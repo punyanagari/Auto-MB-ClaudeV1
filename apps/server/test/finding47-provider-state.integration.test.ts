@@ -63,7 +63,8 @@ let organisationId: string;
 let ownerUserId: string;
 let buyerContactId: string;
 
-/** Submitted invoice with a MANUALLY RECORDED, ACTIVE IRN (registered). */
+/** Submitted invoice with a MANUALLY RECORDED, ACTIVE IRN
+ * (registered_unverified since migration 0053). */
 let registeredInvoiceId: string;
 /** Submitted invoice that never approached the IRP (not_requested). */
 let untouchedInvoiceId: string;
@@ -281,8 +282,10 @@ beforeAll(async () => {
       },
     });
     expect(recorded.statusCode, recorded.body).toBe(200);
+    // Migration 0053: manually recorded evidence lands in its own state,
+    // never the provider-verified 'registered'.
     expect(recorded.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
-      'registered',
+      'registered_unverified',
     );
   }
 
@@ -376,7 +379,7 @@ describe('finding 47(a) — local cancellation with an active IRN', () => {
     );
     const state = await invoiceState(registeredInvoiceId);
     expect(state.status).toBe('submitted');
-    expect(state.irp_provider_state).toBe('registered');
+    expect(state.irp_provider_state).toBe('registered_unverified');
   });
 
   it('opens again only through recorded IRP cancellation evidence', async () => {
@@ -527,7 +530,8 @@ describe('finding 47(b) — an ordinary writer cannot invent e-way bill provider
 describe('fixture self-check', () => {
   it('keeps a registered invoice available for the rewind negatives', async () => {
     const state = await invoiceState(ewbInvoiceId);
-    expect(state.irp_provider_state).toBe('registered');
+    // Manually recorded evidence: registered_unverified since 0053.
+    expect(state.irp_provider_state).toBe('registered_unverified');
     expect(state.irn).not.toBeNull();
   });
 });

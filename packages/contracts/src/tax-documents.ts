@@ -71,6 +71,13 @@ export const IRP_PROVIDER_STATES = [
   'not_requested',
   'registering',
   'registered',
+  /** A registration recorded through the manual compatibility door
+   * (migration 0053): the operator typed what the portal showed, no
+   * provider verified it. Behaves as `registered` for local rules — the
+   * cancel interlock, the reporting window — but renders distinctly and
+   * is excluded from every provider-verified claim. Only
+   * `irp_provider = 'manual'` rows may hold it. */
+  'registered_unverified',
   'registration_failed',
   'registration_unknown',
   'cancelling',
