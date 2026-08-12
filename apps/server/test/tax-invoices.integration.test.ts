@@ -1236,18 +1236,17 @@ describe('the IRP payload and response', () => {
         from tax_invoice_renders where tax_invoice_id = ${invoice1Id}
         order by version
       `;
-      expect(firstRenders).toEqual([
-        {
-          version: 1,
-          object_key: firstRenderedInvoiceKey,
-          pdf_sha256: sha256,
-          source_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
-          source_evidence_missing: false,
-          template_contract_legacy: false,
-          object_key_scope_missing: false,
-          logo_evidence_missing: false,
-        },
-      ]);
+      expect(firstRenders).toHaveLength(1);
+      expect(firstRenders[0]).toMatchObject({
+        version: 1,
+        object_key: firstRenderedInvoiceKey,
+        pdf_sha256: sha256,
+        source_evidence_missing: false,
+        template_contract_legacy: false,
+        object_key_scope_missing: false,
+        logo_evidence_missing: false,
+      });
+      expect(firstRenders[0]?.source_sha256).toMatch(/^[0-9a-f]{64}$/);
       const [audit] = await admin<
         { action: string; sha256: string | null; evidence: string | null }[]
       >`

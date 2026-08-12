@@ -132,7 +132,7 @@ async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
   }
   if (response.body === null) throw new Error('Gotenberg response has no body');
 
-  const reader = response.body.getReader();
+  const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Buffer[] = [];
   let total = 0;
   for (;;) {
