@@ -55,12 +55,30 @@ no discrepancies.
   (`WHITEBOOKS_GSTIN_NOT_AUTHORISED`) — thrown before any network call,
   as designed.
 
+## E-way bill leg (added later on 12 August)
+
+A second registered invoice (`WBCFA26/03`, IRN `73a45c13…0400fe`) was
+used to attempt e-way bill generation by IRN with a direct provider
+call (outside the product, which refuses generation by design). **NIC
+refused it with error `4009`: "E Way Bill can be generated provided at
+least HSN of one item belongs to goods."** The government portal itself
+confirms, live, what the owner's finding-1 decision asserted: this
+product's SAC-only service invoices can never carry an e-way bill, so
+the generation surface being dead code is correct, and the live
+cancellation path is unreachable for any document this product can
+produce. Separately, `/ewaybillapi/v1.03/authenticate` succeeded with
+the dedicated e-way client pair (`status_cd 1`), proving those
+credentials and the adapter's parameter placement. The IRN was then
+cancelled at the IRP and locally, leaving the sandbox tidy.
+
 ## Honest scope — what this run did not prove
 
-- **E-way bill lookup/cancellation**: no e-way bill exists to act on,
-  because fresh generation is refused by owner decision (finding 1). A
-  legacy-style EWB would have to be minted on the sandbox portal by hand
-  to exercise the cancel path; not done in this run.
+- **E-way bill cancellation (`canewb`)**: not exercised live — see
+  above; there is no lawful way to mint an e-way bill from this
+  product's documents, and NIC's own 4009 refusal is the evidence. The
+  cancel path stays proven by the integration suite (16 tests including
+  the single-flight cancellation race), and its endpoint/headers were
+  diffed against the provider's OpenAPI spec.
 - **Unknown-outcome reconciliation** (`registration_unknown` →
   lookup-only recovery): not reachable through a healthy sandbox
   exchange. It remains proven by the integration suite against a fake
