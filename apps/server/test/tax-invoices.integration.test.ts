@@ -2333,7 +2333,8 @@ describe('numbering scope across financial years (finding 8)', () => {
       });
       expect(submitted.statusCode, submitted.body).toBe(201);
       const number = submitted.json<TaxInvoiceDetailResponse>().invoice.invoiceNumber;
-      expect(number).toMatch(new RegExp(`^P10/${fyLabel}/\\d+$`));
+      expect(number).toMatch(/^P10\/\d{4}-\d{2}\/\d+$/);
+      expect(number?.startsWith(`P10/${fyLabel}/`), number ?? '').toBe(true);
       numbers.push(number ?? '');
     }
     expect(new Set(numbers).size).toBe(2);
