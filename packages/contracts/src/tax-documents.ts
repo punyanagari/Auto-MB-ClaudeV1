@@ -24,10 +24,13 @@ import { InvoiceNumberPrefixSchema } from './organisations.js';
  * arithmetic) -> cancelled. Submitting the invoice is what closes the MB
  * it bills; cancelling it releases the MB for a corrected invoice.
  *
- * The e-way bill is the invoice's movement document. It is drafted here,
- * carried to NIC by the GSP (Taxilla, most likely), and the 12-digit EWB
- * number and validity window come BACK from NIC — never made up locally.
- * Draft -> generated -> cancelled.
+ * The e-way bill shapes below serve LEGACY records. The owner's decision
+ * (finding 1, docs/AUDIT-DISPOSITION-2026-08-10.md): these SAC service
+ * invoices need no e-way bill, so fresh generation is refused; the live
+ * provider surface (Whitebooks) is lookup and cancellation of bills that
+ * already exist. The 12-digit EWB number and validity window only ever
+ * came BACK from NIC — never made up locally. Draft -> generated ->
+ * cancelled.
  */
 
 // --- Shared vocabulary -------------------------------------------------------
