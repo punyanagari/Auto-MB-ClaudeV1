@@ -153,6 +153,39 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('RAISE EXCEPTION');
   });
 
+  it('binds the tax-invoice money backstops in 0052', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0052_tax_money_backstops.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain('tax_invoices_tax_heads_guard');
+    expect(sql).toContain('tax_invoices_split_place_guard');
+    // The heads check mirrors the submit route's arithmetic on both
+    // branches; the head PLACEMENT is the split guard's job.
+    expect(sql).toContain('2 * round(NEW.taxable_value * NEW.gst_rate / 200, 2)');
+    expect(sql).toContain('round(NEW.taxable_value * NEW.gst_rate / 100, 2)');
+    // The split guard is SECURITY DEFINER, so its organisation read must
+    // be tenant-pinned by the row's own key, never by the session binding
+    // (which is unbound for admin/direct writers). The comments discuss
+    // current_organisation_id, so the refusal is asserted over code only.
+    const splitGuardCode = sql
+      .slice(
+        sql.indexOf('CREATE FUNCTION app_private.guard_tax_invoice_split_place'),
+        sql.indexOf('CREATE TRIGGER tax_invoices_split_place_guard'),
+      )
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+    expect(splitGuardCode).toContain('WHERE org.id = NEW.organisation_id');
+    expect(splitGuardCode).not.toContain('current_organisation_id');
+    // The preflight judges history by the state FROZEN at submit, falling
+    // back to the live organisation state, and names offenders.
+    expect(sql).toContain("issued_snapshot->'supplier'->>'stateCode'");
+    expect(sql).toContain('RAISE EXCEPTION');
+  });
+
   it('binds the credit-note guards and the supersession arms in 0051', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0051_credit_notes.sql'),
