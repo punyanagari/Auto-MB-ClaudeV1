@@ -49,7 +49,7 @@ afterAll(async () => {
   } finally {
     await admin?.end();
   }
-});
+}, STAGED_TIMEOUT_MS);
 
 interface TemporaryDatabase {
   readonly name: string;
@@ -213,9 +213,12 @@ describe('tax invoice money backstops (0052 triggers)', () => {
     await runMigrations(pool, realMigrationsDirectory);
   }, STAGED_TIMEOUT_MS);
 
+  // Draining the pool and force-dropping the temporary database can
+  // exceed the 10s default hook budget under a fully parallel suite run;
+  // same explicit budget as the staged setup.
   afterAll(async () => {
     await dropTemporaryDatabase(database);
-  });
+  }, STAGED_TIMEOUT_MS);
 
   it('refuses a submitted 18% invoice carrying zero tax heads', async () => {
     const tenant = await seedTenant(pool);
