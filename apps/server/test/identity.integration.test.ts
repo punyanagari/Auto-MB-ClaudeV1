@@ -115,6 +115,7 @@ afterAll(async () => {
     if (organisationId) {
       for (const table of [
         'audit_events',
+        'gst_rates',
         'organisation_memberships',
         'organisations',
       ]) {
@@ -266,10 +267,32 @@ describe('identity and organisation flow', () => {
       where organisation_id = ${organisationId}
       order by occurred_at
     `;
-    expect(events.map((event) => event.action)).toEqual([
-      'organisation.created',
+    // Sorted: organisation.created and the GST-rate default seeding share
+    // one transaction, so their occurred_at values tie.
+    expect(events.map((event) => event.action).sort()).toEqual([
+      'gst_rate.defaults_seeded',
       'membership.added',
+      'organisation.created',
     ]);
+  });
+
+  it('seeds the notified GST rate history when the organisation is created', async () => {
+    const rates = await admin<
+      { rate: string; effective_from: string; effective_to: string | null }[]
+    >`
+      select rate::text as rate, effective_from::text as effective_from,
+             effective_to::text as effective_to
+      from gst_rates where organisation_id = ${organisationId}
+      order by rate, effective_from
+    `;
+    expect(rates).toHaveLength(9);
+    expect(rates).toEqual(
+      expect.arrayContaining([
+        { rate: '18.00', effective_from: '2017-07-01', effective_to: null },
+        { rate: '12.00', effective_from: '2017-07-01', effective_to: '2025-09-21' },
+        { rate: '40.00', effective_from: '2025-09-22', effective_to: null },
+      ]),
+    );
   });
 
   it('revokes access after sign-out', async () => {

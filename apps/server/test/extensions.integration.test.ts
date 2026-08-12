@@ -235,6 +235,7 @@ afterAll(async () => {
           'work_schedules',
           'loa_documents',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {

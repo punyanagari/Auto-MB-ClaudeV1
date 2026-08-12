@@ -258,6 +258,7 @@ afterAll(async () => {
           'work_schedules',
           'loa_documents',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -711,7 +712,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe('export-v8');
+    expect(exported.formatVersion).toBe('export-v9');
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(

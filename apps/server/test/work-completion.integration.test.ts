@@ -397,6 +397,7 @@ afterAll(async () => {
         await admin`delete from works where organisation_id = ${orgId}`;
         await admin`delete from location_masters where organisation_id = ${orgId}`;
         await admin`delete from contacts where organisation_id = ${orgId}`;
+        await admin`delete from gst_rates where organisation_id = ${orgId}`;
         await admin`delete from organisation_memberships where organisation_id = ${orgId}`;
         await admin`delete from organisations where id = ${orgId}`;
       } finally {

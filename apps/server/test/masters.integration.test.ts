@@ -220,6 +220,7 @@ afterAll(async () => {
           'work_items',
           'work_schedules',
           'works',
+          'gst_rates',
           'organisation_memberships',
           'organisations',
         ]) {
@@ -1598,5 +1599,204 @@ describe('cross-tenant denial', () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ code: 'NOT_A_MEMBER' });
+  });
+});
+
+describe('GST rate master (finding 19)', () => {
+  interface GstRateRow {
+    id: string;
+    rate: string;
+    label: string;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+  }
+
+  it('seeds the notified history at organisation creation, readable by every member', async () => {
+    const list = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/gst-rates',
+      organisationId,
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    const rates = list.json<{ gstRates: GstRateRow[] }>().gstRates;
+    expect(rates.length).toBeGreaterThanOrEqual(9);
+    expect(rates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rate: '18.00',
+          effectiveFrom: '2017-07-01',
+          effectiveTo: null,
+        }),
+        // GST 2.0 (22 Sep 2025): 12% and 28% end-dated, 40% introduced.
+        expect.objectContaining({ rate: '12.00', effectiveTo: '2025-09-21' }),
+        expect.objectContaining({ rate: '28.00', effectiveTo: '2025-09-21' }),
+        expect.objectContaining({
+          rate: '40.00',
+          effectiveFrom: '2025-09-22',
+          effectiveTo: null,
+        }),
+      ]),
+    );
+  });
+
+  it('keeps mutations owner-only', async () => {
+    for (const jar of [clerk, viewer]) {
+      const created = await authed(jar, {
+        method: 'POST',
+        url: '/api/masters/gst-rates',
+        organisationId,
+        payload: { rate: '6', label: 'Role probe', effectiveFrom: '2019-04-01' },
+      });
+      expect(created.statusCode).toBe(403);
+      expect(created.json()).toMatchObject({ code: 'OWNER_REQUIRED' });
+    }
+    const [seeded] = await admin<{ id: string }[]>`
+      select id from gst_rates
+      where organisation_id = ${organisationId} and effective_to is null
+      limit 1
+    `;
+    expect(seeded).toBeDefined();
+    const ended = await authed(clerk, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${seeded?.id ?? ''}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2026-01-01' },
+    });
+    expect(ended.statusCode).toBe(403);
+    expect(ended.json()).toMatchObject({ code: 'OWNER_REQUIRED' });
+  });
+
+  it('creates a rate with a window, refusing duplicates, inverted windows, and blank labels', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '6',
+        label: 'Composition-era 6% (test rate)',
+        effectiveFrom: '2019-04-01',
+        effectiveTo: '2020-03-31',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json<GstRateRow>()).toMatchObject({
+      rate: '6.00',
+      effectiveFrom: '2019-04-01',
+      effectiveTo: '2020-03-31',
+    });
+
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '6.00',
+        label: 'Same rate, same start',
+        effectiveFrom: '2019-04-01',
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toMatchObject({ code: 'GST_RATE_EXISTS' });
+
+    const inverted = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '6',
+        label: 'Window covers nothing',
+        effectiveFrom: '2021-04-01',
+        effectiveTo: '2021-03-31',
+      },
+    });
+    expect(inverted.statusCode).toBe(400);
+    expect(inverted.json()).toMatchObject({ code: 'GST_RATE_WINDOW_INVALID' });
+
+    const blank = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: { rate: '6', label: '  ', effectiveFrom: '2021-04-01' },
+    });
+    expect(blank.statusCode).toBe(400);
+    expect(blank.json()).toMatchObject({ code: 'GST_RATE_LABEL_INVALID' });
+  });
+
+  it('retires a rate by end-dating exactly once — no destructive edit or delete exists', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
+      organisationId,
+      payload: {
+        rate: '9.5',
+        label: 'End-dating semantics probe',
+        effectiveFrom: '2019-04-01',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const rateId = created.json<GstRateRow>().id;
+
+    const early = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${rateId}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2019-03-31' },
+    });
+    expect(early.statusCode).toBe(400);
+    expect(early.json()).toMatchObject({ code: 'GST_RATE_WINDOW_INVALID' });
+
+    const ended = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${rateId}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2026-01-31' },
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+    expect(ended.json<GstRateRow>().effectiveTo).toBe('2026-01-31');
+
+    // History is never rewritten: a second end-date is a conflict, and
+    // there is no update or delete route at all.
+    const again = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${rateId}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2026-06-30' },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ code: 'GST_RATE_ALREADY_ENDED' });
+
+    const unknown = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${randomUUID()}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2026-01-31' },
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    // Both mutations left their audit trail.
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_type = 'gst_rates'
+    `;
+    const actions = events.map((event) => event.action);
+    expect(actions).toContain('gst_rate.created');
+    expect(actions).toContain('gst_rate.end_dated');
+  });
+
+  it("answers 404 for another tenant's rate, exactly like an unknown id", async () => {
+    const [foreignRate] = await admin<{ id: string }[]>`
+      select id from gst_rates
+      where organisation_id = ${foreignOrganisationId} and effective_to is null
+      limit 1
+    `;
+    expect(foreignRate).toBeDefined();
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/gst-rates/${foreignRate?.id ?? ''}/end-date`,
+      organisationId,
+      payload: { effectiveTo: '2026-01-31' },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: 'GST_RATE_NOT_FOUND' });
   });
 });
