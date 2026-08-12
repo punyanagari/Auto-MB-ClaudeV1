@@ -16,7 +16,7 @@ Exit criteria:
 
 Delivered:
 
-- Better Auth integration (email/password, server-side sessions, sign-out revocation, two-factor path via the twoFactor plugin);
+- Better Auth integration (email/password, server-side sessions, sign-out revocation, two-factor path via the twoFactor plugin — enrolment and enforcement landed with Milestone 4);
 - organisation creation (atomic SECURITY DEFINER bootstrap) and selection via the validated `x-organisation-id` header;
 - the database-enforced membership floor: tenant context binds only when the authenticated user holds an active membership in the selected organisation, so a compromised or buggy handler cannot stamp an arbitrary organisation id — proven live at both the SQL and HTTP layers;
 - four roles with Work scope and issue/cancel authority stored per membership; member management is owner-only;
@@ -43,7 +43,7 @@ Authorization completion (2026-08-08, following the external code review):
 
 Closing decisions (2026-08-08):
 
-- MFA enrolment/enforcement for owners is deferred to Milestone 4: the twoFactor capability is live, and the enforcement policy lands with design-partner onboarding, where real contractor data first appears;
+- MFA enrolment/enforcement for owners is deferred to Milestone 4: the twoFactor capability is live, and the enforcement policy lands with design-partner onboarding, where real contractor data first appears — _delivered 2026-08-12 (audit finding 36); see Milestone 4_;
 - identity-level audit events (sign-up/sign-in/sign-out) are recorded in the user-scoped, append-only `identity_audit_events` table (migration 0005) — `audit_events` keeps its NOT NULL organisation invariant;
 - role/authority enforcement on Work operations activates with the Milestone 2 endpoints (upload and confirm are owner/office-only).
 
@@ -105,7 +105,17 @@ Delivered (the engineering half):
 
 Remaining (needs the operator, real infrastructure, or third parties):
 
-- MFA enrolment/enforcement for owners — the Milestone 1 deferred decision comes due before the first partner account exists (docs/RUNBOOK.md §8);
+- ~~MFA enrolment/enforcement for owners~~ — shipped 2026-08-12 (audit
+  finding 36): TOTP enrolment with one-time backup codes in the web
+  client, a user-level hard wall refusing tenant requests to anyone
+  holding an owner role or document authority in any organisation until
+  enrolled, disable refused for such users, two-factor endpoints rate
+  limited, other-session revocation on enable/disable, the full
+  two-factor lifecycle in `identity_audit_events`, and the out-of-band
+  operator reset in docs/RUNBOOK.md §7a. Refusals sit behind
+  `MFA_ENFORCE` (production compose defaults it to true); flipping it on
+  before the first partner account exists is the remaining operator
+  step (docs/RUNBOOK.md §8);
 - ~~rate limiting on login and upload/extraction~~ — shipped 2026-08-08 (ops batch), alongside authorize-before-scan ordering, extraction outside the tenant transaction, the idempotent role/grant bootstrap (deployed on every release), the public auth base URL, edge security headers with CSP, the component-aware readiness probe, a production-compose smoke test in CI, and a restore proof that fails CI instead of skipping;
 - the India-region VM, DNS, and TLS hostname (operator accounts and decisions);
 - external uptime monitor and metrics scraper pointed at the deployment;
