@@ -1,4 +1,9 @@
-# ADR-0006: Organisation entry and the contract-source document pack
+# ADR-0007: Organisation entry and the contract-source document pack
+
+> Renumbered from ADR-0006 on 12 August 2026: two ADRs were accepted as
+> 0006 on consecutive days. The Measurement Book lifecycle ADR keeps 0006
+> (it is the one cited as "ADR-0006" throughout the code and tests); this
+> one becomes 0007. No decision content changed.
 
 - Status: Accepted
 - Date: 2026-08-11
