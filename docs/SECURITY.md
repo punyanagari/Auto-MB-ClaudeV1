@@ -51,7 +51,16 @@ Primary risks:
   under a bound tenant. A read filtered on `user_id` alone therefore sees
   the caller's rows in _every_ organisation and resolves an arbitrary one,
   which would let a role or authority held elsewhere answer for the bound
-  organisation. Only the unbound picker endpoints may omit the predicate;
+  organisation. Only the unbound picker endpoints may omit the predicate.
+  The same OR'd-policy hazard applies to the `organisations` table itself:
+  `organisations_member_select_policy` (migration 0004) exposes every
+  organisation the caller is an active member of so the picker can list
+  names, and it stays active under a bound tenant. Every organisations
+  read inside a bound-tenant transaction therefore filters on
+  `id = app_private.current_organisation_id()` — an unqualified read
+  resolves a planner-chosen row for a multi-organisation user and can
+  print another tenant's name, warranty text, or branding onto an issued
+  document. No other tenant-owned table carries a second SELECT policy;
 - the authentication secret is rejected when it is absent, shorter than 32
   characters, or the documented placeholder, unless `NODE_ENV` is
   explicitly `development` or `test`. An unset `NODE_ENV` is treated as

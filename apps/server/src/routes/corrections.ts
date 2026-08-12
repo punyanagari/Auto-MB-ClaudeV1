@@ -1028,6 +1028,7 @@ export function registerCorrectionRoutes(
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
+            where id = app_private.current_organisation_id()
           `;
           return {
             snapshot: parseJsonbColumn(row?.snapshot) as CorrectionNoticeSnapshot,
