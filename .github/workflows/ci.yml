@@ -2,8 +2,14 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  # The heavy proofs (production-smoke, restore-fresh-cluster) run on demand
+  # and weekly, not per pull request: they cost ~45 runner-minutes together
+  # and prove deployment topology, not the changed code. The per-merge push
+  # run was removed — it duplicated the pull request run minutes-for-minutes.
+  workflow_dispatch:
+  schedule:
+    # Monday 03:30 UTC: the weekly full-topology proof.
+    - cron: '30 3 * * 1'
 
 permissions:
   contents: read
@@ -143,6 +149,7 @@ jobs:
   # COMPLETE topology, scanner included (external re-audit) — green must
   # mean uploads scan.
   production-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -222,6 +229,7 @@ jobs:
   # application role connects and the definer functions are owned
   # correctly on the rebuilt cluster.
   restore-fresh-cluster:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
