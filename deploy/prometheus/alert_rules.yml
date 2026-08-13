@@ -1,0 +1,183 @@
+# Alerting rules for the pilot deployment.
+#
+# These are the rules docs/RUNBOOK.md §6 described in prose while nothing
+# evaluated them. Every expression below is written against a series that
+# `apps/server/src/metrics.ts` actually exports and docs/OPERATIONS.md §6
+# documents — no rule refers to a metric that does not exist, because a
+# rule over an absent series is permanently silent and reads as healthy.
+#
+# Severities map to docs/OPERATIONS.md §7: `page` for SEV-1/SEV-2 shapes,
+# `ticket` for everything a human should look at the same day.
+
+groups:
+  - name: availability
+    rules:
+      - alert: ApiDown
+        # The scrape itself failing is the outage signal: readiness is
+        # probed separately by the external uptime monitor (RUNBOOK §6),
+        # which sees the whole path through Caddy rather than the process.
+        expr: up{job="auto-mb-server"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: 'API is not answering scrapes'
+          description: >-
+            Prometheus has failed to scrape the API for two minutes.
+            Triage per docs/RUNBOOK.md §7: /api/ready, docker compose ps,
+            server logs.
+
+      - alert: ApiErrorRateHigh
+        expr: >-
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total[5m])), 0.001)
+          > 0.01
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Over 1% of requests are failing with 5xx'
+          description: 'Five-minute 5xx share above 1% (RUNBOOK §6).'
+
+      - alert: ApiLatencyHigh
+        expr: >-
+          histogram_quantile(
+            0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'p95 request latency above 2s'
+          description: >-
+            The measured backend hot spots are the Measurement Book loader
+            and the unpaginated list endpoints (reconciled review,
+            dimensions 34/36).
+
+  - name: backups
+    rules:
+      - alert: BackupStale
+        # 26 hours = the nightly cron plus slack, i.e. exactly one missed
+        # backup (RUNBOOK §4 writes the marker only after the dump, the
+        # object archive, the manifest verification and — when configured
+        # — the off-host copy have all succeeded).
+        expr: time() - backup_last_success_timestamp_seconds > 26 * 3600
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: 'No verified backup in over 26 hours'
+          description: >-
+            Check /var/log/auto-mb-backup.log on the host. A backup that
+            has not been restored is a hope, not a backup
+            (docs/OPERATIONS.md §5).
+
+      - alert: BackupMarkerAbsent
+        # Deliberately absent rather than zero when the marker cannot be
+        # read, so this fires on a broken cron or a broken marker mount.
+        # It is only meaningful after the first backup has ever run, which
+        # is why it waits an hour before firing.
+        expr: absent(backup_last_success_timestamp_seconds)
+        for: 60m
+        labels:
+          severity: page
+        annotations:
+          summary: 'The backup freshness series has disappeared'
+          description: >-
+            Either the nightly cron never ran or the marker mount into the
+            server container is broken (RUNBOOK §4).
+
+  - name: security
+    rules:
+      - alert: AccountLockout
+        # A lockout during a 3-5 partner pilot is rare enough to look at
+        # every single time.
+        expr: increase(account_lockouts_total[15m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'An account was locked out'
+          description: 'Cross-check identity_audit_events (RUNBOOK §7).'
+
+      - alert: AuthFailureSpike
+        expr: increase(auth_failures_total[15m]) > 20
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'Authentication failures above the pilot band'
+          description: >-
+            Threshold set for a 3-5 partner pilot; revisit it when the
+            partner count changes rather than silencing the alert.
+
+      - alert: TenantDenial
+        # A tenant-boundary denial is either a client bug or someone
+        # probing. Both want eyes.
+        expr: increase(tenant_denials_total[15m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: 'A cross-tenant access attempt was refused'
+          description: >-
+            docs/OPERATIONS.md §7 treats suspected cross-tenant exposure as
+            SEV-1. This alert is the refusal, not an exposure — confirm
+            which it is before standing anything down.
+
+      - alert: MalwareUploadDetected
+        expr: increase(upload_scan_failures_total{reason="malware_detected"}[1h]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'ClamAV rejected an upload as malware'
+          description: 'Security event handling: docs/RUNBOOK.md §7.'
+
+      - alert: MalwareScannerUnavailable
+        # Uploads fail closed when the scanner is down, so this is a
+        # workflow outage as well as a security signal.
+        expr: increase(upload_scan_failures_total{reason="scanner_unavailable"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Uploads are failing closed: the scanner is unreachable'
+          description: 'ClamAV container state and signature download (RUNBOOK §2).'
+
+      - alert: RateLimitRejectionSpike
+        expr: increase(rate_limit_rejections_total[15m]) > 50
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'Rate-limit rejections are spiking'
+          description: >-
+            Either an attack or a limit set too tight for real use. The
+            limits are per API instance (docs/OPERATIONS.md §2).
+
+  - name: saturation
+    rules:
+      - alert: DatabasePoolSaturated
+        expr: >-
+          sum(db_pool_connections) / clamp_min(db_pool_connections_max, 1) > 0.8
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'The database pool is above 80% utilisation'
+          description: >-
+            The API is about to start queueing on connections. Pool sizing
+            is dimension 36 of the reconciled review.
+
+  - name: statutory
+    rules:
+      - alert: StatutoryProviderUnknownOutcome
+        # An unknown outcome always needs a human reconciliation decision
+        # and must never be blindly retried.
+        expr: increase(statutory_provider_operations_total{status="unknown"}[1h]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: 'A statutory provider call ended in an unknown state'
+          description: >-
+            Reconcile against the IRP before any resubmission
+            (docs/RUNBOOK.md §8, procurement and tax walkthrough).

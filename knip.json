@@ -34,6 +34,16 @@
     "playwright"
   ],
 
+  // stryker — .github/workflows/mutation-weekly.yml installs
+  // @stryker-mutator/core and @stryker-mutator/vitest-runner into the runner
+  // at job time and prints the resolved versions into the log, deliberately
+  // rather than committing them to the root package.json (pack P7). knip sees
+  // the binary invoked with nothing declaring it and reports it as unlisted;
+  // there is no dependency to find, because there is meant not to be one.
+  // Added in pack P6 only because it turned `pnpm deadcode:check` red on
+  // `main` and therefore blocked every subsequent pack's verify.
+  "ignoreBinaries": ["stryker"],
+
   "workspaces": {
     ".": {
       "entry": ["scripts/*.mjs", "scripts/import-v1.ts"],

@@ -53,6 +53,51 @@ for (const script of shellScripts) {
   }
 }
 
+// The Poppler pin has to be ONE number in three places, because LOA
+// extraction reads `pdftotext -layout` geometry and a CI runner parsing at a
+// different version than the production image means the corpus proves
+// nothing about production. `poppler-version.txt` holds the value;
+// .github/workflows/ci.yml installs and asserts it, and
+// deploy/Dockerfile.server pins and asserts it. Both call sites already fail
+// loudly when the INSTALLED binary disagrees with what they expect — this
+// checks the cheaper failure the runtime assertions cannot see, which is the
+// three declarations drifting apart from each other.
+{
+  const declared = (
+    await readFile(new URL('../poppler-version.txt', import.meta.url), 'utf8')
+  )
+    .split('\n')[0]
+    .trim();
+  if (!/^\d+\.\d+\.\d+$/.test(declared)) {
+    errors.push(`poppler-version.txt: first line is not a version: ${declared}`);
+  }
+  const workflow = await readFile(
+    new URL('../.github/workflows/ci.yml', import.meta.url),
+    'utf8',
+  );
+  const inWorkflow = /^\s*POPPLER_VERSION:\s*'?([\d.]+)'?\s*$/m.exec(workflow)?.[1];
+  if (inWorkflow === undefined) {
+    errors.push('.github/workflows/ci.yml: no POPPLER_VERSION declaration found');
+  } else if (inWorkflow !== declared) {
+    errors.push(
+      `Poppler pin drift: poppler-version.txt says ${declared}, ` +
+        `.github/workflows/ci.yml says ${inWorkflow}. Move both together, ` +
+        'along with the Alpine base in deploy/Dockerfile.server, and re-run ' +
+        'apps/server/test/loa-extract-roundtrip.test.ts.',
+    );
+  }
+  const dockerfile = await readFile(
+    new URL('../deploy/Dockerfile.server', import.meta.url),
+    'utf8',
+  );
+  if (!dockerfile.includes('poppler-version.txt')) {
+    errors.push(
+      'deploy/Dockerfile.server no longer reads poppler-version.txt; the ' +
+        'production pin and the CI pin can now drift apart silently.',
+    );
+  }
+}
+
 if (errors.length > 0) {
   console.error(errors.map((error) => `- ${error}`).join('\n'));
   process.exit(1);

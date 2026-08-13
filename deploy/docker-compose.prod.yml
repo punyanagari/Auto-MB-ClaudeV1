@@ -4,10 +4,27 @@
 #   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
 name: auto-mb-prod
 
+# Every image carries its DIGEST as well as its tag. A tag is a mutable
+# pointer: `clamav/clamav:1.4` today and `clamav/clamav:1.4` next month can
+# be different bytes, which makes "the image the scanner passed" and "the
+# image serving traffic" two different claims. Renovate moves tag and
+# digest together.
+
+# Container logs are the only diagnostic record this deployment keeps
+# (docs/RUNBOOK.md §6), and Docker's default json-file driver is unbounded
+# — a chatty week fills the 40 GB pilot disk and takes PostgreSQL down with
+# it. Capped and rotated for every service.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
 services:
   postgres:
-    image: postgres:17.5-alpine
+    image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: auto_mb
       POSTGRES_USER: auto_mb_owner
@@ -24,16 +41,62 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          memory: 512M
 
   gotenberg:
-    image: gotenberg/gotenberg:8.24.0
+    image: gotenberg/gotenberg:8.24.0@sha256:b116a40a1c24917e2bf3e153692da5acd2e78e7cd67e1b2d243b47c178f31c90
     restart: unless-stopped
+    logging: *logging
+    # The same endpoint the API's readiness probe calls. Without it a
+    # wedged renderer was only visible as failed challan PDFs.
+    healthcheck:
+      test: ['CMD', 'curl', '--silent', '--fail', 'http://127.0.0.1:3000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          # Chromium is the memory consumer here; the tax-invoice render
+          # path bounds a request to 45s and 20 MiB of PDF
+          # (docs/OPERATIONS.md §2).
+          cpus: '1.0'
+          memory: 1024M
+        reservations:
+          memory: 256M
 
   clamav:
-    image: clamav/clamav:1.4
+    image: clamav/clamav:1.4@sha256:7173cd3d57a839c6fee673b07246301e0d1f68f5a14a5ca063f502323bf1cc61
     restart: unless-stopped
+    logging: *logging
     volumes:
       - clamav-db:/var/lib/clamav
+    # clamdcheck.sh ships in the image and PINGs the daemon. The long
+    # start period is the first-boot signature download, which is minutes,
+    # not seconds — an interval short enough to be useful afterwards would
+    # otherwise mark a healthy container unhealthy on every cold start.
+    healthcheck:
+      test: ['CMD-SHELL', 'clamdcheck.sh']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    deploy:
+      resources:
+        limits:
+          # clamd holds the whole signature database in memory; below
+          # ~1.5 GiB it is killed mid-scan and uploads fail closed.
+          cpus: '1.0'
+          memory: 2048M
+        reservations:
+          memory: 1024M
 
   server:
     # Explicit build tag: the deploy workflow's rollback re-points this
@@ -46,10 +109,19 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.server
     restart: unless-stopped
+    logging: *logging
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      # Pinned to the literal string, never interpolated from the host
+      # environment and never left to the image's own ENV alone. The boot
+      # gates (AUTH_SECRET length, SMTP settings, CLAMAV_HOST) treat an
+      # UNSET NODE_ENV as production and so fail safe, but Better Auth's
+      # built-in rate limiter enables itself only when the value is
+      # exactly `production` — an empty or misspelt value silently loses a
+      # control rather than refusing to start. Same reason the image sets
+      # it too: two independent statements of the same fact.
       NODE_ENV: production
       API_HOST: 0.0.0.0
       API_PORT: '3000'
@@ -104,6 +176,29 @@ services:
       # be reachable from the internet-facing app container. A directory
       # (not file) mount so the cron's atomic rename stays visible inside.
       - /var/lib/auto-mb/backup-status:/backup-status:ro
+    # Full readiness, the same judgement the deploy gate and the uptime
+    # monitor use: every configured dependency answering AND the applied
+    # migration ledger matching the migrations this image carries. The
+    # start period covers ClamAV's first-boot signature download and the
+    # window between `up -d` and the deploy's migration step, during which
+    # the schema-version gate legitimately refuses.
+    #
+    # The image has no curl; BusyBox wget is what Alpine ships. `-q -O -`
+    # exits nonzero on the 503 that readiness answers with, which is
+    # exactly the intended verdict.
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:3000/api/ready >/dev/null']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1024M
+        reservations:
+          memory: 256M
 
   caddy:
     # Same explicit tag rationale as `server` above.
@@ -112,6 +207,11 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.web
     restart: unless-stopped
+    logging: *logging
+    # Deliberately `service_started`, not `service_healthy`: TLS issuance
+    # and the static bundle must keep working while the API is still
+    # warming up, and a site that answers 502 is far easier to diagnose
+    # than a site that answers nothing.
     depends_on:
       - server
     environment:
@@ -122,6 +222,88 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
+    # Caddy's admin API listens on loopback only and is never proxied; it
+    # is the one endpoint that answers without a certificate or a Host
+    # header, which makes it the honest liveness signal for this container.
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:2019/config/ >/dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # --- monitoring -------------------------------------------------------
+  # Neither service publishes a port. Both are reached over an SSH tunnel
+  # (docs/RUNBOOK.md §6); an alerting stack exposed to the internet is a
+  # second attack surface carrying a complete map of the first.
+  prometheus:
+    image: prom/prometheus:v3.13.2@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      # Bounded retention: this is a 40 GB pilot host, and metrics older
+      # than a fortnight have never been needed to answer an incident.
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=4GB'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      # The METRICS_TOKEN as a file. Created once on the host; rotation is
+      # docs/RUNBOOK.md §6. Never committed, never in the image.
+      - /var/lib/auto-mb/prometheus/secrets:/etc/prometheus/secrets:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:9090/-/healthy >/dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Receiver credentials (SMTP password, webhook URL) once an owner has
+      # chosen a delivery channel. Empty until then.
+      - /var/lib/auto-mb/alertmanager/secrets:/etc/alertmanager/secrets:ro
+      - alertmanager-data:/alertmanager
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:9093/-/healthy >/dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          memory: 64M
 
 volumes:
   pgdata:
@@ -129,3 +311,5 @@ volumes:
   clamav-db:
   caddy-data:
   caddy-config:
+  prometheus-data:
+  alertmanager-data:

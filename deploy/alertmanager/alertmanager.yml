@@ -1,0 +1,64 @@
+# Alertmanager routing for the pilot deployment.
+#
+# OWNER DECISION REQUIRED — the delivery channel is the one part of this
+# stack the repository cannot choose. Until an owner fills in a receiver,
+# alerts are evaluated, grouped and RETAINED (visible in the Alertmanager
+# UI over an SSH tunnel, docs/RUNBOOK.md §6) but not delivered anywhere.
+# That is a deliberate, visible gap rather than a config that silently
+# posts to nothing.
+#
+# To enable delivery, replace the `holding-only` receiver below with one of
+# the commented shapes and redeploy. Any credential belongs in
+# deploy/.env.production, never in this file — Alertmanager expands
+# ${VAR} only in a handful of fields, so the supported pattern is a
+# *_file directive pointing at a bind-mounted secret (see the smtp
+# example).
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Alerts from one incident arrive together; group them so a partner
+  # outage is one notification, not fifteen.
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  # Twelve hours: a pilot with one operator does not need to be re-paged
+  # every four hours about a condition already being worked.
+  repeat_interval: 12h
+  receiver: holding-only
+  routes:
+    - matchers:
+        - severity = "page"
+      receiver: holding-only
+      # Pages repeat sooner than tickets.
+      repeat_interval: 4h
+
+receivers:
+  - name: holding-only
+    # No notifier configured. Firing alerts are held and visible in the
+    # Alertmanager UI; nothing is sent.
+
+  # --- Email (SMTP) ----------------------------------------------------
+  # - name: ops-email
+  #   email_configs:
+  #     - to: ops@example.in
+  #       from: auto-mb-alerts@example.in
+  #       smarthost: smtp.example.in:587
+  #       auth_username: auto-mb-alerts@example.in
+  #       auth_password_file: /etc/alertmanager/secrets/smtp-password
+  #       send_resolved: true
+
+  # --- Generic webhook (chat bridge, on-call provider) ------------------
+  # - name: ops-webhook
+  #   webhook_configs:
+  #     - url_file: /etc/alertmanager/secrets/webhook-url
+  #       send_resolved: true
+
+inhibit_rules:
+  # While the API is down, everything downstream of it is noise.
+  - source_matchers:
+      - alertname = "ApiDown"
+    target_matchers:
+      - alertname =~ "ApiErrorRateHigh|ApiLatencyHigh|DatabasePoolSaturated"
+    equal: ['deployment']

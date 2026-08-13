@@ -157,8 +157,12 @@ Every pack below traces to one of these.
   Docs/test/UI-only packs merge when green.
 - **Migration numbers are reserved here** to prevent the collisions that
   occurred twice in the previous round: **0064** → P2, **0065** → P2,
-  **0066** → P14, **0067** → P15, **0068** → P16, **0069** → P17. A pack that
-  does not ship its migration returns the number by editing this file.
+  **0066** → P14, **0067** → P15, **0068** → P16, **0069** → P17,
+  **0070** → P6. A pack that does not ship its migration returns the number
+  by editing this file. P6 was not expected to need one; it takes 0070
+  rather than 0066 so the wave-3 reservations are left undisturbed, and the
+  gap is harmless because the runner applies any unapplied id regardless of
+  relative order.
 
 ### 2.2 Wave 1 — guards and closures (all seven packs runnable in parallel)
 
@@ -228,9 +232,16 @@ plus the score dimension it claims, re-checked in the next review round.
 
 ## 3. Standing corrections
 
-1. `docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
+1. ~~`docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
    `scripts/backup.sh` actually does until P6 lands (encryption, retention,
-   off-host copy are currently claimed and absent). P6 owns this edit.
+   off-host copy are currently claimed and absent). P6 owns this edit.~~
+   **Done in P6.** `scripts/backup.sh` now performs envelope encryption,
+   carries `AUTH_SECRET` in the recovery set, establishes dump/archive
+   consistency by ordering, and gates the freshness marker on a configured
+   off-host copy; `docs/OPERATIONS.md` §5 and `docs/RUNBOOK.md` §4/§4a/§5
+   describe exactly that and name what is still absent — no point-in-time
+   recovery, no pruning in the script, no object-storage versioning, and no
+   chosen off-host destination.
 2. `AUDIT-2026-08-12.md` and the disposition carry three overstatements
    (constraint-trigger wording; "malware scanning fails closed" without the
    config caveat; "every membership read" while two writes lack the predicate)

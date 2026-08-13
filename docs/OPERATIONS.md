@@ -82,14 +82,39 @@ and 6, and no longer trusts a deploy-time `ssh-keyscan`:
   failed migration leaves the previously running release untouched;
 - **rule 6** — the readiness gate rolls back automatically. The image ids
   serving before the deploy are recorded first; if `/api/ready` does not
-  answer within the retry window, the checkout returns to the previous
-  commit, the previous images are restored under the compose build tags,
-  the containers are recreated from them, and the job exits nonzero with
-  both the failed and the restored state logged. Forward-only migrations
-  are deliberately NOT rolled back (§4);
+  answer READY WITH EVERY COMPONENT OK within the retry window, the
+  checkout returns to the previous commit, the previous images are
+  restored under the compose build tags, the containers are recreated from
+  them, and the job exits nonzero with both the failed and the restored
+  state logged. A 200 alone is not the gate: the four per-component
+  assertions CI has always made now run on the deployment path too, so a
+  release that quietly lost `CLAMAV_HOST` or `GOTENBERG_URL` — leaving the
+  component `unconfigured` rather than failed — is refused instead of
+  shipped. Forward-only migrations are deliberately NOT rolled back (§4);
 - **host key** — pinned from the `DEPLOY_HOST_KEY` secret with
   `StrictHostKeyChecking yes`; an unset pin fails the job rather than
   falling back to trust-on-first-use. Rotation: docs/RUNBOOK.md §2a.
+
+Two further properties of the build itself:
+
+- **the artifact is minimal** — the server image ships compiled
+  JavaScript bundles and a production-only dependency install, not the
+  workspace source under `tsx` with the whole dev toolchain beside it.
+  Migrations therefore run as `node apps/server/dist/bootstrap.mjs`; there
+  is no `pnpm` or `tsx` in the image;
+- **the artifact is scanned** — every base image is pinned by digest as
+  well as tag, and `scripts/scan-images.sh` runs Trivy against both built
+  images between the build and the migration. Fixable HIGH/CRITICAL
+  findings stop the release while the previous containers are still
+  serving. Accepting one is an edit to `deploy/.trivyignore`, which is
+  reviewable, rather than a flag;
+- **the artifact's Poppler matches CI's** — `poppler-version.txt` at the
+  repository root holds one version, the production image pins
+  `poppler-utils` to it and asserts the installed banner, and the base is
+  `node:22.16.0-alpine3.21` because that is the Alpine release carrying it.
+  LOA extraction reads `pdftotext -layout` geometry, so a runner and a
+  production image on different Poppler versions means the corpus proves
+  nothing about production (docs/DEPENDENCIES.md).
 
 Rules 1 and 5 remain open, and closing them is still a pre-production
 gate: images are built ON the production host rather than pulled as a
@@ -109,7 +134,7 @@ release. Recorded as finding 32 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.
 
 ## 5. Backup and recovery
 
-Before a paid pilot:
+The requirements, before a paid pilot:
 
 - automated encrypted backups;
 - point-in-time recovery;
@@ -120,6 +145,60 @@ Before a paid pilot:
 
 A backup is not accepted until a restore has succeeded.
 
+### What `scripts/backup.sh` actually does
+
+Stated exactly, because these paragraphs previously promised encryption,
+point-in-time recovery and retention that the script did not implement.
+The concrete procedure and its configuration are docs/RUNBOOK.md §4/§4a.
+
+One run produces one dated directory containing:
+
+- a custom-format `pg_dump` of the database;
+- a gzip archive of the object store;
+- the `AUTH_SECRET` and database passwords, when a secrets file is
+  configured — without `AUTH_SECRET` a restored database cannot decrypt a
+  single stored TOTP secret or backup code, so an MFA-enforcing deployment
+  comes back with every privileged user locked out;
+- a `MANIFEST` recording the format, both snapshot times, whether the
+  artefacts are encrypted, and whether an off-host copy was configured;
+- `SHA256SUMS` over the bytes as stored, re-verified before the run is
+  allowed to call itself successful.
+
+**Encryption** is envelope encryption: a fresh random data key encrypts the
+artefacts with AES-256, and the data key is encrypted to an RSA public key
+with OAEP/SHA-256. Only the public half lives on the production host, so a
+host compromise yields no readable backup and the host cannot decrypt its
+own history. `pg_dump` and `tar` stream straight into the cipher — no
+plaintext artefact is ever written to the backup directory. It is enabled
+by configuration (`BACKUP_ENCRYPTION_PUBLIC_KEY`); production also sets
+`BACKUP_REQUIRE_ENCRYPTION`, which turns a missing key into a refusal
+rather than a plaintext backup. Recovery secrets are refused outright
+unless encryption is on.
+
+**Snapshot consistency** (finding 33) is established by ordering rather
+than by a single instant, which a shell script spanning a database and a
+filesystem cannot have. The dump is taken first, so it can only reference
+objects that already existed; the object store is enumerated after it,
+which yields a superset of everything the dump can reach; and the archive
+is built from exactly that enumeration, so an object disappearing
+mid-backup aborts the run instead of certifying a pair that cannot be
+restored together. Extra members are orphan files a restore ignores; a
+dangling reference — the direction that actually breaks a restore — is no
+longer reachable.
+
+**Off-host copy** runs an operator-supplied command with the finished
+backup directory as its argument, and the last-success marker is published
+only if that command succeeds: a backup that exists only on the host it
+protects has not survived the failure it exists for. The destination is an
+owner decision and is empty by default.
+
+**Still not implemented, and therefore still gates rather than claims:**
+point-in-time recovery (there is no WAL archive, so the recovery point is
+the last nightly run), pruning of old backup directories (the cron in
+docs/RUNBOOK.md §4 does that, not the script), and object-storage
+versioning. RPO is one backup interval, currently 24 hours; RTO has not
+been measured.
+
 Object writes are crash-consistent (finding 34, atomic-write slice): the
 filesystem store writes each object to a temp file in the SAME directory,
 fsyncs it, atomically renames it onto the final key, then fsyncs the
@@ -129,9 +208,9 @@ object, and a crash mid-write leaves at most an inert orphan temp file
 whose dotted name no object key can resolve to. Directory fsync is real on
 Linux, where production runs; on Windows (development only) libuv cannot
 open a directory handle, so that one step degrades to a no-op while the
-rename stays atomic. The REST of finding 34 — off-host/redundant storage,
-versioning, server-side encryption, and a delete path — is unchanged and
-still open.
+rename stays atomic. Of the rest of finding 34, off-host copying and
+encryption at rest are now implemented in the backup path above;
+object-storage versioning and a delete path remain open.
 
 ## 6. Observability
 
@@ -178,13 +257,30 @@ restart resets them and `rate()` handles it. The pool gauge and the backup
 gauge omit their series entirely when they cannot be sampled — absence is
 honest, a fabricated `0` would read as a real measurement.
 
-Still NOT implemented, and therefore still gates rather than claims: job
+### What reads them
+
+`deploy/docker-compose.prod.yml` runs Prometheus and Alertmanager beside
+the application. Prometheus scrapes `server:3000/metrics` every 30 s with
+the `METRICS_TOKEN` bearer, keeps 15 days, and evaluates the rules
+committed at `deploy/prometheus/alert_rules.yml` — every one of them
+written against a series the table above actually lists, because a rule
+over an absent series is permanently silent and reads as healthy. Neither
+service publishes a port; an operator reaches them over an SSH tunnel
+(docs/RUNBOOK.md §6).
+
+The one part that is not settled in the repository is the delivery
+channel: Alertmanager ships with a receiver that holds and groups firing
+alerts but sends them nowhere, because the destination is an owner
+decision. Until one is made, alerts are visible rather than delivered, and
+that gap is deliberate and visible rather than a config posting into
+nothing.
+
+Still NOT instrumented, and therefore still gates rather than claims: job
 queue depth/retries/dead letters, LOA extraction failure and review rate,
 PDF generation failures, object-storage errors, provider latency
 histograms and authentication-expiry signals, locally issued documents
 awaiting external registration, and deployment/migration status as a
-metric. The alerting rules themselves live in RUNBOOK §6 and are
-operator-owned.
+metric.
 
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.
 
