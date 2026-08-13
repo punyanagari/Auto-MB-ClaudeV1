@@ -394,7 +394,12 @@ beforeAll(async () => {
   ownerUserId = ownerUser.id;
   await admin`
     update organisation_memberships
-    set can_issue_documents = true, can_cancel_documents = true
+    set can_issue_documents = true, can_cancel_documents = true,
+        -- Migration 0061: the statutory provider routes now demand the
+        -- dedicated compliance authority ON TOP of issue/cancel. Without
+        -- this grant every IRP/NIC case in this file 403s, which is
+        -- exactly the proof that the new gate binds.
+        can_manage_statutory_reporting = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 

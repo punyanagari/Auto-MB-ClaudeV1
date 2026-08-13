@@ -40,6 +40,8 @@ const ownerEmail = `mfa-owner-${runId}@integration.test`;
 const viewerEmail = `mfa-viewer-${runId}@integration.test`;
 const promotedEmail = `mfa-promoted-${runId}@integration.test`;
 const lockyEmail = `mfa-locky-${runId}@integration.test`;
+/** Holds ONLY the statutory reporting authority (migration 0061). */
+const complianceEmail = `mfa-compliance-${runId}@integration.test`;
 const password = `integration-password-${runId}`;
 
 let admin: Sql;
@@ -280,6 +282,7 @@ describe('finding 36: MFA hard wall for privilege holders', () => {
   let owner: CookieJar;
   let viewer: CookieJar;
   let promoted: CookieJar;
+  let compliance: CookieJar;
   let ownerSecret: Buffer;
   let ownerBackupCodes: string[];
 
@@ -295,6 +298,7 @@ describe('finding 36: MFA hard wall for privilege holders', () => {
       owner = await signUp(ownerEmail, 'Mfa Owner');
       viewer = await signUp(viewerEmail, 'Mfa Viewer');
       promoted = await signUp(promotedEmail, 'Mfa Promoted');
+      compliance = await signUp(complianceEmail, 'Mfa Compliance');
       await signUp(lockyEmail, 'Mfa Locky');
 
       const created = await authed(owner, {
@@ -464,6 +468,101 @@ describe('finding 36: MFA hard wall for privilege holders', () => {
     });
     expect(after.statusCode, after.body).toBe(403);
     expect(after.json()).toMatchObject({ code: 'MFA_ENROLMENT_REQUIRED' });
+  });
+
+  /**
+   * Migration 0061. The compliance authority binds the organisation's
+   * statutory identity at a government portal, so an account holding it
+   * is exactly as worth stealing as one that can issue or cancel. If it
+   * had been added to `organisation_memberships` without joining the
+   * `bool_or` in mfa-policy.ts, a member could hold it — and register the
+   * organisation's invoices at the IRP — while standing outside the TOTP
+   * wall entirely. This case is the proof that it joined.
+   */
+  it('requires MFA of a member holding ONLY the statutory reporting authority', async () => {
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email: complianceEmail, role: 'viewer' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+
+    // A plain viewer: no owner role, no issue, cancel or approve
+    // authority, so no obligation yet.
+    const before = await authed(compliance, { method: 'GET', url: '/api/me' });
+    expect(before.json()).toMatchObject({
+      mfaRequired: false,
+      twoFactorEnabled: false,
+    });
+    const admitted = await authed(compliance, {
+      method: 'GET',
+      url: '/api/organisations/current/members',
+      organisationId,
+    });
+    expect(admitted.statusCode, admitted.body).toBe(200);
+
+    const complianceUserId = await userIdOf(complianceEmail);
+    const grant = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${complianceUserId}`,
+      organisationId,
+      payload: { canManageStatutoryReporting: true },
+    });
+    expect(grant.statusCode, grant.body).toBe(200);
+    // The grant landed and it is the ONLY authority the member holds.
+    const [row] = await admin<
+      {
+        role: string;
+        can_issue_documents: boolean;
+        can_cancel_documents: boolean;
+        can_approve_amendments: boolean;
+        can_manage_statutory_reporting: boolean;
+      }[]
+    >`
+      select role, can_issue_documents, can_cancel_documents,
+             can_approve_amendments, can_manage_statutory_reporting
+      from organisation_memberships
+      where organisation_id = ${organisationId} and user_id = ${complianceUserId}
+    `;
+    expect(row).toEqual({
+      role: 'viewer',
+      can_issue_documents: false,
+      can_cancel_documents: false,
+      can_approve_amendments: false,
+      can_manage_statutory_reporting: true,
+    });
+
+    const me = await authed(compliance, { method: 'GET', url: '/api/me' });
+    expect(me.json()).toMatchObject({ mfaRequired: true, twoFactorEnabled: false });
+
+    const refused = await authed(compliance, {
+      method: 'GET',
+      url: '/api/organisations/current/members',
+      organisationId,
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json()).toMatchObject({ code: 'MFA_ENROLMENT_REQUIRED' });
+  });
+
+  /** The authority is owner-only to hand out, like every other one. */
+  it('refuses a non-owner the grant of the statutory reporting authority', async () => {
+    const refused = await authed(viewer, {
+      method: 'PATCH',
+      url: `/api/organisations/current/members/${await userIdOf(viewerEmail)}`,
+      organisationId,
+      payload: { canManageStatutoryReporting: true },
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json()).toMatchObject({ code: 'OWNER_REQUIRED' });
+
+    // Nothing moved: a viewer cannot promote themselves into the IRP.
+    const [row] = await admin<{ can_manage_statutory_reporting: boolean }[]>`
+      select can_manage_statutory_reporting from organisation_memberships
+      where organisation_id = ${organisationId}
+        and user_id = ${await userIdOf(viewerEmail)}
+    `;
+    expect(row?.can_manage_statutory_reporting).toBe(false);
   });
 
   it('refuses two-factor disable for a required user before Better Auth sees it', async () => {
