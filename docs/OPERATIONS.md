@@ -52,14 +52,34 @@ into PostgreSQL or a shared store (docs/SECURITY.md).
 7. Never depend on an agent session as the sole deployment record.
 
 These are the rules the deployment must meet, not a description of the
-current workflow. `.github/workflows/deploy.yml` does not yet satisfy
-rules 1, 3, 5 and 6: it builds images on the production host rather than
-deploying a reviewed immutable digest, starts containers before running
-migrations, has no protected-environment approval, and has no rollback —
-a failed health check leaves the new containers running. It also trusts
-the host key discovered by `ssh-keyscan` at deploy time. Recorded as
-finding 32 in `docs/AUDIT-DISPOSITION-2026-08-10.md`; closing it is a
-pre-production gate.
+current workflow. `.github/workflows/deploy.yml` now satisfies rules 2, 3
+and 6, and no longer trusts a deploy-time `ssh-keyscan`:
+
+- **rule 2** — the workflow refuses to deploy a commit that has no
+  successful CI run (`gh api .../actions/workflows/ci.yml/runs`
+  filtered to the dispatched ref's head SHA), and the host re-checks that
+  the checkout it is about to serve is that same commit;
+- **rule 3** — images are built, then migrations run to completion in a
+  one-off container built from the NEW image while the OLD containers keep
+  serving, and only a successful migration recreates the app containers. A
+  failed migration leaves the previously running release untouched;
+- **rule 6** — the readiness gate rolls back automatically. The image ids
+  serving before the deploy are recorded first; if `/api/ready` does not
+  answer within the retry window, the checkout returns to the previous
+  commit, the previous images are restored under the compose build tags,
+  the containers are recreated from them, and the job exits nonzero with
+  both the failed and the restored state logged. Forward-only migrations
+  are deliberately NOT rolled back (§4);
+- **host key** — pinned from the `DEPLOY_HOST_KEY` secret with
+  `StrictHostKeyChecking yes`; an unset pin fails the job rather than
+  falling back to trust-on-first-use. Rotation: docs/RUNBOOK.md §2a.
+
+Rules 1 and 5 remain open, and closing them is still a pre-production
+gate: images are built ON the production host rather than pulled as a
+reviewed immutable digest from a registry, and there is no protected
+GitHub environment requiring a second person's approval — `workflow_dispatch`
+proves a human pressed the button, not that a reviewer approved the
+release. Recorded as finding 32 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.
 
 ## 4. Database changes
 
@@ -83,6 +103,19 @@ Before a paid pilot:
 
 A backup is not accepted until a restore has succeeded.
 
+Object writes are crash-consistent (finding 34, atomic-write slice): the
+filesystem store writes each object to a temp file in the SAME directory,
+fsyncs it, atomically renames it onto the final key, then fsyncs the
+directory. A stored object therefore either exists complete or does not
+exist — a backup, a reader, or a restore can never observe a half-written
+object, and a crash mid-write leaves at most an inert orphan temp file
+whose dotted name no object key can resolve to. Directory fsync is real on
+Linux, where production runs; on Windows (development only) libuv cannot
+open a directory handle, so that one step degrades to a no-op while the
+rename stays atomic. The REST of finding 34 — off-host/redundant storage,
+versioning, server-side encryption, and a delete path — is unchanged and
+still open.
+
 ## 6. Observability
 
 Minimum signals:
@@ -102,15 +135,51 @@ Minimum signals:
   metric and alerted on before it exceeds one missed backup cycle;
 - deployment and migration status.
 
+### What `/metrics` actually exposes
+
+`apps/server/src/metrics.ts`, served at `GET /metrics` behind
+`METRICS_TOKEN` (RUNBOOK §6). Every label value is drawn from a closed set
+— route templates, not URLs; bounded reason/scope/operation/status words,
+never document ids, organisation ids, email addresses, client addresses or
+provider codes:
+
+| Series                                  | Type      | Labels                | Source                                                       |
+| --------------------------------------- | --------- | --------------------- | ------------------------------------------------------------ |
+| `http_requests_total`                   | counter   | method, route, status | response hook                                                |
+| `http_request_duration_seconds`         | histogram | —                     | response hook                                                |
+| `auth_failures_total`                   | counter   | surface               | auth handler, off the same response the identity audit reads |
+| `account_lockouts_total`                | counter   | —                     | account lockout, once per episode                            |
+| `tenant_denials_total`                  | counter   | reason                | error handler, every `NOT_A_MEMBER` refusal                  |
+| `rate_limit_rejections_total`           | counter   | scope                 | rate limiter and account lockout, at refusal                 |
+| `statutory_provider_operations_total`   | counter   | operation, status     | provider-operation ledger completion                         |
+| `upload_scan_failures_total`            | counter   | reason                | malware gate                                                 |
+| `db_pool_connections` / `_max`          | gauge     | state                 | `pg_stat_activity`, sampled per scrape                       |
+| `backup_last_success_timestamp_seconds` | gauge     | —                     | backup marker file (§5, RUNBOOK §4)                          |
+
+Counters are process-cumulative, which is what Prometheus expects; a
+restart resets them and `rate()` handles it. The pool gauge and the backup
+gauge omit their series entirely when they cannot be sampled — absence is
+honest, a fabricated `0` would read as a real measurement.
+
+Still NOT implemented, and therefore still gates rather than claims: job
+queue depth/retries/dead letters, LOA extraction failure and review rate,
+PDF generation failures, object-storage errors, provider latency
+histograms and authentication-expiry signals, locally issued documents
+awaiting external registration, and deployment/migration status as a
+metric. The alerting rules themselves live in RUNBOOK §6 and are
+operator-owned.
+
 Logs include request id, route, status, duration, actor id when available, and organisation id when safe. Logs exclude bodies, passwords, tokens, LOA text, and document contents.
 
 The current durable provider-operation ledger records operation name, document
 id, provider/environment, correlation id, request SHA-256, terminal status,
-timestamps, redacted provider code, and HTTP status. It never stores request or
-response bodies, credentials, tokens, encrypted/decrypted session material,
-signed QR payloads, or full invoice JSON. Provider-specific Prometheus metrics,
-latency histograms, authentication-expiry signals, and alerts are not yet
-implemented and remain production-enablement gates.
+timestamps, redacted provider code, and HTTP status. Since migration `0053` it
+also retains the raw provider request and response bodies, bounded at 256 KiB
+with explicit truncation markers. It never stores credentials, tokens,
+encrypted/decrypted session material, or signed QR payloads. Provider call
+outcomes are now counted (`statutory_provider_operations_total`); latency
+histograms, authentication-expiry signals, and alerts are not yet implemented
+and remain production-enablement gates.
 
 ## 7. Incident response
 

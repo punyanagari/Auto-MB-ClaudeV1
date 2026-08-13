@@ -259,10 +259,7 @@ export function CompletionExtensions({
       )}
 
       {canModify && dates.currentCompletionDate !== null && draft === undefined && (
-        <Disclosure
-          label="Save draft extension request"
-          startOpen={extensions.length === 0}
-        >
+        <Disclosure label="New extension request" startOpen={extensions.length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -332,7 +329,7 @@ export function CompletionExtensions({
       )}
 
       {canIssue && dates.currentCompletionDate !== null && (
-        <Disclosure label="Record paper letter as final">
+        <Disclosure label="Record paper letter as final…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -492,7 +489,7 @@ function FinalisedExtensionActions({
         </Actions>
       )}
       {!extension.responseDocumentAvailable && (
-        <Disclosure label="Upload response">
+        <Disclosure label="Upload response…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -529,7 +526,7 @@ function FinalisedExtensionActions({
         </Disclosure>
       )}
       {extension.responseDocumentAvailable && (
-        <Disclosure label="Record response">
+        <Disclosure label="Record response…">
           <form
             onSubmit={(event) => {
               event.preventDefault();

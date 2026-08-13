@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -44,6 +45,37 @@ export function assertSafeObjectKey(key: string): void {
   }
 }
 
+/**
+ * Directory-entry durability after the atomic rename below. On Linux — the
+ * production posture, where the server runs in containers — this is a real
+ * fsync on the directory: without it a power loss can forget the rename
+ * even though the file's own bytes were synced. Windows (development only)
+ * cannot open a directory through libuv (`open` fails EPERM/EISDIR), and
+ * some filesystems reject fsync on a directory handle (EINVAL/ENOTSUP/
+ * EBADF); both degrade gracefully — the write itself is still atomic via
+ * rename, only the crash-durability of the directory entry is weaker.
+ */
+async function syncDirectory(dir: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  let handle;
+  try {
+    handle = await open(dir, 'r');
+  } catch {
+    return;
+  }
+  try {
+    await handle.sync();
+  } catch (error) {
+    const code =
+      error !== null && typeof error === 'object' && 'code' in error
+        ? error.code
+        : undefined;
+    if (code !== 'EINVAL' && code !== 'ENOTSUP' && code !== 'EBADF') throw error;
+  } finally {
+    await handle.close();
+  }
+}
+
 export function createFileSystemStorage(rootDir: string): ObjectStorage {
   const root = path.resolve(rootDir);
 
@@ -57,10 +89,33 @@ export function createFileSystemStorage(rootDir: string): ObjectStorage {
   }
 
   return {
+    /**
+     * Crash-consistent write (audit finding 34, atomic-write slice): the
+     * bytes land in a temp file IN THE SAME DIRECTORY as the final key
+     * (rename is only atomic within one filesystem), are fsynced, and are
+     * then renamed onto the key; finally the directory entry itself is
+     * synced. A stored object therefore either exists complete or not at
+     * all — a reader can never observe a half-written object, and a crash
+     * mid-write leaves at most an orphan temp file. Deliberately no
+     * compensating delete on failure: after an I/O error the directory's
+     * state is unknown and a real crash could not have cleaned up anyway.
+     * Orphan temp files are inert — their dotted names can never satisfy
+     * assertSafeObjectKey, so no key resolves to them.
+     */
     async put(key, bytes) {
       const file = resolveKey(key);
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, bytes);
+      const dir = path.dirname(file);
+      await mkdir(dir, { recursive: true });
+      const temp = path.join(dir, `.put-${randomUUID()}.tmp`);
+      const handle = await open(temp, 'wx');
+      try {
+        await handle.writeFile(bytes);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(temp, file);
+      await syncDirectory(dir);
     },
     async get(key) {
       return readFile(resolveKey(key));

@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ConfirmWorkRequestSchema,
   DiscardLoaDocumentRequestSchema,
   DiscardLoaDocumentResponseSchema,
@@ -15,13 +14,10 @@ import {
   type ConfirmPbgRequirement,
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
-  type DiscardLoaDocumentRequest,
-  type ListLoaDocumentsQuery,
   type LoaDocument,
   type LoaDocumentDetail,
   type LoaLetterNumberMatch,
   type PaymentMatrixCategory,
-  type UploadLoaQuery,
   type Work,
   type WorkSchedule,
 } from '@auto-mb/contracts';
@@ -32,7 +28,6 @@ import {
   type PerformanceGuaranteeField,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -45,13 +40,14 @@ import {
 } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractLoaPdfText } from '../loa-extract.js';
+import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /** What loa_documents.extraction_payload holds for a parsed document:
  * both extracted text views plus the parser's review payload, all verbatim.
@@ -61,15 +57,6 @@ interface ExtractionPayload {
   readonly rawSourceText: string;
   readonly review: LoaReviewPayload;
 }
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
 
 // Params are validated with a pattern rather than the uuid format so the
 // check does not depend on the ajv instance's format registry.
@@ -140,9 +127,11 @@ function parsedLetterNumber(payload: unknown): string | null {
  * a corrigendum, a re-issue after a corrected schedule, an amended
  * acceptance — all print the number the first letter printed, and the
  * later file is the one the contractor must work from. Refusing it would
- * strand the revision; saying nothing would let the reviewer confirm a
- * second Work for a contract that already has one. So the reviewer is
- * warned and told exactly which earlier intake it collides with.
+ * strand the revision; saying nothing would let the reviewer spend an
+ * afternoon correcting rows only to have the confirm refused, because
+ * works.letter_number is unique forever (PRODUCT.md invariant 2). So the
+ * reviewer is warned, and told exactly which earlier intake it collides
+ * with.
  *
  * Confirmed documents are reported through their Work rather than twice:
  * once a letter has become a Work, the Work is the thing the reviewer
@@ -200,6 +189,77 @@ async function loadLetterNumberMatches(
       at: row.created_at.toISOString(),
     })),
   ];
+}
+
+const DOCUMENT_STATE_WORDS: Record<string, string> = {
+  pending: 'waiting for extraction',
+  processing: 'being extracted',
+  review: 'waiting for review',
+  confirmed: 'confirmed',
+  failed: 'extraction failed',
+  discarded: 'discarded',
+};
+
+/** Refuses a BYTE-IDENTICAL re-upload, naming the document the
+ * organisation already holds.
+ *
+ * The hash is over the file itself, so this catches exactly one thing:
+ * the same PDF sent twice. A revised letter — different bytes, same
+ * letter number — is a different document and passes; the reviewer is
+ * warned about it instead (loadLetterNumberMatches).
+ *
+ * Discarded documents are excluded on purpose: withdrawing an upload has
+ * to leave the operator free to send the very same file again, which is
+ * the ordinary repair after discarding one by mistake.
+ *
+ * This is a usability refusal, not a database invariant, so it is not
+ * backed by a unique index: an organisation that has already uploaded
+ * the same letter twice (the state this change exists to give an exit
+ * from) must still migrate. Two byte-identical uploads racing inside the
+ * same millisecond can therefore both land; the check runs again inside
+ * the writing transaction, which narrows that window to the overlap of
+ * two transactions rather than the whole scan-and-extract. */
+async function assertNotDuplicateUpload(
+  tx: TransactionSql,
+  sha256: string,
+): Promise<void> {
+  const [existing] = await tx<
+    {
+      id: string;
+      original_filename: string;
+      extraction_status: LoaDocument['extractionStatus'];
+      confirmed_work_id: string | null;
+      created_at: Date;
+    }[]
+  >`
+    select id, original_filename, extraction_status, confirmed_work_id, created_at
+    from loa_documents
+    where document_kind = 'loa'
+      and sha256 = ${sha256}
+      and extraction_status <> 'discarded'
+    order by created_at, id
+    limit 1
+  `;
+  if (!existing) return;
+  const uploadedOn = existing.created_at.toISOString().slice(0, 10);
+  const state =
+    DOCUMENT_STATE_WORDS[existing.extraction_status] ?? existing.extraction_status;
+  const outcome =
+    existing.confirmed_work_id === null
+      ? 'It has not been confirmed into a Work.'
+      : 'It has already been confirmed into a Work.';
+  throw httpError(
+    409,
+    'LOA_DOCUMENT_DUPLICATE',
+    `This is the same file as ${existing.original_filename}, uploaded on ${uploadedOn} and ${state}. ${outcome} Open that document instead, or discard it first if you meant to replace it.`,
+    {
+      existingRecordId: existing.id,
+      originalFilename: existing.original_filename,
+      uploadedAt: existing.created_at.toISOString(),
+      extractionStatus: existing.extraction_status,
+      confirmedWorkId: existing.confirmed_work_id,
+    },
+  );
 }
 
 interface WorkRow {
@@ -366,77 +426,6 @@ function pbgRequirementSourceFor(
   };
 }
 
-const DOCUMENT_STATE_WORDS: Record<string, string> = {
-  pending: 'waiting for extraction',
-  processing: 'being extracted',
-  review: 'waiting for review',
-  confirmed: 'confirmed',
-  failed: 'extraction failed',
-  discarded: 'discarded',
-};
-
-/** Refuses a BYTE-IDENTICAL re-upload, naming the document the
- * organisation already holds.
- *
- * The hash is over the file itself, so this catches exactly one thing:
- * the same PDF sent twice. A revised letter — different bytes, same
- * letter number — is a different document and passes; the reviewer is
- * warned about it instead (loadLetterNumberMatches).
- *
- * Discarded documents are excluded on purpose: withdrawing an upload has
- * to leave the operator free to send the very same file again, which is
- * the ordinary repair after discarding one by mistake.
- *
- * This is a usability refusal, not a database invariant, so it is not
- * backed by a unique index: an organisation that has already uploaded
- * the same letter twice (the state this change exists to give an exit
- * from) must still migrate. Two byte-identical uploads racing inside the
- * same millisecond can therefore both land; the check runs again inside
- * the writing transaction, which narrows that window to the overlap of
- * two transactions rather than the whole scan-and-extract. */
-async function assertNotDuplicateUpload(
-  tx: TransactionSql,
-  sha256: string,
-): Promise<void> {
-  const [existing] = await tx<
-    {
-      id: string;
-      original_filename: string;
-      extraction_status: LoaDocument['extractionStatus'];
-      confirmed_work_id: string | null;
-      created_at: Date;
-    }[]
-  >`
-    select id, original_filename, extraction_status, confirmed_work_id, created_at
-    from loa_documents
-    where document_kind = 'loa'
-      and sha256 = ${sha256}
-      and extraction_status <> 'discarded'
-    order by created_at, id
-    limit 1
-  `;
-  if (!existing) return;
-  const uploadedOn = existing.created_at.toISOString().slice(0, 10);
-  const state =
-    DOCUMENT_STATE_WORDS[existing.extraction_status] ?? existing.extraction_status;
-  const outcome =
-    existing.confirmed_work_id === null
-      ? 'It has not been confirmed into a Work.'
-      : 'It has already been confirmed into a Work.';
-  throw httpError(
-    409,
-    'LOA_DOCUMENT_DUPLICATE',
-    `This is the same file as ${existing.original_filename}, uploaded on ${uploadedOn} and ${state}. ${outcome} Open that document instead, or discard it first if you meant to replace it.`,
-    {
-      existingRecordId: existing.id,
-      originalFilename: existing.original_filename,
-      uploadedAt: existing.created_at.toISOString(),
-      extractionStatus: existing.extraction_status,
-      confirmedWorkId: existing.confirmed_work_id,
-    },
-  );
-}
-
 function assertPbgRequirementCoherent(body: ConfirmWorkRequest): void {
   if (body.pbgRequirement === undefined) return;
   const amountMinor = parseDecimalToMinorUnits(body.pbgRequirement.requiredAmount, 2);
@@ -582,27 +571,25 @@ function assertInitialPaymentMatrix(
 }
 
 export function registerLoaRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
 ): void {
-  app.post(
-    '/api/loa-documents',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         querystring: UploadLoaQuerySchema,
         response: { 201: LoaDocumentDetailSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { filename } = request.query as UploadLoaQuery;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { filename } = request.query;
 
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
@@ -622,7 +609,7 @@ export function registerLoaRoutes(
       // must not be able to spend a malware scan or a pdftotext run. The
       // duplicate refusal rides along for the same reason — re-sending a
       // file the organisation already holds should cost nothing.
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         await assertNotDuplicateUpload(tx, sha256);
       });
@@ -648,24 +635,34 @@ export function registerLoaRoutes(
         };
         status = 'review';
       } catch (error) {
+        // A misconfigured extraction binary would otherwise persist a
+        // permanently 'failed' document for a perfectly good letter, and
+        // hide an operator fault as a per-document one. Refuse the upload
+        // instead: nothing is written, and re-uploading after the server is
+        // fixed succeeds. (The stored object is orphaned under its UUID key,
+        // the same tolerated outcome as any other post-storage failure.)
+        if (error instanceof PdfToTextConfigurationError) {
+          throw httpError(
+            503,
+            'PDF_TEXT_EXTRACTION_UNAVAILABLE',
+            'PDF text extraction is not correctly configured on the server. The letter was not stored for review; contact your administrator.',
+            { reason: error.message },
+          );
+        }
         payload = {
           error: error instanceof Error ? error.message : 'extraction failed',
         };
         status = 'failed';
       }
 
-      const stored = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Re-checked inside the writing transaction: the role could
-          // have been revoked while the scan and extraction ran, and the
-          // same file could have been uploaded by somebody else.
-          await requireWriterRole(tx, user.id);
-          await assertNotDuplicateUpload(tx, sha256);
+      const stored = await tenant(async (tx) => {
+        // Re-checked inside the writing transaction: the role could have
+        // been revoked while the scan and extraction ran, and the same
+        // file could have been uploaded by somebody else.
+        await requireWriterRole(tx, user.id);
+        await assertNotDuplicateUpload(tx, sha256);
 
-          const [inserted] = await tx<LoaDocumentRow[]>`
+        const [inserted] = await tx<LoaDocumentRow[]>`
             insert into loa_documents (
               id, organisation_id, object_key, original_filename, sha256,
               media_type, size_bytes, extraction_status, extraction_payload,
@@ -680,9 +677,9 @@ export function registerLoaRoutes(
                       extraction_status, confirmed_work_id, created_at,
                       extraction_payload
           `;
-          if (!inserted) throw new Error('loa_documents insert returned no row');
+        if (!inserted) throw new Error('loa_documents insert returned no row');
 
-          await tx`
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -692,54 +689,46 @@ export function registerLoaRoutes(
               ${jsonb(tx, { filename, sha256, sizeBytes: body.length, extractionStatus: status })}
             )
           `;
-          // Computed in the same transaction that inserted the row, so
-          // the reviewer is warned about a colliding letter number from
-          // the moment the upload answers.
-          const letterNumberMatches = await loadLetterNumberMatches(
-            tx,
-            documentId,
-            parsedLetterNumber(payload),
-          );
-          return { inserted, letterNumberMatches };
-        },
-      );
+        // Computed in the same transaction that inserted the row, so the
+        // reviewer is warned about a colliding letter number from the
+        // moment the upload answers.
+        const letterNumberMatches = await loadLetterNumberMatches(
+          tx,
+          documentId,
+          parsedLetterNumber(payload),
+        );
+        return { inserted, letterNumberMatches };
+      });
       return reply
         .status(201)
         .send(toDocumentDetail(stored.inserted, stored.letterNumberMatches));
     },
   );
 
-  app.get(
-    '/api/loa-documents',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/loa-documents',
       schema: {
         querystring: ListLoaDocumentsQuerySchema,
         response: { 200: LoaDocumentListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { includeDiscarded = false } = request.query as ListLoaDocumentsQuery;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Owner/office run the upload/review workflow and see every
-          // document. Site/viewer members see only documents already
-          // confirmed into Works within their scope — unconfirmed uploads
-          // (and their extraction payloads) are the writers' workspace
-          // (external re-audit).
-          const membership = await membershipOf(tx, user.id);
-          const writer = membership?.role === 'owner' || membership?.role === 'office';
-          if (writer) {
-            // Discarded documents leave the working list by default; the
-            // row itself is retention material and stays readable to the
-            // writers who run intake, on request.
-            return tx<LoaDocumentRow[]>`
+    async ({ request, user, tenant }) => {
+      const includeDiscarded = request.query.includeDiscarded ?? false;
+      const rows = await tenant(async (tx) => {
+        // Owner/office run the upload/review workflow and see every
+        // document. Site/viewer members see only documents already
+        // confirmed into Works within their scope — unconfirmed uploads
+        // (and their extraction payloads) are the writers' workspace
+        // (external re-audit).
+        const membership = await membershipOf(tx, user.id);
+        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        if (writer) {
+          // Discarded documents leave the working list by default; the
+          // row itself is retention material and stays readable to the
+          // writers who run intake, on request.
+          return tx<LoaDocumentRow[]>`
               select id, original_filename, sha256, size_bytes,
                      extraction_status, confirmed_work_id, created_at
               from loa_documents
@@ -747,12 +736,12 @@ export function registerLoaRoutes(
                 and (${includeDiscarded} or extraction_status <> 'discarded')
               order by created_at desc, id
             `;
-          }
-          // Site/viewer members read only through a confirmed Work, and a
-          // discarded document never has one, so their branch needs no
-          // discard clause.
-          const full = membership !== undefined && membership.work_scope !== 'assigned';
-          return tx<LoaDocumentRow[]>`
+        }
+        // Site/viewer members read only through a confirmed Work, and a
+        // discarded document never has one, so their branch needs no
+        // discard clause.
+        const full = membership !== undefined && membership.work_scope !== 'assigned';
+        return tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at
             from loa_documents
@@ -765,101 +754,89 @@ export function registerLoaRoutes(
               ))
             order by created_at desc, id
           `;
-        },
-      );
+      });
       return { documents: rows.map(toDocument) };
     },
   );
 
-  app.get(
-    '/api/loa-documents/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/loa-documents/:id',
       schema: {
         params: DocumentParamsSchema,
         response: { 200: LoaDocumentDetailSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const row = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [found] = await tx<LoaDocumentRow[]>`
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      const row = await tenant(async (tx) => {
+        const [found] = await tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at,
                    extraction_payload
             from loa_documents
             where id = ${id} and document_kind = 'loa'
           `;
-          if (!found) {
-            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
-          }
-          // Same visibility rule as the list; the denial is 404 so a
-          // guessed identifier does not confirm the document exists.
-          const membership = await membershipOf(tx, user.id);
-          const writer = membership?.role === 'owner' || membership?.role === 'office';
-          if (!writer) {
-            let visible = false;
-            if (membership !== undefined && found.confirmed_work_id !== null) {
-              if (membership.work_scope !== 'assigned') {
-                visible = true;
-              } else {
-                const [assignment] = await tx<{ id: string }[]>`
+        if (!found) {
+          throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        // Same visibility rule as the list; the denial is 404 so a
+        // guessed identifier does not confirm the document exists.
+        const membership = await membershipOf(tx, user.id);
+        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        if (!writer) {
+          let visible = false;
+          if (membership !== undefined && found.confirmed_work_id !== null) {
+            if (membership.work_scope !== 'assigned') {
+              visible = true;
+            } else {
+              const [assignment] = await tx<{ id: string }[]>`
                   select id from work_assignments
                   where work_id = ${found.confirmed_work_id}
                     and user_id = ${user.id}
                 `;
-                visible = assignment !== undefined;
-              }
-            }
-            if (!visible) {
-              throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+              visible = assignment !== undefined;
             }
           }
-          return {
-            found,
-            letterNumberMatches: await loadLetterNumberMatches(
-              tx,
-              found.id,
-              parsedLetterNumber(parseJsonbColumn(found.extraction_payload)),
-            ),
-          };
-        },
-      );
+          if (!visible) {
+            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+          }
+        }
+        return {
+          found,
+          letterNumberMatches: await loadLetterNumberMatches(
+            tx,
+            found.id,
+            parsedLetterNumber(parseJsonbColumn(found.extraction_payload)),
+          ),
+        };
+      });
       return toDocumentDetail(row.found, row.letterNumberMatches);
     },
   );
 
-  app.post(
-    '/api/loa-documents/:id/discard',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents/:id/discard',
       schema: {
         params: DocumentParamsSchema,
         body: DiscardLoaDocumentRequestSchema,
         response: { 200: DiscardLoaDocumentResponseSchema, ...errorResponses },
       },
+      // The same gate as upload: whoever may put an intake package into
+      // the organisation may take an unconfirmed one back out. No
+      // explicit cancel authority is demanded — unlike the cancel of an
+      // issued challan or a PAC certificate, discarding here withdraws
+      // nothing from the quantity ledger and voids no numbered document,
+      // because a discardable document has never become one.
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const { reason } = request.body as DiscardLoaDocumentRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        // The same gate as upload: whoever may put an intake package into
-        // the organisation may take an unconfirmed one back out. No
-        // explicit cancel authority is demanded — unlike the cancel of an
-        // issued challan or a PAC certificate, discarding here withdraws
-        // nothing from the quantity ledger and voids no numbered
-        // document, because a discardable document has never become one.
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const { reason } = request.body;
+      return tenant(async (tx) => {
         const [existing] = await tx<
           {
             extraction_status: string;
@@ -924,36 +901,27 @@ export function registerLoaRoutes(
           returning id, original_filename
         `;
 
-        await tx`
-          insert into audit_events (
-            organisation_id, actor_user_id, action, entity_type, entity_id, details
-          )
-          values (
-            ${organisationId}, ${user.id}, 'loa.discarded', 'loa_documents', ${id},
-            ${jsonb(tx, {
-              filename: existing.original_filename,
-              before: { extractionStatus: existing.extraction_status },
-              after: { extractionStatus: 'discarded' },
-              reason: reason ?? null,
-              supportingDocumentIds: supporting.map((row) => row.id),
-            })}
-          )
-        `;
+        await audit(tx, organisationId, user.id, 'loa.discarded', 'loa_documents', id, {
+          filename: existing.original_filename,
+          before: { extractionStatus: existing.extraction_status },
+          after: { extractionStatus: 'discarded' },
+          reason: reason ?? null,
+          supportingDocumentIds: supporting.map((row) => row.id),
+        });
         for (const row of supporting) {
-          await tx`
-            insert into audit_events (
-              organisation_id, actor_user_id, action, entity_type, entity_id, details
-            )
-            values (
-              ${organisationId}, ${user.id}, 'contract_source.discarded',
-              'loa_documents', ${row.id},
-              ${jsonb(tx, {
-                filename: row.original_filename,
-                parentLoaDocumentId: id,
-                reason: reason ?? null,
-              })}
-            )
-          `;
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'contract_source.discarded',
+            'loa_documents',
+            row.id,
+            {
+              filename: row.original_filename,
+              parentLoaDocumentId: id,
+              reason: reason ?? null,
+            },
+          );
         }
         return {
           document: toDocument(discarded),
@@ -963,77 +931,70 @@ export function registerLoaRoutes(
     },
   );
 
-  app.post(
-    '/api/loa-documents/:id/confirm',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents/:id/confirm',
       schema: {
         params: DocumentParamsSchema,
         body: ConfirmWorkRequestSchema,
         response: { 201: WorkDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: documentId } = request.params as { id: string };
-      const body = request.body as ConfirmWorkRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: documentId } = request.params;
+      const body = request.body;
       assertPricingShapeCoherent(body);
       assertPbgRequirementCoherent(body);
       assertInitialPaymentMatrix(body.paymentMatrix);
 
-      const result = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          // Needs the organisation's timezone, so it runs here rather
-          // than beside the two synchronous assert* calls above.
-          await assertLetterDateCoherent(tx, organisationId, body.letterDate);
+      const result = await tenant(async (tx) => {
+        // Needs the organisation's timezone, so it runs here rather
+        // than beside the two synchronous assert* calls above.
+        await assertLetterDateCoherent(tx, organisationId, body.letterDate);
 
-          const [document] = await tx<
-            { id: string; extraction_status: string; extraction_payload: unknown }[]
-          >`
+        const [document] = await tx<
+          { id: string; extraction_status: string; extraction_payload: unknown }[]
+        >`
             select id, extraction_status, extraction_payload
             from loa_documents
             where id = ${documentId} and document_kind = 'loa'
             for update
           `;
-          if (!document) {
-            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
-          }
-          if (document.extraction_status === 'discarded') {
-            throw httpError(
-              409,
-              'DOCUMENT_DISCARDED',
-              'This LOA document was discarded and can no longer become a Work. Upload the letter again if it was discarded by mistake.',
-            );
-          }
-          if (document.extraction_status !== 'review') {
-            throw httpError(
-              409,
-              'DOCUMENT_NOT_REVIEWABLE',
-              `Only documents in review can be confirmed (status: ${document.extraction_status}).`,
-            );
-          }
-          const parsedPayload = parseJsonbColumn(document.extraction_payload);
-          const payload =
-            parsedPayload !== null &&
-            typeof parsedPayload === 'object' &&
-            'review' in parsedPayload
-              ? (parsedPayload as unknown as ExtractionPayload)
-              : null;
+        if (!document) {
+          throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        if (document.extraction_status === 'discarded') {
+          throw httpError(
+            409,
+            'DOCUMENT_DISCARDED',
+            'This LOA document was discarded and can no longer become a Work. Upload the letter again if it was discarded by mistake.',
+          );
+        }
+        if (document.extraction_status !== 'review') {
+          throw httpError(
+            409,
+            'DOCUMENT_NOT_REVIEWABLE',
+            `Only documents in review can be confirmed (status: ${document.extraction_status}).`,
+          );
+        }
+        const parsedPayload = parseJsonbColumn(document.extraction_payload);
+        const payload =
+          parsedPayload !== null &&
+          typeof parsedPayload === 'object' &&
+          'review' in parsedPayload
+            ? (parsedPayload as unknown as ExtractionPayload)
+            : null;
 
-          // The reviewer-confirmed PBG requirement lands on the Work in
-          // this same atomic transaction; its provenance payload is built
-          // from the STORED extraction payload, never from the client.
-          const pbg = body.pbgRequirement;
-          const pbgSource =
-            pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
+        // The reviewer-confirmed PBG requirement lands on the Work in
+        // this same atomic transaction; its provenance payload is built
+        // from the STORED extraction payload, never from the client.
+        const pbg = body.pbgRequirement;
+        const pbgSource =
+          pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
 
-          const [work] = await tx<WorkRow[]>`
+        const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
@@ -1062,20 +1023,20 @@ export function registerLoaRoutes(
                       status, completed_at, completed_by_user_id,
                       completion_note, created_at
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'WORK_EXISTS',
-                'A Work with this work code or letter number already exists.',
-              );
-            }
-            throw error;
-          });
-          if (!work) throw new Error('works insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'WORK_EXISTS',
+              'A Work with this work code or letter number already exists.',
+            );
+          }
+          throw error;
+        });
+        if (!work) throw new Error('works insert returned no row');
 
-          const schedules: WorkSchedule[] = [];
-          for (const [index, schedule] of body.schedules.entries()) {
-            const [scheduleRow] = await tx<{ id: string }[]>`
+        const schedules: WorkSchedule[] = [];
+        for (const [index, schedule] of body.schedules.entries()) {
+          const [scheduleRow] = await tx<{ id: string }[]>`
               insert into work_schedules (
                 organisation_id, work_id, schedule_code, title, position
               )
@@ -1085,12 +1046,12 @@ export function registerLoaRoutes(
               )
               returning id
             `;
-            if (!scheduleRow) throw new Error('work_schedules insert returned no row');
+          if (!scheduleRow) throw new Error('work_schedules insert returned no row');
 
-            const items = [];
-            for (const item of schedule.items) {
-              const evidence = sourceEvidenceFor(payload, item);
-              const [itemRow] = await tx<{ id: string }[]>`
+          const items = [];
+          for (const item of schedule.items) {
+            const evidence = sourceEvidenceFor(payload, item);
+            const [itemRow] = await tx<{ id: string }[]>`
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
                   description, unit_code, awarded_quantity, effective_rate,
@@ -1104,36 +1065,36 @@ export function registerLoaRoutes(
                 )
                 returning id
               `;
-              if (!itemRow) throw new Error('work_items insert returned no row');
-              items.push({
-                id: itemRow.id,
-                scheduleId: scheduleRow.id,
-                itemNumber: item.itemNumber,
-                description: item.description,
-                unitCode: item.unitCode,
-                awardedQuantity: item.awardedQuantity,
-                effectiveRate: item.effectiveRate,
-                // Serial traceability is switched on per item after
-                // confirmation, once the contractor knows which items
-                // ship serialised equipment.
-                requiresSerials: false,
-                // Milestone 8: reviewer-set at confirmation (the parser
-                // never proposes it); editable later via the payment
-                // category route.
-                paymentCategory: item.paymentCategory ?? null,
-              });
-            }
-            schedules.push({
-              id: scheduleRow.id,
-              scheduleCode: schedule.scheduleCode,
-              title: schedule.title,
-              position: index + 1,
-              items,
+            if (!itemRow) throw new Error('work_items insert returned no row');
+            items.push({
+              id: itemRow.id,
+              scheduleId: scheduleRow.id,
+              itemNumber: item.itemNumber,
+              description: item.description,
+              unitCode: item.unitCode,
+              awardedQuantity: item.awardedQuantity,
+              effectiveRate: item.effectiveRate,
+              // Serial traceability is switched on per item after
+              // confirmation, once the contractor knows which items
+              // ship serialised equipment.
+              requiresSerials: false,
+              // Milestone 8: reviewer-set at confirmation (the parser
+              // never proposes it); editable later via the payment
+              // category route.
+              paymentCategory: item.paymentCategory ?? null,
             });
           }
+          schedules.push({
+            id: scheduleRow.id,
+            scheduleCode: schedule.scheduleCode,
+            title: schedule.title,
+            position: index + 1,
+            items,
+          });
+        }
 
-          for (const matrixRow of body.paymentMatrix ?? []) {
-            await tx`
+        for (const matrixRow of body.paymentMatrix ?? []) {
+          await tx`
               insert into payment_matrices (
                 organisation_id, work_id, category, pct_supply,
                 pct_installation, pct_pac, pct_final_bill, created_by_user_id
@@ -1144,13 +1105,13 @@ export function registerLoaRoutes(
                 ${matrixRow.pctPac}, ${matrixRow.pctFinalBill}, ${user.id}
               )
             `;
-          }
+        }
 
-          // A discarded supporting document is excluded: it was withdrawn
-          // from the package before confirmation and is terminal, so
-          // stamping this Work onto it would both misrepresent the
-          // evidence and trip the 0055 immutability guard.
-          await tx`
+        // A discarded supporting document is excluded: it was withdrawn
+        // from the package before confirmation and is terminal, so
+        // stamping this Work onto it would both misrepresent the evidence
+        // and trip the 0055 immutability guard.
+        await tx`
             update loa_documents
             set confirmed_work_id = ${work.id},
                 extraction_status = case
@@ -1161,7 +1122,7 @@ export function registerLoaRoutes(
               and extraction_status <> 'discarded'
           `;
 
-          await tx`
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -1203,32 +1164,32 @@ export function registerLoaRoutes(
             )
           `;
 
-          // An 'assigned'-scoped confirmer must be able to see the Work
-          // they just created: grant their assignment in this same
-          // transaction, mirroring the owner-managed assignment writes
-          // (identity.ts) in column set and audit shape. Owners and
-          // 'all'-scope members see every Work and need no row.
-          const membership = await membershipOf(tx, user.id);
-          if (membership?.work_scope === 'assigned') {
-            const previousAssignments = await tx<{ work_id: string }[]>`
+        // An 'assigned'-scoped confirmer must be able to see the Work
+        // they just created: grant their assignment in this same
+        // transaction, mirroring the owner-managed assignment writes
+        // (identity.ts) in column set and audit shape. Owners and
+        // 'all'-scope members see every Work and need no row.
+        const membership = await membershipOf(tx, user.id);
+        if (membership?.work_scope === 'assigned') {
+          const previousAssignments = await tx<{ work_id: string }[]>`
               select work_id from work_assignments
               where user_id = ${user.id}
               order by created_at
             `;
-            await tx`
+          await tx`
               insert into work_assignments (
                 organisation_id, work_id, user_id, created_by_user_id
               )
               values (${organisationId}, ${work.id}, ${user.id}, ${user.id})
             `;
-            const previousWorkIds = previousAssignments.map((row) => row.work_id);
-            // Assignments are a set; both sides sort so the trail matches
-            // the owner-managed replace-set audits exactly.
-            const assignmentChanges = auditDiff(
-              { workIds: [...previousWorkIds].sort() },
-              { workIds: [...previousWorkIds, work.id].sort() },
-            );
-            await tx`
+          const previousWorkIds = previousAssignments.map((row) => row.work_id);
+          // Assignments are a set; both sides sort so the trail matches
+          // the owner-managed replace-set audits exactly.
+          const assignmentChanges = auditDiff(
+            { workIds: [...previousWorkIds].sort() },
+            { workIds: [...previousWorkIds, work.id].sort() },
+          );
+          await tx`
               insert into audit_events (
                 organisation_id, actor_user_id, action, entity_type, details
               )
@@ -1242,11 +1203,10 @@ export function registerLoaRoutes(
                 })}
               )
             `;
-          }
+        }
 
-          return { work: toWork(work), schedules };
-        },
-      ).catch((error: unknown) => {
+        return { work: toWork(work), schedules };
+      }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
           throw httpError(
             409,
@@ -1260,24 +1220,17 @@ export function registerLoaRoutes(
     },
   );
 
-  app.get(
-    '/api/works',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works',
       schema: { response: { 200: WorkListResponseSchema, ...errorResponses } },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // 'assigned'-scoped memberships list only their Works.
-          const full = await hasFullWorkScope(tx, user.id);
-          return tx<WorkRow[]>`
+    async ({ user, tenant }) => {
+      const rows = await tenant(async (tx) => {
+        // 'assigned'-scoped memberships list only their Works.
+        const full = await hasFullWorkScope(tx, user.id);
+        return tx<WorkRow[]>`
             select id, work_code, letter_number, letter_date::text as letter_date,
                    title, advertised_value, contract_value, pricing_shape,
                    letter_percentage, letter_percentage_direction,
@@ -1294,27 +1247,23 @@ export function registerLoaRoutes(
               ))
             order by created_at desc, id
           `;
-        },
-      );
+      });
       return { works: rows.map(toWork) };
     },
   );
 
-  app.get(
-    '/api/works/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id',
       schema: {
         params: DocumentParamsSchema,
         response: { 200: WorkDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, id);
         const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,

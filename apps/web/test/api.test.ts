@@ -235,3 +235,78 @@ describe('api client', () => {
     });
   });
 });
+
+describe('schema-refusal translation', () => {
+  async function messageOf(body: unknown): Promise<string> {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(400, body));
+    const api = createApiClient(fetchImpl);
+    try {
+      await api.listMembers('11111111-1111-4111-8111-111111111111');
+    } catch (error) {
+      if (error instanceof RequestFailedError) return error.message;
+      throw error;
+    }
+    throw new Error('expected the request to fail');
+  }
+
+  it('translates the organisation slug pattern refusal into words', async () => {
+    const message = await messageOf({
+      code: 'FST_ERR_VALIDATION',
+      message: 'body/slug must match pattern "^[a-z0-9][a-z0-9-]{1,62}$"',
+    });
+    expect(message).not.toContain('body/');
+    expect(message).not.toContain('pattern');
+    expect(message).toBe(
+      'The organisation slug must be 2–63 lowercase letters, digits and hyphens, starting with a letter or digit.',
+    );
+  });
+
+  it('names the LOA confirm row instead of its instancePath', async () => {
+    const message = await messageOf({
+      code: 'FST_ERR_VALIDATION',
+      message:
+        'body/schedules/0/items/2/sourceRef/itemSno must NOT have fewer than 1 characters',
+    });
+    expect(message).not.toContain('body/');
+    expect(message).toBe(
+      'The schedules 1 › items 3 › source reference › source item number must be at least 1 characters.',
+    );
+  });
+
+  it('translates missing-property refusals', async () => {
+    const message = await messageOf({
+      code: 'FST_ERR_VALIDATION',
+      message: "body must have required property 'sourceRef'",
+    });
+    expect(message).toBe('The form is missing source reference — fill it in.');
+  });
+
+  it('splits joined clauses on error boundaries, not on commas in patterns', async () => {
+    const message = await messageOf({
+      code: 'FST_ERR_VALIDATION',
+      message:
+        'body/slug must match pattern "^[a-z0-9][a-z0-9-]{1,62}$", ' +
+        'body/name must NOT have fewer than 2 characters',
+    });
+    expect(message).not.toContain('body/');
+    expect(message).toContain('organisation slug');
+    expect(message).toContain('The name must be at least 2 characters.');
+  });
+
+  it('falls back to a generic human sentence for unrecognised shapes', async () => {
+    const message = await messageOf({
+      code: 'FST_ERR_VALIDATION',
+      message: 'something completely different',
+    });
+    expect(message).not.toContain('body/');
+    expect(message).toContain('Check the highlighted fields');
+  });
+
+  it('leaves ordinary server messages alone', async () => {
+    const message = await messageOf({
+      code: 'BUYER_PROFILE_INCOMPLETE',
+      message: 'The buyer contact is missing address — complete it and retry.',
+    });
+    expect(message).toContain('buyer contact');
+  });
+});

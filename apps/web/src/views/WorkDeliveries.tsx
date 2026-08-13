@@ -9,6 +9,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
+import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
@@ -114,16 +115,17 @@ export function WorkDeliveries({
             {challans.map((challan) => (
               <tr key={challan.id}>
                 <th scope="row">
-                  <Button
-                    variant="link"
-                    size="inline"
+                  {/* A real link so a challan can be middle-clicked into
+                      its own tab; a left click stays in-app. */}
+                  <a
+                    href={challanHash(workId, challan.id)}
                     className="font-medium"
-                    onClick={() => {
+                    onClick={navigateOnClick(() => {
                       onOpenChallan(challan.id);
-                    }}
+                    })}
                   >
                     {challan.challanNumber ?? 'Draft'}
-                  </Button>
+                  </a>
                 </th>
                 <td>{challan.challanDate}</td>
                 <td>

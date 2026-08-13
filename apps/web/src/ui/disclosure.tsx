@@ -15,7 +15,15 @@ import { Button } from './button.js';
  * `startOpen` is for the empty state. A section with nothing in it yet has
  * no record to read, so its form is the only thing worth showing and it
  * opens on arrival — the disclosure hides a form from someone reading, not
- * from someone with nothing to read. */
+ * from someone with nothing to read.
+ *
+ * LABELLING RULE: the opener and the form's submit button must never carry
+ * the same words. The opener names what will exist ("New quotation", "New
+ * instrument") or states that it opens a panel ("Cancel challan…"); the
+ * submit keeps the committing verb ("Create quotation", "Cancel challan").
+ * When both said the same thing, an already-open panel made the header look
+ * inert — the operator pressed what they read as the action and the form
+ * merely collapsed. */
 export function Disclosure({
   label,
   children,

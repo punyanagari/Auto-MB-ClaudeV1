@@ -2,7 +2,6 @@ import type { Bill, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { formValue, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
-import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -57,28 +56,38 @@ export function WorkMeasurement({
 }: WorkMeasurementProps) {
   return (
     <>
+      {/* Finding 30: this register is SITE MEASUREMENT EVIDENCE — the
+          loose mb_entries the formal, numbered Measurement Books below
+          draw on. It must not present itself as the Measurement Book,
+          and the retired billed/unbilled reading (billing runs through
+          Measurement Books since ADR-0006) is gone with it. */}
       {mbEntriesState === 'unavailable' ? (
         <>
-          <h2>Measurement Book</h2>
+          <h2>Measurement evidence</h2>
           <FormError>
-            Measurement Book entries could not be loaded. Stage-wise Measurement Books
+            Measurement evidence could not be loaded. The formal Measurement Books
             remain available below.
           </FormError>
         </>
       ) : mbEntriesState === 'loading' ? (
         <>
-          <h2>Measurement Book</h2>
+          <h2>Measurement evidence</h2>
           <p className="text-muted-foreground" role="status">
-            Loading Measurement Book entries…
+            Loading measurement evidence…
           </p>
         </>
       ) : (
         <>
-          <h2>Measurement Book</h2>
+          <h2>Measurement evidence</h2>
+          <p className="text-muted-foreground">
+            Site measurements recorded as evidence. Billing runs through the formal
+            Measurement Books below, which sweep delivered and installed quantities —
+            not these entries.
+          </p>
           {mbEntries.length > 0 ? (
             <DataTable>
               <caption className="sr-only">
-                Measurement Book entries for this Work
+                Site measurement evidence recorded for this Work
               </caption>
               <thead>
                 <tr>
@@ -88,8 +97,7 @@ export function WorkMeasurement({
                   </th>
                   <th scope="col">Measured on</th>
                   <th scope="col">Challan</th>
-                  <th scope="col">MB book</th>
-                  <th scope="col">Billing</th>
+                  <th scope="col">Book reference</th>
                 </tr>
               </thead>
               <tbody>
@@ -108,13 +116,6 @@ export function WorkMeasurement({
                             : 'Unavailable'}
                     </td>
                     <td>{entry.mbBookRef ?? '—'}</td>
-                    <td>
-                      {entry.billId !== null ? (
-                        <StatusChip status="confirmed">billed</StatusChip>
-                      ) : (
-                        <span className="text-muted-foreground">unbilled</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -123,7 +124,7 @@ export function WorkMeasurement({
             <p className="text-muted-foreground">No measurements recorded yet.</p>
           )}
           {canRecordSiteEvidence && workItems.length > 0 && (
-            <Disclosure label="Record measurement" startOpen={mbEntries.length === 0}>
+            <Disclosure label="New measurement" startOpen={mbEntries.length === 0}>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();

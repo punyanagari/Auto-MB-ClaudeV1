@@ -202,7 +202,7 @@ export function WorkPurchaseOrders({
       {canCreateDocuments &&
         (vendors.length > 0 ? (
           <Disclosure
-            label="Create purchase order"
+            label="New purchase order"
             startOpen={purchaseOrders.length === 0}
           >
             <form
@@ -666,7 +666,7 @@ export function WorkPurchaseOrders({
           )}
 
           {order.status === 'issued' && canCancel && (
-            <Disclosure label="Cancel purchase order">
+            <Disclosure label="Cancel purchase order…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();

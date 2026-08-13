@@ -94,7 +94,7 @@ export function WorkAmendments({
         <p className="text-muted-foreground">No amendments proposed yet.</p>
       )}
       {canCreateDocuments && (
-        <Disclosure label="Submit amendment" startOpen={amendments.length === 0}>
+        <Disclosure label="New amendment" startOpen={amendments.length === 0}>
           <AmendmentForm
             items={workItems}
             schedules={schedules}

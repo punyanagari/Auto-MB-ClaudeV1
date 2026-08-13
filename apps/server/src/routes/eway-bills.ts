@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   CancelStatutoryDocumentRequestSchema,
   CancelEwayBillRequestSchema,
   EwayBillDetailResponseSchema,
@@ -7,20 +6,14 @@ import {
   RecordManualStatutoryCancellationRequestSchema,
   RecordEwayNicResponseRequestSchema,
   SaveEwayBillRequestSchema,
-  type CancelEwayBillRequest,
-  type CancelStatutoryDocumentRequest,
   type EwayBill,
   type EwayProviderState,
   type EwayBillStatus,
-  type RecordManualStatutoryCancellationRequest,
-  type RecordEwayNicResponseRequest,
   type SaveEwayBillRequest,
   type TransportMode,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
@@ -43,13 +36,18 @@ import type {
 import { exactJsonInteger, stringifyStatutoryJson } from '../gsp/statutory-json.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
 import {
   parseTaxInvoiceIssuedSnapshot,
   TaxInvoiceSnapshotError,
 } from '../tax-invoice-snapshot.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * The e-way bill (migration 0035): the movement document for a SUBMITTED
@@ -73,24 +71,6 @@ import { cancellationNote } from './challans.js';
  * explicit authority, every change audited, cross-tenant reads answered
  * with 404.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 // --- Row shapes -------------------------------------------------------------
 
@@ -280,133 +260,100 @@ function normalisedSave(body: SaveEwayBillRequest): NormalisedSave {
   };
 }
 
-async function auditEwayBill(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  ewayBillId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'eway_bills', ${ewayBillId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 // --- Routes -----------------------------------------------------------------
 
 export function registerEwayBillRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   provider?: StatutoryProvider,
 ): void {
-  app.get(
-    '/api/tax-invoices/:id/eway-bills',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/tax-invoices/:id/eway-bills',
       schema: {
         params: IdParamsSchema,
         response: { 200: EwayBillListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: invoiceId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [invoice] = await tx<{ work_id: string | null }[]>`
+    async ({ request, user, tenant }) => {
+      const { id: invoiceId } = request.params;
+      const rows = await tenant(async (tx) => {
+        const [invoice] = await tx<{ work_id: string | null }[]>`
             select work_id from tax_invoices where id = ${invoiceId}
           `;
-          if (!invoice) {
-            throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-          }
-          await assertWorkAccess(tx, user.id, invoice.work_id);
-          return (await tx.unsafe(
-            `select ${EB_COLUMNS} ${EB_FROM}
+        if (!invoice) {
+          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        }
+        await assertWorkAccess(tx, user.id, invoice.work_id);
+        return (await tx.unsafe(
+          `select ${EB_COLUMNS} ${EB_FROM}
              where eb.tax_invoice_id = $1
              order by eb.created_at desc, eb.id`,
-            [invoiceId],
-          )) as unknown as EwayBillRow[];
-        },
-      );
+          [invoiceId],
+        )) as unknown as EwayBillRow[];
+      });
       return { ewayBills: rows.map(toEwayBill) };
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/eway-bills',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/eway-bills',
       schema: {
         params: IdParamsSchema,
         body: SaveEwayBillRequestSchema,
         response: { 201: EwayBillDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: invoiceId } = request.params as { id: string };
-      const body = normalisedSave(request.body as SaveEwayBillRequest);
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          // The invoice row lock serialises this create against the
-          // invoice's cancel (which refuses while a live e-way bill
-          // exists) and against a concurrent create on the same invoice.
-          const [invoice] = await tx<
-            {
-              id: string;
-              work_id: string;
-              status: string;
-              invoice_number: string | null;
-            }[]
-          >`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: invoiceId } = request.params;
+      const body = normalisedSave(request.body);
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        // The invoice row lock serialises this create against the
+        // invoice's cancel (which refuses while a live e-way bill
+        // exists) and against a concurrent create on the same invoice.
+        const [invoice] = await tx<
+          {
+            id: string;
+            work_id: string;
+            status: string;
+            invoice_number: string | null;
+          }[]
+        >`
             select id, work_id, status, invoice_number from tax_invoices
             where id = ${invoiceId}
             for update
           `;
-          if (!invoice) {
-            throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-          }
-          await assertWorkAccess(tx, user.id, invoice.work_id);
-          if (invoice.status !== 'submitted') {
-            throw httpError(
-              409,
-              'TAX_INVOICE_STATUS_CONFLICT',
-              `An e-way bill moves a submitted invoice (current status: ${invoice.status}) — a draft has no legal number to move, and a cancelled invoice moves nothing.`,
-            );
-          }
-          // One live e-way bill per invoice (the 0035 partial unique
-          // index is the arbiter); the 409 names the live one.
-          const [live] = await tx<{ id: string; ewb_number: string | null }[]>`
+        if (!invoice) {
+          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        }
+        await assertWorkAccess(tx, user.id, invoice.work_id);
+        if (invoice.status !== 'submitted') {
+          throw httpError(
+            409,
+            'TAX_INVOICE_STATUS_CONFLICT',
+            `An e-way bill moves a submitted invoice (current status: ${invoice.status}) — a draft has no legal number to move, and a cancelled invoice moves nothing.`,
+          );
+        }
+        // One live e-way bill per invoice (the 0035 partial unique
+        // index is the arbiter); the 409 names the live one.
+        const [live] = await tx<{ id: string; ewb_number: string | null }[]>`
             select id, ewb_number from eway_bills
             where tax_invoice_id = ${invoiceId} and status <> 'cancelled'
           `;
-          if (live) {
-            throw draftConflictError(
-              'EWAY_BILL_EXISTS',
-              `This invoice already has a live e-way bill${live.ewb_number === null ? '' : ` (${live.ewb_number})`}; cancel or delete it before raising another.`,
-              live.id,
-            );
-          }
-          const [created] = await tx<{ id: string }[]>`
+        if (live) {
+          throw draftConflictError(
+            'EWAY_BILL_EXISTS',
+            `This invoice already has a live e-way bill${live.ewb_number === null ? '' : ` (${live.ewb_number})`}; cancel or delete it before raising another.`,
+            live.id,
+          );
+        }
+        const [created] = await tx<{ id: string }[]>`
             insert into eway_bills (
               organisation_id, tax_invoice_id, transport_mode, transporter_id,
               transporter_name, vehicle_number, transport_doc_number,
@@ -422,34 +369,34 @@ export function registerEwayBillRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'EWAY_BILL_EXISTS',
-                'This invoice already has a live e-way bill; cancel or delete it before raising another.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('eway bill insert returned no row');
-          await auditEwayBill(
-            tx,
-            organisationId,
-            user.id,
-            'eway_bill.created',
-            created.id,
-            {
-              taxInvoiceId: invoiceId,
-              invoiceNumber: invoice.invoice_number,
-              transportMode: body.transportMode,
-              distanceKm: body.distanceKm,
-            },
-          );
-          return { ewayBill: toEwayBill(await readEwayBill(tx, created.id)) };
-        },
-      ).catch(async (error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'EWAY_BILL_EXISTS',
+              'This invoice already has a live e-way bill; cancel or delete it before raising another.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('eway bill insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.created',
+          'eway_bills',
+          created.id,
+          {
+            taxInvoiceId: invoiceId,
+            invoiceNumber: invoice.invoice_number,
+            transportMode: body.transportMode,
+            distanceKm: body.distanceKm,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, created.id)) };
+      }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'EWAY_BILL_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
+          tenant(async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from eway_bills
               where tax_invoice_id = ${invoiceId} and status <> 'cancelled'
@@ -462,21 +409,18 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.get(
-    '/api/eway-bills/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/eway-bills/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const row = await readEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         return { ewayBill: toEwayBill(row) };
@@ -484,24 +428,21 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.put(
-    '/api/eway-bills/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/eway-bills/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveEwayBillRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = normalisedSave(request.body as SaveEwayBillRequest);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = normalisedSave(request.body);
+      return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         // A generated e-way bill is NIC's record: no edits, ever. Vehicle
@@ -544,31 +485,36 @@ export function registerEwayBillRoutes(
           },
           { ...body },
         );
-        await auditEwayBill(tx, organisationId, user.id, 'eway_bill.updated', id, {
-          before: changes.before,
-          after: changes.after,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.updated',
+          'eway_bills',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+          },
+        );
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
     },
   );
 
-  app.delete(
-    '/api/eway-bills/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/eway-bills/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         // Rule 8: a draft is not yet a document, so it deletes; a
@@ -582,74 +528,76 @@ export function registerEwayBillRoutes(
           );
         }
         await tx`delete from eway_bills where id = ${id}`;
-        await auditEwayBill(tx, organisationId, user.id, 'eway_bill.deleted', id, {
-          taxInvoiceId: row.tax_invoice_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.deleted',
+          'eway_bills',
+          id,
+          {
+            taxInvoiceId: row.tax_invoice_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/recover-provider-operation',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/recover-provider-operation',
       schema: {
         params: IdParamsSchema,
         response: { 202: EwayBillDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const row = await lockEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          if (row.provider_state === 'generating') {
-            await requireAuthority(tx, user.id, 'issue');
-          } else if (row.provider_state === 'cancelling') {
-            await requireAuthority(tx, user.id, 'cancel');
-          } else {
-            throw httpError(
-              409,
-              'EWAY_PROVIDER_STATE_CONFLICT',
-              'Only an in-progress E-way Bill provider operation can be checked for stale recovery.',
-            );
-          }
-          const recovered = await recoverStaleStatutoryOperation(tx, {
-            ewayBillId: id,
-          });
-          if (recovered.length === 0) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'The provider operation is still within its two-minute lease.',
-            );
-          }
-          await auditEwayBill(
-            tx,
-            organisationId,
-            user.id,
-            'eway_bill.provider_operation_recovered',
-            id,
-            { operations: recovered },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const detail = await tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.provider_state === 'generating') {
+          await requireAuthority(tx, user.id, 'issue');
+        } else if (row.provider_state === 'cancelling') {
+          await requireAuthority(tx, user.id, 'cancel');
+        } else {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            'Only an in-progress E-way Bill provider operation can be checked for stale recovery.',
           );
-          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
-        },
-      );
+        }
+        const recovered = await recoverStaleStatutoryOperation(tx, {
+          ewayBillId: id,
+        });
+        if (recovered.length === 0) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'The provider operation is still within its two-minute lease.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.provider_operation_recovered',
+          'eway_bills',
+          id,
+          { operations: recovered },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
       return reply.status(202).send(detail);
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/generate',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/generate',
       schema: {
         params: IdParamsSchema,
         response: {
@@ -658,128 +606,119 @@ export function registerEwayBillRoutes(
           ...errorResponses,
         },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
 
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          await recoverStaleStatutoryOperation(tx, { ewayBillId: id });
-          const row = await lockEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          requireStatus(row, 'draft');
-          if (row.provider_state === 'generating') {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'An e-way bill provider operation is already in progress.',
-            );
-          }
-          if (
-            row.provider_state === 'cancelling' ||
-            row.provider_state === 'cancelled' ||
-            row.provider_state === 'cancellation_unknown'
-          ) {
-            throw httpError(
-              409,
-              'EWAY_PROVIDER_STATE_CONFLICT',
-              `E-way bill generation cannot start from ${row.provider_state}.`,
-            );
-          }
-          const reconcileOnly = row.provider_state === 'generation_unknown';
-          if (!reconcileOnly) {
-            throw httpError(
-              409,
-              'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
-              'This cumulative tax invoice contains a SAC service line. Fresh E-way Bill generation is disabled until a goods/HSN delivery-challan model supplies the legally required item facts.',
-            );
-          }
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured.',
-            );
-          }
-          const [priorEwayBill] = await tx<{ id: string }[]>`
+      const prepared = await tenant(async (tx) => {
+        await recoverStaleStatutoryOperation(tx, { ewayBillId: id });
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        requireStatus(row, 'draft');
+        if (row.provider_state === 'generating') {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'An e-way bill provider operation is already in progress.',
+          );
+        }
+        if (
+          row.provider_state === 'cancelling' ||
+          row.provider_state === 'cancelled' ||
+          row.provider_state === 'cancellation_unknown'
+        ) {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            `E-way bill generation cannot start from ${row.provider_state}.`,
+          );
+        }
+        const reconcileOnly = row.provider_state === 'generation_unknown';
+        if (!reconcileOnly) {
+          throw httpError(
+            409,
+            'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+            'This cumulative tax invoice contains a SAC service line. Fresh E-way Bill generation is disabled until a goods/HSN delivery-challan model supplies the legally required item facts.',
+          );
+        }
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured.',
+          );
+        }
+        const [priorEwayBill] = await tx<{ id: string }[]>`
             select id from eway_bills
             where tax_invoice_id = ${row.tax_invoice_id} and id <> ${id}
             limit 1
           `;
-          if (priorEwayBill) {
-            throw httpError(
-              409,
-              'EWAY_REGENERATION_RECONCILIATION_UNSUPPORTED',
-              'This IRN already has earlier local EWB history. Automatic regeneration is disabled because an IRN-only lookup could attach old or cancelled provider evidence.',
-            );
-          }
-          const [invoice] = await tx<
-            {
-              status: string;
-              irn: string | null;
-              irp_provider: string | null;
-              irp_provider_state: string;
-              issued_snapshot: unknown;
-            }[]
-          >`
+        if (priorEwayBill) {
+          throw httpError(
+            409,
+            'EWAY_REGENERATION_RECONCILIATION_UNSUPPORTED',
+            'This IRN already has earlier local EWB history. Automatic regeneration is disabled because an IRN-only lookup could attach old or cancelled provider evidence.',
+          );
+        }
+        const [invoice] = await tx<
+          {
+            status: string;
+            irn: string | null;
+            irp_provider: string | null;
+            irp_provider_state: string;
+            issued_snapshot: unknown;
+          }[]
+        >`
             select status, irn, irp_provider, irp_provider_state,
                    issued_snapshot
             from tax_invoices where id = ${row.tax_invoice_id}
           `;
-          if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
-          if (
-            invoice.status !== 'submitted' ||
-            invoice.irn === null ||
-            invoice.irp_provider !== 'whitebooks' ||
-            invoice.irp_provider_state !== 'registered'
-          ) {
-            throw httpError(
-              409,
-              'EWAY_IRP_REGISTRATION_REQUIRED',
-              'Generate an e-way bill through Whitebooks only after this invoice has a provider-verified, active IRN.',
-            );
+        if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
+        if (
+          invoice.status !== 'submitted' ||
+          invoice.irn === null ||
+          invoice.irp_provider !== 'whitebooks' ||
+          invoice.irp_provider_state !== 'registered'
+        ) {
+          throw httpError(
+            409,
+            'EWAY_IRP_REGISTRATION_REQUIRED',
+            'Generate an e-way bill through Whitebooks only after this invoice has a provider-verified, active IRN.',
+          );
+        }
+        const issued = parseJsonbColumn(invoice.issued_snapshot);
+        let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
+        try {
+          snapshot = parseTaxInvoiceIssuedSnapshot(issued);
+        } catch (error) {
+          if (error instanceof TaxInvoiceSnapshotError) {
+            throw httpError(409, error.code, error.message);
           }
-          const issued = parseJsonbColumn(invoice.issued_snapshot);
-          let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
-          try {
-            snapshot = parseTaxInvoiceIssuedSnapshot(issued);
-          } catch (error) {
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(409, error.code, error.message);
-            }
-            throw error;
-          }
-          const requestJson = stringifyStatutoryJson({ Irn: invoice.irn });
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: 'reconcile_eway_bill',
-            requestSha256: sha256Hex(requestJson),
-            requestBody: requestJson,
-            ewayBillId: id,
-          });
-          await tx`
+          throw error;
+        }
+        const requestJson = stringifyStatutoryJson({ Irn: invoice.irn });
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: 'reconcile_eway_bill',
+          requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
+          ewayBillId: id,
+        });
+        await tx`
             update eway_bills
             set provider = 'whitebooks', provider_state = 'generating'
             where id = ${id}
           `;
-          return {
-            operationId,
-            gstin: snapshot.supplier.gstin,
-            irn: invoice.irn,
-            provider,
-          };
-        },
-      );
+        return {
+          operationId,
+          gstin: snapshot.supplier.gstin,
+          irn: invoice.irn,
+          provider,
+        };
+      });
 
       let evidence: EwayBillProviderEvidence | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
@@ -802,19 +741,14 @@ export function registerEwayBillRoutes(
         failure = { ...lookupFailure, status: 'unknown' };
       }
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          const row = await lockEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          if (row.status !== 'draft' || row.provider_state !== 'generating') {
-            throw new Error(`e-way bill ${id} left the generating state`);
-          }
-          if (evidence !== null) {
-            await tx`
+      const detail = await tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.status !== 'draft' || row.provider_state !== 'generating') {
+          throw new Error(`e-way bill ${id} left the generating state`);
+        }
+        if (evidence !== null) {
+          await tx`
               update eway_bills
               set status = 'generated', provider = 'whitebooks',
                   provider_state = 'generated',
@@ -827,31 +761,32 @@ export function registerEwayBillRoutes(
                   generated_by_user_id = ${user.id}, generated_at = now()
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-              responseBody: evidence.rawResponse,
-            });
-            await auditEwayBill(
-              tx,
-              organisationId,
-              user.id,
-              'eway_bill.provider_generated',
-              id,
-              {
-                taxInvoiceId: row.tax_invoice_id,
-                ewbNumber: evidence.ewbNumber,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-              rawResponse: null,
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+            responseBody: evidence.rawResponse,
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'eway_bill.provider_generated',
+            'eway_bills',
+            id,
+            {
+              taxInvoiceId: row.tax_invoice_id,
+              ewbNumber: evidence.ewbNumber,
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+            rawResponse: null,
+          };
+          await tx`
               update eway_bills
               set provider = 'whitebooks',
                   provider_state = ${
@@ -861,30 +796,30 @@ export function registerEwayBillRoutes(
                   }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'eway_bill.provider_generation_unresolved',
+            'eway_bills',
+            id,
+            {
+              taxInvoiceId: row.tax_invoice_id,
+              outcome: result.status,
               providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-              responseBody: result.rawResponse,
-            });
-            await auditEwayBill(
-              tx,
-              organisationId,
-              user.id,
-              'eway_bill.provider_generation_unresolved',
-              id,
-              {
-                taxInvoiceId: row.tax_invoice_id,
-                outcome: result.status,
-                providerCode: result.providerCode,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          }
-          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
-        },
-      );
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        }
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
 
       if (evidence !== null) return reply.status(200).send(detail);
       const result = failure ?? {
@@ -902,54 +837,45 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.get(
-    '/api/eway-bills/:id/nic-payload',
-    { schema: { params: IdParamsSchema } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const payloadJson = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const row = await readEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          throw httpError(
-            409,
-            'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
-            'This cumulative tax invoice contains a SAC service line. No E-way Bill payload is exposed until goods/HSN delivery facts exist.',
-          );
-        },
-      );
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/eway-bills/:id/nic-payload',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const payloadJson = await tenant(async (tx) => {
+        const row = await readEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        throw httpError(
+          409,
+          'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+          'This cumulative tax invoice contains a SAC service line. No E-way Bill payload is exposed until goods/HSN delivery facts exist.',
+        );
+      });
       void reply.type('application/json; charset=utf-8');
       return reply.send(payloadJson);
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/nic-response',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/nic-response',
       schema: {
         params: IdParamsSchema,
         body: RecordEwayNicResponseRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as RecordEwayNicResponseRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         // Compatibility import only. Manually typed evidence is explicitly
         // unverified and requires issue authority.
-        await requireAuthority(tx, user.id, 'issue');
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         if (provider !== undefined) {
@@ -993,38 +919,43 @@ export function registerEwayBillRoutes(
           }
           throw error;
         });
-        await auditEwayBill(tx, organisationId, user.id, 'eway_bill.generated', id, {
-          taxInvoiceId: row.tax_invoice_id,
-          invoiceNumber: row.invoice_number,
-          ewbNumber: body.ewbNumber,
-          ewbDate: body.ewbDate,
-          validUntil: body.validUntil,
-          evidence: 'manual_unverified',
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.generated',
+          'eway_bills',
+          id,
+          {
+            taxInvoiceId: row.tax_invoice_id,
+            invoiceNumber: row.invoice_number,
+            ewbNumber: body.ewbNumber,
+            ewbDate: body.ewbDate,
+            validUntil: body.validUntil,
+            evidence: 'manual_unverified',
+          },
+        );
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/manual-cancel-response',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/manual-cancel-response',
       schema: {
         params: IdParamsSchema,
         body: RecordManualStatutoryCancellationRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as RecordManualStatutoryCancellationRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         if (row.status !== 'generated' && row.status !== 'cancelled') {
@@ -1057,11 +988,12 @@ export function registerEwayBillRoutes(
               provider_cancel_remark = ${remark}
           where id = ${id}
         `;
-        await auditEwayBill(
+        await audit(
           tx,
           organisationId,
           user.id,
           'eway_bill.external_cancellation_recorded',
+          'eway_bills',
           id,
           {
             ewbNumber: row.ewb_number,
@@ -1075,9 +1007,10 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/cancel-provider',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/cancel-provider',
       schema: {
         params: IdParamsSchema,
         body: CancelStatutoryDocumentRequestSchema,
@@ -1087,91 +1020,82 @@ export function registerEwayBillRoutes(
           ...errorResponses,
         },
       },
+      authority: 'cancel',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelStatutoryDocumentRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
-            ewayBillId: id,
-          });
-          const row = await lockEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured.',
-            );
-          }
-          requireStatus(row, 'generated');
-          if (
-            row.provider_state === 'cancellation_unknown' &&
-            recoveredOperations.includes('cancel_eway_bill')
-          ) {
-            return {
-              recovered: true as const,
-              detail: { ewayBill: toEwayBill(await readEwayBill(tx, id)) },
-            };
-          }
-          if (
-            row.provider !== 'whitebooks' ||
-            row.provider_state !== 'generated' ||
-            row.ewb_number === null
-          ) {
-            throw httpError(
-              409,
-              'EWAY_PROVIDER_STATE_CONFLICT',
-              row.provider_state === 'cancellation_unknown'
-                ? 'The earlier cancellation result is unknown and cannot be sent again blindly. Reconcile with Whitebooks/NIC support.'
-                : 'Only a Whitebooks-generated active e-way bill can use provider cancellation.',
-            );
-          }
-          const [invoice] = await tx<{ issued_snapshot: unknown }[]>`
+      const prepared = await tenant(async (tx) => {
+        const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
+          ewayBillId: id,
+        });
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured.',
+          );
+        }
+        requireStatus(row, 'generated');
+        if (
+          row.provider_state === 'cancellation_unknown' &&
+          recoveredOperations.includes('cancel_eway_bill')
+        ) {
+          return {
+            recovered: true as const,
+            detail: { ewayBill: toEwayBill(await readEwayBill(tx, id)) },
+          };
+        }
+        if (
+          row.provider !== 'whitebooks' ||
+          row.provider_state !== 'generated' ||
+          row.ewb_number === null
+        ) {
+          throw httpError(
+            409,
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            row.provider_state === 'cancellation_unknown'
+              ? 'The earlier cancellation result is unknown and cannot be sent again blindly. Reconcile with Whitebooks/NIC support.'
+              : 'Only a Whitebooks-generated active e-way bill can use provider cancellation.',
+          );
+        }
+        const [invoice] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from tax_invoices
             where id = ${row.tax_invoice_id}
           `;
-          if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
-          const gstin = parseTaxInvoiceIssuedSnapshot(
-            parseJsonbColumn(invoice.issued_snapshot),
-          ).supplier.gstin;
-          const requestJson = stringifyStatutoryJson({
-            ewbNo: exactJsonInteger(row.ewb_number),
-            cancelRsnCode: exactJsonInteger(body.reasonCode),
-            cancelRmrk: remark,
-          });
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: 'cancel_eway_bill',
-            requestSha256: sha256Hex(requestJson),
-            requestBody: requestJson,
-            ewayBillId: id,
-          });
-          await tx`
+        if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
+        const gstin = parseTaxInvoiceIssuedSnapshot(
+          parseJsonbColumn(invoice.issued_snapshot),
+        ).supplier.gstin;
+        const requestJson = stringifyStatutoryJson({
+          ewbNo: exactJsonInteger(row.ewb_number),
+          cancelRsnCode: exactJsonInteger(body.reasonCode),
+          cancelRmrk: remark,
+        });
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: 'cancel_eway_bill',
+          requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
+          ewayBillId: id,
+        });
+        await tx`
             update eway_bills set provider_state = 'cancelling'
             where id = ${id}
           `;
-          return {
-            recovered: false as const,
-            operationId,
-            ewbNumber: row.ewb_number,
-            gstin,
-            provider,
-          };
-        },
-      );
+        return {
+          recovered: false as const,
+          operationId,
+          ewbNumber: row.ewb_number,
+          gstin,
+          provider,
+        };
+      });
 
       if (prepared.recovered) {
         return reply.status(202).send(prepared.detail);
@@ -1194,19 +1118,14 @@ export function registerEwayBillRoutes(
         failure = providerFailure(error);
       }
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const row = await lockEwayBill(tx, id);
-          await assertWorkAccess(tx, user.id, row.work_id);
-          if (row.provider_state !== 'cancelling') {
-            throw new Error(`e-way bill ${id} left the cancelling state`);
-          }
-          if (cancelled !== null) {
-            await tx`
+      const detail = await tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.provider_state !== 'cancelling') {
+          throw new Error(`e-way bill ${id} left the cancelling state`);
+        }
+        if (cancelled !== null) {
+          await tx`
               update eway_bills
               set provider_state = 'cancelled',
                   provider_cancelled_at = ${cancelled.cancelledAt},
@@ -1215,50 +1134,49 @@ export function registerEwayBillRoutes(
                   provider_cancel_remark = ${remark}
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-              responseBody: cancelled.rawResponse,
-            });
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-              rawResponse: null,
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+            responseBody: cancelled.rawResponse,
+          });
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+            rawResponse: null,
+          };
+          await tx`
               update eway_bills
               set provider_state = ${
                 result.status === 'failed' ? 'generated' : 'cancellation_unknown'
               }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
-              providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-              responseBody: result.rawResponse,
-            });
-          }
-          await auditEwayBill(
-            tx,
-            organisationId,
-            user.id,
-            cancelled === null
-              ? 'eway_bill.provider_cancellation_unresolved'
-              : 'eway_bill.provider_cancelled',
-            id,
-            {
-              ewbNumber: prepared.ewbNumber,
-              outcome:
-                cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
-              provider: prepared.provider.name,
-              operationId: prepared.operationId,
-            },
-          );
-          return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
-        },
-      );
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
+          });
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          cancelled === null
+            ? 'eway_bill.provider_cancellation_unresolved'
+            : 'eway_bill.provider_cancelled',
+          'eway_bills',
+          id,
+          {
+            ewbNumber: prepared.ewbNumber,
+            outcome: cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
+            provider: prepared.provider.name,
+            operationId: prepared.operationId,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
       if (cancelled !== null) return reply.status(200).send(detail);
       if (failure?.status === 'failed') {
         throw httpError(
@@ -1271,25 +1189,22 @@ export function registerEwayBillRoutes(
     },
   );
 
-  app.post(
-    '/api/eway-bills/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/eway-bills/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelEwayBillRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelEwayBillRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
         if (row.status === 'draft') {
@@ -1317,11 +1232,19 @@ export function registerEwayBillRoutes(
               cancellation_note = ${note}
           where id = ${id}
         `;
-        await auditEwayBill(tx, organisationId, user.id, 'eway_bill.cancelled', id, {
-          ewbNumber: row.ewb_number,
-          taxInvoiceId: row.tax_invoice_id,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.cancelled',
+          'eway_bills',
+          id,
+          {
+            ewbNumber: row.ewb_number,
+            taxInvoiceId: row.tax_invoice_id,
+            note,
+          },
+        );
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
     },

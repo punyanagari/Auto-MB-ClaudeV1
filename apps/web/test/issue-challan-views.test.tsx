@@ -17,7 +17,12 @@ import { IssueChallanDetail } from '../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../src/views/IssueChallanEditor.js';
 import { WorkDetail } from '../src/views/WorkDetail.js';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // The workspace serializes its view into location.hash (finding 28);
+  // clear it so one test's navigation cannot leak into the next.
+  window.history.replaceState(null, '', window.location.pathname);
+});
 
 /** A create-and-record form sits behind a Disclosure labelled with the
  * verb on its own submit button, so a detail page reads as records first
@@ -762,7 +767,7 @@ describe('IssueChallanDetail', () => {
     // Read-only member without modify rights sees no signed-copy upload.
     expect(screen.queryByRole('button', { name: 'Upload signed copy' })).toBeNull();
 
-    await openForm('Cancel challan');
+    await openForm('Cancel challan…');
     fireEvent.change(screen.getByLabelText('Cancellation note'), {
       target: { value: 'Wrong site.' },
     });
@@ -869,7 +874,7 @@ describe('WorkDetail Issue Challans section', () => {
     renderWorkDetail(api, { onOpenIssueChallan });
     await openWorkTab('Issues');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-IC/1' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'DCW-1-IC/1' }));
     expect(onOpenIssueChallan).toHaveBeenCalledWith(CHALLAN_ID);
     // No draft exists, so the primary action starts a new Issue Challan.
     expect(screen.getByRole('button', { name: 'New Issue Challan' })).toBeTruthy();
@@ -924,7 +929,7 @@ describe('Issue Challan correction flow', () => {
     expect(
       await screen.findByRole('heading', { name: 'Request correction' }),
     ).toBeTruthy();
-    await openForm('Request cancel & replace');
+    await openForm('Request cancel & replace…');
     fireEvent.change(screen.getByLabelText('Issued to'), {
       target: { value: 'SSE/Works/Delhi' },
     });

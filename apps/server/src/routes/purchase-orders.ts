@@ -1,37 +1,33 @@
 import {
-  ApiErrorSchema,
   CancelPurchaseOrderRequestSchema,
   CreatePurchaseOrderRequestSchema,
   PURCHASE_ORDER_STATUSES,
   PurchaseOrderDetailResponseSchema,
   PurchaseOrderListResponseSchema,
   SavePurchaseOrderLinesRequestSchema,
-  type CancelPurchaseOrderRequest,
-  type CreatePurchaseOrderRequest,
   type PurchaseOrder,
   type PurchaseOrderDetailResponse,
   type PurchaseOrderLine,
   type PurchaseOrderLineInput,
   type PurchaseOrderNotFullyReceivedDetails,
   type PurchaseOrderStatus,
-  type SavePurchaseOrderLinesRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { cancellationNote } from './challans.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Purchase orders (migration 0033; legacy spec §5.8): what the contractor
@@ -57,23 +53,6 @@ import { cancellationNote } from './challans.js';
  * as closed. The status records a transition that was true when it was
  * made; the balance is always the truth of now.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
 
 /** `status=open` is the challan editor's filter: the orders a delivery
  * challan can still receive against — issued, and with at least one line
@@ -555,60 +534,35 @@ async function readLineInputs(
   }));
 }
 
-async function auditPurchaseOrder(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  purchaseOrderId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'purchase_orders',
-      ${purchaseOrderId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 // --- Routes -----------------------------------------------------------------
 
 export function registerPurchaseOrderRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
-  app.get(
-    '/api/works/:id/purchase-orders',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/purchase-orders',
       schema: {
         params: IdParamsSchema,
         querystring: ListQuerySchema,
         response: { 200: PurchaseOrderListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const { status } = request.query as { status?: 'open' | PurchaseOrderStatus };
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      const { status } = request.query;
       // 'open' is issued PLUS the derived "still owed something" test; a
       // literal status filters literally; no filter lists everything.
       const statusFilter = status === 'open' ? 'issued' : (status ?? null);
       const openOnly = status === 'open';
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return (await tx.unsafe(
-            `select ${PO_COLUMNS} ${PO_FROM}
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return (await tx.unsafe(
+          `select ${PO_COLUMNS} ${PO_FROM}
              where po.work_id = $1
                and ($2::text is null or po.status = $2)
                and (
@@ -627,72 +581,64 @@ export function registerPurchaseOrderRoutes(
                  )
                )
              order by po.po_date desc, po.created_at desc, po.id`,
-            [workId, statusFilter, openOnly],
-          )) as unknown as PurchaseOrderRow[];
-        },
-      );
+          [workId, statusFilter, openOnly],
+        )) as unknown as PurchaseOrderRow[];
+      });
       return { purchaseOrders: rows.map(toPurchaseOrder) };
     },
   );
 
-  app.post(
-    '/api/works/:id/purchase-orders',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/purchase-orders',
       schema: {
         params: IdParamsSchema,
         body: CreatePurchaseOrderRequestSchema,
         response: { 201: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as CreatePurchaseOrderRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
       const terms =
         body.terms === undefined
           ? null
           : trimmedText(body.terms, 3, 4000, 'PO_TERMS_INVALID', 'The terms');
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works row lock pairs with the one POST
-          // /api/works/:id/complete holds, so a draft created here can
-          // never appear behind a completed Work's refusals; the 0033
-          // insert guard backstops it in the database.
-          const [work] = await tx<{ status: string }[]>`
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock pairs with the one POST
+        // /api/works/:id/complete holds, so a draft created here can
+        // never appear behind a completed Work's refusals; the 0033
+        // insert guard backstops it in the database.
+        const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'drafting a purchase order');
-          await assertPurchaseOrderDate(tx, workId, body.poDate);
-          await requireVendor(tx, body.vendorContactId);
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'drafting a purchase order');
+        await assertPurchaseOrderDate(tx, workId, body.poDate);
+        await requireVendor(tx, body.vendorContactId);
 
-          // One open draft per Work and vendor (0045 partial unique index):
-          // independent vendors may be drafted in parallel, while the 409
-          // names a duplicate for the same vendor.
-          const [existingDraft] = await tx<{ id: string }[]>`
+        // One open draft per Work and vendor (0045 partial unique index):
+        // independent vendors may be drafted in parallel, while the 409
+        // names a duplicate for the same vendor.
+        const [existingDraft] = await tx<{ id: string }[]>`
             select id from purchase_orders
             where work_id = ${workId} and vendor_contact_id = ${body.vendorContactId}
               and status = 'draft'
           `;
-          if (existingDraft) {
-            throw draftConflictError(
-              'PO_DRAFT_EXISTS',
-              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-              existingDraft.id,
-            );
-          }
+        if (existingDraft) {
+          throw draftConflictError(
+            'PO_DRAFT_EXISTS',
+            'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            existingDraft.id,
+          );
+        }
 
-          const [created] = await tx<{ id: string }[]>`
+        const [created] = await tx<{ id: string }[]>`
             insert into purchase_orders (
               organisation_id, work_id, vendor_contact_id, po_date, expected_on,
               terms, created_by_user_id
@@ -703,37 +649,37 @@ export function registerPurchaseOrderRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              // A concurrent create won between the pre-check and this
-              // insert; the transaction is aborted, so the route-level
-              // catch names the winner from a fresh read.
-              throw httpError(
-                409,
-                'PO_DRAFT_EXISTS',
-                'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('purchase order insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            // A concurrent create won between the pre-check and this
+            // insert; the transaction is aborted, so the route-level
+            // catch names the winner from a fresh read.
+            throw httpError(
+              409,
+              'PO_DRAFT_EXISTS',
+              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('purchase order insert returned no row');
 
-          await auditPurchaseOrder(
-            tx,
-            organisationId,
-            user.id,
-            'purchase_order.created',
-            created.id,
-            {
-              workId,
-              vendorContactId: body.vendorContactId,
-              poDate: body.poDate,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      ).catch(async (error: unknown) => {
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.created',
+          'purchase_orders',
+          created.id,
+          {
+            workId,
+            vendorContactId: body.vendorContactId,
+            poDate: body.poDate,
+          },
+        );
+        return readDetail(tx, created.id);
+      }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
+          tenant(async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from purchase_orders
               where work_id = ${workId}
@@ -748,21 +694,18 @@ export function registerPurchaseOrderRoutes(
     },
   );
 
-  app.get(
-    '/api/purchase-orders/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/purchase-orders/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from purchase_orders where id = ${id}
         `;
@@ -775,27 +718,24 @@ export function registerPurchaseOrderRoutes(
     },
   );
 
-  app.put(
-    '/api/purchase-orders/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/purchase-orders/:id',
       schema: {
         params: IdParamsSchema,
         body: CreatePurchaseOrderRequestSchema,
         response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CreatePurchaseOrderRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const terms =
         body.terms === undefined
           ? null
           : trimmedText(body.terms, 3, 4000, 'PO_TERMS_INVALID', 'The terms');
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const order = await lockPurchaseOrder(tx, id);
         await assertWorkAccess(tx, user.id, order.work_id);
@@ -847,18 +787,19 @@ export function registerPurchaseOrderRoutes(
             terms,
           },
         );
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.updated',
+          'purchase_orders',
           id,
           { before: changes.before, after: changes.after, vendor: vendor.designation },
         );
         return readDetail(tx, id);
       }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
+          tenant(async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from purchase_orders
               where work_id = (
@@ -874,24 +815,21 @@ export function registerPurchaseOrderRoutes(
     },
   );
 
-  app.put(
-    '/api/purchase-orders/:id/lines',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/purchase-orders/:id/lines',
       schema: {
         params: IdParamsSchema,
         body: SavePurchaseOrderLinesRequestSchema,
         response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SavePurchaseOrderLinesRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
         await assertWorkAccess(tx, user.id, order.work_id);
         requireStatus(order, 'draft');
@@ -908,11 +846,12 @@ export function registerPurchaseOrderRoutes(
           { lines: linesBefore },
           { lines: await readLineInputs(tx, id) },
         );
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.lines_saved',
+          'purchase_orders',
           id,
           {
             before: changes.before,
@@ -925,22 +864,19 @@ export function registerPurchaseOrderRoutes(
     },
   );
 
-  app.delete(
-    '/api/purchase-orders/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/purchase-orders/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      await tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
         await assertWorkAccess(tx, user.id, order.work_id);
         // Rule 8: a draft is not yet a document, so it is deleted rather
@@ -951,92 +887,86 @@ export function registerPurchaseOrderRoutes(
         // find no parent row and raise.
         await tx`delete from purchase_order_lines where purchase_order_id = ${id}`;
         await tx`delete from purchase_orders where id = ${id}`;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.deleted',
+          'purchase_orders',
           id,
           { workId: order.work_id },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
-  app.post(
-    '/api/purchase-orders/:id/issue',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/purchase-orders/:id/issue',
       schema: {
         params: IdParamsSchema,
         response: { 201: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          const order = await lockPurchaseOrder(tx, id);
-          await assertWorkAccess(tx, user.id, order.work_id);
-          requireStatus(order, 'draft');
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const detail = await tenant(async (tx) => {
+        const order = await lockPurchaseOrder(tx, id);
+        await assertWorkAccess(tx, user.id, order.work_id);
+        requireStatus(order, 'draft');
 
-          // Lock order works -> counter matches every other numbering
-          // writer, so an issue and a Work completion serialise instead of
-          // deadlocking.
-          const [work] = await tx<{ work_code: string; status: string }[]>`
+        // Lock order works -> counter matches every other numbering
+        // writer, so an issue and a Work completion serialise instead of
+        // deadlocking.
+        const [work] = await tx<{ work_code: string; status: string }[]>`
             select work_code, status from works
             where id = ${order.work_id} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          // R8: a completed Work accepts no new procurement.
-          assertWorkOperable(work.status, 'issuing a purchase order');
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // R8: a completed Work accepts no new procurement.
+        assertWorkOperable(work.status, 'issuing a purchase order');
 
-          const [lineCount] = await tx<{ total: string }[]>`
+        const [lineCount] = await tx<{ total: string }[]>`
             select count(*)::text as total from purchase_order_lines
             where purchase_order_id = ${id}
           `;
-          if (lineCount?.total === '0') {
-            throw httpError(
-              409,
-              'PO_EMPTY',
-              'A purchase order needs at least one line before it can be issued.',
-            );
-          }
+        if (lineCount?.total === '0') {
+          throw httpError(
+            409,
+            'PO_EMPTY',
+            'A purchase order needs at least one line before it can be issued.',
+          );
+        }
 
-          // Re-checked under the lock: the vendor may have been retired
-          // since the draft named it, and an order issued today must not
-          // go to a supplier the organisation has stopped using.
-          const vendor = await requireVendor(tx, order.vendor_contact_id);
+        // Re-checked under the lock: the vendor may have been retired
+        // since the draft named it, and an order issued today must not
+        // go to a supplier the organisation has stopped using.
+        const vendor = await requireVendor(tx, order.vendor_contact_id);
 
-          const [total] = await tx<{ amount: string }[]>`
+        const [total] = await tx<{ amount: string }[]>`
             select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
             from purchase_order_lines where purchase_order_id = ${id}
           `;
 
-          // Serialised per-Work numbering: the counter row lock orders
-          // concurrent issues, and a rolled-back transaction rolls the
-          // counter back with it, so numbers are gapless per Work.
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Serialised per-Work numbering: the counter row lock orders
+        // concurrent issues, and a rolled-back transaction rolls the
+        // counter back with it, so numbers are gapless per Work.
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into purchase_order_counters (organisation_id, work_id)
             values (${organisationId}, ${order.work_id})
             on conflict (organisation_id, work_id)
             do update set next_value = purchase_order_counters.next_value + 1
             returning next_value
           `;
-          if (!counter) throw new Error('counter upsert returned no row');
-          const sequence = counter.next_value;
-          const poNumber = `${work.work_code}-PO-${String(sequence).padStart(2, '0')}`;
+        if (!counter) throw new Error('counter upsert returned no row');
+        const sequence = counter.next_value;
+        const poNumber = `${work.work_code}-PO-${String(sequence).padStart(2, '0')}`;
 
-          await tx`
+        await tx`
             update purchase_orders
             set status = 'issued', po_number = ${poNumber},
                 sequence_number = ${sequence},
@@ -1045,55 +975,52 @@ export function registerPurchaseOrderRoutes(
                 issued_by_user_id = ${user.id}, issued_at = now()
             where id = ${id}
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'PO_NUMBER_CONFLICT',
-                `Purchase order number ${poNumber} already exists in this organisation.`,
-              );
-            }
-            throw error;
-          });
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PO_NUMBER_CONFLICT',
+              `Purchase order number ${poNumber} already exists in this organisation.`,
+            );
+          }
+          throw error;
+        });
 
-          await auditPurchaseOrder(
-            tx,
-            organisationId,
-            user.id,
-            'purchase_order.issued',
-            id,
-            {
-              poNumber,
-              sequence,
-              totalAmount: total?.amount ?? '0.00',
-              vendorContactId: vendor.id,
-            },
-          );
-          return readDetail(tx, id);
-        },
-      );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'purchase_order.issued',
+          'purchase_orders',
+          id,
+          {
+            poNumber,
+            sequence,
+            totalAmount: total?.amount ?? '0.00',
+            vendorContactId: vendor.id,
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.post(
-    '/api/purchase-orders/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/purchase-orders/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelPurchaseOrderRequestSchema,
         response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelPurchaseOrderRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
         await assertWorkAccess(tx, user.id, order.work_id);
         // Only an issued order cancels: a draft is deleted (rule 8), and a
@@ -1109,11 +1036,12 @@ export function registerPurchaseOrderRoutes(
               cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.cancelled',
+          'purchase_orders',
           id,
           { poNumber: order.po_number, note },
         );
@@ -1122,25 +1050,22 @@ export function registerPurchaseOrderRoutes(
     },
   );
 
-  app.post(
-    '/api/purchase-orders/:id/close',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/purchase-orders/:id/close',
       schema: {
         params: IdParamsSchema,
         response: { 200: PurchaseOrderDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         // Closing asserts nothing an operator could invent: it succeeds
         // only when the receipts already say the order is complete, so it
         // is a writer action rather than an issue/cancel authority.
-        await requireWriterRole(tx, user.id);
         const order = await lockPurchaseOrder(tx, id);
         await assertWorkAccess(tx, user.id, order.work_id);
         requireStatus(order, 'issued');
@@ -1197,11 +1122,12 @@ export function registerPurchaseOrderRoutes(
           set status = 'closed', closed_at = now()
           where id = ${id}
         `;
-        await auditPurchaseOrder(
+        await audit(
           tx,
           organisationId,
           user.id,
           'purchase_order.closed',
+          'purchase_orders',
           id,
           { poNumber: order.po_number, lineCount: lines.length },
         );

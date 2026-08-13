@@ -41,6 +41,52 @@ and ClamAV is active (upload the EICAR test file — it must be rejected
 with `MALWARE_DETECTED`; give the clamav container a few minutes on first
 boot to download signatures).
 
+## 2a. Deploy secrets and host-key rotation
+
+`.github/workflows/deploy.yml` needs three repository secrets
+(Settings → Secrets and variables → Actions). With none of them set the
+workflow skips; with `DEPLOY_HOST`/`DEPLOY_SSH_KEY` set but no
+`DEPLOY_HOST_KEY` it FAILS rather than falling back to `ssh-keyscan`.
+
+| Secret            | What it holds                                         |
+| ----------------- | ----------------------------------------------------- |
+| `DEPLOY_HOST`     | the host's public IP (the Elastic IP)                 |
+| `DEPLOY_SSH_KEY`  | the deploy private key (verbatim PEM or base64 of it) |
+| `DEPLOY_HOST_KEY` | the host's PUBLIC `known_hosts` line(s), pinned       |
+
+**Capturing the pin (once, and after any host rebuild).** Take it from
+the host itself over a channel you already trust — the provider's serial
+console, or an SSH session whose fingerprint you have already verified —
+never from a `ssh-keyscan` you cannot authenticate:
+
+```bash
+# ON THE HOST:
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub     # note the SHA256 fingerprint
+awk '{print "<DEPLOY_HOST-ip> " $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Paste that one line into `DEPLOY_HOST_KEY`. To confirm from a workstation
+before saving it, run `ssh-keyscan <ip> | ssh-keygen -lf -` and check the
+fingerprint equals the one printed on the host — comparing, not trusting.
+
+**Rotation.** Rotate the host key when the VM is rebuilt or restored from
+an image, when the deploy key is rotated as part of an incident, and
+whenever the host key may have been exposed:
+
+1. On the host: `sudo rm /etc/ssh/ssh_host_*_key*` then
+   `sudo ssh-keygen -A` and `sudo systemctl restart ssh`. Existing SSH
+   sessions survive; new ones will warn until step 2.
+2. Re-capture the fingerprint and the `known_hosts` line as above and
+   update the `DEPLOY_HOST_KEY` secret.
+3. Remove the stale entry from any operator workstation:
+   `ssh-keygen -R <ip>`.
+4. Run the deploy workflow. A mismatch is a hard failure at the SSH step
+   (`StrictHostKeyChecking yes`) — a failed deploy here means the pin and
+   the host disagree, which is either an incomplete rotation or an
+   attacker; treat it as the latter until proven otherwise.
+
+Record every rotation in the ops log with the new fingerprint.
+
 ### Optional Whitebooks transport
 
 Whitebooks is disabled by default. Enable it first in sandbox by setting
@@ -61,10 +107,42 @@ blocked for the current cumulative SAC service-invoice model.
 
 ## 3. Upgrades
 
+The supported path is the **Deploy** workflow (Actions → Deploy → Run
+workflow), which enforces the ordering the operations contract requires:
+it refuses a commit with no successful CI run, connects over the pinned
+host key, builds images, runs migrations to completion while the OLD
+containers keep serving, recreates the app containers only after the
+migration succeeds, and rolls back automatically if `/api/ready` never
+answers. Read the job log: it prints the state before the deploy, the
+commit being served, and — on failure — both the failed state and the
+restored one.
+
+Manual upgrade on the host, for when Actions is unavailable, in the same
+order (never `up -d --build` first: that serves new code against an
+un-migrated schema):
+
 ```bash
-git pull
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
-# then re-run the bootstrap command from §2 if the release added migrations
+cd /opt/auto-mb && git pull
+COMPOSE="docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production"
+docker inspect --format '{{.Image}}' "$($COMPOSE ps -q server)"   # note this, for rollback
+$COMPOSE build                       # build only; nothing is recreated yet
+$COMPOSE up -d --wait postgres
+set -a; . deploy/.env.production; set +a
+$COMPOSE run --rm --no-deps -T \
+  -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
+  -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
+  -e DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@postgres:5432/auto_mb" \
+  server pnpm --filter @auto-mb/db bootstrap    # migrations to completion
+$COMPOSE up -d                       # only now recreate the app containers
+curl -fsSk --resolve "${SITE_ADDRESS}:443:127.0.0.1" "https://${SITE_ADDRESS}/api/ready"
+```
+
+To roll back manually, retag the noted image id and recreate without
+building — migrations are forward-only and stay applied:
+
+```bash
+docker tag <noted-image-id> auto-mb-prod-server:latest
+$COMPOSE up -d --no-build --force-recreate
 ```
 
 Migrations are additive and advisory-lock-guarded (packages/db); a
@@ -150,6 +228,23 @@ and requires the application role to connect afterwards.
   the first backup has ever run: the series is deliberately omitted (not
   `0`) when the marker is unset or unreadable, so absence after go-live
   means the cron or the marker mount is broken;
+- **security and saturation signals** (OPERATIONS.md §6 lists every series
+  and its labels). Suggested pilot alerts, all off `/metrics`:
+  - `increase(auth_failures_total[15m])` above the pilot's normal band, and
+    ANY `increase(account_lockouts_total[15m]) > 0` — a lockout is rare
+    enough during a 3–5 partner pilot to be worth a look every time;
+  - `increase(tenant_denials_total[15m]) > 0` — a tenant-boundary denial is
+    either a client bug or someone probing; both want eyes;
+  - `increase(upload_scan_failures_total{reason="malware_detected"}[1h]) > 0`
+    (security event, RUNBOOK §7) and any sustained
+    `reason="scanner_unavailable"` (uploads are failing closed);
+  - `increase(rate_limit_rejections_total[15m])` spiking — either an attack
+    or a limit set too tight for real use;
+  - `sum(db_pool_connections) / db_pool_connections_max > 0.8` for 5
+    minutes — the API is about to start queueing on connections;
+  - `increase(statutory_provider_operations_total{status="unknown"}[1h]) > 0`
+    — an unknown provider outcome always needs a human reconciliation
+    decision, never a blind retry.
 - **disk**: alert at 80% on the VM (PostgreSQL volume + objects volume);
 - **logs**: the server logs structured JSON to stdout
   (`docker compose logs server`); review after every alert and weekly.

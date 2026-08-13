@@ -1,44 +1,18 @@
 import {
-  ApiErrorSchema,
   SerialSearchQuerySchema,
   SerialSearchResponseSchema,
   UpdateWorkItemSerialsRequestSchema,
   WorkItemSerialsResponseSchema,
   type SerialSearchMatch,
-  type SerialSearchQuery,
-  type UpdateWorkItemSerialsRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
-import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
+import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import {
-  assertWorkAccess,
-  hasFullWorkScope,
-  requireEvidenceRole,
-  requireWriterRole,
-} from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { httpError } from '../http.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /** Result cap for the tenant-wide lookup; one extra row is fetched to
  * detect truncation without a second count query. */
@@ -51,50 +25,28 @@ function escapeLikePattern(text: string): string {
   return text.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 }
 
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerSerialRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // --- requires_serials flag management -----------------------------------
-  app.patch(
-    '/api/work-items/:id/requires-serials',
+  tenantRoute(
     {
+      method: 'PATCH',
+      url: '/api/work-items/:id/requires-serials',
       schema: {
         params: IdParamsSchema,
         body: UpdateWorkItemSerialsRequestSchema,
         response: { 200: WorkItemSerialsResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workItemId } = request.params as { id: string };
-      const body = request.body as UpdateWorkItemSerialsRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id: workItemId } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         // The item row lock serialises the toggle against a concurrent
         // issue: the issue transaction locks the same rows before its
         // completeness check, so whichever commits first is visible to
@@ -209,22 +161,19 @@ export function registerSerialRoutes(
   );
 
   // --- Tenant-wide serial lookup ------------------------------------------
-  app.get(
-    '/api/serials/search',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/serials/search',
       schema: {
         querystring: SerialSearchQuerySchema,
         response: { 200: SerialSearchResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { q } = request.query as SerialSearchQuery;
+    async ({ request, user, tenant }) => {
+      const { q } = request.query;
       const pattern = `%${escapeLikePattern(q)}%`;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // 'assigned'-scoped memberships search only their Works (same
         // filter shape as the Works listing).
         const full = await hasFullWorkScope(tx, user.id);
@@ -300,22 +249,19 @@ export function registerSerialRoutes(
   );
 
   // --- Draft-serial corrections -------------------------------------------
-  app.delete(
-    '/api/serials/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/serials/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'evidence',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireEvidenceRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      await tenant(async (tx) => {
         // The challan row lock serialises deletion against a concurrent
         // issue: after the wait the re-read status is current, so a
         // just-issued challan rejects the deletion instead of losing a
@@ -362,7 +308,7 @@ export function registerSerialRoutes(
           },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 }

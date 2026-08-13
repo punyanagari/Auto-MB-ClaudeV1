@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   CancelChallanRequestSchema,
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
   SaveChallanRequestSchema,
   WorkBalanceResponseSchema,
-  type CancelChallanRequest,
   type Challan,
   type ChallanDetailResponse,
   type ChallanItem,
@@ -15,12 +13,11 @@ import {
   type SaveChallanRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import {
   CHALLAN_TEMPLATE_VERSION,
   WARRANTY_TEMPLATE_VERSION,
@@ -37,30 +34,18 @@ import {
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
-import { assertSourceNotBilled } from './measurement-books.js';
+import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertNotMalware } from '../upload-guards.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 
 const PdfQuerySchema = Type.Object(
   {
@@ -626,48 +611,27 @@ async function readLineInputs(
   }));
 }
 
-async function auditChallan(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  challanId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'delivery_challans',
-      ${challanId}, ${jsonb(tx, details)}
-    )
-  `;
-}
-
 export function registerChallanRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   gotenbergUrl: string,
   scanner: MalwareScanner,
 ): void {
-  app.get(
-    '/api/works/:id/balance',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/balance',
       schema: {
         params: IdParamsSchema,
         response: { 200: WorkBalanceResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ allow_excess_delivery: boolean; today: string }[]>`
           select w.allow_excess_delivery,
@@ -729,92 +693,77 @@ export function registerChallanRoutes(
     },
   );
 
-  app.get(
-    '/api/works/:id/challans',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/challans',
       schema: {
         params: IdParamsSchema,
         response: { 200: ChallanListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          return tx<ChallanRow[]>`
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        return tx<ChallanRow[]>`
             select ${tx.unsafe(CHALLAN_COLUMNS)}
             from delivery_challans
             where work_id = ${workId}
             order by created_at desc, id
           `;
-        },
-      );
+      });
       return { challans: rows.map(toChallan) };
     },
   );
 
-  app.post(
-    '/api/works/:id/challans',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/challans',
       schema: {
         params: IdParamsSchema,
         body: SaveChallanRequestSchema,
         response: { 201: ChallanDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as SaveChallanRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
       const consignee = normaliseConsignee(body.consignee);
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works row lock pairs with the one POST
-          // /api/works/:id/complete holds: a draft created here and a
-          // completion on the same Work serialise, so a draft can never
-          // appear behind a completed Work's refusals (the 0031 insert
-          // guard backstops it in the database).
-          const [work] = await tx<{ status: string }[]>`
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock pairs with the one POST
+        // /api/works/:id/complete holds: a draft created here and a
+        // completion on the same Work serialise, so a draft can never
+        // appear behind a completed Work's refusals (the 0031 insert
+        // guard backstops it in the database).
+        const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'drafting a delivery challan');
-          await assertChallanDate(tx, workId, body.challanDate);
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'drafting a delivery challan');
+        await assertChallanDate(tx, workId, body.challanDate);
 
-          // One open draft per Work (the partial unique index is the
-          // arbiter): the 409 names the existing draft so the client can
-          // open it instead of parsing the message.
-          const [existingDraft] = await tx<{ id: string }[]>`
+        // One open draft per Work (the partial unique index is the
+        // arbiter): the 409 names the existing draft so the client can
+        // open it instead of parsing the message.
+        const [existingDraft] = await tx<{ id: string }[]>`
             select id from delivery_challans
             where work_id = ${workId} and status = 'draft'
           `;
-          if (existingDraft) {
-            throw draftConflictError(
-              'DRAFT_EXISTS',
-              'This Work already has a draft challan; issue or delete it first.',
-              existingDraft.id,
-            );
-          }
+        if (existingDraft) {
+          throw draftConflictError(
+            'DRAFT_EXISTS',
+            'This Work already has a draft challan; issue or delete it first.',
+            existingDraft.id,
+          );
+        }
 
-          const [created] = await tx<{ id: string }[]>`
+        const [created] = await tx<{ id: string }[]>`
             insert into delivery_challans (
               organisation_id, work_id, challan_date, prefix,
               consignee_snapshot, created_by_user_id
@@ -825,39 +774,39 @@ export function registerChallanRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              // A concurrent create won between the pre-check and this
-              // insert; the transaction is aborted, so the route-level
-              // catch names the winner from a fresh read.
-              throw httpError(
-                409,
-                'DRAFT_EXISTS',
-                'This Work already has a draft challan; issue or delete it first.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('challan insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            // A concurrent create won between the pre-check and this
+            // insert; the transaction is aborted, so the route-level
+            // catch names the winner from a fresh read.
+            throw httpError(
+              409,
+              'DRAFT_EXISTS',
+              'This Work already has a draft challan; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('challan insert returned no row');
 
-          await writeLines(tx, organisationId, created.id, workId, body);
-          await auditChallan(
-            tx,
-            organisationId,
-            user.id,
-            'challan.created',
-            created.id,
-            {
-              workId,
-              itemCount: body.items.length,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      ).catch(async (error: unknown) => {
+        await writeLines(tx, organisationId, created.id, workId, body);
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.created',
+          'delivery_challans',
+          created.id,
+          {
+            workId,
+            itemCount: body.items.length,
+          },
+        );
+        return readDetail(tx, created.id);
+      }).catch(async (error: unknown) => {
         // The unique-index race path could not name the winning draft
         // inside its aborted transaction; do it from a fresh read.
         throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
-          withBoundTenant(database, organisationId, user.id, async (tx) => {
+          tenant(async (tx) => {
             const [row] = await tx<{ id: string }[]>`
               select id from delivery_challans
               where work_id = ${workId} and status = 'draft'
@@ -870,21 +819,18 @@ export function registerChallanRoutes(
     },
   );
 
-  app.get(
-    '/api/challans/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/challans/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: ChallanDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${id}
         `;
@@ -897,25 +843,22 @@ export function registerChallanRoutes(
     },
   );
 
-  app.put(
-    '/api/challans/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/challans/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveChallanRequestSchema,
         response: { 200: ChallanDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveChallanRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const consignee = normaliseConsignee(body.consignee);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
@@ -945,31 +888,36 @@ export function registerChallanRoutes(
             items: await readLineInputs(tx, id),
           },
         );
-        await auditChallan(tx, organisationId, user.id, 'challan.updated', id, {
-          before: changes.before,
-          after: changes.after,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.updated',
+          'delivery_challans',
+          id,
+          {
+            before: changes.before,
+            after: changes.after,
+          },
+        );
         return readDetail(tx, id);
       });
     },
   );
 
-  app.delete(
-    '/api/challans/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/challans/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      await tenant(async (tx) => {
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
         requireStatus(challan, 'draft');
@@ -978,112 +926,113 @@ export function registerChallanRoutes(
         await tx`delete from challan_item_serials where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challan_items where delivery_challan_id = ${id}`;
         await tx`delete from delivery_challans where id = ${id}`;
-        await auditChallan(tx, organisationId, user.id, 'challan.deleted', id, {
-          workId: challan.work_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.deleted',
+          'delivery_challans',
+          id,
+          {
+            workId: challan.work_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
-  app.post(
-    '/api/challans/:id/issue',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/issue',
       schema: {
         params: IdParamsSchema,
         response: { 201: ChallanDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          // Closing a PO locks purchase_orders -> linked delivery_challans.
-          // Take the identical order here before locking this challan, so
-          // the status re-check below cannot deadlock against a close.
-          const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
-          const challan = await lockChallan(tx, id);
-          await assertWorkAccess(tx, user.id, challan.work_id);
-          requireStatus(challan, 'draft');
-          await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
-          // writeLines validates the receipt link when the draft is saved,
-          // but the order may have been closed or cancelled in between: a
-          // closed or cancelled order takes no further receipts, and only
-          // a cancellation reopens one. Re-check under the locks above so
-          // the issue is refused rather than silently over-receipting.
-          const unavailableOrder = linkedOrders.find(
-            (order) => order.status !== 'issued',
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const detail = await tenant(async (tx) => {
+        // Closing a PO locks purchase_orders -> linked delivery_challans.
+        // Take the identical order here before locking this challan, so
+        // the status re-check below cannot deadlock against a close.
+        const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'draft');
+        await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
+        // writeLines validates the receipt link when the draft is saved,
+        // but the order may have been closed or cancelled in between: a
+        // closed or cancelled order takes no further receipts, and only
+        // a cancellation reopens one. Re-check under the locks above so
+        // the issue is refused rather than silently over-receipting.
+        const unavailableOrder = linkedOrders.find(
+          (order) => order.status !== 'issued',
+        );
+        if (unavailableOrder) {
+          throw httpError(
+            409,
+            'PO_NOT_ISSUED',
+            `Purchase order ${unavailableOrder.po_number ?? unavailableOrder.id} is no longer issued (current status: ${unavailableOrder.status}); deliveries are received against an ISSUED purchase order.`,
           );
-          if (unavailableOrder) {
-            throw httpError(
-              409,
-              'PO_NOT_ISSUED',
-              `Purchase order ${unavailableOrder.po_number ?? unavailableOrder.id} is no longer issued (current status: ${unavailableOrder.status}); deliveries are received against an ISSUED purchase order.`,
-            );
-          }
+        }
 
-          // The works row lock pairs with the one the MB finalize
-          // transaction holds: an issue and a final-MB finalize on the
-          // same Work serialise here, so whichever commits second sees
-          // the other — a challan issued first is caught by the final
-          // sweep, and a final MB finalized first makes this issue fail
-          // the FINAL_MB_EXISTS check below (the 0027 challan-update
-          // guard backstops it in the database). Lock order works ->
-          // work_items matches every other writer taking both.
-          const [work] = await tx<
-            {
-              allow_excess_delivery: boolean;
-              work_code: string;
-              title: string;
-              letter_number: string;
-              letter_date: string;
-              status: string;
-            }[]
-          >`
+        // The works row lock pairs with the one the MB finalize
+        // transaction holds: an issue and a final-MB finalize on the
+        // same Work serialise here, so whichever commits second sees
+        // the other — a challan issued first is caught by the final
+        // sweep, and a final MB finalized first makes this issue fail
+        // the FINAL_MB_EXISTS check below (the 0027 challan-update
+        // guard backstops it in the database). Lock order works ->
+        // work_items matches every other writer taking both.
+        const [work] = await tx<
+          {
+            allow_excess_delivery: boolean;
+            work_code: string;
+            title: string;
+            letter_number: string;
+            letter_date: string;
+            status: string;
+          }[]
+        >`
             select allow_excess_delivery, work_code, title, letter_number,
                    letter_date::text as letter_date, status
             from works where id = ${challan.work_id}
             for update
           `;
-          if (!work) throw new Error('challan without a Work');
+        if (!work) throw new Error('challan without a Work');
 
-          // R8: a completed Work accepts no new operational documents.
-          // The works lock above serialises this against completion, and
-          // the 0031 challan-update guard backstops it in the database.
-          assertWorkOperable(work.status, 'issuing a delivery challan');
+        // R8: a completed Work accepts no new operational documents.
+        // The works lock above serialises this against completion, and
+        // the 0031 challan-update guard backstops it in the database.
+        assertWorkOperable(work.status, 'issuing a delivery challan');
 
-          // A live final Measurement Book closes the Work's payment
-          // cycle (spec §5.9): a challan issued after it could never be
-          // billed, so the issue is refused outright.
-          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+        // A live final Measurement Book closes the Work's payment
+        // cycle (spec §5.9): a challan issued after it could never be
+        // billed, so the issue is refused outright.
+        const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
             where work_id = ${challan.work_id} and is_final
               and status <> 'cancelled'
           `;
-          if (finalBook) {
-            throw httpError(
-              409,
-              'FINAL_MB_EXISTS',
-              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a challan issued now could never be billed.`,
-            );
-          }
+        if (finalBook) {
+          throw httpError(
+            409,
+            'FINAL_MB_EXISTS',
+            `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a challan issued now could never be billed.`,
+          );
+        }
 
-          // Concurrency-safe quantity validation: this challan's lines plus
-          // everything already ISSUED must stay within the delivery ceiling
-          // COALESCE(effective_quantity, awarded_quantity) — exact numeric
-          // arithmetic in SQL. The challan row lock above serialises
-          // competing issues of this work's single draft, and the item row
-          // locks below serialise against amendment apply (Milestone 6),
-          // which takes the same locks before lowering a ceiling.
-          await tx`
+        // Concurrency-safe quantity validation: this challan's lines plus
+        // everything already ISSUED must stay within the delivery ceiling
+        // COALESCE(effective_quantity, awarded_quantity) — exact numeric
+        // arithmetic in SQL. The challan row lock above serialises
+        // competing issues of this work's single draft, and the item row
+        // locks below serialise against amendment apply (Milestone 6),
+        // which takes the same locks before lowering a ceiling.
+        await tx`
             select wi.id from work_items wi
             where wi.id in (
               select dci.work_item_id from delivery_challan_items dci
@@ -1091,8 +1040,8 @@ export function registerChallanRoutes(
             )
             for update
           `;
-          if (!work.allow_excess_delivery) {
-            const exceeded = await tx<{ item_number: string }[]>`
+        if (!work.allow_excess_delivery) {
+          const exceeded = await tx<{ item_number: string }[]>`
               select wi.item_number
               from delivery_challan_items dci
               join work_items wi on wi.id = dci.work_item_id
@@ -1106,28 +1055,28 @@ export function registerChallanRoutes(
                 ), 0) > coalesce(wi.effective_quantity, wi.awarded_quantity)
               order by wi.item_number
             `;
-            if (exceeded.length > 0) {
-              throw httpError(
-                409,
-                'QUANTITY_EXCEEDED',
-                `Issuing would exceed the permitted quantity for: ${exceeded
-                  .map((row) => row.item_number)
-                  .join(', ')}.`,
-              );
-            }
+          if (exceeded.length > 0) {
+            throw httpError(
+              409,
+              'QUANTITY_EXCEEDED',
+              `Issuing would exceed the permitted quantity for: ${exceeded
+                .map((row) => row.item_number)
+                .join(', ')}.`,
+            );
           }
+        }
 
-          // requires_serials enforcement. The challan's work_items rows
-          // are locked FOR UPDATE (no flag predicate) so a concurrent
-          // flag toggle serialises with this check in both orders: a
-          // toggle that committed first is visible in the locked read;
-          // a toggle waiting on these locks re-validates against the
-          // now-issued lines after we commit. Serial recording/deletion
-          // already serialises against issue through the challan row
-          // lock taken above.
-          const challanWorkItems = await tx<
-            { id: string; item_number: string; requires_serials: boolean }[]
-          >`
+        // requires_serials enforcement. The challan's work_items rows
+        // are locked FOR UPDATE (no flag predicate) so a concurrent
+        // flag toggle serialises with this check in both orders: a
+        // toggle that committed first is visible in the locked read;
+        // a toggle waiting on these locks re-validates against the
+        // now-issued lines after we commit. Serial recording/deletion
+        // already serialises against issue through the challan row
+        // lock taken above.
+        const challanWorkItems = await tx<
+          { id: string; item_number: string; requires_serials: boolean }[]
+        >`
             select wi.id, wi.item_number, wi.requires_serials
             from work_items wi
             where wi.id in (
@@ -1138,21 +1087,21 @@ export function registerChallanRoutes(
             for update of wi
           `;
 
-          // R7 / rule 7: issue freezes the line snapshots written at
-          // DRAFT-SAVE time (description, unit, rate) into the immutable
-          // snapshot and the PDF handed to the consignee. An amendment
-          // approved since then moved work_items.effective_* and never
-          // touched the open draft, so issuing now would carry the
-          // superseded reading forever — the quantity ledger and the
-          // bill maths stay right (both read the live item), the printed
-          // document does not. Silently re-snapshotting here would change
-          // amounts the operator reviewed on screen a moment ago, so the
-          // draft is sent back to be re-saved instead. This runs under
-          // the work_items row locks taken just above, which are the same
-          // locks amendment apply takes before writing effective_*, so an
-          // amendment either committed before this read or waits behind
-          // the issue.
-          const stale = await tx<{ item_number: string; fields: string[] }[]>`
+        // R7 / rule 7: issue freezes the line snapshots written at
+        // DRAFT-SAVE time (description, unit, rate) into the immutable
+        // snapshot and the PDF handed to the consignee. An amendment
+        // approved since then moved work_items.effective_* and never
+        // touched the open draft, so issuing now would carry the
+        // superseded reading forever — the quantity ledger and the
+        // bill maths stay right (both read the live item), the printed
+        // document does not. Silently re-snapshotting here would change
+        // amounts the operator reviewed on screen a moment ago, so the
+        // draft is sent back to be re-saved instead. This runs under
+        // the work_items row locks taken just above, which are the same
+        // locks amendment apply takes before writing effective_*, so an
+        // amendment either committed before this read or waits behind
+        // the issue.
+        const stale = await tx<{ item_number: string; fields: string[] }[]>`
             select wi.item_number,
                    array_remove(array[
                      case when dci.description_snapshot
@@ -1178,26 +1127,26 @@ export function registerChallanRoutes(
               )
             order by wi.item_number
           `;
-          if (stale.length > 0) {
-            const changed = stale
-              .map((line) => `${line.item_number} (${line.fields.join(', ')})`)
-              .join('; ');
-            throw httpError(
-              409,
-              'DRAFT_STALE',
-              `These items were amended after this draft was saved: ${changed}. Reopen the draft and save it to pick up the new values, then issue.`,
-            );
-          }
+        if (stale.length > 0) {
+          const changed = stale
+            .map((line) => `${line.item_number} (${line.fields.join(', ')})`)
+            .join('; ');
+          throw httpError(
+            409,
+            'DRAFT_STALE',
+            `These items were amended after this draft was saved: ${changed}. Reopen the draft and save it to pick up the new values, then issue.`,
+          );
+        }
 
-          const flaggedItemIds = challanWorkItems
-            .filter((item) => item.requires_serials)
-            .map((item) => item.id);
-          if (flaggedItemIds.length > 0) {
-            // Exact count check in SQL: recorded serials must equal the
-            // line quantity (numeric comparison, no floats).
-            const incomplete = await tx<
-              { item_number: string; quantity: string; recorded: string }[]
-            >`
+        const flaggedItemIds = challanWorkItems
+          .filter((item) => item.requires_serials)
+          .map((item) => item.id);
+        if (flaggedItemIds.length > 0) {
+          // Exact count check in SQL: recorded serials must equal the
+          // line quantity (numeric comparison, no floats).
+          const incomplete = await tx<
+            { item_number: string; quantity: string; recorded: string }[]
+          >`
               select wi.item_number, dci.quantity::text as quantity,
                      (
                        select count(*) from challan_item_serials s
@@ -1213,25 +1162,25 @@ export function registerChallanRoutes(
                 ) <> dci.quantity
               order by wi.item_number
             `;
-            if (incomplete.length > 0) {
-              const detail = incomplete
-                .map(
-                  (line) =>
-                    `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,
-                )
-                .join('; ');
-              throw httpError(
-                409,
-                'SERIALS_INCOMPLETE',
-                `These items require one serial per unit before issue: ${detail}.`,
-              );
-            }
+          if (incomplete.length > 0) {
+            const detail = incomplete
+              .map(
+                (line) =>
+                  `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,
+              )
+              .join('; ');
+            throw httpError(
+              409,
+              'SERIALS_INCOMPLETE',
+              `These items require one serial per unit before issue: ${detail}.`,
+            );
           }
+        }
 
-          // Serialised per-Work numbering: the counter row lock orders
-          // concurrent issues; a rolled-back transaction rolls the counter
-          // back with it, so numbers are gapless per Work.
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Serialised per-Work numbering: the counter row lock orders
+        // concurrent issues; a rolled-back transaction rolls the counter
+        // back with it, so numbers are gapless per Work.
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into delivery_challan_counters (organisation_id, work_id)
             values (${organisationId}, ${challan.work_id})
             on conflict (organisation_id, work_id)
@@ -1239,39 +1188,39 @@ export function registerChallanRoutes(
                           updated_at = now()
             returning next_value
           `;
-          if (!counter) throw new Error('counter upsert returned no row');
-          const sequence = counter.next_value;
-          // The organisation's own format; the default is the
-          // prefix/serial this route used to build by hand.
-          // The Work code is a template token, so it is read here rather
-          // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
-          // needs it, and the default never asks for it.
-          const [numberWork] = await tx<{ work_code: string }[]>`
+        if (!counter) throw new Error('counter upsert returned no row');
+        const sequence = counter.next_value;
+        // The organisation's own format; the default is the
+        // prefix/serial this route used to build by hand.
+        // The Work code is a template token, so it is read here rather
+        // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
+        // needs it, and the default never asks for it.
+        const [numberWork] = await tx<{ work_code: string }[]>`
             select work_code from works where id = ${challan.work_id}
           `;
-          const template = await loadNumberTemplate(tx, 'delivery_challan');
-          let challanNumber: string;
-          try {
-            challanNumber = renderNumberTemplate(template, {
-              prefix: challan.prefix,
-              work: numberWork?.work_code ?? null,
-              documentDate: challan.challan_date,
-              sequence,
-            });
-          } catch (cause) {
-            if (cause instanceof NumberTemplateError) {
-              throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
-            }
-            throw cause;
+        const template = await loadNumberTemplate(tx, 'delivery_challan');
+        let challanNumber: string;
+        try {
+          challanNumber = renderNumberTemplate(template, {
+            prefix: challan.prefix,
+            work: numberWork?.work_code ?? null,
+            documentDate: challan.challan_date,
+            sequence,
+          });
+        } catch (cause) {
+          if (cause instanceof NumberTemplateError) {
+            throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
           }
+          throw cause;
+        }
 
-          const [organisation] = await tx<
-            { name: string; warranty_template_text: string | null }[]
-          >`
+        const [organisation] = await tx<
+          { name: string; warranty_template_text: string | null }[]
+        >`
             select name, warranty_template_text from organisations
             where id = app_private.current_organisation_id()
           `;
-          const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
+        const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
             select dci.id, dci.work_item_id, dci.description_snapshot,
                    dci.unit_snapshot, dci.quantity::text as quantity,
                    dci.rate_snapshot::text as rate_snapshot,
@@ -1282,57 +1231,57 @@ export function registerChallanRoutes(
             where dci.delivery_challan_id = ${id}
             order by dci.position
           `;
-          const [total] = await tx<{ amount: string }[]>`
+        const [total] = await tx<{ amount: string }[]>`
             select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
             from delivery_challan_items where delivery_challan_id = ${id}
           `;
 
-          // Legacy §11: the warranty/guarantee certificate page is
-          // optional — it exists exactly when the organisation has
-          // template text at issue time. The FULL text is frozen into
-          // the immutable snapshot (with the certificate template
-          // version and the SHA-256 of the exact text), so later
-          // profile edits never change an issued certificate.
-          const warrantyText = organisation?.warranty_template_text ?? null;
-          const warranty =
-            warrantyText !== null
-              ? {
-                  templateVersion: WARRANTY_TEMPLATE_VERSION,
-                  textSha256: createHash('sha256')
-                    .update(warrantyText, 'utf8')
-                    .digest('hex'),
-                  text: warrantyText,
-                }
-              : undefined;
+        // Legacy §11: the warranty/guarantee certificate page is
+        // optional — it exists exactly when the organisation has
+        // template text at issue time. The FULL text is frozen into
+        // the immutable snapshot (with the certificate template
+        // version and the SHA-256 of the exact text), so later
+        // profile edits never change an issued certificate.
+        const warrantyText = organisation?.warranty_template_text ?? null;
+        const warranty =
+          warrantyText !== null
+            ? {
+                templateVersion: WARRANTY_TEMPLATE_VERSION,
+                textSha256: createHash('sha256')
+                  .update(warrantyText, 'utf8')
+                  .digest('hex'),
+                text: warrantyText,
+              }
+            : undefined;
 
-          const issuedAt = new Date().toISOString();
-          const snapshot: ChallanSnapshot = {
-            templateVersion: CHALLAN_TEMPLATE_VERSION,
-            organisationName: organisation?.name ?? '',
-            challanNumber,
-            challanDate: challan.challan_date,
-            issuedAt,
-            work: {
-              workCode: work.work_code,
-              title: work.title,
-              letterNumber: work.letter_number,
-              letterDate: work.letter_date,
-            },
-            consignee: parseJsonbColumn(challan.consignee_snapshot) as Consignee,
-            items: lines.map((line) => ({
-              position: line.position,
-              itemNumber: line.item_number,
-              description: line.description_snapshot,
-              unit: line.unit_snapshot,
-              quantity: line.quantity,
-              rate: canonicalRateText(line.rate_snapshot),
-              lineAmount: line.line_amount,
-            })),
-            totalAmount: total?.amount ?? '0.00',
-            ...(warranty !== undefined ? { warranty } : {}),
-          };
+        const issuedAt = new Date().toISOString();
+        const snapshot: ChallanSnapshot = {
+          templateVersion: CHALLAN_TEMPLATE_VERSION,
+          organisationName: organisation?.name ?? '',
+          challanNumber,
+          challanDate: challan.challan_date,
+          issuedAt,
+          work: {
+            workCode: work.work_code,
+            title: work.title,
+            letterNumber: work.letter_number,
+            letterDate: work.letter_date,
+          },
+          consignee: parseJsonbColumn(challan.consignee_snapshot) as Consignee,
+          items: lines.map((line) => ({
+            position: line.position,
+            itemNumber: line.item_number,
+            description: line.description_snapshot,
+            unit: line.unit_snapshot,
+            quantity: line.quantity,
+            rate: canonicalRateText(line.rate_snapshot),
+            lineAmount: line.line_amount,
+          })),
+          totalAmount: total?.amount ?? '0.00',
+          ...(warranty !== undefined ? { warranty } : {}),
+        };
 
-          await tx`
+        await tx`
             update delivery_challans
             set status = 'issued', challan_number = ${challanNumber},
                 sequence_number = ${sequence},
@@ -1343,47 +1292,51 @@ export function registerChallanRoutes(
                 warranty_text_sha256 = ${warranty?.textSha256 ?? null}
             where id = ${id}
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'NUMBER_CONFLICT',
-                `Challan number ${challanNumber} already exists in this organisation; use a distinct prefix for this Work.`,
-              );
-            }
-            throw error;
-          });
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'NUMBER_CONFLICT',
+              `Challan number ${challanNumber} already exists in this organisation; use a distinct prefix for this Work.`,
+            );
+          }
+          throw error;
+        });
 
-          await auditChallan(tx, organisationId, user.id, 'challan.issued', id, {
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.issued',
+          'delivery_challans',
+          id,
+          {
             challanNumber,
             sequence,
             totalAmount: snapshot.totalAmount,
-          });
-          return readDetail(tx, id);
-        },
-      );
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.post(
-    '/api/challans/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelChallanRequestSchema,
         response: { 200: ChallanDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelChallanRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const [challanRef] = await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${id}
         `;
@@ -1450,10 +1403,18 @@ export function registerChallanRoutes(
               cancelled_at = now(), cancellation_note = ${note}
           where id = ${id}
         `;
-        await auditChallan(tx, organisationId, user.id, 'challan.cancelled', id, {
-          challanNumber: challan.challan_number,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.cancelled',
+          'delivery_challans',
+          id,
+          {
+            challanNumber: challan.challan_number,
+            note,
+          },
+        );
         // A closed PO whose receipt was just released must become receivable
         // again. Otherwise its live balance shows pending material while the
         // challan editor refuses the replacement receipt as PO_NOT_ISSUED.
@@ -1470,59 +1431,51 @@ export function registerChallanRoutes(
     },
   );
 
-  app.post(
-    '/api/challans/:id/render',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/render',
       schema: {
         params: IdParamsSchema,
         response: { 200: ChallanDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
 
       // Snapshot read and PDF write live in separate transactions so the
       // slow external call holds no database locks; the legal content is
       // the immutable issued snapshot, so re-rendering reproduces the
       // record. Branding (logo, company details) is presentation and
       // comes from the organisation's current profile.
-      const { snapshot, branding } = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const challan = await lockChallan(tx, id);
-          await assertWorkAccess(tx, user.id, challan.work_id);
-          requireStatus(challan, 'issued');
-          const [row] = await tx<{ issued_snapshot: unknown }[]>`
+      const { snapshot, branding } = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        const challan = await lockChallan(tx, id);
+        await assertWorkAccess(tx, user.id, challan.work_id);
+        requireStatus(challan, 'issued');
+        const [row] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from delivery_challans where id = ${id}
           `;
-          const [organisation] = await tx<
-            {
-              address: string | null;
-              gstin: string | null;
-              contact_phone: string | null;
-              contact_email: string | null;
-              logo_object_key: string | null;
-              logo_media_type: string | null;
-            }[]
-          >`
+        const [organisation] = await tx<
+          {
+            address: string | null;
+            gstin: string | null;
+            contact_phone: string | null;
+            contact_email: string | null;
+            logo_object_key: string | null;
+            logo_media_type: string | null;
+          }[]
+        >`
             select address, gstin, contact_phone, contact_email,
                    logo_object_key, logo_media_type
             from organisations
             where id = app_private.current_organisation_id()
           `;
-          return {
-            snapshot: parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot,
-            branding: organisation ?? null,
-          };
-        },
-      );
+        return {
+          snapshot: parseJsonbColumn(row?.issued_snapshot) as ChallanSnapshot,
+          branding: organisation ?? null,
+        };
+      });
 
       let logoDataUri: string | undefined;
       if (branding?.logo_object_key && branding.logo_media_type) {
@@ -1541,31 +1494,18 @@ export function registerChallanRoutes(
         contactPhone: branding?.contact_phone ?? null,
         contactEmail: branding?.contact_email ?? null,
       });
-      const form = new FormData();
-      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-      let pdf: Buffer;
-      try {
-        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-          method: 'POST',
-          body: form,
-        });
-        if (!response.ok) {
-          throw new Error(`Gotenberg answered ${String(response.status)}`);
-        }
-        pdf = Buffer.from(await response.arrayBuffer());
-      } catch (error) {
-        request.log.error({ err: error }, 'challan render failed');
-        throw httpError(
-          502,
-          'RENDER_FAILED',
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
           'The PDF service is unavailable; the issued challan is unaffected — retry later.',
-        );
-      }
+        logError: (error) => {
+          request.log.error({ err: error }, 'challan render failed');
+        },
+      });
       const sha256 = createHash('sha256').update(pdf).digest('hex');
       const objectKey = `${organisationId}/dc/${id}.pdf`;
       await storage.put(objectKey, pdf);
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         const updated = await tx`
           update delivery_challans
           set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
@@ -1580,29 +1520,34 @@ export function registerChallanRoutes(
             'The challan is no longer issued; the render was discarded.',
           );
         }
-        await auditChallan(tx, organisationId, user.id, 'challan.rendered', id, {
-          sha256,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.rendered',
+          'delivery_challans',
+          id,
+          {
+            sha256,
+          },
+        );
         return readDetail(tx, id);
       });
     },
   );
 
-  app.post(
-    '/api/challans/:id/signed-copy',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/challans/:id/signed-copy',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         params: IdParamsSchema,
         response: { 200: ChallanDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -1616,7 +1561,7 @@ export function registerChallanRoutes(
       }
       // Authorisation before the expensive scan (ops batch): an
       // unauthorised caller must not spend scanner capacity.
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
       });
       await assertNotMalware(scanner, body);
@@ -1625,7 +1570,7 @@ export function registerChallanRoutes(
       // rendered PDF's.
       const signedSha256 = createHash('sha256').update(body).digest('hex');
       const objectKey = `${organisationId}/signed/${id}-${signedSha256.slice(0, 16)}.pdf`;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
@@ -1637,11 +1582,12 @@ export function registerChallanRoutes(
               signed_copy_sha256 = ${signedSha256}
           where id = ${id}
         `;
-        await auditChallan(
+        await audit(
           tx,
           organisationId,
           user.id,
           'challan.signed_copy_uploaded',
+          'delivery_challans',
           id,
           { sizeBytes: body.length, sha256: signedSha256 },
         );
@@ -1650,51 +1596,43 @@ export function registerChallanRoutes(
     },
   );
 
-  app.get(
-    '/api/challans/:id/pdf',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/challans/:id/pdf',
       schema: { params: IdParamsSchema, querystring: PdfQuerySchema },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const { kind = 'rendered' } = request.query as { kind?: 'rendered' | 'signed' };
-      const key = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [row] = await tx<
-            {
-              work_id: string;
-              rendered_object_key: string | null;
-              signed_copy_object_key: string | null;
-            }[]
-          >`
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const { kind = 'rendered' } = request.query;
+      const key = await tenant(async (tx) => {
+        const [row] = await tx<
+          {
+            work_id: string;
+            rendered_object_key: string | null;
+            signed_copy_object_key: string | null;
+          }[]
+        >`
             select work_id, rendered_object_key, signed_copy_object_key
             from delivery_challans where id = ${id}
           `;
-          if (!row) {
-            throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
-          }
-          await assertWorkAccess(tx, user.id, row.work_id);
-          const found =
-            kind === 'rendered' ? row.rendered_object_key : row.signed_copy_object_key;
-          if (found === null) {
-            throw httpError(
-              404,
-              'PDF_NOT_AVAILABLE',
-              kind === 'rendered'
-                ? 'This challan has not been rendered yet.'
-                : 'No signed copy has been uploaded for this challan.',
-            );
-          }
-          return found;
-        },
-      );
+        if (!row) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        const found =
+          kind === 'rendered' ? row.rendered_object_key : row.signed_copy_object_key;
+        if (found === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            kind === 'rendered'
+              ? 'This challan has not been rendered yet.'
+              : 'No signed copy has been uploaded for this challan.',
+          );
+        }
+        return found;
+      });
       const bytes = await storage.get(key);
       void reply.type('application/pdf');
       void reply.header(

@@ -592,8 +592,17 @@ export function Quotations({
             <p className="text-muted-foreground">No quotations yet.</p>
           ))}
 
+        {/* The register's primary action, and distinct from the submit
+            inside it: the opener names what will exist ("New quotation"),
+            the submit commits it ("Create quotation"). They used to carry
+            the same words, so on an empty register — where the panel is
+            already open — pressing the header looked inert. */}
         {quotations !== null && canModify && (
-          <Disclosure label="Create quotation" startOpen={quotations.length === 0}>
+          <Disclosure
+            label="New quotation"
+            variant="default"
+            startOpen={quotations.length === 0}
+          >
             <form
               noValidate
               onSubmit={(event) => {
