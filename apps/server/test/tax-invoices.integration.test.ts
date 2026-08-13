@@ -317,9 +317,7 @@ function resetProviderMocks(): void {
  * literal date here eventually expires and the cancel tests start
  * failing on an untouched tree (they did, on 13/08/2026).
  */
-const IRP_ACKED_AT = new Date(
-  Math.floor((Date.now() - 60 * 60 * 1000) / 1000) * 1000,
-);
+const IRP_ACKED_AT = new Date(Math.floor((Date.now() - 60 * 60 * 1000) / 1000) * 1000);
 const IRP_CANCELLED_AT = new Date(IRP_ACKED_AT.getTime() + 30 * 60 * 1000);
 
 /** DD/MM/YYYY HH:mm:ss in IST (UTC+05:30), the NIC portal's text form. */
