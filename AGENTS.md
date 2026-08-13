@@ -11,9 +11,10 @@ Read in this order:
 1. `docs/PRODUCT.md`
 2. `docs/ARCHITECTURE.md`
 3. `docs/SECURITY.md`
-4. the relevant ADR
-5. the issue or task being implemented
-6. existing tests and fixtures
+4. `docs/UX.md` for interaction architecture and the measurement-to-billing narrative
+5. the relevant ADR
+6. the issue or task being implemented
+7. existing tests and fixtures
 
 `docs/reference/**` is historical evidence, not active instruction. Do not copy legacy architecture or governance merely because it exists there.
 

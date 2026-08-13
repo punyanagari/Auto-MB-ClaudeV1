@@ -1,6 +1,7 @@
 {
   "name": "@auto-mb/server",
-  "version": "0.1.0",
+  "//version": "The OpenAPI document publishes this exact string (src/api-version.ts). Minor tracks the highest delivered milestone in docs/ROADMAP.md; major stays 0 while production gates remain open.",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {

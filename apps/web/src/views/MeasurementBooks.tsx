@@ -18,6 +18,7 @@ import {
 } from '../api.js';
 import { formatInr } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
+import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
@@ -112,7 +113,14 @@ export function MeasurementBooks({
   const [confirmingUnmerge, setConfirmingUnmerge] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<LoadFailure | null>(null);
+  /** The consignee pick list, when it could not be read. Surfaced rather
+   * than swallowed (audit finding 27 residue): without it the record-MB
+   * option quietly disappears, which looks exactly like a Work that has
+   * no consignees. */
+  const [consigneeFailure, setConsigneeFailure] = useState<LoadFailure | null>(null);
+  /** Bumped by Retry, to re-run the loads below. */
+  const [loadVersion, setLoadVersion] = useState(0);
   const [actionError, setActionError] = useState<{
     readonly message: string;
     /** Where the refusal is actually fixed, when it names another screen. */
@@ -133,26 +141,27 @@ export function MeasurementBooks({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Measurement Books could not be loaded.',
-        );
+        setLoadError(describeLoadFailure(cause, 'Measurement Books'));
       });
     // A convenience read: without it record MBs lose their names and the
     // record kind is not offered, but the books themselves still load.
+    // Its failure is reported all the same — an absent option and an
+    // unreadable one are different facts.
+    setConsigneeFailure(null);
     api
       .listWorkConsignees(organisationId, workId)
       .then((loaded) => {
         if (!cancelled) setConsignees(loaded);
       })
-      .catch(() => {
-        // The record option simply is not offered.
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setConsigneeFailure(describeLoadFailure(cause, 'The Work’s consignees'));
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
 
   const act = useCallback(
     async (work: () => Promise<void>, done: string) => {
@@ -254,7 +263,20 @@ export function MeasurementBooks({
     return (
       <>
         <h2>Measurement Books</h2>
-        <FormError>{loadError}</FormError>
+        <FormError>
+          {loadError.message} Existing Measurement Books remain unknown, so drafting and
+          finalisation are paused.
+        </FormError>
+        {loadError.retryable && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLoadVersion((current) => current + 1);
+            }}
+          >
+            Retry Measurement Books
+          </Button>
+        )}
       </>
     );
   }
@@ -308,6 +330,24 @@ export function MeasurementBooks({
         draft recomputes from live state; finalizing assigns the next gap-free MB number
         and freezes the snapshot; the bill is prepared from the finalized MB.
       </p>
+      {consigneeFailure !== null && (
+        <>
+          <FormError>
+            {consigneeFailure.message} A record Measurement Book cannot be started
+            without them — this does not mean the Work has no consignees.
+          </FormError>
+          {consigneeFailure.retryable && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLoadVersion((current) => current + 1);
+              }}
+            >
+              Retry consignees
+            </Button>
+          )}
+        </>
+      )}
       {actionError !== null && (
         <FormError>
           {actionError.message}

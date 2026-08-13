@@ -27,6 +27,10 @@ export type WorkspaceView =
   | { name: 'quotations' }
   | { name: 'approvals' }
   | { name: 'serials' }
+  /** Tenant-wide record search. The query is part of the route, so a
+   * result set can be linked, bookmarked and reached by Back — the same
+   * durability finding 28 gave every other view. */
+  | { name: 'search'; query: string }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -124,6 +128,13 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/approvals';
     case 'serials':
       return '#/serials';
+    case 'search':
+      // encodeURIComponent escapes '/' as %2F, and the parser splits the
+      // raw fragment before decoding, so a query containing a slash stays
+      // one segment and round-trips.
+      return view.query === ''
+        ? '#/search'
+        : `#/search/${encodeURIComponent(view.query)}`;
     case 'members':
       return '#/members';
     case 'settings':
@@ -163,6 +174,14 @@ export function deliveryChallanHash(challanId: string): string {
 }
 
 export const SETTINGS_HASH = '#/settings';
+
+/** `#/search/<query>` as a plain href. */
+export function searchHash(query: string): string {
+  return workspaceHashOf({ view: { name: 'search', query } });
+}
+
+export const SERIALS_HASH = '#/serials';
+export const QUOTATIONS_HASH = '#/quotations';
 
 /** Click handler for a real `<a href="#/…">`: a plain left click stays
  * in-app through the given handler (synchronous state navigation, and
@@ -224,6 +243,13 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (extra.length > 0) return null;
       if (tab === undefined) return { view: { name: 'masters' } };
       return isMastersTab(tab) ? { view: { name: 'masters' }, mastersTab: tab } : null;
+    }
+    case 'search': {
+      if (rest.length === 0) return { view: { name: 'search', query: '' } };
+      // A single segment by construction (the serializer percent-encodes
+      // any slash), but joining is the honest inverse of the split above
+      // and keeps a hand-typed `#/search/a/b` meaningful instead of null.
+      return { view: { name: 'search', query: rest.join('/') } };
     }
     case 'delivery-challans': {
       const [challanId, ...extra] = rest;

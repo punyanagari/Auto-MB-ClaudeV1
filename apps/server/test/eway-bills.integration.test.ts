@@ -105,6 +105,7 @@ const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
 const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
 const providerStub: StatutoryProvider = {
   name: 'whitebooks',
+  portal: 'NIC1 via apisandbox.whitebooks.in',
   environment: 'sandbox',
   registerInvoice: registerInvoiceProvider,
   findInvoiceByDocument: findInvoiceProvider,

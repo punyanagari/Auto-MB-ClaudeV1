@@ -10,6 +10,7 @@ import type {
   TaxInvoiceLineShape,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
+import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
 import { mastersHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { FormError } from '../ui/form.js';
@@ -85,6 +86,9 @@ export function WorkTaxInvoices({
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
   const [creditNotes, setCreditNotes] = useState<readonly CreditNote[]>([]);
   const [loadError, setLoadError] = useState(false);
+  /** A picker that could not be read. The invoices still render — this
+   * says which action is missing and why (audit finding 27 residue). */
+  const [pickerFailure, setPickerFailure] = useState<LoadFailure | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
@@ -102,13 +106,23 @@ export function WorkTaxInvoices({
     // The pickers are conveniences: neither an unavailable Measurement
     // Book list nor an unavailable contact master must stop the invoices
     // that already exist from being read.
+    //
+    // But their failure must not be SILENT either (audit finding 27's
+    // residue). Swallowing it made an unreachable Measurement Book list
+    // indistinguishable from a Work with nothing billable: the create
+    // form simply was not offered, and the operator was left to conclude
+    // there was nothing to bill. That is the same lie as an empty
+    // register, told about an action instead of a record.
+    setPickerFailure(null);
     api
       .listWorkMeasurementBooks(organisationId, workId)
       .then((loaded) => {
         if (!cancelled) setBooks(loaded.books);
       })
-      .catch(() => {
-        // The create form simply is not offered without a billable MB.
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setPickerFailure(describeLoadFailure(cause, 'Measurement Books'));
+        }
       });
     api
       .listContacts(organisationId)
@@ -118,8 +132,15 @@ export function WorkTaxInvoices({
           setShipToContacts(contacts);
         }
       })
-      .catch(() => {
-        // Likewise: no buyer picker, no create form.
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setPickerFailure(
+            (current) =>
+              // First failure wins: two banners saying the same outage twice
+              // is noise, and the retry re-runs every load anyway.
+              current ?? describeLoadFailure(cause, 'Contacts'),
+          );
+        }
       });
     api
       .listGstRates(organisationId)
@@ -127,8 +148,11 @@ export function WorkTaxInvoices({
         if (!cancelled) setGstRates(rates);
       })
       .catch(() => {
-        // The rate picker degrades to a plain input; the server still
-        // refuses a rate the master does not cover.
+        // Deliberately still silent, and the only one: the rate picker
+        // degrades to a plain input the operator can type into, and the
+        // server refuses a rate the master does not notify. Nothing is
+        // hidden and no action is withdrawn, so there is nothing to warn
+        // about.
       });
     api
       .organisationProfile(organisationId)
@@ -245,6 +269,26 @@ export function WorkTaxInvoices({
       </p>
 
       <InvoiceList invoices={invoices} pending={pending} onOpen={openInvoice} />
+
+      {pickerFailure !== null && (
+        <>
+          <FormError>
+            {pickerFailure.message} Drafting is unavailable until it loads — the
+            invoices above are unaffected, and this does not mean there is nothing to
+            bill.
+          </FormError>
+          {pickerFailure.retryable && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLoadVersion((current) => current + 1);
+              }}
+            >
+              Retry
+            </Button>
+          )}
+        </>
+      )}
 
       {draftBlockedByMissingClient && (
         <>

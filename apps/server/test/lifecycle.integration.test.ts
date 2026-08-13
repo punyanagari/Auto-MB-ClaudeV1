@@ -18,6 +18,7 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import { deriveIrn } from '../src/gsp/irn.js';
 
 /**
  * The complete post-award lifecycle, end to end through the real API —
@@ -1095,7 +1096,24 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       },
     });
 
-    const irn = '0123456789abcdef'.repeat(4);
+    // Derived from the invoice's own frozen identity: the manual door
+    // refuses any other value (audit finding 2).
+    const before = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoice1Id}`,
+      organisationId,
+    });
+    expect(before.statusCode, before.body).toBe(200);
+    const frozen = before.json<TaxInvoiceDetailResponse>().issuedSnapshot as {
+      supplier: { gstin: string };
+      invoiceNumber: string;
+      invoiceDate: string;
+    };
+    const irn = deriveIrn({
+      gstin: frozen.supplier.gstin,
+      documentNumber: frozen.invoiceNumber,
+      documentDate: frozen.invoiceDate,
+    });
     const recorded = await authed(owner, {
       method: 'POST',
       url: `/api/tax-invoices/${invoice1Id}/irp-response`,

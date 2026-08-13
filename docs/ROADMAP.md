@@ -63,7 +63,7 @@ Delivered:
 Remaining (tracked for the pre-pilot hardening pass):
 
 - ~~rate limiting on upload/extraction~~ — shipped 2026-08-08 (ops batch): sliding-window limits on login and every upload endpoint;
-- ClamAV upload quarantine before design-partner uploads (Milestone 4 trigger);
+- ~~ClamAV upload quarantine before design-partner uploads~~ — shipped: a dependency-free clamd INSTREAM client (`apps/server/src/malware-scan.ts`) scans both upload endpoints and fails closed when configured, so an unreachable scanner rejects the upload rather than admitting it; production compose runs the real ClamAV service. Delivered under Milestone 4 below, where the same item is listed;
 - the model/OCR fallback for unresolved fields waits for the first real letter the deterministic parser cannot serve.
 
 Exit: all six legacy LOA fixtures can be reviewed and confirmed without losing source evidence — met (`apps/server/test/loa.integration.test.ts`).
@@ -121,11 +121,14 @@ Remaining (needs the operator, real infrastructure, or third parties):
 - external uptime monitor and metrics scraper pointed at the deployment;
 - DAST against staging and the external application-security review;
 - three to five design partners recruited and onboarded per the checklist;
-- backup-age visibility (thin pre-pilot slice, ADR-0005): the backup
-  script updates a last-success marker only after the dump, the object
-  archive, and manifest verification all complete; `/metrics` exposes the
-  marker as a `backup_last_success_timestamp_seconds` gauge so the
-  external monitor alerts on staleness — no in-app backup controls.
+- ~~backup-age visibility (thin pre-pilot slice, ADR-0005)~~ — shipped:
+  `scripts/backup.sh:36-39` writes the last-success marker only after the
+  dump, the object archive, and manifest verification all complete, and
+  `apps/server/src/metrics.ts:88-94` publishes it as the
+  `backup_last_success_timestamp_seconds` gauge, so an external monitor
+  can alert on staleness. No in-app backup controls, as decided. What
+  remains here is operator work, not code: pointing a monitor at the
+  gauge and setting the staleness threshold (docs/RUNBOOK.md §6).
 
 ## Milestone 5 — retention workflow
 

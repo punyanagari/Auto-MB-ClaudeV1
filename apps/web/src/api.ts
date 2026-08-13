@@ -63,6 +63,7 @@ import type {
   Signatory,
   UnitMaster,
   SetCompletionDateRequest,
+  SearchResponse,
   SerialSearchResponse,
   UpdateBillStatusRequest,
   UpdateInstrumentRequest,
@@ -461,6 +462,8 @@ export interface ApiClient {
     organisationId: string,
     query: string,
   ) => Promise<SerialSearchResponse>;
+  /** Tenant-wide record search across Works and the document registers. */
+  readonly search: (organisationId: string, query: string) => Promise<SearchResponse>;
   readonly updateWorkItemSerials: (
     organisationId: string,
     workItemId: string,
@@ -1932,6 +1935,11 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/serials/search?q=${encodeURIComponent(query)}`,
         { organisationId },
       );
+    },
+    async search(organisationId, query) {
+      return request<SearchResponse>(`/api/search?q=${encodeURIComponent(query)}`, {
+        organisationId,
+      });
     },
     async updateWorkItemSerials(organisationId, workItemId, requiresSerials) {
       return request<WorkItemSerialsResponse>(

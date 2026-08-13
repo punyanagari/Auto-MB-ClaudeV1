@@ -120,11 +120,34 @@ The product must consistently explain this sequence:
 ```text
 site evidence
   → formal Measurement Book
-  → contractual bill/payment claim
-  → GST tax invoice
-  → IRP/EWB registration where applicable
+  → finalisation
+      ├→ contractual bill/payment claim
+      └→ GST tax invoice
+           → IRP registration where applicable
   → payment receipt/reconciliation
 ```
+
+The branch is the point, and this document used to draw it as one straight
+line — bill, then invoice from the bill (resolved finding 31 in
+`docs/AUDIT-DISPOSITION-2026-08-10.md`). The code does not work that way and
+never did. Finalising a Measurement Book raises the contractual bill from
+that book's lines in the same transaction
+(`routes/measurement-books/finalize.ts`), and the GST tax invoice is raised
+from the **finalised Measurement Book** as well — a draft invoice is created
+against a `measurementBookId` (`routes/tax-invoices/drafting.ts`), never
+against a bill id. The bill is not an input to the invoice.
+
+They are siblings from one parent because they answer to different
+authorities: the bill is the contractual claim the Railways department
+measures and pays against, the tax invoice is the GST document the statutory
+regime requires. One finalised measurement is the single source of truth
+under both, which is what keeps them from disagreeing. An invoice may also
+be raised directly, with no Work and no Measurement Book behind it, for
+service billing outside a measured contract.
+
+Cancellation releases the Measurement Book so a corrected document can be
+raised against the same measurement; after the IRP's 24-hour cancellation
+window a Section 34 credit note is the lawful instrument instead.
 
 The older site `mb_entries` surface is labelled **Measurement evidence** rather than presented as the formal Measurement Book itself: the register heads itself with measurement-evidence language, states that billing runs through the formal Measurement Books below, and no longer shows the retired billed/unbilled chips. (Resolved finding 30 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.)
 

@@ -103,6 +103,63 @@ describe('WorkDetail tax invoices', () => {
     expect(screen.queryByRole('button', { name: 'Draft a tax invoice' })).toBeNull();
   });
 
+  /**
+   * Finding 27's residue. The invoice LIST was fixed; the picker loads
+   * beneath it were still swallowed, so an unreachable Measurement Book
+   * list withdrew the whole drafting workflow and looked exactly like a
+   * Work with nothing billable.
+   */
+  it('reports an unreadable Measurement Book list instead of silently hiding drafting', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new RequestFailedError(
+            503,
+            'UNAVAILABLE',
+            'Measurement Books are unavailable.',
+          ),
+        )
+        .mockResolvedValue({ books: [billableBook()] }),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    expect(await screen.findByText(/Measurement Books are unavailable/)).toBeTruthy();
+    // The invoices that DID load are unaffected — the failure is scoped
+    // to the action it actually removed.
+    expect(screen.getByText('TI/2026-27/001')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Measurement Books are unavailable/)).toBeNull();
+    });
+    expect(api.listWorkMeasurementBooks).toHaveBeenCalledTimes(2);
+  });
+
+  it('names a refused picker as a permission answer, with no retry to offer', async () => {
+    // A 403 is not an outage. Retrying it in a loop produces audit noise
+    // and implies the operator did something wrong.
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([SUBMITTED_INVOICE]),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi
+        .fn()
+        .mockRejectedValue(new RequestFailedError(403, 'FORBIDDEN', 'Refused.')),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    expect(
+      await screen.findByText(/Measurement Books are not available to you/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
   it('offers only finalized, unbilled, non-record Measurement Books to bill', async () => {
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
