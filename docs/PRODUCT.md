@@ -32,7 +32,9 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
 2. The system stores the original privately under an opaque object key.
 3. Text extraction and the deterministic LOA parser produce a proposed header, schedules, items, totals, warnings, source spans, and confidence.
 4. Uncertain fields retain raw source evidence and a review flag.
-5. A human reviews and corrects the proposal.
+5. A human reviews the proposal and **supplies only what the parser could not
+   read**. Every value the parser produced and did not flag is read-only — see
+   "Extracted values are read-only", below.
 6. Confirmation atomically creates the Work, schedules, and items.
 7. Empty numeric and category fields are stored as null, never as zero or empty strings.
 8. A byte-identical re-upload within the organisation is refused, naming the
@@ -50,6 +52,55 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
 **No extraction output may directly create authoritative contract records without explicit confirmation.**
 
 **A letter that has become a Work is that Work's source of truth and can never be discarded.**
+
+#### Extracted values are read-only
+
+The letter is the truth source for the Work it creates. Every quantity, rate,
+percentage and date recorded against that Work afterwards is measured from what
+the letter says, so the review screen presents the extraction rather than
+inviting a rewrite of it.
+
+**The rule.** A field is **locked** if and only if the stored parse produced a
+usable value for it **and** the parser did not declare that value unverifiable.
+Every other field is **fillable**, and the reviewer supplies it.
+
+- The locked set is derived from each letter's own stored parse, never from a
+  fixed list of field names: the same field is locked on one letter and open on
+  the next, exactly as the parser found it.
+- "Usable" excludes a value the wire cannot carry — a quantity read as zero, a
+  decimal finer than its column, a date that did not reduce to `YYYY-MM-DD`.
+  Locking a value nobody could submit would make the letter unconfirmable, so
+  those are treated as holes.
+- "Unverifiable" is the parser's own signal at the granularity it publishes:
+  a header field's review flag, the totals block's, the performance-guarantee
+  clause's, an item row whose printed `qty × rate` does not reconcile to its
+  printed amount, a description boundary the PDF's reading order could not
+  confirm, and the item flags `unresolved_unit`, `unresolved_item_description`,
+  `prose_unit_correction`, `prose_qty_decomposition` and `layout_junk`.
+- Filling a hole is answering a question the parser itself asked; it is not
+  overriding a truth.
+
+**Not locked**, because the parser never produced them: the work code (the
+contractor's own filing reference), the per-Work item number and schedule
+labels, the payment category and the initial payment matrix, and any row the
+reviewer adds — which stays marked as a manual entry.
+
+**Enforcement.** The confirm endpoint compares every locked field in the
+submitted payload against the stored parse and refuses a mismatch with
+`LOA_EXTRACTED_VALUE_MODIFIED` (400), naming the field, the extracted value and
+the submitted one, before anything is written. Dropping a performance-guarantee
+requirement the letter demands is refused the same way. The review screen shows
+locked values as read-only text for the same reason, but the server is the
+control.
+
+**If an extracted value is wrong**, the path is to **discard** the letter and
+upload a corrected one — never a silent edit. Removing a parsed row from the
+confirmation stays allowed (a re-upload cannot repair a row the parser read out
+of layout noise) and is recorded in the audit trail.
+
+**Audit.** The `work.created` event records the lock's verdict: how many locked
+values were verified, which letter-level holes the reviewer filled, how many
+item-level holes, how many manual rows, and how many parsed rows were omitted.
 
 ### Delivery Challan
 

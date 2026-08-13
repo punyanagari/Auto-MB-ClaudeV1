@@ -40,6 +40,7 @@ import {
 } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { assertExtractedValuesUnmodified } from '../loa-extracted-values.js';
 import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
@@ -987,6 +988,14 @@ export function registerLoaRoutes(
             ? (parsedPayload as unknown as ExtractionPayload)
             : null;
 
+        // THE EXTRACTED-VALUE LOCK (owner ruling, 2026-08-13). Every value
+        // the stored parse established and did not flag is read-only; the
+        // reviewer may only fill the holes the parser itself declared.
+        // Derived per letter from the STORED payload — see
+        // src/loa-extracted-values.ts for the rule and its exclusions. It
+        // runs before the Work is inserted, so a refusal saves nothing.
+        const valueLock = assertExtractedValuesUnmodified(payload?.review, body);
+
         // The reviewer-confirmed PBG requirement lands on the Work in
         // this same atomic transaction; its provenance payload is built
         // from the STORED extraction payload, never from the client.
@@ -1150,6 +1159,16 @@ export function registerLoaRoutes(
                   0,
                 ),
                 paymentMatrixRows: body.paymentMatrix?.length ?? 0,
+                // The extracted-value lock's verdict, so the trail shows
+                // what was held to the letter, which holes the reviewer
+                // filled, and what the payload did with the parsed rows.
+                extractedValueLock: {
+                  lockedFieldsVerified: valueLock.lockedFieldsVerified,
+                  letterHolesFilled: valueLock.letterHolesFilled,
+                  itemHolesFilled: valueLock.itemHolesFilled,
+                  manualRows: valueLock.manualRows,
+                  parsedRowsOmitted: valueLock.parsedRowsOmitted,
+                },
                 pbgRequirement:
                   pbg === undefined
                     ? null
