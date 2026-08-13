@@ -40,15 +40,39 @@ let workDir: string;
 let compatible = false;
 let skipReason = '';
 
-/** The scripts shell out to `openssl` and `pg_dump`; both have to be on
- * PATH for the proof to mean anything. CI sets RESTORE_PROOF=required, and
- * a required proof that cannot run fails rather than passing quietly. */
+/**
+ * The scripts shell out to these; all of them have to be on PATH for the
+ * proof to mean anything. CI sets RESTORE_PROOF=required, and a required
+ * proof that cannot run fails rather than passing quietly.
+ *
+ * Each tool is probed with the argument IT accepts, not with a single
+ * assumed spelling. `openssl` in particular takes `version` as a
+ * subcommand: OpenSSL 3.0 (Ubuntu 24.04, and therefore CI) rejects
+ * `--version` with `Invalid command '--version'` and a nonzero exit, while
+ * 3.5 tolerates it — so a `--version` probe reports "openssl is not
+ * installed" on the one platform that certainly has it.
+ */
+const REQUIRED_TOOLS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['openssl', ['version']],
+  ['pg_dump', ['--version']],
+  ['tar', ['--version']],
+];
+
 async function toolingAvailable(): Promise<{ ok: boolean; reason: string }> {
-  for (const tool of ['openssl', 'pg_dump', 'tar']) {
+  for (const [tool, args] of REQUIRED_TOOLS) {
     try {
-      await execFileAsync(tool, ['--version']);
-    } catch {
-      return { ok: false, reason: `${tool} is not installed` };
+      const { stdout } = await execFileAsync(tool, [...args]);
+      if (stdout.trim() === '') {
+        return { ok: false, reason: `${tool} ${args.join(' ')} printed nothing` };
+      }
+    } catch (error) {
+      // Carrying the underlying error keeps the next mis-detection
+      // diagnosable from the CI log alone, rather than asserting a
+      // conclusion ("not installed") the probe cannot actually reach.
+      return {
+        ok: false,
+        reason: `${tool} ${args.join(' ')} failed: ${String(error)}`,
+      };
     }
   }
   return { ok: true, reason: '' };
