@@ -125,10 +125,11 @@ export function WorkTaxInvoices({
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setPickerFailure((current) =>
-            // First failure wins: two banners saying the same outage twice
-            // is noise, and the retry re-runs every load anyway.
-            current ?? describeLoadFailure(cause, 'Contacts'),
+          setPickerFailure(
+            (current) =>
+              // First failure wins: two banners saying the same outage twice
+              // is noise, and the retry re-runs every load anyway.
+              current ?? describeLoadFailure(cause, 'Contacts'),
           );
         }
       });
@@ -253,8 +254,8 @@ export function WorkTaxInvoices({
         <>
           <FormError>
             {pickerFailure.message} Drafting is unavailable until it loads — the
-            invoices above are unaffected, and this does not mean there is nothing
-            to bill.
+            invoices above are unaffected, and this does not mean there is nothing to
+            bill.
           </FormError>
           {pickerFailure.retryable && (
             <Button

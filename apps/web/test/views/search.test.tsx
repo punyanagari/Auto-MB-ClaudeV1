@@ -170,7 +170,9 @@ describe('record search', () => {
   });
 
   it('groups results by register and links each row into its record', async () => {
-    renderWorkspaceAt('#/search/PL270', { search: vi.fn().mockResolvedValue(searchResponse()) });
+    renderWorkspaceAt('#/search/PL270', {
+      search: vi.fn().mockResolvedValue(searchResponse()),
+    });
 
     const works = await screen.findByRole('region', { name: 'Works' });
     const workLink = within(works).getByRole('link', { name: 'PL270-CRB' });
@@ -192,7 +194,9 @@ describe('record search', () => {
   });
 
   it('sends the operator to the serial module rather than duplicating it', async () => {
-    renderWorkspaceAt('#/search/PL270', { search: vi.fn().mockResolvedValue(searchResponse()) });
+    renderWorkspaceAt('#/search/PL270', {
+      search: vi.fn().mockResolvedValue(searchResponse()),
+    });
     const link = await screen.findByRole('link', { name: 'open Serial Lookup' });
     expect(link.getAttribute('href')).toBe('#/serials');
   });
@@ -201,7 +205,11 @@ describe('record search', () => {
     const search = vi
       .fn()
       .mockRejectedValueOnce(
-        new RequestFailedError(503, 'SEARCH_UNAVAILABLE', 'The search service is down.'),
+        new RequestFailedError(
+          503,
+          'SEARCH_UNAVAILABLE',
+          'The search service is down.',
+        ),
       )
       .mockResolvedValue(searchResponse());
     renderWorkspaceAt('#/search/PL270', { search });

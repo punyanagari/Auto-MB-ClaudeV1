@@ -204,9 +204,7 @@ describe('privilege matrix drift', () => {
         and table_type in ('BASE TABLE', 'VIEW')
     `;
     const present = new Set(rows.map((row) => row.table_name));
-    const stale = Object.keys(TABLE_PRIVILEGES).filter(
-      (table) => !present.has(table),
-    );
+    const stale = Object.keys(TABLE_PRIVILEGES).filter((table) => !present.has(table));
     expect(
       stale,
       `privilege matrix entries with no matching relation: ${stale.join(', ')}`,

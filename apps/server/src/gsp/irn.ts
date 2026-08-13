@@ -131,7 +131,10 @@ export interface SignedQrClaims {
   readonly documentDateText: string | null;
 }
 
-function claimText(source: Record<string, unknown>, keys: readonly string[]): string | null {
+function claimText(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): string | null {
   for (const key of keys) {
     const value = source[key];
     if (typeof value === 'string' && value.trim() !== '') return value.trim();
@@ -256,10 +259,7 @@ export function assertSignedQrAgrees(
       'The signed QR names a different document type from the document submitted.',
     );
   }
-  if (
-    claims.documentDateText !== null &&
-    claims.documentDateText !== expectedDate
-  ) {
+  if (claims.documentDateText !== null && claims.documentDateText !== expectedDate) {
     throw new SignedQrClaimError(
       'IRP_SIGNED_QR_IDENTITY_MISMATCH',
       'The signed QR names a different document date from the document submitted.',

@@ -117,7 +117,11 @@ describe('WorkDetail tax invoices', () => {
       listWorkMeasurementBooks: vi
         .fn()
         .mockRejectedValueOnce(
-          new RequestFailedError(503, 'UNAVAILABLE', 'Measurement Books are unavailable.'),
+          new RequestFailedError(
+            503,
+            'UNAVAILABLE',
+            'Measurement Books are unavailable.',
+          ),
         )
         .mockResolvedValue({ books: [billableBook()] }),
     });

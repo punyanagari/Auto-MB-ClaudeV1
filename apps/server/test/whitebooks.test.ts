@@ -103,7 +103,9 @@ describe('Whitebooks IRP transport', () => {
    * NIC certificate is provisioned; see gsp/irn.ts).
    */
   function signedQr(
-    overrides: Partial<Record<'Irn' | 'SellerGstin' | 'DocNo' | 'DocTyp' | 'DocDt', string>> = {},
+    overrides: Partial<
+      Record<'Irn' | 'SellerGstin' | 'DocNo' | 'DocTyp' | 'DocDt', string>
+    > = {},
   ): string {
     const header = Buffer.from(
       JSON.stringify({ alg: 'RS256', typ: 'JWT' }),

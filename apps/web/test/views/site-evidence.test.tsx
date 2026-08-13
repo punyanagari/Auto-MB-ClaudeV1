@@ -788,7 +788,11 @@ describe('MeasurementBooks workspace', () => {
     const listWorkMeasurementBooks = vi
       .fn()
       .mockRejectedValueOnce(
-        new RequestFailedError(503, 'UNAVAILABLE', 'Measurement Books are unavailable.'),
+        new RequestFailedError(
+          503,
+          'UNAVAILABLE',
+          'Measurement Books are unavailable.',
+        ),
       )
       .mockResolvedValue({ books: [MB_FINAL, MB_DRAFT] });
     renderMb(mbApi({ listWorkMeasurementBooks }));

@@ -264,8 +264,8 @@ export function MeasurementBooks({
       <>
         <h2>Measurement Books</h2>
         <FormError>
-          {loadError.message} Existing Measurement Books remain unknown, so
-          drafting and finalisation are paused.
+          {loadError.message} Existing Measurement Books remain unknown, so drafting and
+          finalisation are paused.
         </FormError>
         {loadError.retryable && (
           <Button

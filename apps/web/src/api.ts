@@ -447,10 +447,7 @@ export interface ApiClient {
     query: string,
   ) => Promise<SerialSearchResponse>;
   /** Tenant-wide record search across Works and the document registers. */
-  readonly search: (
-    organisationId: string,
-    query: string,
-  ) => Promise<SearchResponse>;
+  readonly search: (organisationId: string, query: string) => Promise<SearchResponse>;
   readonly updateWorkItemSerials: (
     organisationId: string,
     workItemId: string,

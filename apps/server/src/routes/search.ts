@@ -128,18 +128,16 @@ function toGroup(kind: SearchResultKind, rows: readonly RegisterRow[]): SearchGr
   return {
     kind,
     truncated: rows.length > GROUP_LIMIT,
-    results: rows.slice(0, GROUP_LIMIT).map(
-      (row): SearchResult => ({
-        kind,
-        id: row.id,
-        label: row.label ?? draftLabel(kind),
-        detail: row.detail ?? '—',
-        status: row.status,
-        date: row.date,
-        workId: row.work_id,
-        workCode: row.work_code,
-      }),
-    ),
+    results: rows.slice(0, GROUP_LIMIT).map((row): SearchResult => ({
+      kind,
+      id: row.id,
+      label: row.label ?? draftLabel(kind),
+      detail: row.detail ?? '—',
+      status: row.status,
+      date: row.date,
+      workId: row.work_id,
+      workCode: row.work_code,
+    })),
   };
 }
 

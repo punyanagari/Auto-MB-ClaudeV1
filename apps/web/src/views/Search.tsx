@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { SearchResponse, SearchResult, SearchResultKind } from '@auto-mb/contracts';
+import type {
+  SearchResponse,
+  SearchResult,
+  SearchResultKind,
+} from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import {
   QUOTATIONS_HASH,
@@ -163,9 +167,8 @@ export function Search({
         Search
       </h1>
       <p className="text-muted-foreground">
-        Works, Delivery and Issue Challans, tax invoices, credit notes, purchase
-        orders and quotations — by number, by Work, or by the party named on the
-        document.
+        Works, Delivery and Issue Challans, tax invoices, credit notes, purchase orders
+        and quotations — by number, by Work, or by the party named on the document.
       </p>
       <form
         role="search"

@@ -115,16 +115,16 @@ pnpm verify
 
 ## Authoritative documents
 
-| File                   | Authority                                              |
-| ---------------------- | ------------------------------------------------------ |
-| `docs/PRODUCT.md`      | Current product boundary and business invariants       |
-| `docs/ARCHITECTURE.md` | Current implementation architecture                    |
+| File                   | Authority                                               |
+| ---------------------- | ------------------------------------------------------- |
+| `docs/PRODUCT.md`      | Current product boundary and business invariants        |
+| `docs/ARCHITECTURE.md` | Current implementation architecture                     |
 | `docs/UX.md`           | Approved interaction architecture and product narrative |
-| `docs/SECURITY.md`     | Threat model, required controls, and audit posture     |
-| `docs/OPERATIONS.md`   | Deployment, backup, restore, monitoring, and incidents |
-| `docs/ROADMAP.md`      | Delivery sequence and release gates                    |
-| `adr/`                 | Expensive-to-reverse decisions only                    |
-| `docs/reference/`      | Historical evidence; never authoritative by itself     |
+| `docs/SECURITY.md`     | Threat model, required controls, and audit posture      |
+| `docs/OPERATIONS.md`   | Deployment, backup, restore, monitoring, and incidents  |
+| `docs/ROADMAP.md`      | Delivery sequence and release gates                     |
+| `adr/`                 | Expensive-to-reverse decisions only                     |
+| `docs/reference/`      | Historical evidence; never authoritative by itself      |
 
 ## Development model
 
