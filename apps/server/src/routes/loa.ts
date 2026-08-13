@@ -39,7 +39,7 @@ import {
 } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractLoaPdfText } from '../loa-extract.js';
+import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
@@ -480,6 +480,20 @@ export function registerLoaRoutes(
         };
         status = 'review';
       } catch (error) {
+        // A misconfigured extraction binary would otherwise persist a
+        // permanently 'failed' document for a perfectly good letter, and
+        // hide an operator fault as a per-document one. Refuse the upload
+        // instead: nothing is written, and re-uploading after the server is
+        // fixed succeeds. (The stored object is orphaned under its UUID key,
+        // the same tolerated outcome as any other post-storage failure.)
+        if (error instanceof PdfToTextConfigurationError) {
+          throw httpError(
+            503,
+            'PDF_TEXT_EXTRACTION_UNAVAILABLE',
+            'PDF text extraction is not correctly configured on the server. The letter was not stored for review; contact your administrator.',
+            { reason: error.message },
+          );
+        }
         payload = {
           error: error instanceof Error ? error.message : 'extraction failed',
         };

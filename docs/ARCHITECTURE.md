@@ -142,7 +142,12 @@ As delivered in Milestone 2: extraction runs complementary Poppler views from
 the same PDF: `pdftotext -layout` remains authoritative for headers,
 schedules, and numeric columns, while `pdftotext -raw` supplies exact item-row
 description ownership behind a strict whole-letter tuple gate. Both run in
-parallel inline at upload because extraction is sub-second. No product
+parallel inline at upload because extraction is sub-second. Extraction first
+verifies that the `pdftotext` binary is Poppler's and refuses to run
+otherwise: Xpdf's same-named binary accepts the same flags but renders
+bordered IREPS item tables with a different column geometry, which the reader
+turns into null units and mis-owned descriptions rather than a visible failure
+(see `docs/DEPENDENCIES.md`, "`pdftotext` must be Poppler's"). No product
 workflow currently requires a background job; implemented PDF routes are
 synchronous and idempotent (§9). The
 parser's review payload — per-field value plus printed raw source plus

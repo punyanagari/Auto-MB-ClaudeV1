@@ -28,7 +28,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractPdfText } from '../loa-extract.js';
+import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
@@ -376,6 +376,17 @@ export function registerContractSourceRoutes(
       try {
         sourceText = await extractPdfText(body);
       } catch (error) {
+        // A misconfigured text-extraction binary is an operator fault, not a
+        // fault in the uploaded document: reporting it as "upload a
+        // searchable PDF" would send the user chasing the wrong problem.
+        if (error instanceof PdfToTextConfigurationError) {
+          throw httpError(
+            503,
+            'PDF_TEXT_EXTRACTION_UNAVAILABLE',
+            'PDF text extraction is not correctly configured on the server. No document was rejected; contact your administrator.',
+            { reason: error.message },
+          );
+        }
         throw httpError(
           400,
           'CONTRACT_SOURCE_EXTRACTION_FAILED',

@@ -1,0 +1,616 @@
+WESTERN RLY
+MUMBAI CENTRAL
+DIVISION-S AND T
+Signal and Telcom
+Departemnt, 2 nd floor,
+DRM Office, Mumbai
+Central
+Mumbai, 400008
+Maharashtra, India
+Letter No: MUMBAI CENTRAL DIVISION-S AND T / WR-
+MMCT-SnT-STTD-34-2025 / 00341490158364
+Dated: 25/05/2026
+M/s PARTRONICS EBOARDS PRIVATE LIMITED-
+PUNE
+S.No 81/5, NR SamarthSociety
+NDARoad, Shivane
+Pune- 411023
+Maharashtra, India
+Sub: Letter Of Acceptance
+Ref: 1. Tender No. WR-MMCT-SnT-STTD-34-2025 closing date 16-01-2026
+15:00 for Upgradation of manual announcement system to automatic
+announcement at stations of non-suburban sections and replacement of
+Public Address System with IP based Public Address System installed at
+CCG, MX, DDR, ADH, RMAR, GMN, BVI & NSP stations of
+Churchgate - Virar section ofMumbaiDivision on age cumcondition basis
+along with Comprehensive Annual Maintenance Contract (CAMC) after
+warranty.
+2. Your bid ID 19514943 dated 16/01/2026 14:52
+3. Your Negotiation bid IDs [ 20049129 dated 13/05/2026 14:59 ]
+The CompetentAuthority has accepted your offered rates in connection with the subject
+work. The total cost of the work at the accepted rates works out to Rs. 147535947.85
+(Rupees Fourteen Crore Seventy-Five Lakh Thirty-Five Thousand Nine Hundred And
+Fourty-SevenRupeesAnd Eighty-Five Paise Only)
+A sum of Rs.742500 deposited as Earnest Money vide IREPS reference ID
+PE572429466356 has been retained towards initial Security Money for due and faithful
+fulfillment of the contract, and the balance Security Money will be recovered from the
+progressive bills @ 6 % ofthe billamount tillit reaches 5 % ofthe contract value in terms of
+clause 6.2 ofChapter 6 ofTender document..
+You are requested to submit Performance Guarantee in the form as given in Clause 6.3
+of Chapter 6 of Tender document. equivalent to 5 % of the contract value amounting to Rs.
+7376797.39 (Rupees Seventy-Three Lakh Seventy-Six Thousand Seven Hundred And
+Ninety-Seven Rupees And Thirty-Nine Paise Only) within 21 days fromthe date ofissue of
+Letter ofAcceptance, valid up to stipulated date ofcompletion plus 60 days so that contract
+agreement canbe executed.
+The entire work shallbe completed within 108 month fromthe date ofissue ofLetter of
+Acceptance.As per NIT header ofTender document.
+Payment Terms:As per clause 2.5 ofchapter 2 ofTender document.
+Skilled labour: The contractor should depute skilled Technicians,supervisors & engineers as
+per provisionofthis tender document.
+Programme for excution:You are requested to draw the programme forexcution of work in
+connection with Concerned ADSTE, DSTE/BCT as well as SrDSTE/Co/BCT for this
+work.
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 1/7IndemnityBond:As per clause 6.43 ofchapter 6 oftender document
+Supervision& Labour:As per clause 6.17 ofchapter 6 oftender document
+Shramik Kalyan: You are requested to update LOA details & workerdetails in Indian
+RailwayShramik KalyanPortalsite.
+IRWCMS:Indianrailwayworks contract management system(IR-WCMS), web enabled IT
+application and hosted or IRCEPportal(www.ircep.gov.in) has been implemented by
+Railway Board. All theactivities associated with contract handling including signing of
+contractagreement,Measurement,Billing,Extension of DOC,Release of PG & SD ieall types
+ofCorrespondence betweenRailway& Contractors etc shallbedone throughIRWCMS.
+Engineer Incharge:ADSTE/Tele1/MumbaiCentral
+Supervisor Incharge:Concerned sectionalSSE incharge
+Consignee:SSE/Tele/Store/BCT & Valsad
+AccountingAuthority:Sr DFM/MumbaiCentral
+LOA: Until formal contract agreement is prepared & excuted, acceptanceof this letter shall
+be bindingcontract.
+Banned item: Rates of item no 2,6,8,16,17,18 of schedule A1 & rates of item no 8,15 of
+scheduleA2 are baneed for future reference.
+AllOther terms and conditions, as stipulated inthe tender documents shallbe applicable.
+ASHISH TIWARI
+Sr.DSTE/Co./BCT
+Digitally Signed
+View Signature Details
+Awarded Quantities And Rates
+Item
+Sno.
+Item Desc Item
+Code
+Item
+Qty
+Qty
+Unit
+Unit
+Rate(Rs)
+Escl.
+(%)
+Advt.Value
+(Rs)
+Bid Rate/
+Unit Rate
+Bid Amount
+(Rs)
+Schedule A1-Upgradation of manual announcement system to automatic
+announcement at stations of non-suburban (VR to JL) sections (Item
+Directory - Not Applicable)
+34220518.40
+1
+Supply of 19" 42U covered rack
+as per specifications no.4.1 of
+chapter 4 of tender document.
+Inspected by Consignee.
+1 30 Numbers 34643.64 At Par 1039309.20
+2
+Supply of Aluminium weather
+resistant, outdoor column
+speaker 20 watt & its
+installation as per specification
+no.4.2 of chapter 4 of tender
+document. Inspected by
+Consignee.
+2 240 Numbers 3203.41 At Par 768818.40
+3
+Supply of weather resistant,
+outdoor Horn Type Speaker.
+Make - Ahuja, ModelUHC-30 XT
+or Similar power 30 W RMS /45
+W.as per specification no.no.4.3
+of chapter 4 of tender
+document. Inspected by
+Consignee.
+3 600 Numbers 1594.94 At Par 956964.00
+4
+Supply of Two Zone PA Amplifier
+200 Watt + 200 Watt operated
+on 230 Volt AC 50 Hz & 24 Volt
+DC Battery operated as per
+specification no.4.4 of chapter 4
+of tender document. Inspected
+by Consignee.
+4 48 Numbers 23965.42 At Par 1150340.16
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 2/75
+Supply of Microphone AUD 99
+MS of Ahuja Philips or similar
+with microphone stand table
+Ahuja make model No DGT as
+per specification no.4.5 of
+chapter 4 of tender document.
+Inspected by Consignee.
+5 30 Numbers 4916.92 At Par 147507.60
+6
+Supply of Three Core PVC Power
+Cable as per as per specification
+no.4.6 of chapter 4 of tender
+document. Inspected by
+Consignee.
+6 2000 Metre 38.16 At Par 76320.00
+7
+Supply of twin core shielded
+microphone cable (Red & Black)
+as per specification no.4.7 of
+chapter 4 of tender document.
+Inspected by Consignee.
+7 20000 Metre 29.04 At Par 580800.00
+8
+Supply, Installation, Testing and
+Commissioning of Central Data
+Controller as RDSO Specification
+No. RDSO/SPN/TC/108/2019 or
+latest and as per specification
+no.4.8 of chapter 4 of tender
+document. Inspected by RDSO.
+8 30 Numbers 308275.07 At Par 9248252.10
+9
+Supply of Self Regulating Type
+Battery Charger, 230V AC/24V
+DC, 20 Amps as 20 A per RDSO
+Specn.No.IRS:S-86/2000
+(Amnd.4) or latest and as per
+specification no.4.9 of chapter 4
+of tender document. Inspected
+by RDSO.
+9 30 Numbers 34199.97 At Par 1025999.10
+10
+Supply of sealed maintenance
+free VRLA battery of rating
+24V/120AH with initial charging
+complete as per specification
+no.4.10 of chapter 4 of tender
+document. Inspected by
+Consignee.
+10 30 Numbers 11382.41 At Par 341472.30
+11
+Supply of MS
+bracket/Clamp/Wooden base
+fixures for fixing and hanging of
+PA unit/Coloumn speaker as per
+specification no.4.11 of chapter
+4 of tender document.
+Inspected by Consignee.
+11 840 Numbers 468.72 At Par 393724.80
+12
+Cutting of platform with tile/rock
+cutting machine or manually to
+30 cm depth and 12 cm wide
+approx. by removing slabs/tiles
+neatly and re-filling the trench
+with the excavated soil and
+restoring the top surface to its
+original condition with smooth
+finish as per specification
+no.no.4.12 of chapter 4 of
+tender document.
+12 20000 Metre 154.66 At Par 3093200.00
+13
+Supply & Fixing of 100 mm dia GI
+pipes to carry all the cable at
+the cabins, Stations, cable huts
+& other buildings etc as per
+specification no.4.13 of chapter
+4 of tender document.
+Inspected by Consignee.
+13 200 Metre 770.66 At Par 154132.00
+14
+Laying of HDPE pipe duct in
+trenches/GI Pipe/RCC pipe/on
+wall/on PF, including jointing and
+levelling using couplers and
+sealing the section etc as per
+site requirement as per
+specification no.4.14 of chapter
+4 of tender document.
+14 20000 Metre 11.54 At Par 230800.00
+15
+Supply of PVC rigid pipe 25mm
+dia with ISI mark & reputed
+make as per specification
+no.4.15 of chapter 4 of tender
+document. Inspected by
+Consignee.
+15 8000 Metre 21.03 At Par 168240.00
+16 Laying of PVC/Coaxial
+cable/Power cable/CAT6 cable in
+16 20000 Metre 12.83 At Par 256600.00
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 3/7through HDPE/PVC casing
+capping/pipe/duct including
+laying material like 3 way/4 way
+junction box ,T-Joint, flexible
+PVC pipes etc. as per
+specification no. 4.16 of chapter
+4 of tender document.
+17
+Supply & installation of 150 mm
+width x 50 mm Depth x 1.6 mm
+thick size GI perforated yellow
+powder coated cable tray
+including horizontal and vertical
+reducers, tees , cross members,
+and other accessories as
+required and fully suspended
+from the ceiling with GI
+suspended etc as per
+specification no.4.17 of chapter
+4 of tender document.
+Inspected by Consignee.
+17 1000 Metre 602.43 At Par 602430.00
+18
+Supply & installation of
+Microcontroller based double
+sided audio visual signage unit
+of size 24" x24" x 6" for
+Divyangjan passenger on
+platform as per specification
+no.4.18 of chapter 4 of tender
+document. Inspected by
+Consignee.
+18 30 Numbers 13092.53 At Par 392775.90
+19
+Supply & installation of single
+sided audio visual signage unit
+of size 15" x 15" x 2 " for
+divyangjan passengers at
+booking window as per
+specification no.4.19 of chapter
+4 of tender document.
+Inspected by Consignee.
+19 30 Numbers 5899.00 At Par 176970.00
+20
+Upgradation/Setup/Configuration
+of IPIS system (CDC) to include
+automatic announcement of
+Coach Position and Divyangjan
+Coach Position at stations and
+suitable display on CGDBs/AGDBs
+at stations as per specification
+no. 4.20 of chapter 4 of tender
+document. Inspected by
+Consignee.
+20 20 Numbers 5000.00 At Par 100000.00
+21
+Supply of yellow powder coated
+GI CABLE TRAY PERFORTED,
+Size- 300 X 50 X1.6 MM, Along
+with accessories Coupler, Nut,
+Bolts with down rod Make-
+Anchor or similar. Specification -
+With Accessories, 53nos.
+Coupler with Nut, Bolt and 6
+Nos. Down Rod of 1 meter
+length with each cable tray of
+2.5 meter length as per
+specification no.4.21 of chapter
+4 of tender document.
+Inspected by Consignee.
+21 500 Metre 879.33 At Par 439665.00
+22
+Installation of GI CABLE TRAY
+PERFORTED as per instruction of
+Rly site engineer. All sundry
+materials (like wire, fixing and
+clamping arrangements etc.) are
+to be supplied by the contractor
+as per site requirements as per
+specification no. 4.22 of chapter
+4 of tender document.
+22 500 Metre 42.05 At Par 21025.00
+23
+Supply of self supported
+Aluminium flat step ladder
+(Conforming to ISI) 08 ft. height
+as per specification no.4.23 of
+chapter 4 of tender document.
+Inspected by Consignee.
+23 8 Numbers 5233.43 At Par 41867.44
+24 Supply of NMS for managing the
+entire network of Mumbai
+division as per technical
+specifications attached and its
+standard installation as per
+24 1 Numbers 2000376.00 At Par 2000376.00
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 4/7specification no.4.24 of chapter
+4 of tender document.
+Inspected by Consignee.
+25
+Horizontal boring/drilling of
+100mm dia Horizontal Bore below
+at least 1.2 m from the ground
+level. Note : Rate is inclusive of
+Supply and Placing of Double
+Walled Corrugated (DWC) pipes
+and all other installation
+materials at site as per
+specifications no. 4.25 of
+chapter 4 of tender document.
+Unit - route metre.
+25 300 RMT 1146.71 At Par 344013.00
+26
+Supply & installation of 19" 9U
+rack with all accessories as per
+specification no.4.26 of chapter
+4 of tender document.
+Inspected by Consignee.
+26 30 Numbers 12963.88 At Par 388916.40
+27
+Design, fabrication,
+transportation, supply &
+erection of 5 m length hot dip
+galvanized iron sheet street
+light octagonal double door
+junction box with foundation
+type base plate & foundation
+bolts with double arms bracket
+with holes as per site condition
+as per specification no.4.47 of
+chapter 4 of tender document.
+Inspected by Consignee.
+27 420 Numbers 24000.00 At Par 10080000.00
+Schedule Totals 0.00
+Schedule A2-Replacement of Public Address System with IP based Public
+Address System installed at CCG, MX, DDR, ADH, RMAR, GMN, BVI & NSP
+stations of Churchgate -Virar section of Mumbai Division on age cum
+condition basis. (Item Directory - Not Applicable)
+65989076.03
+1
+Supply & Installation of
+Weatherproof Self Amplified IP
+Speaker with mounting
+arrangement as per specification
+no.4.27 of chapter 4 of tender
+document. Inspected by
+Consignee.
+1 950 Numbers 27115.30 At Par 25759535.00
+2
+Supply , Installation, Testing &
+Commissioning of PA IP
+Controller (It consists of two
+Servers Active & redundancy
+Server in standby mode with
+licenses) as per specification
+no.4.28 of chapter 4 of tender
+document. Inspected by
+Consignee.
+2 7 Numbers 543584.44 At Par 3805091.08
+3
+Supply of Layer 2, 24 port
+Manageable PoE+ switch and its
+standard installation as per
+RDSO specification and as per
+specification no.4.29 of chapter
+4 of tender document.
+Inspected by RDSO.
+3 85 Numbers 100450.79 At Par 8538317.15
+4
+Supply and installation of 8 port
+manageable PoE+ switch as per
+RDSO specification and as per
+specification no.4.30 of chapter
+4 of tender document.
+Inspected by RDSO.
+4 63 Numbers 15101.16 At Par 951373.08
+5
+Supply of Single mode LC-
+LC/LC-SC/SC-SC optical patch
+cord as per specification
+no.4.31 of chapter 4 of tender
+document. Inspected by
+Consignee.
+5 1305 Numbers 169.48 At Par 221171.40
+6
+Supply & installation of 24 port
+Rack mounted LIU along with all
+accessories as per specification
+no.4.32 of chapter 4 of tender
+document. Inspected by
+Consignee.
+6 232 Numbers 15897.76 At Par 3688280.32
+7 Supply & installation of 19" 9U
+rack with all accessories as per
+specification no.4.26 of chapter
+7 225 Numbers 12963.88 At Par 2916873.00
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 5/74 of tender document.
+Inspected by Consignee.
+8
+Supply of Three Core PVC Power
+Cable as per specification no.4.6
+of chapter 4 of tender
+document. Inspected by
+Consignee.
+8 30000 Metre 38.16 At Par 1144800.00
+9
+Supply of PVC rigid pipe 25mm
+dia with ISI mark & reputed
+make as per specification
+no.4.15 of chapter 4 of tender
+document. Inspected by
+Consignee.
+9 90000 Metre 21.03 At Par 1892700.00
+10
+Supply, Installation, Testing &
+Commissioning of 3 KVA Online
+UPS with Lithium ion battery
+having one hour backup on full
+load with 5 years warranty as
+per specification no.4.33 of
+chapter 4 of tender document.
+Inspected by Consignee.
+10 38 Numbers 177000.00 At Par 6726000.00
+11
+Releasing of speaker & its
+accessories & transporting them
+to nearest S&T office or DS8
+depot or as decided by the
+supervisor in charge as per
+specification no. 4.34 of chapter
+4 of tender document.
+11 810 Numbers 210.00 At Par 170100.00
+12
+Releasing of PIJF cables/24 Fiber
+OFC from station
+platforms/building walls etc.
+including its laying materials &
+transporting them to nearest
+S&T office or DS8 depot or as
+decided by the supervisor in
+charge as per specification no.
+4.35 of chapter 4 of tender
+document.
+12 8200 Metre 27.20 At Par 223040.00
+13
+Releasing of PVC/Coaxial
+cable/6core OFC/ Power
+cable/CAT6 cable from station
+platforms/ building walls etc
+including its laying materials &
+transporting them to nearest
+S&T office or DS8 depot or as
+decided by the supervisor in
+charge as per specification no.
+4.36 of chapter 4 of tender
+document.
+13 23000 Metre 10.88 At Par 250240.00
+14
+Laying of Armoured Optical Fiber
+OFC through PVC Pipe/Casing
+capping and fiber termination in
+LIUs & FDMS as per
+specification no. 4.37 of chapter
+4 of tender document.
+14 46500 Metre 24.19 At Par 1124835.00
+15
+Laying of PVC/Data cable/Power
+cable/CAT6 cable in through
+PVC casing capping/pipe on wall
+including laying material like 3
+way/4 way junction box ,T-
+Joint, flexible PVC pipes etc as
+per specification no. 4.16 of
+chapter 4 of tender document.
+15 80000 Metre 12.83 At Par 1026400.00
+16
+SITC of PA System Controller as
+per specification no.4.38 of
+chapter 4 of tender document.
+Inspected by Consignee.
+16 1 Numbers 245440.00 At Par 245440.00
+17
+SITC of PA System Call Station
+as per specification no.4.39 of
+chapter 4 of tender document.
+Inspected by Consignee.
+17 1 Numbers 80240.00 At Par 80240.00
+18
+SITC of PA amplifier as per
+specification no.4.40 of chapter
+4 of tender document.
+Inspected by Consignee.
+18 10 Numbers 36580.00 At Par 365800.00
+19
+SITC of of Bosch Hemi
+directional Loudspeaker as per
+specification no.4.41 of chapter
+4 of tender document.
+Inspected by Consignee.
+19 16 Numbers 306800.00 At Par 4908800.00
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 6/720
+SITC of Bosch premium Sound
+30W, 2 Way Cabinet
+Loudspeaker as per specification
+no.4.42 of chapter 4 of tender
+document. Inspected by
+Consignee.
+20 60 Numbers 15340.00 At Par 920400.00
+21
+SITC of 100V - Line level
+converter cable as per
+specification no.4.43 of chapter
+4 of tender document.
+Inspected by Consignee.
+21 10 Numbers 1770.00 At Par 17700.00
+22
+SITC of Equipment rack for
+Central Control Equipment: as
+per specification no.4.44 of
+chapter 4 of tender document.
+Inspected by Consignee.
+22 2 Numbers 36580.00 At Par 73160.00
+23
+Supply of 2 core multistrand 2.5
+Sqmm. Armoured cable ( actuals
+will be charged) as per
+specification no.4.45 of chapter
+4 of tender document.
+Inspected by Consignee.
+23 6000 Metre 110.33 At Par 661980.00
+24
+Supply of 2 core multistrand 1.5
+Sqmm. Armoured cable ( actuals
+will be charged) as per
+specification no.4.46 of chapter
+4 of tender document.
+Inspected by Consignee.
+24 5000 Metre 55.36 At Par 276800.00
+Schedule Totals 0.00
+Schedule B1-Comprehensive Annual Maintenance Contract (CAMC) of
+Upgradation of manual announcement system to automatic
+announcement at stations of non suburban sections and replacement of
+Public Address System with IP based Public Address System installed at
+CCG, MX, DDR, ADH, RMAR, GMN, BVI & NSP stations of Churchgate -Virar
+section of Mumbai Division on age cum condition basis. (Item Directory -
+Not Applicable)
+18293174.93
+1
+CAMC of Sr. No. 8 & 24 of SCH
+A1 for 7 years after 1 year
+warranty as per specification
+no. 4.48 of chapter 4 of tender
+document.
+1 7 Year 1124862.81 At Par 7874039.67
+2
+CAMC of Sr. No. 1, 2, 3 & 4 of
+Schedule A2 for 2 years after 3
+years warranty as per
+specification no. 4.49 of chapter
+4 of tender document.
+2 2 Year 3905431.63 At Par 7810863.26
+3
+CAMC of Sr. no. 16, 17, 18, 19 &
+20 of schedule A2 for 4 years
+after 1 year warranty as per
+specification no. 4.50 of chapter
+4 of tender document.
+3 4 Year 652068.00 At Par 2608272.00
+Schedule Totals 0.00
+Total Value 118502769.36 24.50 %Above 147535947.85
+Rebate on Total Value (%) 0.00
+Net Bid Value 147535947.85
+Item Breakup
+No break up item added
+5/25/26, 2:40 PM ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&lette…
+https://w w w.ireps.gov.in/epsn/w orks/tds/publishLOAWorksLetter.do?Action=View PublishedLetter&nitOId=85806491&tdId=2888684&letterId=1… 7/7
