@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HealthResponseSchema, ReadinessResponseSchema } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
+import { API_VERSION } from '../api-version.js';
 import type { ObjectStorage } from '../storage.js';
 import type { AppInstance } from '../app-instance.js';
 
@@ -217,10 +218,17 @@ export function registerHealthRoutes(app: AppInstance, deps: ReadinessDeps = {})
         response: { 200: HealthResponseSchema },
       },
     },
+    // The version reads the one source (`api-version.ts` → the server
+    // package's own version), like the OpenAPI document does. It used to
+    // be the scaffold's literal '0.1.0' — a second copy of a number, which
+    // is why it had already drifted three minor versions behind by the
+    // time the reconciled review measured it. An uptime monitor and a
+    // deploy check both read this field to tell one release from another,
+    // so a frozen string made them agree about nothing.
     () => ({
       status: 'ok' as const,
       service: 'auto-mb-server',
-      version: '0.1.0',
+      version: API_VERSION,
       timestamp: new Date().toISOString(),
     }),
   );

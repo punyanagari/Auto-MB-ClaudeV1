@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
+import { API_VERSION } from '../src/api-version.js';
 
 const require = createRequire(import.meta.url);
 
@@ -22,8 +23,29 @@ describe('health API', () => {
     expect(response.json()).toMatchObject({
       status: 'ok',
       service: 'auto-mb-server',
-      version: '0.1.0',
+      version: API_VERSION,
     });
+  });
+
+  /*
+   * The probe and the OpenAPI document must publish ONE version.
+   *
+   * `/api/health` carried the scaffold's literal '0.1.0' while the
+   * document read the package version; by the time the reconciled review
+   * measured it the two disagreed by three minor versions (0.1.0 vs
+   * 0.11.0), and the field an uptime monitor reads was the wrong one.
+   * Asserting against the package version rather than a literal is what
+   * makes a future bump a one-file edit again.
+   */
+  it('publishes the same version through /api/health and the OpenAPI document', async () => {
+    app = await buildApp();
+    const packageVersion = (require('../package.json') as { version: string }).version;
+
+    const health = await app.inject({ method: 'GET', url: '/api/health' });
+    const document = app.swagger() as unknown as { info: { version: string } };
+
+    expect(health.json<{ version: string }>().version).toBe(packageVersion);
+    expect(document.info.version).toBe(packageVersion);
   });
 
   it('reports not ready when no database is configured', async () => {

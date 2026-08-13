@@ -56,6 +56,64 @@ describe('api client', () => {
     });
   });
 
+  /*
+   * The envelope's `remedy` reaching a screen (pack P12).
+   *
+   * The server has carried one reviewed next action per error code since
+   * P8, and no screen rendered it: every failure panel and inline alert in
+   * the client reads `error.message`. Joining the two here, rather than
+   * threading a second prop through forty render sites, is what turned
+   * that into one change — so the assertion that matters is that the
+   * MESSAGE carries both sentences, in the order an operator reads them.
+   */
+  it('renders the refusal and its remedy as one message', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(409, {
+        code: 'DRAFT_EXISTS',
+        message: 'This Work already has a draft challan.',
+        remedy: 'Open the draft this Work already carries and issue or delete it.',
+        requestId: 'req-2',
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    const failure = await api.listMembers('11111111-1111-4111-8111-111111111111').then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(RequestFailedError);
+    const error = failure as RequestFailedError;
+    expect(error.message).toBe(
+      'This Work already has a draft challan. Open the draft this Work already carries and issue or delete it.',
+    );
+    expect(error.fact).toBe('This Work already has a draft challan.');
+    expect(error.remedy).toBe(
+      'Open the draft this Work already carries and issue or delete it.',
+    );
+  });
+
+  it('leaves the message alone when the server sent no remedy', async () => {
+    // Most refusals carry none, and filler advice would be worse than
+    // silence: an operator who learns the remedy line is sometimes noise
+    // stops reading it.
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(400, {
+        code: 'FIELD_TOO_SHORT',
+        message: 'The value is too short.',
+        requestId: 'req-3',
+      }),
+    );
+    const api = createApiClient(fetchImpl);
+
+    const failure = (await api
+      .listMembers('11111111-1111-4111-8111-111111111111')
+      .catch((error: unknown) => error)) as RequestFailedError;
+
+    expect(failure.message).toBe('The value is too short.');
+    expect(failure.remedy).toBeNull();
+  });
+
   it('treats 401 from /api/me as signed-out, not as a failure', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse(401, {

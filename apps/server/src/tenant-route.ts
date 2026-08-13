@@ -1,3 +1,4 @@
+import { ApiErrorSchema } from '@auto-mb/contracts';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import type {
   FastifyReply,
@@ -143,6 +144,30 @@ export function registeredRoutesOf(app: AppInstance): ReadonlySet<string> {
   return routeTables.get(app) ?? new Set();
 }
 
+/**
+ * Declares the throttle's own refusal on every route the registrar
+ * registers.
+ *
+ * 429 is not a route's own answer — it is written by the sliding-window
+ * hook in `app.ts`, before any handler runs — which is exactly why every
+ * route file had forgotten it: no call site throws it, so no `response`
+ * map named it, so the OpenAPI document told a client that four of the
+ * ~200 endpoints could rate-limit and the rest could not. That was never
+ * true of the mechanism: the hook runs on every request and only its rule
+ * selection is narrow, so widening the rules (a new upload route, a
+ * per-tenant quota) would have silently falsified two hundred schemas at
+ * once.
+ *
+ * So it is declared here, once, where the registrar already knows it is
+ * wrapping a route rather than in two hundred hand-maintained maps. A
+ * route that declares its own 429 keeps it.
+ */
+function withThrottleResponse(schema: FastifySchema): FastifySchema {
+  const response = (schema.response ?? {}) as Record<string, unknown>;
+  if (Object.hasOwn(response, '429')) return schema;
+  return { ...schema, response: { ...response, 429: ApiErrorSchema } };
+}
+
 export function createTenantRouteRegistrar(
   app: AppInstance,
   auth: Auth,
@@ -169,10 +194,14 @@ export function createTenantRouteRegistrar(
         : typeof authority === 'string'
           ? [authority]
           : authority;
+    // The registry carries the schema as REGISTERED (429 included), so
+    // the route-inventory test reads what the app actually serves rather
+    // than what the route file wrote down.
+    const registrationSchema: FastifySchema = withThrottleResponse(schema);
     routes.set(`${method} ${url}`, {
       method,
       url,
-      schema,
+      schema: registrationSchema,
       ...(bodyLimit !== undefined ? { bodyLimit } : {}),
     });
 
@@ -185,12 +214,11 @@ export function createTenantRouteRegistrar(
       await requireAuthorities(tx, userId, authorities);
     };
 
-    // Widened to the base FastifySchema for registration so the reply
-    // return type resolves to unknown here — the handler's payload passes
-    // through exactly as it did when the routes were registered directly.
-    // The context below still types the request from the route's own Schema.
-    const registrationSchema: FastifySchema = schema;
-
+    // `registrationSchema` above is widened to the base FastifySchema so
+    // the reply return type resolves to unknown here — the handler's
+    // payload passes through exactly as it did when the routes were
+    // registered directly. The context below still types the request from
+    // the route's own Schema.
     app.route({
       method,
       url,

@@ -973,7 +973,7 @@ export function registerLoaRoutes(
         if (existing.extraction_status === 'discarded') {
           throw httpError(
             409,
-            'DOCUMENT_ALREADY_DISCARDED',
+            'DOCUMENT_DISCARDED',
             'This LOA document has already been discarded.',
           );
         }

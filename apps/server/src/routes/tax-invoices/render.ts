@@ -133,7 +133,7 @@ export function registerTaxInvoiceRenderRoutes(
         request.log.error({ err: error }, 'tax invoice render input failed');
         throw httpError(
           409,
-          'TAX_INVOICE_RENDER_INPUT_INVALID',
+          'RENDER_INPUT_INVALID',
           'The frozen invoice or signed QR evidence cannot be rendered safely.',
         );
       }
@@ -191,7 +191,7 @@ export function registerTaxInvoiceRenderRoutes(
         ) {
           throw httpError(
             409,
-            'TAX_INVOICE_RENDER_SOURCE_CHANGED',
+            'RENDER_SOURCE_CHANGED',
             'IRP evidence changed while the invoice was rendering; the previous PDF remains current — render again.',
           );
         }

@@ -1,9 +1,11 @@
+import type { ErrorCode } from '@auto-mb/contracts';
+
 export type StatutoryEnvironment = 'sandbox' | 'production';
 export type ProviderOutcome = 'failed' | 'unknown';
 
 export class StatutoryProviderError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: ErrorCode,
     readonly outcome: ProviderOutcome,
     readonly providerCode: string | null = null,
     readonly httpStatus: number | null = null,

@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { NextCursorSchema } from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -83,8 +84,14 @@ export const SerialSchema = Type.Object(
 );
 export type Serial = Static<typeof SerialSchema>;
 
+/** Every serial recorded against the Work, newest challan first.
+ *
+ * `nextCursor` is the keyset contract from `pagination.ts`: the id to send
+ * as the next `cursor`, or null when there is no further page — which is
+ * also what an unpaginated request (no `limit`) always answers, because it
+ * received the whole register. */
 export const SerialListResponseSchema = Type.Object(
-  { serials: Type.Array(SerialSchema) },
+  { serials: Type.Array(SerialSchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
 export type SerialListResponse = Static<typeof SerialListResponseSchema>;
@@ -191,8 +198,14 @@ export const MbEntrySchema = Type.Object(
 );
 export type MbEntry = Static<typeof MbEntrySchema>;
 
+/** Every site measurement recorded against the Work.
+ *
+ * `nextCursor` is the keyset contract from `pagination.ts`: the id to send
+ * as the next `cursor`, or null when there is no further page — which is
+ * also what an unpaginated request (no `limit`) always answers, because it
+ * received the whole register. */
 export const MbEntryListResponseSchema = Type.Object(
-  { entries: Type.Array(MbEntrySchema) },
+  { entries: Type.Array(MbEntrySchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
 export type MbEntryListResponse = Static<typeof MbEntryListResponseSchema>;

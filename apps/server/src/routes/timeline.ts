@@ -61,18 +61,35 @@ function toEvent(row: EventRow): TimelineEvent {
   };
 }
 
-/** Resolves the keyset cursor (an event id from a previous page) to its
- * full-precision position. occurred_at travels as text because a JS Date
- * only keeps milliseconds — a microsecond-truncated cursor could skip or
- * repeat events that share a millisecond. */
+/**
+ * Proves the keyset cursor (an event id from a previous page) names an
+ * event, and answers with nothing more than its id.
+ *
+ * It used to carry `occurred_at::text` back out and send it in as
+ * `::timestamptz`, precisely to keep the microseconds a JavaScript Date
+ * would lose — and pack P12 measured that this defence does not always
+ * hold: the driver re-encodes a parameter it types as `timestamptz`
+ * through a Date anyway, and a cursor read as `.527771` reached the
+ * server as `.527`. This trail was TESTED and does not currently lose
+ * them (`test/pagination.integration.test.ts` walks four events four
+ * microseconds apart, and it passes on the old shape too), so this is
+ * hardening rather than a repair. It is worth doing because the failure
+ * it prevents is the silent one: on a DESCENDING trail a truncated
+ * cursor sorts earlier than the event it names, so every event sharing
+ * that millisecond and preceding it drops out of the next page, and a
+ * short trail looks like a quiet day.
+ *
+ * The position is now read inside the comparison itself
+ * (`src/pagination.ts` states the rule), so the timestamp never leaves
+ * PostgreSQL and cannot be rounded on the way back.
+ */
 async function resolveCursor(
   tx: TransactionSql,
   cursor: string | undefined,
-): Promise<{ occurredAt: string; id: string } | null> {
+): Promise<string | null> {
   if (cursor === undefined) return null;
-  const [row] = await tx<{ occurred_at: string; id: string }[]>`
-    select occurred_at::text as occurred_at, id
-    from audit_events where id = ${cursor}
+  const [row] = await tx<{ id: string }[]>`
+    select id from audit_events where id = ${cursor}
   `;
   if (!row) {
     throw httpError(
@@ -81,7 +98,7 @@ async function resolveCursor(
       'The pagination cursor does not name a known event.',
     );
   }
-  return { occurredAt: row.occurred_at, id: row.id };
+  return row.id;
 }
 
 function parseEntityTypes(raw: string | undefined): readonly TimelineEntityType[] {
@@ -195,8 +212,8 @@ export function registerTimelineRoutes(
               or (ae.entity_type = 'measurement_books' and ae.entity_id in (
                 select id from measurement_books where work_id = ${workId}))
             )
-            and (${cursor === null} or (ae.occurred_at, ae.id) <
-              (${cursor?.occurredAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
+            and (${cursor === null} or (ae.occurred_at, ae.id) < (
+              select c.occurred_at, c.id from audit_events c where c.id = ${cursor}))
           order by ae.occurred_at desc, ae.id desc
           limit ${limit + 1}
         `;
@@ -244,8 +261,8 @@ export function registerTimelineRoutes(
           from audit_events ae
           left join auth_users u on u."id" = ae.actor_user_id
           where ae.entity_type = ${entityType} and ae.entity_id = ${entityId}
-            and (${cursor === null} or (ae.occurred_at, ae.id) <
-              (${cursor?.occurredAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
+            and (${cursor === null} or (ae.occurred_at, ae.id) < (
+              select c.occurred_at, c.id from audit_events c where c.id = ${cursor}))
           order by ae.occurred_at desc, ae.id desc
           limit ${limit + 1}
         `;

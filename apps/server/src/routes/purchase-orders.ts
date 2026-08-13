@@ -11,6 +11,7 @@ import {
   type PurchaseOrderLineInput,
   type PurchaseOrderNotFullyReceivedDetails,
   type PurchaseOrderStatus,
+  type ErrorCode,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
@@ -267,7 +268,7 @@ function trimmedText(
   value: string,
   min: number,
   max: number,
-  code: string,
+  code: ErrorCode,
   label: string,
 ): string {
   const trimmed = value.trim();
@@ -1062,7 +1063,7 @@ export function registerPurchaseOrderRoutes(
           if (error instanceof Error && 'code' in error && error.code === '23505') {
             throw httpError(
               409,
-              'PO_NUMBER_CONFLICT',
+              'NUMBER_CONFLICT',
               `Purchase order number ${poNumber} already exists in this organisation.`,
             );
           }

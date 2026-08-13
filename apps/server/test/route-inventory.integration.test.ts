@@ -62,6 +62,102 @@ const UNBOUND_ROUTES = new Set([
   'POST /api/organisations',
 ]);
 
+/**
+ * Lists that answer in full, on purpose, with the reason (pack P12).
+ *
+ * The reconciled review counted about fifty list endpoints that read a
+ * table and serialised all of it. Six of them — the ones whose row count
+ * grows with the WORK rather than with the organisation's configuration —
+ * are keyset-paginated now. The rest are here, each with the fact that
+ * bounds it, so that "unpaginated" is a decision this file records rather
+ * than the default a new list falls into.
+ *
+ * Adding a list means adding a row here or accepting `limit`/`cursor`.
+ * That is the whole point: the next unbounded register should have to
+ * argue for itself.
+ *
+ * What this map does NOT reach: a response that names a single entity
+ * beside its arrays reads as a detail to the shape rule below, so
+ * `GET /api/dashboard` (an unbounded `works` array beside the portfolio
+ * summary) and `GET /api/works/:id/completion` (extension letters beside
+ * the Work's completion facts) are outside it. The dashboard is a real
+ * unbounded read and pack P11 owns that route this wave; it is recorded
+ * here rather than left to be rediscovered.
+ */
+const UNPAGINATED_LISTS = new Map<string, string>([
+  // --- Bounded by the organisation's configuration ------------------------
+  [
+    'GET /api/masters/contacts',
+    'party master: one row per party the agency deals with',
+  ],
+  ['GET /api/masters/locations', 'site master, curated by hand'],
+  ['GET /api/masters/units', 'unit master, seeded from a canonical list'],
+  ['GET /api/masters/signatories', "the agency's own signing officers"],
+  ['GET /api/masters/gst-rates', 'the notified GST rate slabs'],
+  ['GET /api/organisation/number-series', 'four configurable document types'],
+  ['GET /api/organisations/current/members', 'staff headcount'],
+
+  // --- Bounded by the Work's own schedule ---------------------------------
+  ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
+  ['GET /api/works/:id/payment-matrix', 'at most four payment categories'],
+  ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
+  ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
+  ['GET /api/works/:id/instruments', 'the PBG/PAC/DOC instruments of one Work'],
+  [
+    'GET /api/organisations/current/members/:userId/assignments',
+    'work ids assigned to one member; the picker needs all of them at once',
+  ],
+  [
+    'GET /api/loa-documents/:id/contract-source-context',
+    "one letter's supporting tender documents and extracted clauses",
+  ],
+  [
+    'GET /api/works/:id/contract-source-context',
+    "one Work's supporting tender documents and extracted clauses",
+  ],
+
+  // --- Bounded by the parent document -------------------------------------
+  ['GET /api/tax-invoices/:id/credit-notes', 'the credit notes against one invoice'],
+  ['GET /api/tax-invoices/:id/eway-bills', 'the e-way bills of one invoice'],
+  ['GET /api/challans/:id/correction-notices', 'the notices against one challan'],
+
+  // --- Not registers at all -----------------------------------------------
+  //
+  // One record each, whose own parts sit flat beside its fields instead of
+  // under a named object — so the shape test above cannot tell them from a
+  // list, and they are named here rather than by loosening the test.
+  ['GET /api/loa-documents/:id', 'one letter, with its extracted schedule'],
+  ['GET /api/pac-certificates/:id', 'one certificate, with its items'],
+
+  // --- Capped or streamed by the route itself ------------------------------
+  ['GET /api/search', 'ten hits per group, with a `truncated` flag'],
+  ['GET /api/serials/search', 'fifty matches, with a `truncated` flag'],
+  [
+    'GET /api/export',
+    'the whole tenant record by definition — a page of it would not be an export; pack P11 made it stream, section by section, so it is bounded in memory rather than in rows',
+  ],
+
+  // --- Unbounded and still unpaginated ------------------------------------
+  //
+  // Named rather than excused. Each is a register that grows without limit
+  // and would page the same way the six do; they are the next candidates,
+  // and this block is the list a future pack works through.
+  ['GET /api/works', 'grows per organisation — next candidate'],
+  ['GET /api/loa-documents', 'grows per organisation — next candidate'],
+  ['GET /api/credit-notes', 'grows per organisation — next candidate'],
+  ['GET /api/budgetary-quotations', 'grows per organisation — next candidate'],
+  ['GET /api/works/:id/issue-challans', 'grows per Work — next candidate'],
+  ['GET /api/works/:id/tax-invoices', 'grows per Work — next candidate'],
+  ['GET /api/works/:id/purchase-orders', 'grows per Work — next candidate'],
+  ['GET /api/works/:id/correction-notices', 'grows per Work — next candidate'],
+  ['GET /api/works/:id/pac-certificates', 'grows per Work — next candidate'],
+  ['GET /api/works/:id/bills', 'grows per Work — next candidate'],
+  [
+    'GET /api/works/:id/measurement-books',
+    'grows per Work; pack P11 owns this route this wave',
+  ],
+]);
+
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
   'postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb';
@@ -441,6 +537,83 @@ describe('route inventory: the tenant preamble is a mechanism', () => {
     // The registry cannot claim routes the app does not actually serve.
     const phantom = [...wrapper.keys()].filter((entry) => !table.has(entry));
     expect(phantom).toEqual([]);
+  });
+
+  /*
+   * Pack P12: two contract facts the inventory can prove from the route
+   * table alone, without a request.
+   */
+
+  it('declares the throttle refusal on every tenant route', () => {
+    // 429 is written by the sliding-window hook in app.ts, before any
+    // handler runs, so no route file ever named it in its own `response`
+    // map — and the published contract said two hundred endpoints could
+    // not rate-limit. The registrar now declares it for every route it
+    // registers; this asserts the declaration survived.
+    const missing = [...tenantRoutesOf(app).values()]
+      .filter((record) => {
+        const response = (record.schema as { response?: Record<string, unknown> })
+          .response;
+        return response === undefined || !Object.hasOwn(response, '429');
+      })
+      .map((record) => `${record.method} ${record.url}`)
+      .sort();
+
+    expect(
+      missing,
+      'every tenant route must declare 429 in its response schema (createTenantRouteRegistrar adds it)',
+    ).toEqual([]);
+  });
+
+  it('pages every list, or records why it does not', () => {
+    // "Unpaginated" must be a decision. A route whose 200 payload carries
+    // an array either accepts limit/cursor and answers with nextCursor,
+    // or is named in UNPAGINATED_LISTS with the fact that bounds it.
+    const offenders: string[] = [];
+    const staleAllowlistEntries = new Set(UNPAGINATED_LISTS.keys());
+
+    for (const record of tenantRoutesOf(app).values()) {
+      const key = `${record.method} ${record.url}`;
+      const schema = record.schema as {
+        querystring?: JsonSchemaLike;
+        response?: Record<string, JsonSchemaLike | undefined>;
+      };
+      const ok = schema.response?.['200'];
+      const properties = ok?.properties ?? {};
+      // What counts as a list, decided from the schema rather than from a
+      // hand-kept name list: a GET whose 200 payload carries an array and
+      // names no single entity beside it. A DETAIL response — `{ work,
+      // items }`, `{ challan, items }` — carries arrays too, but they are
+      // that record's own parts and page with the record; the object
+      // property beside them is what tells the two apart. Mutations are
+      // excluded for the same reason: a PUT answering with the register it
+      // just changed is showing a result, not offering a page.
+      const carriesArray = Object.values(properties).some(
+        (property) => property.type === 'array',
+      );
+      const namesAnEntity = Object.values(properties).some(
+        (property) => property.type === 'object',
+      );
+      if (record.method !== 'GET' || !carriesArray || namesAnEntity) continue;
+      staleAllowlistEntries.delete(key);
+      if (UNPAGINATED_LISTS.has(key)) continue;
+
+      const query = schema.querystring?.properties ?? {};
+      const paginated =
+        query['limit'] !== undefined &&
+        query['cursor'] !== undefined &&
+        properties['nextCursor'] !== undefined;
+      if (!paginated) offenders.push(key);
+    }
+
+    expect(
+      offenders.sort(),
+      'a list route must accept limit/cursor and answer with nextCursor, or be added — deliberately, with a reason — to UNPAGINATED_LISTS',
+    ).toEqual([]);
+    expect(
+      [...staleAllowlistEntries].sort(),
+      'UNPAGINATED_LISTS names routes that are no longer unpaginated lists',
+    ).toEqual([]);
   });
 
   it('refuses every tenant route unauthenticated with 401 UNAUTHENTICATED', async () => {

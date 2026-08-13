@@ -171,6 +171,40 @@ API rules:
 - response schemas prevent accidental leakage of internal fields;
 - request bodies are never logged.
 
+### 8.1 The refusal vocabulary
+
+Error codes are a declared, closed list: `ERROR_CODES` in
+`packages/contracts/src/errors.ts`, with `httpError` typed against it, so a
+refusal spelled any other way fails to compile rather than reaching a
+client. Adding a refusal means adding its code there first. Fastify's own
+`FST_ERR_*` codes and Better Auth's refusals travel in the same envelope
+and are deliberately outside the list — they are the framework's
+vocabulary, not this product's.
+
+A code names the REFUSAL, not the route that refused: one
+`NUMBER_CONFLICT` rather than one per numbered document. Refusals that
+differ in what the operator must do next stay distinct. `remedy` in the
+envelope is keyed by code for exactly this reason
+(`apps/server/src/remedies.ts`).
+
+### 8.2 Pagination
+
+Lists paginate by KEYSET — `limit` plus a `cursor` naming the last row of
+the previous page, answered with a `nextCursor`
+(`packages/contracts/src/pagination.ts`). Offset paging is not used: it
+skips and repeats rows over a register being written to, and degrades.
+
+Omitting `limit` returns the whole list with a null cursor, so paginating a
+route is backward compatible and a client adopts paging when it is ready.
+A cursor's sort key is read inside the comparing statement rather than sent
+back as a value — `apps/server/src/pagination.ts` records why, and it is a
+correctness rule, not a preference.
+
+Not every list pages. Which ones do not, and the fact that bounds each, is
+recorded in `UNPAGINATED_LISTS` in
+`apps/server/test/route-inventory.integration.test.ts`, and the test fails
+for any new list that is neither paginated nor listed there.
+
 ## 9. Background jobs
 
 Use PostgreSQL-backed jobs before introducing a second datastore. Adopt `pg-boss` when the first real async workflow lands. Jobs are idempotent, bounded, observable, and refer to records by ids rather than embedding sensitive documents.

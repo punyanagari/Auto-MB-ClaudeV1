@@ -180,14 +180,39 @@ export interface WorkItemTaxFactsResponse {
   readonly isService: boolean;
 }
 
-/** Error carrying the server's ApiError envelope for user-facing display.
+/**
+ * Error carrying the server's ApiError envelope for user-facing display.
  * `details` carries structured conflict payloads (e.g. one-draft 409s
- * answer with the existing draft's id — see existingRecordIdOf). */
+ * answer with the existing draft's id — see existingRecordIdOf).
+ *
+ * ## Why `message` is the fact AND the remedy
+ *
+ * The envelope carries two sentences: `message` states what was refused,
+ * written by the route that refused it, and `remedy` states the action
+ * that clears it, written once per error code in the server's remedy
+ * catalog. The envelope shipped ahead of its reader — until now every
+ * screen rendered the fact and dropped the advice on the floor, which is
+ * the dead end the reconciled review counted (about three-quarters of
+ * refusals stating a fact with no next step).
+ *
+ * Joining them into `message` here, rather than adding a second prop to
+ * every failure panel and inline alert in the client, is what makes that
+ * one change instead of forty: every place that already renders an error
+ * message renders the remedy with it, in the order an operator reads —
+ * what happened, then what to do. `fact` and `remedy` stay available
+ * separately for anything that needs to lay them out itself.
+ */
 export class RequestFailedError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: unknown;
   readonly requestId: string | null;
+  /** The server's own sentence, without the remedy appended. */
+  readonly fact: string;
+  /** The reviewed next action for this code, when the server sent one.
+   * Null is normal: a refusal with no reviewed action carries no field
+   * rather than filler. */
+  readonly remedy: string | null;
 
   constructor(
     status: number,
@@ -195,12 +220,16 @@ export class RequestFailedError extends Error {
     message: string,
     details?: unknown,
     requestId?: string,
+    remedy?: string,
   ) {
-    super(message);
+    const advice = remedy !== undefined && remedy !== '' ? remedy : null;
+    super(advice === null ? message : `${message} ${advice}`);
     this.status = status;
     this.code = code;
     this.details = details ?? null;
     this.requestId = requestId ?? null;
+    this.fact = message;
+    this.remedy = advice;
   }
 }
 
@@ -1402,11 +1431,13 @@ async function parseError(response: Response): Promise<RequestFailedError> {
   let message = `The server answered ${String(response.status)}.`;
   let details: unknown;
   let requestId: string | undefined;
+  let remedy: string | undefined;
   try {
     const body = (await response.json()) as Partial<ApiError>;
     if (typeof body.code === 'string') code = body.code;
     if (typeof body.message === 'string') message = body.message;
     if (typeof body.requestId === 'string') requestId = body.requestId;
+    if (typeof body.remedy === 'string') remedy = body.remedy;
     details = body.details;
   } catch {
     // Non-JSON error body: keep the status-based message.
@@ -1419,7 +1450,14 @@ async function parseError(response: Response): Promise<RequestFailedError> {
   ) {
     message = humanizeValidationMessage(message);
   }
-  return new RequestFailedError(response.status, code, message, details, requestId);
+  return new RequestFailedError(
+    response.status,
+    code,
+    message,
+    details,
+    requestId,
+    remedy,
+  );
 }
 
 /**

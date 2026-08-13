@@ -4,6 +4,7 @@ import {
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
   DeliveryChallanRegisterResponseSchema,
+  KeysetQuerySchema,
   SaveChallanRequestSchema,
   SaveStandaloneChallanRequestSchema,
   WorkBalanceResponseSchema,
@@ -36,6 +37,7 @@ import {
   renderNumberTemplate,
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertSourceNotBilled } from './measurement-books/index.js';
@@ -1221,21 +1223,34 @@ export function registerChallanRoutes(
       url: '/api/works/:id/challans',
       schema: {
         params: IdParamsSchema,
+        querystring: KeysetQuerySchema,
         response: { 200: ChallanListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await tenant(async (tx) => {
+      const query = request.query;
+      const paged = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
-        return tx<ChallanRow[]>`
+        // The tie-break was `id` ascending under a descending created_at,
+        // which cannot be expressed as one row comparison; it is `id desc`
+        // now so the keyset predicate matches the ORDER BY exactly. Only
+        // ties are affected — challans created in the same instant — and
+        // no screen depends on their relative order.
+        const cursor = await cursorRowId(tx, 'delivery_challans', query.cursor);
+        const rows = await tx<ChallanRow[]>`
             select ${tx.unsafe(CHALLAN_COLUMNS)}
             from delivery_challans
             where work_id = ${workId}
-            order by created_at desc, id
+              and (${cursor === null} or (created_at, id) < (
+                select c.created_at, c.id from delivery_challans c
+                where c.id = ${cursor}))
+            order by created_at desc, id desc
+            limit ${sqlLimit(query.limit)}
           `;
+        return keysetPage(rows, query.limit, (row) => row.id);
       });
-      return { challans: rows.map(toChallan) };
+      return { challans: paged.rows.map(toChallan), nextCursor: paged.nextCursor };
     },
   );
 
@@ -1356,10 +1371,12 @@ export function registerChallanRoutes(
       method: 'GET',
       url: '/api/delivery-challans',
       schema: {
+        querystring: KeysetQuerySchema,
         response: { 200: DeliveryChallanRegisterResponseSchema, ...errorResponses },
       },
     },
-    async ({ user, tenant }) => {
+    async ({ request, user, tenant }) => {
+      const query = request.query;
       return tenant(async (tx) => {
         // An 'assigned'-scoped membership sees its assigned Works'
         // challans and NOTHING standalone: work-scope binds through a
@@ -1367,6 +1384,13 @@ export function registerChallanRoutes(
         // could ever reach it. Decided in SQL rather than by filtering
         // in the handler, so the rows never leave the database.
         const full = await hasFullWorkScope(tx, user.id);
+        // The register reads newest challan date first; the keyset runs
+        // BACKWARD on (challan_date, created_at, id). The trailing `id`
+        // was ascending under two descending keys, which no single row
+        // comparison can express, so it is descending now — a difference
+        // only two challans issued in the same instant on the same date
+        // could ever see.
+        const cursor = await cursorRowId(tx, 'delivery_challans', query.cursor);
         const rows = await tx<
           {
             id: string;
@@ -1405,14 +1429,21 @@ export function registerChallanRoutes(
             from delivery_challan_items i
             where i.delivery_challan_id = dc.id
           ) lines
-          where ${full} or exists (
-            select 1 from work_assignments wa
-            where wa.work_id = dc.work_id and wa.user_id = ${user.id}
-          )
-          order by dc.challan_date desc, dc.created_at desc, dc.id
+          where (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = dc.work_id and wa.user_id = ${user.id}
+            ))
+            and (${cursor === null} or
+              (dc.challan_date, dc.created_at, dc.id) < (
+                select c.challan_date, c.created_at, c.id from delivery_challans c
+                where c.id = ${cursor}))
+          order by dc.challan_date desc, dc.created_at desc, dc.id desc
+          limit ${sqlLimit(query.limit)}
         `;
+        const paged = keysetPage(rows, query.limit, (row) => row.id);
         return {
-          challans: rows.map((row) => {
+          nextCursor: paged.nextCursor,
+          challans: paged.rows.map((row) => {
             const manualLineCount = Number(row.manual_line_count);
             const movement: DeliveryChallanMovement =
               row.challan_kind === 'standalone'

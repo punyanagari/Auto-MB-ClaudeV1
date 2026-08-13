@@ -418,12 +418,12 @@ export function registerPacRoutes(
             where id = ${body.consigneeMasterId}
           `;
         if (!consignee) {
-          throw httpError(404, 'CONSIGNEE_MASTER_NOT_FOUND', 'No such consignee.');
+          throw httpError(404, 'CONTACT_NOT_FOUND', 'No such consignee.');
         }
         if (!consignee.active) {
           throw httpError(
             409,
-            'CONSIGNEE_MASTER_RETIRED',
+            'CONTACT_RETIRED',
             'This consignee is retired — reactivate it or pick another.',
           );
         }
@@ -633,7 +633,7 @@ export function registerPacRoutes(
         if (existing.status !== 'recorded') {
           throw httpError(
             409,
-            'PAC_CERTIFICATE_ALREADY_CANCELLED',
+            'PAC_CERTIFICATE_CANCELLED',
             'This PAC certificate is already cancelled.',
           );
         }
