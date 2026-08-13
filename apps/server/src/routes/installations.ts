@@ -1,6 +1,7 @@
 import {
   CancelInstallationRequestSchema,
   InstallationListResponseSchema,
+  KeysetQuerySchema,
   InstallationSchema,
   RecordInstallationRequestSchema,
   type Installation,
@@ -11,6 +12,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
@@ -125,25 +127,38 @@ export function registerInstallationRoutes(
       url: '/api/works/:id/installations',
       schema: {
         params: IdParamsSchema,
+        querystring: KeysetQuerySchema,
         response: { 200: InstallationListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
+      const query = request.query;
       return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        // Newest installation first, so the keyset runs backward on
+        // (installed_on, created_at, id) — the trailing id turned
+        // descending to match the comparison, which only reorders records
+        // sharing both a date and a creation instant.
+        const cursor = await cursorRowId(tx, 'installations', query.cursor);
         const rows = (await tx.unsafe(
           `select ${INSTALLATION_COLUMNS}
            from installations i
            join work_items wi on wi.id = i.work_item_id
            where i.work_id = $1
-           order by i.installed_on desc, i.created_at desc, i.id`,
-          [workId],
+             and ($2::uuid is null
+               or (i.installed_on, i.created_at, i.id) < (
+                 select c.installed_on, c.created_at, c.id
+                 from installations c where c.id = $2::uuid))
+           order by i.installed_on desc, i.created_at desc, i.id desc
+           limit $3`,
+          [workId, cursor, sqlLimit(query.limit)],
         )) as unknown as InstallationRow[];
+        const paged = keysetPage(rows, query.limit, (row) => row.id);
         // THE authoritative installed quantity per item: SUM(quantity)
         // over non-cancelled installation records, computed in SQL
         // numeric arithmetic. Milestone 8 stage-wise billing consumes
@@ -162,7 +177,8 @@ export function registerInstallationRoutes(
           order by wi.item_number
         `;
         return {
-          installations: rows.map(toInstallation),
+          installations: paged.rows.map(toInstallation),
+          nextCursor: paged.nextCursor,
           itemSummaries: summaries.map((summary) => ({
             workItemId: summary.work_item_id,
             itemNumber: summary.item_number,

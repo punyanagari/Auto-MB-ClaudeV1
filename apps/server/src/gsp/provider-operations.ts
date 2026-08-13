@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { TransactionSql } from '@auto-mb/db';
 import { httpError } from '../http.js';
 import { recordStatutoryProviderOutcome } from '../metrics.js';
+import type { ErrorCode } from '@auto-mb/contracts';
 import type {
   StatutoryProvider,
   StatutoryProviderError,
@@ -24,7 +25,7 @@ export interface ProviderFailure {
   readonly status: 'failed' | 'unknown';
   readonly providerCode: string | null;
   readonly httpStatus: number | null;
-  readonly publicCode: string;
+  readonly publicCode: ErrorCode;
   /** Raw provider response body when one was received (migration 0053);
    * null for network-level failures that produced no body. */
   readonly rawResponse: string | null;

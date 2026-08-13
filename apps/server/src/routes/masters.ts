@@ -22,6 +22,7 @@ import {
   type LocationMaster,
   type Signatory,
   type UnitMaster,
+  type ErrorCode,
 } from '@auto-mb/contracts';
 import { CANONICAL_UNIT_NAMES } from '@auto-mb/loa-parser';
 import { Type, type TSchema } from '@sinclair/typebox';
@@ -275,7 +276,7 @@ export function registerMasterRoutes(
     path: string;
     entity: string;
     entityType: string;
-    notFoundCode: string;
+    notFoundCode: ErrorCode;
     notFoundMessage: string;
     update: (
       tx: TransactionSql,

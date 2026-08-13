@@ -9,6 +9,7 @@ import {
   type BudgetaryQuotationLine,
   type BudgetaryQuotationLineInput,
   type CreateBudgetaryQuotationRequest,
+  type ErrorCode,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
@@ -200,7 +201,7 @@ function isNumericOverflow(error: unknown): boolean {
 function trimmedAtLeast(
   value: string,
   minLength: number,
-  code: string,
+  code: ErrorCode,
   message: string,
 ): string {
   const trimmed = value.trim();

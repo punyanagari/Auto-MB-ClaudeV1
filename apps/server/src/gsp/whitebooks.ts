@@ -1,8 +1,10 @@
+import type { ErrorCode } from '@auto-mb/contracts';
 import {
   IrnDerivationError,
   SignedQrClaimError,
   assertIrnDerivesFrom,
   assertSignedQrAgrees,
+  type IrnEvidenceCode,
 } from './irn.js';
 import { formatNicDate } from './irp-payload.js';
 import { exactJsonInteger, stringifyStatutoryJson } from './statutory-json.js';
@@ -20,6 +22,25 @@ const BASE_URLS: Record<StatutoryEnvironment, string> = {
   sandbox: 'https://apisandbox.whitebooks.in',
   production: 'https://api.whitebooks.in',
 };
+/**
+ * How an evidence refusal raised while verifying what the IRP returned is
+ * re-raised as this adapter's own refusal.
+ *
+ * It used to be `WHITEBOOKS_${error.code}` — correct, and invisible: no
+ * search for `WHITEBOOKS_IRP_SIGNED_QR_UNREADABLE` in this repository
+ * found anything, so five codes a client can receive were undiscoverable
+ * from the source. Written out, they are greppable AND checked against
+ * the declared vocabulary, and the exhaustive Record means adding a sixth
+ * evidence refusal without naming its prefixed form is a compile error.
+ */
+const PROVIDER_EVIDENCE_CODES: Readonly<Record<IrnEvidenceCode, ErrorCode>> = {
+  IRP_IRN_DERIVATION_MISMATCH: 'WHITEBOOKS_IRP_IRN_DERIVATION_MISMATCH',
+  IRP_IRN_MALFORMED: 'WHITEBOOKS_IRP_IRN_MALFORMED',
+  IRP_SIGNED_QR_IDENTITY_MISMATCH: 'WHITEBOOKS_IRP_SIGNED_QR_IDENTITY_MISMATCH',
+  IRP_SIGNED_QR_IRN_MISMATCH: 'WHITEBOOKS_IRP_SIGNED_QR_IRN_MISMATCH',
+  IRP_SIGNED_QR_UNREADABLE: 'WHITEBOOKS_IRP_SIGNED_QR_UNREADABLE',
+};
+
 const MAX_RESPONSE_BYTES = 1_500_000;
 const AUTH_EXPIRY_SKEW_MS = 5 * 60_000;
 
@@ -290,14 +311,11 @@ function providerCode(value: unknown): string | null {
 function validatedInstant(
   rawParts: readonly string[],
   offsetMinutes: number,
-  field: string,
+  invalidCode: ErrorCode,
 ): string {
   const parts = rawParts.map((part) => Number(part));
   if (parts.some((part) => !Number.isInteger(part))) {
-    throw new StatutoryProviderError(
-      `WHITEBOOKS_${field.toUpperCase()}_INVALID`,
-      'unknown',
-    );
+    throw new StatutoryProviderError(invalidCode, 'unknown');
   }
   const [year, month, day, hour, minute, second] = parts as [
     number,
@@ -317,15 +335,16 @@ function validatedInstant(
     check.getUTCMinutes() !== minute ||
     check.getUTCSeconds() !== second
   ) {
-    throw new StatutoryProviderError(
-      `WHITEBOOKS_${field.toUpperCase()}_INVALID`,
-      'unknown',
-    );
+    throw new StatutoryProviderError(invalidCode, 'unknown');
   }
   return new Date(localUtc - offsetMinutes * 60_000).toISOString();
 }
 
-function indiaInstant(raw: string, field: string): string {
+/** `invalidCode` is passed in rather than assembled from a field name.
+ * A code built by string interpolation is a code no reader can grep and
+ * no type checker can vouch for — which is precisely how this adapter's
+ * refusal vocabulary stayed undeclared. */
+function indiaInstant(raw: string, invalidCode: ErrorCode): string {
   const offsetIso =
     /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})([zZ]|([+-])(\d{2}):(\d{2}))$/.exec(
       raw,
@@ -337,12 +356,9 @@ function indiaInstant(raw: string, field: string): string {
         : (offsetIso[8] === '-' ? -1 : 1) *
           (Number(offsetIso[9]) * 60 + Number(offsetIso[10]));
     if (Math.abs(offset) > 14 * 60) {
-      throw new StatutoryProviderError(
-        `WHITEBOOKS_${field.toUpperCase()}_INVALID`,
-        'unknown',
-      );
+      throw new StatutoryProviderError(invalidCode, 'unknown');
     }
-    return validatedInstant(offsetIso.slice(1, 7), offset, field);
+    return validatedInstant(offsetIso.slice(1, 7), offset, invalidCode);
   }
   const ymd = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
   const dmy = /^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(raw);
@@ -352,15 +368,12 @@ function indiaInstant(raw: string, field: string): string {
       ? [dmy[3], dmy[2], dmy[1], dmy[4], dmy[5], dmy[6]]
       : null;
   if (!parts?.every((part) => part !== undefined)) {
-    throw new StatutoryProviderError(
-      `WHITEBOOKS_${field.toUpperCase()}_INVALID`,
-      'unknown',
-    );
+    throw new StatutoryProviderError(invalidCode, 'unknown');
   }
-  return validatedInstant(parts, 330, field);
+  return validatedInstant(parts, 330, invalidCode);
 }
 
-function boundedText(value: string | null, code: string, max: number): string {
+function boundedText(value: string | null, code: ErrorCode, max: number): string {
   if (value === null || value.length > max) {
     throw new StatutoryProviderError(code, 'unknown');
   }
@@ -393,7 +406,7 @@ function normaliseIrp(
     irn: irn.toLowerCase(),
     ackNumber,
     ackDateText,
-    ackDate: indiaInstant(ackDateText, 'ack_date'),
+    ackDate: indiaInstant(ackDateText, 'WHITEBOOKS_ACK_DATE_INVALID'),
     signedQr: boundedText(
       textValue(value, ['SignedQRCode', 'SignedQrCode', 'signedQr']),
       'WHITEBOOKS_SIGNED_QR_MISSING',
@@ -443,9 +456,9 @@ function normaliseEway(
   return {
     ewbNumber,
     ewbDateText,
-    ewbDate: indiaInstant(ewbDateText, 'ewb_date'),
+    ewbDate: indiaInstant(ewbDateText, 'WHITEBOOKS_EWB_DATE_INVALID'),
     validUntilText,
-    validUntil: indiaInstant(validUntilText, 'ewb_validity'),
+    validUntil: indiaInstant(validUntilText, 'WHITEBOOKS_EWB_VALIDITY_INVALID'),
   };
 }
 
@@ -470,7 +483,7 @@ function verifyIrpEvidence(
   } catch (error) {
     if (error instanceof IrnDerivationError || error instanceof SignedQrClaimError) {
       throw new StatutoryProviderError(
-        `WHITEBOOKS_${error.code}`,
+        PROVIDER_EVIDENCE_CODES[error.code],
         outcome,
         null,
         null,
@@ -818,7 +831,7 @@ export class WhitebooksProvider implements StatutoryProvider {
       );
       return {
         cancelledAtText,
-        cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
+        cancelledAt: indiaInstant(cancelledAtText, 'WHITEBOOKS_CANCEL_DATE_INVALID'),
         rawResponse: result.raw,
       };
     });
@@ -900,7 +913,7 @@ export class WhitebooksProvider implements StatutoryProvider {
       );
       return {
         cancelledAtText,
-        cancelledAt: indiaInstant(cancelledAtText, 'cancel_date'),
+        cancelledAt: indiaInstant(cancelledAtText, 'WHITEBOOKS_CANCEL_DATE_INVALID'),
         rawResponse: result.raw,
       };
     });

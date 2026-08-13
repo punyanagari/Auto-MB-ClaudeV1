@@ -1,3 +1,5 @@
+import type { ErrorCode } from '@auto-mb/contracts';
+
 /**
  * What to do about a refusal, one reviewed sentence per error code.
  *
@@ -30,8 +32,12 @@
  * rejection, a missing authority — and the test checks that every key here
  * is a code the tree still throws, so a retired refusal cannot leave its
  * advice behind.
+ *
+ * Since pack P12 the key type is `ErrorCode`, so a remedy written against
+ * a code the declared vocabulary does not carry is a compile error rather
+ * than dead advice waiting for the census test to notice it.
  */
-export const REMEDIES: Readonly<Record<string, string>> = {
+export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // ---- Records the address no longer resolves to -------------------------
   //
   // A 404 is rarely a typo in this product: a link is followed after a
@@ -62,6 +68,11 @@ export const REMEDIES: Readonly<Record<string, string>> = {
     'Pick the contact again from Masters, Contacts — a contact removed or renamed there is no longer selectable by its old id.',
   DOCUMENT_NOT_FOUND:
     'Open the LOA document from the Works register, under documents awaiting review.',
+  // Crossed the coverage bar when P12 collapsed three spellings of "that
+  // letter was discarded" into one code — which is the dedupe paying for
+  // itself: one refusal now earns one reviewed sentence.
+  DOCUMENT_DISCARDED:
+    'Upload the letter again if it was discarded by mistake; a discarded intake package keeps its record but accepts no further work.',
   SERIAL_NOT_FOUND:
     'Find the serial with Serial Lookup; it names the challan that delivered it and where it now stands.',
   NOT_FOUND:
@@ -210,7 +221,7 @@ export const REMEDIES: Readonly<Record<string, string>> = {
 
 /** Codes the error handler mints itself; they are legitimate catalog keys
  * even though no route throws them. */
-export const ENVELOPE_CODES: readonly string[] = [
+export const ENVELOPE_CODES: readonly ErrorCode[] = [
   'DATABASE_UNAVAILABLE',
   'INTERNAL_ERROR',
   'RATE_LIMITED',
@@ -220,5 +231,7 @@ export const ENVELOPE_CODES: readonly string[] = [
  * written. Undefined omits the field: a refusal with no reviewed action is
  * better than one carrying filler. */
 export function remedyFor(code: string): string | undefined {
-  return Object.hasOwn(REMEDIES, code) ? REMEDIES[code] : undefined;
+  // Indexed by an arbitrary string: the error handler looks up whatever
+  // code an error carried, which includes the framework's own.
+  return (REMEDIES as Readonly<Record<string, string | undefined>>)[code];
 }

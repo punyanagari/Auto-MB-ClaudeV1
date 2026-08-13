@@ -7,12 +7,12 @@
  * draft must reuse it via these helpers).
  */
 
-import type { DraftConflictDetails } from '@auto-mb/contracts';
+import type { DraftConflictDetails, ErrorCode } from '@auto-mb/contracts';
 import { httpError } from './http.js';
 
 /** A 409 whose details name the existing draft. */
 export function draftConflictError(
-  code: string,
+  code: ErrorCode,
   message: string,
   existingRecordId: string,
 ): Error {
@@ -23,7 +23,7 @@ export function draftConflictError(
 /** True for a one-draft 409 that could not yet name the existing draft —
  * the unique-index race path raises inside an aborted transaction, before
  * the winning draft is readable. */
-function isUnnamedDraftConflict(error: unknown, code: string): boolean {
+function isUnnamedDraftConflict(error: unknown, code: ErrorCode): boolean {
   return (
     error instanceof Error &&
     'statusCode' in error &&
@@ -44,7 +44,7 @@ function isUnnamedDraftConflict(error: unknown, code: string): boolean {
  */
 export async function nameDraftConflict(
   error: unknown,
-  code: string,
+  code: ErrorCode,
   lookup: () => Promise<string | null>,
 ): Promise<unknown> {
   if (!isUnnamedDraftConflict(error, code)) return error;

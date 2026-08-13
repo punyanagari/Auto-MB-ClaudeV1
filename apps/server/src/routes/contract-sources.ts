@@ -310,7 +310,7 @@ async function parentLoaForWriter(
       `;
   const parent = rows[0];
   if (parent === undefined) {
-    throw httpError(404, 'LOA_DOCUMENT_NOT_FOUND', 'No such LOA document.');
+    throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
   }
   const payload = asStoredLoaPayload(parent.extraction_payload);
   const tenderNumber = payload?.review.header.tenderNumber.value ?? null;
@@ -337,7 +337,7 @@ function assertParentNotDiscarded(parent: ParentLoaRow): void {
   if (parent.extraction_status === 'discarded') {
     throw httpError(
       409,
-      'LOA_DOCUMENT_DISCARDED',
+      'DOCUMENT_DISCARDED',
       'That LOA document was discarded, so supporting tender documents can no longer be attached to it. Upload the letter again first.',
     );
   }

@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { NextCursorSchema } from './pagination.js';
 import { LocationKindSchema } from './masters.js';
 import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
 
@@ -97,10 +98,20 @@ export const InstallationItemSummarySchema = Type.Object(
 );
 export type InstallationItemSummary = Static<typeof InstallationItemSummarySchema>;
 
+/** The Work's installation records, with the per-item totals.
+ *
+ * `itemSummaries` is deliberately NOT paged with `installations`: it is
+ * one row per Work item (bounded by the LOA schedule) and it aggregates
+ * EVERY live installation, not the page. A page of records beside a
+ * summary of the page would be a quieter kind of wrong than an unpaged
+ * list — the totals on screen have to be the Work's totals.
+ *
+ * `nextCursor` pages `installations` only; see `pagination.ts`. */
 export const InstallationListResponseSchema = Type.Object(
   {
     installations: Type.Array(InstallationSchema),
     itemSummaries: Type.Array(InstallationItemSummarySchema),
+    nextCursor: NextCursorSchema,
   },
   { additionalProperties: false },
 );

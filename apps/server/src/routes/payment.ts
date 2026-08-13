@@ -82,7 +82,7 @@ function assertMatrixCategory(raw: string): PaymentMatrixCategory {
   if (!(PAYMENT_MATRIX_CATEGORIES as readonly string[]).includes(raw)) {
     throw httpError(
       400,
-      'CATEGORY_INVALID',
+      'PAYMENT_MATRIX_CATEGORY_INVALID',
       `Unknown payment category ${raw}. Valid categories: ${PAYMENT_MATRIX_CATEGORIES.join(', ')}.`,
     );
   }
@@ -109,7 +109,7 @@ function assertPercentagesSumTo100(body: UpsertPaymentMatrixRowRequest): void {
     if (minor === null || minor < 0n || minor > 10000n) {
       throw httpError(
         400,
-        'PERCENTAGE_INVALID',
+        'PAYMENT_MATRIX_PERCENTAGE_INVALID',
         `The ${label} percentage must be between 0 and 100 with at most two decimal places.`,
       );
     }
@@ -118,7 +118,7 @@ function assertPercentagesSumTo100(body: UpsertPaymentMatrixRowRequest): void {
   if (total !== 10000n) {
     throw httpError(
       400,
-      'PERCENTAGES_SUM_INVALID',
+      'PAYMENT_MATRIX_SUM_INVALID',
       'The four stage percentages (supply, installation, PAC, final bill) must sum to exactly 100.',
     );
   }

@@ -54,12 +54,27 @@ import type { IrpDocumentIdentity } from './statutory-provider.js';
  * (`StatutoryProvider.portal`, persisted on every operation ledger row).
  */
 
+/**
+ * The evidence refusals this module raises. They are error CODES that
+ * reach a client on the manual-record path (the route rethrows
+ * `error.code` verbatim), and the Whitebooks adapter re-raises them under
+ * a `WHITEBOOKS_` prefix, so both spellings are declared in the
+ * contracts' `ERROR_CODES`. Naming the union here is what lets the type
+ * checker prove the prefixed forms are declared too.
+ */
+export type IrnEvidenceCode =
+  | 'IRP_IRN_DERIVATION_MISMATCH'
+  | 'IRP_IRN_MALFORMED'
+  | 'IRP_SIGNED_QR_IDENTITY_MISMATCH'
+  | 'IRP_SIGNED_QR_IRN_MISMATCH'
+  | 'IRP_SIGNED_QR_UNREADABLE';
+
 /** 64 lowercase hex characters. */
 const IRN_PATTERN = /^[0-9a-f]{64}$/;
 
 export class IrnDerivationError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: IrnEvidenceCode,
     message: string,
     /** The IRN that was offered, for the audit trail. Never the expected
      * value: publishing that would hand a forger the answer. */
@@ -194,7 +209,7 @@ export function readSignedQrClaims(signedQr: string): SignedQrClaims | null {
 
 export class SignedQrClaimError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: IrnEvidenceCode,
     message: string,
   ) {
     super(message);

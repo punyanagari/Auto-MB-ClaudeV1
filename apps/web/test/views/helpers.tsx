@@ -232,7 +232,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setWorkSettings: vi.fn<ApiClient['setWorkSettings']>(),
     listWorkInstallations: vi
       .fn<ApiClient['listWorkInstallations']>()
-      .mockResolvedValue({ installations: [], itemSummaries: [] }),
+      .mockResolvedValue({ installations: [], itemSummaries: [], nextCursor: null }),
     recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
     cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
     challanCorrectionEligibility: vi

@@ -804,7 +804,7 @@ export function registerCreditNoteRoutes(
           if (error instanceof Error && 'code' in error && error.code === '23505') {
             throw httpError(
               409,
-              'CREDIT_NOTE_NUMBER_CONFLICT',
+              'NUMBER_CONFLICT',
               `Credit note number ${noteNumber} already exists in this organisation.`,
             );
           }
@@ -1618,7 +1618,7 @@ export function registerCreditNoteRoutes(
         request.log.error({ err: error }, 'credit note render input failed');
         throw httpError(
           409,
-          'CREDIT_NOTE_RENDER_INPUT_INVALID',
+          'RENDER_INPUT_INVALID',
           'The frozen credit note or signed QR evidence cannot be rendered safely.',
         );
       }
@@ -1670,7 +1670,7 @@ export function registerCreditNoteRoutes(
         ) {
           throw httpError(
             409,
-            'CREDIT_NOTE_RENDER_SOURCE_CHANGED',
+            'RENDER_SOURCE_CHANGED',
             'IRP evidence changed while the credit note was rendering; the previous PDF remains current — render again.',
           );
         }

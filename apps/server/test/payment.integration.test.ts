@@ -426,7 +426,7 @@ describe('payment matrix CRUD', () => {
       pctFinalBill: '10.00',
     });
     expect(response.statusCode).toBe(400);
-    expect(response.json<{ code: string }>().code).toBe('PERCENTAGES_SUM_INVALID');
+    expect(response.json<{ code: string }>().code).toBe('PAYMENT_MATRIX_SUM_INVALID');
   });
 
   it('rejects percentages outside 0–100 or with more than two decimals', async () => {
@@ -444,7 +444,9 @@ describe('payment matrix CRUD', () => {
   it('rejects an unknown category with 400', async () => {
     const response = await putMatrixRow(office, 'MISC');
     expect(response.statusCode).toBe(400);
-    expect(response.json<{ code: string }>().code).toBe('CATEGORY_INVALID');
+    expect(response.json<{ code: string }>().code).toBe(
+      'PAYMENT_MATRIX_CATEGORY_INVALID',
+    );
   });
 
   it('denies viewers the mutations but serves them the list', async () => {

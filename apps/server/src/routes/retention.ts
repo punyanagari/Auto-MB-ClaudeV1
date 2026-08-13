@@ -4,6 +4,7 @@ import {
   InstallSerialRequestSchema,
   InstrumentListResponseSchema,
   InstrumentSchema,
+  KeysetQuerySchema,
   MbEntryListResponseSchema,
   MbEntrySchema,
   ReceiptSchema,
@@ -25,6 +26,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import { requireWorkBoundChallan } from './challans.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -401,7 +403,7 @@ export function registerRetentionRoutes(
         );
         return listSerials(tx, lineWorkId);
       });
-      return reply.status(201).send({ serials });
+      return reply.status(201).send(serials);
     },
   );
 
@@ -483,7 +485,7 @@ export function registerRetentionRoutes(
         );
         return listSerials(tx, updated.work_id);
       });
-      return { serials };
+      return serials;
     },
   );
 
@@ -493,16 +495,17 @@ export function registerRetentionRoutes(
       url: '/api/works/:id/serials',
       schema: {
         params: IdParamsSchema,
+        querystring: KeysetQuerySchema,
         response: { 200: SerialListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const serials = await tenant(async (tx) => {
+      const query = request.query;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
-        return listSerials(tx, workId);
+        return listSerials(tx, workId, query);
       });
-      return { serials };
     },
   );
 
@@ -746,14 +749,22 @@ export function registerRetentionRoutes(
       url: '/api/works/:id/mb-entries',
       schema: {
         params: IdParamsSchema,
+        querystring: KeysetQuerySchema,
         response: { 200: MbEntryListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await tenant(async (tx) => {
+      const query = request.query;
+      const paged = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
-        return tx<MbEntryRow[]>`
+        // Site measurements read oldest first — the register is a diary,
+        // so the keyset runs FORWARD on (measured_on, created_at, id).
+        // The id is the tie-break that makes the sort total: a day's
+        // measurements are typed up in one sitting and share a
+        // measured_on, and a batch insert can share a created_at.
+        const cursor = await cursorRowId(tx, 'mb_entries', query.cursor);
+        const rows = await tx<MbEntryRow[]>`
             select mb.id, mb.work_item_id, wi.item_number,
                    mb.delivery_challan_id, mb.measured_quantity::text as measured_quantity,
                    mb.measured_on::text as measured_on, mb.mb_book_ref, mb.remarks,
@@ -761,10 +772,16 @@ export function registerRetentionRoutes(
             from mb_entries mb
             join work_items wi on wi.id = mb.work_item_id
             where mb.work_id = ${workId}
-            order by mb.measured_on, mb.created_at
+              and (${cursor === null} or
+                (mb.measured_on, mb.created_at, mb.id) > (
+                  select c.measured_on, c.created_at, c.id from mb_entries c
+                  where c.id = ${cursor}))
+            order by mb.measured_on, mb.created_at, mb.id
+            limit ${sqlLimit(query.limit)}
           `;
+        return keysetPage(rows, query.limit, (row) => row.id);
       });
-      return { entries: rows.map(toMbEntry) };
+      return { entries: paged.rows.map(toMbEntry), nextCursor: paged.nextCursor };
     },
   );
 
@@ -996,11 +1013,25 @@ export function registerRetentionRoutes(
   );
 }
 
+/**
+ * The Work's serial register.
+ *
+ * `page` is omitted by the two mutation routes that answer with the whole
+ * register after recording — they are showing the operator what the Work
+ * now carries, not paging it — and supplied by the read route, which
+ * accepts `limit`/`cursor`. Omitting it reads every row, exactly as this
+ * helper did before it could page (see `pagination.ts`).
+ *
+ * Ordering is by serial number, so the keyset runs on
+ * (serial_number, id): serial numbers are unique per work ITEM, not per
+ * Work, so the id is what makes the sort total and the cursor exact.
+ */
 async function listSerials(
   tx: TransactionSql,
   workId: string,
-): Promise<
-  {
+  page: { readonly limit?: number; readonly cursor?: string } = {},
+): Promise<{
+  serials: {
     id: string;
     deliveryChallanId: string;
     challanItemId: string;
@@ -1013,8 +1044,10 @@ async function listSerials(
     challanStatus: 'draft' | 'issued' | 'cancelled';
     installationId: string | null;
     installationLocation: string | null;
-  }[]
-> {
+  }[];
+  nextCursor: string | null;
+}> {
+  const cursor = await cursorRowId(tx, 'challan_item_serials', page.cursor);
   const rows = await tx<
     {
       id: string;
@@ -1046,20 +1079,28 @@ async function listSerials(
       on att.challan_item_serial_id = s.id and att.released_at is null
     left join installations inst on inst.id = att.installation_id
     where s.work_id = ${workId}
-    order by s.serial_number
+      and (${cursor === null} or (s.serial_number, s.id) > (
+        select c.serial_number, c.id from challan_item_serials c
+        where c.id = ${cursor}))
+    order by s.serial_number, s.id
+    limit ${sqlLimit(page.limit)}
   `;
-  return rows.map((row) => ({
-    id: row.id,
-    deliveryChallanId: row.delivery_challan_id,
-    challanItemId: row.delivery_challan_item_id,
-    challanNumber: row.challan_number,
-    itemDescription: row.description_snapshot,
-    serialNumber: row.serial_number,
-    installedOn: row.installed_on,
-    installationRemarks: row.installation_remarks,
-    workItemId: row.work_item_id,
-    challanStatus: row.challan_status,
-    installationId: row.installation_id,
-    installationLocation: row.installation_location,
-  }));
+  const paged = keysetPage(rows, page.limit, (row) => row.id);
+  return {
+    serials: paged.rows.map((row) => ({
+      id: row.id,
+      deliveryChallanId: row.delivery_challan_id,
+      challanItemId: row.delivery_challan_item_id,
+      challanNumber: row.challan_number,
+      itemDescription: row.description_snapshot,
+      serialNumber: row.serial_number,
+      installedOn: row.installed_on,
+      installationRemarks: row.installation_remarks,
+      workItemId: row.work_item_id,
+      challanStatus: row.challan_status,
+      installationId: row.installation_id,
+      installationLocation: row.installation_location,
+    })),
+    nextCursor: paged.nextCursor,
+  };
 }

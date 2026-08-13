@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { NextCursorSchema } from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -194,8 +195,14 @@ export const ChallanSchema = Type.Object(
 );
 export type Challan = Static<typeof ChallanSchema>;
 
+/** The Work's delivery challans, newest first.
+ *
+ * `nextCursor` is the keyset contract from `pagination.ts`: the id to send
+ * as the next `cursor`, or null when there is no further page — which is
+ * also what an unpaginated request (no `limit`) always answers, because it
+ * received the whole register. */
 export const ChallanListResponseSchema = Type.Object(
-  { challans: Type.Array(ChallanSchema) },
+  { challans: Type.Array(ChallanSchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
 export type ChallanListResponse = Static<typeof ChallanListResponseSchema>;
@@ -245,8 +252,17 @@ export type DeliveryChallanRegisterEntry = Static<
   typeof DeliveryChallanRegisterEntrySchema
 >;
 
+/** The organisation-wide movement register, newest challan date first.
+ *
+ * `nextCursor` is the keyset contract from `pagination.ts`: the id to send
+ * as the next `cursor`, or null when there is no further page — which is
+ * also what an unpaginated request (no `limit`) always answers, because it
+ * received the whole register. */
 export const DeliveryChallanRegisterResponseSchema = Type.Object(
-  { challans: Type.Array(DeliveryChallanRegisterEntrySchema) },
+  {
+    challans: Type.Array(DeliveryChallanRegisterEntrySchema),
+    nextCursor: NextCursorSchema,
+  },
   { additionalProperties: false },
 );
 export type DeliveryChallanRegisterResponse = Static<

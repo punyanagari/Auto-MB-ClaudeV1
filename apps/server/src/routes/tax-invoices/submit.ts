@@ -765,7 +765,7 @@ export function registerTaxInvoiceSubmitRoute(
           if (error instanceof Error && 'code' in error && error.code === '23505') {
             throw httpError(
               409,
-              'TAX_INVOICE_NUMBER_CONFLICT',
+              'NUMBER_CONFLICT',
               `Tax invoice number ${invoiceNumber} already exists in this organisation.`,
             );
           }

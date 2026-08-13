@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { NextCursorSchema } from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -221,8 +222,14 @@ export type AttachVariationOrderResponse = Static<
   typeof AttachVariationOrderResponseSchema
 >;
 
+/** Approval requests, newest first.
+ *
+ * `nextCursor` is the keyset contract from `pagination.ts`: the id to send
+ * as the next `cursor`, or null when there is no further page — which is
+ * also what an unpaginated request (no `limit`) always answers, because it
+ * received the whole register. */
 export const ApprovalListResponseSchema = Type.Object(
-  { approvals: Type.Array(ApprovalRequestSchema) },
+  { approvals: Type.Array(ApprovalRequestSchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
 export type ApprovalListResponse = Static<typeof ApprovalListResponseSchema>;

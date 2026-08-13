@@ -1,13 +1,20 @@
+import type { ErrorCode } from '@auto-mb/contracts';
 import type { FastifyRequest } from 'fastify';
 
 /** An Error carrying a curated public HTTP status, stable code, and message;
  * the app-level handler may expose these even for a dependency 5xx while
  * continuing to mask unexpected errors. Optional `details`
  * carry a structured payload (e.g. one-draft 409s answer with
- * `{ existingRecordId }` — see DraftConflictDetails in @auto-mb/contracts). */
+ * `{ existingRecordId }` — see DraftConflictDetails in @auto-mb/contracts).
+ *
+ * `code` is `ErrorCode`, not `string`: the declared vocabulary lives in
+ * `packages/contracts/src/errors.ts`, and a refusal spelled any other way
+ * fails to compile here rather than reaching a client. Adding a new
+ * refusal means adding its code to that list first — which is the review
+ * step the 323 undeclared spellings never had. */
 export function httpError(
   statusCode: number,
-  code: string,
+  code: ErrorCode,
   message: string,
   details?: unknown,
 ): Error {

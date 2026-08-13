@@ -1824,7 +1824,7 @@ describe('discarding an unconfirmed LOA intake package', () => {
       payload: matchingSpecPdf(),
     });
     expect(rejected.statusCode, rejected.body).toBe(409);
-    expect(rejected.json()).toMatchObject({ code: 'LOA_DOCUMENT_DISCARDED' });
+    expect(rejected.json()).toMatchObject({ code: 'DOCUMENT_DISCARDED' });
   });
 
   it('refuses a second discard and freezes the discarded document', async () => {
@@ -1846,7 +1846,7 @@ describe('discarding an unconfirmed LOA intake package', () => {
       payload: {},
     });
     expect(second.statusCode).toBe(409);
-    expect(second.json()).toMatchObject({ code: 'DOCUMENT_ALREADY_DISCARDED' });
+    expect(second.json()).toMatchObject({ code: 'DOCUMENT_DISCARDED' });
 
     // Terminal at the database too: not even the table-owning role revives it.
     await expect(

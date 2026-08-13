@@ -610,9 +610,7 @@ describe('cancellation releases certified quantities', () => {
       payload: { note: 'Cancelling twice' },
     });
     expect(again.statusCode).toBe(409);
-    expect(again.json<{ code: string }>().code).toBe(
-      'PAC_CERTIFICATE_ALREADY_CANCELLED',
-    );
+    expect(again.json<{ code: string }>().code).toBe('PAC_CERTIFICATE_CANCELLED');
   });
 
   it('frees the cap and the reference for re-recording', async () => {
@@ -672,7 +670,7 @@ describe('consignee snapshot-on-use', () => {
       items: [{ workItemId: itemAId, certifiedQuantity: '0.100' }],
     });
     expect(refused.statusCode).toBe(409);
-    expect(refused.json<{ code: string }>().code).toBe('CONSIGNEE_MASTER_RETIRED');
+    expect(refused.json<{ code: string }>().code).toBe('CONTACT_RETIRED');
 
     const unknown = await record(office, {
       reference: 'PAC-NO-CONSIGNEE',
@@ -681,7 +679,7 @@ describe('consignee snapshot-on-use', () => {
       items: [{ workItemId: itemAId, certifiedQuantity: '0.100' }],
     });
     expect(unknown.statusCode).toBe(404);
-    expect(unknown.json<{ code: string }>().code).toBe('CONSIGNEE_MASTER_NOT_FOUND');
+    expect(unknown.json<{ code: string }>().code).toBe('CONTACT_NOT_FOUND');
   });
 });
 

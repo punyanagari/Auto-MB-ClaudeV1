@@ -71,7 +71,10 @@ describe('refusal remedies', () => {
 
   it('advises only on codes the server still throws', () => {
     const orphaned = Object.keys(REMEDIES)
-      .filter((code) => !thrown.has(code) && !ENVELOPE_CODES.includes(code))
+      .filter(
+        (code) =>
+          !thrown.has(code) && !(ENVELOPE_CODES as readonly string[]).includes(code),
+      )
       .sort();
 
     expect(orphaned).toEqual([]);
@@ -124,8 +127,14 @@ describe('refusal remedies', () => {
   it('omits the field entirely for a code with no reviewed remedy', async () => {
     const app = await buildApp();
     try {
+      // A declared code that deliberately carries no reviewed remedy —
+      // since P12 the vocabulary is typechecked, so this can no longer be
+      // an invented string, and picking a real unremedied code is a
+      // truer test anyway.
+      const unremedied = 'FIELD_TOO_SHORT';
+      expect(remedyFor(unremedied)).toBeUndefined();
       app.post('/test-unremedied', () => {
-        throw httpError(400, 'A_CODE_WITH_NO_REMEDY', 'Refused.');
+        throw httpError(400, unremedied, 'Refused.');
       });
 
       const response = await app.inject({ method: 'POST', url: '/test-unremedied' });

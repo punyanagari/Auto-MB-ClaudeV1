@@ -6,11 +6,13 @@ import {
   ApproveAmendmentRequestSchema,
   AttachVariationOrderQuerySchema,
   AttachVariationOrderResponseSchema,
+  KeysetQuerySchema,
   ProposeAddItemRequestSchema,
   ProposeAmendmentRequestSchema,
   ProposeRemoveItemRequestSchema,
   RejectAmendmentRequestSchema,
   UpdateWorkSettingsRequestSchema,
+  withKeysetQuery,
   WorkSettingsResponseSchema,
   type AmendmentDiffEntry,
   type ApprovalRequest,
@@ -30,6 +32,7 @@ import {
   type IssueChallanCancelReplaceProposal,
 } from '../corrections-apply.js';
 import { httpError } from '../http.js';
+import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
@@ -1409,6 +1412,16 @@ export function registerAmendmentRoutes(
     },
   );
 
+  /** Both approval registers order newest first on (created_at, id), so
+   * they share one cursor resolver. The queue and the per-Work history
+   * read the same table; a cursor from one is a valid position in the
+   * other, which is harmless — the WHERE clause still decides what the
+   * caller may see. */
+  const approvalCursor = (
+    tx: TransactionSql,
+    cursor: string | undefined,
+  ): Promise<string | null> => cursorRowId(tx, 'approval_requests', cursor);
+
   // --- Per-Work amendment history ------------------------------------------
   tenantRoute(
     {
@@ -1416,24 +1429,32 @@ export function registerAmendmentRoutes(
       url: '/api/works/:id/amendments',
       schema: {
         params: IdParamsSchema,
+        querystring: KeysetQuerySchema,
         response: { 200: ApprovalListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await tenant(async (tx) => {
+      const query = request.query;
+      const paged = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
             select id from works where id = ${workId} and deleted_at is null
           `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        return tx<ApprovalRow[]>`
+        const cursor = await approvalCursor(tx, query.cursor);
+        const rows = await tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where ar.work_id = ${workId}
-            order by ar.created_at desc, ar.id
+              and (${cursor === null} or (ar.created_at, ar.id) < (
+                select c.created_at, c.id from approval_requests c
+                where c.id = ${cursor}))
+            order by ar.created_at desc, ar.id desc
+            limit ${sqlLimit(query.limit)}
           `;
+        return keysetPage(rows, query.limit, (row) => row.id);
       });
-      return { approvals: rows.map(toApproval) };
+      return { approvals: paged.rows.map(toApproval), nextCursor: paged.nextCursor };
     },
   );
 
@@ -1443,26 +1464,32 @@ export function registerAmendmentRoutes(
       method: 'GET',
       url: '/api/approvals',
       schema: {
-        querystring: ApprovalListQuerySchema,
+        querystring: withKeysetQuery(ApprovalListQuerySchema),
         response: { 200: ApprovalListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
-      const { status } = request.query;
-      const rows = await tenant(async (tx) => {
+      const { status, limit, cursor: rawCursor } = request.query;
+      const paged = await tenant(async (tx) => {
         // 'assigned'-scoped memberships see only their Works' requests.
         const full = await hasFullWorkScope(tx, user.id);
-        return tx<ApprovalRow[]>`
+        const cursor = await approvalCursor(tx, rawCursor);
+        const rows = await tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where (${status ?? null}::text is null or ar.status = ${status ?? null})
               and (${full} or exists (
                 select 1 from work_assignments wa
                 where wa.work_id = ar.work_id and wa.user_id = ${user.id}
               ))
-            order by ar.created_at desc, ar.id
+              and (${cursor === null} or (ar.created_at, ar.id) < (
+                select c.created_at, c.id from approval_requests c
+                where c.id = ${cursor}))
+            order by ar.created_at desc, ar.id desc
+            limit ${sqlLimit(limit)}
           `;
+        return keysetPage(rows, limit, (row) => row.id);
       });
-      return { approvals: rows.map(toApproval) };
+      return { approvals: paged.rows.map(toApproval), nextCursor: paged.nextCursor };
     },
   );
 
