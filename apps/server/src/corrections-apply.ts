@@ -22,7 +22,7 @@ import type { ChallanSnapshot } from './challan-html.js';
 import { draftConflictError } from './draft-conflict.js';
 import { httpError } from './http.js';
 import { parseJsonbColumn } from './jsonb-column.js';
-import { assertSourceNotBilled } from './routes/measurement-books.js';
+import { assertSourceNotBilled } from './routes/measurement-books/index.js';
 import {
   assertChallanDate,
   assertLinkedPurchaseOrderLocksCurrent,

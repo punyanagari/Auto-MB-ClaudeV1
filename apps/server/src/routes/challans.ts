@@ -34,7 +34,7 @@ import {
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
-import { assertSourceNotBilled } from './measurement-books.js';
+import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertNotMalware } from '../upload-guards.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertWorkOperable } from '../work-status.js';

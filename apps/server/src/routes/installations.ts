@@ -11,7 +11,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { assertSourceNotBilled } from './measurement-books.js';
+import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';

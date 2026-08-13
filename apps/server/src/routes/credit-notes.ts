@@ -55,7 +55,7 @@ import {
   TaxInvoiceSnapshotError,
 } from '../tax-invoice-snapshot.js';
 import { cancellationNote } from './challans.js';
-import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices.js';
+import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices/index.js';
 import {
   audit,
   IdParamsSchema,

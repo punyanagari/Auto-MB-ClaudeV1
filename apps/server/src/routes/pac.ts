@@ -22,7 +22,7 @@ import {
   resolvePaymentPercentages,
   type PaymentMatrixRowData,
 } from '../payment-matrix.js';
-import { assertSourceNotBilled } from './measurement-books.js';
+import { assertSourceNotBilled } from './measurement-books/index.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertWorkOperable } from '../work-status.js';
 import { assertNotMalware } from '../upload-guards.js';
