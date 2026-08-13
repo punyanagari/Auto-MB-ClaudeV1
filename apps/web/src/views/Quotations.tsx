@@ -11,6 +11,7 @@ import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
@@ -925,54 +926,39 @@ export function Quotations({
                       Issue quotation
                     </Button>
                   )}
-                  {!confirmingDelete && (
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => {
-                        setConfirmingDelete(true);
-                      }}
-                    >
-                      Delete draft…
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setConfirmingDelete(true);
+                    }}
+                  >
+                    Delete draft…
+                  </Button>
                 </Actions>
                 {confirmingDelete && (
-                  <div className="my-3">
-                    <h4>Confirm delete</h4>
-                    <p>
-                      Deleting discards this draft and its lines for good. Only drafts
-                      can be deleted — an issued quotation keeps its number forever.
-                      Continue?
-                    </p>
-                    <Actions>
-                      <Button
-                        disabled={pending}
-                        onClick={() => {
-                          void act(async () => {
-                            await api.deleteBudgetaryQuotation(
-                              organisationId,
-                              quotation.id,
-                            );
-                            setDetail(null);
-                            setConfirmingDelete(false);
-                            await refreshList();
-                          }, 'Draft quotation deleted.');
-                        }}
-                      >
-                        Delete draft now
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={pending}
-                        onClick={() => {
-                          setConfirmingDelete(false);
-                        }}
-                      >
-                        Keep drafting
-                      </Button>
-                    </Actions>
-                  </div>
+                  <ConfirmDialog
+                    title="Confirm delete"
+                    description="Deleting discards this draft and its lines for good. Only drafts can be deleted — an issued quotation keeps its number forever. Continue?"
+                    cancelLabel="Keep drafting"
+                    confirmLabel="Delete draft now"
+                    pending={pending}
+                    onCancel={() => {
+                      setConfirmingDelete(false);
+                    }}
+                    onConfirm={() => {
+                      void act(async () => {
+                        await api.deleteBudgetaryQuotation(
+                          organisationId,
+                          quotation.id,
+                        );
+                        setDetail(null);
+                        setConfirmingDelete(false);
+                        await refreshList();
+                      }, 'Draft quotation deleted.');
+                    }}
+                  />
                 )}
               </>
             ) : (
@@ -1102,10 +1088,11 @@ export function Quotations({
                           </Button>
                         </>
                       )}
-                      {canCancel && !confirmingWithdraw && (
+                      {canCancel && (
                         <Button
                           variant="outline"
                           disabled={pending}
+                          aria-haspopup="dialog"
                           onClick={() => {
                             setConfirmingWithdraw(true);
                           }}
@@ -1115,44 +1102,29 @@ export function Quotations({
                       )}
                     </Actions>
                     {canCancel && confirmingWithdraw && (
-                      <div className="my-3">
-                        <h4>Confirm withdrawal</h4>
-                        <p>
-                          Withdrawing takes back an offer that has left the building —
-                          it is the cancel act, not a lapse. Quotation {numberLabel}{' '}
-                          keeps its number forever, its lines and total stay exactly as
-                          issued, and the status never moves again. Continue?
-                        </p>
-                        <Actions>
-                          <Button
-                            disabled={pending}
-                            onClick={() => {
-                              void act(async () => {
-                                setDetail(
-                                  await api.setBudgetaryQuotationOutcome(
-                                    organisationId,
-                                    quotation.id,
-                                    { outcome: 'withdrawn' },
-                                  ),
-                                );
-                                setConfirmingWithdraw(false);
-                                await refreshList();
-                              }, `Quotation ${numberLabel} withdrawn; its number is retained forever.`);
-                            }}
-                          >
-                            Withdraw {numberLabel} now
-                          </Button>
-                          <Button
-                            variant="outline"
-                            disabled={pending}
-                            onClick={() => {
-                              setConfirmingWithdraw(false);
-                            }}
-                          >
-                            Keep it issued
-                          </Button>
-                        </Actions>
-                      </div>
+                      <ConfirmDialog
+                        title="Confirm withdrawal"
+                        description={`Withdrawing takes back an offer that has left the building — it is the cancel act, not a lapse. Quotation ${numberLabel} keeps its number forever, its lines and total stay exactly as issued, and the status never moves again. Continue?`}
+                        cancelLabel="Keep it issued"
+                        confirmLabel={`Withdraw ${numberLabel} now`}
+                        pending={pending}
+                        onCancel={() => {
+                          setConfirmingWithdraw(false);
+                        }}
+                        onConfirm={() => {
+                          void act(async () => {
+                            setDetail(
+                              await api.setBudgetaryQuotationOutcome(
+                                organisationId,
+                                quotation.id,
+                                { outcome: 'withdrawn' },
+                              ),
+                            );
+                            setConfirmingWithdraw(false);
+                            await refreshList();
+                          }, `Quotation ${numberLabel} withdrawn; its number is retained forever.`);
+                        }}
+                      />
                     )}
                   </>
                 )}

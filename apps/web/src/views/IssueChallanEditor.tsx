@@ -7,6 +7,7 @@ import type {
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import {
@@ -112,8 +113,6 @@ export function IssueChallanEditor({
   const [loadVersion, setLoadVersion] = useState(0);
   const manualSequence = useRef(0);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
-  const discardRef = useRef<HTMLButtonElement>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   const edited =
     state !== null &&
     loadedState !== null &&
@@ -177,19 +176,6 @@ export function IssueChallanEditor({
   function retry(): void {
     setLoadVersion((current) => current + 1);
   }
-
-  // The confirmation takes over the decision the Cancel button was about to
-  // make, so focus moves into it rather than leaving a keyboard user parked
-  // on a button whose meaning just changed.
-  useEffect(() => {
-    if (!confirmingDiscard) {
-      // Declining unmounts the button that held focus, so hand it back to
-      // Cancel rather than dropping the operator at the top of the document.
-      cancelRef.current?.focus();
-      return;
-    }
-    discardRef.current?.focus();
-  }, [confirmingDiscard]);
 
   useEffect(() => {
     onDirtyChange?.(edited);
@@ -726,7 +712,7 @@ export function IssueChallanEditor({
           </Button>
           <Button
             variant="outline"
-            ref={cancelRef}
+            aria-haspopup="dialog"
             onClick={() => {
               if (edited) {
                 setConfirmingDiscard(true);
@@ -740,26 +726,16 @@ export function IssueChallanEditor({
         </ActionBar>
 
         {confirmingDiscard && (
-          <div className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3">
-            <h2>Discard your changes?</h2>
-            <p>
-              Nothing entered here has been saved yet. Leaving now throws away the
-              quantities and manual lines you typed.
-            </p>
-            <Actions>
-              <Button ref={discardRef} onClick={onCancel}>
-                Discard and leave
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setConfirmingDiscard(false);
-                }}
-              >
-                Keep editing
-              </Button>
-            </Actions>
-          </div>
+          <ConfirmDialog
+            title="Discard your changes?"
+            description="Nothing entered here has been saved yet. Leaving now throws away the quantities and manual lines you typed."
+            cancelLabel="Keep editing"
+            confirmLabel="Discard and leave"
+            onCancel={() => {
+              setConfirmingDiscard(false);
+            }}
+            onConfirm={onCancel}
+          />
         )}
       </form>
     </Card>

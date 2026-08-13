@@ -10,6 +10,7 @@ import type {
 import { formValue, type ApiClient } from '../api.js';
 import { formatInr, formatRate } from '../format.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
@@ -601,10 +602,11 @@ export function WorkPurchaseOrders({
                 Issue purchase order
               </Button>
             )}
-            {order.status === 'draft' && canModify && !confirmingDelete && (
+            {order.status === 'draft' && canModify && (
               <Button
                 variant="outline"
                 disabled={pending}
+                aria-haspopup="dialog"
                 onClick={() => {
                   setConfirmingDelete(true);
                 }}
@@ -633,37 +635,24 @@ export function WorkPurchaseOrders({
           </Actions>
 
           {order.status === 'draft' && canModify && confirmingDelete && (
-            <div className="my-3">
-              <h4>Confirm delete</h4>
-              <p>
-                Deleting discards this draft and its lines for good. A draft carries no
-                number, so nothing is retained. Continue?
-              </p>
-              <Actions>
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    void act(async () => {
-                      await api.deletePurchaseOrder(organisationId, order.id);
-                      setDetail(null);
-                      setConfirmingDelete(false);
-                      await refreshList();
-                    }, 'Draft purchase order deleted.');
-                  }}
-                >
-                  Delete draft now
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingDelete(false);
-                  }}
-                >
-                  Keep drafting
-                </Button>
-              </Actions>
-            </div>
+            <ConfirmDialog
+              title="Confirm delete"
+              description="Deleting discards this draft and its lines for good. A draft carries no number, so nothing is retained. Continue?"
+              cancelLabel="Keep drafting"
+              confirmLabel="Delete draft now"
+              pending={pending}
+              onCancel={() => {
+                setConfirmingDelete(false);
+              }}
+              onConfirm={() => {
+                void act(async () => {
+                  await api.deletePurchaseOrder(organisationId, order.id);
+                  setDetail(null);
+                  setConfirmingDelete(false);
+                  await refreshList();
+                }, 'Draft purchase order deleted.');
+              }}
+            />
           )}
 
           {order.status === 'issued' && canCancel && (

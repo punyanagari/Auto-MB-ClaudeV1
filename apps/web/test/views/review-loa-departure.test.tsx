@@ -76,6 +76,48 @@ async function correctTheLetter() {
   });
 }
 
+describe('ReviewLoa arrival announcements', () => {
+  it('announces what the extraction produced, in a region that was already there', async () => {
+    /* The document read is held open so the loading state can be caught.
+       That is the whole point of the assertion: a live region only
+       announces a CHANGE to text it already had, so the region has to be on
+       screen while the reviewer is still waiting. This screen used to
+       render "Loading document…" as a status and then REMOVE it along with
+       the entire card — a sighted reviewer watched the letter appear and a
+       screen-reader user was told nothing at all. */
+    let deliver = (): void => undefined;
+    const held = new Promise((resolve) => {
+      deliver = () => {
+        resolve(REVIEW_DOCUMENT);
+      };
+    });
+    const { container } = renderReview({
+      getLoaDocument: vi.fn().mockReturnValue(held),
+    });
+
+    await screen.findByText('Loading the document…');
+    const waiting = [...container.querySelectorAll('.sr-only [role="status"]')];
+    expect(waiting.length).toBe(2);
+    expect(waiting[0]?.textContent).toBe('');
+
+    deliver();
+    /* Awaited on the announcement itself, and deliberately not on the
+       heading: the loading branch renders "Review LOA" too, so
+       `findByRole('heading', { name: /^Review / })` resolves against the
+       state this test is trying to leave. That is the hazard §2.7 recorded
+       after P9 — awaiting an element that exists in the LOADING state — and
+       it caught this test once, passing alone and failing under the
+       parallel run. */
+    const announced = await screen.findByText(
+      /^Extraction ready for .+: \d+ items? across \d+ schedules?, \d+ flagged for review\.$/,
+    );
+    // The same node, not a replacement: an inserted region announces
+    // nothing. Identity, because `toEqual` on two DOM elements compares own
+    // enumerable properties and any two elements pass it.
+    expect(announced).toBe(waiting[0]);
+  });
+});
+
 describe('ReviewLoa departure protection', () => {
   it('lets an untouched letter be left without a question', async () => {
     renderReview();

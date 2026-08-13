@@ -1295,26 +1295,53 @@ export function Masters({
       <h1 id="masters-title" tabIndex={-1}>
         Masters
       </h1>
-      <div
-        className="mb-4 flex gap-2 border-b border-border"
-        role="tablist"
+      {/* Not a tablist, deliberately.
+       *
+       * It was one, and the promise was empty: `role="tablist"` tells a
+       * screen-reader user that Left/Right/Home/End move between the
+       * categories and that Tab leaves the strip in one keystroke, and
+       * nothing listened for a key. A five-item strip is also five tab
+       * stops instead of one, which is worse than the plain buttons it
+       * was pretending not to be.
+       *
+       * The honest role is navigation, because that is what these
+       * controls do: each category is its own address (`#/masters/units`),
+       * opening one pushes a history entry, Back walks between them, and
+       * the rail opens a category directly without stopping at Contacts.
+       * A tab panel does not change the page's address; this does. The
+       * Work workspace settled the same question the same way — its
+       * section strip is a `nav` with `aria-current="page"` — so this is
+       * the product's one answer rather than a second one.
+       *
+       * `overflow-x-auto` is not decoration either: five unwrapped buttons
+       * measured 445px on a 320px screen and took the whole page sideways
+       * with them. The strip scrolls; the page does not. */}
+      <nav
+        className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border"
         aria-label="Master data categories"
       >
-        {TABS.map((candidate) => (
-          <button
-            key={candidate.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === candidate.key}
-            className="-mb-px border-b-2 border-transparent px-3 py-2 font-medium text-muted-foreground hover:text-foreground aria-selected:border-primary aria-selected:text-primary"
-            onClick={() => {
-              setTab(candidate.key);
-            }}
-          >
-            {candidate.label}
-          </button>
-        ))}
-      </div>
+        {TABS.map((candidate) => {
+          const current = tab === candidate.key;
+          return (
+            <button
+              key={candidate.key}
+              type="button"
+              aria-current={current ? 'page' : undefined}
+              className={
+                '-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ' +
+                (current
+                  ? 'border-primary font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground')
+              }
+              onClick={() => {
+                setTab(candidate.key);
+              }}
+            >
+              {candidate.label}
+            </button>
+          );
+        })}
+      </nav>
       {tab === 'contacts' && (
         <ContactsTab api={api} organisationId={organisationId} canModify={canModify} />
       )}

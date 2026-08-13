@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type KeyboardEvent,
   type RefObject,
 } from 'react';
 import type { Organisation, Work } from '@auto-mb/contracts';
@@ -32,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ApiClient, MeResponse } from '../api.js';
+import { useDocumentTitle } from '../lib/document-title.js';
 import {
   parseWorkspaceHash,
   workspaceHashOf,
@@ -40,6 +40,8 @@ import {
 } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
+import { Modal } from '../ui/dialog.js';
 import type { MastersTab } from './Masters.js';
 import type { WorkTab } from './WorkDetail.js';
 
@@ -393,10 +395,7 @@ export function OperationsWorkspace({
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const headerSearchRef = useRef<HTMLInputElement>(null);
-  const mobileMenuDialogRef = useRef<HTMLDivElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
-  const keepEditingRef = useRef<HTMLButtonElement>(null);
-  const discardAndLeaveRef = useRef<HTMLButtonElement>(null);
   const departureRestoreFocusRef = useRef<HTMLElement | null>(null);
   const transientMenuTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -417,6 +416,10 @@ export function OperationsWorkspace({
   const isOwner = membership?.role === 'owner';
   const canSwitchOrganisation = organisations.length > 1;
   const activeModule = activeModuleOf(view);
+  /* The screen names the tab, and the tenant names it after that: an
+     operator working two organisations keeps a tab open for each, and
+     "Auto-MB" on both told them nothing. */
+  useDocumentTitle([pageTitleOf(view), organisation.name]);
   const recordWorkId =
     view.name === 'work' || view.name === 'challan' || view.name === 'issue-challan'
       ? view.workId
@@ -489,19 +492,6 @@ export function OperationsWorkspace({
     setMobileRecordOpen(false);
   }, [view]);
 
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const restoreTarget =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    mobileMenuCloseRef.current?.focus();
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      if (restoreTarget?.isConnected === true) restoreTarget.focus();
-    };
-  }, [mobileMenuOpen]);
-
   /**
    * The global `/` shortcut.
    *
@@ -565,15 +555,6 @@ export function OperationsWorkspace({
       window.removeEventListener('beforeunload', warnBeforeUnload);
     };
   }, [editorDirty]);
-
-  useEffect(() => {
-    if (pendingDeparture === null) return;
-    const restoreTarget = departureRestoreFocusRef.current;
-    keepEditingRef.current?.focus();
-    return () => {
-      if (restoreTarget?.isConnected === true) restoreTarget.focus();
-    };
-  }, [pendingDeparture]);
 
   function requestDeparture(action: () => void): void {
     if (!editorDirty) {
@@ -715,51 +696,6 @@ export function OperationsWorkspace({
     departure.action();
   }
 
-  function handleDepartureKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      keepEditing();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const keep = keepEditingRef.current;
-    const discard = discardAndLeaveRef.current;
-    if (keep === null || discard === null) return;
-    if (event.shiftKey && document.activeElement === keep) {
-      event.preventDefault();
-      discard.focus();
-    } else if (!event.shiftKey && document.activeElement === discard) {
-      event.preventDefault();
-      keep.focus();
-    }
-  }
-
-  function handleMobileMenuKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setMobileMenuOpen(false);
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(
-      mobileMenuDialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), ' +
-          'select:not([disabled]), textarea:not([disabled]), ' +
-          '[tabindex]:not([tabindex="-1"])',
-      ) ?? [],
-    );
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (first === undefined || last === undefined) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   function openRecordTab(workId: string, tab: 'deliveries' | 'measurement'): void {
     navigate({ name: 'work', workId }, { workTab: tab });
   }
@@ -807,7 +743,11 @@ export function OperationsWorkspace({
     navigate(defaultViewOf(key));
   }
 
-  function renderNavigation(closeAfterSelection = false) {
+  /* `scope` prefixes the submenu ids. The rail and the drawer render the
+     same navigation at the same time — the desktop aside is hidden by CSS,
+     not unmounted — so one id per module would be two elements with the
+     same id whenever the drawer is open. */
+  function renderNavigation(closeAfterSelection = false, scope = 'rail') {
     return (
       <>
         {NAVIGATION.map((group) => (
@@ -820,6 +760,7 @@ export function OperationsWorkspace({
                 const Icon = item.icon;
                 const current = activeModule === item.key;
                 const children = subItems[item.key] ?? [];
+                const submenuId = `${scope}-submenu-${item.key}`;
                 return (
                   <div key={item.key}>
                     <button
@@ -831,6 +772,10 @@ export function OperationsWorkspace({
                       }`}
                       aria-current={current ? 'page' : undefined}
                       aria-expanded={children.length > 0 ? current : undefined}
+                      /* Names the list the state refers to. Present only
+                         alongside aria-expanded, so it never points at an
+                         id that no module will ever render. */
+                      aria-controls={children.length > 0 ? submenuId : undefined}
                       onClick={() => {
                         openModule(item.key);
                         if (closeAfterSelection) setMobileMenuOpen(false);
@@ -848,7 +793,10 @@ export function OperationsWorkspace({
                       )}
                     </button>
                     {current && children.length > 0 && (
-                      <ul className="my-1 ml-6 flex list-none flex-col gap-0.5 border-l border-border pl-3">
+                      <ul
+                        id={submenuId}
+                        className="my-1 ml-6 flex list-none flex-col gap-0.5 border-l border-border pl-3"
+                      >
                         {children.map((child) => (
                           <li key={child.label}>
                             <button
@@ -882,6 +830,24 @@ export function OperationsWorkspace({
 
   return (
     <div className="min-h-screen bg-background lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
+      {/* The first thing the keyboard reaches, so the twenty-odd rail and
+          header controls are one keystroke rather than twenty.
+          `preventDefault` is not decoration: the workspace's address IS the
+          fragment, so letting the browser follow `#main-content` would
+          replace the route with a fragment nothing parses and drop the
+          operator on the Dashboard. The anchor keeps its href so it is
+          announced as a link and points at a real element; the focus move
+          is done here instead. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-md focus:border focus:border-border focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
+        onClick={(event) => {
+          event.preventDefault();
+          containerRef.current?.focus();
+        }}
+      >
+        Skip to main content
+      </a>
       <aside
         className="sticky top-0 hidden h-screen flex-col border-r border-border bg-card lg:flex print:hidden"
         inert={mobileMenuOpen || pendingDeparture !== null}
@@ -1176,8 +1142,23 @@ export function OperationsWorkspace({
         </header>
 
         <main
+          id="main-content"
           ref={containerRef}
-          className="mx-auto flex w-full max-w-[100rem] flex-col gap-5 px-4 py-5 pb-24 sm:px-6 lg:px-8 lg:py-7 lg:pb-10"
+          /* The skip link's destination has to be able to hold focus, and a
+             landmark is not focusable on its own. -1 keeps it out of the tab
+             order it is there to shorten. */
+          tabIndex={-1}
+          /* `[&>*]:min-w-0` caps the page at the screen.
+           *
+           * A flex item's automatic minimum size is its content, so one
+           * unshrinkable string anywhere in a view — a long `<select>`
+           * option, a nowrap button — made this column wider than the
+           * phone, and the whole shell scrolled sideways with it. Zero lets
+           * each view shrink to the column; anything inside a view that
+           * still cannot fit is that view's own scroll container to
+           * provide, which is what `ui/table.tsx` does for every register.
+           * Measured at 320px by `e2e/responsive.spec.ts`. */
+          className="mx-auto flex w-full max-w-[100rem] flex-col gap-5 px-4 py-5 pb-24 outline-none sm:px-6 lg:px-8 lg:py-7 lg:pb-10 [&>*]:min-w-0"
         >
           <Suspense fallback={<ViewSkeleton />}>
             {/* Restores the heading focus the outer effect cannot take
@@ -1534,69 +1515,63 @@ export function OperationsWorkspace({
       </div>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden print:hidden">
-          <div
-            className="absolute inset-0 bg-foreground/25 backdrop-blur-sm"
-            aria-hidden="true"
-            onClick={() => {
-              setMobileMenuOpen(false);
-            }}
-          />
-          <div
-            id="mobile-navigation-dialog"
-            ref={mobileMenuDialogRef}
-            className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] flex-col border-r border-border bg-card shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Application navigation"
-            onKeyDown={handleMobileMenuKeyDown}
-          >
-            <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-4">
-              <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                <Building2 className="size-5" aria-hidden="true" />
-              </span>
-              <strong className="flex-1">Auto-MB</strong>
-              <Button
-                ref={mobileMenuCloseRef}
-                variant="ghost"
-                size="icon"
-                aria-label="Close menu"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <X aria-hidden="true" />
-              </Button>
-            </div>
-            <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-5">
-              {renderNavigation(true)}
-            </nav>
-            <div className="border-t border-border p-3">
-              {canSwitchOrganisation && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => {
-                    requestDeparture(onSwitchOrganisation);
-                  }}
-                >
-                  <ArrowLeftRight aria-hidden="true" />
-                  Switch organisation
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                className="mt-1 w-full"
-                onClick={() => {
-                  requestDeparture(onSignOut);
-                }}
-              >
-                <LogOut aria-hidden="true" />
-                Sign out
-              </Button>
-            </div>
+        <Modal
+          id="mobile-navigation-dialog"
+          label="Application navigation"
+          lockScroll
+          initialFocusRef={mobileMenuCloseRef}
+          onClose={() => {
+            setMobileMenuOpen(false);
+          }}
+          overlayClassName="z-50 p-0 lg:hidden"
+          backdropClassName="bg-foreground/25"
+          className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] max-w-none flex-col rounded-none border-0 border-r border-border p-0 shadow-2xl"
+        >
+          <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-4">
+            <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Building2 className="size-5" aria-hidden="true" />
+            </span>
+            <strong className="flex-1">Auto-MB</strong>
+            <Button
+              ref={mobileMenuCloseRef}
+              variant="ghost"
+              size="icon"
+              aria-label="Close menu"
+              onClick={() => {
+                setMobileMenuOpen(false);
+              }}
+            >
+              <X aria-hidden="true" />
+            </Button>
           </div>
-        </div>
+          <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-5">
+            {renderNavigation(true, 'drawer')}
+          </nav>
+          <div className="border-t border-border p-3">
+            {canSwitchOrganisation && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  requestDeparture(onSwitchOrganisation);
+                }}
+              >
+                <ArrowLeftRight aria-hidden="true" />
+                Switch organisation
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              className="mt-1 w-full"
+              onClick={() => {
+                requestDeparture(onSignOut);
+              }}
+            >
+              <LogOut aria-hidden="true" />
+              Sign out
+            </Button>
+          </div>
+        </Modal>
       )}
 
       <nav
@@ -1650,6 +1625,7 @@ export function OperationsWorkspace({
           type="button"
           className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium text-muted-foreground"
           aria-expanded={mobileMoreOpen}
+          aria-controls="mobile-more-destinations"
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;
             setHeaderQuickActionsOpen(false);
@@ -1716,7 +1692,15 @@ export function OperationsWorkspace({
       )}
 
       {mobileMoreOpen && (
-        <div className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden">
+        /* Its two sibling sheets carry an id, a role and a name; this one
+           carried none, so the trigger's aria-expanded described nothing a
+           screen reader could go to. */
+        <div
+          id="mobile-more-destinations"
+          className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden"
+          role="group"
+          aria-label="More destinations"
+        >
           {MOBILE_MORE_ITEMS.map((item) => {
             const Icon = item.icon;
             return (
@@ -1752,42 +1736,18 @@ export function OperationsWorkspace({
       )}
 
       {pendingDeparture !== null && (
-        <div
-          className="fixed inset-0 z-[60] grid place-items-center p-4 print:hidden"
-          onKeyDown={handleDepartureKeyDown}
-        >
-          <div
-            className="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
-            aria-hidden="true"
-            onClick={keepEditing}
-          />
-          <section
-            className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="unsaved-draft-title"
-            aria-describedby="unsaved-draft-description"
-          >
-            <h2 id="unsaved-draft-title" className="mt-0">
-              Unsaved draft changes
-            </h2>
-            <p id="unsaved-draft-description" className="text-sm text-muted-foreground">
-              Leaving this editor will discard the changes you have not saved.
-            </p>
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <Button ref={keepEditingRef} variant="outline" onClick={keepEditing}>
-                Keep editing
-              </Button>
-              <Button
-                ref={discardAndLeaveRef}
-                variant="destructive"
-                onClick={discardAndLeave}
-              >
-                Discard and leave
-              </Button>
-            </div>
-          </section>
-        </div>
+        <ConfirmDialog
+          title="Unsaved draft changes"
+          description="Leaving this editor will discard the changes you have not saved."
+          cancelLabel="Keep editing"
+          confirmLabel="Discard and leave"
+          onCancel={keepEditing}
+          onConfirm={discardAndLeave}
+          /* A departure asked for from inside a transient menu must return
+             the operator to the menu's trigger: the menu itself closed when
+             the confirmation opened, so whatever held focus is gone. */
+          restoreFocusTo={departureRestoreFocusRef.current}
+        />
       )}
     </div>
   );

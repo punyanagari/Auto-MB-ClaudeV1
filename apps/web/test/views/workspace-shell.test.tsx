@@ -218,6 +218,37 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it('names the browser tab after the open screen and the tenant', async () => {
+    renderWorkspace();
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    // Most specific first, so the tab is still legible truncated.
+    expect(document.title).toBe('Dashboard · Sharma Constructions · Auto-MB');
+
+    const rail = screen.getByRole('navigation', { name: 'Modules' });
+    fireEvent.click(within(rail).getByRole('button', { name: 'Works' }));
+    await screen.findByRole('heading', { name: 'Works' });
+    expect(document.title).toBe('Works · Sharma Constructions · Auto-MB');
+  });
+
+  it('offers a skip link that reaches main without disturbing the address', async () => {
+    const { container } = renderWorkspace();
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    const skip = screen.getByRole('link', { name: 'Skip to main content' });
+    // The point of a skip link is that it comes before the twenty-odd rail
+    // and header controls it exists to skip, so it must be the first thing
+    // Tab reaches.
+    expect(
+      container.querySelector('a[href], button:not([disabled]), input, [tabindex="0"]'),
+    ).toBe(skip);
+
+    const before = window.location.hash;
+    fireEvent.click(skip);
+    expect(document.activeElement).toBe(screen.getByRole('main'));
+    // The workspace's address IS the fragment: following the href would
+    // replace the route with one nothing parses.
+    expect(window.location.hash).toBe(before);
+  });
+
   it('routes Record through Works when no Work is selected', async () => {
     renderWorkspace();
     await screen.findByRole('heading', { name: 'Dashboard' });

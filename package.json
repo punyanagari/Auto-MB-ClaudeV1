@@ -37,6 +37,7 @@
     "@types/node": "22.20.1",
     "axe-core": "^4.12.1",
     "eslint": "9.39.5",
+    "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-security": "4.0.1",
     "globals": "17.8.0",
     "knip": "^6.32.0",

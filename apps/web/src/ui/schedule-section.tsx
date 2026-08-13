@@ -225,10 +225,14 @@ export function ClampedText({
   readonly label: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  /* The toggle says aria-expanded, so it has to say what it expands: the
+   * span below is the thing whose clamp comes off. */
+  const textId = useId();
   const clampable = text.length > 90 || text.includes('\n');
   return (
     <>
       <span
+        id={textId}
         className={cn(
           'block whitespace-pre-line',
           !expanded && clampable && 'line-clamp-2',
@@ -242,6 +246,7 @@ export function ClampedText({
           size="inline"
           className="mt-1 text-xs"
           aria-expanded={expanded}
+          aria-controls={textId}
           aria-label={
             expanded ? `Show less of ${label}` : `Show the full description of ${label}`
           }

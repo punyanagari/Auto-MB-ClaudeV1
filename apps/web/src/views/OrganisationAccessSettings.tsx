@@ -47,7 +47,12 @@ export function OrganisationAccessSettings({
           return (
             <div
               key={organisation.id}
-              className={`flex items-center gap-3 rounded-xl border p-4 ${
+              /* `flex-wrap` is the 320px fix: the name, the slug and the
+                 "Current" mark on one unbreakable line gave this card a
+                 300px minimum, and the Settings page inherited it. Below
+                 about 290px the mark drops to its own line instead of
+                 taking the page sideways. */
+              className={`flex flex-wrap items-center gap-3 rounded-xl border p-4 ${
                 current
                   ? 'border-primary/30 bg-primary/[0.035]'
                   : 'border-border bg-background/60'

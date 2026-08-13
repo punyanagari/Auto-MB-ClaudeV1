@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
@@ -356,7 +356,17 @@ describe('Masters', () => {
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Units' }));
+    // The category strip is a navigation, not a tablist: each category is
+    // its own address and Back walks between them.
+    const categories = await screen.findByRole('navigation', {
+      name: 'Master data categories',
+    });
+    fireEvent.click(within(categories).getByRole('button', { name: 'Units' }));
+    expect(
+      within(categories)
+        .getByRole('button', { name: 'Units' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
     expect(await screen.findByText('Numbers')).toBeTruthy();
     expect(listUnitMasters).toHaveBeenCalledWith(ORG_ID, false);
   });

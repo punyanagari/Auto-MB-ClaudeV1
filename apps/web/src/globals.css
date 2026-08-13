@@ -221,10 +221,38 @@
     text-wrap: pretty;
   }
 
+  /* `min-width: 0` is load-bearing, not tidiness.
+   *
+   * A control's automatic minimum size is its content, and for a `select`
+   * Chromium reads that as the widest OPTION. The e-invoicing declaration
+   * offers "Not applicable — turnover has never crossed the threshold",
+   * which measures 381px; on a 320px screen that one string made the whole
+   * Settings page 432px wide and the operator dragged the shell sideways
+   * to reach a field. Measured, in Chromium, by `e2e/responsive.spec.ts`.
+   *
+   * Zero lets the control take the width its box gives it and clip the
+   * long option to the closed control, which is what a native select does
+   * on a phone anyway — the full text is still in the open list. */
   input,
   select,
   textarea {
+    min-width: 0;
+    max-width: 100%;
     @apply min-h-9 rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-sm;
+  }
+
+  /* The `width` is the fix; `max-width: 100%` above is not enough on its
+   * own, because a percentage maximum is ignored while a browser works out
+   * how narrow a box may be. Chromium sizes a closed `<select>` to its
+   * WIDEST OPTION, and the e-invoicing declaration offers "Not applicable —
+   * turnover has never crossed the threshold": 381px of intrinsic minimum,
+   * which travelled all the way up and made the Settings page 432px wide on
+   * a 320px screen. An explicit width gives the control the box it is in
+   * instead, which is the width it already rendered at — the closed control
+   * clips the long option, and the open list still shows it whole.
+   * Measured in Chromium by `e2e/responsive.spec.ts`. */
+  select {
+    width: 100%;
     transition:
       border-color 120ms ease,
       box-shadow 120ms ease,

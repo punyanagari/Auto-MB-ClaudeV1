@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,7 @@ import type {
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { SignaturePanel } from '../ui/signature-panel.js';
 import { Card } from '../ui/card.js';
@@ -366,10 +368,14 @@ function DescriptionCell({
   readonly onChange: (description: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  /* The toggle says aria-expanded, so it has to name what it expands: the
+   * box below, which grows from two rows to ten. */
+  const boxId = useId();
   const clampable = item.description.length > 90 || item.description.includes('\n');
   return (
     <>
       <textarea
+        id={boxId}
         aria-label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
         value={item.description}
         onChange={(event) => {
@@ -385,6 +391,7 @@ function DescriptionCell({
           size="inline"
           className="mt-1 text-xs"
           aria-expanded={expanded}
+          aria-controls={boxId}
           aria-label={
             expanded
               ? `Show less of the description for row ${item.itemSno}`
@@ -448,6 +455,15 @@ export function ReviewLoa({
   /** The payment matrix is derived from the matched tender the moment
    * TenderTermsReview mounts, so its first emission is a starting point,
    * not an edit. Anything after that is the reviewer's. */
+  /* This screen opens on a spinner and fills itself in from two independent
+   * reads. A sighted reviewer watches the letter appear; a screen-reader
+   * user was told nothing — the "Loading document…" line was REMOVED from
+   * the page when the content arrived, and a live region that is removed
+   * announces nothing. These two hold the arrivals instead, and the regions
+   * that carry them (below the heading) are mounted from the first render
+   * so a later change is a change rather than an insertion. */
+  const [extractionArrival, setExtractionArrival] = useState('');
+  const [evidenceArrival, setEvidenceArrival] = useState('');
   const matrixBaselineRef = useRef<string | null>(null);
   const [matrixEdited, setMatrixEdited] = useState(false);
   const manualSequence = useRef(1);
@@ -462,6 +478,7 @@ export function ReviewLoa({
     setLoadError(null);
     setFieldErrors({});
     setLoadedDraft(null);
+    setExtractionArrival('');
     matrixBaselineRef.current = null;
     setMatrixEdited(false);
     api
@@ -470,25 +487,38 @@ export function ReviewLoa({
         if (cancelled) return;
         setDocument(loaded);
         const payload = asExtractionPayload(loaded.extractionPayload);
-        if (payload !== null) {
-          const drafts = buildItemDrafts(payload);
-          const headerDraft = buildHeaderDraft(payload);
-          const pbgDraft = buildPbgDraft(payload);
-          setHeader(headerDraft);
-          setItems(drafts);
-          setPbg(pbgDraft);
-          setLoadedDraft(comparableDraft(headerDraft, drafts, pbgDraft));
-          const lastDraft = drafts[drafts.length - 1];
-          setAddSchedule(lastDraft !== undefined ? lastDraft.scheduleId : 'A');
+        if (payload === null) {
+          setExtractionArrival(
+            `Extraction for ${loaded.originalFilename} produced no reviewable content.`,
+          );
+          return;
         }
+        const drafts = buildItemDrafts(payload);
+        const headerDraft = buildHeaderDraft(payload);
+        const pbgDraft = buildPbgDraft(payload);
+        setHeader(headerDraft);
+        setItems(drafts);
+        setPbg(pbgDraft);
+        setLoadedDraft(comparableDraft(headerDraft, drafts, pbgDraft));
+        const lastDraft = drafts[drafts.length - 1];
+        setAddSchedule(lastDraft !== undefined ? lastDraft.scheduleId : 'A');
+        const schedules = new Set(drafts.map((draft) => draft.scheduleId)).size;
+        const flaggedCount = payload.review.needsReview.total;
+        setExtractionArrival(
+          `Extraction ready for ${loaded.originalFilename}: ${String(drafts.length)} item${
+            drafts.length === 1 ? '' : 's'
+          } across ${String(schedules)} schedule${schedules === 1 ? '' : 's'}, ` +
+            `${String(flaggedCount)} flagged for review.`,
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
+        const message =
           cause instanceof RequestFailedError
             ? cause.message
-            : 'The document could not be loaded.',
-        );
+            : 'The document could not be loaded.';
+        setLoadError(message);
+        setExtractionArrival(message);
       });
     return () => {
       cancelled = true;
@@ -499,18 +529,28 @@ export function ReviewLoa({
     let cancelled = false;
     setContractContext(null);
     setContractContextError(null);
+    setEvidenceArrival('');
     api
       .getLoaContractSourceContext(organisationId, documentId)
       .then((loaded) => {
-        if (!cancelled) setContractContext(loaded);
+        if (cancelled) return;
+        setContractContext(loaded);
+        setEvidenceArrival(
+          loaded.documents.length === 0
+            ? 'No matched tender evidence is attached to this letter.'
+            : `Matched tender evidence ready: ${String(loaded.documents.length)} source document${
+                loaded.documents.length === 1 ? '' : 's'
+              }.`,
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setContractContextError(
+        const message =
           cause instanceof RequestFailedError
             ? cause.message
-            : 'The matched tender evidence could not be loaded.',
-        );
+            : 'The matched tender evidence could not be loaded.';
+        setContractContextError(message);
+        setEvidenceArrival(message);
       });
     return () => {
       cancelled = true;
@@ -870,9 +910,22 @@ export function ReviewLoa({
     }
   }
 
+  /* Mounted identically at the head of every branch below, so React keeps
+   * the same two DOM nodes across the loading → loaded switch. That is the
+   * whole trick: a live region only announces a CHANGE to text it already
+   * had, so a region rendered for the first time alongside the arrived
+   * content says nothing at all. */
+  const arrivals = (
+    <div className="sr-only">
+      <p role="status">{extractionArrival}</p>
+      <p role="status">{evidenceArrival}</p>
+    </div>
+  );
+
   if (loadError !== null) {
     return (
       <Card aria-labelledby="review-title">
+        {arrivals}
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
@@ -891,6 +944,7 @@ export function ReviewLoa({
   if (document === null) {
     return (
       <Card aria-labelledby="review-title">
+        {arrivals}
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
@@ -908,6 +962,7 @@ export function ReviewLoa({
   ) {
     return (
       <Card aria-labelledby="review-title">
+        {arrivals}
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
@@ -939,6 +994,7 @@ export function ReviewLoa({
 
   return (
     <Card className="w-full" aria-labelledby="review-title">
+      {arrivals}
       <h1 id="review-title" tabIndex={-1}>
         Review {document.originalFilename}
       </h1>
@@ -967,46 +1023,40 @@ export function ReviewLoa({
           Wrong? Discard this letter and upload a corrected one — an extracted value is
           never quietly overwritten.
         </p>
-        {canModify &&
-          (discardAsked ? (
-            <span className="mt-2 flex flex-wrap items-center gap-2 print:hidden">
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={discardPending}
-                onClick={() => void discard()}
-              >
-                Confirm discard
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={discardPending}
-                onClick={() => {
-                  setDiscardAsked(false);
-                  setDiscardError(null);
-                }}
-              >
-                Keep reviewing
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                The file stays on record for retention, but leaves the review list.
-                Upload the corrected letter to start again.
-              </span>
-            </span>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={() => {
-                setDiscardAsked(true);
-              }}
-            >
-              Discard this letter
-            </Button>
-          ))}
-        {discardError !== null && <FormError>{discardError}</FormError>}
+        {canModify && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            aria-haspopup="dialog"
+            onClick={() => {
+              setDiscardAsked(true);
+            }}
+          >
+            Discard this letter
+          </Button>
+        )}
+        {canModify && discardAsked && (
+          <ConfirmDialog
+            title={`Discard ${document.originalFilename}?`}
+            description="The file stays on record for retention, but leaves the review list. Upload the corrected letter to start again."
+            cancelLabel="Keep reviewing"
+            confirmLabel="Confirm discard"
+            pending={discardPending}
+            onCancel={() => {
+              setDiscardAsked(false);
+              setDiscardError(null);
+            }}
+            onConfirm={() => void discard()}
+          >
+            {discardError !== null && <FormError>{discardError}</FormError>}
+          </ConfirmDialog>
+        )}
+        {/* A refusal arriving with the confirmation open is shown inside
+            it; behind a modal it would be unreadable. */}
+        {discardError !== null && !discardAsked && (
+          <FormError>{discardError}</FormError>
+        )}
       </div>
 
       {/* Before everything else about the letter's CONTENT, because it is

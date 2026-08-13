@@ -35,7 +35,10 @@ export function AppearanceSettings() {
       <fieldset className="m-0 border-0 p-0">
         <legend className="sr-only">Theme</legend>
         <div
-          className="inline-flex rounded-lg border border-input bg-muted p-0.5"
+          /* Wraps rather than widening the page: three segments on one
+             unbreakable line measured 253px, which does not fit the 246px
+             a card leaves on a 320px screen. */
+          className="inline-flex flex-wrap rounded-lg border border-input bg-muted p-0.5"
           role="radiogroup"
           aria-label="Theme"
         >

@@ -1,4 +1,12 @@
-import { Children, cloneElement, isValidElement, useId } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { cn } from '../lib/cn.js';
 
 /* The corner cells clip the card themselves rather than the table carrying
@@ -96,6 +104,41 @@ export function DataTable({
   ...props
 }: React.ComponentProps<'table'> & { readonly scroll?: boolean }) {
   const generatedCaptionId = useId();
+  const scrollportRef = useRef<HTMLDivElement>(null);
+  /* Focusable only while there is something to scroll.
+   *
+   * A scroll container needs a tab stop, because a keyboard has no other
+   * way to move it. A box whose content fits does not: it is an inert stop
+   * on the way to the next control, and the product puts up to a dozen
+   * registers on one screen. Every register carried one unconditionally,
+   * so a Work workspace could cost a dozen keystrokes that did nothing.
+   *
+   * Measured rather than guessed, because whether a ledger overflows
+   * depends on the viewport, the zoom, the font, and how many rows the
+   * Work has: a ResizeObserver on the box and on the table inside it
+   * re-asks after any of those change. */
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const node = scrollportRef.current;
+    if (node === null) return;
+    const measure = (): void => {
+      setScrollable(
+        node.scrollWidth > node.clientWidth || node.scrollHeight > node.clientHeight,
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    const table = node.firstElementChild;
+    if (table !== null) observer.observe(table);
+    return () => {
+      observer.disconnect();
+    };
+    // Mount only: the observer watches both boxes, so a viewport change, a
+    // font change and a row arriving all re-measure without React
+    // re-subscribing on every keystroke of a 129-row editor.
+  }, []);
   /* Every DataTable in the product carries an `sr-only` caption naming the
    * register. That caption is the honest name for the scroll region too,
    * so it is borrowed rather than duplicated into a second string that
@@ -125,13 +168,18 @@ export function DataTable({
     </table>
   );
   if (!scroll) return table;
+  /* Named and reachable, or neither. A tab stop with no accessible name is
+   * a stop a screen-reader user cannot identify, so the region semantics
+   * and the tab stop are granted together — and `apps/web/test/
+   * a11y-invariants.test.ts` fails the build on a DataTable with no
+   * caption, so this branch should never be taken in the product. */
+  const named = captionId !== undefined;
   return (
     <div
+      ref={scrollportRef}
       className={SCROLLPORT}
-      tabIndex={0}
-      {...(captionId === undefined
-        ? {}
-        : { role: 'region', 'aria-labelledby': captionId })}
+      tabIndex={named && scrollable ? 0 : undefined}
+      {...(named ? { role: 'region', 'aria-labelledby': captionId } : {})}
     >
       {table}
     </div>

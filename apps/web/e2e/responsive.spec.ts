@@ -124,21 +124,18 @@ function scrollportOf(table: Locator) {
  * own hash so the assertion does not depend on a navigation rail that only
  * exists above 1024px.
  *
- * Two screens are deliberately absent, both because they carry a measured
- * 320px overflow that has nothing to do with a table and lives in a file
- * this pack does not own. Add them here when the owning pack lands.
- *
- *  - Masters (`views/Masters.tsx`): the category tablist is a row of
- *    unwrapped buttons reaching 445px on a 320px screen.
- *  - Settings (`views/OrganisationAccessSettings.tsx` inside the
- *    `views/OperationsWorkspace.tsx` main column): the organisation card
- *    is a grid item whose min-content width is 337px, and the main column
- *    is a flex container whose items do not carry `min-width: 0`, so the
- *    whole page settles at 432px. */
+ * Masters and Settings were held out of this list when it was written,
+ * each carrying a measured 320px overflow with nothing to do with a table:
+ * the Masters category strip was a row of unwrapped buttons reaching 445px,
+ * and Settings settled at 432px on the organisation cards inside
+ * `views/OrganisationAccessSettings.tsx`. Both are fixed and both are in
+ * the list; nothing is held out now. */
 const SCREENS = [
   { hash: '#/', name: 'dashboard', ready: 'Dashboard' },
   { hash: '#/works', name: 'works register', ready: 'Works' },
   { hash: '#/members', name: 'members', ready: 'Members' },
+  { hash: '#/masters/locations', name: 'masters', ready: 'Masters' },
+  { hash: '#/settings', name: 'settings', ready: 'Settings' },
   { hash: `#/loa/${DOC_ID}`, name: 'LOA review', ready: /Review loa-letter\.pdf/ },
 ] as const;
 
@@ -273,7 +270,6 @@ test('a register too wide for the screen scrolls inside its own container', asyn
   // not fit, so it has to be reachable from the keyboard and announced as
   // the region it is — not a silent div that only a trackpad can move.
   const scrollport = scrollportOf(register);
-  await expect(scrollport).toHaveAttribute('tabindex', '0');
   await expect(scrollport).toHaveAttribute('role', 'region');
   await expect(scrollport).toHaveAttribute('aria-labelledby', /.+/);
   expect(
@@ -282,4 +278,22 @@ test('a register too wide for the screen scrolls inside its own container', asyn
   // Named by the caption the register already carries, rather than by a
   // second string that would drift from it.
   await expect(scrollport).toHaveAccessibleName('Location masters');
+
+  /* The tab stop is conditional, and this is the condition.
+   *
+   * A box that scrolls must be focusable; a box whose content fits must
+   * not be, because an operator on a desk screen would otherwise tab
+   * through one dead stop per register — up to a dozen on a Work
+   * workspace — before reaching a control. The same register is measured
+   * at every viewport this suite runs, so the assertion reads the box
+   * rather than assuming which way it went at this width. */
+  const overflows = await scrollport.evaluate(
+    (node) =>
+      node.scrollWidth > node.clientWidth || node.scrollHeight > node.clientHeight,
+  );
+  if (overflows) {
+    await expect(scrollport).toHaveAttribute('tabindex', '0');
+  } else {
+    await expect(scrollport).not.toHaveAttribute('tabindex', '0');
+  }
 });
