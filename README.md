@@ -119,6 +119,7 @@ pnpm verify
 | ---------------------- | ------------------------------------------------------ |
 | `docs/PRODUCT.md`      | Current product boundary and business invariants       |
 | `docs/ARCHITECTURE.md` | Current implementation architecture                    |
+| `docs/UX.md`           | Approved interaction architecture and product narrative |
 | `docs/SECURITY.md`     | Threat model, required controls, and audit posture     |
 | `docs/OPERATIONS.md`   | Deployment, backup, restore, monitoring, and incidents |
 | `docs/ROADMAP.md`      | Delivery sequence and release gates                    |
@@ -127,6 +128,10 @@ pnpm verify
 
 ## Development model
 
-Claude Code is the primary coding agent (see ADR-0004 amendment). Product decisions remain human-owned; deterministic tests prove code properties; qualified external reviewers validate security, operations, and compliance before production.
+Claude Code is the primary coding agent and the only writer: it owns repository edits and integration, and parallel writers are not run on overlapping application or migration code (ADR-0004 and its amendments). Work is delivered on a branch and merged through a pull request filled in from `.github/pull_request_template.md`; nothing is pushed directly to `main`.
+
+At most two concurrent read-only subagents assist the writer — a project explorer before medium or high-complexity changes, an integrity reviewer for the high-risk surfaces, and a test reviewer that compares acceptance criteria against the final diff. The same three roles are defined for Codex in `.codex/agents/` and `.agents/skills/`, so the review shape does not depend on which host runs it.
+
+None of that is approval. Product decisions remain human-owned; deterministic tests prove code properties; and `CONTRIBUTING.md` requires fresh human review before production for row-level security, authentication, permissions, uploads, money, numbering, issued documents, migrations, infrastructure, and production configuration. An agent review never satisfies that requirement.
 
 Read `AGENTS.md` before making changes.
