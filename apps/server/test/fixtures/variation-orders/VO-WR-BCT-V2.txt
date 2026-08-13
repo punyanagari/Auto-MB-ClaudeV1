@@ -1,0 +1,287 @@
+                                                                                           Variation Statement
+
+Agreement Details:
+Railway Name:                 Western Railway                          Unit Name:                        Mumbai                         Department Name:                  S&T
+Tender Number:                                                         Tender Type:                      Open                           Tender Opened On:                 12/05/2023
+Tender Validity (Up To):      12/05/2023                                 Nature of Contract:             Works                             LOA Number:                    00341490077841
+LOA Date:                     26/05/2023                                 LOA  Amount   (Rs.):            79,892,180                        PG Amount (Rs.):               3136447.0
+Contractor's Name:            PARTRONICS EBOARDS PRIVATE                 Contractor's Code:              34149                             Date of Completion:            30/11/2025
+                              LIMITED-PUNE
+Agreement No:                 WR/BCT/S&T/2023/0031                       Agreement Date:                 27/09/2023                        Variation Number:              2
+Name of Work Under            Provision of Telecom facility at Marine Lines, Charni Road and Grant Road stations under Amrit Bharat Station Scheme of Mumbai division, WR.
+Proposed LOA:
+
+
+1. Considering this Variation value of contract agreement is now modified to 79970801.36
+
+2. The term and conditions of original agreement and its subsequent agreed modification shall apply to the current modification.
+
+
+
+
+         Signature Not Verified                                Signature Not Verified               Signature Not Verified                 Signature Not Verified
+         Digitally signed by SURENDRA                          Digitally signed by AJAY ERANNA      Digitally signed by AVINASH            Digitally signed by ASHISH TIWARI
+         KUMAR                                                 ESOMPALLI                            BHAUSAHEB PATIL                        Date: 2025.12.23 12:54:15 IST
+                                                               Date: 2025.12.11 13:56:03 IST        Date: 2025.12.18 12:48:41 IST
+         Date: 2025.12.11 13:20:14 IST                         Reason: Variation Signing By ADSTE   Reason: Variation Signing By           Reason: Variation Signing By
+         Reason: Variation Signing By SSE                                                           Contractor                             SrDSTE Co BCT
+
+         Signature Not Verified                                Signature Not Verified               Signature Not Verified                 Signature Not Verified
+         Digitally signed by AVINASH KAUR                      Digitally signed by                  Digitally signed by RAKESH KUMAR       Digitally signed by MANISH KUMAR
+         KALSI                                                 Madhusudan Singh                     Date: 2025.12.15 11:13:16 IST          Date: 2025.12.17 17:02:57 IST
+         Date: 2026.01.28 17:00:12 IST                                                              Reason: Variation Signing By
+         Reason: Variation Vetted By Sr. DFM BCT               Date: 2026.02.03 12:20:37 IST        SSE/TELE                               Reason: Variation Signing By OS
+                                                               Reason: Variation Approval                                                  WA Tele
+ Schedules Details:
+                                                            Amount(Rs.) up to Last    Amount(Rs.) as per Proposed      Amount(Rs.) as per Proposed                     %age Variation, Including
+ Schedule                    Org. Agmt. Amount(Rs.) Total                                                                                             %age Variation
+                                                            Variation                 Qty                              Qty, Including Special Cond.                    Spcl. Cond.
+ 1                           62,728,940.313                 62,728,940.31             62,846,266.4                     62,807,561.36                  0.187            0.125
+ NS01                        0                              4,275,000                 4,275,000                        4,275,000
+ NS02                        0                              8,340,000                 8,340,000                        8,340,000
+ NS04                        0                              300,000                   300,000                          300,000
+ NS03                        0                              794,240                   794,240                          794,240
+ NS05                        0                              2,250,000                 2,250,000                        2,250,000
+ NS06                        0                              544,000                   544,000                          544,000
+ NS07                        0                              660,000                   660,000                          660,000
+        Total of All above   62,728,940.313                 79,892,180.31             80,009,506.4                     79,970,801.36                  27.548           27.486
+               Schedules:
+ Total of New Schedules:     0                                                        17,163,240                       17,163,240
+  Total of Old Schedules:    62,728,940.313                                           62,846,266.4                     62,807,561.36
+Rebate (0.0 %) on Org Sdl    0                                                       Rebate (0.0 %) on Org Sdl         0
+            Total Amount     62,728,940.313                                                      Total Amount          79,970,801.36
+
+ Last Sanctioned Variation Details:
+                                                                                      %age Variation w.r.t. Original   %age Variation w.r.t. Inclu.
+ Srl. No.                    Variation Revno.               Amount(Rs.) Sanctioned                                                                    Sanctioned By    Sanctioned Date
+                                                                                      Agreement Value                  Spcl. Cond.
+                                                                                                                                                      SrDSTE Co BCT
+ 1                           Revno. 1                       79,892,180.31             27.36                            27.36                                           22/04/2025
+                                                                                                                                                      (sdstebct)
+Variation Details:
+                                                                                                                                                                                Amount
+                                                                                                                                                                                (Rs.) as per   %age
+                                                                                                                                                                 Amount
+Previous                                                                                                   Last                       Amount                                    Proposed       variation of
+             Schedule                                                           Qty. as per   Base                       Agreement                   Proposed    (Rs.) as per
+Variation                 Schedule      Item No.     Item Type     Unit                                    variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                               Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                   Qty.        Proposed
+Revno.                                                                                                     Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                 Qty.           special        Agmt. Qty.
+                                                                                                                                                                                cond.
+                                                                                                                               361606.96 24589273. 69.0                 24950880. 24950880. 1.47
+             NS           1             1            Individual    Numbers      68.0          349378.71    68.0                485         6098                         57          57
+Description: Supply, Installation, Testing &amp; Commissioning of Suburban Train Indicator of double face as per specification no. 4.1 of chapter 4 of the tender document.
+Remarks: Required to provide train information on the CYR station SFOB.
+              NS             1             10          Individual Numbers           446.0          26300         446.0         27220.5     12140343      322.0          8765001.0 8765001.0 -27.8
+Description: Supply &amp; Installation of Weatherproof Self Amplified IP Speaker with mounting arrangement as per specification no. 4.10 of chapter 4 of the tender document.
+Remarks: There is no requirement for speakers, since the speakers are already installed at all required locations
+              NS             1             11          Individual Numbers           3.0            527240        3.0           545693.4    1637080.2 4.0                2182773.6 2171859.7  33.33
+                                                                                                                                                                                    3
+Description: Supply , Installation, Testing &amp; Commissioning of PA IP Controller (It consists of two Servers Active &amp; redundancy Server in standby mode with licenses) as per specification no.
+4.11 of chapter 4 of the tender document.
+Remarks: It is required to be installed at CYR to GTR Section to drive Self Amplified IP Speakers.
+                                                                                                                               32675.374 98026.123 3.0
+              NS             1             12          Individual Numbers           3.0            31570.41      3.0                                                    98026.12    98026.12 0.0
+                                                                                                                               35          05
+Description: Supply and installation of 19" 42U rack with accessories as per specification no. 4.12 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                               54655.038 2295511.5                      3388612.3 3373308.9 47.62
+              NS             1             13          Individual Numbers           42.0           52806.8       42.0                                    62.0
+                                                                                                                                           96                           6           5
+Description: Supply of Layer 2, 24 port Manageable switch and its standard installation as per RDSO specification, as per specification no. 4.13 of chapter 4 of the tender document.
+Remarks: Additional requirement of a 24-port switch in MEL, CYR and GTR station.
+                                                                                                                               11807.186 1062646.8 90.0                 1062646.8 1062646.8 0.0
+              NS             1             14          Individual Numbers           90.0           11407.91      90.0          85          165                          2           2
+Description: Supply and installation of 8 port manageable switch as per RDSO specification, as per specification no. 4.14 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                               11058.840 663530.42 60.0
+              NS             1             15          Individual Numbers           60.0           10684.87      60.0                                                   663530.43 663530.43 0.0
+                                                                                                                               45          7
+Description: Supply &amp; installation of 9U rack with all accessories as per specification no. 4.15 of chapter 4 of the tender document.
+Remarks:
+              NS             1             16          Individual Numbers           30.0           213.11        30.0          220.56885 6617.0655 30.0                 6617.07     6617.07  0.0
+Description: Suppy &amp; installation of CAT6 Surface mount info-outlet as per specification no. 4.16 of chapter 4 of the tender document.
+Remarks:
+              NS             1             17          Individual Numbers           60.0           5675.1        60.0          5873.7285 352423.71 60.0                 352423.71 352423.71 0.0
+Description: Supply of 12 port Rack mounted LIU along with all accessories as per specification no. 4.17 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                               14032.033 168384.39 43.0
+              NS             1             18          Individual Numbers           12.0           13557.52      12.0                                                   603377.43 596080.77 258.33
+                                                                                                                               2           84
+                                                                                                                                                                                  Amount
+                                                                                                                                                                                  (Rs.) as per   %age
+                                                                                                                                                                   Amount
+Previous                                                                                                    Last                       Amount                                     Proposed       variation of
+             Schedule                                                            Qty. as per   Base                       Agreement                   Proposed     (Rs.) as per
+Variation                  Schedule     Item No.      Item Type    Unit                                     variation                  (Rs.) as per                               Qty.           Proposed
+             Type                                                                Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                   Qty.         Proposed
+Revno.                                                                                                      Qty.                       Orig. Agmt.                                including      Qty. with
+                                                                                                                                                                   Qty.           special        Agmt. Qty.
+                                                                                                                                                                                  cond.
+Description: Supply of 24 port Rack mounted LIU along with all accessories as per specification no. 4.18 of chapter 4 of the tender document.
+Remarks: Additional requirement of a 24-port LIU to manage increased fiber terminations.
+              NS            1             19          Individual Numbers           3.0            3121.2      3.0            3230.442     9691.326      3.0            9691.33     9691.33       0.0
+Description: Supply of I/O Box Punching tool as per specification no. 4.19 of chapter 4 of the tender document.
+Remarks:
+              NS            1             2           Individual Numbers           3.0            270000      3.0            279450.0     838350.0      3.0            838350.0    838350.0      0.0
+Description: Supply, Installation, Testing &amp; Commissioning of interface unit to drive Suburban Train Indicators as per specification no. 4.2 of chapter 4 of the tender document.
+Remarks:
+              NS            1             20          Individual Numbers           528.0          123.31      528.0          127.62585 67386.448        528.0          67386.45    67386.45      0.0
+                                                                                                                                          8
+Description: Supply of Single mode LC-LC/LC-SC optical patch cord as per specification no. 4.20 of chapter 4 of the tender document.
+Remarks:
+              NS            1             21          Individual Metre             4200.0         35.84       4200.0         37.0944      155796.48 10200.0            378362.88 377027.48       142.86
+Description: Supply of Three Core PVC Power Cable as per specification no. 4.21 of chapter 4 of the tender document.
+Remarks: It is an additional requirement of Power cable for ABSS stations (MEL,CYR and GTR) for making protection paths .
+                                                                                                                                          294400.57 17000.0
+              NS            1             22          Individual Metre             10500.0        27.09       10500.0        28.03815                                  476648.55 476648.55       61.9
+                                                                                                                                          5
+Description: Supply of Armoured Optical Fiber Cable , 6 Core , Single Mode as per specification no. 4.22 of chapter 4 of the tender document.
+Remarks: It is an additional requirement for ABSS stations (MEL, CYR, and GTR) to provision and maintain reliable fiber optic connectivity.
+              NS            1             23          Individual Metre             15000.0        43.52       15000.0        45.0432      675648.0      22015.0        991626.05 987770.35       46.77
+Description: Supply of STP CAT-6 Cable as per specification no. 4.23 of chapter 4 of the tender document.
+
+Remarks: It is an additional requirement of CAT-6 cable to support new network connections and ensure stable.
+                                                                                                                                       396662.50 23760.0
+             NS            1            24            Individual   Metre         23760.0       16.13        23760.0       16.69455                                 396662.51      396662.51      0.0
+                                                                                                                                       8
+Description: Supply of PVC rigid pipe 25mm dia with ISI mark &amp; reputed make as per specification no. 4.24 of chapter 4 of the tender document.
+Remarks:
+              NS           1             25           Individual Metre           1500.0        209.96         1500.0      217.3086     325962.9    1500.0          325962.9       325962.9       0.0
+Description: Supply of casing capping of size 75 mm x 50 mm as per specification no. 4.25 of chapter 4 of the tender document.
+
+Remarks:
+              NS           1            26           Individual Metre          1500.0       38.44        1500.0         39.7854       59678.1       1500.0         59678.1        59678.1        0.0
+Description: Supply of 10 pair 0.5 mm annealed copper conductor PVC insulated switch board Telephone cable as per specification no. 4.26 of chapter 4 of the tender document.
+
+Remarks:
+                                                                                                                      3269.2855 98078.566 30.0
+             NS            1            27            Individual   Numbers       30.0          3158.73      30.0                                                 98078.57       98078.57    0.0
+                                                                                                                      5              5
+Description: Supply of TMC DP Box for 50 pair with krone modules alongwith mounting arrangement and its standard installation as per specification no. 4.27 of chapter 4 of the tender document.
+                                                                                                                                                                               Amount
+                                                                                                                                                                               (Rs.) as per   %age
+                                                                                                                                                                Amount
+Previous                                                                                                  Last                       Amount                                    Proposed       variation of
+             Schedule                                                           Qty. as per   Base                      Agreement                   Proposed    (Rs.) as per
+Variation                 Schedule      Item No.     Item Type    Unit                                    variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                               Orig.Agmt.    Rate(Rs.)                 Rate(Rs.)                   Qty.        Proposed
+Revno.                                                                                                    Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                Qty.           special        Agmt. Qty.
+                                                                                                                                                                               cond.
+Remarks:
+              NS         1              28            Individual Numbers         45.0         12264         45.0          12693.24       571195.8      45.0          571195.8  571195.8       0.0
+Description: Suuply &amp; installation of double sided Audio Visual signage unit for Divyangjan passenger as per specification no. 4.28 of chapter 4 of the tender document.
+Remarks:
+              NS         1              29            Individual Numbers         12.0         89680         12.0          92818.8        1113825.6 13.0              1206644.4 1206644.4      8.33
+Description: Supply &amp; Installation of 3 KVA Online UPS having minimum 15 minute backup on full load as per specification no. 4.29 of chapter 4 of the tender document.
+
+Note :- For the required backup Battery Bank with Stand shall be provided by the contractor .
+Remarks: It is required to be installed at CYR to GTR Section to ensure uninterrupted power supply.
+               NS            1              3            Individual Numbers          35.0          250000       35.0          258750.0      9056250.0 35.0          9056250.0 9056250.0 0.0
+Description: Supply, Installation, Testing &amp; Commissioning of True colour All in one (AVD) video display single face as per specification no. 4.3 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                              629.82855 2645279.9                   2645279.9 2645279.9 0.0
+               NS            1              30           Individual Metre            4200.0        608.53       4200.0                                4200.0
+                                                                                                                                            1                       1              1
+Description: Supply &amp; installation of 150 mm width x 50 mm Depth x 1.6 mm thick size perforated GI cable tray including horizontal and vertical reducers, tees , cross members, and other
+accessories as required and fully suspended from the ceiling with GI suspended etc as per specification no. 4.30 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                                            235716.07 17000.0
+               NS            1              31           Individual Metre            10500.0       21.69        10500.0       22.44915                              381635.55 381635.55 61.9
+                                                                                                                                            5
+Description: Laying of Armoured Optical Fiber OFC through PVC Pipe/Casing capping and termination of LIUs &amp; FDMS as per specification no. 4.31 of chapter 4 of the tender document.
+Remarks: It is an additional requirement of fiber cable to establish new optical routes and strengthen high-bandwidth.
+               NS            1              32           Individual Metre            20700.0       7.86         20700.0       8.1351        168396.57 32715.0       266139.8       266139.8   58.04
+Description: Laying of PVC/Data cable/Power cable/CAT6 cable in through PVC casing capping/pipe on wall including laying material like 3 way/4 way junction box ,T-Joint, flexible PVC pipes etc as
+per specification no. 4.32 of chapter 4 of the tender document.
+Remarks: Additional requirement for laying CAT-6,Power cable and PVC cable to support new connectivity needs and ensure reliable operation of the system in ABSSS stations (MEL, CYR and GTR).
+                                                                                                                              54928.164 54928.164 1.0
+               NS            1              33           Individual Numbers          1.0           53070.69     1.0                                                 54928.16       54928.16   0.0
+                                                                                                                              15            15
+Description: Supply of Remote Craft Terminal as per specification no. 4.33 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                              75521.103 453126.62 6.0
+               NS            1              4            Individual Numbers          6.0           72967.25     6.0                                                 453126.62 453126.62 0.0
+                                                                                                                              75            25
+Description: Supply of 55" Video Display Unit &amp; its standard installation as per specification no. 4.4 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                              8077.7506 48466.503 6.0
+               NS            1              5            Individual Numbers          6.0           7804.59      6.0                                                 48466.5        48466.5    0.0
+                                                                                                                              5             9
+Description: Supply of MS cabinet for housing LED/LCD VDU duly black colour powder coated with 4mm toughened glass at front &amp; its standard installation with VDU as per specification no. 4.5
+of chapter 4 of the tender document.
+Remarks:
+                                                                                                                                                                                Amount
+                                                                                                                                                                                (Rs.) as per   %age
+                                                                                                                                                                 Amount
+Previous                                                                                                   Last                       Amount                                    Proposed       variation of
+             Schedule                                                           Qty. as per   Base                       Agreement                   Proposed    (Rs.) as per
+Variation                 Schedule      Item No.     Item Type     Unit                                    variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                               Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                   Qty.        Proposed
+Revno.                                                                                                     Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                 Qty.           special        Agmt. Qty.
+                                                                                                                                                                                cond.
+                                                                                                                             43600.347 523204.17 12.0
+             NS           1             6            Individual    Numbers      12.0          42125.94     12.0                                                     523204.17 523204.17 0.0
+                                                                                                                             9             48
+Description: Supply, Installation, Testing &amp; Commissioning of GPS based double faced Digital platform clock as per RDSO Specification no. 4.6 of chapter 4 of the tender document.
+Remarks:
+                                                                                                                             34013.650 34013.650 1.0
+               NS            1              7             Individual Numbers        1.0         32863.43      1.0                                                   34013.65   34013.65      0.0
+                                                                                                                             05            05
+Description: Supply of Client System for NMS as per specification &amp; its standard installation as per specification no. 4.7 of chapter 4 of the tender document.
+Remarks:
+               NS            1              8             Individual Numbers        60.0        16710         60.0           17294.85      1037691.0 60.0           1037691.0 1037691.0 0.0
+Description: Supply and installation of fixed type FHD, IP, Colour camera as per RDSO Specification no. RDSO/SPN/TC/65/2019 Revision 5.0 or latest, as per specification no. 4.8 of chapter 4 of the
+tender document.
+Remarks:
+                                                                                                                             283784.79 851354.39 3.0
+               NS            1              9             Individual Set            3.0         274188.21 3.0                                                       851354.39 851354.39 0.0
+                                                                                                                             735           205
+Description: Supply and installation of Network Video Recorder (NVR) of 32 Channels with storage including required software &amp; licenses with redundant NVR in 1:1 i.e. 2 nos as per RDSO
+specification, as per specification no. 4.9 of chapter 4 of the tender document.
+Remarks:
+Revno 1        NS            NS01           NS01          Individual Numbers        0.0         475000        9.0            475000.0      0.0            9.0       4275000.0 4275000.0 0.0
+Description: Supply, Installation, Testing & Commissioning of True colour All in one (AVD) video display double face with as per specification.
+Remarks:
+Revno 1        NS            NS02           NS02          Individual Numbers        0.0         1390000       6.0            1390000.0 0.0                6.0       8340000.0 8340000.0 0.0
+Description: Supply, Installation, Testing & Commissioning of True colour Mini (MVD) video display Single face with as per specification.
+Remarks:
+Revno 1        NS            NS04           NS04          Individual Metre          0.0         100           3000.0         100.0         0.0            3000.0    300000.0   300000.0      0.0
+Description: Releasing of old cable tray.
+Remarks:
+Revno 1        NS            NS03           NS03          Individual Metre          0.0         160           4964.0         160.0         0.0            4964.0    794240.0   794240.0      0.0
+Description: Powder coating yellow colour of cable tray.
+Remarks:
+Revno 1        NS            NS05           NS05          Individual Numbers        0.0         375000        6.0            375000.0      0.0            6.0       2250000.0 2250000.0 0.0
+Description: Supply, Installation, Testing & Commissioning of Station Information System as per specification.
+Remarks:
+Revno 1        NS            NS06           NS06          Individual Numbers        0.0         8000          68.0           8000.0        0.0            68.0      544000.0   544000.0      0.0
+Description: Provision of LED based Titles for indicators with laser cutting and blue background lighting.
+Remarks:
+Revno 1        NS            NS07           NS07          Individual Metre          0.0         1100          600.0          1100.0        0.0            600.0     660000.0   660000.0      0.0
+Description: Supply & installation of 300 mm width x 50 mm Depth x 1.6 mm thick size GI perforated yellow powder coated cable tray including horizontal and vertical reducers, tees , cross members,
+and other accessories as required and fully suspended from the ceiling.
+                                                                                                                                                              Amount
+                                                                                                                                                              (Rs.) as per     %age
+                                                                                                                                               Amount
+Previous                                                                                  Last                    Amount                                      Proposed         variation of
+            Schedule                                            Qty. as per   Base                    Agreement                  Proposed      (Rs.) as per
+Variation              Schedule   Item No.   Item Type   Unit                             variation               (Rs.) as per                                Qty.             Proposed
+            Type                                                Orig.Agmt.    Rate(Rs.)               Rate(Rs.)                  Qty.          Proposed
+Revno.                                                                                    Qty.                    Orig. Agmt.                                 including        Qty. with
+                                                                                                                                               Qty.           special          Agmt. Qty.
+                                                                                                                                                              cond.
+Remarks:
+                                                                                                                  62,728,94                    80,009,50      79,970,80
+                                                                                                         Total:                  Total:                                        27.548
+                                                                                                                  0.313                        6.4            1.36
+                                                                                                                                                                                    %age
+                                                                                                                                   Rebate (0.0 %) Amount      0              Var.Incl.Spc
+                                                                                                                                                                                  l.Cond.
+                                                                                                                                                              79,970,80
+                                                                                                                                            Total Amount                       27.486
+                                                                                                                                                              1.36
+

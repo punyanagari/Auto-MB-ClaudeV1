@@ -1,0 +1,416 @@
+                                                                                   Variation Statement
+
+Agreement Details:
+Railway Name:              Northeast Frontier Railway             Unit Name:                     Lumding                        Department Name:                   S&T
+Tender Number:                                                    Tender Type:                   Open                           Tender Opened On:                  27/04/2023
+Tender Validity (Up To):   28/04/2023                               Nature of Contract:          Works                         LOA Number:                         00846370081460
+LOA Date:                  14/07/2023                               LOA  Amount   (Rs.):         5.311708E+7                   PG Amount (Rs.):                    2655854.0
+Contractor's Name:         ELECTRONIC EQUIPMENT                     Contractor's Code:           84637                         Date of Completion:                 31/12/2024
+                           COMPANY PVT LTD-KOLKATA
+Agreement No:              NFR/LMG/S&T/2023/0040                    Agreement Date:                  01/01/2024                Variation Number:                 1
+Name of Work Under         Associate telecom work in connection with Amrit Bharat Station Scheme at SZR, LMG, DPU &amp; NHLG under the jurisdiction of Sr.DSTE/LMG
+Proposed LOA:
+
+
+
+
+         Signature Not Verified                            Signature Not Verified
+         Digitally signed by NAGENDRA KUMAR                Digitally signed by BALVEER
+         Date: 2024.12.02 19:32:28 IST                     Date: 2024.12.02 19:48:41 IST
+         Reason: Variation Signing By
+         SSE/T/IC/LMG                                      Reason: Variation Signing By
+                                                           DSTE/LMG
+
+                                                                                            Signature Not Verified                 Signature Not Verified
+                                                                                            Digitally signed by AKASH              Digitally signed by TAHID ALI
+                                                                                            Date: 2024.12.04 11:02:55 IST          Date: 2024.12.05 16:18:28 IST
+                                                                                            Reason: Variation Signing By           Reason: Variation Signing By
+                                                                                            JE/Tele/LMG                            SSE/W/LMG
+ Schedules Details:
+                                                            Amount(Rs.) up to Last    Amount(Rs.) as per Proposed   Amount(Rs.) as per Proposed                     %age Variation, Including
+ Schedule                    Org. Agmt. Amount(Rs.) Total                                                                                          %age Variation
+                                                            Variation                 Qty                           Qty, Including Special Cond.                    Spcl. Cond.
+ A                           53,117,080.42                  0                         63,833,783.97                 63,472,444.34                  20.176           19.495
+ NS                          0                              0                         4,123,360                     4,123,360                      100              100
+        Total of All above   53,117,080.42                  0                         67,957,143.97                 67,595,804.34                  27.938           27.258
+               Schedules:
+ Total of New Schedules:     0                                                        4,123,360                     4,123,360
+  Total of Old Schedules:    53,117,080.42                                            63,833,783.97                 63,472,444.34
+Rebate (0.0 %) on Org Sdl    0                                                       Rebate (0.0 %) on Org Sdl      0
+            Total Amount     53,117,080.42                                                       Total Amount       67,595,804.34
+
+ Last Sanctioned Variation Details:
+Variation Details:
+                                                                                                                                                                              Amount
+                                                                                                                                                                              (Rs.) as per   %age
+                                                                                                                                                               Amount
+Previous                                                                                                  Last                      Amount                                    Proposed       variation of
+             Schedule                                                          Qty. as per   Base                      Agreement                   Proposed    (Rs.) as per
+Variation                 Schedule     Item No.      Item Type    Unit                                    variation                 (Rs.) as per                              Qty.           Proposed
+             Type                                                              Orig.Agmt.    Rate(Rs.)                 Rate(Rs.)                   Qty.        Proposed
+Revno.                                                                                                    Qty.                      Orig. Agmt.                               including      Qty. with
+                                                                                                                                                               Qty.           special        Agmt. Qty.
+                                                                                                                                                                              cond.
+              NS            A             1           Individual Numbers           6.0           320600       6.0           320600.0       1923600.0 6.0         1923600.0 1923600.0 0.0
+Description: Supply of LED based Single line double faced Train arrival/departure display board as per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0 or latest. Suitable clamping
+arrangement and all consumable materials including iron frame to be supplied by contractor.Should be compatible with existing system.
+Remarks:
+              NS            A             10          Individual Kilometre 4.0                   37581.63     4.0           37581.63       150326.52 4.0         150326.52 150326.52 0.0
+Description: Supply of armoured 6 core Optical Fibre Cable Single Mode as per TS
+Remarks:
+              NS            A             11          Individual Boxes             160.0         3706.02      160.0         3706.02        592963.2    160.0     592963.2       592963.2       0.0
+Description: Supply of Box of CAT 6e STP Cable (Box of 305m) as per TS
+Remarks:
+              NS            A             12          Individual Numbers           4.0           27828.73     4.0           27828.73       111314.92 4.0         111314.92 111314.92 0.0
+Description: Supply of Maintenance free tripod type Chemical Earthing with ultra efficient gel whose earth resistance should be less than 1 Ohm as per RDSO/SPN/197/ ver 1.0 or latest as per TS.
+Remarks:
+              NS            A             13          Individual Numbers           40.0          928.14       40.0          928.14         37125.6     40.0      37125.6        37125.6        0.0
+Description: supply of RJ45 connectors (100Nos) in One pack 8P8C RJ45 Metal Shielded Male Plug Crimp Connector for Stander CAT6 Ethernet Network Cable as per TS.
+Remarks:
+              NS            A             14          Individual Metre             9200.0        74.45        9200.0        74.45          684940.0    17200.0   1280540.0 1265620.2           86.96
+                                                                                                                                                                                2
+Description: Supply of Power Cable 3 core x 2.5 sq. mm copper indoor PVC ISI Mark IS-694-1990 Sheathed or equivalent capable of carrying load current .ISI Mark ISS-694-1990,1100V , Finolex make
+or superiors per TS.
+Remarks: as per site requirement.
+              NS            A             15          Individual Numbers           11.0          7939.03      11.0          7939.03        87329.33    20.0      158780.6       158780.6       81.82
+Description: Supply of SC style LIU loaded with pigtail for Optical Fibre Cable 6 port (min) as per TS
+Remarks: as per site requirement.
+              NS            A             16          Individual Numbers           30.0          2054.49      30.0          2054.49        61634.7     30.0      61634.7        61634.7        0.0
+Description: Supply of PA Wall speaker. Make Ahuja Model No BS-6083T or superior as per TS
+Remarks:
+              NS            A             17          Individual Numbers           5.0           48801.11     5.0           48801.11       244005.55 5.0         244005.55 244005.55 0.0
+Description: Supply and installation of 3 KVA on line UPS with one hour backup and battery rack as per TS.
+Remarks:
+              NS            A             18          Individual Numbers           40.0          7867.06      40.0          7867.06        314682.4    40.0      314682.4       314682.4       0.0
+Description: Supply and installation of Amron Quanta SMF battery 12V/65Ah for UPS as per TS
+Remarks:
+              NS            A             19          Individual Numbers           8.0           28638.52     8.0           28638.52       229108.16 8.0         229108.16 229108.16 0.0
+Description: Supply of HD Base-T Lite 70 Mtrs HDMI Extender set over single CAT-6 or similar as per TS
+                                                                                                                                                                                   Amount
+                                                                                                                                                                                   (Rs.) as per   %age
+                                                                                                                                                                    Amount
+Previous                                                                                                     Last                        Amount                                    Proposed       variation of
+             Schedule                                                             Qty. as per   Base                       Agreement                    Proposed    (Rs.) as per
+Variation                  Schedule      Item No.     Item Type     Unit                                     variation                   (Rs.) as per                              Qty.           Proposed
+             Type                                                                 Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                    Qty.        Proposed
+Revno.                                                                                                       Qty.                        Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                    Qty.           special        Agmt. Qty.
+                                                                                                                                                                                   cond.
+Remarks:
+              NS             A            2             Individual Numbers           4.0           206100      4.0            206100.0      824400.0    4.0           824400.0       824400.0       0.0
+Description: Supply of LED based Single faced At a Glance display board as per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0 or latest. Suitable clamping arrangement and all consumable
+materials including steel frame to be supplied by the contractor. Should be compatible with existing system.
+Remarks:
+              NS             A            20            Individual Numbers           7.0           48131.96    7.0            48131.96      336923.72 7.0             336923.72 336923.72 0.0
+Description: Supply of 8 port 4K HDMI Splitter or similar as per TS
+Remarks:
+              NS             A            21            Individual Numbers           17.0          1724.73     17.0           1724.73       29320.41    17.0          29320.41       29320.41       0.0
+Description: Supply of HDMI Cable of good quality as per site requirement of suitable length as per TS.
+Remarks:
+              NS             A            22            Individual Numbers           3.0           6569.33     3.0            6569.33       19707.99    3.0           19707.99       19707.99       0.0
+Description: Supply &amp; Installation of cabinet (for protection of LFD) with hanging arrangement on suitable Bracket to install 01 No of Professional 49" LED based Full HD LFD (Large format
+display) type VDU as per TS
+Remarks:
+              NS             A            23            Individual Numbers           32.0          206400      32.0           206400.0      6604800.0 32.0            6604800.0 6604800.0 0.0
+Description: Supply and installation of 55 inch screen size digital signage cum mobile charging kiosk having body height of 80 inch * 27 inch with NF railway logo upper side, two power strip trays for
+mobile charging including client as per TS.
+Remarks:
+              NS             A            24            Individual Numbers           32.0          86000       32.0           86000.0       2752000.0 32.0            2752000.0 2752000.0 0.0
+Description: Software for digital signage system with its installation and configuration as per TS.
+Remarks:
+              NS             A            25            Individual Numbers           16.0          3750        16.0           3750.0        60000.0     16.0          60000.0        60000.0        0.0
+Description: Supply of Ahuja Speaker SRX 50Dx 50 watt or superior as per TS.
+Remarks:
+              NS             A            26            Individual Numbers           48.0          2579.09     48.0           2579.09       123796.32 10.0            25790.9        25790.9        -79.17
+Description: Installation and commissioning Double faced Coach Guidance Display Board under covered areaas per instruction of site in-charge. All fitting materials are to be supplied by the contractor
+Remarks: As per site requirment. length of shed is small
+              NS             A            27            Individual Numbers           30.0          3593.99     30.0           3593.99       107819.7    60.0          215639.4       215639.4       100.0
+Description: Installation and commissioning of LED based Double faced Coach Guidance Display Board in open area as per instruction of site in-charge. All fitting materials are tobe supplied by the
+contractor.This includes supply and installation of GI pole drawing of which has been given in the technical specification including requirement of cement, sandstone chips etc. as per site requirements.
+Remarks: As per site requirment.
+              NS             A            28            Individual Numbers           2.0           13740       2.0            13740.0       27480.0     2.0           27480.0        27480.0        0.0
+Description: Installation and commissioning of Central Data Controller as per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0or latest . This includes Computer,software, UPS, CCU
+Rack,CDS(Layer 3 Switch), KVM switch
+Remarks:
+              NS             A            29            Individual Numbers           3.0           13740       3.0            13740.0       41220.0     3.0           41220.0        41220.0        0.0
+Description: Installation &amp; Configuration of Remote Monitoring System (RMS)&amp; NMS
+                                                                                                                                                                                     Amount
+                                                                                                                                                                                     (Rs.) as per   %age
+                                                                                                                                                                      Amount
+Previous                                                                                                       Last                       Amount                                     Proposed       variation of
+             Schedule                                                              Qty. as per   Base                        Agreement                   Proposed     (Rs.) as per
+Variation                  Schedule      Item No.      Item Type     Unit                                      variation                  (Rs.) as per                               Qty.           Proposed
+             Type                                                                  Orig.Agmt.    Rate(Rs.)                   Rate(Rs.)                   Qty.         Proposed
+Revno.                                                                                                         Qty.                       Orig. Agmt.                                including      Qty. with
+                                                                                                                                                                      Qty.           special        Agmt. Qty.
+                                                                                                                                                                                     cond.
+Remarks:
+               NS           A              3              Individual Numbers            1.0      458303.96 1.0                458303.96 458303.96 1.0                     458303.96 458303.96 0.0
+Description: Supply of LED based Single faced Five line Train arrival/departure display board as per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0 or latest. Suitable clamping arrangement
+and all consumable materials including steel frame tobe supplied by the contractor. Should be compatible with existing system.
+Remarks:
+               NS           A              30             Individual Numbers            6.0      12219.44      6.0            12219.44       73316.64       6.0           73316.64       73316.64     0.0
+Description: Installation and commissioning of Single line double faced Train arrival/departure display board as per instruction of site in-charge.All fitting materials are to be supplied by the contractor
+Remarks:
+               NS           A              31             Individual Numbers            4.0      12219.44      4.0            12219.44       48877.76       4.0           48877.76       48877.76     0.0
+Description: Installation and commissioning of LED based At a glance display board as per instruction of site in-charge. All fitting materials are tobe supplied by the contractor
+Remarks:
+               NS           A              32             Individual Numbers            1.0      25481.33      1.0            25481.33       25481.33       1.0           25481.33       25481.33     0.0
+Description: Installation and commissioning of LED based Five line Single faced train arrival/departure displayboard as per instruction of site in-charge. All fitting materials are to be supplied by the
+contractor.
+Remarks:
+               NS           A              33             Individual Numbers            10.0     13167.5       10.0           13167.5        131675.0       10.0          131675.0       131675.0     0.0
+Description: Installation and commissioning of PDC (Platform Data Controller) insuitable capacity 9U rack with 8-16 port LIU and Rack Mountable Power Sockets.
+Remarks:
+               NS           A              34             Individual Metre              6000.0   28.63         6000.0         28.63          171780.0       6000.0        171780.0       171780.0     0.0
+Description: Fixing of casing Capping &amp; Conduit pipe and drawing of Communication/power/STP/Fiber wire through casing capping &amp; conduit pipe and fixing of Horn/Speaker etc. All fitting
+materials are to be supplied by the contractor.
+Remarks:
+               NS           A              35             Individual Metre              2400.0   317.17        2400.0         317.17         761208.0       5400.0        1712718.0 1684553.3 125.0
+Description: Laying &amp; drawing of communication cable and Power cables along with PLB pipe inside the common trench. This includes cutting of platform with tiles/stone cutting machine or
+manually to 30 cm depth and 10cm width approximately(including cutting of tiles neatly) by removing slabs/tiles if any. Refilling the trench with riversand replacing the top surface with smooth finished
+by appropriate concrete slabs/tiles as per site condition and as perdirection of site in-charge.
+Remarks: Required to Camera cable laying 12 No Plateform & concord area of SZR, NHLG, LMG & DPU
+               NS           A              36             Individual Numbers            300.0    348.54        300.0          348.54         104562.0       300.0         104562.0       104562.0     0.0
+Description: Splicing of fibers OFC Cable and making splice joint with contractor's own splicing machine and tools and consumables.
+Remarks:
+               NS           A              37             Individual Numbers            4.0      1877.02       4.0            1877.02        7508.08        4.0           7508.08        7508.08      0.0
+Description: Installation and commissioning of maintenance free tripod type Chemical Earthing as per TS
+Remarks:
+                                                                                                                              824051.89 1648103.7                         1648103.7 1648103.7 0.0
+               NS           A              38             Individual Numbers            2.0      824051.89 2.0                                              2.0
+                                                                                                                                             8                            8              8
+Description: Supply of GPS based outdoor true color clock LED tower clock.
+Remarks:
+               NS           A              39             Individual Numbers            2.0      57357.74      2.0            57357.74       114715.48 2.0                114715.48 114715.48 0.0
+                                                                                                                                                                                 Amount
+                                                                                                                                                                                 (Rs.) as per   %age
+                                                                                                                                                                  Amount
+Previous                                                                                                    Last                       Amount                                    Proposed       variation of
+             Schedule                                                            Qty. as per   Base                       Agreement                   Proposed    (Rs.) as per
+Variation                  Schedule     Item No.      Item Type    Unit                                     variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                                Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                   Qty.        Proposed
+Revno.                                                                                                      Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                  Qty.           special        Agmt. Qty.
+                                                                                                                                                                                 cond.
+Description: Installation, commissioning and testing of GPS based outdoor true color clock LED tower clock as per TS
+Remarks:
+                                                                                                                                          2795142.4 78.0            2795142.4 2795142.4 0.0
+             NS            A            4             Individual   Numbers       78.0          35835.16     78.0          35835.16        8                         8              8
+Description: Supply of LED based Double faced Coach Guidance Display Board complete with accessories (i.e. pole, clamps etc) as per RDSO's Specification No. RDSO/SPN/TC/108/2019, Ver.-0.0 or
+latest. Should be compatible with existing system.
+Remarks:
+              NS            A             40           Individual Numbers         3.0           28165.75     3.0           28165.75       84497.25     3.0          84497.25       84497.25     0.0
+Description: Supply,Installation, commissioning and testing of passenger operated enquiry terminal (POET) of PRS terminal for PNR status and accomodation availablity as per TS.
+Remarks:
+                                                                                                                                                                                   11084235. 300.0
+              NS            A             41           Individual Numbers         1.0           2847222      1.0           2847222.0 2847222.0 4.0                  11388888       25
+Description: Supply &amp; Installation of true colour outdoor video wall display as per TS
+Remarks: Require to install at SZR, NHLG, LMG & DPU
+              NS            A             42           Individual Numbers         185.0         23930.4      185.0         23930.4        4427124.0 185.0           4427124.0 4427124.0 0.0
+Description: Supply, Installation, Testing and commissioning of Full HD bullet type IP colour camera along with housing and mount and all accessories required for installation purposes along with 128
+GB SD/SDHC/SDXC Memory card or higher as per Technical Specification
+Remarks:
+              NS            A             43           Individual Numbers         20.0          88972        20.0          88972.0        1779440.0 20.0            1779440.0 1779440.0 0.0
+Description: "Supply, Installation, Testing and commissioning of Full HD P/T/Z (Pan, Tilt, Zoom) IP colour camera along with housing and mount and all accessories required for installation purposes
+along with 128 GB SD/SDHC/SDXC Memory
+card or higher as per Technical Specification"
+Remarks:
+              NS            A             44           Individual Numbers         8.0           27612        8.0           27612.0        220896.0     8.0          220896.0       220896.0     0.0
+Description: "Supply and Installation of Digital Key-Board all accessories compatible with P/T/Z cameras procured as per Technical
+Specification "
+Remarks:
+              NS            A             45           Individual Numbers         20.0          143360.26 20.0             143360.26 2867205.2 20.0                 2867205.2 2867205.2 0.0
+Description: "Supply and Installation of Full HD or higher (4K) Large format Display Monitor Industrial (55"" or Larger) with all required cables, connectors &amp; remote i.e. HDMI cable, power cable
+etc. as per Technical Specification
+
+Remarks:
+              NS            A             46            Individual Numbers           12.0          5369      12.0      5369.0       64428.0           12.0        64428.0        64428.0        0.0
+Description: Supply and installation of panic button with all required accessories, connectors etc as per TS
+Remarks:
+              NS            A             47            Individual Numbers           4.0           432588    4.0       432588.0     1730352.0         4.0         1730352.0      1730352.0      0.0
+Description: "Supply, Installation,Testing and commissioning of PC Workstation for viewing, monitoring and system management including
+24"" 4K UHD LED monitor with mouse and keyboard with
+Windows 11 operating system, MS office, antivirus (licensed
+genuine software), with 1000 VA UPS as per TS"
+                                                                                                                                                                             Amount
+                                                                                                                                                                             (Rs.) as per   %age
+                                                                                                                                                              Amount
+Previous                                                                                                 Last                       Amount                                   Proposed       variation of
+             Schedule                                                          Qty. as per   Base                      Agreement                   Proposed   (Rs.) as per
+Variation                 Schedule     Item No.     Item Type     Unit                                   variation                  (Rs.) as per                             Qty.           Proposed
+             Type                                                              Orig.Agmt.    Rate(Rs.)                 Rate(Rs.)                   Qty.       Proposed
+Revno.                                                                                                   Qty.                       Orig. Agmt.                              including      Qty. with
+                                                                                                                                                              Qty.           special        Agmt. Qty.
+                                                                                                                                                                             cond.
+Remarks:
+                                                                                                                                    1096055.2                 1096055.2      1096055.2
+             NS           A            48           Individual    Numbers      4.0           274013.82   4.0           274013.82                   4.0                                      0.0
+                                                                                                                                    8                         8              8
+Description: "Supply, Installation, Testing and Commissioning of Video Management &amp; Recording server cum Analytic hardware
+and all accessories required for installation purposes at RPF Chowki as per Technical Specification"
+Remarks:
+              NS            A               49            Individual Numbers       4.0           62221.68     4.0           62221.68        248886.72 4.0            248886.72 248886.72 0.0
+Description: Supply, Installation, Testing and Commissioning of FRS server hardware band all accessories required for installation purposes. including 17" FHD LED monitor with mouse and keyboard
+&amp; KVM switch with Windows operating system suitable for server, , for server rack as per Technical specification
+Remarks:
+              NS            A               5             Individual Numbers       2.0           291483.51 2.0              291483.51 582967.02 2.0                  582967.02 582967.02 0.0
+Description: Supply of Central Data Controlleras per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0 or latest . This includes Two CPUs, Software, UPS, Rack, CDS, KVM Switch, Monitor,
+Speaker, Microphone etc. Should be compatible with existing system.
+Remarks:
+              NS            A               50            Individual Numbers       4.0           3068         4.0           3068.0          12272.0        4.0       12272.0        12272.0     0.0
+Description: Supply, Installation, Testing and Commissioning of AI Video Analytic server software and all accessories required for installation purposes as per Technical specification
+Remarks:
+              NS            A               51            Individual Numbers       4.0           153400       4.0           153400.0        613600.0       4.0       613600.0       613600.0    0.0
+Description: Supply, Installation, Testing and Commissioning of Video FRS server software and all accessories required for installation purposes Technical Specification
+Remarks:
+              NS            A               52            Individual Numbers       205.0         2791.88      205.0         2791.88         572335.4       205.0     572335.4       572335.4    0.0
+Description: Supply, Installation, Testing and commissioning of Graphical User Interface software, Video Management System software and Video Recording Software (per camera basis) for the server
+hardware as per TS and Supply , Installation, configuration &amp; Commissioning of Remote Viewing on Web and Mobile APP &amp; Command and Control Center software as per TS
+Remarks:
+              NS            A               53            Individual Lot           960.0         7056.4       960.0         7056.4          6774144.0 960.0          6774144.0 6774144.0 0.0
+Description: "Supply, Installation, Testing and Commissioning of External Storage Device for 30 days recording at station/RPF/GRP Thana/Post along with all accessories required for installation
+purposes (Lot = Tera Byte , Capacity of storage in TB) as per TS"
+Remarks:
+              NS            A               54            Individual Numbers       40.0          21000.58     40.0          21000.58        840023.2       40.0      840023.2       840023.2    0.0
+Description: Supply, Installation, Testing and commissioning of Type-I (Field Switch) switches and all accessories required for their installation as per TS
+Remarks:
+              NS            A               55            Individual Pair          40.0          1829         40.0          1829.0          73160.0        40.0      73160.0        73160.0     0.0
+Description: Supply of SFP -BX (10KM) Single Fibre as per TS
+Remarks:
+              NS            A               56            Individual Numbers       12.0          4625.54      12.0          4625.54         55506.48       12.0      55506.48       55506.48    0.0
+Description: SFP+ (10 KM) as per TS.
+Remarks:
+              NS            A               57            Individual Numbers       12.0          36728.15     12.0          36728.15        440737.8       12.0      440737.8       440737.8    0.0
+                                                                                                                                                                                  Amount
+                                                                                                                                                                                  (Rs.) as per   %age
+                                                                                                                                                                   Amount
+Previous                                                                                                     Last                       Amount                                    Proposed       variation of
+             Schedule                                                            Qty. as per   Base                       Agreement                    Proposed    (Rs.) as per
+Variation                  Schedule     Item No.      Item Type     Unit                                     variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                                Orig.Agmt.    Rate(Rs.)                  Rate(Rs.)                    Qty.        Proposed
+Revno.                                                                                                       Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                   Qty.           special        Agmt. Qty.
+                                                                                                                                                                                  cond.
+Description: "Supply, Installation, Testing and commissioning of Type-II (Aggregator Switch) switches and all accessories required
+for their installation as per TS"
+Remarks:
+                NS            A             58        Individual Pair              20.0          17375.5       20.0        17375.5     347510.0        20.0          347510.0     347510.0       0.0
+Description: "Supply of Media Convertor Pair and all accessories required
+for their installation as per TS"
+Remarks:
+                NS            A             59        Individual Metre             12000.0       55.83         12000.0     55.83       669960.0        12000.0       669960.0     669960.0       0.0
+Description: "Supply of STP CAT-6 cable and all the accessories required
+for installation as per TS"
+Remarks:
+                NS            A             6         Individual Numbers           3.0           326325        3.0         326325.0    978975.0        3.0           978975.0     978975.0       0.0
+Description: Supply of Remote Monitoring System with NMS
+Remarks:
+                NS            A             60        Individual Metre             8000.0        20.12         8000.0      20.12       160960.0        8000.0        160960.0     160960.0       0.0
+Description: Supply of 12 Core metal strengthened outdoor armoured optic fibre cable (ITU-TG- 652-D) and all the accessories required for installation as per clause TS
+Remarks:
+                NS            A             61        Individual Numbers           4.0           6144.53       4.0         6144.53     24578.12        4.0           24578.12     24578.12       0.0
+Description: Supply of 19" 42U Racks and all accessories required for installation purpose of switches as per TS-
+Remarks:
+                NS            A             62        Individual Numbers           28.0          10974         28.0        10974.0     307272.0        28.0          307272.0     307272.0       0.0
+Description: Supply of 19" 9U Racks and all accessories required for installation purpose of switches as per TS
+Remarks:
+                NS            A             63        Individual Numbers           28.0          15254.77      28.0        15254.77    427133.56 28.0                427133.56    427133.56      0.0
+Description: Supply of 12 Fiber FMS (SC-APC Type) and all accessories required for installation as per TS
+Remarks:
+                NS            A             64        Individual Numbers           4.0           22134.56      4.0         22134.56    88538.24        4.0           88538.24     88538.24       0.0
+Description: Supply of 24 Fibre FMS (SC- APC Type) and all accessories required for installation as per TS
+Remarks:
+                NS            A             65        Individual Numbers           8.0           85196         8.0         85196.0     681568.0        8.0           681568.0     681568.0       0.0
+Description: Supply of 1KVA Online UPS and all accessories required for installation as per TS
+Remarks:
+                NS            A             66        Individual Numbers           4.0           144694.67 4.0             144694.67 578778.68 4.0                   578778.68    578778.68      0.0
+Description: "Supply of 2X10KVA Online UPS (2 Nos of 10KVA) and all
+accessories required for installation as per TS"
+Remarks:
+                NS            A             67        Individual Numbers           4.0           107196.75 4.0             107196.75 428787.0          4.0           428787.0     428787.0       0.0
+                                                                                                                                                                                 Amount
+                                                                                                                                                                                 (Rs.) as per   %age
+                                                                                                                                                                  Amount
+Previous                                                                                                    Last                       Amount                                    Proposed       variation of
+             Schedule                                                            Qty. as per   Base                      Agreement                    Proposed    (Rs.) as per
+Variation                  Schedule     Item No.      Item Type    Unit                                     variation                  (Rs.) as per                              Qty.           Proposed
+             Type                                                                Orig.Agmt.    Rate(Rs.)                 Rate(Rs.)                    Qty.        Proposed
+Revno.                                                                                                      Qty.                       Orig. Agmt.                               including      Qty. with
+                                                                                                                                                                  Qty.           special        Agmt. Qty.
+                                                                                                                                                                                 cond.
+Description: Supply of Earthing and installation for 3 Pit per site as per TS
+Remarks:
+               NS            A             68           Individual Metre            200.0         646.82        200.0        646.82       129364.0      200.0        129364.0      129364.0     0.0
+Description: "Supply of GI pipes (50mm dia- 3.65mm thick) as per IS- 1239, Pt.- 1, medium grade, for laying of cable to the PF shelter from ground level. Entry of cables will be advised
+by the site in charge of the Railway and extending by suitable
+dia HDPE/Flexible PVC pipe on either side as required as per Ts"
+Remarks:
+               NS            A             69           Individual Numbers          4.0           4441.4        4.0          4441.4       17765.6       4.0          17765.6       17765.6      0.0
+Description: Supply of ACDB for AC distribution Box with Lock and key arrangements and ISI Mark MCBs of various ratings as per TS
+Remarks:
+               NS            A             7            Individual Numbers          10.0          54960         10.0         54960.0      549600.0      10.0         549600.0      549600.0     0.0
+Description: Supply of Platform Data Controller(PDC) as per as per RDSO's Specification No.RDSO/SPN/TC/108/2019, Ver.-0.0 or latest
+Remarks:
+               NS            A             70           Individual Numbers          4.0           3097.21       4.0          3097.21      12388.84      4.0          12388.84      12388.84     0.0
+Description: Supply and fixing of furniture for each Workstation quoted one table (Model:T-105 Make: Godrej or similar), and two chairs (Model:CH-1007 Make: Godrej or similar) as per TS
+Remarks:
+               NS            A             71           Individual Metre            1600.0        45.58         1600.0       45.58        72928.0       1600.0       72928.0       72928.0      0.0
+Description: Supply of PVC Flexible pipe of 35mm (This includes all materials, clamps etc. required for laying, fixing and clamping). As per TS
+Remarks:
+               NS            A             72           Individual Metre            1800.0        61.52         1800.0       61.52        110736.0      3500.0       215320.0      215320.0     94.44
+Description: Supply of 35mm PVC Conduit pipe ISI Mark with all accessories for laying of cables as per TS
+Remarks: as per site requirment.
+               NS            A             73           Individual Metre            400.0         170.03        400.0        170.03       68012.0       3000.0       510090.0      496487.6     650.0
+Description: "Supply of 40 mm dia. HDPE pipe with accessories on wall or structure/ in Trench/HDD etc. along with all accessories
+required for fixing, clamping, cutting as per TS"
+Remarks: as per site requirment.
+               NS            A             74           Individual Metre            18000.0       3.07          18000.0      3.07         55260.0       18000.0      55260.0       55260.0      0.0
+Description: Blowing, Pulling, Laying of STP CAT-6, Optic Fibre, Power Copper cable as per TS
+Remarks:
+               NS            A             75           Individual Man-             15.0          15340         15.0         15340.0      230100.0      15.0         230100.0      230100.0     0.0
+                                                                        Week
+Description: Training of personnel over and above the onsite training, during the installation, maintenance and supervision period as detailed in the tender document
+Remarks:
+               NS            A             8            Individual Metre            2000.0        59.54         2000.0       59.54        119080.0      2000.0       119080.0      119080.0     0.0
+Description: Supply of 2" PVC conduit pipe/Casing capping superior quality with ISI mark. As per IS 9537
+Remarks:
+               NS            A             9            Individual Metre            1000.0        21.76         1000.0       21.76        21760.0       1000.0       21760.0       21760.0      0.0
+                                                                                                                                                                                 Amount
+                                                                                                                                                                                 (Rs.) as per     %age
+                                                                                                                                                                  Amount
+Previous                                                                                                   Last                      Amount                                      Proposed         variation of
+             Schedule                                                           Qty. as per   Base                      Agreement                   Proposed      (Rs.) as per
+Variation                 Schedule      Item No.     Item Type    Unit                                     variation                 (Rs.) as per                                Qty.             Proposed
+             Type                                                               Orig.Agmt.    Rate(Rs.)                 Rate(Rs.)                   Qty.          Proposed
+Revno.                                                                                                     Qty.                      Orig. Agmt.                                 including        Qty. with
+                                                                                                                                                                  Qty.           special          Agmt. Qty.
+                                                                                                                                                                                 cond.
+Description: Twin Core screened TRS wire size3/0.29 mm Multi stand copper conductor.
+Remarks:
+              NS            NS              NS01        Individual Metre            0.0            627.46         1000.0       627.46       0.0         1000.0  627460.0      627460.0      0.0
+Description: Supply of GI wire Mesh type fabricated from pre-galvansied wire cable tray of Min size 150mm x 75mm x 4 mm along with all required accessories for mounting of the tray under the
+platform covered shed.
+Remarks: Necessary for laying overhead cables outside and under the platform covered shed as per site requirement.
+              NS            NS              NS02        Individual Numbers          0.0            77900          1.0          77900.0      0.0         1.0     77900.0       77900.0       0.0
+Description: ECOTANK printers ECOTANK L6570 / L6580 Make EPSON or similar
+Remarks: Required for printing, copying and scanning survey reports, drawings, documentation works etc.
+              NS            NS              NS03        Individual Numbers          0.0            250000         2.0          250000.0     0.0         2.0     500000.0      500000.0      0.0
+Description: Electro-Voice Evolve 50M portable Linear Column Array PA system
+Remarks: Required for inauguration programme/video conferences at station premises under Amrit Bharat Abhiyan.
+              NS            NS              NS04        Individual Numbers          0.0            118000         1.0          118000.0     0.0         1.0     118000.0      118000.0      0.0
+Description: High speed servo control voltage stabiliser with micro controller, based digital controls , input voltage range=340v to 470v, & output= 415v
+Remarks: Required for stabilizing the three phase supply current for video wall.
+              NS            NS              NS05        Individual Numbers          0.0            350000         8.0          350000.0     0.0         8.0     2800000.0 2800000.0 0.0
+Description: Supply, installation, testing and commissioning of GPS based LED Tower clock of size 30 inch(Height) X 78 inch (Breadth)
+Remarks: Require to install at SZR, NHLG, LMG & DPU
+                                                                                                                                            53,117,08           67,957,14     67,595,80
+                                                                                                                                  Total:                Total:                              27.938
+                                                                                                                                            0.42                3.97          4.34
+                                                                                                                                                                                                       %age
+                                                                                                                                                      Rebate (0.0 %) Amount      0              Var.Incl.Spc
+                                                                                                                                                                                                     l.Cond.
+                                                                                                                                                                                 67,595,80
+                                                                                                                                                               Total Amount                       27.258
+                                                                                                                                                                                 4.34
+
