@@ -12,6 +12,31 @@ const migrationsDirectory = path.resolve(here, '..', 'migrations');
 
 let allSql = '';
 let createdTables: string[] = [];
+let createdTriggers: string[] = [];
+
+/**
+ * The number of CREATE TRIGGER statements the migration series contains.
+ *
+ * The panel's coverage reading was "131 triggers, 4 named in tests": the
+ * trigger population grows silently because nothing counts it. This census
+ * makes each addition an explicit edit. Raising the number is a normal
+ * part of adding a trigger — the value of the constant is that it cannot
+ * happen without somebody typing the new total and, in doing so, asking
+ * whether the trigger has a test.
+ */
+const TRIGGER_CENSUS = 139;
+
+/**
+ * The one counter table that must NOT carry a monotonicity guard.
+ *
+ * Migration 0029 gave the manual back-fill of paper extension letters a
+ * delete path whose mechanism is a counter DECREMENT: the top-of-sequence
+ * row is deleted, the counter steps back, and the slot is handed out
+ * again, so the extension sequence never gains a gap. 0029 relaxed the
+ * table's own CHECK to `next_value >= 0` for the same reason. Its
+ * invariant is gaplessness, not monotonicity.
+ */
+const COUNTER_DECREASE_EXEMPT = ['extension_request_counters'];
 
 beforeAll(async () => {
   const files = (await readdir(migrationsDirectory))
@@ -23,6 +48,9 @@ beforeAll(async () => {
   );
   allSql = contents.join('\n');
   createdTables = [...allSql.matchAll(/^create table (\w+)/gim)].map(
+    (match) => match[1] ?? '',
+  );
+  createdTriggers = [...allSql.matchAll(/^\s*create trigger (\w+)/gim)].map(
     (match) => match[1] ?? '',
   );
 });
@@ -229,5 +257,100 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('purchase_orders_one_draft_per_work_vendor');
     expect(sql).toContain('purchase_orders_update_guard');
     expect(sql).toContain('budgetary_quotations_update_guard');
+  });
+
+  it('counts the triggers the series creates', () => {
+    expect(
+      createdTriggers.length,
+      'the migration series creates a different number of triggers than the ' +
+        'census records. Update TRIGGER_CENSUS in this file, and give the new ' +
+        'trigger a test that attacks it with raw SQL.',
+    ).toBe(TRIGGER_CENSUS);
+  });
+
+  it('guards every counter table against a decreasing counter (0064)', () => {
+    // Numbering state is the one thing a document series cannot recover
+    // from: a counter that moves backwards reissues a number that is
+    // already on paper. Six of the eleven counter tables carried the 0003
+    // guard and four more gained it in 0064, so the rule is stated here
+    // over the migration text rather than left to whoever writes the next
+    // counter to remember. The eleventh is exempt for a documented reason
+    // and must stay named, not merely absent.
+    const counterTables = createdTables
+      .filter((table) => table.endsWith('_counters'))
+      .filter((table) => !COUNTER_DECREASE_EXEMPT.includes(table));
+    expect(counterTables.length).toBeGreaterThanOrEqual(10);
+    for (const exempt of COUNTER_DECREASE_EXEMPT) {
+      expect(createdTables, `${exempt} is not a counter table`).toContain(exempt);
+    }
+    const flattened = allSql.replace(/\s+/g, ' ');
+    for (const table of counterTables) {
+      const statement =
+        `CREATE TRIGGER ${table}_guard_decrease BEFORE UPDATE ON ${table} ` +
+        'FOR EACH ROW EXECUTE FUNCTION ';
+      const at = flattened.indexOf(statement);
+      expect(
+        at,
+        `${table} has no monotonicity trigger. Add one: ${statement}` +
+          'app_private.guard_counter_decrease();',
+      ).toBeGreaterThanOrEqual(0);
+      // 0051 and 0056 wrote their own copies of the function rather than
+      // reusing 0003's, so the name is matched by shape, not literally.
+      expect(flattened.slice(at, flattened.indexOf(';', at) + 1)).toMatch(
+        /app_private\.guard_[a-z_]*counter[a-z_]*_decrease\(\);$/,
+      );
+    }
+  });
+
+  it('binds counter monotonicity and invoice sequence uniqueness in 0064', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0064_counter_and_invoice_number_guards.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // The shared guard names the table that refused, so one message can
+    // serve eleven tables.
+    expect(sql).toContain("RAISE EXCEPTION '% must not decrease', TG_TABLE_NAME");
+    // The exemption is recorded in the migration that would otherwise
+    // have broken the 0029 delete path.
+    expect(sql).toContain('deliberately NOT guarded');
+    expect(sql).toContain('extension_request_counters');
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX tax_invoices_sequence_per_fy\s+ON tax_invoices \(organisation_id, fy_label, sequence_number\)\s+WHERE sequence_number IS NOT NULL;/,
+    );
+    // The preflight names offending rows before the index could report a
+    // uniqueness violation with no way to find them.
+    expect(sql).toContain('RAISE EXCEPTION');
+    expect(sql).toContain('sequence numbers repeat inside a financial year');
+  });
+
+  it('names the three repeated value shapes in 0065', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0065_value_domains_and_live_items.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain('CREATE DOMAIN sha256_hex AS text');
+    expect(sql).toContain('CREATE DOMAIN money_amount AS numeric(18, 2)');
+    expect(sql).toContain('CREATE DOMAIN quantity_amount AS numeric(18, 3)');
+    // The live-items view must stay invoker-scoped: a definer view would
+    // read work_items with the view owner's privileges.
+    expect(sql).toContain(
+      'CREATE VIEW work_items_live\nWITH (security_invoker = true)',
+    );
+    expect(sql).toContain('WHERE deleted_at IS NULL');
+    // Three column-scoped triggers block ALTER COLUMN TYPE and are dropped
+    // and recreated inside this migration's transaction. Every drop must
+    // have its matching create, or a money guard would be gone.
+    for (const trigger of [
+      'tax_invoices_render_pointer_guard',
+      'tax_invoices_split_place_guard',
+      'tax_invoices_tax_heads_guard',
+    ]) {
+      expect(sql).toContain(`DROP TRIGGER ${trigger} ON tax_invoices;`);
+      expect(sql).toContain(`CREATE TRIGGER ${trigger}`);
+    }
   });
 });
