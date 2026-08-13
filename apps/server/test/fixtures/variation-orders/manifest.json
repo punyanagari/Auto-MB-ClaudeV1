@@ -1,0 +1,47 @@
+[
+  {
+    "id": "VO-NFR-LMG-V1",
+    "railway": "Northeast Frontier Railway",
+    "unit": "Lumding",
+    "variation_number": "1",
+    "loa_number": "00846370081460",
+    "loa_date": "2023-07-14",
+    "loa_amount_printed": "5.311708E+7",
+    "agreement_number": "NFR/LMG/S&T/2023/0040",
+    "omitted_items": 0,
+    "note": "LOA amount printed in scientific notation; no item is omitted by this variation.",
+    "redaction": "verbatim-names-retained",
+    "fixture_file": "VO-NFR-LMG-V1.txt",
+    "sha256": "0919b2422a5d8056eadab249039aa93e7d7c27bad29932b423dd2b21338d412f"
+  },
+  {
+    "id": "VO-CR-BSL-V3",
+    "railway": "Central Railway",
+    "unit": "Bhusawal",
+    "variation_number": "3",
+    "loa_number": "00341490031451",
+    "loa_date": "2021-01-29",
+    "loa_amount_printed": "41,301,860",
+    "agreement_number": "CR/BSL/S&T/2021/0006",
+    "omitted_items": 67,
+    "note": "The omission corpus: 67 of its 328 item rows carry a proposed quantity of zero and a -100 %age variation.",
+    "redaction": "verbatim-names-retained",
+    "fixture_file": "VO-CR-BSL-V3.txt",
+    "sha256": "02a884de03a1c2378af33f05333c933d39bf3db6d76eee912c8768c0f6e0baa4"
+  },
+  {
+    "id": "VO-WR-BCT-V2",
+    "railway": "Western Railway",
+    "unit": "Mumbai",
+    "variation_number": "2",
+    "loa_number": "00341490077841",
+    "loa_date": "2023-05-26",
+    "loa_amount_printed": "79,892,180",
+    "agreement_number": "WR/BCT/S&T/2023/0031",
+    "omitted_items": 0,
+    "note": "Carries a Last Sanctioned Variation Details block above the Variation Details table.",
+    "redaction": "verbatim-names-retained",
+    "fixture_file": "VO-WR-BCT-V2.txt",
+    "sha256": "fa7c7f1cb8adaf0aa8d37dd9e982792f266b7e953ecb51309c7e1a31757457ef"
+  }
+]
