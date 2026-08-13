@@ -2,11 +2,14 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { PlanNode, Sql, TransactionSql } from '@auto-mb/db';
 import {
+  aggregateLoops,
   createDatabasePool,
+  explainPlan,
   removeOrganisationResidue,
   runMigrations,
+  sharedBlocks,
   withTenant,
 } from '@auto-mb/db';
 import {
@@ -201,53 +204,24 @@ const RETIRED_DASHBOARD_PBG_SQL = `
   order by w.created_at desc
 `;
 
-interface PlanNode extends Record<string, unknown> {
-  'Node Type': string;
-  'Actual Loops'?: number;
-  'Shared Hit Blocks'?: number;
-  'Shared Read Blocks'?: number;
-  Plans?: PlanNode[];
-}
-
-function planNodes(node: PlanNode): PlanNode[] {
-  return [node, ...(node.Plans ?? []).flatMap(planNodes)];
-}
-
-/** Runs EXPLAIN (ANALYZE, BUFFERS) over the exact statement production
- * runs and returns its node list. */
+/** The EXPLAIN kit lives in `@auto-mb/db` (`src/explain.ts`). This file,
+ * `scale-budget.integration.test.ts` and the RLS plan-shape guards in
+ * `packages/db/test` each carried a copy of it declaring only the plan
+ * fields that copy happened to read, and a plan assertion is only as good
+ * as its field names. `explainPlan` takes ANALYZE and BUFFERS as options;
+ * both are on here, because these budgets read `Actual Loops` and buffer
+ * counts.
+ *
+ * `aggregateLoops` is the highest loop count over the plan's AGGREGATE
+ * nodes — how many times PostgreSQL had to compute a sum. Join nodes may
+ * legitimately loop (a nested loop over 40 items is linear work); an
+ * aggregate that loops is the per-row shape pack P11 removed. */
 async function explain(
   tx: TransactionSql,
   sql: string,
   parameters: readonly unknown[],
 ): Promise<PlanNode[]> {
-  const rows = (await tx.unsafe(`explain (analyze, buffers, format json) ${sql}`, [
-    ...parameters,
-  ] as never)) as unknown as { 'QUERY PLAN': unknown }[];
-  const raw = rows[0]?.['QUERY PLAN'];
-  const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-    Plan: PlanNode;
-  }[];
-  const root = parsed[0]?.Plan;
-  if (!root) throw new Error('EXPLAIN returned no plan');
-  return planNodes(root);
-}
-
-/** The highest loop count over the plan's AGGREGATE nodes — how many
- * times PostgreSQL had to compute a sum. Join nodes may legitimately
- * loop (a nested loop over 40 items is linear work); an aggregate that
- * loops is the per-row shape this pack removed. */
-function aggregateLoops(nodes: readonly PlanNode[]): number {
-  const aggregates = nodes.filter((node) => node['Node Type'].includes('Aggregate'));
-  if (aggregates.length === 0) throw new Error('plan has no aggregate node');
-  return Math.max(...aggregates.map((node) => node['Actual Loops'] ?? 1));
-}
-
-function sharedBlocks(nodes: readonly PlanNode[]): number {
-  return nodes.reduce(
-    (total, node) =>
-      total + (node['Shared Hit Blocks'] ?? 0) + (node['Shared Read Blocks'] ?? 0),
-    0,
-  );
+  return explainPlan(tx, sql, parameters, { analyze: true, buffers: true });
 }
 
 /** Counts the statements a helper issues, without touching production
@@ -444,9 +418,33 @@ describe('the Measurement Book loader is one grouped statement', () => {
     // running, and a committed absolute ceiling that catches a
     // regression the retired statement would share.
     //
-    // Measured 2026-08-13, PostgreSQL 18, 40 items x 3 challans:
-    // current 5,820 shared blocks, retired 59,084 — 10.2x.
-    expect(sharedBlocks(current) * 4).toBeLessThan(sharedBlocks(retired));
+    // The relative multiplier was 4x, and pack P17 (migration 0069) moved
+    // it to 2x. Not because anything regressed — both statements got much
+    // cheaper — but because part of what the 4x was measuring turned out
+    // not to be the lateral re-execution at all.
+    //
+    // Before 0069 every RLS policy called the SECURITY DEFINER membership
+    // helper in bare filter position, so the executor ran it per candidate
+    // row. The retired six-lateral shape re-scans per work item, so it was
+    // paying that per-row cost N times over and the grouped shape was
+    // paying it once — which flattered the gap. 0069 evaluates the helper
+    // once per statement in BOTH shapes, and what is left is the lateral
+    // penalty on its own.
+    //
+    // Measured on one database, one fixture, flipping only the policy
+    // shape (2026-08-14, PostgreSQL 18.4, 40 items x 3 challans, three
+    // runs each):
+    //
+    //   bare policies:     current 9,418-9,939   retired 46,066-55,396  (4.9-5.6x)
+    //   InitPlan policies: current 3,448-4,387   retired 13,426-15,782  (3.1-4.6x)
+    //
+    // So the ratio is now data-dependent around 3x and the old threshold
+    // fails on a loaded database. 2x still refuses the shape this guard
+    // exists to refuse — a grouped statement that quietly became the
+    // retired one reads the SAME buffers, not half of them — and the two
+    // assertions above, which are structural rather than measured, are
+    // what actually hold the loop count at one.
+    expect(sharedBlocks(current) * 2).toBeLessThan(sharedBlocks(retired));
     expect(sharedBlocks(current)).toBeLessThan(MB_BLOCK_CEILING);
   });
 });

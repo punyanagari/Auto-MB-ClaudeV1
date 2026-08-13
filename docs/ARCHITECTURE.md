@@ -56,8 +56,8 @@ Tenant isolation is enforced by:
 2. PostgreSQL Row-Level Security;
 3. `FORCE ROW LEVEL SECURITY`;
 4. a non-owner, non-superuser application role without `BYPASSRLS`;
-5. transaction-local `app.organisation_id` context;
-6. the membership floor: `app_private.current_organisation_id()` returns the context organisation only when `app.user_id` holds an active membership in it, so every policy fails closed against a stamped-but-illegitimate organisation id;
+5. transaction-local `app.organisation_id` context, written by `app_private.bind_tenant` (migration 0069), which refuses the binding with Auto-MB's own SQLSTATE `28A01` when the user holds no active membership in it (deliberately not `28000` — that is PostgreSQL's own connection-authorisation failure, and conflating the two would report an authentication outage as a membership decision) — a wrong binding fails at the top of the transaction rather than reading an empty database;
+6. the membership floor: `app_private.current_organisation_id()` returns the context organisation only when `app.user_id` holds an active membership in it, so every policy fails closed against a stamped-but-illegitimate organisation id. Policies call it as `organisation_id = (SELECT app_private.current_organisation_id())`, which the planner runs as an InitPlan once per statement; the membership check itself is unchanged and still happens inside the SECURITY DEFINER function, which is why the floor does not depend on point 5 (see ADR-0010);
 7. integration tests that attempt cross-tenant access through the real pool and the real HTTP endpoints.
 
 A user may belong to multiple organisations through memberships. The client names its selected organisation with the `x-organisation-id` header, but the database membership floor decides whether that selection binds; a client-supplied organisation id is never trusted by itself. Organisation creation goes through `app_private.create_organisation_with_owner`, the atomic SECURITY DEFINER bootstrap owned by the non-login `auto_mb_definer` role.
