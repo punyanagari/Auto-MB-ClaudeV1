@@ -286,7 +286,11 @@ Process notes for wave 3:
   timing. P9's extra test file changed the scheduling enough to lose the
   race on the runner. The class of bug — awaiting an element that exists
   in the LOADING state — is worth a grep before wave 3 writes more view
-  tests.
+  tests. _Resolved: after the class bit a second time (`search.test.tsx`
+  on P14, PR #68), the grep became a standing guard —
+  `apps/web/test/views/loading-anchor-census.test.ts` derives the
+  loading-visible heading names from every view's loading branch and
+  fails any view test that anchors an await on one._
 
 ---
 
