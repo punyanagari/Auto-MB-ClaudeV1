@@ -478,8 +478,11 @@ export function OperationsWorkspace({
       ? challanWork.workCode
       : '';
 
+  // Closing the transient menus belongs here, where it can happen the
+  // instant the view changes. Moving focus onto the new view's heading
+  // does not: with the views code-split the heading may not exist yet,
+  // so that lives in ViewFocus, inside the Suspense boundary.
   useEffect(() => {
-    containerRef.current?.querySelector('h1')?.focus();
     setMobileMenuOpen(false);
     setMobileMoreOpen(false);
     setHeaderQuickActionsOpen(false);

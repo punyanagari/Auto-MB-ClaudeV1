@@ -7,16 +7,15 @@
  *
  * 1. The INITIAL JavaScript payload — the entry module plus every chunk
  *    Vite tells the browser to preload alongside it — stays inside a gzip
- *    budget. That is what a clerk downloads and parses before the first
+ *    ratchet. That is what a clerk downloads and parses before the first
  *    screen can paint, and the number the improvement programme set a
  *    budget for (pack P10, dimension 35).
  *
  * 2. Each code-split view is still its own chunk and is still absent from
- *    that initial payload. This is the assertion with teeth: a single
- *    static `import { Works } from './Works.js'` re-added to
- *    `views/OperationsWorkspace.tsx` collapses a view back into the entry
- *    chunk, and it would take many such mistakes before the byte budget
- *    alone noticed.
+ *    that initial payload. A single static `import { Works } from
+ *    './Works.js'` re-added to `views/OperationsWorkspace.tsx` collapses
+ *    a view back into the entry chunk, and this names the view rather
+ *    than leaving a byte count to be interpreted.
  *
  * Run after `pnpm --filter @auto-mb/web build`; `pnpm verify` does both in
  * order. Reads the built `index.html` rather than a Vite manifest so the
@@ -33,14 +32,27 @@ const distDir = join(webRoot, 'dist');
 const assetsDir = join(distDir, 'assets');
 
 /**
- * The gzip budget for the initial JavaScript payload.
- *
- * A ratchet: lower it when a pack takes the number down, never raise it
- * to accommodate a regression. Measured on `main` @ a15449b, before the
- * views were code-split, the whole application was one chunk at 222.31 KiB
- * gzip — the budget is the number that tree fails.
+ * The improvement programme's budget for the initial JavaScript payload
+ * (pack P10): 220 kB gzip, in the decimal kB Vite's own build report
+ * uses. On `main` @ a15449b, before the views were code-split, the whole
+ * application was one chunk measuring 220,743 bytes gzip — 743 bytes over
+ * this line, which is what makes it a budget the pre-fix tree fails
+ * rather than one it happens to meet.
  */
-const INITIAL_JS_GZIP_BUDGET_BYTES = 220 * 1024;
+const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
+
+/**
+ * The ratchet actually asserted on, which is where the payload sits now
+ * plus a little room for ordinary drift. Lower it when a pack takes the
+ * number down; never raise it to accommodate a regression, and never
+ * above the budget above.
+ *
+ * It exists because 220 kB is a ceiling with a hundred kilobytes of slack
+ * beneath it: without a ratchet a new dependency could double the initial
+ * payload and still pass. Measured at 103,192 bytes gzip when this was
+ * written.
+ */
+const INITIAL_JS_GZIP_RATCHET_BYTES = 115_000;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.
@@ -80,8 +92,10 @@ function fail(message) {
   process.exit(1);
 }
 
-function kib(bytes) {
-  return `${(bytes / 1024).toFixed(2)} KiB`;
+/** Decimal kB, matching Vite's own build report so the two numbers can be
+ * compared without conversion. */
+function kb(bytes) {
+  return `${(bytes / 1000).toFixed(2)} kB`;
 }
 
 let html;
@@ -120,7 +134,7 @@ for (const href of initial) {
   }
   const gzipped = gzipSync(bytes).byteLength;
   total += gzipped;
-  report.push(`  ${href}  ${kib(bytes.byteLength)} raw, ${kib(gzipped)} gzip`);
+  report.push(`  ${href}  ${kb(bytes.byteLength)} raw, ${kb(gzipped)} gzip`);
 }
 
 /* The view chunks, checked by name. `readdirSync` once: the assertion is
@@ -152,8 +166,8 @@ process.stdout.write(
 );
 process.stdout.write(`${report.join('\n')}\n`);
 process.stdout.write(
-  `  total ${kib(total)} gzip against a ${kib(INITIAL_JS_GZIP_BUDGET_BYTES)} budget ` +
-    `(${kib(INITIAL_JS_GZIP_BUDGET_BYTES - total)} of headroom)\n`,
+  `  total ${kb(total)} gzip — ratchet ${kb(INITIAL_JS_GZIP_RATCHET_BYTES)}, ` +
+    `programme budget ${kb(INITIAL_JS_GZIP_BUDGET_BYTES)}\n`,
 );
 process.stdout.write(
   `Code-split views: ${String(LAZY_VIEWS.length - missing.length)} of ` +
@@ -175,10 +189,18 @@ if (inlined.length > 0) {
   );
 }
 
-if (total > INITIAL_JS_GZIP_BUDGET_BYTES) {
+if (INITIAL_JS_GZIP_RATCHET_BYTES > INITIAL_JS_GZIP_BUDGET_BYTES) {
   fail(
-    `the initial JavaScript payload is ${kib(total)} gzip, over the ` +
-      `${kib(INITIAL_JS_GZIP_BUDGET_BYTES)} budget by ` +
-      `${kib(total - INITIAL_JS_GZIP_BUDGET_BYTES)}.`,
+    `the ratchet (${kb(INITIAL_JS_GZIP_RATCHET_BYTES)}) has been raised above the ` +
+      `programme's budget (${kb(INITIAL_JS_GZIP_BUDGET_BYTES)}). Take the payload ` +
+      'down rather than the line.',
+  );
+}
+
+if (total > INITIAL_JS_GZIP_RATCHET_BYTES) {
+  fail(
+    `the initial JavaScript payload is ${kb(total)} gzip, over the ` +
+      `${kb(INITIAL_JS_GZIP_RATCHET_BYTES)} ratchet by ` +
+      `${kb(total - INITIAL_JS_GZIP_RATCHET_BYTES)}.`,
   );
 }

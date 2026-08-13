@@ -211,9 +211,10 @@ test('typing in a 129-item challan editor re-renders only the row typed into', a
   const worstRows = Math.max(...rowsPerKeystroke);
   expect(
     worstRows,
-    `one character re-rendered ${String(worstRows)} of the ${String(ITEM_COUNT)} table ` +
-      'rows; only the row being typed into should re-render (per keystroke: ' +
-      `${rowsPerKeystroke.join(', ')})`,
+    `one character re-rendered ${String(worstRows)} table rows of the ` +
+      `${String(ITEM_COUNT + 1)} on screen (${String(ITEM_COUNT)} items and the ` +
+      'column heading); only the row being typed into should re-render ' +
+      `(per keystroke: ${rowsPerKeystroke.join(', ')})`,
   ).toBeLessThanOrEqual(MAX_ROWS_RERENDERED_PER_KEYSTROKE);
 
   const worstCommits = Math.max(...commitsPerKeystroke);
