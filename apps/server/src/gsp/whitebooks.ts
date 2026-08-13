@@ -1,3 +1,9 @@
+import {
+  IrnDerivationError,
+  SignedQrClaimError,
+  assertIrnDerivesFrom,
+  assertSignedQrAgrees,
+} from './irn.js';
 import { formatNicDate } from './irp-payload.js';
 import { exactJsonInteger, stringifyStatutoryJson } from './statutory-json.js';
 import {
@@ -364,7 +370,7 @@ function boundedText(value: string | null, code: string, max: number): string {
 function normaliseIrp(
   rawTexts: readonly string[],
   value: unknown,
-): Omit<IrpRegistrationEvidence, 'rawResponse'> {
+): Omit<IrpRegistrationEvidence, 'rawResponse' | 'portal'> {
   const irn = boundedText(
     textValue(value, ['Irn', 'irn']),
     'WHITEBOOKS_IRN_MISSING',
@@ -443,9 +449,48 @@ function normaliseEway(
   };
 }
 
+/**
+ * Local verification of an IRP registration response (audit finding 2).
+ *
+ * The adapter is the right place for it: every caller that can obtain
+ * registration evidence — invoice register, credit-note register, and the
+ * reconcile-by-lookup path for all of them — goes through here, so no
+ * future route can acquire unverified evidence by forgetting to call a
+ * checker. The refusal outcome is the caller's to choose, because it means
+ * different things after a mutation than after a lookup.
+ */
+function verifyIrpEvidence(
+  evidence: Omit<IrpRegistrationEvidence, 'portal'>,
+  identity: IrpDocumentIdentity,
+  outcome: 'failed' | 'unknown',
+): void {
+  try {
+    assertIrnDerivesFrom(evidence.irn, identity);
+    assertSignedQrAgrees(evidence.signedQr, evidence.irn, identity);
+  } catch (error) {
+    if (error instanceof IrnDerivationError || error instanceof SignedQrClaimError) {
+      throw new StatutoryProviderError(
+        `WHITEBOOKS_${error.code}`,
+        outcome,
+        null,
+        null,
+        // The body stays with the refusal: evidence we refuse is exactly
+        // the evidence an operator needs to see whole.
+        evidence.rawResponse,
+      );
+    }
+    throw error;
+  }
+}
+
 export class WhitebooksProvider implements StatutoryProvider {
   readonly name = 'whitebooks' as const;
   readonly environment: StatutoryEnvironment;
+  /** Which portal answers for this instance: the NIC IRP the provider
+   * routes to, and the provider host it routes through. Persisted on every
+   * operation ledger row so the evidence records WHO answered, not only
+   * what they said (audit finding 2). */
+  readonly portal: string;
   readonly #baseUrl: string;
   readonly #auth = new Map<string, AuthEvidence>();
   readonly #authPending = new Map<string, Promise<AuthEvidence>>();
@@ -459,6 +504,7 @@ export class WhitebooksProvider implements StatutoryProvider {
   ) {
     this.environment = config.environment;
     this.#baseUrl = BASE_URLS[config.environment];
+    this.portal = `${config.irp} via ${new URL(this.#baseUrl).host}`;
   }
 
   async #request(
@@ -697,10 +743,18 @@ export class WhitebooksProvider implements StatutoryProvider {
       },
     );
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_IRP_EMPTY', 'unknown');
-    return withRawResponse(result.raw, () => ({
+    const evidence = withRawResponse(result.raw, () => ({
       ...normaliseIrp(result.rawTexts, result.parsed),
       rawResponse: result.raw,
     }));
+    // 'unknown', not 'failed'. The GENERATE call already mutated: if the
+    // response is incoherent we cannot claim the document was NOT
+    // registered, only that we will not adopt what came back. 'unknown'
+    // leaves the invoice in registration_unknown, which the
+    // reconcile-by-lookup path is built to resolve — and which that path
+    // verifies again before adopting anything.
+    verifyIrpEvidence(evidence, identity, 'unknown');
+    return { ...evidence, portal: this.portal };
   }
 
   async findInvoiceByDocument(
@@ -727,12 +781,16 @@ export class WhitebooksProvider implements StatutoryProvider {
         notFoundIsNull: true,
       },
     );
-    return result === null
-      ? null
-      : withRawResponse(result.raw, () => ({
-          ...normaliseIrp(result.rawTexts, result.parsed),
-          rawResponse: result.raw,
-        }));
+    if (result === null) return null;
+    const evidence = withRawResponse(result.raw, () => ({
+      ...normaliseIrp(result.rawTexts, result.parsed),
+      rawResponse: result.raw,
+    }));
+    // 'failed', not 'unknown'. A lookup mutates nothing, so refusing its
+    // answer changes no external state: the document stays exactly as
+    // unknown as it already was, and a named refusal is the honest result.
+    verifyIrpEvidence(evidence, identity, 'failed');
+    return { ...evidence, portal: this.portal };
   }
 
   async cancelInvoice(input: {

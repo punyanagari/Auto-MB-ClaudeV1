@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '../src/index.js';
 import { createDatabasePool, runMigrations } from '../src/index.js';
 import {
+  TABLE_PRIVILEGES,
   applyGrants,
   ensureApplicationRole,
   verifyApplicationConnection,
@@ -148,4 +149,78 @@ describe('production bootstrap', () => {
       .replace(/\/[^/]+$/, `/${bootDbName}`);
     await verifyApplicationConnection(appUrl);
   }, 30_000);
+});
+
+/**
+ * Audit finding 10's acceptance condition. The matrix being complete today
+ * was established by reading every CREATE TABLE by hand; that proves the
+ * present state and nothing about the next migration. This test derives
+ * the required set from the catalog of the freshly migrated database, so a
+ * table that lands without a matrix entry — and therefore without any
+ * grant, failing at runtime with a bare permission-denied — fails here
+ * instead of shipping.
+ */
+describe('privilege matrix drift', () => {
+  /**
+   * The migration ledger is the ONLY table deliberately absent from the
+   * matrix: it is administrator state, written by `runMigrations` under
+   * the owner role, and the application role must never read or write it.
+   * Every other table is tenant or platform data the application serves.
+   */
+  const UNGRANTED_BY_DESIGN = new Set(['schema_migrations']);
+
+  it('declares every table the migrations create', async () => {
+    const rows = await bootAdmin<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_type = 'BASE TABLE'
+      order by table_name
+    `;
+    const tables = rows.map((row) => row.table_name);
+    // A vacuous pass on an unmigrated database would defeat the point.
+    expect(tables.length).toBeGreaterThan(50);
+
+    const missing = tables.filter(
+      (table) =>
+        !UNGRANTED_BY_DESIGN.has(table) &&
+        !Object.prototype.hasOwnProperty.call(TABLE_PRIVILEGES, table),
+    );
+    expect(
+      missing,
+      `tables present in the database but absent from the bootstrap ` +
+        `privilege matrix: ${missing.join(', ')}. Declare each in ` +
+        'TABLE_PRIVILEGES (packages/db/src/bootstrap.ts), or record it in ' +
+        'UNGRANTED_BY_DESIGN with the reason it holds no application grant.',
+    ).toEqual([]);
+  });
+
+  it('names no relation the database does not have', async () => {
+    // The other drift direction: a table renamed or dropped by a migration
+    // leaves a matrix entry that makes `applyGrants` throw on a fresh
+    // install. Views count — consignee_masters (0028) is a compatibility
+    // view and legitimately carries its own narrow ACL.
+    const rows = await bootAdmin<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public'
+        and table_type in ('BASE TABLE', 'VIEW')
+    `;
+    const present = new Set(rows.map((row) => row.table_name));
+    const stale = Object.keys(TABLE_PRIVILEGES).filter((table) => !present.has(table));
+    expect(
+      stale,
+      `privilege matrix entries with no matching relation: ${stale.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('grants nothing on the migration ledger', async () => {
+    // The exclusion above must stay a decision, not a hole: prove the
+    // application role really holds no privilege on it.
+    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+      const [row] = await bootAdmin<{ ok: boolean }[]>`
+        select has_table_privilege(
+          'auto_mb_app', 'schema_migrations', ${privilege}
+        ) as ok
+      `;
+      expect(row?.ok, `schema_migrations ${privilege}`).toBe(false);
+    }
+  });
 });

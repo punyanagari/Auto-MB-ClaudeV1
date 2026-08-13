@@ -528,9 +528,12 @@ export function trimmedDescription(value: string): string {
   return trimmed;
 }
 
-/** Re-exported from its own module (apps/server/src/financial-year.ts)
- * since migration 0056 gave the standalone Delivery Challan a
- * per-financial-year counter too; every existing importer is unchanged. */
+/** Re-exported from its own module (`apps/server/src/financial-year.ts`)
+ * so every existing importer is unchanged. It moved there for two
+ * reasons: migration 0056 gave the standalone Delivery Challan a
+ * per-financial-year counter too, and the statutory adapter derives IRNs
+ * over the same label, so the two must never be separate implementations
+ * (audit finding 2). */
 export { financialYearLabel } from '../../financial-year.js';
 
 export interface BuyerRow {

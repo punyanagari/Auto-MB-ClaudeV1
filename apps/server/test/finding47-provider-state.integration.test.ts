@@ -9,6 +9,7 @@ import type { TaxInvoiceDetailResponse } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations, withTenant } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import { deriveIrn } from '../src/gsp/irn.js';
 
 /**
  * Finding 47, money-and-legal subset, items (a) and (b).
@@ -269,12 +270,30 @@ beforeAll(async () => {
     [registeredInvoiceId, 'a'],
     [ewbInvoiceId, 'b'],
   ] as const) {
+    // The IRN is derived from each invoice's own frozen identity: since
+    // audit finding 2 the manual door refuses any other value, so a
+    // fixture can no longer be an arbitrary 64-character string.
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoiceId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const frozen = detail.json<TaxInvoiceDetailResponse>().issuedSnapshot as {
+      supplier: { gstin: string };
+      invoiceNumber: string;
+      invoiceDate: string;
+    };
     const recorded = await authed(owner, {
       method: 'POST',
       url: `/api/tax-invoices/${invoiceId}/irp-response`,
       organisationId,
       payload: {
-        irn: seed.repeat(64),
+        irn: deriveIrn({
+          gstin: frozen.supplier.gstin,
+          documentNumber: frozen.invoiceNumber,
+          documentDate: frozen.invoiceDate,
+        }),
         ackNumber: '112010036563310',
         ackDate: '2026-02-15T09:00:00.000Z',
         ackDateText: '2026-02-15 14:30:00',

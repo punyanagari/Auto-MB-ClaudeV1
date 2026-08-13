@@ -564,6 +564,87 @@ describe('export completeness', () => {
   });
 });
 
+/**
+ * Audit finding 11's acceptance condition. The completeness assertions
+ * above are a hand-maintained list, which is precisely what the audit said
+ * not to rely on: a new tenant table lands, nobody remembers to add it to
+ * the export, and the register is quietly no longer the complete business
+ * record while CI stays green. This test derives the required set from the
+ * database catalog instead, so the omission is a failure rather than an
+ * oversight.
+ */
+describe('export completeness is catalog-driven', () => {
+  /**
+   * Export sections whose name is not the plain camelCase of their table.
+   * These are the only hand-written entries and each is a naming decision
+   * already published in the package's format: adding a table cannot get
+   * past the test by being listed here, because a new table's absence
+   * fails the assertion below regardless.
+   */
+  const SECTION_NAME_OVERRIDES: Readonly<Record<string, string>> = {
+    // The organisation's own row is exported singular, as an object.
+    organisations: 'organisation',
+    // The membership register is published under its business name.
+    organisation_memberships: 'members',
+  };
+
+  function sectionNameOf(table: string): string {
+    const override = SECTION_NAME_OVERRIDES[table];
+    if (override !== undefined) return override;
+    return table.replace(/_([a-z0-9])/g, (_match, character: string) =>
+      character.toUpperCase(),
+    );
+  }
+
+  it('exports every organisation-scoped table the catalog knows about', async () => {
+    // A tenant table is one carrying organisation_id, plus `organisations`
+    // itself — the same definition the tenancy suite's own drift check
+    // uses. BASE TABLE only: the consignee_masters compatibility view
+    // (0028) exposes organisation_id but owns no rows of its own; its base
+    // table `contacts` is in the set.
+    const rows = await admin<{ table_name: string }[]>`
+      select t.table_name
+      from information_schema.tables t
+      where t.table_schema = 'public'
+        and t.table_type = 'BASE TABLE'
+        and (
+          t.table_name = 'organisations'
+          or exists (
+            select 1
+            from information_schema.columns c
+            where c.table_schema = t.table_schema
+              and c.table_name = t.table_name
+              and c.column_name = 'organisation_id'
+          )
+        )
+      order by t.table_name
+    `;
+    const tenantTables = rows.map((row) => row.table_name);
+    // Guard against the query silently matching nothing and the test
+    // passing vacuously on an unmigrated database.
+    expect(tenantTables.length).toBeGreaterThan(50);
+
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode).toBe(200);
+    const exported: Record<string, unknown> = response.json();
+
+    const missing = tenantTables.filter(
+      (table) => exported[sectionNameOf(table)] === undefined,
+    );
+    expect(
+      missing,
+      `tenant tables absent from the organisation export: ${missing
+        .map((table) => `${table} (expected section "${sectionNameOf(table)}")`)
+        .join(', ')}. Add the table to routes/export.ts, or add a section-name ` +
+        'override here if it is published under a different name.',
+    ).toEqual([]);
+  });
+});
+
 describe('the export is one consistent snapshot', () => {
   /**
    * The export runs about forty-five sequential SELECTs. Under READ

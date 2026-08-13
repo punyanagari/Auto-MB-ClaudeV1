@@ -5,9 +5,10 @@ import {
   TaxInvoiceDetailResponseSchema,
   type TaxInvoiceStatus,
 } from '@auto-mb/contracts';
-import type { Sql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../../auth.js';
 import { requireAuthority } from '../../authz.js';
+import { IrnDerivationError, assertIrnDerivesFrom } from '../../gsp/irn.js';
 import { stringifyStatutoryJson } from '../../gsp/statutory-json.js';
 import {
   finishStatutoryOperation,
@@ -46,6 +47,40 @@ import {
   requireEinvoiceDeclared,
   requireStatus,
 } from './internal.js';
+
+/**
+ * The document identity the IRN derives from, read from the invoice's own
+ * FROZEN issued snapshot — never from live master data, which may have
+ * moved since the invoice was submitted (finding 6). The caller must
+ * already hold the invoice lock.
+ */
+async function irpIdentityOfInvoice(
+  tx: TransactionSql,
+  invoiceId: string,
+): Promise<IrpDocumentIdentity> {
+  const [row] = await tx<{ issued_snapshot: unknown }[]>`
+    select issued_snapshot from tax_invoices where id = ${invoiceId}
+  `;
+  if (!row) throw new Error(`tax invoice ${invoiceId} disappeared while locked`);
+  let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
+  try {
+    snapshot = parseTaxInvoiceIssuedSnapshot(parseJsonbColumn(row.issued_snapshot));
+  } catch (error) {
+    if (error instanceof TaxInvoiceSnapshotError) {
+      throw httpError(
+        409,
+        error.code,
+        'The frozen issued invoice is incomplete, so the IRN cannot be checked against it.',
+      );
+    }
+    throw error;
+  }
+  return {
+    gstin: snapshot.supplier.gstin,
+    documentNumber: snapshot.invoiceNumber,
+    documentDate: snapshot.invoiceDate,
+  };
+}
 
 /** The IRP transport: Whitebooks registration and cancellation, the
  * stale-operation recovery door, the manual compatibility evidence
@@ -637,6 +672,25 @@ export function registerTaxInvoiceProviderRoutes(
         // unconditional here.
         const today = await requireEinvoiceDeclared(tx);
         assertReportingWindowOpen(invoice, today);
+        // Local verification reaches the manual door too (audit finding
+        // 2). The IRN is not opaque: it is the SHA-256 of the supplier
+        // GSTIN, document type, number and financial year, and all four
+        // are frozen on this invoice's own issued snapshot. An IRN that
+        // does not reproduce from them is not this invoice's IRN, so
+        // recording it would put a false statutory identifier on a legal
+        // document — a refusal, not a warning. This is the one check the
+        // manual path CAN make: the signed QR's signature still cannot be
+        // verified without the portal's certificate, which is why these
+        // rows stay `registered_unverified` even when the IRN checks out.
+        const manualIdentity = await irpIdentityOfInvoice(tx, id);
+        try {
+          assertIrnDerivesFrom(body.irn, manualIdentity);
+        } catch (error) {
+          if (error instanceof IrnDerivationError) {
+            throw httpError(409, error.code, error.message);
+          }
+          throw error;
+        }
         // The distinct manually-recorded state (migration 0053): behaves
         // as registered for local rules but is excluded from every
         // provider-verified claim and renders as unverified.

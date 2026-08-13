@@ -296,6 +296,13 @@ export function registerExportRoutes(
         const creditNoteCounters = await tx<Record<string, unknown>[]>`
           select * from credit_note_counters order by fy_label
         `;
+        // The standalone Delivery Challan's per-FY sequence (0056). Found
+        // missing by the catalog-driven completeness test: recovery needs
+        // every counter, or a restored organisation reissues numbers it
+        // has already used.
+        const standaloneChallanCounters = await tx<Record<string, unknown>[]>`
+          select * from standalone_challan_counters order by fy_label
+        `;
         // Recorded first so the export contains its own audit record.
         await tx`
           insert into audit_events (
@@ -529,6 +536,7 @@ export function registerExportRoutes(
           budgetaryQuotationCounters,
           taxInvoiceCounters,
           creditNoteCounters,
+          standaloneChallanCounters,
           objectManifest,
           auditEvents,
         };

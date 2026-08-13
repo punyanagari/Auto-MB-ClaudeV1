@@ -14,17 +14,27 @@ import { runMigrations } from './migration-runner.js';
  *
  * The matrix below is the CANONICAL final state, mirroring migrations
  * all migrations after all revokes. Adding a table? Update the matrix AND the
- * tenancy suite's table lists.
+ * tenancy suite's table lists — the catalog-driven drift test in
+ * `test/bootstrap.integration.test.ts` (audit finding 10) fails the build
+ * if a table exists in the database and not here.
  */
 
-/** table → privileges the application role holds. */
-const TABLE_PRIVILEGES: Record<string, string> = {
+/** table → privileges the application role holds. Exported so the
+ * catalog-driven drift test (audit finding 10) can diff it against
+ * `information_schema` rather than against a second hand-kept list. */
+export const TABLE_PRIVILEGES: Record<string, string> = {
   // Business tables that must never lose rows keep no DELETE (0003).
   organisations: 'SELECT, INSERT, UPDATE',
   works: 'SELECT, INSERT, UPDATE',
   work_items: 'SELECT, INSERT, UPDATE',
   loa_documents: 'SELECT, INSERT, UPDATE',
   delivery_challan_counters: 'SELECT, INSERT, UPDATE',
+  // The standalone Delivery Challan's per-financial-year sequence (0056):
+  // numbering state, so no DELETE, like every other counter. Found missing
+  // by the catalog-driven drift test below — the migration's own grant sits
+  // in a role-guarded block, so a database migrated before the application
+  // role existed would have had no grant at all and nothing to repair it.
+  standalone_challan_counters: 'SELECT, INSERT, UPDATE',
   // Drafts and structural rows remain deletable.
   organisation_memberships: 'SELECT, INSERT, UPDATE, DELETE',
   work_schedules: 'SELECT, INSERT, UPDATE, DELETE',

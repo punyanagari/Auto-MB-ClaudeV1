@@ -4,6 +4,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify from 'fastify';
 import pg from 'pg';
+import { API_VERSION } from './api-version.js';
 import type { AppInstance } from './app-instance.js';
 import { createDatabasePool, withUserContext } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
@@ -52,6 +53,7 @@ import { registerLoaRoutes } from './routes/loa.js';
 import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
+import { registerSearchRoutes } from './routes/search.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
@@ -299,8 +301,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       openapi: {
         info: {
           title: 'Auto-MB API',
-          version: '0.1.0',
-          description: 'Post-award works-contract execution API.',
+          // Single-sourced from apps/server/package.json — see api-version.ts
+          // for the scheme and why there is no literal here.
+          version: API_VERSION,
+          description:
+            'Post-award works-contract execution API for Indian government ' +
+            'contractors: LOA intake, delivery and issue challans, ' +
+            'measurement books, statutory GST documents, and the audit ' +
+            'trail over them. Every /api route outside the documented ' +
+            'unbound set is tenant-scoped and requires the ' +
+            'x-organisation-id header.',
         },
       },
     });
@@ -818,6 +828,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
+    registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
