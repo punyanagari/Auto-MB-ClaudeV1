@@ -15,7 +15,7 @@ import type {
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatTimestampDate } from '../format.js';
+import { formatDate, formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
@@ -33,6 +33,7 @@ import {
   ActionBar,
   FormError,
   FieldError,
+  Hint,
 } from '../ui/form.js';
 import { TenderTermsReview } from './TenderTermsReview.js';
 import {
@@ -42,7 +43,15 @@ import {
   normaliseDecimal,
   parseDecimalMinorUnits,
   type ExtractionPayloadView,
+  type ReviewFlagView,
 } from '../loa-payload.js';
+import {
+  itemFlagsOf,
+  itemLocksOf,
+  itemTargetId,
+  letterLocksOf,
+  type ItemLocks,
+} from '../loa-locked-fields.js';
 
 interface ReviewLoaProps {
   readonly api: ApiClient;
@@ -52,6 +61,28 @@ interface ReviewLoaProps {
   readonly onConfirmed: (work: WorkDetailResponse) => void;
   readonly onBack: () => void;
 }
+
+/** The product's words for the two classifications, so a read-only fact
+ * reads the way the form's own options read. */
+const PRICING_SHAPE_WORDS = {
+  letter_percentage: 'Letter percentage',
+  per_schedule: 'Per-schedule totals',
+} as const;
+
+const DIRECTION_WORDS = {
+  below: 'Below',
+  at_par: 'At par',
+  above: 'Above',
+} as const;
+
+/** Every field of a reviewer-added row is the reviewer's: nothing was
+ * extracted for it. */
+const MANUAL_ROW_LOCKS: ItemLocks = {
+  description: false,
+  unitCode: false,
+  awardedQuantity: false,
+  effectiveRate: false,
+};
 
 interface ItemDraft {
   readonly key: string;
@@ -63,6 +94,13 @@ interface ItemDraft {
    * of a sourceRef. */
   readonly manual: boolean;
   readonly anchorLine: string;
+  /** Which of this row's values the letter already decided. A locked value
+   * is shown as printed and cannot be typed over; the server refuses a
+   * changed one by name. */
+  readonly locks: ItemLocks;
+  /** The parser's own flags against this row, shown beside the fields it
+   * left open. */
+  readonly flags: readonly ReviewFlagView[];
   itemNumber: string;
   description: string;
   unitCode: string;
@@ -158,6 +196,8 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
       needsReview: item.needsReview,
       manual: false,
       anchorLine: item.raw.anchorLine,
+      locks: itemLocksOf(payload, item),
+      flags: itemFlagsOf(payload, itemTargetId(scheduleId, item.itemSno)),
       itemNumber: `${scheduleId}/${item.itemSno}`,
       description: item.description,
       unitCode: (item.qtyUnit ?? '').slice(0, 20),
@@ -166,6 +206,101 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
       paymentCategory: '',
     };
   });
+}
+
+/** One value the letter already decided, read straight off the printed
+ * text. It is TEXT, not a disabled control: a disabled input still reads as
+ * "a field you cannot use", and this is not a field at all — it is the
+ * letter's own value, and the only thing that can change it is a corrected
+ * letter. Numbers, money and dates keep the product's mono + tabular
+ * figures so a column of them lines up under the eye. */
+function ExtractedFact({
+  label,
+  value,
+  numeric = false,
+  testId,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly numeric?: boolean;
+  readonly testId?: string;
+}) {
+  return (
+    <>
+      <dt className="text-[13px] font-medium text-muted-foreground">{label}</dt>
+      <dd
+        data-testid={testId}
+        className={
+          numeric
+            ? 'font-mono text-[13px] tabular-nums [overflow-wrap:anywhere]'
+            : 'text-[13px] [overflow-wrap:anywhere]'
+        }
+      >
+        {value}
+      </dd>
+    </>
+  );
+}
+
+/** The panel the extracted facts sit in. Quieter than the form around it:
+ * these are settled facts, not questions. */
+function ExtractedFacts({
+  children,
+  testId,
+  caption,
+}: {
+  readonly children: React.ReactNode;
+  readonly testId: string;
+  readonly caption: string;
+}) {
+  return (
+    <dl
+      data-testid={testId}
+      aria-label={caption}
+      className="my-3 grid max-w-[46rem] grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/40 px-4 py-3"
+    >
+      {children}
+    </dl>
+  );
+}
+
+/** One locked value inside the items table. Same reasoning as
+ * `ExtractedFact`, in the width a table cell has. */
+function LockedCell({
+  value,
+  numeric = false,
+  label,
+}: {
+  readonly value: string;
+  readonly numeric?: boolean;
+  readonly label: string;
+}) {
+  return (
+    <span
+      aria-label={label}
+      className={
+        numeric
+          ? 'block font-mono text-[13px] tabular-nums'
+          : 'block text-[13px] [overflow-wrap:anywhere]'
+      }
+    >
+      {value}
+    </span>
+  );
+}
+
+/** What the parser said it could not read, beside the field it left open. */
+function ParserHoleNote({ flags }: { readonly flags: readonly ReviewFlagView[] }) {
+  if (flags.length === 0) return null;
+  return (
+    <p className="mt-1 text-xs text-muted-foreground">
+      {flags.map((flag) => (
+        <span key={flag.code} className="mr-1 inline-block">
+          <StatusChip status="review">{flag.code}</StatusChip>
+        </span>
+      ))}
+    </p>
+  );
 }
 
 /** One item's description cell: two rows by default, the whole thing on
@@ -247,6 +382,12 @@ export function ReviewLoa({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
+  /** The one remedy for a wrong extraction: withdraw the letter and upload
+   * a corrected one. It asks once — the file leaves the working list and
+   * only a fresh upload brings it back. */
+  const [discardAsked, setDiscardAsked] = useState(false);
+  const [discardPending, setDiscardPending] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
   const manualSequence = useRef(1);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
 
@@ -320,6 +461,30 @@ export function ReviewLoa({
     () => (document === null ? null : asExtractionPayload(document.extractionPayload)),
     [document],
   );
+
+  /** Which letter-level values the parser established. Everything true here
+   * renders as the letter's own text; the rest stay as fields, because the
+   * parser said it could not read them. */
+  const locks = useMemo(
+    () => (payload === null ? null : letterLocksOf(payload)),
+    [payload],
+  );
+
+  async function discard() {
+    setDiscardPending(true);
+    setDiscardError(null);
+    try {
+      await api.discardLoaDocument(organisationId, documentId);
+      onBack();
+    } catch (cause) {
+      setDiscardError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The letter could not be discarded. Nothing was changed.',
+      );
+      setDiscardPending(false);
+    }
+  }
 
   const scheduleIds = useMemo(() => {
     if (items === null) return [];
@@ -438,6 +603,8 @@ export function ReviewLoa({
               needsReview: true,
               manual: true,
               anchorLine: '',
+              locks: MANUAL_ROW_LOCKS,
+              flags: [],
               itemNumber: `${scheduleId}/${sno}`,
               description: '',
               unitCode: '',
@@ -626,7 +793,13 @@ export function ReviewLoa({
     );
   }
 
-  if (payload === null || header === null || items === null || pbg === null) {
+  if (
+    payload === null ||
+    locks === null ||
+    header === null ||
+    items === null ||
+    pbg === null
+  ) {
     return (
       <Card aria-labelledby="review-title">
         <h1 id="review-title" tabIndex={-1}>
@@ -646,6 +819,17 @@ export function ReviewLoa({
   }
 
   const flagged = payload.review.needsReview.total;
+  /** Whether the letter established anything at all. A letter whose whole
+   * header the parser missed shows no panel rather than an empty box. */
+  const hasLetterFacts =
+    locks.letterNumber ||
+    locks.letterDate ||
+    locks.title ||
+    locks.advertisedValue ||
+    locks.contractValue ||
+    locks.pricingShape ||
+    locks.letterPercentage ||
+    locks.letterPercentageDirection;
 
   return (
     <Card className="w-full" aria-labelledby="review-title">
@@ -653,10 +837,71 @@ export function ReviewLoa({
         Review {document.originalFilename}
       </h1>
       <p className="text-muted-foreground">
-        Values below are prefilled from the letter's own text; every parsed field keeps
-        its printed source. Correct anything that reads wrong — nothing becomes a Work
-        until you confirm.
+        The letter is the source of truth for this Work. Values read off it are shown as
+        printed and cannot be edited here; only the values the parser could not read are
+        yours to supply. Nothing becomes a Work until you confirm.
       </p>
+
+      {/* The rule, and the one way out of it. Placed before the review
+          issues: a reviewer who disagrees with an extracted value needs to
+          know now that the exit is a corrected letter, not a keystroke. */}
+      <div
+        className="my-3 rounded-lg border border-border bg-muted/40 px-4 py-3"
+        role="note"
+        aria-labelledby="extracted-lock-title"
+        data-testid="extracted-lock-note"
+      >
+        <h2 id="extracted-lock-title">Extracted values are read-only</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Every quantity, rate, percentage and date recorded against this Work is
+          measured from what this letter says, so the extraction is kept exactly as
+          printed. Fields the parser flagged stay editable and carry its flag.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Wrong? Discard this letter and upload a corrected one — an extracted value is
+          never quietly overwritten.
+        </p>
+        {canModify &&
+          (discardAsked ? (
+            <span className="mt-2 flex flex-wrap items-center gap-2 print:hidden">
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={discardPending}
+                onClick={() => void discard()}
+              >
+                Confirm discard
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={discardPending}
+                onClick={() => {
+                  setDiscardAsked(false);
+                  setDiscardError(null);
+                }}
+              >
+                Keep reviewing
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                The file stays on record for retention, but leaves the review list.
+                Upload the corrected letter to start again.
+              </span>
+            </span>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => {
+                setDiscardAsked(true);
+              }}
+            >
+              Discard this letter
+            </Button>
+          ))}
+        {discardError !== null && <FormError>{discardError}</FormError>}
+      </div>
 
       {/* Above the review issues on purpose: a letter number that already
           belongs to something is the one thing that should stop a
@@ -751,7 +996,79 @@ export function ReviewLoa({
           every failure names its field, binds a message, and moves focus. */}
       <form noValidate onSubmit={(event) => void confirm(event)}>
         <h2>Letter details</h2>
+        {/* What the letter itself says. Read-only text, not disabled
+            controls: these are not fields the reviewer is locked out of,
+            they are the letter's own values, and the only thing that
+            changes one is a corrected letter. */}
+        {hasLetterFacts && (
+          <ExtractedFacts testId="letter-facts" caption="Values read from the letter">
+            {locks.letterNumber && (
+              <ExtractedFact
+                label="Letter number"
+                value={header.letterNumber}
+                numeric
+                testId="fact-letter-number"
+              />
+            )}
+            {locks.letterDate && (
+              <ExtractedFact
+                label="Letter date"
+                value={formatDate(header.letterDate)}
+                numeric
+                testId="fact-letter-date"
+              />
+            )}
+            {locks.title && (
+              <ExtractedFact
+                label="Work description"
+                value={header.title}
+                testId="fact-title"
+              />
+            )}
+            {locks.advertisedValue && (
+              <ExtractedFact
+                label="Advertised value"
+                value={`₹${header.advertisedValue}`}
+                numeric
+                testId="fact-advertised-value"
+              />
+            )}
+            {locks.contractValue && (
+              <ExtractedFact
+                label="Accepted value"
+                value={`₹${header.contractValue}`}
+                numeric
+                testId="fact-contract-value"
+              />
+            )}
+            {locks.pricingShape && (
+              <ExtractedFact
+                label="Pricing shape"
+                value={PRICING_SHAPE_WORDS[header.pricingShape]}
+                testId="fact-pricing-shape"
+              />
+            )}
+            {locks.letterPercentage && (
+              <ExtractedFact
+                label="Percentage"
+                value={`${header.letterPercentage}%`}
+                numeric
+                testId="fact-letter-percentage"
+              />
+            )}
+            {locks.letterPercentageDirection &&
+              header.letterPercentageDirection !== '' && (
+                <ExtractedFact
+                  label="Direction"
+                  value={DIRECTION_WORDS[header.letterPercentageDirection]}
+                  testId="fact-percentage-direction"
+                />
+              )}
+          </ExtractedFacts>
+        )}
         <FieldRow>
+          {/* The contractor's own filing reference. The letter does not
+              print it, so it is the reviewer's to choose. */}
           <Field>
             <label htmlFor="work-code">Work code (your reference)</label>
             <input
@@ -775,214 +1092,244 @@ export function ReviewLoa({
               <FieldError id="work-code-error">{fieldErrors['work-code']}</FieldError>
             )}
           </Field>
-          <Field>
-            <label htmlFor="letter-number">Letter number</label>
-            <input
-              id="letter-number"
-              ref={(node) => {
-                registerField('letter-number', node);
-              }}
-              value={header.letterNumber}
-              onChange={(event) => {
-                updateHeader('letterNumber', event.target.value);
-              }}
-              required
-              aria-invalid={fieldErrors['letter-number'] !== undefined}
-              aria-describedby={
-                fieldErrors['letter-number'] !== undefined
-                  ? 'letter-number-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['letter-number'] !== undefined && (
-              <FieldError id="letter-number-error">
-                {fieldErrors['letter-number']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="letter-date">Letter date</label>
-            <input
-              id="letter-date"
-              ref={(node) => {
-                registerField('letter-date', node);
-              }}
-              type="date"
-              value={header.letterDate}
-              onChange={(event) => {
-                updateHeader('letterDate', event.target.value);
-              }}
-              required
-              aria-invalid={fieldErrors['letter-date'] !== undefined}
-              aria-describedby={
-                fieldErrors['letter-date'] !== undefined
-                  ? 'letter-date-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['letter-date'] !== undefined && (
-              <FieldError id="letter-date-error">
-                {fieldErrors['letter-date']}
-              </FieldError>
-            )}
-          </Field>
-        </FieldRow>
-        <Field>
-          <label htmlFor="work-title">Work description</label>
-          <textarea
-            id="work-title"
-            ref={(node) => {
-              registerField('work-title', node);
-            }}
-            value={header.title}
-            onChange={(event) => {
-              updateHeader('title', event.target.value);
-            }}
-            required
-            minLength={3}
-            rows={2}
-            aria-invalid={fieldErrors['work-title'] !== undefined}
-            aria-describedby={
-              fieldErrors['work-title'] !== undefined ? 'work-title-error' : undefined
-            }
-          />
-          {fieldErrors['work-title'] !== undefined && (
-            <FieldError id="work-title-error">{fieldErrors['work-title']}</FieldError>
-          )}
-        </Field>
-        <FieldRow>
-          <Field>
-            <label htmlFor="advertised-value">Advertised value (₹)</label>
-            <input
-              id="advertised-value"
-              ref={(node) => {
-                registerField('advertised-value', node);
-              }}
-              value={header.advertisedValue}
-              onChange={(event) => {
-                updateHeader('advertisedValue', event.target.value);
-              }}
-              required
-              inputMode="decimal"
-              aria-invalid={fieldErrors['advertised-value'] !== undefined}
-              aria-describedby={
-                fieldErrors['advertised-value'] !== undefined
-                  ? 'advertised-value-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['advertised-value'] !== undefined && (
-              <FieldError id="advertised-value-error">
-                {fieldErrors['advertised-value']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="contract-value">Contract value (₹)</label>
-            <input
-              id="contract-value"
-              ref={(node) => {
-                registerField('contract-value', node);
-              }}
-              value={header.contractValue}
-              onChange={(event) => {
-                updateHeader('contractValue', event.target.value);
-              }}
-              required
-              inputMode="decimal"
-              aria-invalid={fieldErrors['contract-value'] !== undefined}
-              aria-describedby={
-                fieldErrors['contract-value'] !== undefined
-                  ? 'contract-value-error'
-                  : undefined
-              }
-            />
-            {fieldErrors['contract-value'] !== undefined && (
-              <FieldError id="contract-value-error">
-                {fieldErrors['contract-value']}
-              </FieldError>
-            )}
-          </Field>
-          <Field>
-            <label htmlFor="pricing-shape">Pricing shape</label>
-            <select
-              id="pricing-shape"
-              value={header.pricingShape}
-              onChange={(event) => {
-                updateHeader(
-                  'pricingShape',
-                  event.target.value as HeaderDraft['pricingShape'],
-                );
-              }}
-            >
-              <option value="letter_percentage">Letter percentage</option>
-              <option value="per_schedule">Per-schedule totals</option>
-            </select>
-          </Field>
-        </FieldRow>
-        {header.pricingShape === 'letter_percentage' && (
-          <FieldRow>
+          {!locks.letterNumber && (
             <Field>
-              <label htmlFor="letter-percentage">Percentage</label>
+              <label htmlFor="letter-number">Letter number</label>
               <input
-                id="letter-percentage"
+                id="letter-number"
                 ref={(node) => {
-                  registerField('letter-percentage', node);
+                  registerField('letter-number', node);
                 }}
-                value={header.letterPercentage}
+                value={header.letterNumber}
                 onChange={(event) => {
-                  updateHeader('letterPercentage', event.target.value);
+                  updateHeader('letterNumber', event.target.value);
                 }}
                 required
-                inputMode="decimal"
-                aria-invalid={fieldErrors['letter-percentage'] !== undefined}
+                aria-invalid={fieldErrors['letter-number'] !== undefined}
                 aria-describedby={
-                  fieldErrors['letter-percentage'] !== undefined
-                    ? 'letter-percentage-error'
+                  fieldErrors['letter-number'] !== undefined
+                    ? 'letter-number-error'
                     : undefined
                 }
               />
-              {fieldErrors['letter-percentage'] !== undefined && (
-                <FieldError id="letter-percentage-error">
-                  {fieldErrors['letter-percentage']}
+              <Hint>
+                The parser could not read the letter number; enter it as printed.
+              </Hint>
+              {fieldErrors['letter-number'] !== undefined && (
+                <FieldError id="letter-number-error">
+                  {fieldErrors['letter-number']}
                 </FieldError>
               )}
             </Field>
+          )}
+          {!locks.letterDate && (
             <Field>
-              <label htmlFor="percentage-direction">Direction</label>
-              <select
-                id="percentage-direction"
+              <label htmlFor="letter-date">Letter date</label>
+              <input
+                id="letter-date"
                 ref={(node) => {
-                  registerField('percentage-direction', node);
+                  registerField('letter-date', node);
                 }}
-                value={header.letterPercentageDirection}
+                type="date"
+                value={header.letterDate}
                 onChange={(event) => {
-                  updateHeader(
-                    'letterPercentageDirection',
-                    event.target.value as HeaderDraft['letterPercentageDirection'],
-                  );
+                  updateHeader('letterDate', event.target.value);
                 }}
                 required
-                aria-invalid={fieldErrors['percentage-direction'] !== undefined}
+                aria-invalid={fieldErrors['letter-date'] !== undefined}
                 aria-describedby={
-                  fieldErrors['percentage-direction'] !== undefined
-                    ? 'percentage-direction-error'
+                  fieldErrors['letter-date'] !== undefined
+                    ? 'letter-date-error'
                     : undefined
                 }
-              >
-                <option value="">Choose…</option>
-                <option value="below">Below</option>
-                <option value="at_par">At par</option>
-                <option value="above">Above</option>
-              </select>
-              {fieldErrors['percentage-direction'] !== undefined && (
-                <FieldError id="percentage-direction-error">
-                  {fieldErrors['percentage-direction']}
+              />
+              <Hint>
+                The parser could not read the date printed on the letter; enter it.
+              </Hint>
+              {fieldErrors['letter-date'] !== undefined && (
+                <FieldError id="letter-date-error">
+                  {fieldErrors['letter-date']}
                 </FieldError>
               )}
             </Field>
-          </FieldRow>
+          )}
+        </FieldRow>
+        {!locks.title && (
+          <Field>
+            <label htmlFor="work-title">Work description</label>
+            <textarea
+              id="work-title"
+              ref={(node) => {
+                registerField('work-title', node);
+              }}
+              value={header.title}
+              onChange={(event) => {
+                updateHeader('title', event.target.value);
+              }}
+              required
+              minLength={3}
+              rows={2}
+              aria-invalid={fieldErrors['work-title'] !== undefined}
+              aria-describedby={
+                fieldErrors['work-title'] !== undefined ? 'work-title-error' : undefined
+              }
+            />
+            <Hint>
+              The parser could not read the name of work; enter it as printed.
+            </Hint>
+            {fieldErrors['work-title'] !== undefined && (
+              <FieldError id="work-title-error">{fieldErrors['work-title']}</FieldError>
+            )}
+          </Field>
         )}
+        <FieldRow>
+          {!locks.advertisedValue && (
+            <Field>
+              <label htmlFor="advertised-value">Advertised value (₹)</label>
+              <input
+                id="advertised-value"
+                ref={(node) => {
+                  registerField('advertised-value', node);
+                }}
+                value={header.advertisedValue}
+                onChange={(event) => {
+                  updateHeader('advertisedValue', event.target.value);
+                }}
+                required
+                inputMode="decimal"
+                aria-invalid={fieldErrors['advertised-value'] !== undefined}
+                aria-describedby={
+                  fieldErrors['advertised-value'] !== undefined
+                    ? 'advertised-value-error'
+                    : undefined
+                }
+              />
+              {fieldErrors['advertised-value'] !== undefined && (
+                <FieldError id="advertised-value-error">
+                  {fieldErrors['advertised-value']}
+                </FieldError>
+              )}
+            </Field>
+          )}
+          {!locks.contractValue && (
+            <Field>
+              <label htmlFor="contract-value">Contract value (₹)</label>
+              <input
+                id="contract-value"
+                ref={(node) => {
+                  registerField('contract-value', node);
+                }}
+                value={header.contractValue}
+                onChange={(event) => {
+                  updateHeader('contractValue', event.target.value);
+                }}
+                required
+                inputMode="decimal"
+                aria-invalid={fieldErrors['contract-value'] !== undefined}
+                aria-describedby={
+                  fieldErrors['contract-value'] !== undefined
+                    ? 'contract-value-error'
+                    : undefined
+                }
+              />
+              {fieldErrors['contract-value'] !== undefined && (
+                <FieldError id="contract-value-error">
+                  {fieldErrors['contract-value']}
+                </FieldError>
+              )}
+            </Field>
+          )}
+          {!locks.pricingShape && (
+            <Field>
+              <label htmlFor="pricing-shape">Pricing shape</label>
+              <select
+                id="pricing-shape"
+                value={header.pricingShape}
+                onChange={(event) => {
+                  updateHeader(
+                    'pricingShape',
+                    event.target.value as HeaderDraft['pricingShape'],
+                  );
+                }}
+              >
+                <option value="letter_percentage">Letter percentage</option>
+                <option value="per_schedule">Per-schedule totals</option>
+              </select>
+            </Field>
+          )}
+        </FieldRow>
+        {header.pricingShape === 'letter_percentage' &&
+          (!locks.letterPercentage || !locks.letterPercentageDirection) && (
+            <FieldRow>
+              {!locks.letterPercentage && (
+                <Field>
+                  <label htmlFor="letter-percentage">Percentage</label>
+                  <input
+                    id="letter-percentage"
+                    ref={(node) => {
+                      registerField('letter-percentage', node);
+                    }}
+                    value={header.letterPercentage}
+                    onChange={(event) => {
+                      updateHeader('letterPercentage', event.target.value);
+                    }}
+                    required
+                    inputMode="decimal"
+                    aria-invalid={fieldErrors['letter-percentage'] !== undefined}
+                    aria-describedby={
+                      fieldErrors['letter-percentage'] !== undefined
+                        ? 'letter-percentage-error'
+                        : undefined
+                    }
+                  />
+                  <Hint>
+                    The letter declares no percentage of its own; an at-par acceptance
+                    is recorded as 0.
+                  </Hint>
+                  {fieldErrors['letter-percentage'] !== undefined && (
+                    <FieldError id="letter-percentage-error">
+                      {fieldErrors['letter-percentage']}
+                    </FieldError>
+                  )}
+                </Field>
+              )}
+              {!locks.letterPercentageDirection && (
+                <Field>
+                  <label htmlFor="percentage-direction">Direction</label>
+                  <select
+                    id="percentage-direction"
+                    ref={(node) => {
+                      registerField('percentage-direction', node);
+                    }}
+                    value={header.letterPercentageDirection}
+                    onChange={(event) => {
+                      updateHeader(
+                        'letterPercentageDirection',
+                        event.target.value as HeaderDraft['letterPercentageDirection'],
+                      );
+                    }}
+                    required
+                    aria-invalid={fieldErrors['percentage-direction'] !== undefined}
+                    aria-describedby={
+                      fieldErrors['percentage-direction'] !== undefined
+                        ? 'percentage-direction-error'
+                        : undefined
+                    }
+                  >
+                    <option value="">Choose…</option>
+                    <option value="below">Below</option>
+                    <option value="at_par">At par</option>
+                    <option value="above">Above</option>
+                  </select>
+                  {fieldErrors['percentage-direction'] !== undefined && (
+                    <FieldError id="percentage-direction-error">
+                      {fieldErrors['percentage-direction']}
+                    </FieldError>
+                  )}
+                </Field>
+              )}
+            </FieldRow>
+          )}
 
         <h2>Performance guarantee requirement</h2>
         <p className="text-muted-foreground">
@@ -993,86 +1340,133 @@ export function ReviewLoa({
           <p className="text-muted-foreground">
             <StatusChip status="review">needs review</StatusChip> The parser could not
             fully read the performance-guarantee clause; check the printed source below
-            and correct the values.
+            and enter what the letter demands.
           </p>
         )}
-        <Field>
-          <label>
-            <input
-              type="checkbox"
-              checked={pbg.required}
-              onChange={(event) => {
-                updatePbg('required', event.target.checked);
-              }}
-            />{' '}
-            The letter demands a Performance Bank Guarantee
-          </label>
-        </Field>
-        {pbg.required && (
+        {locks.pbgClause ? (
+          // The clause was read cleanly: what it demands, and by when, is
+          // the letter's word. Only the parts the parser could not read
+          // stay open below.
+          <ExtractedFacts
+            testId="pbg-facts"
+            caption="Performance guarantee read from the letter"
+          >
+            <ExtractedFact
+              label="Required amount"
+              value={`₹${pbg.requiredAmount}`}
+              numeric
+              testId="fact-pbg-amount"
+            />
+            <ExtractedFact
+              label="Submit within"
+              value={`${pbg.submissionDays} days`}
+              numeric
+              testId="fact-pbg-submission-days"
+            />
+            {locks.pbgExtensionDays && (
+              <ExtractedFact
+                label="Extension window"
+                value={`${pbg.extensionDays} days`}
+                numeric
+                testId="fact-pbg-extension-days"
+              />
+            )}
+            {locks.pbgPenalInterest && (
+              <ExtractedFact
+                label="Penal interest"
+                value={`${pbg.penalInterestPercent}% p.a.`}
+                numeric
+                testId="fact-pbg-penal-interest"
+              />
+            )}
+          </ExtractedFacts>
+        ) : (
+          <Field>
+            <label>
+              <input
+                type="checkbox"
+                checked={pbg.required}
+                onChange={(event) => {
+                  updatePbg('required', event.target.checked);
+                }}
+              />{' '}
+              The letter demands a Performance Bank Guarantee
+            </label>
+          </Field>
+        )}
+        {(locks.pbgClause || pbg.required) && (
           <FieldRow>
-            <Field>
-              <label htmlFor="pbg-amount">Required amount (₹)</label>
-              <input
-                id="pbg-amount"
-                value={pbg.requiredAmount}
-                onChange={(event) => {
-                  updatePbg('requiredAmount', event.target.value);
-                }}
-                required
-                inputMode="decimal"
-              />
-            </Field>
-            <Field>
-              <label htmlFor="pbg-submission-days">Submit within (days)</label>
-              <input
-                id="pbg-submission-days"
-                type="number"
-                min={1}
-                max={180}
-                ref={(node) => {
-                  registerField('pbg-submission-days', node);
-                }}
-                value={pbg.submissionDays}
-                onChange={(event) => {
-                  updatePbg('submissionDays', event.target.value);
-                }}
-                required
-                aria-invalid={fieldErrors['pbg-submission-days'] !== undefined}
-                aria-describedby={
-                  fieldErrors['pbg-submission-days'] !== undefined
-                    ? 'pbg-submission-days-error'
-                    : undefined
-                }
-              />
-              {fieldErrors['pbg-submission-days'] !== undefined && (
-                <FieldError id="pbg-submission-days-error">
-                  {fieldErrors['pbg-submission-days']}
-                </FieldError>
-              )}
-            </Field>
-            <Field>
-              <label htmlFor="pbg-extension-days">Extension window (days)</label>
-              <input
-                id="pbg-extension-days"
-                type="number"
-                min={0}
-                value={pbg.extensionDays}
-                onChange={(event) => {
-                  updatePbg('extensionDays', event.target.value);
-                }}
-              />
-            </Field>
-            <Field>
-              <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
-              <input
-                id="pbg-penal-interest"
-                value={pbg.penalInterestPercent}
-                onChange={(event) => {
-                  updatePbg('penalInterestPercent', event.target.value);
-                }}
-                inputMode="decimal"
-              />
-            </Field>
+            {!locks.pbgClause && (
+              <Field>
+                <label htmlFor="pbg-amount">Required amount (₹)</label>
+                <input
+                  id="pbg-amount"
+                  value={pbg.requiredAmount}
+                  onChange={(event) => {
+                    updatePbg('requiredAmount', event.target.value);
+                  }}
+                  required
+                  inputMode="decimal"
+                />
+              </Field>
+            )}
+            {!locks.pbgClause && (
+              <Field>
+                <label htmlFor="pbg-submission-days">Submit within (days)</label>
+                <input
+                  id="pbg-submission-days"
+                  type="number"
+                  min={1}
+                  max={180}
+                  ref={(node) => {
+                    registerField('pbg-submission-days', node);
+                  }}
+                  value={pbg.submissionDays}
+                  onChange={(event) => {
+                    updatePbg('submissionDays', event.target.value);
+                  }}
+                  required
+                  aria-invalid={fieldErrors['pbg-submission-days'] !== undefined}
+                  aria-describedby={
+                    fieldErrors['pbg-submission-days'] !== undefined
+                      ? 'pbg-submission-days-error'
+                      : undefined
+                  }
+                />
+                {fieldErrors['pbg-submission-days'] !== undefined && (
+                  <FieldError id="pbg-submission-days-error">
+                    {fieldErrors['pbg-submission-days']}
+                  </FieldError>
+                )}
+              </Field>
+            )}
+            {!locks.pbgExtensionDays && (
+              <Field>
+                <label htmlFor="pbg-extension-days">Extension window (days)</label>
+                <input
+                  id="pbg-extension-days"
+                  type="number"
+                  min={0}
+                  value={pbg.extensionDays}
+                  onChange={(event) => {
+                    updatePbg('extensionDays', event.target.value);
+                  }}
+                />
+              </Field>
+            )}
+            {!locks.pbgPenalInterest && (
+              <Field>
+                <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
+                <input
+                  id="pbg-penal-interest"
+                  value={pbg.penalInterestPercent}
+                  onChange={(event) => {
+                    updatePbg('penalInterestPercent', event.target.value);
+                  }}
+                  inputMode="decimal"
+                />
+              </Field>
+            )}
           </FieldRow>
         )}
         {typeof payload.review.header.performanceGuarantee?.raw === 'string' && (
@@ -1103,7 +1497,8 @@ export function ReviewLoa({
           >
             <DataTable scroll className={`[&_input]:w-28 ${underScheduleHeader}`}>
               <caption className="sr-only">
-                Awarded items in schedule {scheduleId}; every field is editable
+                Awarded items in schedule {scheduleId}. Values read from the letter are
+                shown as printed; only the ones the parser could not read are editable.
               </caption>
               <thead>
                 <tr>
@@ -1125,6 +1520,9 @@ export function ReviewLoa({
                       className={item.needsReview ? 'row--flagged' : undefined}
                     >
                       <td>
+                        {/* The product's own per-Work label, not a parser
+                            field: the row's binding to its printed source
+                            is the sourceRef, which no relabelling moves. */}
                         <input
                           aria-label={`Item number for row ${item.itemSno} in schedule ${scheduleId}`}
                           value={item.itemNumber}
@@ -1135,13 +1533,20 @@ export function ReviewLoa({
                         />
                       </td>
                       <td className={wrapCell}>
-                        <DescriptionCell
-                          item={item}
-                          scheduleId={scheduleId}
-                          onChange={(description) => {
-                            updateItem(item.key, { description });
-                          }}
-                        />
+                        {item.locks.description ? (
+                          <LockedCell
+                            value={item.description}
+                            label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
+                          />
+                        ) : (
+                          <DescriptionCell
+                            item={item}
+                            scheduleId={scheduleId}
+                            onChange={(description) => {
+                              updateItem(item.key, { description });
+                            }}
+                          />
+                        )}
                         {item.manual ? (
                           <p className="text-muted-foreground">
                             <StatusChip status="review">manual row</StatusChip> Added by
@@ -1157,39 +1562,67 @@ export function ReviewLoa({
                         )}
                       </td>
                       <td>
-                        <input
-                          aria-label={`Unit for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.unitCode}
-                          onChange={(event) => {
-                            updateItem(item.key, { unitCode: event.target.value });
-                          }}
-                          required
-                          maxLength={20}
-                        />
+                        {item.locks.unitCode ? (
+                          <LockedCell
+                            value={item.unitCode}
+                            label={`Unit for row ${item.itemSno} in schedule ${scheduleId}`}
+                          />
+                        ) : (
+                          <>
+                            <input
+                              aria-label={`Unit for row ${item.itemSno} in schedule ${scheduleId}`}
+                              value={item.unitCode}
+                              onChange={(event) => {
+                                updateItem(item.key, { unitCode: event.target.value });
+                              }}
+                              required
+                              maxLength={20}
+                            />
+                            <ParserHoleNote flags={item.flags} />
+                          </>
+                        )}
                       </td>
                       <td>
-                        <input
-                          aria-label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.awardedQuantity}
-                          onChange={(event) => {
-                            updateItem(item.key, {
-                              awardedQuantity: event.target.value,
-                            });
-                          }}
-                          required
-                          inputMode="decimal"
-                        />
+                        {item.locks.awardedQuantity ? (
+                          <LockedCell
+                            value={item.awardedQuantity}
+                            numeric
+                            label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
+                          />
+                        ) : (
+                          <input
+                            aria-label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
+                            value={item.awardedQuantity}
+                            onChange={(event) => {
+                              updateItem(item.key, {
+                                awardedQuantity: event.target.value,
+                              });
+                            }}
+                            required
+                            inputMode="decimal"
+                          />
+                        )}
                       </td>
                       <td>
-                        <input
-                          aria-label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.effectiveRate}
-                          onChange={(event) => {
-                            updateItem(item.key, { effectiveRate: event.target.value });
-                          }}
-                          required
-                          inputMode="decimal"
-                        />
+                        {item.locks.effectiveRate ? (
+                          <LockedCell
+                            value={item.effectiveRate}
+                            numeric
+                            label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
+                          />
+                        ) : (
+                          <input
+                            aria-label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
+                            value={item.effectiveRate}
+                            onChange={(event) => {
+                              updateItem(item.key, {
+                                effectiveRate: event.target.value,
+                              });
+                            }}
+                            required
+                            inputMode="decimal"
+                          />
+                        )}
                       </td>
                       <td>
                         {/* Optional, reviewer's judgement — the parser
