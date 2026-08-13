@@ -91,7 +91,7 @@ export function registerExportRoutes(
           await tx<Record<string, unknown>[]>`
             select * from loa_documents order by created_at
           `,
-          ['extraction_payload', 'identity_match'],
+          ['extraction_payload', 'identity_match', 'signature_verdict'],
         );
         const challans = parseColumns(
           await tx<Record<string, unknown>[]>`
@@ -473,10 +473,19 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
+          // export-v12: every inbound PDF carries the digital-signature
+          // verdict recorded when its bytes were accepted (0060) —
+          // signature_status, signature_verdict and signature_verified_at
+          // ride along on loaDocuments. The export is the incident
+          // procedure's evidence snapshot and the contractor's data
+          // portability, and a document exported without the verdict that
+          // was relied on when it was accepted is missing the part that
+          // says whether it was authentic.
+          //
           // export-v11: an ITEMISED invoice's lines (0057) join the
           // record — without them such an invoice would export as a
           // header with no document.
-          formatVersion: 'export-v11',
+          formatVersion: 'export-v12',
           organisation,
           members,
           workAssignments: assignments,

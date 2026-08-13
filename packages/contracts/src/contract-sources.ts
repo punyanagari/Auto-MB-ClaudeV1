@@ -1,6 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { PaymentMatrixCategorySchema } from './payment.js';
 import { UuidSchema } from './primitives.js';
+import {
+  PdfSignatureReportSchema,
+  StoredPdfSignatureStatusSchema,
+} from './pdf-signature.js';
 
 export const CONTRACT_SOURCE_DOCUMENT_KINDS = [
   'nit',
@@ -52,6 +56,12 @@ export const ContractSourceDocumentSchema = Type.Object(
     identityMatch: ContractSourceIdentityMatchSchema,
     confirmedWorkId: Type.Union([UuidSchema, Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
+    /** Digital-signature verdict recorded when these bytes were accepted
+     * (migration 0060). A tender document or contract agreement arriving
+     * from IREPS is signed the same way an LOA is, so it earns the same
+     * evidence. */
+    signatureStatus: StoredPdfSignatureStatusSchema,
+    signatureVerdict: Type.Union([PdfSignatureReportSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );

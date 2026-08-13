@@ -18,6 +18,7 @@ import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { SignaturePanel } from '../ui/signature-panel.js';
 import { Card } from '../ui/card.js';
 import {
   ScheduleAccordionControls,
@@ -902,6 +903,16 @@ export function ReviewLoa({
           ))}
         {discardError !== null && <FormError>{discardError}</FormError>}
       </div>
+
+      {/* Before everything else about the letter's CONTENT, because it is
+          a question about the letter's AUTHENTICITY: whether this file is
+          the document the Railway signed. A reviewer who is going to
+          reject the file should not first spend twenty minutes correcting
+          rows in it. */}
+      <SignaturePanel
+        status={document.signatureStatus}
+        verdict={document.signatureVerdict}
+      />
 
       {/* Above the review issues on purpose: a letter number that already
           belongs to something is the one thing that should stop a

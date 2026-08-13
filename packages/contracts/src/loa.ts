@@ -1,5 +1,9 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { UuidSchema, nonBlankString } from './primitives.js';
+import {
+  PdfSignatureReportSchema,
+  StoredPdfSignatureStatusSchema,
+} from './pdf-signature.js';
 
 export const ExtractionStatusSchema = Type.Union([
   Type.Literal('pending'),
@@ -23,6 +27,11 @@ export const LoaDocumentSchema = Type.Object(
     extractionStatus: ExtractionStatusSchema,
     confirmedWorkId: Type.Union([UuidSchema, Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
+    /** The digital-signature verdict recorded when these bytes were
+     * accepted (migration 0060). Carried on the LIST shape, not only the
+     * detail one, so a register can show which intake documents need a
+     * human without opening each of them. */
+    signatureStatus: StoredPdfSignatureStatusSchema,
   },
   { additionalProperties: false },
 );
@@ -72,6 +81,10 @@ export const LoaDocumentDetailSchema = Type.Composite(
       {
         extractionPayload: Type.Unknown(),
         letterNumberMatches: Type.Array(LoaLetterNumberMatchSchema),
+        /** The full stored verdict, or null when this document was
+         * accepted before verification existed. Null is NOT "no
+         * signatures"; `signatureStatus` says which. */
+        signatureVerdict: Type.Union([PdfSignatureReportSchema, Type.Null()]),
       },
       { additionalProperties: false },
     ),

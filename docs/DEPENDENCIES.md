@@ -60,6 +60,35 @@ Operational notes:
 - A failed probe is not cached, so correcting the environment and retrying
   works without restarting the server.
 
+## PDF digital-signature verification adds no dependency
+
+`apps/server/src/pdf-signature/` reads PDF signature dictionaries and CMS
+SignedData blobs with about 900 lines of hand-written DER and PDF parsing,
+and does no cryptography of its own: digests, RSA PKCS#1 v1.5, RSASSA-PSS,
+ECDSA verification, X.509 parsing and issuer-link checking are all
+`node:crypto`, i.e. OpenSSL.
+
+The 2026 survey behind the decision (recorded in the pull request) found
+that the well-regarded option is `pkijs` + `@peculiar/x509` + a
+hand-written PDF revision reader — that is, the parsing work is
+unavoidable either way, and what a dependency would replace is the CMS
+structure walk. Under this repository's rule (adopted only when they
+replace meaningful commodity work AND have a narrow boundary), that is not
+enough to put third-party code on the path of a security verdict.
+
+The survey also disqualified the obvious candidate outright:
+`node-forge` shipped fixes in March/April 2026 for an RSA PKCS#1 v1.5
+signature FORGERY (CVE-2026-33894) and a `verifyCertificateChain`
+basicConstraints bypass (CVE-2026-33896) — precisely the two functions a
+verifier would have depended on. The convenience wrappers
+(`@ninja-labs/verify-pdf`, `pdf-signature-reader` and their forks) are
+abandoned, built on forge, and validate against the chain EMBEDDED IN THE
+DOCUMENT, which proves nothing. `mupdf` is capable and actively released
+but AGPL-3.0-or-later, which is a real obligation for a hosted service.
+
+Trust anchors are operator-supplied PEM files, never compiled in; the
+sourcing and refresh procedure is docs/OPERATIONS.md §8.
+
 ## Explicit non-defaults
 
 Redis, Kafka, Temporal, Kubernetes, OpenSearch, a policy engine, and enterprise IdP are not installed until a measured requirement exceeds the simpler stack.
