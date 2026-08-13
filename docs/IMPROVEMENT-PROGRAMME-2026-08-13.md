@@ -266,11 +266,22 @@ tree with the command stated in the PR.
 | ---- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P9   | #55 | The CCA publishes four current roots; only three are bundled. `CCA India 2015 SPL` as served fails its own self-signature check (`openssl verify -check_ss_sig` → `certificate signature failure`), reproduced on three downloads from both hostnames, so it is documented and left out rather than shipped unverified. Provenance is one channel (TLS from `cca.gov.in`) corroborated for `CCA India 2022` by the fingerprint already in `docs/OPERATIONS.md` §8; the out-of-band `verifyroot@cca.gov.in` confirmation stays an operator step and the docs now say so. The Masters "auto-opened create" half of the row already existed (`MasterForm startOpen`); what was missing was the purpose sentence, so the empty states name it and point at the open form. |
 
-Process notes for wave 3: `docs/OPERATIONS.md` §8 asserted "why they are
-not shipped in the image" — shipping a default made a documentation
-sentence false, and updating it was part of the change, not follow-up
-(recurring finding 3). A pack that ships an artefact should expect to own
-the paragraph that explains its absence.
+Process notes for wave 3:
+
+- `docs/OPERATIONS.md` §8 asserted "why they are not shipped in the image".
+  Shipping a default made a documentation sentence false, and updating it
+  was part of the change, not follow-up (recurring finding 3). A pack that
+  ships an artefact should expect to own the paragraph that explains its
+  absence.
+- Wave 1's lesson repeated exactly: CI failed where a local verify passed.
+  `apps/web/test/views/masters-settings.test.tsx` awaited
+  `findByRole('heading', { name: 'Settings' })` before reading the form,
+  but that heading renders during the profile fetch as well, so all four
+  of its Settings cases were racing the mock and had been passing by
+  timing. P9's extra test file changed the scheduling enough to lose the
+  race on the runner. The class of bug — awaiting an element that exists
+  in the LOADING state — is worth a grep before wave 3 writes more view
+  tests.
 
 ---
 
