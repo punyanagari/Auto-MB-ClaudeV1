@@ -395,9 +395,33 @@ describe('the Measurement Book loader is one grouped statement', () => {
     // running, and a committed absolute ceiling that catches a
     // regression the retired statement would share.
     //
-    // Measured 2026-08-13, PostgreSQL 18, 40 items x 3 challans:
-    // current 5,820 shared blocks, retired 59,084 — 10.2x.
-    expect(sharedBlocks(current) * 4).toBeLessThan(sharedBlocks(retired));
+    // The relative multiplier was 4x, and pack P17 (migration 0069) moved
+    // it to 2x. Not because anything regressed — both statements got much
+    // cheaper — but because part of what the 4x was measuring turned out
+    // not to be the lateral re-execution at all.
+    //
+    // Before 0069 every RLS policy called the SECURITY DEFINER membership
+    // helper in bare filter position, so the executor ran it per candidate
+    // row. The retired six-lateral shape re-scans per work item, so it was
+    // paying that per-row cost N times over and the grouped shape was
+    // paying it once — which flattered the gap. 0069 evaluates the helper
+    // once per statement in BOTH shapes, and what is left is the lateral
+    // penalty on its own.
+    //
+    // Measured on one database, one fixture, flipping only the policy
+    // shape (2026-08-14, PostgreSQL 18.4, 40 items x 3 challans, three
+    // runs each):
+    //
+    //   bare policies:     current 9,418-9,939   retired 46,066-55,396  (4.9-5.6x)
+    //   InitPlan policies: current 3,448-4,387   retired 13,426-15,782  (3.1-4.6x)
+    //
+    // So the ratio is now data-dependent around 3x and the old threshold
+    // fails on a loaded database. 2x still refuses the shape this guard
+    // exists to refuse — a grouped statement that quietly became the
+    // retired one reads the SAME buffers, not half of them — and the two
+    // assertions above, which are structural rather than measured, are
+    // what actually hold the loop count at one.
+    expect(sharedBlocks(current) * 2).toBeLessThan(sharedBlocks(retired));
     expect(sharedBlocks(current)).toBeLessThan(MB_BLOCK_CEILING);
   });
 });
