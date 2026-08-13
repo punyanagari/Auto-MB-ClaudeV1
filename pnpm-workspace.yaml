@@ -62,3 +62,13 @@ allowBuilds:
 # 6.1.1, updating that test with it.
 overrides:
   '@fastify/static': '10.1.2'
+  # nanoid 3.3.17 fails the dependency audit (GHSA-2v37-7h3g-55p8, high:
+  # custom generators can loop indefinitely when size is zero). It reaches
+  # the tree only through vite > postcss, as build/test tooling. 3.3.18
+  # (published 2026-08-07) fixes it; nanoid already sits in the reviewed
+  # minimumReleaseAgeExclude list above, which is what lets this resolve
+  # before 2026-08-14. Pinned exactly: an open range here resolves to the
+  # ESM-only nanoid 6, which postcss 8 does not declare support for. Drop
+  # this override once vite/postcss ranges pick up >=3.3.18 on their own.
+  # See issue #61.
+  nanoid: '3.3.18'
