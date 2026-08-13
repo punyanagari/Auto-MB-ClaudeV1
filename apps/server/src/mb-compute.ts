@@ -54,6 +54,11 @@ export interface MbItemInput {
    * installations. */
   readonly cumulativeDelivered: string;
   readonly cumulativeInstalled: string;
+  /** SUM over non-cancelled acceptance certificates, FOR AMC ITEMS ONLY
+   * — the base an AMC item earns its final bill on, and '0' on every
+   * other category because no other branch reads it. See
+   * `FinalBillBaseInput.amcCertifiedQuantity`. */
+  readonly cumulativeAmcCertified: string;
 }
 
 /** One computed (previewed or to-be-snapshotted) MB line. */
@@ -131,8 +136,9 @@ export function subtractDecimalStrings(a: string, b: string): string {
 /**
  * The final-bill stage delta for one item on the FINAL MB: the base
  * quantity (delivered for supply-branch items, installed for
- * installation-branch items — resolveFinalBillBase) minus what the
- * final-bill stage already billed, floored at zero.
+ * installation-branch items, certified for AMC items —
+ * resolveFinalBillBase) minus what the final-bill stage already billed,
+ * floored at zero.
  */
 export function computeFinalBillDelta(item: MbItemInput): string {
   const base = resolveFinalBillBase({
@@ -140,6 +146,7 @@ export function computeFinalBillDelta(item: MbItemInput): string {
     description: item.description,
     deliveredQuantity: item.cumulativeDelivered,
     installedQuantity: item.cumulativeInstalled,
+    amcCertifiedQuantity: item.cumulativeAmcCertified,
   });
   const delta = subtractDecimalStrings(base.baseQuantity, item.priorFinalBill);
   return isNegativeDecimal(delta) ? '0' : delta;

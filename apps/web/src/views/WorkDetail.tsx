@@ -203,15 +203,24 @@ const REQUIREMENT_LABELS: Record<UnfinishedWorkItem['requirement'], string> = {
   delivery: 'full delivery',
   installation: 'full installation',
   delivery_and_installation: 'full delivery and installation',
+  service: 'full certification',
 };
 
 /** The remedy is opposite for the two directions, so the worklist says
  * which one each row needs rather than leaving the operator to compare
- * the numbers. */
-const DIRECTION_REMEDIES: Record<UnfinishedWorkItem['direction'], string> = {
-  short: 'short — amend the quantity down',
-  excess: 'over-delivered — amend the quantity up',
-};
+ * the numbers.
+ *
+ * A short AMC item gets its own sentence. Amending its quantity down is
+ * a legal short closure of the maintenance contract, but it is not the
+ * ordinary answer — the ordinary answer is that another period has been
+ * served and its certificate has not been recorded yet — so the row
+ * names the certificate first and the amendment second. */
+function directionRemedy(item: UnfinishedWorkItem): string {
+  if (item.direction === 'excess') return 'over-delivered — amend the quantity up';
+  return item.requirement === 'service'
+    ? 'not yet certified — record the acceptance certificate, or amend the quantity down'
+    : 'short — amend the quantity down';
+}
 
 const DIRECTION_LABELS = {
   below: 'below advertised',
@@ -267,6 +276,7 @@ function CompletionShortfall({
               <th scope="col">Required</th>
               <th scope="col">Delivered</th>
               <th scope="col">Installed</th>
+              <th scope="col">Certified</th>
             </tr>
           </thead>
           <tbody>
@@ -275,10 +285,11 @@ function CompletionShortfall({
                 <th scope="row">{item.itemNumber}</th>
                 <td>{item.category ?? 'uncategorised'}</td>
                 <td>{REQUIREMENT_LABELS[item.requirement]}</td>
-                <td>{DIRECTION_REMEDIES[item.direction]}</td>
+                <td>{directionRemedy(item)}</td>
                 <td className={numericCell}>{item.requiredQuantity}</td>
                 <td className={numericCell}>{item.deliveredQuantity}</td>
                 <td className={numericCell}>{item.installedQuantity}</td>
+                <td className={numericCell}>{item.certifiedQuantity}</td>
               </tr>
             ))}
           </tbody>

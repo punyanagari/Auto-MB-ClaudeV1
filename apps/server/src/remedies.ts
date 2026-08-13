@@ -160,7 +160,7 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   CORRECTION_EMPTY:
     'Change at least one line before filing the correction; a notice identical to the issued document corrects nothing.',
   WORK_NOT_FULLY_EXECUTED:
-    'Deliver and install the balance, or amend the outstanding quantities down, before completing the Work.',
+    'Deliver and install the balance, record the acceptance certificate for any maintenance period already served, or amend the outstanding quantities down, before completing the Work.',
   WORK_HAS_DOWNSTREAM_DOCUMENTS:
     'Correct the Work through an amendment or a correction notice; superseding is available only while nothing has been issued or received against it.',
   WORK_HAS_NO_LOA_DOCUMENT:

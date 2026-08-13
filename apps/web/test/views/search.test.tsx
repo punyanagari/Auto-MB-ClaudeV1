@@ -162,7 +162,16 @@ describe('record search', () => {
 
     // The old control went to the Works register. This one asks the
     // server for records and shows them.
-    expect(await screen.findByRole('heading', { name: 'Search' })).toBeTruthy();
+    //
+    // Awaited on a RESULT, not on the heading: the Search view renders its
+    // <h1> while the query is still in flight, so
+    // `findByRole('heading', { name: 'Search' })` resolves against the
+    // loading state and the assertion below then races the mock. That is
+    // the class §2.7 of the improvement programme recorded after P9, and
+    // it caught this file too — passing locally every time, and failing in
+    // CI once another test file changed the scheduling.
+    expect(await screen.findByRole('region', { name: 'Works' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Search' })).toBeTruthy();
     expect(search).toHaveBeenCalledWith(ORG_ID, 'PL270');
     // The query is part of the route, so the result set is linkable and
     // Back returns to it.

@@ -286,10 +286,17 @@ describe('write budgets do not grow with the document', () => {
         return { short: short.statements.length, long: long.statements.length };
       },
     );
-    // Two deletes and one insert, whatever the document holds. Before
-    // this pack the long document cost 55 more round-trips than the
-    // short one.
-    expect(counts.short).toBe(3);
+    // Two deletes, one row-lock read over the referenced items, and one
+    // insert — whatever the document holds. Before P11 the long document
+    // cost 55 more round-trips than the short one; the property this
+    // test holds is the SECOND assertion, that the two counts are equal.
+    //
+    // The count moved from 3 to 4 with migration 0068, which added the
+    // `FOR UPDATE` read that serialises a draft save against a
+    // concurrent payment-category change. It is one statement over the
+    // whole line set, not one per line, so it raises the constant
+    // without touching the invariant.
+    expect(counts.short).toBe(4);
     expect(counts.long).toBe(counts.short);
   });
 

@@ -141,6 +141,7 @@ interface UnfinishedRow {
   required_quantity: string;
   delivered_quantity: string;
   installed_quantity: string;
+  certified_quantity: string;
 }
 
 /**
@@ -156,18 +157,38 @@ interface UnfinishedRow {
  *   SUPPLY, SPARE_SUPPLY        -> fully delivered
  *   PURE_INSTALLATION           -> fully installed
  *   SUPPLY_AND_INSTALLATION     -> fully delivered AND fully installed
+ *   AMC                         -> fully certified
  *   uncategorised               -> effective description mentioning
  *                                  'installation' (case-insensitive)
  *                                  -> fully installed, else fully
  *                                  delivered.
  *
+ * AMC IS WHY THIS PREDICATE USED TO BE UNSATISFIABLE (migration 0068).
+ * A railway LOA's annual-maintenance schedule is quoted in `Year`: the
+ * flagship corpus letter PL270-CRB carries two of them, together about
+ * 16% of its net bid value. Nothing moves against such an item and
+ * nothing is installed against it — a year of maintenance is served, and
+ * the railway certifies that it was. With four categories the item
+ * resolved to "fully delivered", so the only route to 100% was a
+ * Delivery Challan claiming five years of maintenance had been
+ * despatched. AMC resolves instead to the CERTIFIED total, summed over
+ * the item's non-cancelled acceptance certificates, and migration 0068
+ * makes the delivery and installation dimensions structurally
+ * unreachable for it so the requirement cannot be satisfied the old way
+ * by accident.
+ *
  * Each row also carries the DIRECTION of its own remedy, because the two
  * are opposite. An item is 'excess' when a measured dimension the
  * requirement covers stands ABOVE the baseline — the delivery dimension,
- * and the installation dimension likewise where the requirement includes
- * it. While any covered dimension is over, the R7 floor refuses every
- * reduction, so the only legal move is to amend the sanctioned quantity
- * UP to match; everything else is 'short' and amends down.
+ * the installation dimension where the requirement includes it, and the
+ * certified dimension for AMC. While any covered dimension is over, the
+ * R7 floor refuses every reduction, so the only legal move is to amend
+ * the sanctioned quantity UP to match; everything else is 'short' and
+ * amends down. (Certification cannot in fact exceed the sanctioned
+ * quantity — `routes/pac.ts` caps an AMC item there — so the 'excess'
+ * arm is unreachable for a service item through the API. It is written
+ * anyway: the direction is derived from the measurement, not asserted
+ * from the route that produced it.)
  */
 async function unfinishedItems(
   tx: TransactionSql,
@@ -193,12 +214,16 @@ async function unfinishedItems(
              ) or (
                measured.requirement in ('installation', 'delivery_and_installation')
                and measured.installed_quantity > measured.required_quantity
+             ) or (
+               measured.requirement = 'service'
+               and measured.certified_quantity > measured.required_quantity
              ) then 'excess'
              else 'short'
            end as direction,
            measured.required_quantity::text as required_quantity,
            measured.delivered_quantity::text as delivered_quantity,
-           measured.installed_quantity::text as installed_quantity
+           measured.installed_quantity::text as installed_quantity,
+           measured.certified_quantity::text as certified_quantity
     from (
       select wi.id, wi.item_number, wi.payment_category,
              coalesce(wi.effective_quantity, wi.awarded_quantity)
@@ -210,6 +235,8 @@ async function unfinishedItems(
                  then 'installation'
                when wi.payment_category = 'SUPPLY_AND_INSTALLATION'
                  then 'delivery_and_installation'
+               when wi.payment_category = 'AMC'
+                 then 'service'
                when coalesce(wi.effective_description, wi.description)
                     ilike '%installation%'
                  then 'installation'
@@ -225,7 +252,20 @@ async function unfinishedItems(
                select sum(i.quantity)
                from installations i
                where i.work_item_id = wi.id and i.status = 'recorded'
-             ), 0)::numeric(18,3) as installed_quantity
+             ), 0)::numeric(18,3) as installed_quantity,
+             -- Restricted to AMC items, which are the only ones the
+             -- 'service' requirement measures. Two reasons, and both
+             -- matter: the contract documents this field as 0 on every
+             -- other requirement, so computing it everywhere would make
+             -- that sentence false; and the completion path would
+             -- otherwise pay for one certificate-table descent per item
+             -- on every Work, for a number nothing reads.
+             case when wi.payment_category = 'AMC' then coalesce((
+               select sum(pci.certified_quantity)
+               from pac_certificate_items pci
+               join pac_certificates pc on pc.id = pci.pac_certificate_id
+               where pci.work_item_id = wi.id and pc.status = 'recorded'
+             ), 0) else 0 end::numeric(18,3) as certified_quantity
       from work_items wi
       where wi.work_id = ${workId} and wi.deleted_at is null
     ) measured
@@ -235,6 +275,9 @@ async function unfinishedItems(
     ) or (
       measured.requirement in ('installation', 'delivery_and_installation')
       and measured.installed_quantity <> measured.required_quantity
+    ) or (
+      measured.requirement = 'service'
+      and measured.certified_quantity <> measured.required_quantity
     )
     order by measured.item_number
   `;
@@ -247,26 +290,46 @@ async function unfinishedItems(
     requiredQuantity: row.required_quantity,
     deliveredQuantity: row.delivered_quantity,
     installedQuantity: row.installed_quantity,
+    certifiedQuantity: row.certified_quantity,
   }));
 }
 
 /** The 409's prose, split on the direction of the remedy. Telling the
  * operator to "amend those quantities down" for an over-delivered item
  * sends them at an instruction the R7 floor refuses; the sanctioned
- * quantity has to go UP to meet the delivery instead. */
+ * quantity has to go UP to meet the delivery instead.
+ *
+ * Short AMC items are split out again, because their remedy is not the
+ * same sentence. An unfinished supply item is waiting for material that
+ * either moved or did not; an unfinished AMC item is waiting for a
+ * period of maintenance to be served and certified, and telling its
+ * operator to amend the quantity down would read as "close the
+ * maintenance contract early" when the ordinary answer is "record this
+ * year's certificate". Both routes stay open — an AMC schedule really
+ * can be short-closed by amendment — but the certificate is named first
+ * because it is the one that finishes the contract as written. */
 function notFullyExecutedMessage(unfinished: readonly UnfinishedWorkItem[]): string {
-  const numbers = (direction: UnfinishedWorkItem['direction']) =>
-    unfinished
-      .filter((item) => item.direction === direction)
-      .map((item) => item.itemNumber);
-  const short = numbers('short');
-  const excess = numbers('excess');
+  const numbers = (
+    predicate: (item: UnfinishedWorkItem) => boolean,
+  ): readonly string[] => unfinished.filter(predicate).map((item) => item.itemNumber);
+  const short = numbers(
+    (item) => item.direction === 'short' && item.requirement !== 'service',
+  );
+  const service = numbers(
+    (item) => item.direction === 'short' && item.requirement === 'service',
+  );
+  const excess = numbers((item) => item.direction === 'excess');
   const parts = [
     `A Work completes only at 100% executed value; ${String(unfinished.length)} item(s) are not fully executed.`,
   ];
   if (short.length > 0) {
     parts.push(
       `${String(short.length)} item(s) are short: ${short.join(', ')}. For a short closure, amend those quantities down through the approval path first, then complete.`,
+    );
+  }
+  if (service.length > 0) {
+    parts.push(
+      `${String(service.length)} maintenance item(s) are not fully certified: ${service.join(', ')}. Record the acceptance certificate for each period served — or, to close the maintenance short, amend those quantities down through the approval path first.`,
     );
   }
   if (excess.length > 0) {

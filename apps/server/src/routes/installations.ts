@@ -256,12 +256,14 @@ export function registerInstallationRoutes(
             id: string;
             item_number: string;
             requires_serials: boolean;
+            payment_category: string | null;
             loa_quantity: string;
             letter_date: string;
             today: string;
           }[]
         >`
             select wi.id, wi.item_number, wi.requires_serials,
+                   wi.payment_category,
                    coalesce(wi.effective_quantity, wi.awarded_quantity)::text as loa_quantity,
                    w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
@@ -274,6 +276,20 @@ export function registerInstallationRoutes(
           `;
         if (!item) {
           throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+
+        // An AMC item is never installed (migration 0068): annual
+        // maintenance is served over a period and certified, and the
+        // 0068 trigger refuses the row against every writer. Said here
+        // with a code and a remedy, under the item row lock above, so
+        // the operator reads a sentence instead of a 500.
+        if (item.payment_category === 'AMC') {
+          throw httpError(
+            409,
+            'ITEM_NOT_INSTALLABLE',
+            `${item.item_number} is an annual maintenance item: maintenance is served over a period and certified by the railway, not installed. Record the acceptance certificate for the period served instead.`,
+            { workItemId: item.id, itemNumber: item.item_number },
+          );
         }
 
         // R11, friendly form (the 0017 trigger holds it against every

@@ -29,6 +29,7 @@ export const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
   SUPPLY_AND_INSTALLATION: 'Supply + installation',
   PURE_INSTALLATION: 'Purely installation',
   SPARE_SUPPLY: 'Spare supply',
+  AMC: 'Annual maintenance (AMC)',
   UNCATEGORISED: 'Uncategorised items',
 };
 
@@ -40,6 +41,14 @@ const STAGE_FIELDS = [
 ] as const;
 
 type StageField = (typeof STAGE_FIELDS)[number][0];
+
+/** The two stages an AMC row may never bill on (migration 0068), because
+ * an AMC item takes no Delivery Challan line and no installation record
+ * and so can never move a quantity through either. */
+const LOCKED_AMC_STAGES: ReadonlySet<StageField> = new Set([
+  'pctSupply',
+  'pctInstallation',
+]);
 
 type RowDraft = Record<StageField, string>;
 
@@ -54,6 +63,20 @@ function percentHundredths(raw: string): bigint | null {
   if (dot !== -1 && !/^\d{1,2}$/.test(fraction)) return null;
   const value = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
   return value > 10000n ? null : value;
+}
+
+/**
+ * The draft as it will actually be SUBMITTED.
+ *
+ * For an AMC row the two locked stages are 0 whatever the draft holds
+ * (migration 0068), so validation, the sum-to-100 check and the request
+ * body all read the same four numbers. Deriving the payload separately
+ * from the thing that was validated is how a form comes to refuse a row
+ * it would have accepted, or send one it showed as invalid.
+ */
+function submittedDraft(category: string, draft: RowDraft): RowDraft {
+  if (category !== 'AMC') return draft;
+  return { ...draft, pctSupply: '0', pctInstallation: '0' };
 }
 
 /** Inline validation message for a draft, or null when it is saveable. */
@@ -391,7 +414,8 @@ export function PaymentMatrix({
           {PAYMENT_MATRIX_CATEGORIES.map((category) => {
             const saved = rows.find((row) => row.category === category);
             const draft = drafts[category] ?? draftFrom(saved);
-            const problem = draftProblem(draft);
+            const submitted = submittedDraft(category, draft);
+            const problem = draftProblem(submitted);
             const touched =
               draft.pctSupply !== '' ||
               draft.pctInstallation !== '' ||
@@ -417,18 +441,34 @@ export function PaymentMatrix({
             return (
               <tr key={category}>
                 <th scope="row">{CATEGORY_LABELS[category]}</th>
-                {STAGE_FIELDS.map(([field, label]) => (
-                  <td key={field}>
-                    <input
-                      aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
-                      value={draft[field]}
-                      inputMode="decimal"
-                      onChange={(event) => {
-                        updateDraft(category, field, event.target.value);
-                      }}
-                    />
-                  </td>
-                ))}
+                {STAGE_FIELDS.map(([field, label]) => {
+                  // An AMC item is never delivered and never installed
+                  // (migration 0068), so those two stage deltas are
+                  // permanently zero and any percentage on them would
+                  // bill nothing, forever. The server refuses it and a
+                  // database CHECK backstops the refusal; the input is
+                  // held at 0 and disabled so the operator meets the
+                  // rule while typing rather than at save.
+                  const locked = category === 'AMC' && LOCKED_AMC_STAGES.has(field);
+                  return (
+                    <td key={field}>
+                      <input
+                        aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
+                        value={locked ? '0' : draft[field]}
+                        inputMode="decimal"
+                        disabled={locked}
+                        title={
+                          locked
+                            ? 'Annual maintenance is certified rather than delivered or installed, so this stage can never carry a quantity.'
+                            : undefined
+                        }
+                        onChange={(event) => {
+                          updateDraft(category, field, event.target.value);
+                        }}
+                      />
+                    </td>
+                  );
+                })}
                 <td>
                   <span className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
                     <Button
@@ -440,10 +480,10 @@ export function PaymentMatrix({
                             workId,
                             category,
                             {
-                              pctSupply: draft.pctSupply,
-                              pctInstallation: draft.pctInstallation,
-                              pctPac: draft.pctPac,
-                              pctFinalBill: draft.pctFinalBill,
+                              pctSupply: submitted.pctSupply,
+                              pctInstallation: submitted.pctInstallation,
+                              pctPac: submitted.pctPac,
+                              pctFinalBill: submitted.pctFinalBill,
                             },
                           );
                           setRows((current) => [
@@ -555,6 +595,7 @@ export function PaymentMatrix({
                       </option>
                       <option value="PURE_INSTALLATION">Purely installation</option>
                       <option value="SPARE_SUPPLY">Spare supply</option>
+                      <option value="AMC">Annual maintenance (AMC)</option>
                     </select>
                   ) : (
                     <span

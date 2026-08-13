@@ -54,6 +54,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   SUPPLY_AND_INSTALLATION: 'Supply and installation',
   PURE_INSTALLATION: 'Pure installation',
   SPARE_SUPPLY: 'Spare supply',
+  AMC: 'Annual maintenance (AMC)',
   UNCATEGORISED: 'Uncategorised',
 };
 
