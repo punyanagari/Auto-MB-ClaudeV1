@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { SerialSearchResponse } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
@@ -120,30 +121,30 @@ export function SerialLookup({
                 <tr key={match.id}>
                   <th scope="row">{match.serialNumber}</th>
                   <td className={wrapCell}>
-                    <Button
-                      variant="link"
-                      size="inline"
+                    {/* Real links so a hit can be middle-clicked into
+                        its own tab; a left click stays in-app. */}
+                    <a
+                      href={workHash(match.workId)}
                       className="font-medium"
-                      onClick={() => {
+                      onClick={navigateOnClick(() => {
                         onOpenWork(match.workId);
-                      }}
+                      })}
                     >
                       {match.workCode}
-                    </Button>{' '}
+                    </a>{' '}
                     <span className="text-muted-foreground">{match.workTitle}</span>
                   </td>
                   <td className={wrapCell}>{match.itemDescription}</td>
                   <td>
-                    <Button
-                      variant="link"
-                      size="inline"
+                    <a
+                      href={challanHash(match.workId, match.challanId)}
                       className="font-medium"
-                      onClick={() => {
+                      onClick={navigateOnClick(() => {
                         onOpenChallan(match.workId, match.challanId);
-                      }}
+                      })}
                     >
                       {match.challanNumber ?? 'Draft'}
-                    </Button>{' '}
+                    </a>{' '}
                     <span className="text-muted-foreground">· {match.challanDate}</span>{' '}
                     <StatusChip status={match.challanStatus} />
                   </td>

@@ -8,7 +8,7 @@ import type {
   Serial,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatRate, formatTimestampDate } from '../format.js';
+import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
@@ -557,7 +557,10 @@ export function ChallanDetail({
             </tbody>
           </DataTable>
           {canRecordEvidence ? (
-            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+            <Disclosure
+              label="New serial numbers"
+              startOpen={(serials ?? []).length === 0}
+            >
               <RecordSerialsForm
                 lines={trackedLines.map((line) => line.item)}
                 pending={pending}
@@ -696,7 +699,10 @@ export function ChallanDetail({
           )}
 
           {canRecordEvidence && (
-            <Disclosure label="Record serials" startOpen={(serials ?? []).length === 0}>
+            <Disclosure
+              label="New serial numbers"
+              startOpen={(serials ?? []).length === 0}
+            >
               <RecordSerialsForm
                 lines={items}
                 pending={pending}
@@ -723,7 +729,7 @@ export function ChallanDetail({
           )}
 
           {canRecordEvidence && uninstalled.length > 0 && (
-            <Disclosure label="Record installation">
+            <Disclosure label="New installation">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -761,7 +767,13 @@ export function ChallanDetail({
                 </Field>
                 <Field>
                   <label htmlFor="install-date">Installed on</label>
-                  <input id="install-date" name="install-date" type="date" required />
+                  <input
+                    id="install-date"
+                    name="install-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                 </Field>
                 <Field>
                   <label htmlFor="install-remarks">Remarks (optional)</label>
@@ -779,7 +791,7 @@ export function ChallanDetail({
       )}
 
       {challan.status === 'issued' && canModify && (
-        <Disclosure label="Upload signed copy">
+        <Disclosure label="Upload signed copy…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -899,7 +911,7 @@ export function ChallanDetail({
               the approvals queue.
             </p>
           ) : eligibility.path === 'cancel_replace' ? (
-            <Disclosure label="Request cancel & replace">
+            <Disclosure label="Request cancel & replace…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1014,7 +1026,7 @@ export function ChallanDetail({
               </form>
             </Disclosure>
           ) : (
-            <Disclosure label="Request correction notice">
+            <Disclosure label="Request correction notice…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1108,7 +1120,7 @@ export function ChallanDetail({
       )}
 
       {challan.status === 'issued' && canCancel && cancelClosed === null && (
-        <Disclosure label="Cancel challan">
+        <Disclosure label="Cancel challan…">
           <form
             onSubmit={(event) => {
               event.preventDefault();

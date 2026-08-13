@@ -21,7 +21,13 @@ import {
   mfaRequiredByPolicyError,
 } from './mfa-policy.js';
 import { createClamdScanner, noScanner } from './malware-scan.js';
-import { createMetricsRegistry } from './metrics.js';
+import {
+  createMetricsRegistry,
+  recordAuthFailure,
+  recordTenantDenial,
+  type AuthFailureSurface,
+  type DatabasePoolSample,
+} from './metrics.js';
 import {
   accountLockoutKey,
   createAccountLockout,
@@ -321,6 +327,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       (declaredStatusCode === null || declaredStatusCode >= 500) &&
       isDatabaseUnavailableError(error);
     const statusCode = databaseUnavailable ? 503 : (declaredStatusCode ?? 500);
+    // Tenant-boundary denial signal (finding 37): every NOT_A_MEMBER
+    // refusal — a request addressed to an organisation the authenticated
+    // user holds no active membership in — passes through this handler,
+    // so counting here covers every tenant-scoped route at once.
+    if (
+      statusCode === 403 &&
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'NOT_A_MEMBER'
+    ) {
+      recordTenantDenial('not_a_member');
+    }
     const explicitlyPublic =
       error instanceof Error &&
       'expose' in error &&
@@ -373,11 +391,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   }
 
   if (options.metricsToken !== undefined) {
-    const registry = createMetricsRegistry(
-      options.backupMarkerPath !== undefined
+    // Database saturation (finding 37, docs/OPERATIONS.md §6): sampled at
+    // scrape time from pg_stat_activity, which shows a non-superuser the
+    // detail of its OWN role's backends — exactly this server's
+    // connections. The denominator is the configured pool budget: the
+    // app pool plus, when authentication is enabled, Better Auth's own
+    // node-postgres pool. A failed or unconfigured sample omits the
+    // series rather than reporting a fictional zero.
+    const collectDatabasePool = database
+      ? async (): Promise<DatabasePoolSample | null> => {
+          const rows = await database<{ state: string; connections: number }[]>`
+            select coalesce(state, 'unknown') as state, count(*)::int as connections
+            from pg_stat_activity
+            where datname = current_database() and usename = current_user
+            group by 1
+          `;
+          return {
+            maxConnections: authPool !== undefined ? 10 : 5,
+            connectionsByState: new Map(
+              rows.map((row) => [row.state, row.connections]),
+            ),
+          };
+        }
+      : undefined;
+    const registry = createMetricsRegistry({
+      ...(options.backupMarkerPath !== undefined
         ? { backupMarkerPath: options.backupMarkerPath }
-        : {},
-    );
+        : {}),
+      ...(collectDatabasePool !== undefined ? { collectDatabasePool } : {}),
+    });
     // Constant-time bearer comparison: both sides are folded through
     // SHA-256 so the buffers timingSafeEqual compares always have equal
     // length — neither the token's length nor its bytes leak through
@@ -402,13 +444,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       );
       done();
     });
-    app.get('/metrics', (request, reply) => {
+    app.get('/metrics', async (request, reply) => {
       if (!authorizationMatches(request.headers.authorization)) {
         void reply.status(401);
         return { code: 'UNAUTHENTICATED', message: 'Metrics require the token.' };
       }
       void reply.type('text/plain; version=0.0.4');
-      return reply.send(registry.render());
+      return reply.send(await registry.renderAll());
     });
   }
 
@@ -433,10 +475,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     (process.env.NODE_ENV === 'test' ? crypto.randomUUID() : 'deployment');
   const authLimiter = database
     ? createPgRateLimiter(database, 'auth', authRule, throttleNamespace)
-    : createRateLimiter(authRule);
+    : createRateLimiter(authRule, 'auth');
   const uploadLimiter = database
     ? createPgRateLimiter(database, 'upload', uploadRule, throttleNamespace)
-    : createRateLimiter(uploadRule);
+    : createRateLimiter(uploadRule, 'upload');
   // Second throttling dimension for sign-in only: the per-address window
   // above is trivially bypassed by rotating source addresses, so repeated
   // failures against ONE account (keyed by a hash of the normalised
@@ -575,6 +617,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
         }
 
         const response = await authInstance.handler(toWebRequest(request));
+
+        // Authentication failure signal (finding 37), read from the same
+        // response the identity-audit hooks below already judge, so the
+        // metric and the audit trail can never disagree. The surface label
+        // comes from the matched path, never from request data.
+        if (request.method === 'POST' && response.status >= 400) {
+          const surface: AuthFailureSurface | null =
+            path === '/api/auth/sign-in/email'
+              ? 'sign_in'
+              : path === '/api/auth/sign-up/email'
+                ? 'sign_up'
+                : isTwoFactorPath(path)
+                  ? 'two_factor'
+                  : null;
+          if (surface !== null) recordAuthFailure(surface);
+        }
 
         if (lockoutKey !== null) {
           // The auth response above already exists; this is bookkeeping,

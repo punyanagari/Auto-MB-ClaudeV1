@@ -392,7 +392,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       {formError !== null && <FormError>{formError}</FormError>}
 
       {isOwner && (
-        <Disclosure label="Add member">
+        <Disclosure label="New member">
           <p className="text-muted-foreground">
             The person must already have an Auto-MB account; add them by their account
             email. Site members record delivery evidence; set their scope to Assigned

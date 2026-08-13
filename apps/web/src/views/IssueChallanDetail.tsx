@@ -346,7 +346,7 @@ export function IssueChallanDetail({
       </Actions>
 
       {issueChallan.status === 'issued' && canModify && (
-        <Disclosure label="Upload signed copy">
+        <Disclosure label="Upload signed copy…">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -420,7 +420,7 @@ export function IssueChallanDetail({
         !hasPendingCorrection && (
           <>
             <h2>Request correction</h2>
-            <Disclosure label="Request cancel & replace">
+            <Disclosure label="Request cancel & replace…">
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -567,7 +567,7 @@ export function IssueChallanDetail({
       )}
 
       {issueChallan.status === 'issued' && canCancel && workActive && (
-        <Disclosure label="Cancel challan">
+        <Disclosure label="Cancel challan…">
           <form
             onSubmit={(event) => {
               event.preventDefault();

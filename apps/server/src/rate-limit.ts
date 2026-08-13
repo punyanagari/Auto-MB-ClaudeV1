@@ -13,11 +13,18 @@
 
 import { createHash } from 'node:crypto';
 import type { Sql, TransactionSql } from '@auto-mb/db';
+import { recordAccountLockout, recordRateLimitRejection } from './metrics.js';
 
 export interface RateLimitRule {
   readonly windowMs: number;
   readonly max: number;
 }
+
+/** Which throttle refused a request, for the finding-37 rejection counter.
+ * Both implementations of each interface count at the moment of refusal,
+ * so the metric measures the control rather than any one caller's
+ * bookkeeping. */
+export type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout';
 
 export interface RateLimiter {
   /** Records an attempt for the key and reports whether it is allowed.
@@ -26,7 +33,10 @@ export interface RateLimiter {
   allow(key: string): boolean | Promise<boolean>;
 }
 
-export function createRateLimiter(rule: RateLimitRule): RateLimiter {
+export function createRateLimiter(
+  rule: RateLimitRule,
+  scope: 'auth' | 'upload' = 'auth',
+): RateLimiter {
   const hits = new Map<string, number[]>();
   let lastSweep = 0;
 
@@ -46,6 +56,7 @@ export function createRateLimiter(rule: RateLimitRule): RateLimiter {
       const recent = (hits.get(key) ?? []).filter((stamp) => stamp > cutoff);
       if (recent.length >= rule.max) {
         hits.set(key, recent);
+        recordRateLimitRejection(scope);
         return false;
       }
       recent.push(now);
@@ -116,7 +127,9 @@ export function createAccountLockout(rule: AccountLockoutRule): AccountLockout {
       const now = Date.now();
       sweep(now);
       const entry = failures.get(key);
-      return entry !== undefined && entry.lockedUntil > now;
+      const locked = entry !== undefined && entry.lockedUntil > now;
+      if (locked) recordRateLimitRejection('account_lockout');
+      return locked;
     },
     recordFailure(key: string): boolean {
       const now = Date.now();
@@ -127,7 +140,10 @@ export function createAccountLockout(rule: AccountLockoutRule): AccountLockout {
       entry.stamps = entry.stamps.filter((stamp) => stamp > cutoff);
       entry.stamps.push(now);
       const justLocked = !wasLocked && entry.stamps.length >= rule.maxFailures;
-      if (justLocked) entry.lockedUntil = now + rule.lockMs;
+      if (justLocked) {
+        entry.lockedUntil = now + rule.lockMs;
+        recordAccountLockout();
+      }
       failures.set(key, entry);
       return justLocked;
     },
@@ -200,7 +216,7 @@ export function createPgRateLimiter(
             and occurred_at <= now() - make_interval(secs => ${rule.windowMs / 1000})
         `;
       }
-      return sql.begin(async (tx) => {
+      const allowed = await sql.begin(async (tx) => {
         await lockThrottleKey(tx, scope, keyHash);
         const inserted = await tx<{ recorded: number }[]>`
           insert into rate_limit_attempts (scope, key_hash)
@@ -214,6 +230,11 @@ export function createPgRateLimiter(
         `;
         return inserted.length === 1;
       });
+      // Counted here, in the shared-state limiter every production replica
+      // runs (finding 38), so the rejection metric measures the deployment
+      // rather than one instance's view of it.
+      if (!allowed) recordRateLimitRejection(scope);
+      return allowed;
     },
   };
 }
@@ -252,7 +273,9 @@ export function createPgAccountLockout(
   return {
     async isLocked(key: string): Promise<boolean> {
       await sweep();
-      return activeLock(sql, limiterKeyHash(namespace, key));
+      const locked = await activeLock(sql, limiterKeyHash(namespace, key));
+      if (locked) recordRateLimitRejection(scope);
+      return locked;
     },
     async recordFailure(key: string): Promise<boolean> {
       await sweep();
@@ -279,6 +302,9 @@ export function createPgAccountLockout(
         `;
         const justLocked = !wasLocked && (counted?.failures ?? 0) >= rule.maxFailures;
         if (justLocked) {
+          // Once per lockout episode, matching the audit row app.ts writes
+          // off the same boolean — never once per rejected attempt.
+          recordAccountLockout();
           await tx`
             insert into account_lockout_locks (key_hash, locked_until)
             values (${keyHash}, now() + make_interval(secs => ${rule.lockMs / 1000}))

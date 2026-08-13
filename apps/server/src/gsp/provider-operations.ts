@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { TransactionSql } from '@auto-mb/db';
 import { httpError } from '../http.js';
+import { recordStatutoryProviderOutcome } from '../metrics.js';
 import type {
   StatutoryProvider,
   StatutoryProviderError,
@@ -161,7 +162,7 @@ export async function finishStatutoryOperation(
   },
 ): Promise<void> {
   const response = boundedLedgerBody(input.responseBody);
-  const rows = await tx<{ id: string }[]>`
+  const rows = await tx<{ operation: StatutoryOperation }[]>`
     update statutory_provider_operations
     set status = ${input.status},
         provider_code = ${input.providerCode ?? null},
@@ -170,10 +171,18 @@ export async function finishStatutoryOperation(
         response_body_truncated = ${response.truncated},
         completed_at = now()
     where id = ${operationId} and status = 'pending'
-    returning id
+    returning operation
   `;
   if (rows.length !== 1) {
     throw new Error(`provider operation ${operationId} is not pending`);
+  }
+  // Finding 37: statutory-provider call outcomes, labelled by the ledger's
+  // own operation name and terminal status — both closed sets, no provider
+  // code or document id ever becomes a label value. Counted off the ledger
+  // write itself, so every provider call that reaches a terminal state is
+  // measured exactly once and the metric cannot drift from the record.
+  if (rows[0] !== undefined) {
+    recordStatutoryProviderOutcome(rows[0].operation, input.status);
   }
 }
 
@@ -206,6 +215,11 @@ export async function recoverStaleStatutoryOperation(
     returning operation
   `;
   for (const row of rows) {
+    // A lease-expired recovery is a real terminal outcome of a provider
+    // call — unknown — and must show up in the same counter as the calls
+    // that finished in-process; otherwise the metric quietly under-reports
+    // exactly the cases operators most need to see.
+    recordStatutoryProviderOutcome(row.operation, 'unknown');
     if (row.operation === 'register_irp' || row.operation === 'reconcile_irp') {
       if (!('taxInvoiceId' in target)) throw new Error('IRP operation target mismatch');
       await tx`

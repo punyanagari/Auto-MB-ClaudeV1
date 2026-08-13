@@ -9,6 +9,7 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -322,7 +323,7 @@ export function Installations({
         locationsState === 'ready' &&
         selectableItems.length > 0 && (
           <Disclosure
-            label="Record installation"
+            label="New installation"
             startOpen={data.installations.length === 0}
           >
             <form
@@ -410,7 +411,13 @@ export function Installations({
               </Field>
               <Field>
                 <label htmlFor="inst-date">Installed on</label>
-                <input id="inst-date" name="inst-date" type="date" required />
+                <input
+                  id="inst-date"
+                  name="inst-date"
+                  type="date"
+                  required
+                  defaultValue={todayIso()}
+                />
               </Field>
               <Field>
                 <label htmlFor="inst-location">Location</label>

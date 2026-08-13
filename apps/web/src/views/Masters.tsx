@@ -335,7 +335,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
 
       {canModify && rows !== null && (
         <MasterForm
-          label="Add contact"
+          label="New contact"
           editingTitle={editing === null ? null : `Edit ${editing.designation}`}
           startOpen={rows.length === 0}
         >
@@ -640,7 +640,7 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
 
       {canModify && rows !== null && (
         <MasterForm
-          label="Add location"
+          label="New location"
           editingTitle={editing === null ? null : `Edit ${editing.name}`}
           startOpen={rows.length === 0}
         >
@@ -808,7 +808,7 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
 
       {canModify && rows !== null && (
         <MasterForm
-          label="Add unit"
+          label="New unit"
           editingTitle={editing === null ? null : `Edit ${editing.name}`}
           startOpen={rows.length === 0}
         >
@@ -964,7 +964,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
 
       {canModify && rows !== null && (
         <MasterForm
-          label="Add signatory"
+          label="New signatory"
           editingTitle={editing === null ? null : `Edit ${editing.name}`}
           startOpen={rows.length === 0}
         >
@@ -1164,7 +1164,7 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
 
       {isOwner && rows !== null && ending === null && (
         <MasterForm
-          label="Record a notified rate"
+          label="New notified rate"
           editingTitle={null}
           startOpen={rows.length === 0}
         >
