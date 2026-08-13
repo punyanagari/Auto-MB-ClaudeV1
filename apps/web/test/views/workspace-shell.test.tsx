@@ -100,9 +100,7 @@ describe('OperationsDashboard', () => {
       // dashboard's loading branch renders that heading too, so waiting on
       // it resolves against the loading state and every read below then
       // races the dashboard mock (the §2.7 hazard).
-      expect(
-        await screen.findByText(/PBG BG\/22 for PL270-CRB expires/),
-      ).toBeTruthy();
+      expect(await screen.findByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
       expect(screen.getByText('38 days left')).toBeTruthy();
       expect(
         screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
