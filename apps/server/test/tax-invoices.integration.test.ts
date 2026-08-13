@@ -347,6 +347,17 @@ function derivedIrnFor(detail: TaxInvoiceDetailResponse): string {
   });
 }
 
+/** The same, for an invoice reached only by id. */
+async function derivedIrnForInvoice(invoiceId: string): Promise<string> {
+  const detail = await authed(owner, {
+    method: 'GET',
+    url: `/api/tax-invoices/${invoiceId}`,
+    organisationId,
+  });
+  expect(detail.statusCode, detail.body).toBe(200);
+  return derivedIrnFor(detail.json<TaxInvoiceDetailResponse>());
+}
+
 async function expirePendingProviderOperation(invoiceId: string): Promise<void> {
   await admin.unsafe(`set session_replication_role = 'replica'`);
   try {
@@ -1383,7 +1394,9 @@ describe('the IRP payload and response', () => {
   });
 
   it('records the IRP response once, and only once', async () => {
-    const irn = '0123456789abcdef'.repeat(4);
+    // Derived, not invented: the manual door refuses an IRN that does not
+    // reproduce from this invoice's own frozen identity (finding 2).
+    const irn = await derivedIrnForInvoice(invoice1Id);
     const badIrn = await authed(owner, {
       method: 'POST',
       url: `/api/tax-invoices/${invoice1Id}/irp-response`,
@@ -1462,7 +1475,7 @@ describe('the IRP payload and response', () => {
         organisationId,
       });
       expect(rendered.statusCode, rendered.body).toBe(200);
-      expect(renderedHtml).toContain('0123456789abcdef'.repeat(4));
+      expect(renderedHtml).toContain(await derivedIrnForInvoice(invoice1Id));
       expect(renderedHtml).toContain('112010036563');
       expect(renderedHtml).toContain('16/03/2026 16:00:00');
       expect(renderedHtml).toContain('Manual or legacy IRP evidence — unverified');
