@@ -148,6 +148,19 @@ export const MeasurementBookSchema = Type.Object(
     createdAt: Type.String({ format: 'date-time' }),
     finalizedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     cancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /**
+     * When the railway's own On-Account Bill settling this measurement was
+     * accepted (migration 0066).
+     *
+     * Deliberately NOT the same "closed" migration 0035 speaks of — that
+     * one means a live tax invoice bills this book, and is an invoice
+     * fact. This is a railway fact, and the two are independent: the
+     * settlement corpus carries an invoice dated two days BEFORE the bill
+     * that settles it.
+     */
+    closedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** The received railway bill that closed this measurement. */
+    closedByReceivedBillId: Type.Union([UuidSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );

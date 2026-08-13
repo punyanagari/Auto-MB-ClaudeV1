@@ -73,6 +73,15 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The one inbound document the agency receives rather than authors
+    // (0066). Same magic-byte gate, same throttle, same 25 MB ceiling.
+    key: 'POST /api/measurement-books/:id/received-railway-bill',
+    sourceFile: 'routes/received-railway-bills.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     key: 'POST /api/challans/:id/signed-copy',
     sourceFile: 'routes/challans.ts',
     format: 'pdf',

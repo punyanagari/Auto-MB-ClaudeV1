@@ -550,9 +550,58 @@ describe('Measurement Book and the first partial-billing cycle', () => {
     expect(allUnstamped).toBe(true);
   });
 
+  /**
+   * Records a railway bill against `measurementBookId` and closes the book
+   * with it, using the admin connection.
+   *
+   * Written directly rather than through the API because closing properly
+   * needs a signed PDF and a trust-anchor store, which is what
+   * `apps/server/test/received-railway-bills.integration.test.ts` sets up and proves. Here
+   * the closure is a precondition of the status machine under test, not the
+   * thing under test.
+   */
+  async function closeBookForPayment(measurementBookId: string): Promise<void> {
+    const [book] = await admin<{ work_id: string }[]>`
+    select work_id from measurement_books where id = ${measurementBookId}
+  `;
+    const [recorded] = await admin<{ id: string }[]>`
+    insert into received_railway_bills (
+      organisation_id, work_id, measurement_book_id, object_key,
+      original_filename, sha256, media_type, size_bytes, bill_number,
+      bill_date, bill_amount, rate_inclusive_of_gst, measurement_number,
+      measurement_sequence, letter_number, extraction_payload,
+      uploaded_by_user_id, signature_status, signature_verdict,
+      signature_verified_at
+    )
+    values (
+      ${organisationId}, ${book?.work_id ?? ''}, ${measurementBookId},
+      ${`${organisationId}/railwaybill/${measurementBookId}.pdf`},
+      'bill.pdf', ${'c'.repeat(64)}, 'application/pdf', 1024,
+      'RETENTION/B1', '2026-02-10', '10.00', true,
+      'RETENTION/CSTM/1/OAM/FL2/01', 1, 'RETENTION-LOA',
+      '{"billNumber": "RETENTION/B1"}'::jsonb, 'retention-fixture',
+      -- The 0066 closure guard reads the verdict, so the stand-in bill
+      -- carries one: settleable status and the three signatures an
+      -- accepted On-Account Bill has. The per-signature rule is the
+      -- server's and is proved in the railway-bill suites; what the
+      -- database asks for is this shape.
+      'signed_and_intact',
+      '{"signatures": [{"index": 1}, {"index": 2}, {"index": 3}]}'::jsonb,
+      now()
+    )
+    returning id
+  `;
+    await admin`
+    update measurement_books
+    set closed_at = now(), closed_by_user_id = 'retention-fixture',
+        closed_by_received_bill_id = ${recorded?.id ?? ''}
+    where id = ${measurementBookId}
+  `;
+  }
+
   it('moves bill status forward only', async () => {
-    const [bill] = await admin<{ id: string }[]>`
-      select id from bills where organisation_id = ${organisationId} limit 1
+    const [bill] = await admin<{ id: string; mb_id: string }[]>`
+      select id, mb_id from bills where organisation_id = ${organisationId} limit 1
     `;
     const submitted = await authed(owner, {
       method: 'POST',
@@ -561,13 +610,32 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       payload: { status: 'submitted' },
     });
     expect(submitted.statusCode, submitted.body).toBe(200);
+
+    // Migration 0066: a bill is not paid until the railway's own signed
+    // On-Account Bill has closed the Measurement Book behind it. This
+    // suite is about the forward-only status machine, not about railway
+    // settlement, so the closure is written directly here; the gate
+    // itself — route and trigger — is proved in
+    // received-railway-bills.integration.test.ts.
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/bills/${bill?.id ?? ''}/status`,
+      organisationId,
+      payload: { status: 'paid' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'BILL_MEASUREMENT_BOOK_NOT_CLOSED',
+    );
+    await closeBookForPayment(bill?.mb_id ?? '');
+
     const paid = await authed(owner, {
       method: 'POST',
       url: `/api/bills/${bill?.id ?? ''}/status`,
       organisationId,
       payload: { status: 'paid' },
     });
-    expect(paid.statusCode).toBe(200);
+    expect(paid.statusCode, paid.body).toBe(200);
     const backwards = await authed(owner, {
       method: 'POST',
       url: `/api/bills/${bill?.id ?? ''}/status`,

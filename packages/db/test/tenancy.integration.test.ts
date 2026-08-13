@@ -84,6 +84,8 @@ const TENANT_TABLES = [
   'measurement_book_counters',
   'import_batches',
   'import_records',
+  // The railway's own received On-Account Bill (0066).
+  'received_railway_bills',
   // The procurement wave and the tax facts that ride with it (0033).
   'purchase_orders',
   'purchase_order_lines',
@@ -144,6 +146,9 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
  * zero rows. */
 const DELETE_REVOKED_TABLES = [
   'organisations',
+  // A settlement document does not leave; a bill attached to the wrong
+  // measurement discards in place (0066).
+  'received_railway_bills',
   'works',
   'work_items',
   'loa_documents',
@@ -703,6 +708,30 @@ async function seedTenantGraph(
     await tx`
       insert into measurement_book_counters (organisation_id, work_id, next_value)
       values (${organisationId}, ${work.id}, 1)
+    `;
+
+    // The railway's own On-Account Bill against that finalized book
+    // (0066). Present in both organisations so the cross-tenant reads
+    // below have something of each other's to fail to see. Left at the
+    // default `not_checked` verdict: nothing here closes a measurement
+    // against it, and a fabricated verdict would be a claim this suite
+    // has no business making.
+    await tx`
+      insert into received_railway_bills (
+        organisation_id, work_id, measurement_book_id, object_key,
+        original_filename, sha256, media_type, size_bytes, bill_number,
+        bill_date, bill_amount, rate_inclusive_of_gst, measurement_number,
+        measurement_sequence, letter_number, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${measurementBook.id},
+        ${`${organisationId}/railwaybill/${measurementBook.id}.pdf`},
+        'bill.pdf', ${'b'.repeat(64)}, 'application/pdf', 2048,
+        ${`${workCode}/B1`}, '2026-02-06', '10.00', true,
+        '00341490147964/CSTM/1139316/OAM/FL2/01', 1, ${`LOA-${workCode}`},
+        '{"billNumber": "seed"}'::jsonb, ${userId}
+      )
     `;
 
     // 0045 normalized merge provenance: a live target plus one selected

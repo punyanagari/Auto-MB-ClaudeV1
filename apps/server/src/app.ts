@@ -48,6 +48,7 @@ import { registerChallanRoutes } from './routes/challans.js';
 import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerContractSourceRoutes } from './routes/contract-sources.js';
+import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bills.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -905,6 +906,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
     registerLoaRoutes(app, authInstance, database, storage, scanner, pdfTrustAnchors);
     registerContractSourceRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      scanner,
+      pdfTrustAnchors,
+    );
+    registerReceivedRailwayBillRoutes(
       app,
       authInstance,
       database,

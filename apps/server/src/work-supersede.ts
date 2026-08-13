@@ -26,7 +26,7 @@ import { httpError } from './http.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * `works` has 30 direct children. This list holds the 16 that are
+ * `works` has 31 direct children. This list holds the 17 that are
  * documents; `WORK_CHILD_TABLES_EXEMPT` holds the rest with the reason each
  * is exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — so a table added later cannot
@@ -55,6 +55,7 @@ export const DOWNSTREAM_REGISTERS = [
   { register: 'bills', label: 'bills' },
   { register: 'extension_requests', label: 'extension requests' },
   { register: 'purchase_orders', label: 'purchase orders' },
+  { register: 'received_railway_bills', label: 'received railway bills' },
   { register: 'amendment_variation_orders', label: 'cited variation orders' },
   { register: 'approval_requests', label: 'live change requests' },
 ] as const;

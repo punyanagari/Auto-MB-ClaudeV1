@@ -50,6 +50,7 @@ interface ManifestEntry {
 type ManifestBucket =
   | 'organisation-logo'
   | 'loa-document'
+  | 'received-railway-bill'
   | 'challan'
   | 'correction-notice'
   | 'pac-certificate'
@@ -62,6 +63,7 @@ type ManifestBucket =
 const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'organisation-logo',
   'loa-document',
+  'received-railway-bill',
   'challan',
   'correction-notice',
   'pac-certificate',
@@ -134,6 +136,25 @@ const SECTIONS: readonly ExportSection[] = [
       bucket: 'loa-document',
       entries: (row) => [
         { kind: 'loa-document', objectKey: row.object_key, sha256: row.sha256 },
+      ],
+    },
+  },
+  {
+    // The railway's own On-Account Bill (0066). Its bytes ride in the
+    // archive beside the LOA and challan PDFs: it is the evidence the
+    // organisation's settlements rest on, and an export without it would
+    // hand back a chain with the counterparty's half missing.
+    key: 'receivedRailwayBills',
+    sql: `select * from received_railway_bills order by created_at`,
+    jsonbColumns: ['extraction_payload', 'signature_verdict'],
+    manifest: {
+      bucket: 'received-railway-bill',
+      entries: (row) => [
+        {
+          kind: 'received-railway-bill',
+          objectKey: row.object_key,
+          sha256: row.sha256,
+        },
       ],
     },
   },

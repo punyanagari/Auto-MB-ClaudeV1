@@ -301,6 +301,12 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue(undefined),
     prepareBillFromMeasurementBook:
       vi.fn<ApiClient['prepareBillFromMeasurementBook']>(),
+    uploadReceivedRailwayBill: vi.fn<ApiClient['uploadReceivedRailwayBill']>(),
+    listReceivedRailwayBills: vi
+      .fn<ApiClient['listReceivedRailwayBills']>()
+      .mockResolvedValue([]),
+    discardReceivedRailwayBill: vi.fn<ApiClient['discardReceivedRailwayBill']>(),
+    closeMeasurementBook: vi.fn<ApiClient['closeMeasurementBook']>(),
     renderMeasurementBook: vi.fn<ApiClient['renderMeasurementBook']>(),
     downloadMeasurementBookPdf: vi.fn<ApiClient['downloadMeasurementBookPdf']>(),
     downloadMeasurementBookDraftPreview:
@@ -754,6 +760,8 @@ export function billableBook(
     createdAt: '2026-07-30T00:00:00.000Z',
     finalizedAt: '2026-07-30T06:00:00.000Z',
     cancelledAt: null,
+    closedAt: null,
+    closedByReceivedBillId: null,
     ...overrides,
   };
 }

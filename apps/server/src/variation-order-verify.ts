@@ -53,7 +53,7 @@
  * owner scoped this ruling to omissions, so only the zero-quantity
  * expectation is wired up.
  */
-import { resolveCanonicalUnitCode } from '@auto-mb/loa-parser';
+import { parseDdMmYyyy, resolveCanonicalUnitCode } from '@auto-mb/loa-parser';
 
 // ---------------------------------------------------------------------------
 // the verdict
@@ -249,20 +249,12 @@ function readLabelledField(text: string, words: readonly string[]): string | nul
  * every date on all three samples uses this form. Converted to the
  * product's date-only ISO representation; anything else yields null rather
  * than a guess. */
-const PRINTED_DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 
 function printedDateToIso(printed: string | null): string | null {
   if (printed === null) return null;
-  const match = PRINTED_DATE_RE.exec(printed.trim());
-  if (match === null) return null;
-  const [, day, month, year] = match;
-  if (day === undefined || month === undefined || year === undefined) return null;
-  const iso = `${year}-${month}-${day}`;
-  // Reject 31/02: a date the calendar does not carry is not a date read.
-  const parsed = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(iso)
-    ? null
-    : iso;
+  // The shared reader (`@auto-mb/loa-parser`), which now carries the
+  // calendar-validity rejection this function used to hold privately.
+  return printed.trim() === '' ? null : parseDdMmYyyy(printed);
 }
 
 /** `5.311708E+7`, `41,301,860`, `79,892,180` — every amount form seen.

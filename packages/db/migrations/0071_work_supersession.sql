@@ -320,6 +320,10 @@ BEGIN
       SELECT 1 FROM purchase_orders t
       WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
     UNION ALL
+    SELECT 'received railway bill' WHERE EXISTS (
+      SELECT 1 FROM received_railway_bills t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
     SELECT 'cited variation order' WHERE EXISTS (
       SELECT 1 FROM amendment_variation_orders t
       WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)

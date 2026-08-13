@@ -89,6 +89,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // written once at upload and never rewritten, so no UPDATE and no
   // DELETE either (0058).
   amendment_variation_orders: 'SELECT, INSERT',
+  // The railway's own On-Account Bill, received rather than authored
+  // (0066). Its bytes and every fact extracted from them are immutable;
+  // UPDATE exists only so the row can be discarded when a bill was
+  // attached to the wrong Measurement Book, and there is no DELETE
+  // because a settlement document does not leave.
+  received_railway_bills: 'SELECT, INSERT, UPDATE',
   // The record that a confirmed Work was withdrawn and what replaced it
   // (0071). UPDATE binds the successor once; no DELETE, because this is
   // the only place the withdrawal is written down.

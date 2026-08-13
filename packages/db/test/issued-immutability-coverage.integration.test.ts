@@ -176,6 +176,10 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // part in and the third marks the closing book of a Work, and all three
   // are written by routes that check the book's state themselves rather
   // than by a trigger.
+  //
+  // The three railway-closure columns 0066 adds are deliberately NOT here:
+  // the restated guard compares them, so closure is append-once in the
+  // database and not merely in the route that writes it.
   measurement_books: [
     'id',
     'updated_at',
@@ -205,6 +209,20 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
 
   // 0045 froze the purchase order whole once it is not a draft.
   purchase_orders: ['updated_at'],
+
+  // The railway's own On-Account Bill (0066). Its bytes and every fact
+  // extracted from them are frozen by
+  // `guard_received_railway_bill_update`, and its signature verdict by
+  // 0060's append-once function reused verbatim. What is left is the
+  // discard evidence — written once when a bill turns out to be attached
+  // to the wrong Measurement Book, and made terminal by the same guard.
+  received_railway_bills: [
+    'id',
+    'updated_at',
+    'discarded_at',
+    'discarded_by_user_id',
+    'discard_reason',
+  ],
 
   // The provider attempt ledger (0041): the request is frozen at start,
   // and the outcome is the append that closes it.

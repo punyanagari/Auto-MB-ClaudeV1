@@ -95,6 +95,8 @@ import type {
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
   MeasurementBookDetailResponse,
+  ReceivedRailwayBill,
+  ReceivedRailwayBillListResponse,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
   MergeMeasurementBooksRequest,
@@ -920,6 +922,33 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
   ) => Promise<Bill>;
+  /**
+   * The railway's own On-Account Bill, recorded against the measurement it
+   * settles. Nothing about the bill is sent: its number, date, amount and
+   * measurement are read out of the PDF on the server, because a bill
+   * somebody typed is a claim and one found in the document is a fact.
+   */
+  readonly uploadReceivedRailwayBill: (
+    organisationId: string,
+    measurementBookId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<ReceivedRailwayBill>;
+  readonly listReceivedRailwayBills: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<ReceivedRailwayBill[]>;
+  readonly discardReceivedRailwayBill: (
+    organisationId: string,
+    receivedRailwayBillId: string,
+    reason?: string,
+  ) => Promise<ReceivedRailwayBill>;
+  /** Records that the railway settled this measurement. Refused unless a
+   * recorded bill's signatures pass the gate. */
+  readonly closeMeasurementBook: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<MeasurementBookDetailResponse>;
   /** Phase 3: the MB document. Finalized MBs render to a persisted PDF;
    * drafts stream a watermarked live preview that is never stored. */
   readonly renderMeasurementBook: (
@@ -2639,6 +2668,46 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         method: 'POST',
         organisationId,
       });
+    },
+    async uploadReceivedRailwayBill(organisationId, measurementBookId, file, filename) {
+      const query = new URLSearchParams({ filename });
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/received-railway-bill?${query.toString()}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ReceivedRailwayBill;
+    },
+    async listReceivedRailwayBills(organisationId, workId) {
+      const { bills } = await request<ReceivedRailwayBillListResponse>(
+        `/api/works/${workId}/received-railway-bills`,
+        { organisationId },
+      );
+      return bills;
+    },
+    async discardReceivedRailwayBill(organisationId, receivedRailwayBillId, reason) {
+      return request<ReceivedRailwayBill>(
+        `/api/received-railway-bills/${receivedRailwayBillId}/discard`,
+        {
+          method: 'POST',
+          body: reason === undefined ? {} : { reason },
+          organisationId,
+        },
+      );
+    },
+    async closeMeasurementBook(organisationId, measurementBookId) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/close`,
+        { method: 'POST', organisationId },
+      );
     },
     async renderMeasurementBook(organisationId, measurementBookId) {
       return request<MeasurementBookDetailResponse>(
