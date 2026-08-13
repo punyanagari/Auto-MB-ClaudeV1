@@ -17,7 +17,11 @@ import type {
   TimelineResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -348,44 +352,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const orgId of [organisationId, organisationBId]) {
-      if (!orgId) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'correction_notice_counters',
-          'correction_notices',
-          'challan_receipts',
-          'challan_item_serials',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'issue_challan_lines',
-          'issue_challan_counters',
-          'issue_challans',
-          'delivery_challans',
-          'purchase_order_lines',
-          'purchase_orders',
-          'purchase_order_counters',
-          'approval_requests',
-          'work_assignments',
-          'work_items',
-          'work_schedules',
-          'loa_documents',
-          'works',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [orgId],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId, organisationBId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

@@ -5,6 +5,7 @@ import { organisationA, organisationB } from './fixtures.js';
 import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
+import { removeOrganisationResidue } from '../src/testing.js';
 import { withTenant, withTenantSnapshot, withUserContext } from '../src/tenant.js';
 
 const adminUrl =
@@ -250,22 +251,10 @@ let app: Sql;
 let graphA: TenantGraph;
 let graphB: TenantGraph;
 
-/** Deletes both fixture organisations' rows, children first. */
+/** Deletes both fixture organisations' rows — the shared helper discovers
+ * the closure from the catalog and censuses foreign keys afterwards. */
 async function removeSeedResidue(): Promise<void> {
-  const organisationIds = [organisationA.id, organisationB.id];
-  // Fixture cleanup as superuser: the bill/MB immutability triggers
-  // (rightly) block ordinary deletes.
-  await admin.unsafe(`set session_replication_role = 'replica'`);
-  try {
-    for (const table of [...TENANT_TABLES].reverse()) {
-      await admin.unsafe(
-        `delete from ${table} where ${organisationColumn(table)} = any($1::uuid[])`,
-        [organisationIds],
-      );
-    }
-  } finally {
-    await admin.unsafe(`set session_replication_role = 'origin'`);
-  }
+  await removeOrganisationResidue(admin, [organisationA.id, organisationB.id]);
 }
 
 async function countAs(

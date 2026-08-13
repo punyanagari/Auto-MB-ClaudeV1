@@ -12,7 +12,11 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -336,39 +340,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const orgId of [organisationId, otherOrganisationId]) {
-      if (!orgId) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'challan_item_serials',
-          'challan_receipts',
-          'mb_entries',
-          'bills',
-          'bill_counters',
-          'work_instruments',
-          'work_assignments',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'delivery_challans',
-          'work_items',
-          'work_schedules',
-          'loa_documents',
-          'works',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [orgId],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId, otherOrganisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

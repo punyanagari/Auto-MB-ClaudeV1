@@ -16,7 +16,11 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 import { deriveIrn } from '../src/gsp/irn.js';
 
@@ -289,56 +293,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    if (organisationId) {
-      // The immutability triggers (rightly) block deleting issued rows;
-      // fixture cleanup is exactly what session_replication_role is for.
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'work_assignments',
-          'eway_bills',
-          'tax_invoices',
-          'tax_invoice_counters',
-          'document_number_series',
-          'measurement_book_merge_provenance',
-          'mb_sources',
-          'measurement_book_lines',
-          'measurement_book_counters',
-          'bills',
-          'measurement_books',
-          'bill_counters',
-          'payment_matrices',
-          'mb_entries',
-          'installation_serials',
-          'installations',
-          'location_masters',
-          'challan_item_serials',
-          'challan_receipts',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'delivery_challans',
-          'purchase_order_lines',
-          'purchase_order_counters',
-          'purchase_orders',
-          'contacts',
-          'loa_documents',
-          'work_items',
-          'work_schedules',
-          'works',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [organisationId],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

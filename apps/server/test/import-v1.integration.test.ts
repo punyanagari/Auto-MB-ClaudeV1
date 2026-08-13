@@ -6,7 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations, withTenant } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+  withTenant,
+} from '@auto-mb/db';
 import {
   ADDRESS_NOT_RECORDED,
   IMPORT_ACTOR,
@@ -575,22 +580,10 @@ async function organisationIds(): Promise<string[]> {
 }
 
 async function cleanup(): Promise<void> {
-  const ids = await organisationIds();
-  if (ids.length === 0) return;
   // Test-fixture cleanup only: issued documents rightly refuse ordinary
-  // deletes, so residue removal runs with triggers disabled (same pattern
-  // as the tenancy suite). The importer itself never does this.
-  await admin.unsafe(`set session_replication_role = 'replica'`);
-  try {
-    for (const table of CLEANUP_TABLES) {
-      const column = table === 'organisations' ? 'id' : 'organisation_id';
-      await admin.unsafe(`delete from ${table} where ${column} = any($1::uuid[])`, [
-        ids,
-      ]);
-    }
-  } finally {
-    await admin.unsafe(`set session_replication_role = 'origin'`);
-  }
+  // deletes, so residue removal runs with triggers disabled inside the
+  // shared helper. The importer itself never does this.
+  await removeOrganisationResidue(admin, await organisationIds());
 }
 
 beforeAll(async () => {
@@ -1504,19 +1497,7 @@ describe('v1 importer review-hardening cases', () => {
   }
 
   async function cleanupHard(): Promise<void> {
-    const ids = await hardOrgIds();
-    if (ids.length === 0) return;
-    await admin.unsafe(`set session_replication_role = 'replica'`);
-    try {
-      for (const table of CLEANUP_TABLES) {
-        const column = table === 'organisations' ? 'id' : 'organisation_id';
-        await admin.unsafe(`delete from ${table} where ${column} = any($1::uuid[])`, [
-          ids,
-        ]);
-      }
-    } finally {
-      await admin.unsafe(`set session_replication_role = 'origin'`);
-    }
+    await removeOrganisationResidue(admin, await hardOrgIds());
   }
 
   beforeAll(async () => {
