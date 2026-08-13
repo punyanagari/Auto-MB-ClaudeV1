@@ -152,13 +152,27 @@ async function settle(page: Page) {
   );
 }
 
-async function openEditor(page: Page) {
-  await page.goto(`/#/works/${WORK_ID}/challans/new`);
+async function awaitEditor(page: Page) {
   const table = page.getByRole('table', { name: /Work items with awarded/ });
   await expect(table).toBeVisible();
   await expect(table.locator('tbody tr')).toHaveCount(ITEM_COUNT);
   await settle(page);
   return table;
+}
+
+async function openEditor(page: Page) {
+  await page.goto(`/#/works/${WORK_ID}/challans/new`);
+  return awaitEditor(page);
+}
+
+/** Drops whatever has been recorded so far, so a measurement starts from
+ * a known-idle page. */
+async function resetMeasurements(page: Page) {
+  await page.evaluate(() => {
+    if (window.__perf === undefined) return;
+    window.__perf.commits = 0;
+    window.__perf.longTasks = [];
+  });
 }
 
 function longTaskReport(durations: readonly number[]) {
@@ -174,11 +188,7 @@ test('typing in a 129-item challan editor re-renders only the row typed into', a
 
   // The editor is open and idle. Everything measured from here is the
   // cost of typing into it.
-  await page.evaluate(() => {
-    if (window.__perf === undefined) return;
-    window.__perf.commits = 0;
-    window.__perf.longTasks = [];
-  });
+  await resetMeasurements(page);
 
   const target = page.getByLabel(TARGET_ROW_LABEL);
   await target.click();
@@ -238,7 +248,21 @@ test('opening a 129-item challan editor blocks the main thread only briefly', as
 }) => {
   await instrument(page);
   await mockChallanEditor(page, ITEM_COUNT);
-  await openEditor(page);
+
+  // Opened from the Dashboard rather than by loading the URL directly, and
+  // measured only from that point: a cold load also parses the entry
+  // chunk and boots the shell, which is a different cost with a different
+  // owner and on a loaded CI runner is easily the longest task on the
+  // page. What is measured here is what building the dense table costs.
+  await page.goto('/#/');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await settle(page);
+  await resetMeasurements(page);
+
+  await page.evaluate((workId) => {
+    window.location.hash = `#/works/${workId}/challans/new`;
+  }, WORK_ID);
+  await awaitEditor(page);
 
   const longTasks = await page.evaluate(() => window.__perf?.longTasks ?? []);
   const worstTask = longTasks.length === 0 ? 0 : Math.max(...longTasks);
