@@ -67,7 +67,8 @@ import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
 import { EMPTY_TRUST_ANCHOR_STORE, type TrustAnchorStore } from './pdf-signature.js';
-import { recordRegisteredRoutes } from './tenant-route.js';
+import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
+import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard } from './origin-guard.js';
 
@@ -242,6 +243,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   // default (or another instance's explicit choice) with `false`.
   if (options.mfaEnforce !== undefined) {
     configureMfaEnforcement(options.mfaEnforce);
+  }
+
+  // Fail closed at boot, beside the auth-secret and MFA gates: the upload
+  // routes exist only where authentication and a database do, and with
+  // CLAMAV_HOST unset they come up behind `noScanner`, whose scan is a
+  // no-op. The fail-closed behaviour docs/SECURITY.md describes therefore
+  // only exists once scanning has been switched on, so a production
+  // process refuses to start rather than serve uploads with nothing
+  // behind them. Asserted here, before any pool or listener is created,
+  // so the refusal cannot strand a half-built instance.
+  if (options.authSecret !== undefined && options.databaseUrl !== undefined) {
+    assertProductionMalwareScanning(options.clamav);
   }
 
   // The type provider is compile-time only (see app-instance.ts): route
@@ -520,19 +533,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       (path === '/api/auth/sign-in/email' ||
         path === '/api/auth/sign-up/email' ||
         path.startsWith('/api/auth/two-factor/'));
+    // Which requests are uploads is DERIVED from the route table rather
+    // than restated as a path list here. Every raw-body upload route
+    // declares a `bodyLimit` through createTenantRouteRegistrar, so the
+    // registrar's inventory is the definition of "upload" and a new upload
+    // route is throttled from the moment it is registered.
+    //
+    // The hand-maintained list this replaces had already fallen behind:
+    // POST /api/approvals/:id/variation-order — a 25 MB PDF body that runs
+    // a malware scan and a Poppler text extraction — matched none of its
+    // patterns and was served with no per-address limit at all.
+    //
+    // `request.routeOptions.url` is the MATCHED route pattern, because
+    // Fastify routes before it runs onRequest hooks; an unmatched request
+    // carries none and is not an upload. The registry is read per request
+    // rather than snapshotted here on purpose: routes register after this
+    // hook is installed.
+    const routePattern = request.routeOptions.url;
     const isUpload =
-      (request.method === 'POST' || request.method === 'PUT') &&
-      (path === '/api/loa-documents' ||
-        (path.startsWith('/api/loa-documents/') &&
-          path.endsWith('/contract-sources')) ||
-        path === '/api/organisation/logo' ||
-        path.endsWith('/signed-copy') ||
-        // PAC scanned-certificate and extension railway-response uploads:
-        // both are 25MB PDF bodies that run the malware scan, so they
-        // carry the same per-address limit as every other scan-bearing
-        // upload.
-        (path.startsWith('/api/pac-certificates/') && path.endsWith('/document')) ||
-        path.endsWith('/response-document'));
+      routePattern !== undefined &&
+      tenantRoutesOf(app).get(`${request.method} ${routePattern}`)?.bodyLimit !==
+        undefined;
     const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
     // Fail closed: a database failure here throws, and the error handler
     // answers 503 — the protected endpoints could not have served the

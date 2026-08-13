@@ -1,4 +1,5 @@
 import type { TransactionSql } from '@auto-mb/db';
+import type { DocumentAuthority } from './authz.js';
 import { httpError } from './http.js';
 
 /**
@@ -71,6 +72,59 @@ export function mfaEnforcementEnabled(): boolean {
 }
 
 /**
+ * Every document authority requires MFA. The value type is the literal
+ * `true` rather than `boolean`, so an authority cannot be quietly relaxed
+ * to `false` in passing — dropping one out of the wall means editing the
+ * type and saying so. Adding a member to `DocumentAuthority` fails
+ * typechecking here until the new authority is classified, which is the
+ * first half of the guarantee that a new authority cannot be silently
+ * MFA-exempt.
+ */
+export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
+  issue: true,
+  cancel: true,
+  statutory: true,
+};
+
+/** The `organisation_memberships` column each document authority is
+ * granted through — the same exhaustive `Record<DocumentAuthority, …>`
+ * shape, so a new authority fails typechecking here too. */
+const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
+  issue: 'can_issue_documents',
+  cancel: 'can_cancel_documents',
+  statutory: 'can_manage_statutory_reporting',
+};
+
+/** Grants that are not `DocumentAuthority` values but still make the
+ * account worth stealing. Approving an amendment rewrites the contract
+ * quantities and rates every later document is computed from, so it sits
+ * with the three authorities rather than with the plain writer role. */
+const NON_AUTHORITY_MFA_REQUIRING_COLUMNS = ['can_approve_amendments'] as const;
+
+/**
+ * `can_%` columns on `organisation_memberships` that deliberately do NOT
+ * require MFA. Empty today: every grant the table carries is worth
+ * stealing. A future low-power grant belongs here WITH a stated reason —
+ * the census test refuses any `can_%` column that appears in neither this
+ * list nor `MFA_REQUIRING_GRANT_COLUMNS`, so the decision cannot be made
+ * by omission.
+ */
+export const MFA_EXEMPT_GRANT_COLUMNS: readonly string[] = [];
+
+/**
+ * The single source of truth for both the gate query below and the
+ * `can_%` column census in `test/mfa-policy-census.integration.test.ts`.
+ * Because the query reads these column names rather than restating them
+ * in SQL, the list and the wall it enforces cannot drift apart.
+ */
+export const MFA_REQUIRING_GRANT_COLUMNS: readonly string[] = [
+  ...(Object.keys(MFA_REQUIRING_AUTHORITIES) as DocumentAuthority[]).map(
+    (authority) => AUTHORITY_GRANT_COLUMNS[authority],
+  ),
+  ...NON_AUTHORITY_MFA_REQUIRING_COLUMNS,
+];
+
+/**
  * Computes the caller's MFA gate from the transaction's own user context
  * (`app.user_id`, set by withUserContext/withTenant).
  *
@@ -86,29 +140,35 @@ export function mfaEnforcementEnabled(): boolean {
  * visible through it.
  */
 export async function mfaGate(tx: TransactionSql): Promise<MfaGate> {
-  const [row] = await tx<{ required: boolean; enabled: boolean }[]>`
+  const rows = await tx<
+    {
+      role: string;
+      grants: Record<string, unknown>;
+      enabled: boolean | null;
+    }[]
+  >`
     select
-      coalesce(
-        bool_or(
-          m.role = 'owner'
-          or m.can_issue_documents
-          or m.can_cancel_documents
-          or m.can_approve_amendments
-          -- Migration 0061: the compliance authority binds the
-          -- organisation's statutory identity at a government portal, so
-          -- it is at least as worth stealing as the other three. A
-          -- member holding ONLY this one is MFA-required.
-          or m.can_manage_statutory_reporting
-        ),
-        false
-      ) as required,
-      coalesce(bool_or(u."twoFactorEnabled"), false) as enabled
+      m.role,
+      -- The whole membership row, so the grants that require MFA are read
+      -- from MFA_REQUIRING_GRANT_COLUMNS above instead of being restated
+      -- as a hand-written OR chain here. Adding a grant to that list is
+      -- honoured by this query with no second edit, and adding a can_%
+      -- column to the table without classifying it fails the census test.
+      to_jsonb(m) as grants,
+      u."twoFactorEnabled" as enabled
     from organisation_memberships m
     join auth_users u on u."id" = m.user_id
     where m.user_id = app_private.current_user_id()
       and m.status = 'active'
   `;
-  return { required: row?.required ?? false, enabled: row?.enabled ?? false };
+  return {
+    required: rows.some(
+      (row) =>
+        row.role === 'owner' ||
+        MFA_REQUIRING_GRANT_COLUMNS.some((column) => row.grants[column] === true),
+    ),
+    enabled: rows.some((row) => row.enabled === true),
+  };
 }
 
 /** The tenant-wall refusal: the account must enrol before tenant data is

@@ -28,7 +28,7 @@ import {
   NumberTemplateError,
   assertValidTemplate,
 } from '../number-series.js';
-import { assertNotMalware } from '../upload-guards.js';
+import { assertNotMalware, consumeUpload } from '../upload-guards.js';
 import { audit } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -40,17 +40,12 @@ const errorResponses = {
   404: ApiErrorSchema,
 } as const;
 
-/** Logos are embedded into generated PDFs; keep them small and simple. */
+/** Logos are embedded into generated PDFs; keep them small and simple.
+ * Declared as the route's Fastify `bodyLimit` as well as checked in the
+ * handler: the limit is what marks the route as an upload for the throttle
+ * derived in app.ts, and it is the value Fastify was already applying by
+ * default, so nothing about the accepted sizes changes. */
 const LOGO_MAX_BYTES = 1024 * 1024;
-
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
-
-function detectImageType(bytes: Buffer): 'image/png' | 'image/jpeg' | null {
-  if (bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return 'image/png';
-  if (bytes.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)) return 'image/jpeg';
-  return null;
-}
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
   const [membership] = await tx<{ role: string }[]>`
@@ -435,23 +430,16 @@ export function registerOrganisationRoutes(
     {
       method: 'PUT',
       url: '/api/organisation/logo',
+      bodyLimit: LOGO_MAX_BYTES,
       schema: { response: { ...errorResponses } },
     },
     async ({ request, reply, user, organisationId, tenant }) => {
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw httpError(
-          400,
-          'INVALID_IMAGE',
-          'Send the logo bytes as an image/png or image/jpeg request body.',
-        );
-      }
+      const { bytes: body, mediaType } = consumeUpload(request.body, {
+        format: 'image',
+        description: 'the logo bytes',
+      });
       if (body.length > LOGO_MAX_BYTES) {
         throw httpError(400, 'IMAGE_TOO_LARGE', 'The logo must be 1 MB or smaller.');
-      }
-      const mediaType = detectImageType(body);
-      if (mediaType === null) {
-        throw httpError(400, 'INVALID_IMAGE', 'The logo must be a PNG or JPEG image.');
       }
       // Authorisation before the expensive scan (ops batch).
       await tenant(async (tx) => {

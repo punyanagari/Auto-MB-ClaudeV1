@@ -30,15 +30,16 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import type { ObjectStorage } from '../storage.js';
-import { assertNotMalware } from '../upload-guards.js';
+import {
+  assertNotMalware,
+  consumeUpload,
+  MAX_PDF_UPLOAD_BYTES,
+} from '../upload-guards.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 const IdParamsSchema = Type.Object({ id: UuidSchema }, { additionalProperties: false });
 
@@ -355,7 +356,7 @@ export function registerContractSourceRoutes(
     {
       method: 'POST',
       url: '/api/loa-documents/:id/contract-sources',
-      bodyLimit: MAX_PDF_BYTES,
+      bodyLimit: MAX_PDF_UPLOAD_BYTES,
       schema: {
         params: IdParamsSchema,
         querystring: ContractSourceUploadQuerySchema,
@@ -365,17 +366,10 @@ export function registerContractSourceRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id: parentId } = request.params;
       const { kind, filename } = request.query;
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw httpError(
-          400,
-          'PDF_REQUIRED',
-          'Send the supporting contract document as an application/pdf request body.',
-        );
-      }
-      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
-        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
-      }
+      const { bytes: body } = consumeUpload(request.body, {
+        format: 'pdf',
+        description: 'the supporting contract document',
+      });
 
       // Authorisation and expected identity are resolved before malware scan
       // and text extraction, so a forbidden account cannot spend either.

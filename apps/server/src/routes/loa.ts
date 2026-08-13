@@ -48,7 +48,11 @@ import { assertExtractedValuesUnmodified } from '../loa-extracted-values.js';
 import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
-import { assertNotMalware } from '../upload-guards.js';
+import {
+  assertNotMalware,
+  consumeUpload,
+  MAX_PDF_UPLOAD_BYTES,
+} from '../upload-guards.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import type { ObjectStorage } from '../storage.js';
@@ -75,9 +79,6 @@ const DocumentParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 interface LoaDocumentRow {
   id: string;
@@ -688,7 +689,7 @@ export function registerLoaRoutes(
     {
       method: 'POST',
       url: '/api/loa-documents',
-      bodyLimit: MAX_PDF_BYTES,
+      bodyLimit: MAX_PDF_UPLOAD_BYTES,
       schema: {
         querystring: UploadLoaQuerySchema,
         response: { 201: LoaDocumentDetailSchema, ...errorResponses },
@@ -697,18 +698,10 @@ export function registerLoaRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { filename } = request.query;
 
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw httpError(
-          400,
-          'PDF_REQUIRED',
-          'Send the LOA as an application/pdf request body.',
-        );
-      }
-      // Magic bytes, not just the declared content type (docs/SECURITY.md).
-      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
-        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
-      }
+      const { bytes: body } = consumeUpload(request.body, {
+        format: 'pdf',
+        description: 'the LOA',
+      });
       const sha256 = createHash('sha256').update(body).digest('hex');
 
       // Authorisation BEFORE any expensive work: an unauthorised caller

@@ -25,7 +25,11 @@ import {
 import { assertSourceNotBilled } from './measurement-books/index.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertWorkOperable } from '../work-status.js';
-import { assertNotMalware } from '../upload-guards.js';
+import {
+  assertNotMalware,
+  consumeUpload,
+  MAX_PDF_UPLOAD_BYTES,
+} from '../upload-guards.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -43,9 +47,6 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * stay untouched — those are banking-reference records, this table is the
  * quantity-bearing certificate.
  */
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 interface CertificateRow {
   id: string;
@@ -686,7 +687,7 @@ export function registerPacRoutes(
     {
       method: 'POST',
       url: '/api/pac-certificates/:id/document',
-      bodyLimit: MAX_PDF_BYTES,
+      bodyLimit: MAX_PDF_UPLOAD_BYTES,
       schema: {
         params: IdParamsSchema,
         response: { 200: PacCertificateSchema, ...errorResponses },
@@ -694,17 +695,10 @@ export function registerPacRoutes(
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw httpError(
-          400,
-          'PDF_REQUIRED',
-          'Send the scanned PAC certificate as an application/pdf request body.',
-        );
-      }
-      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
-        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
-      }
+      const { bytes: body } = consumeUpload(request.body, {
+        format: 'pdf',
+        description: 'the scanned PAC certificate',
+      });
       // Authorisation before the expensive scan (ops batch): an
       // unauthorised caller must not spend scanner capacity.
       await tenant(async (tx) => {
