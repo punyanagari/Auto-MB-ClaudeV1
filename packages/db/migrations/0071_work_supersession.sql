@@ -163,10 +163,12 @@ CREATE TABLE work_supersessions (
   )
 );
 
--- A Work stands at the end of at most one supersession chain.
+-- A Work stands at the end of at most one supersession chain. Written
+-- total rather than partial so it also serves the successor foreign key
+-- (the FK-index census reads leading index columns): NULLs are DISTINCT by
+-- default, so any number of unbound supersessions still coexist.
 CREATE UNIQUE INDEX work_supersessions_one_successor
-  ON work_supersessions (organisation_id, successor_work_id)
-  WHERE successor_work_id IS NOT NULL;
+  ON work_supersessions (organisation_id, successor_work_id);
 
 CREATE INDEX work_supersessions_document_idx
   ON work_supersessions (organisation_id, loa_document_id);
@@ -259,7 +261,7 @@ BEGIN
   -- work_items, payment_matrices, work_consignees, work_assignments,
   -- loa_documents) and the seven per-Work counters are deliberately
   -- absent: see this migration's header. `apps/server/src/work-supersede.ts`
-  -- carries the same list, and `packages/db/test/work-supersession.*`
+  -- carries the same list, and `packages/db/test/work-supersession.integration.test.ts`
   -- proves the two agree with the catalog.
   SELECT x.label INTO blocker FROM (
     SELECT 'delivery challan' AS label WHERE EXISTS (

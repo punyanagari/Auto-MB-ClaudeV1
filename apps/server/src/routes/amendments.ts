@@ -50,10 +50,7 @@ import {
   type VariationOrderVerdict,
 } from '../variation-order-verify.js';
 import { assertWorkOperable } from '../work-status.js';
-import {
-  applyWorkSupersede,
-  type WorkSupersedeProposal,
-} from '../work-supersede.js';
+import { applyWorkSupersede, type WorkSupersedeProposal } from '../work-supersede.js';
 import { isPositiveDecimal } from './challans.js';
 import {
   audit,

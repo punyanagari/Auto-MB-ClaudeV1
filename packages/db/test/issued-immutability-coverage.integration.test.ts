@@ -299,6 +299,19 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'gst_basis',
     'gst_rate',
   ],
+
+  // A supersession record (0071) is written whole when a Work is
+  // withdrawn; the only later fact is which Work replaced it, and the
+  // stamps that travel with the binding. `successor_work_id` itself is
+  // absent here on purpose: it is bind-once, so the guard freezes it the
+  // moment it stops being NULL, exactly as `approval_requests.entity_id`
+  // is bound once by an approved apply.
+  work_supersessions: [
+    'id',
+    'successor_bound_at',
+    'successor_bound_by_user_id',
+    'updated_at',
+  ],
 };
 
 /**

@@ -224,7 +224,20 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     proposeAmendment: vi.fn<ApiClient['proposeAmendment']>(),
     proposeAddItem: vi.fn<ApiClient['proposeAddItem']>(),
     proposeItemRemoval: vi.fn<ApiClient['proposeItemRemoval']>(),
-    getSupersedeEligibility: vi.fn<ApiClient['getSupersedeEligibility']>(),
+    // Not superseding by default: a Work with a document behind it is the
+    // ordinary case, so a test that does not care about the supersede panel
+    // never sees it.
+    getSupersedeEligibility: vi
+      .fn<ApiClient['getSupersedeEligibility']>()
+      .mockResolvedValue({
+        workId: WORK_ID,
+        eligible: false,
+        blockers: [
+          { register: 'delivery_challans', label: 'delivery challans', count: 1 },
+        ],
+        loaDocumentId: DOC_ID,
+        pendingRequestId: null,
+      }),
     proposeWorkSupersede: vi.fn<ApiClient['proposeWorkSupersede']>(),
     attachVariationOrder: vi.fn<ApiClient['attachVariationOrder']>(),
     downloadVariationOrderFile: vi.fn<ApiClient['downloadVariationOrderFile']>(),

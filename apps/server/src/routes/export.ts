@@ -268,6 +268,13 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from amendment_variation_orders order by created_at, id`,
     jsonbColumns: ['verdict'],
   },
+  // Which Works were withdrawn, why, on whose approval, and what replaced
+  // them (0071). A recovery package that carried the successor and not the
+  // withdrawal would present a Work with no history.
+  {
+    key: 'workSupersessions',
+    sql: `select * from work_supersessions order by superseded_at, id`,
+  },
   {
     key: 'correctionNotices',
     sql: `select * from correction_notices order by created_at, id`,

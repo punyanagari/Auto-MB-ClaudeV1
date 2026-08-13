@@ -26,9 +26,9 @@ import { httpError } from './http.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * `works` has 29 direct children. This list holds the 16 that are
- * documents; `WORK_CHILD_TABLES_EXEMPT` holds the other 13 with the reason
- * each is exempt, and `test/work-supersede-census.integration.test.ts`
+ * `works` has 30 direct children. This list holds the 16 that are
+ * documents; `WORK_CHILD_TABLES_EXEMPT` holds the rest with the reason each
+ * is exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — so a table added later cannot
  * be silently omitted from the rule.
  *
@@ -115,7 +115,9 @@ export async function readSupersedeBlockers(
       `where organisation_id = app_private.current_organisation_id() ` +
       `and work_id = $1::uuid${registerPredicate(register)}`,
   ).join(' union all ');
-  const rows = (await tx.unsafe(`${census} order by position`, [workId])) as unknown as {
+  const rows = (await tx.unsafe(`${census} order by position`, [
+    workId,
+  ])) as unknown as {
     position: number;
     register: string;
     count: number;

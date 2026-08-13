@@ -291,7 +291,10 @@ afterAll(async () => {
   } finally {
     await admin?.end();
   }
-});
+  // Two forced drops, and a forced drop waits on whatever the pools left
+  // behind: well outside the default ten-second hook budget on a loaded
+  // machine.
+}, 120_000);
 
 describe('the pre-0071 schema, where the holes are', () => {
   it(

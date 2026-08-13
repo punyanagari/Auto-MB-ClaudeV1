@@ -38,7 +38,7 @@ import {
  *
  * The database's own half of the rule (the eligibility census, the
  * soft-delete guard, the release guard, and the two holes that existed
- * before 0071) is proved in `packages/db/test/work-supersession.*`.
+ * before 0071) is proved in `packages/db/test/work-supersession.integration.test.ts`.
  */
 
 const adminUrl =
@@ -59,10 +59,7 @@ const migrationsDirectory = path.resolve(
   'db',
   'migrations',
 );
-const supersedeMigration = path.join(
-  migrationsDirectory,
-  '0071_work_supersession.sql',
-);
+const supersedeMigration = path.join(migrationsDirectory, '0071_work_supersession.sql');
 
 const runId = randomBytes(5).toString('hex');
 const ownerEmail = `sup-owner-${runId}@integration.test`;
@@ -578,7 +575,11 @@ describe('the whole remedy, end to end', () => {
       order by occurred_at
     `;
     expect(events.map((event) => event.action)).toEqual(
-      expect.arrayContaining(['work.supersede_proposed', 'work.superseded', 'work.created']),
+      expect.arrayContaining([
+        'work.supersede_proposed',
+        'work.superseded',
+        'work.created',
+      ]),
     );
   });
 

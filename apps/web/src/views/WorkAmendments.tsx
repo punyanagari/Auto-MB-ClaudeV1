@@ -168,8 +168,8 @@ function WorkSupersedePanel({
   return (
     <>
       <p className="text-muted-foreground">
-        Withdraws this Work and returns its LOA document to review, so the letter can
-        be read again and confirmed in its place. Use it when the extracted values are
+        Withdraws this Work and returns its LOA document to review, so the letter can be
+        read again and confirmed in its place. Use it when the extracted values are
         wrong — the rates, the quantities, the letter number — rather than when the
         railway has changed the contract. Nothing is withdrawn until an approver with
         the cancel authority approves the request.
@@ -186,8 +186,8 @@ function WorkSupersedePanel({
       {eligibility.blockers.length > 0 && (
         <>
           <p>
-            This Work cannot be superseded — it already carries documents that depend
-            on it. Correct it through an amendment or a correction notice.
+            This Work cannot be superseded — it already carries documents that depend on
+            it. Correct it through an amendment or a correction notice.
           </p>
           <DataTable>
             <caption className="sr-only">
@@ -221,7 +221,7 @@ function WorkSupersedePanel({
           }}
         >
           <Field>
-            <label htmlFor="supersede-reason">Reason</label>
+            <label htmlFor="supersede-reason">Reason for superseding</label>
             <input
               id="supersede-reason"
               name="supersede-reason"

@@ -168,7 +168,15 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     proposeAmendment: vi.fn(),
     proposeAddItem: vi.fn(),
     proposeItemRemoval: vi.fn(),
-    getSupersedeEligibility: vi.fn(),
+    getSupersedeEligibility: vi.fn().mockResolvedValue({
+      workId: WORK_ID,
+      eligible: false,
+      blockers: [
+        { register: 'delivery_challans', label: 'delivery challans', count: 1 },
+      ],
+      loaDocumentId: null,
+      pendingRequestId: null,
+    }),
     proposeWorkSupersede: vi.fn(),
     attachVariationOrder: vi.fn(),
     downloadVariationOrderFile: vi.fn(),
