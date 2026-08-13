@@ -811,7 +811,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
-    registerAmendmentRoutes(app, authInstance, database);
+    registerAmendmentRoutes(app, authInstance, database, storage, scanner);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
     registerMasterRoutes(app, authInstance, database);

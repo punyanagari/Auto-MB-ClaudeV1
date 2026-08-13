@@ -115,7 +115,7 @@ export function WorkAmendments({
               void act(async () => {
                 await api.proposeItemRemoval(organisationId, workId, body);
                 await refresh();
-              }, 'Omission recorded — it applies once approved (immediately if you hold the approval authority).');
+              }, 'Omission recorded. Cite the railway variation order against it on the Approvals screen; it cannot be approved until that order has been uploaded and verified.');
             }}
           />
         </Disclosure>
@@ -158,7 +158,14 @@ interface AmendmentFormProps {
  * quantity 0: the removal soft-deletes the item, keeps its number
  * reserved for the life of the Work, and refuses while any delivery,
  * installation, PAC or billing evidence names it. A quantity-0 change
- * would leave the item live, and R12 refuses zero quantities anyway. */
+ * would leave the item live, and R12 refuses zero quantities anyway.
+ *
+ * An omission is also the one amendment that never applies on filing,
+ * however much authority the filer holds: it is a contractual variation,
+ * and the railway's variation order must be uploaded and verified against
+ * it first. The form therefore asks for nothing extra here — every fact
+ * about the order is read from the order itself, on the Approvals
+ * screen. */
 function AmendmentForm({
   items,
   schedules,

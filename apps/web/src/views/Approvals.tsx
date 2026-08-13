@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ApprovalRequest } from '@auto-mb/contracts';
+import type { ApprovalRequest, VariationOrder } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { DataTable } from '../ui/table.js';
@@ -41,6 +42,135 @@ const TYPE_LABELS: Record<ApprovalRequest['entityType'], string> = {
   challan_correction_notice: 'Correction notice',
 };
 
+/** Whether this request is the kind that needs a railway variation order:
+ * an item omission. The proposal snapshot is the authority — the server
+ * reads the same field. */
+function isOmission(approval: ApprovalRequest): boolean {
+  const proposed = approval.proposed;
+  return (
+    typeof proposed === 'object' &&
+    proposed !== null &&
+    (proposed as { kind?: unknown }).kind === 'remove_item'
+  );
+}
+
+/** The cited order, beside the omission it authorises, so an approver can
+ * see what the railway actually sanctioned before deciding. Every value
+ * here was extracted from the uploaded PDF and matched against the Work;
+ * none was typed. */
+function CitedVariationOrder({
+  order,
+  pending,
+  onOpen,
+}: {
+  readonly order: VariationOrder;
+  readonly pending: boolean;
+  readonly onOpen: () => void;
+}) {
+  const advisory = order.verdict.claims.filter(
+    (claim) => !claim.required && !claim.verified,
+  );
+  return (
+    <section aria-label="Cited variation order">
+      <h3>Variation order</h3>
+      <DataTable>
+        <caption className="sr-only">
+          The railway variation order cited for this omission
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Field</th>
+            <th scope="col">Read from the order</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Agreement</th>
+            <td className="font-mono text-[13px] tabular-nums">
+              {order.agreementNumber}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Variation</th>
+            <td className="font-mono text-[13px] tabular-nums">
+              {order.variationNumber}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">LOA number</th>
+            <td className="font-mono text-[13px] tabular-nums">{order.loaNumber}</td>
+          </tr>
+          <tr>
+            <th scope="row">LOA date</th>
+            <td className="font-mono text-[13px] tabular-nums">
+              {formatDate(order.loaDate)}
+            </td>
+          </tr>
+        </tbody>
+      </DataTable>
+      {advisory.map((claim) => (
+        <p key={claim.code} className="text-muted-foreground">
+          {claim.detail}
+        </p>
+      ))}
+      <Actions>
+        <Button variant="outline" disabled={pending} onClick={onOpen}>
+          Open {order.originalFilename}
+        </Button>
+      </Actions>
+    </section>
+  );
+}
+
+/** The upload that makes an omission approvable. There is no field to type
+ * a letter number into, deliberately: the server reads the order's own LOA
+ * number, date, agreement number and variation number out of the PDF and
+ * checks them, plus the omitted item's row, against this Work. */
+function CiteVariationOrderForm({
+  approval,
+  pending,
+  onCite,
+}: {
+  readonly approval: ApprovalRequest;
+  readonly pending: boolean;
+  readonly onCite: (file: File) => void;
+}) {
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem(
+          `variation-order-${approval.id}`,
+        );
+        const file =
+          input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null;
+        if (file !== null) onCite(file);
+      }}
+    >
+      <p className="text-muted-foreground">
+        This omission cannot be approved until the railway variation order that
+        authorises it has been uploaded. Upload the machine-readable order issued by
+        IREPS — a scan or photograph carries no text to verify.
+      </p>
+      <Field>
+        <label htmlFor={`variation-order-${approval.id}`}>Variation order (PDF)</label>
+        <input
+          id={`variation-order-${approval.id}`}
+          name={`variation-order-${approval.id}`}
+          type="file"
+          accept="application/pdf"
+          required
+        />
+      </Field>
+      <Actions>
+        <Button type="submit" disabled={pending}>
+          Cite variation order
+        </Button>
+      </Actions>
+    </form>
+  );
+}
+
 /** One pending request: diff rendering plus the decision controls. */
 function ApprovalCard({
   approval,
@@ -50,6 +180,8 @@ function ApprovalCard({
   onApprove,
   onReject,
   onWithdraw,
+  onCite,
+  onOpenOrder,
 }: {
   readonly approval: ApprovalRequest;
   readonly currentUserId: string;
@@ -58,9 +190,12 @@ function ApprovalCard({
   readonly onApprove: (note: string) => void;
   readonly onReject: (note: string) => void;
   readonly onWithdraw: () => void;
+  readonly onCite: (file: File) => void;
+  readonly onOpenOrder: () => void;
 }) {
   const [note, setNote] = useState('');
   const isRequester = approval.requestedByUserId === currentUserId;
+  const omissionNeedsOrder = isOmission(approval) && approval.variationOrder === null;
   return (
     <article
       className="rounded-xl border border-border bg-card p-5 shadow-sm print:border-0 print:p-0 print:shadow-none"
@@ -104,6 +239,16 @@ function ApprovalCard({
           ))}
         </tbody>
       </DataTable>
+      {approval.variationOrder !== null && (
+        <CitedVariationOrder
+          order={approval.variationOrder}
+          pending={pending}
+          onOpen={onOpenOrder}
+        />
+      )}
+      {omissionNeedsOrder && (
+        <CiteVariationOrderForm approval={approval} pending={pending} onCite={onCite} />
+      )}
       {canApprove && (
         <Field>
           <label htmlFor={`decision-note-${approval.id}`}>
@@ -122,8 +267,11 @@ function ApprovalCard({
       <Actions>
         {canApprove && (
           <>
+            {/* The server refuses this by name regardless; disabling it
+                keeps the approver from meeting a 409 they could have been
+                told about, and the sentence above says why. */}
             <Button
-              disabled={pending}
+              disabled={pending || omissionNeedsOrder}
               onClick={() => {
                 onApprove(note.trim());
               }}
@@ -195,6 +343,28 @@ export function Approvals({
     };
   }, [api, organisationId]);
 
+  /** Opens the cited order in a new tab. The endpoint needs the
+   * organisation header, so the bytes are fetched and handed to the
+   * browser as an object URL rather than linked to directly. */
+  async function openVariationOrder(approvalId: string): Promise<void> {
+    setActionError(null);
+    try {
+      const blob = await api.downloadVariationOrderFile(organisationId, approvalId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      // Revoked on the next tick: the new tab has already taken the bytes.
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 60_000);
+    } catch (cause) {
+      setActionError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The cited variation order could not be opened.',
+      );
+    }
+  }
+
   async function act(work: () => Promise<void>, done: string) {
     setPending(true);
     setActionError(null);
@@ -245,6 +415,19 @@ export function Approvals({
             currentUserId={currentUserId}
             canApprove={canApprove}
             pending={pending}
+            onOpenOrder={() => {
+              void openVariationOrder(approval.id);
+            }}
+            onCite={(file) => {
+              void act(async () => {
+                await api.attachVariationOrder(
+                  organisationId,
+                  approval.id,
+                  file,
+                  file.name,
+                );
+              }, `Variation order cited for ${approval.workCode}; the omission can now be approved.`);
+            }}
             onApprove={(note) => {
               void act(async () => {
                 await api.approveAmendment(

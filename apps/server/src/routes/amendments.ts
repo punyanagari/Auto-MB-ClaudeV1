@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   ApprovalListQuerySchema,
   ApprovalListResponseSchema,
   ApprovalRequestSchema,
   ApproveAmendmentRequestSchema,
+  AttachVariationOrderQuerySchema,
+  AttachVariationOrderResponseSchema,
   ProposeAddItemRequestSchema,
   ProposeAmendmentRequestSchema,
   ProposeRemoveItemRequestSchema,
@@ -12,7 +14,9 @@ import {
   WorkSettingsResponseSchema,
   type AmendmentDiffEntry,
   type ApprovalRequest,
+  type VariationOrder,
 } from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -27,12 +31,34 @@ import {
 } from '../corrections-apply.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
+import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
+import type { ObjectStorage } from '../storage.js';
+import { assertNotMalware } from '../upload-guards.js';
+import {
+  describeFailedClaims,
+  verifyVariationOrder,
+  type OmissionUnderVerification,
+  type VariationOrderVerdict,
+} from '../variation-order-verify.js';
 import { assertWorkOperable } from '../work-status.js';
 import { isPositiveDecimal } from './challans.js';
-import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import {
+  audit,
+  upstreamErrorResponses,
+  errorResponses,
+  IdParamsSchema,
+} from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
+
+const PDF_MAGIC = Buffer.from('%PDF-');
+/** The same ceiling the LOA and contract-source uploads use. The largest
+ * real variation order seen is 7.9 MB (a photographed one, which is
+ * refused for other reasons); the machine-readable originals are well
+ * under 1 MB. */
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 interface ChangeSet {
   quantity?: string;
@@ -85,6 +111,17 @@ interface ApprovalRow {
   decided_at: Date | null;
   decision_note: string | null;
   created_at: Date;
+  variation_order_id: string | null;
+  variation_loa_number: string | null;
+  variation_loa_date: string | null;
+  variation_agreement_number: string | null;
+  variation_number: string | null;
+  variation_filename: string | null;
+  variation_sha256: string | null;
+  variation_size_bytes: string | number | null;
+  variation_verdict: unknown;
+  variation_uploaded_by_user_id: string | null;
+  variation_created_at: Date | null;
 }
 
 const APPROVAL_SELECT = `
@@ -95,12 +132,57 @@ const APPROVAL_SELECT = `
          case when ar.entity_type <> 'work_item_amendment'
            then ar.proposed->>'challanNumber' end as document_number,
          ar.proposed, ar.diff, ar.reason, ar.status, ar.requested_by_user_id,
-         ar.decided_by_user_id, ar.decided_at, ar.decision_note, ar.created_at
+         ar.decided_by_user_id, ar.decided_at, ar.decision_note, ar.created_at,
+         avo.id as variation_order_id,
+         avo.loa_number as variation_loa_number,
+         to_char(avo.loa_date, 'YYYY-MM-DD') as variation_loa_date,
+         avo.agreement_number as variation_agreement_number,
+         avo.variation_number as variation_number,
+         avo.original_filename as variation_filename,
+         avo.sha256 as variation_sha256,
+         avo.size_bytes as variation_size_bytes,
+         avo.verdict as variation_verdict,
+         avo.uploaded_by_user_id as variation_uploaded_by_user_id,
+         avo.created_at as variation_created_at
   from approval_requests ar
   join works w on w.id = ar.work_id
   left join work_items wi
     on wi.id = ar.entity_id and ar.entity_type = 'work_item_amendment'
+  left join amendment_variation_orders avo on avo.approval_request_id = ar.id
 `;
+
+/** The cited order, assembled from the joined columns. Null unless a
+ * verified one has actually been attached — the table holds no other kind. */
+function toVariationOrder(row: ApprovalRow): VariationOrder | null {
+  if (
+    row.variation_order_id === null ||
+    row.variation_loa_number === null ||
+    row.variation_loa_date === null ||
+    row.variation_agreement_number === null ||
+    row.variation_number === null ||
+    row.variation_filename === null ||
+    row.variation_sha256 === null ||
+    row.variation_size_bytes === null ||
+    row.variation_uploaded_by_user_id === null ||
+    row.variation_created_at === null
+  ) {
+    return null;
+  }
+  return {
+    id: row.variation_order_id,
+    approvalRequestId: row.id,
+    loaNumber: row.variation_loa_number,
+    loaDate: row.variation_loa_date,
+    agreementNumber: row.variation_agreement_number,
+    variationNumber: row.variation_number,
+    originalFilename: row.variation_filename,
+    sha256: row.variation_sha256,
+    sizeBytes: Number(row.variation_size_bytes),
+    verdict: parseJsonbColumn(row.variation_verdict) as VariationOrder['verdict'],
+    uploadedByUserId: row.variation_uploaded_by_user_id,
+    createdAt: row.variation_created_at.toISOString(),
+  };
+}
 
 function toApproval(row: ApprovalRow): ApprovalRequest {
   return {
@@ -119,6 +201,7 @@ function toApproval(row: ApprovalRow): ApprovalRequest {
     decidedByUserId: row.decided_by_user_id,
     decidedAt: row.decided_at?.toISOString() ?? null,
     decisionNote: row.decision_note,
+    variationOrder: toVariationOrder(row),
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -321,6 +404,30 @@ export async function applyApproval(
       where id = ${item.id}
     `;
   } else if (proposed.kind === 'remove_item') {
+    // THE AUTHORISATION GATE (owner ruling, 2026-08-13). An omission after
+    // award is a contractual event, and the railway's variation order is
+    // what authorises it. The order is uploaded and VERIFIED against this
+    // very amendment before it is stored, so the presence of a row here is
+    // the authorisation — there is no unverified kind to check for.
+    //
+    // Checked inside the same transaction that applies, under the request
+    // lock the caller already holds, exactly like the approver-authority
+    // check: a request filed without an order is lawful, approving one is
+    // not. Migration 0058 holds the identical rule against every writer,
+    // twice — at the request when it becomes approved, and at the item
+    // when it is soft-deleted.
+    const [cited] = await tx<{ id: string }[]>`
+      select id from amendment_variation_orders
+      where approval_request_id = ${request.id} and verified
+    `;
+    if (!cited) {
+      throw httpError(
+        409,
+        'OMISSION_VARIATION_REFERENCE_REQUIRED',
+        'This omission cannot be approved until the railway variation order authorising it has been uploaded and verified. Cite the variation order against this request, then approve it.',
+        { approvalId: request.id },
+      );
+    }
     // R7 omission. Soft-delete under the item row lock, never erasure:
     // the item number stays reserved for the life of the Work (the 0001
     // uniqueness constraint counts deleted rows), so a later addition
@@ -480,6 +587,29 @@ export async function applyApproval(
     proposed.kind === 'remove_item'
       ? 'amendment.approved'
       : 'correction.approved';
+  // The authorisation travels with the decision. The audit-diff machinery
+  // already records the value pairs the amendment moved; for an omission
+  // the trail must also answer "on whose authority", so the cited order's
+  // identity — every field of it extracted from the document, not typed —
+  // is recorded beside the diff rather than left to be joined for later.
+  const [citedForAudit] =
+    proposed.kind === 'remove_item'
+      ? await tx<
+          {
+            id: string;
+            loa_number: string;
+            loa_date: string;
+            agreement_number: string;
+            variation_number: string;
+            sha256: string;
+          }[]
+        >`
+          select id, loa_number, to_char(loa_date, 'YYYY-MM-DD') as loa_date,
+                 agreement_number, variation_number, sha256
+          from amendment_variation_orders
+          where approval_request_id = ${request.id}
+        `
+      : [];
   await audit(
     tx,
     organisationId,
@@ -492,14 +622,132 @@ export async function applyApproval(
       entityId: boundEntityId,
       kind: proposed.kind,
       diff: parseJsonbColumn(request.diff),
+      ...(citedForAudit === undefined
+        ? {}
+        : {
+            variationOrder: {
+              id: citedForAudit.id,
+              loaNumber: citedForAudit.loa_number,
+              loaDate: citedForAudit.loa_date,
+              agreementNumber: citedForAudit.agreement_number,
+              variationNumber: citedForAudit.variation_number,
+              sha256: citedForAudit.sha256,
+            },
+          }),
     },
   );
+}
+
+/** The wire/stored shape of a verdict: the claims and the outcome, without
+ * the extracted-facts block, which is written into its own columns. */
+function storedVerdict(verdict: VariationOrderVerdict): VariationOrder['verdict'] {
+  return {
+    verified: verdict.verified,
+    claims: verdict.claims.map((claim) => ({ ...claim })),
+    failedClaims: [...verdict.failedClaims],
+  };
+}
+
+interface OmissionTarget {
+  readonly workId: string;
+  readonly omission: OmissionUnderVerification;
+}
+
+/**
+ * Everything a variation order must be checked against: the Work's LOA
+ * identity and the item's own stored facts. Read from the database, never
+ * from the request — the operator supplies only the PDF.
+ *
+ * Refuses anything that is not a PENDING omission: a decided request has
+ * nothing left to authorise, and the other amendment kinds are outside
+ * this ruling's scope.
+ */
+async function readOmissionUnderVerification(
+  tx: TransactionSql,
+  userId: string,
+  approvalId: string,
+  lock = false,
+): Promise<OmissionTarget> {
+  const [row] = lock
+    ? await tx<ApprovalTargetRow[]>`
+        select id, work_id, status, proposed from approval_requests
+        where id = ${approvalId}
+        for update
+      `
+    : await tx<ApprovalTargetRow[]>`
+        select id, work_id, status, proposed from approval_requests
+        where id = ${approvalId}
+      `;
+  if (!row) throw httpError(404, 'APPROVAL_NOT_FOUND', 'No such approval request.');
+  // Work scope, exactly as every other amendment surface checks it: an
+  // 'assigned'-scoped member may not cite an order against someone else's
+  // Work, and a cross-tenant id never resolves at all.
+  await assertWorkAccess(tx, userId, row.work_id);
+  const proposed = parseJsonbColumn(row.proposed) as ProposedSnapshot;
+  if (proposed.kind !== 'remove_item') {
+    throw httpError(
+      409,
+      'VARIATION_ORDER_NOT_APPLICABLE',
+      'Only an item omission cites a railway variation order. This request is not an omission.',
+    );
+  }
+  if (row.status !== 'pending') {
+    throw httpError(
+      409,
+      'APPROVAL_NOT_PENDING',
+      `This request is already ${row.status}.`,
+    );
+  }
+  const [work] = await tx<
+    { letter_number: string; letter_date: string; contract_value: string }[]
+  >`
+    select letter_number, to_char(letter_date, 'YYYY-MM-DD') as letter_date,
+           contract_value::text as contract_value
+    from works where id = ${row.work_id} and deleted_at is null
+  `;
+  if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  const [item] = await tx<
+    { item_number: string; unit_code: string; awarded_quantity: string }[]
+  >`
+    select item_number, coalesce(effective_unit, unit_code) as unit_code,
+           coalesce(effective_quantity, awarded_quantity)::text as awarded_quantity
+    from work_items
+    where id = ${proposed.workItemId} and work_id = ${row.work_id}
+      and deleted_at is null
+  `;
+  if (!item) {
+    throw httpError(
+      409,
+      'AMENDMENT_ITEM_MISSING',
+      'The Work item is already omitted or no longer exists.',
+    );
+  }
+  return {
+    workId: row.work_id,
+    omission: {
+      workLetterNumber: work.letter_number,
+      workLetterDate: work.letter_date,
+      itemNumber: item.item_number,
+      unitCode: item.unit_code,
+      awardedQuantity: item.awarded_quantity,
+      contractValue: work.contract_value,
+    },
+  };
+}
+
+interface ApprovalTargetRow {
+  id: string;
+  work_id: string;
+  status: string;
+  proposed: unknown;
 }
 
 export function registerAmendmentRoutes(
   app: AppInstance,
   auth: Auth,
   database: Sql,
+  storage: ObjectStorage,
+  scanner: MalwareScanner,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // --- Propose a change to an existing item (quantity/rate/description/
@@ -923,18 +1171,245 @@ export function registerAmendmentRoutes(
             reason: body.reason,
           },
         );
-        if (await isApprover(tx, user.id)) {
-          await applyApproval(
-            tx,
-            organisationId,
-            user.id,
-            { ...created, proposed, diff },
-            null,
-          );
-        }
+        // NO DIRECT APPLY, deliberately — unlike a change or an addition.
+        // An omission now needs the railway's variation order verified
+        // against it, and that arrives as a separate upload; direct-apply
+        // would 409 the FILING for anyone holding the approval authority,
+        // when filing without an order yet is exactly what the ruling
+        // permits. The omission therefore always waits in the queue until
+        // its order is cited, and is then approved explicitly.
         return readApproval(tx, created.id);
       });
       return reply.status(201).send(approval);
+    },
+  );
+
+  // --- Cite the railway variation order that authorises an omission --------
+  // The upload path reuses the machinery the LOA and contract-source
+  // uploads already established — the same PDF magic-byte gate, the same
+  // malware scan, the same Poppler-only text extraction (a non-Poppler
+  // binary is refused outright by PR #24's probe), the same private object
+  // key — and adds the verification the ruling asks for. Nothing is stored
+  // unless the document itself supports every required claim.
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/approvals/:id/variation-order',
+      bodyLimit: MAX_PDF_BYTES,
+      schema: {
+        params: IdParamsSchema,
+        querystring: AttachVariationOrderQuerySchema,
+        response: {
+          201: AttachVariationOrderResponseSchema,
+          ...upstreamErrorResponses,
+        },
+      },
+      role: 'writer',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: approvalId } = request.params;
+      const { filename } = request.query;
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        throw httpError(
+          400,
+          'PDF_REQUIRED',
+          'Send the variation order as an application/pdf request body.',
+        );
+      }
+      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
+        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
+      }
+
+      // What the order must describe is read BEFORE the scan and the
+      // extraction, so a caller with no access to this Work cannot spend
+      // either, and so the verification has something to check against.
+      const target = await tenant((tx) =>
+        readOmissionUnderVerification(tx, user.id, approvalId),
+      );
+      await assertNotMalware(scanner, body);
+
+      let text: string;
+      try {
+        text = await extractPdfText(body);
+      } catch (error) {
+        // A misconfigured extraction binary is an operator fault, not a
+        // fault in the uploaded order: reporting it as "this PDF has no
+        // text" would send the operator chasing the wrong problem.
+        if (error instanceof PdfToTextConfigurationError) {
+          throw httpError(
+            503,
+            'PDF_TEXT_EXTRACTION_UNAVAILABLE',
+            'PDF text extraction is not correctly configured on the server. No document was rejected; contact your administrator.',
+            { reason: error.message },
+          );
+        }
+        throw httpError(
+          400,
+          'VARIATION_ORDER_EXTRACTION_FAILED',
+          'The variation order could not be read. Upload the machine-readable order issued by IREPS, not a scan or a photograph of it.',
+          { reason: error instanceof Error ? error.message : 'extraction failed' },
+        );
+      }
+
+      const verdict = verifyVariationOrder(text, target.omission);
+      const sha256 = createHash('sha256').update(body).digest('hex');
+      if (!verdict.verified) {
+        // The refusal is recorded: an operator repeatedly presenting an
+        // order the document does not support is worth seeing, and the
+        // rejected bytes are never stored.
+        await tenant(async (tx) => {
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'amendment.variation_order_rejected',
+            'approval_requests',
+            approvalId,
+            {
+              workId: target.workId,
+              filename,
+              sha256,
+              failedClaims: verdict.failedClaims,
+            },
+          );
+        });
+        throw httpError(
+          409,
+          'OMISSION_VARIATION_ORDER_UNVERIFIED',
+          `The uploaded document does not authorise this omission. ${describeFailedClaims(verdict)}`,
+          { failedClaims: verdict.failedClaims, claims: verdict.claims },
+        );
+      }
+
+      const documentId = randomUUID();
+      const objectKey = `${organisationId}/variationorder/${documentId}.pdf`;
+      await storage.put(objectKey, body);
+
+      const result = await tenant(async (tx) => {
+        // Re-read under the request lock: the amendment could have been
+        // decided or withdrawn while the scan and extraction ran, and the
+        // item's own facts could have moved under a concurrent amendment.
+        const current = await readOmissionUnderVerification(
+          tx,
+          user.id,
+          approvalId,
+          true,
+        );
+        const recheck = verifyVariationOrder(text, current.omission);
+        if (!recheck.verified) {
+          throw httpError(
+            409,
+            'OMISSION_VARIATION_ORDER_UNVERIFIED',
+            `The Work changed while the variation order was being read, and the order no longer supports this omission. ${describeFailedClaims(recheck)}`,
+            { failedClaims: recheck.failedClaims, claims: recheck.claims },
+          );
+        }
+        const document = recheck.document;
+        if (
+          document.loaNumber === null ||
+          document.loaDate === null ||
+          document.agreementNumber === null ||
+          document.variationNumber === null
+        ) {
+          // Unreachable while the claims above are required; asserted
+          // rather than coerced so a future claim change cannot quietly
+          // start writing nulls into the evidence row.
+          throw new Error('a verified verdict is missing its extracted identity');
+        }
+        await tx`
+          insert into amendment_variation_orders (
+            id, organisation_id, approval_request_id, work_id, loa_number,
+            loa_date, agreement_number, variation_number, object_key,
+            original_filename, sha256, media_type, size_bytes, verdict,
+            verified, uploaded_by_user_id
+          )
+          values (
+            ${documentId}, ${organisationId}, ${approvalId}, ${current.workId},
+            ${document.loaNumber}, ${document.loaDate},
+            ${document.agreementNumber}, ${document.variationNumber},
+            ${objectKey}, ${filename}, ${sha256}, 'application/pdf',
+            ${body.length}, ${jsonb(tx, storedVerdict(recheck))}, true,
+            ${user.id}
+          )
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'VARIATION_ORDER_ALREADY_CITED',
+              'This omission already cites a variation order. Withdraw the request and file it again to cite a different one.',
+            );
+          }
+          throw error;
+        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'amendment.variation_order_cited',
+          'approval_requests',
+          approvalId,
+          {
+            workId: current.workId,
+            variationOrderId: documentId,
+            loaNumber: document.loaNumber,
+            loaDate: document.loaDate,
+            agreementNumber: document.agreementNumber,
+            variationNumber: document.variationNumber,
+            itemNumber: current.omission.itemNumber,
+            filename,
+            sha256,
+            verifiedClaims: recheck.claims
+              .filter((entry) => entry.verified)
+              .map((entry) => entry.code),
+          },
+        );
+        return {
+          approval: await readApproval(tx, approvalId),
+          verdict: storedVerdict(recheck),
+        };
+      });
+      return reply.status(201).send(result);
+    },
+  );
+
+  // --- Read the cited order back -------------------------------------------
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/approvals/:id/variation-order/file',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: Type.Any(), ...errorResponses },
+      },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id: approvalId } = request.params;
+      const row = await tenant(async (tx) => {
+        const [document] = await tx<
+          { object_key: string; original_filename: string; work_id: string }[]
+        >`
+          select object_key, original_filename, work_id
+          from amendment_variation_orders
+          where approval_request_id = ${approvalId}
+        `;
+        if (document === undefined) {
+          throw httpError(
+            404,
+            'VARIATION_ORDER_NOT_FOUND',
+            'This request cites no variation order.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, document.work_id);
+        return document;
+      });
+      const bytes = await storage.get(row.object_key);
+      void reply.header(
+        'content-disposition',
+        `inline; filename*=UTF-8''${encodeURIComponent(row.original_filename)}`,
+      );
+      void reply.type('application/pdf');
+      return reply.send(bytes);
     },
   );
 
