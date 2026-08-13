@@ -1,7 +1,7 @@
 import type { TransportMode } from '@auto-mb/contracts';
 import {
   parseTaxInvoiceIssuedSnapshot,
-  type TaxInvoiceIssuedSnapshotV1,
+  type TaxInvoiceIssuedSnapshot,
 } from '../tax-invoice-snapshot.js';
 import { formatNicDate } from './irp-payload.js';
 import { exactJsonInteger, stringifyStatutoryJson } from './statutory-json.js';
@@ -37,7 +37,7 @@ const TRANS_MODE: Record<TransportMode, string> = {
 };
 
 function validateLocations(
-  snapshot: TaxInvoiceIssuedSnapshotV1,
+  snapshot: TaxInvoiceIssuedSnapshot,
   input: EwayByIrnFacts,
 ): void {
   const destination = snapshot.shipTo ?? snapshot.buyer;

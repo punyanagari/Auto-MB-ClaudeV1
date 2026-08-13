@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import type { Contact, GstRateMaster, TaxInvoice } from '@auto-mb/contracts';
+import type {
+  Contact,
+  GstRateMaster,
+  TaxInvoice,
+  TaxInvoiceLine,
+  TaxInvoiceLineShape,
+} from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../../api.js';
 import { formatDate, formatInr } from '../../format.js';
 import { openPdf } from '../../lib/openPdf.js';
@@ -8,12 +14,22 @@ import { StatusChip } from '../../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../../ui/form.js';
 import { Disclosure } from '../../ui/disclosure.js';
+import {
+  draftLinesOf,
+  emptyDraftLine,
+  InvoiceLineEditor,
+  toLineInputs,
+  type DraftLine,
+} from './InvoiceLineEditor.js';
 import { GstRateOptions, type ActRunner } from './shared.js';
 
 interface InvoiceDetailProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly invoice: TaxInvoice;
+  /** The lines of an ITEMISED invoice, in print order; empty for a
+   * cumulative one, whose single line lives in the header fields. */
+  readonly lines: readonly TaxInvoiceLine[];
   readonly clients: readonly Contact[];
   readonly shipToContacts: readonly Contact[];
   readonly gstRates: readonly GstRateMaster[];
@@ -35,6 +51,7 @@ export function InvoiceDetail({
   api,
   organisationId,
   invoice,
+  lines,
   clients,
   shipToContacts,
   gstRates,
@@ -46,6 +63,11 @@ export function InvoiceDetail({
   onDeleted,
 }: InvoiceDetailProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editShape, setEditShape] = useState<TaxInvoiceLineShape>(invoice.lineShape);
+  const [editLines, setEditLines] = useState<readonly DraftLine[]>(() =>
+    lines.length > 0 ? draftLinesOf(lines) : [emptyDraftLine()],
+  );
+  const editItemised = editShape === 'itemised';
   return (
     <>
       <h3>
@@ -88,10 +110,24 @@ export function InvoiceDetail({
         <dd>{invoice.mbNumber ?? '—'}</dd>
         <dt>Invoice date</dt>
         <dd>{formatDate(invoice.invoiceDate)}</dd>
-        <dt>SAC</dt>
-        <dd>{invoice.sacCode}</dd>
-        <dt>GST rate</dt>
-        <dd>{invoice.gstRate}%</dd>
+        <dt>Lines</dt>
+        <dd>
+          {invoice.lineShape === 'itemised'
+            ? 'Itemised HSN/SAC lines'
+            : 'One cumulative service line'}
+        </dd>
+        {invoice.sacCode !== null && (
+          <>
+            <dt>SAC</dt>
+            <dd>{invoice.sacCode}</dd>
+          </>
+        )}
+        {invoice.gstRate !== null && (
+          <>
+            <dt>GST rate</dt>
+            <dd>{invoice.gstRate}%</dd>
+          </>
+        )}
         <dt>Place of supply</dt>
         <dd>{invoice.placeOfSupply}</dd>
         <dt>Reverse charge</dt>
@@ -128,7 +164,44 @@ export function InvoiceDetail({
         )}
       </dl>
 
-      <p className={wrapCell}>{invoice.serviceDescription}</p>
+      {invoice.lineShape === 'itemised' ? (
+        <DataTable>
+          <caption className="sr-only">The lines this invoice bills</caption>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Description</th>
+              <th scope="col">HSN / SAC</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Unit</th>
+              <th scope="col">Rate</th>
+              <th scope="col">GST rate</th>
+              <th scope="col">Taxable value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.id}>
+                <td>{line.position}</td>
+                <td className={wrapCell}>{line.description}</td>
+                <td>
+                  {line.hsnSacCode}
+                  {line.isService ? ' · service' : ' · goods'}
+                </td>
+                <td className={numericCell}>{line.quantity}</td>
+                <td>{line.unitLabel ?? '—'}</td>
+                <td className={numericCell}>{formatInr(line.unitRate)}</td>
+                <td className={numericCell}>{line.gstRate}%</td>
+                <td className={numericCell}>
+                  {line.taxableValue === null ? '—' : formatInr(line.taxableValue)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      ) : (
+        <p className={wrapCell}>{invoice.serviceDescription}</p>
+      )}
 
       {invoice.status === 'submitted' || invoice.status === 'cancelled' ? (
         <DataTable>
@@ -176,8 +249,9 @@ export function InvoiceDetail({
         </DataTable>
       ) : (
         <p className="text-muted-foreground">
-          The amounts are computed from the Measurement Book total at submit, so a draft
-          carries none yet.
+          The amounts are computed at submit — from the Measurement Book total for a
+          cumulative invoice, from the lines for an itemised one — so a draft carries
+          none yet.
         </p>
       )}
 
@@ -199,11 +273,8 @@ export function InvoiceDetail({
                 const notes = formValue(data, 'edit-invoice-notes');
                 const shipToContactId = formValue(data, 'edit-invoice-ship-to');
                 const numberPrefix = formValue(data, 'edit-invoice-number-prefix');
-                await api.updateTaxInvoice(organisationId, invoice.id, {
+                const common = {
                   invoiceDate: formValue(data, 'edit-invoice-date'),
-                  sacCode: formValue(data, 'edit-invoice-sac'),
-                  serviceDescription: formValue(data, 'edit-invoice-description'),
-                  gstRate: formValue(data, 'edit-invoice-gst-rate'),
                   placeOfSupply: formValue(data, 'edit-invoice-place-of-supply'),
                   reverseChargeApplicable:
                     formValue(data, 'edit-invoice-reverse-charge') === 'true',
@@ -213,7 +284,23 @@ export function InvoiceDetail({
                   ...(notes === '' ? {} : { notes }),
                   ...(shipToContactId === '' ? {} : { shipToContactId }),
                   ...(numberPrefix === '' ? {} : { numberPrefix }),
-                });
+                };
+                await api.updateTaxInvoice(
+                  organisationId,
+                  invoice.id,
+                  editItemised
+                    ? {
+                        ...common,
+                        lineShape: 'itemised',
+                        lines: toLineInputs(editLines),
+                      }
+                    : {
+                        ...common,
+                        sacCode: formValue(data, 'edit-invoice-sac'),
+                        serviceDescription: formValue(data, 'edit-invoice-description'),
+                        gstRate: formValue(data, 'edit-invoice-gst-rate'),
+                      },
+                );
                 await refresh();
               }, 'Draft tax invoice updated.');
             }}
@@ -230,6 +317,31 @@ export function InvoiceDetail({
                 />
               </Field>
               <Field>
+                <label htmlFor="edit-invoice-line-shape">Invoice lines</label>
+                <select
+                  id="edit-invoice-line-shape"
+                  value={editShape}
+                  onChange={(event) => {
+                    setEditShape(
+                      event.currentTarget.value === 'itemised'
+                        ? 'itemised'
+                        : 'service_cumulative',
+                    );
+                  }}
+                >
+                  <option value="service_cumulative">
+                    One cumulative service line (SAC)
+                  </option>
+                  <option value="itemised">Itemised HSN/SAC lines</option>
+                </select>
+                <Hint>
+                  Editable while this invoice is a draft; frozen with every other
+                  business fact once it is submitted.
+                </Hint>
+              </Field>
+            </FieldRow>
+            {!editItemised && (
+              <Field>
                 <label htmlFor="edit-invoice-sac">SAC code</label>
                 <input
                   id="edit-invoice-sac"
@@ -238,10 +350,10 @@ export function InvoiceDetail({
                   pattern="[0-9]{6}"
                   maxLength={6}
                   required
-                  defaultValue={invoice.sacCode}
+                  defaultValue={invoice.sacCode ?? ''}
                 />
               </Field>
-            </FieldRow>
+            )}
             <Field>
               <label htmlFor="edit-invoice-reverse-charge">
                 Tax payable on reverse charge
@@ -265,40 +377,51 @@ export function InvoiceDetail({
                 </option>
               </select>
             </Field>
-            <Field>
-              <label htmlFor="edit-invoice-description">Service description</label>
-              <textarea
-                id="edit-invoice-description"
-                name="edit-invoice-description"
-                rows={3}
-                required
-                minLength={3}
-                maxLength={1000}
-                defaultValue={invoice.serviceDescription}
+            {editItemised ? (
+              <InvoiceLineEditor
+                idPrefix="edit-invoice"
+                lines={editLines}
+                gstRates={gstRates}
+                onChange={setEditLines}
               />
-            </Field>
-            <FieldRow>
+            ) : (
               <Field>
-                <label htmlFor="edit-invoice-gst-rate">GST rate (%)</label>
-                {gstRates.length > 0 ? (
-                  <select
-                    id="edit-invoice-gst-rate"
-                    name="edit-invoice-gst-rate"
-                    required
-                    defaultValue={invoice.gstRate}
-                  >
-                    <GstRateOptions rates={gstRates} />
-                  </select>
-                ) : (
-                  <input
-                    id="edit-invoice-gst-rate"
-                    name="edit-invoice-gst-rate"
-                    inputMode="decimal"
-                    required
-                    defaultValue={invoice.gstRate}
-                  />
-                )}
+                <label htmlFor="edit-invoice-description">Service description</label>
+                <textarea
+                  id="edit-invoice-description"
+                  name="edit-invoice-description"
+                  rows={3}
+                  required
+                  minLength={3}
+                  maxLength={1000}
+                  defaultValue={invoice.serviceDescription ?? ''}
+                />
               </Field>
+            )}
+            <FieldRow>
+              {!editItemised && (
+                <Field>
+                  <label htmlFor="edit-invoice-gst-rate">GST rate (%)</label>
+                  {gstRates.length > 0 ? (
+                    <select
+                      id="edit-invoice-gst-rate"
+                      name="edit-invoice-gst-rate"
+                      required
+                      defaultValue={invoice.gstRate ?? ''}
+                    >
+                      <GstRateOptions rates={gstRates} />
+                    </select>
+                  ) : (
+                    <input
+                      id="edit-invoice-gst-rate"
+                      name="edit-invoice-gst-rate"
+                      inputMode="decimal"
+                      required
+                      defaultValue={invoice.gstRate ?? ''}
+                    />
+                  )}
+                </Field>
+              )}
               <Field>
                 <label htmlFor="edit-invoice-place-of-supply">Place of supply</label>
                 <input

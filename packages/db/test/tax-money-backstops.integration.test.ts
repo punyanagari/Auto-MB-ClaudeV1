@@ -417,6 +417,394 @@ describe('tax invoice money backstops (0052 triggers)', () => {
   });
 });
 
+/** One line of a raw-SQL itemised invoice. */
+interface RawLine {
+  readonly quantity: string;
+  readonly unitRate: string;
+  readonly gstRate: string;
+  readonly taxable: string;
+  readonly cgst: string;
+  readonly sgst: string;
+  readonly igst: string;
+}
+
+/**
+ * The itemised equivalent of `submittedInvoice`: the exact write a
+ * compromised or buggy caller would make against migration 0057's shape —
+ * an itemised header (no SAC, no description, no header rate) over its
+ * own lines, straight SQL, no route in between.
+ *
+ * One transaction, because the 0057 deferred constraint trigger judges
+ * the invoice and its lines by the transaction's RESULT: the lines are
+ * written and priced while the header is still a draft (the only window
+ * the mutation guard leaves open), then the header moves to submitted.
+ */
+function submittedItemisedInvoice(
+  pool: Sql,
+  tenant: Tenant,
+  options: {
+    readonly placeOfSupply: string;
+    readonly lines: readonly RawLine[];
+    readonly taxable: string;
+    readonly cgst: string;
+    readonly sgst: string;
+    readonly igst: string;
+    readonly roundOff: string;
+    readonly total: string;
+  },
+): Promise<unknown> {
+  sequence += 1;
+  const label = `TI/ITEMISED/${randomBytes(4).toString('hex')}/${String(sequence)}`;
+  const ordinal = sequence;
+  return pool.begin(async (tx) => {
+    const [invoice] = await tx<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, status, line_shape, invoice_date, place_of_supply,
+        buyer_contact_id, stated_taxable_value, reverse_charge_applicable,
+        created_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, 'draft', 'itemised', '2026-02-15',
+        ${options.placeOfSupply}, ${tenant.buyerId}, ${options.taxable}, false,
+        'tax-money-test'
+      )
+      returning id
+    `;
+    if (!invoice) throw new Error('itemised invoice seed failed');
+    let position = 0;
+    for (const line of options.lines) {
+      position += 1;
+      await tx`
+        insert into tax_invoice_lines (
+          organisation_id, tax_invoice_id, position, is_service, hsn_sac_code,
+          description, quantity, unit_label, unit_rate, gst_rate
+        )
+        values (
+          ${tenant.organisationId}, ${invoice.id}, ${position}, false,
+          '85444999', 'Raw SQL itemised line', ${line.quantity}, 'no',
+          ${line.unitRate}, ${line.gstRate}
+        )
+      `;
+      await tx`
+        update tax_invoice_lines
+        set taxable_value = ${line.taxable}, cgst_amount = ${line.cgst},
+            sgst_amount = ${line.sgst}, igst_amount = ${line.igst}
+        where tax_invoice_id = ${invoice.id} and position = ${position}
+      `;
+    }
+    await tx`
+      update tax_invoices
+      set status = 'submitted', invoice_number = ${label},
+          sequence_number = ${ordinal}, fy_label = '2025-26',
+          number_prefix = 'TI',
+          buyer_snapshot = ${tx.json({ designation: 'Tax Money Buyer' })},
+          issued_snapshot = ${tx.json({
+            templateVersion: 'ti-v2',
+            supplier: { stateCode: '27' },
+          })},
+          taxable_value = ${options.taxable}, cgst_amount = ${options.cgst},
+          sgst_amount = ${options.sgst}, igst_amount = ${options.igst},
+          round_off = ${options.roundOff}, total_amount = ${options.total},
+          submitted_at = now(), submitted_by_user_id = 'tax-money-test'
+      where id = ${invoice.id}
+    `;
+    return invoice.id;
+  });
+}
+
+/** `seedTenant` plus the 5% merit rate, so an itemised fixture can carry
+ * two DIFFERENT per-line rates — which is the whole point of the shape,
+ * and what the 0057 per-line rate guard is there to police. */
+async function seedItemisedTenant(pool: Sql): Promise<Tenant> {
+  const tenant = await seedTenant(pool);
+  await pool`
+    insert into gst_rates (
+      organisation_id, rate, label, effective_from, created_by_user_id
+    )
+    values (${tenant.organisationId}, '5.00', 'Merit 5%', '2017-07-01',
+            'tax-money-test')
+  `;
+  return tenant;
+}
+
+describe('itemised tax invoice money backstops (0057 triggers)', () => {
+  let database: TemporaryDatabase;
+  let pool: Sql;
+
+  beforeAll(async () => {
+    database = await createTemporaryDatabase();
+    pool = database.pool;
+    await runMigrations(pool, realMigrationsDirectory);
+  }, STAGED_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await dropTemporaryDatabase(database);
+  }, STAGED_TIMEOUT_MS);
+
+  // Two lines at DIFFERENT rates, which is what a header rate cannot
+  // express: 2 x 50.00 at 18% (halves 9.00 / 9.00) and 1 x 100.00 at 5%
+  // (halves 2.50 / 2.50). The header therefore carries 200.00 taxable
+  // with 11.50 CGST and 11.50 SGST, and 223.00 lands on a whole rupee.
+  const INTRA_LINES: readonly RawLine[] = [
+    {
+      quantity: '2.000',
+      unitRate: '50.00',
+      gstRate: '18.00',
+      taxable: '100.00',
+      cgst: '9.00',
+      sgst: '9.00',
+      igst: '0.00',
+    },
+    {
+      quantity: '1.000',
+      unitRate: '100.00',
+      gstRate: '5.00',
+      taxable: '100.00',
+      cgst: '2.50',
+      sgst: '2.50',
+      igst: '0.00',
+    },
+  ];
+
+  it('accepts an itemised invoice whose heads are the sum of its lines', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    await submittedItemisedInvoice(pool, tenant, {
+      placeOfSupply: '27',
+      lines: INTRA_LINES,
+      taxable: '200.00',
+      cgst: '11.50',
+      sgst: '11.50',
+      igst: '0.00',
+      roundOff: '0.00',
+      total: '223.00',
+    });
+  });
+
+  it('refuses an itemised invoice carrying zero tax heads', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    // Every pre-0057 constraint passes: split coherence holds (igst = 0),
+    // the total re-adds the parts, and there is no header rate to judge
+    // against — which is exactly the hole the recreated guard closes.
+    const refusal = await refused(
+      submittedItemisedInvoice(pool, tenant, {
+        placeOfSupply: '27',
+        lines: INTRA_LINES,
+        taxable: '200.00',
+        cgst: '0.00',
+        sgst: '0.00',
+        igst: '0.00',
+        roundOff: '0.00',
+        total: '200.00',
+      }),
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('do not reconcile with the itemised lines');
+  });
+
+  it('refuses a header taxable value that is not the sum of the lines', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    const refusal = await refused(
+      submittedItemisedInvoice(pool, tenant, {
+        placeOfSupply: '27',
+        lines: INTRA_LINES,
+        taxable: '150.00',
+        cgst: '11.50',
+        sgst: '11.50',
+        igst: '0.00',
+        roundOff: '0.00',
+        total: '173.00',
+      }),
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('is not the sum of its');
+  });
+
+  it('refuses a line whose money is not quantity x rate at its own GST rate', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    const refusal = await refused(
+      submittedItemisedInvoice(pool, tenant, {
+        placeOfSupply: '27',
+        lines: [
+          {
+            quantity: '2.000',
+            unitRate: '50.00',
+            gstRate: '18.00',
+            // 2 x 50 is 100, not 90.
+            taxable: '90.00',
+            cgst: '8.10',
+            sgst: '8.10',
+            igst: '0.00',
+          },
+        ],
+        taxable: '90.00',
+        cgst: '8.10',
+        sgst: '8.10',
+        igst: '0.00',
+        roundOff: '-0.20',
+        total: '106.00',
+      }),
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain(
+      'tax_invoice_lines_taxable_is_quantity_times_rate',
+    );
+  });
+
+  it('keeps the CUMULATIVE branch exactly as 0052 left it', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    // The same two proofs the 0052 suite makes, re-run against the
+    // recreated function so the itemised branch cannot have weakened it.
+    await submittedInvoice(pool, tenant, {
+      gstRate: '18.00',
+      placeOfSupply: '27',
+      taxable: '100.00',
+      cgst: '9.00',
+      sgst: '9.00',
+      igst: '0.00',
+      roundOff: '0.00',
+      total: '118.00',
+    });
+    const refusal = await refused(
+      submittedInvoice(pool, tenant, {
+        gstRate: '18.00',
+        placeOfSupply: '27',
+        taxable: '100.00',
+        cgst: '0.00',
+        sgst: '0.00',
+        igst: '0.00',
+        roundOff: '0.00',
+        total: '100.00',
+      }),
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('do not reconcile with the GST rate');
+  });
+
+  it('still applies the 0052 split-place guard to an itemised invoice', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    // Place of supply 29 against organisation state 27 is inter-state, so
+    // a CGST/SGST split is a contradiction the HEADER guard owns — it
+    // reads no line and was deliberately left untouched by 0057.
+    const refusal = await refused(
+      submittedItemisedInvoice(pool, tenant, {
+        placeOfSupply: '29',
+        lines: INTRA_LINES,
+        taxable: '200.00',
+        cgst: '11.50',
+        sgst: '11.50',
+        igst: '0.00',
+        roundOff: '0.00',
+        total: '223.00',
+      }),
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('CGST and SGST must be 0');
+  });
+
+  it('refuses a cumulative invoice that carries line rows, and an itemised one that carries none', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    const withLines = await refused(
+      pool.begin(async (tx) => {
+        const [invoice] = await tx<{ id: string }[]>`
+          insert into tax_invoices (
+            organisation_id, status, invoice_date, sac_code,
+            service_description, gst_rate, place_of_supply, buyer_contact_id,
+            stated_taxable_value, created_by_user_id
+          )
+          values (
+            ${tenant.organisationId}, 'draft', '2026-02-15', '998734',
+            'Cumulative draft', '18.00', '27', ${tenant.buyerId}, '100.00',
+            'tax-money-test'
+          )
+          returning id
+        `;
+        if (!invoice) throw new Error('cumulative invoice seed failed');
+        await tx`
+          insert into tax_invoice_lines (
+            organisation_id, tax_invoice_id, position, is_service,
+            hsn_sac_code, description, quantity, unit_rate, gst_rate
+          )
+          values (
+            ${tenant.organisationId}, ${invoice.id}, 1, false, '85444999',
+            'A line a cumulative invoice may not have', '1.000', '100.00',
+            '18.00'
+          )
+        `;
+      }),
+    );
+    expect(withLines.code).toBe('23514');
+    expect(withLines.message).toContain('must have no tax_invoice_lines rows');
+
+    const withoutLines = await refused(
+      pool`
+        insert into tax_invoices (
+          organisation_id, status, line_shape, invoice_date, place_of_supply,
+          buyer_contact_id, stated_taxable_value, created_by_user_id
+        )
+        values (
+          ${tenant.organisationId}, 'draft', 'itemised', '2026-02-15', '27',
+          ${tenant.buyerId}, '100.00', 'tax-money-test'
+        )
+      `,
+    );
+    expect(withoutLines.code).toBe('23514');
+    expect(withoutLines.message).toContain(
+      'must have at least one tax_invoice_lines row',
+    );
+  });
+
+  it('refuses every line write once the invoice has left draft', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    const invoiceId = (await submittedItemisedInvoice(pool, tenant, {
+      placeOfSupply: '27',
+      lines: INTRA_LINES,
+      taxable: '200.00',
+      cgst: '11.50',
+      sgst: '11.50',
+      igst: '0.00',
+      roundOff: '0.00',
+      total: '223.00',
+    })) as string;
+
+    const edited = await refused(
+      pool`
+        update tax_invoice_lines set description = 'rewritten after issue'
+        where tax_invoice_id = ${invoiceId}
+      `,
+    );
+    expect(edited.code).toBe('23514');
+    expect(edited.message).toContain('mutable only while the invoice is draft');
+
+    const deleted = await refused(
+      pool`delete from tax_invoice_lines where tax_invoice_id = ${invoiceId}`,
+    );
+    expect(deleted.code).toBe('23514');
+    expect(deleted.message).toContain('mutable only while the invoice is draft');
+  });
+
+  it('freezes line_shape on an issued invoice', async () => {
+    const tenant = await seedItemisedTenant(pool);
+    const invoiceId = (await submittedItemisedInvoice(pool, tenant, {
+      placeOfSupply: '27',
+      lines: INTRA_LINES,
+      taxable: '200.00',
+      cgst: '11.50',
+      sgst: '11.50',
+      igst: '0.00',
+      roundOff: '0.00',
+      total: '223.00',
+    })) as string;
+    const refusal = await refused(
+      pool`
+        update tax_invoices set line_shape = 'service_cumulative'
+        where id = ${invoiceId}
+      `,
+    );
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('business facts are immutable');
+  });
+});
+
 describe('0052 preflight over stored invoices', () => {
   it(
     'refuses the upgrade while a stored invoice breaks either invariant, naming it, and honours the frozen supplier state',

@@ -203,9 +203,24 @@ registration or generation outcomes are reconciled by lookup only; unknown
 cancellations require externally confirmed evidence and are not resent blindly.
 
 NIC seller, buyer, and ship-to locality is explicit frozen data and is never
-guessed from an address. The application currently models cumulative SAC
-service invoices, so fresh EWB provider generation and NIC payload exposure are
-deliberately refused until goods/HSN delivery facts exist.
+guessed from an address.
+
+A tax invoice's LINE SHAPE is a per-document choice, never derived from the
+buyer or the Work: `service_cumulative` carries one SAC service line in the
+invoice header, `itemised` carries `tax_invoice_lines` rows with their own HSN
+(goods) or SAC (services) code, quantity, unit rate and GST rate. An
+organisation-level default seeds the create form only. Per-line money is frozen
+at submit in SQL numeric — `round(quantity * unit_rate, 2)` at the line's own
+notified rate — and the header's tax heads are the exact sum, enforced in the
+database by the recreated tax-heads guard for both shapes. The issued snapshot
+is versioned: `ti-v1` for a cumulative document, `ti-v2` (a `lines` array) for
+an itemised one, and a stored v1 snapshot is parsed and re-rendered exactly as
+before, never migrated.
+
+Fresh EWB provider generation and NIC payload exposure remain deliberately
+refused. That refusal is being re-based on the document's CONTENT — whether it
+carries goods lines — rather than on the invoice model as a whole; until that
+work lands, the existing refusal stands for every invoice.
 
 ## 11. Scale target
 

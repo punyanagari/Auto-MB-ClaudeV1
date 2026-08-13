@@ -466,7 +466,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v10');
+    expect(exported.formatVersion).toBe('export-v11');
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -519,6 +519,8 @@ describe('export completeness', () => {
       'budgetaryQuotations',
       'budgetaryQuotationLines',
       'taxInvoices',
+      // export-v11: the lines of an ITEMISED invoice (0057).
+      'taxInvoiceLines',
       'taxInvoiceRenders',
       // export-v10: the Section 34 credit note register (0051).
       'creditNotes',

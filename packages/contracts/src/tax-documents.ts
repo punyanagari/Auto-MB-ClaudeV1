@@ -2,10 +2,13 @@ import { Type, type Static } from '@sinclair/typebox';
 import {
   DateOnlySchema,
   NonNegativeDecimalStringSchema,
+  PositiveDecimalStringSchema,
   RoundOffStringSchema,
   DecimalStringSchema,
   GstRateSchema,
   GstStateCodeSchema,
+  HsnCodeSchema,
+  TaxInvoiceLineShapeSchema,
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
@@ -15,14 +18,29 @@ import { InvoiceNumberPrefixSchema } from './organisations.js';
  * The two GST tax documents (migration 0035): the TAX INVOICE and the
  * E-WAY BILL that moves it.
  *
- * The invoice model, settled with the product owner: a works contract is
- * a supply of services under GST, so the tax invoice is CUMULATIVE — one
- * service line at a SAC (six digits) for a finalized Measurement Book's
- * total. It is never a per-item HSN document. Draft -> submitted
- * (numbered gapless per organisation PER FINANCIAL YEAR, buyer
- * snapshotted, amounts frozen from the MB total in exact SQL numeric
- * arithmetic) -> cancelled. Submitting the invoice is what closes the MB
- * it bills; cancelling it releases the MB for a corrected invoice.
+ * The invoice's LINE SHAPE is a PER-DOCUMENT choice (migration 0057),
+ * with an organisation default that only seeds the create form:
+ *
+ * - `service_cumulative` — the original 0035 model, and still the common
+ *   railway works-contract bill: ONE service line at a SAC (six digits)
+ *   for a finalized Measurement Book's total, carried by the header
+ *   `sacCode` / `serviceDescription` / `gstRate` fields;
+ * - `itemised` — those three header fields are absent and the document is
+ *   its `lines`, each with its own HSN (goods) or SAC (services) code,
+ *   quantity, unit rate and GST rate.
+ *
+ * The choice is NEVER derived from the buyer or the Work: the owner's
+ * account is that practice varies by company — some vendors put HSN goods
+ * items on Railway invoices too, and private customers commonly take HSN
+ * goods supply — so a Railway invoice may be itemised and a private one
+ * cumulative.
+ *
+ * Either shape: draft -> submitted (numbered gapless per organisation PER
+ * FINANCIAL YEAR, buyer snapshotted, amounts frozen in exact SQL numeric
+ * arithmetic — from the MB total for a cumulative invoice, from the sum of
+ * the lines for an itemised one) -> cancelled. Submitting the invoice is
+ * what closes the MB it bills; cancelling it releases the MB for a
+ * corrected invoice.
  *
  * The e-way bill shapes below serve LEGACY records. The owner's decision
  * (finding 1, docs/AUDIT-DISPOSITION-2026-08-10.md): these SAC service
@@ -89,99 +107,202 @@ export const IrpProviderStateSchema = Type.Union(
 );
 export type IrpProviderState = Static<typeof IrpProviderStateSchema>;
 
-// --- Tax invoice requests ----------------------------------------------------
+/** A line's unit rate. Non-negative — free-issue and nil-rated lines are
+ * real — and bounded to the TWO fraction digits its numeric(18,2) column
+ * holds, so a third digit is a named 400 rather than a silent rounding. */
+export const LineUnitRateSchema = Type.String({
+  pattern: '^(?:0|[1-9]\\d{0,14})(?:\\.\\d{1,2})?$',
+  description:
+    'Non-negative unit rate transported as a string; up to two fraction digits.',
+});
 
-/** POST /api/works/:id/tax-invoices — drafts the invoice against a
- * finalized on-account or final Measurement Book of the Work. The buyer
- * is a contact; its details are snapshotted at SUBMIT (not now), so a
- * master edit before submit is reflected and one after is not. */
-export const CreateTaxInvoiceRequestSchema = Type.Object(
+// --- Tax invoice lines (migration 0057) --------------------------------------
+
+/** One line of an ITEMISED invoice, as the client states it. The money
+ * is NOT stated: taxable value and the tax heads are computed in SQL
+ * numeric at submit from quantity x rate at this line's own GST rate. */
+export const TaxInvoiceLineInputSchema = Type.Object(
   {
-    measurementBookId: UuidSchema,
-    invoiceDate: DateOnlySchema,
-    sacCode: SacCodeSchema,
-    serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
-    gstRate: GstRateSchema,
-    /** Two-digit state code of the place of supply. Against the
-     * organisation's own state it decides CGST+SGST (intra) vs IGST
-     * (inter) at submit. */
-    placeOfSupply: GstStateCodeSchema,
-    /** Explicit GST liability confirmation. Reverse-charge invoices are
-     * retained as drafts but issuance is refused until that calculation and
-     * statutory flow are implemented. Omitted means not yet confirmed. */
-    reverseChargeApplicable: Type.Optional(Type.Boolean()),
-    buyerContactId: UuidSchema,
-    /** The BUYER's own order reference, printed on the face of the
-     * invoice and verbatim: the paying division matches the bill against
-     * it. One free-text field on purpose — the observed shape is
-     * division / tender number / order number and date, but that grammar
-     * is the railway's, it varies by division, and a parser would refuse
-     * the first invoice that did not match it. */
-    customerPoReference: Type.Optional(
-      nonBlankString({ minLength: 3, maxLength: 500 }),
-    ),
-    /** The unit word beside the quantity ('set'). Per invoice, because
-     * work billed per metre or per job says something else. The column
+    /** Whether this line supplies a SERVICE or GOODS. Stated, never
+     * inferred from the code: it becomes IsServc on the IRP wire and, in
+     * a later stage, decides whether the document moves goods at all. */
+    isService: Type.Boolean(),
+    /** Six digits for a SAC (a service code takes no deepening), six to
+     * eight for a goods HSN. The pairing with `isService` is enforced by
+     * the server and by the 0057 CHECK. */
+    hsnSacCode: HsnCodeSchema,
+    description: nonBlankString({ minLength: 3, maxLength: 1000 }),
+    quantity: PositiveDecimalStringSchema,
+    /** The unit word beside the quantity ('m', 'set', 'no'). The column
      * measures TRIMMED length 1..20, and a floor of one cannot use
-     * nonBlankString — it starts at two — so the pattern demands at
-     * least one non-space character itself. */
+     * nonBlankString — it starts at two — so the pattern demands at least
+     * one non-space character itself. */
     unitLabel: Type.Optional(
       Type.String({
         minLength: 1,
         maxLength: 20,
         pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
-        description: "The unit word beside the quantity, e.g. 'set'.",
       }),
     ),
-    /** The Notes block. Falls back to the organisation's standing line
-     * when omitted; nothing to do with the cancellation note. */
-    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
-    /** Where the supply is delivered, when that differs from who is
-     * billed. Snapshotted at submit like the buyer. Omitted means the
-     * ship-to block repeats the buyer, which is the common case. */
-    shipToContactId: Type.Optional(UuidSchema),
-    /** Overrides the organisation's house prefix for this invoice's
-     * number; the serial behind it is shared across every prefix. */
-    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
+    unitRate: LineUnitRateSchema,
+    gstRate: GstRateSchema,
   },
   { additionalProperties: false },
 );
+export type TaxInvoiceLineInput = Static<typeof TaxInvoiceLineInputSchema>;
+
+/** One line as stored. The four money fields are null while the invoice
+ * is a draft and frozen together at submit (migration 0057). */
+export const TaxInvoiceLineSchema = Type.Object(
+  {
+    id: UuidSchema,
+    position: Type.Integer({ minimum: 1 }),
+    isService: Type.Boolean(),
+    hsnSacCode: HsnCodeSchema,
+    description: Type.String(),
+    quantity: DecimalStringSchema,
+    unitLabel: Type.Union([Type.String(), Type.Null()]),
+    unitRate: DecimalStringSchema,
+    gstRate: DecimalStringSchema,
+    taxableValue: Type.Union([DecimalStringSchema, Type.Null()]),
+    cgstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    sgstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    igstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type TaxInvoiceLine = Static<typeof TaxInvoiceLineSchema>;
+
+/** At most 200 lines on one invoice — far past any real bill, and a
+ * bound so a single request cannot mint unbounded rows. */
+const TaxInvoiceLinesSchema = Type.Array(TaxInvoiceLineInputSchema, {
+  minItems: 1,
+  maxItems: 200,
+});
+
+// --- Tax invoice requests ----------------------------------------------------
+
+/** The fields every tax-invoice draft carries whatever its line shape.
+ * Spread into each variant rather than composed, so `additionalProperties:
+ * false` stays exact on the object ajv actually validates. */
+const invoiceCommonFields = {
+  invoiceDate: DateOnlySchema,
+  /** Two-digit state code of the place of supply. Against the
+   * organisation's own state it decides CGST+SGST (intra) vs IGST
+   * (inter) at submit. */
+  placeOfSupply: GstStateCodeSchema,
+  /** Explicit GST liability confirmation. Reverse-charge invoices are
+   * retained as drafts but issuance is refused until that calculation and
+   * statutory flow are implemented. Omitted means not yet confirmed. */
+  reverseChargeApplicable: Type.Optional(Type.Boolean()),
+  buyerContactId: UuidSchema,
+  /** The BUYER's own order reference, printed on the face of the
+   * invoice and verbatim: the paying division matches the bill against
+   * it. One free-text field on purpose — the observed shape is
+   * division / tender number / order number and date, but that grammar
+   * is the railway's, it varies by division, and a parser would refuse
+   * the first invoice that did not match it. */
+  customerPoReference: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })),
+  /** The unit word beside the quantity ('set') on a CUMULATIVE invoice's
+   * single line; an itemised invoice's units are per line. The column
+   * measures TRIMMED length 1..20, and a floor of one cannot use
+   * nonBlankString — it starts at two — so the pattern demands at
+   * least one non-space character itself. */
+  unitLabel: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 20,
+      pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
+      description: "The unit word beside the quantity, e.g. 'set'.",
+    }),
+  ),
+  /** The Notes block. Falls back to the organisation's standing line
+   * when omitted; nothing to do with the cancellation note. */
+  notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
+  /** Where the supply is delivered, when that differs from who is
+   * billed. Snapshotted at submit like the buyer. Omitted means the
+   * ship-to block repeats the buyer, which is the common case. */
+  shipToContactId: Type.Optional(UuidSchema),
+  /** Overrides the organisation's house prefix for this invoice's
+   * number; the serial behind it is shared across every prefix. */
+  numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
+};
+
+/** The CUMULATIVE shape's own fields: the single service line, carried in
+ * the header. `lineShape` is optional here and defaults to
+ * 'service_cumulative' on the wire, so every client written before
+ * migration 0057 keeps working unchanged; the ORGANISATION default seeds
+ * the create FORM, never the API. */
+const cumulativeLineFields = {
+  lineShape: Type.Optional(Type.Literal('service_cumulative')),
+  sacCode: SacCodeSchema,
+  serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
+  gstRate: GstRateSchema,
+};
+
+/** The ITEMISED shape's own fields: no header line at all, and at least
+ * one line of its own. */
+const itemisedLineFields = {
+  lineShape: Type.Literal('itemised'),
+  lines: TaxInvoiceLinesSchema,
+};
+
+/** POST /api/works/:id/tax-invoices — drafts the invoice against a
+ * finalized on-account or final Measurement Book of the Work. The buyer
+ * is a contact; its details are snapshotted at SUBMIT (not now), so a
+ * master edit before submit is reflected and one after is not.
+ *
+ * An MB-backed ITEMISED invoice still bills the Measurement Book: its
+ * lines must sum to the MB total, which the submit route proves before it
+ * freezes any money. */
+export const CreateTaxInvoiceRequestSchema = Type.Union([
+  Type.Object(
+    {
+      measurementBookId: UuidSchema,
+      ...invoiceCommonFields,
+      ...cumulativeLineFields,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      measurementBookId: UuidSchema,
+      ...invoiceCommonFields,
+      ...itemisedLineFields,
+    },
+    { additionalProperties: false },
+  ),
+]);
 export type CreateTaxInvoiceRequest = Static<typeof CreateTaxInvoiceRequestSchema>;
 
 /** POST /api/tax-invoices — a DIRECT invoice, raised against a private
  * customer rather than a works contract. It descends from no LOA, so it
  * names no Work and no Measurement Book, and states its own taxable
  * value; everything else — the SAC, the buyer, the GST split, the
- * number, the IRN — behaves exactly as on an MB-backed invoice. */
-export const CreateDirectTaxInvoiceRequestSchema = Type.Object(
-  {
-    invoiceDate: DateOnlySchema,
-    sacCode: SacCodeSchema,
-    serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
-    gstRate: GstRateSchema,
-    placeOfSupply: GstStateCodeSchema,
-    /** See the MB-backed request. Omitted means not yet confirmed. */
-    reverseChargeApplicable: Type.Optional(Type.Boolean()),
-    buyerContactId: UuidSchema,
-    /** What the supply is worth before tax. Stated, because there is no
-     * Measurement Book to measure it. */
-    taxableValue: NonNegativeDecimalStringSchema,
-    customerPoReference: Type.Optional(
-      nonBlankString({ minLength: 3, maxLength: 500 }),
-    ),
-    unitLabel: Type.Optional(
-      Type.String({
-        minLength: 1,
-        maxLength: 20,
-        pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
-      }),
-    ),
-    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
-    shipToContactId: Type.Optional(UuidSchema),
-    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
-  },
-  { additionalProperties: false },
-);
+ * number, the IRN — behaves exactly as on an MB-backed invoice.
+ *
+ * The ITEMISED variant states NO taxable value: the lines already say
+ * what the supply is worth, and asking for the same figure twice would
+ * invite the two to disagree. The server derives it from them. */
+export const CreateDirectTaxInvoiceRequestSchema = Type.Union([
+  Type.Object(
+    {
+      ...invoiceCommonFields,
+      ...cumulativeLineFields,
+      /** What the supply is worth before tax. Stated, because there is no
+       * Measurement Book to measure it. */
+      taxableValue: NonNegativeDecimalStringSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...invoiceCommonFields,
+      ...itemisedLineFields,
+    },
+    { additionalProperties: false },
+  ),
+]);
 export type CreateDirectTaxInvoiceRequest = Static<
   typeof CreateDirectTaxInvoiceRequestSchema
 >;
@@ -189,52 +310,22 @@ export type CreateDirectTaxInvoiceRequest = Static<
 /** PUT /api/tax-invoices/:id — edits the draft's fields. The Measurement
  * Book is the invoice's SUBJECT, not a field: re-pointing an invoice at
  * another MB is delete-and-redraft, so the 0035 finalized-MB insert
- * guard is never sidestepped by an update. */
-export const UpdateTaxInvoiceRequestSchema = Type.Object(
-  {
-    invoiceDate: DateOnlySchema,
-    sacCode: SacCodeSchema,
-    serviceDescription: nonBlankString({ minLength: 3, maxLength: 1000 }),
-    gstRate: GstRateSchema,
-    placeOfSupply: GstStateCodeSchema,
-    /** See the create request. Omitted means not yet confirmed. */
-    reverseChargeApplicable: Type.Optional(Type.Boolean()),
-    buyerContactId: UuidSchema,
-    /** The BUYER's own order reference, printed on the face of the
-     * invoice and verbatim: the paying division matches the bill against
-     * it. One free-text field on purpose — the observed shape is
-     * division / tender number / order number and date, but that grammar
-     * is the railway's, it varies by division, and a parser would refuse
-     * the first invoice that did not match it. */
-    customerPoReference: Type.Optional(
-      nonBlankString({ minLength: 3, maxLength: 500 }),
-    ),
-    /** The unit word beside the quantity ('set'). Per invoice, because
-     * work billed per metre or per job says something else. The column
-     * measures TRIMMED length 1..20, and a floor of one cannot use
-     * nonBlankString — it starts at two — so the pattern demands at
-     * least one non-space character itself. */
-    unitLabel: Type.Optional(
-      Type.String({
-        minLength: 1,
-        maxLength: 20,
-        pattern: '^[\\s\\S]*[^ ][\\s\\S]*$',
-        description: "The unit word beside the quantity, e.g. 'set'.",
-      }),
-    ),
-    /** The Notes block. Falls back to the organisation's standing line
-     * when omitted; nothing to do with the cancellation note. */
-    notes: Type.Optional(nonBlankString({ minLength: 3, maxLength: 4000 })),
-    /** Where the supply is delivered, when that differs from who is
-     * billed. Snapshotted at submit like the buyer. Omitted means the
-     * ship-to block repeats the buyer, which is the common case. */
-    shipToContactId: Type.Optional(UuidSchema),
-    /** Overrides the organisation's house prefix for this invoice's
-     * number; the serial behind it is shared across every prefix. */
-    numberPrefix: Type.Optional(InvoiceNumberPrefixSchema),
-  },
-  { additionalProperties: false },
-);
+ * guard is never sidestepped by an update.
+ *
+ * The line shape IS editable while the invoice is a draft — switching it
+ * replaces the header line with lines or the reverse, and nothing legal
+ * has been minted yet. Once submitted it is frozen with every other
+ * business fact (the 0057 issued-update guard). */
+export const UpdateTaxInvoiceRequestSchema = Type.Union([
+  Type.Object(
+    { ...invoiceCommonFields, ...cumulativeLineFields },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...invoiceCommonFields, ...itemisedLineFields },
+    { additionalProperties: false },
+  ),
+]);
 export type UpdateTaxInvoiceRequest = Static<typeof UpdateTaxInvoiceRequestSchema>;
 
 const ProviderTimestampTextSchema = Type.String({
@@ -331,9 +422,14 @@ export const TaxInvoiceSchema = Type.Object(
      * number agree forever. */
     fyLabel: Type.Union([Type.String(), Type.Null()]),
     invoiceDate: DateOnlySchema,
-    sacCode: SacCodeSchema,
-    serviceDescription: Type.String(),
-    gstRate: DecimalStringSchema,
+    /** Which shape this document is (migration 0057). A per-document
+     * fact, frozen with every other business fact once submitted. */
+    lineShape: TaxInvoiceLineShapeSchema,
+    /** The cumulative service line, carried in the header. All three are
+     * null on an ITEMISED invoice, whose document is its `lines`. */
+    sacCode: Type.Union([SacCodeSchema, Type.Null()]),
+    serviceDescription: Type.Union([Type.String(), Type.Null()]),
+    gstRate: Type.Union([DecimalStringSchema, Type.Null()]),
     placeOfSupply: GstStateCodeSchema,
     /** Explicit submit-time GST liability fact; null only on an unconfirmed
      * draft or a historical issued invoice that predates capture. */
@@ -428,6 +524,9 @@ export const TaxInvoiceDetailResponseSchema = Type.Object(
     issuedSnapshot: Type.Unknown(),
     /** The IRP's signed QR payload; null until the irp-response lands. */
     signedQr: Type.Union([Type.String(), Type.Null()]),
+    /** The lines of an ITEMISED invoice, in position order. Always empty
+     * for a cumulative one, whose single line lives in the header. */
+    lines: Type.Array(TaxInvoiceLineSchema),
   },
   { additionalProperties: false },
 );
