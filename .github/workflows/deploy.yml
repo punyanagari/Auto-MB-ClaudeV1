@@ -1,26 +1,38 @@
 name: Deploy
 
 # Deploys main to the production host after CI passes there. Does nothing
-# until two repository secrets exist (Settings → Secrets and variables →
+# until three repository secrets exist (Settings → Secrets and variables →
 # Actions):
-#   DEPLOY_HOST     the server's public IP (the Elastic IP)
-#   DEPLOY_SSH_KEY  a dedicated OpenSSH private key whose public half is
-#                   appended to /home/ubuntu/.ssh/authorized_keys on the
-#                   host; rotate by replacing both halves
-# The key exists only inside GitHub's encrypted secrets and the server;
-# revoking it is one line out of authorized_keys.
+#   DEPLOY_HOST      the server's public IP (the Elastic IP)
+#   DEPLOY_SSH_KEY   a dedicated OpenSSH private key whose public half is
+#                    appended to /home/ubuntu/.ssh/authorized_keys on the
+#                    host; rotate by replacing both halves
+#   DEPLOY_HOST_KEY  the host's PUBLIC key line(s), pinned (audit finding
+#                    32). Format: the `known_hosts` lines themselves, e.g.
+#                    `<ip> ssh-ed25519 AAAA...`, one per line. Obtained ONCE
+#                    from the host's own console (`ssh-keygen -lf
+#                    /etc/ssh/ssh_host_ed25519_key.pub` to verify the
+#                    fingerprint out of band) — never by trusting whatever a
+#                    deploy-time ssh-keyscan happens to answer, which is the
+#                    machine-in-the-middle window this replaces. Rotation
+#                    procedure: docs/RUNBOOK.md §2a.
+# The private key exists only inside GitHub's encrypted secrets and the
+# server; revoking it is one line out of authorized_keys.
 
 on:
   # Deploys are a deliberate operator action (Run workflow), never a side
   # effect of a merge: audit finding 32 flagged auto-deploy-on-main, and
-  # per-merge AWS deploys were never the intent. Run CI on the commit you
-  # intend to ship before dispatching.
+  # per-merge AWS deploys were never the intent. The dispatched ref must
+  # already have a successful CI run — the job proves that below and
+  # refuses otherwise, so "run CI first" is enforced rather than trusted.
   workflow_dispatch:
 
 # contents:read lets the job mint the ephemeral token the host uses to
-# pull this private repository.
+# pull this private repository. actions:read lets it verify that the
+# target commit has a successful CI run before deploying it.
 permissions:
   contents: read
+  actions: read
 
 # Deploys must not interleave; a queued newer deploy still runs after the
 # current one so the host always converges on the latest main.
@@ -39,20 +51,60 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "DEPLOY_HOST / DEPLOY_SSH_KEY not set; skipping deploy."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # The host key is NOT optional once the deploy is configured:
+          # falling back to ssh-keyscan is exactly the trust-on-first-use
+          # hole finding 32 named, so an unset pin fails the job loudly
+          # rather than silently deploying over an unauthenticated channel.
+          if [ -z "$DEPLOY_HOST_KEY" ]; then
+            echo "DEPLOY_HOST_KEY is not set. Pin the production host key" >&2
+            echo "before deploying (docs/RUNBOOK.md 2a); ssh-keyscan at" >&2
+            echo "deploy time is no longer accepted." >&2
+            exit 1
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      # Finding 32: the workflow deployed whatever main pointed at without
+      # proving the commit had ever passed CI. The dispatched ref's own
+      # head SHA must carry a successful CI run, or the deploy refuses —
+      # so an operator cannot ship a red (or never-tested) commit by
+      # pressing "Run workflow".
+      - name: Require a successful CI run for this commit
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "target commit: $TARGET_SHA"
+          conclusion=$(gh api \
+            "repos/${GH_REPO}/actions/workflows/ci.yml/runs?head_sha=${TARGET_SHA}&status=completed&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          if [ "$conclusion" -lt 1 ]; then
+            echo "No successful CI run found for ${TARGET_SHA}." >&2
+            echo "Run CI on this commit and let it pass before deploying." >&2
+            gh api \
+              "repos/${GH_REPO}/actions/workflows/ci.yml/runs?head_sha=${TARGET_SHA}&per_page=100" \
+              --jq '.workflow_runs[] | "  seen: \(.status)/\(.conclusion // "pending") \(.html_url)"' >&2 || true
+            exit 1
+          fi
+          echo "CI proof: ${conclusion} successful run(s) for ${TARGET_SHA}"
 
       - name: Configure SSH
         if: steps.gate.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           # The secret may hold the key either verbatim or base64-encoded
           # (one line, survives any clipboard); detect and normalise.
@@ -76,19 +128,66 @@ jobs:
             echo "DEPLOY_SSH_KEY does not parse as a private key" >&2
             exit 1
           fi
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # PINNED host key (finding 32) — the deploy authenticates the
+          # server instead of accepting whatever answers on port 22.
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if ! ssh-keygen -l -f ~/.ssh/known_hosts; then
+            echo "DEPLOY_HOST_KEY is not a valid known_hosts entry" >&2
+            exit 1
+          fi
+          # StrictHostKeyChecking=yes: an unknown or changed host key is a
+          # hard failure, never an interactive or silent accept.
+          cat > ~/.ssh/config <<CONFIG
+          Host deploy-target
+            HostName ${DEPLOY_HOST}
+            User ubuntu
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          CONFIG
+          chmod 600 ~/.ssh/config
 
-      - name: Pull, rebuild, migrate, verify
+      - name: Build, migrate, then serve — with rollback
         if: steps.gate.outputs.configured == 'true'
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/deploy_key "ubuntu@$DEPLOY_HOST" \
-            "sudo GITHUB_TOKEN='$GH_TOKEN' GITHUB_REPOSITORY='$GH_REPO' bash -s" <<'DEPLOY'
+          set -euo pipefail
+          ssh deploy-target \
+            "sudo GITHUB_TOKEN='$GH_TOKEN' GITHUB_REPOSITORY='$GH_REPO' TARGET_SHA='$TARGET_SHA' bash -s" <<'DEPLOY'
           set -euo pipefail
           cd /opt/auto-mb
+          COMPOSE="docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production"
+
+          # ---------------------------------------------------------------
+          # 0. Record the CURRENTLY RUNNING image identities before anything
+          #    changes. These are what a failed readiness gate restores
+          #    (finding 32: "no rollback"). Image IDs, not tags: the rebuild
+          #    below moves the tags, so only the id still names the bytes
+          #    that were serving a moment ago.
+          # ---------------------------------------------------------------
+          previous_state() {
+            $COMPOSE ps --format '{{.Service}} {{.Image}} {{.State}}' 2>/dev/null || true
+          }
+          previous_image() {
+            docker inspect --format '{{.Image}}' "$($COMPOSE ps -q "$1" 2>/dev/null | head -n1)" 2>/dev/null || true
+          }
+          PREV_SERVER_IMAGE="$(previous_image server)"
+          PREV_CADDY_IMAGE="$(previous_image caddy)"
+          PREV_COMMIT="$(git rev-parse HEAD)"
+          echo "=== state before deploy ==="
+          previous_state
+          echo "previous commit: ${PREV_COMMIT}"
+          echo "previous server image: ${PREV_SERVER_IMAGE:-<none>}"
+          echo "previous caddy image: ${PREV_CADDY_IMAGE:-<none>}"
+
+          # ---------------------------------------------------------------
+          # 1. Fetch the exact commit the workflow proved CI on.
+          # ---------------------------------------------------------------
           # The repository is private and this shell has no TTY to prompt
           # for credentials; fetch with the job's ephemeral read token,
           # which never touches the host's disk.
@@ -103,36 +202,108 @@ jobs:
             git stash push --include-untracked -m "deploy-autostash before $(git rev-parse --short FETCH_HEAD)"
           fi
           git merge --ff-only FETCH_HEAD
-          docker compose -f deploy/docker-compose.prod.yml \
-            --env-file deploy/.env.production up -d --build
+          # The commit CI was proved on must be the commit being deployed.
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ -n "${TARGET_SHA:-}" ] && [ "$HEAD_SHA" != "$TARGET_SHA" ]; then
+            echo "host is at ${HEAD_SHA} but CI was proved on ${TARGET_SHA}" >&2
+            echo "(main moved during the deploy); refusing to serve unproven code" >&2
+            exit 1
+          fi
+
+          # ---------------------------------------------------------------
+          # 2. BUILD images without touching the running containers.
+          #    `up -d` is deliberately not used here: it would recreate the
+          #    app before migrations run, which is finding 32's ordering
+          #    defect (operations contract rule 3).
+          # ---------------------------------------------------------------
+          $COMPOSE build
+
           set -a; . deploy/.env.production; set +a
-          # Bootstrap = ensure application role + migrations + reapply the
-          # canonical privilege matrix + prove an application-role query.
-          # Idempotent and advisory-lock-guarded; safe on every deploy.
-          docker compose -f deploy/docker-compose.prod.yml \
-            --env-file deploy/.env.production exec -T \
+
+          # ---------------------------------------------------------------
+          # 3. MIGRATE TO COMPLETION, before any app container is recreated.
+          #    The database service must be up (it is the only dependency
+          #    migrations have); the migration runs in a ONE-OFF container
+          #    built from the NEW image, so the old server containers keep
+          #    serving untouched throughout. A failed migration exits here
+          #    and step 4 never happens — the old containers are still the
+          #    ones answering traffic.
+          #    Bootstrap = ensure application role + migrations + reapply
+          #    the canonical privilege matrix + prove an application-role
+          #    query. Idempotent and advisory-lock-guarded.
+          # ---------------------------------------------------------------
+          $COMPOSE up -d --wait postgres
+          if ! $COMPOSE run --rm --no-deps -T \
             -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
             -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
             -e DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@postgres:5432/auto_mb" \
-            server pnpm --filter @auto-mb/db bootstrap < /dev/null
-          # (the </dev/null matters: without it, docker exec attaches to
-          # this script's stdin and swallows the lines below)
-          # The deploy is not done until the site answers READY — every
-          # configured component, scanner included. Retries cover the
-          # scanner's warm-up window after a container recreation.
+            server pnpm --filter @auto-mb/db bootstrap < /dev/null; then
+            echo "migrations failed; the previously running containers were never replaced" >&2
+            echo "=== state (unchanged) ==="
+            previous_state
+            exit 1
+          fi
+
+          # ---------------------------------------------------------------
+          # 4. Only now recreate the application containers.
+          # ---------------------------------------------------------------
+          $COMPOSE up -d
+
+          # ---------------------------------------------------------------
+          # 5. Readiness gate, with automatic rollback on failure.
+          #    The deploy is not done until the site answers READY — every
+          #    configured component, scanner included. Retries cover the
+          #    scanner's warm-up window after a container recreation.
+          # ---------------------------------------------------------------
+          ready() {
+            curl -fsSk --max-time 15 \
+              --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
+              "https://${SITE_ADDRESS}/api/ready"
+          }
           for attempt in $(seq 1 24); do
-            if body=$(curl -fsSk --max-time 15 \
-                --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
-                "https://${SITE_ADDRESS}/api/ready"); then
+            if body=$(ready); then
               echo "$body"
-              echo "deploy verified: site is ready"
+              echo "deploy verified: site is ready at ${HEAD_SHA}"
+              echo "=== state after deploy ==="
+              previous_state
               exit 0
             fi
             echo "not ready yet (attempt $attempt)"
             sleep 10
           done
-          echo "site did not become ready" >&2
-          curl -sk --resolve "${SITE_ADDRESS}:443:127.0.0.1" \
-            "https://${SITE_ADDRESS}/api/ready" || true
+
+          echo "site did not become ready; rolling back" >&2
+          echo "=== FAILED state (new containers) ===" >&2
+          previous_state >&2
+          ready || true
+          # Roll back to the image identities captured in step 0. Migrations
+          # are additive and forward-only (docs/OPERATIONS.md §4), so the
+          # previous image runs against the migrated schema; the schema is
+          # deliberately NOT rolled back.
+          rollback_ok=0
+          if [ -n "$PREV_SERVER_IMAGE" ] && [ -n "$PREV_CADDY_IMAGE" ]; then
+            echo "restoring server to ${PREV_SERVER_IMAGE}" >&2
+            echo "restoring caddy to ${PREV_CADDY_IMAGE}" >&2
+            # Return the checkout to the previous commit so the compose
+            # definitions and the restored images describe the SAME
+            # release, then point compose's build tags back at the image
+            # ids that were serving before this deploy and recreate from
+            # them without rebuilding.
+            git reset --hard "$PREV_COMMIT"
+            docker tag "$PREV_SERVER_IMAGE" auto-mb-prod-server:latest || rollback_ok=1
+            docker tag "$PREV_CADDY_IMAGE" auto-mb-prod-caddy:latest || rollback_ok=1
+            $COMPOSE up -d --no-build --force-recreate || rollback_ok=1
+          else
+            echo "no previous containers were running; nothing to roll back to" >&2
+            rollback_ok=1
+          fi
+          echo "=== state after rollback ===" >&2
+          previous_state >&2
+          if [ "$rollback_ok" -eq 0 ] && ready >/dev/null 2>&1; then
+            echo "rollback verified: the previous release is serving again" >&2
+          else
+            echo "ROLLBACK DID NOT REACH READY — manual intervention required" >&2
+          fi
+          # Either way the deploy failed: exit nonzero so the workflow is red.
           exit 1
           DEPLOY

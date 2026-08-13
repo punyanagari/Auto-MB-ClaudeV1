@@ -36,6 +36,12 @@ services:
       - clamav-db:/var/lib/clamav
 
   server:
+    # Explicit build tag: the deploy workflow's rollback re-points this
+    # exact tag at the image id that was serving before a failed deploy and
+    # recreates from it (.github/workflows/deploy.yml). Relying on
+    # compose's derived default name would make that restore depend on an
+    # undocumented naming convention.
+    image: auto-mb-prod-server:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.server
@@ -92,6 +98,8 @@ services:
       - /var/lib/auto-mb/backup-status:/backup-status:ro
 
   caddy:
+    # Same explicit tag rationale as `server` above.
+    image: auto-mb-prod-caddy:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
