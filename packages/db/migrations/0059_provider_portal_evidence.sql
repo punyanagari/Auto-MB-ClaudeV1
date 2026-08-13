@@ -1,4 +1,4 @@
--- Migration 0058: record WHICH portal answered a statutory provider
+-- Migration 0059: record WHICH portal answered a statutory provider
 -- operation (finding 2 residue, docs/AUDIT-DISPOSITION-2026-08-10.md).
 --
 -- The operation ledger already retained WHAT was sent and WHAT came back
@@ -22,6 +22,13 @@
 -- those operations ran is not recoverable from anything in the database —
 -- and NULL honestly reads "not recorded" rather than asserting a portal
 -- that may be wrong. The column is therefore nullable by design.
+--
+-- Numbering note: 0058 is deliberately skipped — it is reserved by the
+-- omission/variation reference branch in flight. The migration runner keys
+-- strictly on the four-digit id (packages/db/src/migration-runner.ts
+-- refuses duplicates and hash/rename drift but never requires
+-- contiguity), so the gap is safe and 0058 can land later in either
+-- order. 0052 and 0057 set the same precedent.
 
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '5min';
@@ -34,7 +41,7 @@ ALTER TABLE statutory_provider_operations
     );
 
 COMMENT ON COLUMN statutory_provider_operations.provider_portal IS
-  'Which portal answered: the NIC IRP the adapter routed to and the provider host it routed through. NULL on rows that predate migration 0058; never backfilled, because the portal then in force is not recoverable.';
+  'Which portal answered: the NIC IRP the adapter routed to and the provider host it routed through. NULL on rows that predate migration 0059; never backfilled, because the portal then in force is not recoverable.';
 
 -- ---------------------------------------------------------------------------
 -- The append-once guard, recreated verbatim from 0053's text with one
