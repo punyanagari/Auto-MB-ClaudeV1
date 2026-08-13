@@ -64,6 +64,10 @@ import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
+import {
+  EMPTY_TRUST_ANCHOR_STORE,
+  type TrustAnchorStore,
+} from './pdf-signature.js';
 import { recordRegisteredRoutes } from './tenant-route.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard } from './origin-guard.js';
@@ -89,6 +93,13 @@ export interface BuildAppOptions {
   /** clamd endpoint for upload malware scanning. Unset disables scanning
    * (development posture — docs/SECURITY.md); production sets it. */
   readonly clamav?: { readonly host: string; readonly port: number };
+  /** Trust anchors for verifying digital signatures on inbound railway
+   * PDFs (migration 0060). Loaded by main.ts from
+   * AUTO_MB_PDF_TRUST_ANCHORS. Unset means signatures are still verified
+   * cryptographically and recorded, but no trust decision is made and no
+   * document can reach the `signed_and_intact` state — never that
+   * signatures are ignored. */
+  readonly pdfTrustAnchors?: TrustAnchorStore;
   /** Enables GET /metrics (Prometheus text format) behind this bearer
    * token. Unset disables the endpoint entirely. */
   readonly metricsToken?: string;
@@ -812,8 +823,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerSerialRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
-    registerLoaRoutes(app, authInstance, database, storage, scanner);
-    registerContractSourceRoutes(app, authInstance, database, storage, scanner);
+    const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
+    registerLoaRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      scanner,
+      pdfTrustAnchors,
+    );
+    registerContractSourceRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      scanner,
+      pdfTrustAnchors,
+    );
     registerChallanRoutes(
       app,
       authInstance,

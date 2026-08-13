@@ -80,6 +80,11 @@ import {
   type ChainResult,
   type TrustAnchorStore,
 } from './pdf-signature/trust-anchors.js';
+import type {
+  PdfDocumentSignatureStatus,
+  PdfSignatureReport,
+  PdfSignatureVerdict,
+} from '@auto-mb/contracts';
 
 export {
   TRUST_ANCHOR_PATH_ENV,
@@ -101,158 +106,26 @@ export {
 export const PDF_SIGNATURE_VERIFIER_VERSION = '1';
 
 /**
- * What the document as a whole is. Exactly one of these is green
- * (`signed_and_intact`); every other value is a state a reviewer has to
- * look at.
+ * The verdict shapes live in `@auto-mb/contracts` and are re-exported
+ * here, so the type this module produces, the type the API transports, the
+ * type the browser renders, and the JSON Schema that validates the
+ * `loa_documents.signature_verdict` column are one definition rather than
+ * four that drift.
  *
- * The owner's brief named four; this carries eight, because collapsing the
- * extra four would hide precisely the distinctions the brief asked for:
- *
- * - `signature_invalid` (the signature does not verify under its own
- *   certificate's key) is not the same event as
- *   `signed_but_modified_after_signing` (the bytes moved out from under a
- *   signature that is otherwise fine).
- * - `signature_unverifiable` (this verifier could not read the signature)
- *   is not a judgement about the document at all.
- * - `signed_chain_not_checked` (no trust anchors are installed) must never
- *   be reported as `signed_but_untrusted_chain`, which would blame a
- *   document for an operator's missing configuration.
- * - `signed_chain_expired` is the state most of the real corpus is in and
- *   the one most worth separating. A Class 3 DSC lives two years; a
- *   variation order signed in 2024 by a certificate that expired in 2026
- *   has a complete, cryptographically valid path to the CCA India root and
- *   was signed while that certificate was live — but IREPS applies no
- *   timestamp, so nothing independent PROVES the signature predates the
- *   expiry. Calling that "untrusted chain", the same words used for a
- *   certificate from an unknown issuer, would train a reviewer to ignore
- *   the field within a month. It is not green either: it is its own amber
- *   fact, and the panel states exactly which certificate expired and when.
+ * `packages/contracts/src/pdf-signature.ts` carries the meaning of every
+ * status — in particular why there are eight document statuses rather than
+ * the four the brief named, and why exactly one of them may render green.
  */
-export type PdfDocumentSignatureStatus =
-  | 'unsigned'
-  | 'signed_and_intact'
-  | 'signed_but_untrusted_chain'
-  | 'signed_chain_expired'
-  | 'signed_chain_not_checked'
-  | 'signed_but_modified_after_signing'
-  | 'signature_invalid'
-  | 'signature_unverifiable';
+export type {
+  PdfDocumentSignatureStatus,
+  PdfSignatureReport,
+  PdfSignatureVerdict,
+  SignatureIntegrity,
+  StoredPdfSignatureStatus,
+} from '@auto-mb/contracts';
 
-export type SignatureIntegrity =
-  | 'intact'
-  | 'digest_mismatch'
-  | 'signature_invalid'
-  | 'unverifiable';
-
-export interface SignerIdentity {
-  /** From the certificate — this is the evidence. */
-  readonly commonName: string | null;
-  readonly organisation: string | null;
-  readonly organisationalUnit: string | null;
-  readonly subject: string | null;
-  readonly issuerCommonName: string | null;
-  readonly certificateSerialNumber: string | null;
-  /** From the PDF `/Name` entry — a CLAIM by the signing application, kept
-   * beside the certificate subject so a mismatch between the two is
-   * visible rather than resolved silently. */
-  readonly declaredName: string | null;
-}
-
-export interface SignatureTimestamp {
-  readonly present: boolean;
-  /** The time a TSA attested to, ISO-8601. */
-  readonly time: string | null;
-  readonly status: 'absent' | 'verified' | 'unverified';
-  readonly reason: string;
-  readonly authoritySubject: string | null;
-}
-
-export interface SignatureCoverage {
-  /** The single question that matters for the append attack: are the bytes
-   * now in the file entirely covered by this signature? */
-  readonly coversWholeDocument: boolean;
-  readonly signedByteCount: number;
-  readonly unsignedBytesAfter: number;
-  /** How many incremental updates (`%%EOF` markers) follow this
-   * signature's coverage. Non-zero is NORMAL for every signature but the
-   * last in a countersigned document. */
-  readonly revisionsAfter: number;
-  /** Whether those trailing bytes are themselves covered by a later
-   * signature that verified. When true, the later content is attributable
-   * to a named later signer; when false, it is anonymous. */
-  readonly trailingBytesCoveredByLaterSignature: boolean;
-}
-
-export interface SignatureRevocation {
-  readonly status: 'not_checked';
-  readonly reason: 'network_egress_not_available';
-  /** Whether the signature shipped revocation material of its own (a
-   * PAdES-LT style CRL/OCSP set). Reported because its absence is the
-   * reason offline revocation checking is impossible for this document,
-   * not merely a policy choice. */
-  readonly embeddedRevocationData: boolean;
-}
-
-export interface PdfSignatureVerdict {
-  /** 1-based, in file order. */
-  readonly index: number;
-  readonly subFilter: string | null;
-  readonly filter: string | null;
-  readonly signer: SignerIdentity;
-  /** ISO-8601, or null. Always a CLAIM: `/M` and the CMS `signingTime`
-   * attribute are both written by the signing client. */
-  readonly claimedSigningTime: string | null;
-  readonly claimedSigningTimeSource: 'signature_dictionary' | 'signed_attribute' | 'none';
-  readonly timestamp: SignatureTimestamp;
-  readonly reason: string | null;
-  readonly location: string | null;
-  readonly contactInfo: string | null;
-  readonly integrity: SignatureIntegrity;
-  /** Plain sentence explaining a non-intact integrity, or null. */
-  readonly integrityDetail: string | null;
-  readonly digestAlgorithm: string | null;
-  /** True for SHA-1. The signature still proves the key was applied, but
-   * the digest no longer proves the bytes are unique. Every IREPS document
-   * in the corpus is in this state (`adbe.pkcs7.sha1`), so this is
-   * disclosure, not rejection. */
-  readonly weakDigest: boolean;
-  /** Whether the signed ESS `signing-certificate(-v2)` attribute binds the
-   * certificate that was actually used. `absent` is normal for the Adobe
-   * SubFilters and a hard failure for `ETSI.CAdES.detached`, which
-   * requires it. */
-  readonly signingCertificateBinding: SigningCertificateBinding;
-  readonly chain: ChainResult;
-  readonly revocation: SignatureRevocation;
-  readonly coverage: SignatureCoverage;
-  /** A certification (DocMDP) signature declares what later changes are
-   * permitted. Recorded; not yet enforced. */
-  readonly certification: {
-    readonly docMdp: boolean;
-    readonly permissions: number | null;
-  };
-}
-
-export interface PdfSignatureReport {
-  readonly status: PdfDocumentSignatureStatus;
-  readonly signatureCount: number;
-  readonly signatures: readonly PdfSignatureVerdict[];
-  /** Signature dictionaries that were present but could not be read. A
-   * document holding one of these is never reported as unsigned. */
-  readonly unreadableSignatures: readonly {
-    readonly offset: number;
-    readonly reason: string;
-  }[];
-  readonly fileLength: number;
-  /** Bytes at the end of the file covered by no signature at all. */
-  readonly unsignedTrailingBytes: number;
-  readonly trustAnchors: {
-    readonly configured: boolean;
-    readonly count: number;
-    readonly source: string | null;
-  };
-  readonly verifiedAt: string;
-  readonly verifierVersion: string;
-}
+type SignatureTimestamp = PdfSignatureVerdict['timestamp'];
+type SignatureIntegrity = PdfSignatureVerdict['integrity'];
 
 export interface VerifyPdfSignaturesOptions {
   readonly trustAnchors?: TrustAnchorStore;
@@ -276,6 +149,13 @@ function rdn(distinguishedName: string | null, key: string): string | null {
 
 function toIso(value: Date | null): string | null {
   return value === null ? null : value.toISOString();
+}
+
+/** The chain result as the transport shape: same facts, mutable arrays,
+ * and `reason` widened to the string the contract carries so a new reason
+ * never needs a contract change to be reportable. */
+function toTransportChain(chain: ChainResult): PdfSignatureVerdict['chain'] {
+  return { ...chain, path: chain.path.map((entry) => ({ ...entry })) };
 }
 
 /**
@@ -414,7 +294,7 @@ function unverifiableVerdict(
       signingCertificateBinding: 'absent',
       chain: {
         status: 'not_checked',
-        reason: 'signing_certificate_not_in_signature',
+        reason: 'signature_not_readable',
         reachesConfiguredAnchor: false,
         anchorSubject: null,
         path: [],
@@ -563,12 +443,14 @@ function verifyField(
       digestAlgorithm: signer.digestAlgorithm,
       weakDigest: WEAK_DIGESTS.has(signer.digestAlgorithm),
       signingCertificateBinding,
-      chain: validateChain(
-        certificate,
-        signedData.certificates,
-        anchors,
-        chainReferenceTime,
-        claimed,
+      chain: toTransportChain(
+        validateChain(
+          certificate,
+          signedData.certificates,
+          anchors,
+          chainReferenceTime,
+          claimed,
+        ),
       ),
       revocation: {
         status: 'not_checked',
@@ -673,7 +555,7 @@ export function verifyPdfSignatures(
     ),
     signatureCount: signatures.length + scan.malformed.length,
     signatures,
-    unreadableSignatures: scan.malformed,
+    unreadableSignatures: scan.malformed.map((entry) => ({ ...entry })),
     fileLength: scan.fileLength,
     unsignedTrailingBytes,
     trustAnchors: {

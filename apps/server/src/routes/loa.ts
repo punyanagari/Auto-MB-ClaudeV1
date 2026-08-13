@@ -16,6 +16,7 @@ import {
   type ConfirmWorkRequest,
   type LoaDocument,
   type LoaDocumentDetail,
+  type PdfSignatureReport,
   type LoaLetterNumberMatch,
   type PaymentMatrixCategory,
   type Work,
@@ -45,6 +46,8 @@ import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.j
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import type { TrustAnchorStore } from '../pdf-signature.js';
 import type { ObjectStorage } from '../storage.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -82,6 +85,8 @@ interface LoaDocumentRow {
   confirmed_work_id: string | null;
   created_at: Date;
   extraction_payload?: unknown;
+  signature_status: LoaDocument['signatureStatus'];
+  signature_verdict?: unknown;
 }
 
 function toDocument(row: LoaDocumentRow): LoaDocument {
@@ -93,6 +98,7 @@ function toDocument(row: LoaDocumentRow): LoaDocument {
     extractionStatus: row.extraction_status,
     confirmedWorkId: row.confirmed_work_id,
     createdAt: row.created_at.toISOString(),
+    signatureStatus: row.signature_status,
   };
 }
 
@@ -104,6 +110,11 @@ function toDocumentDetail(
     ...toDocument(row),
     extractionPayload: parseJsonbColumn(row.extraction_payload),
     letterNumberMatches: [...letterNumberMatches],
+    // Null only when the row predates migration 0060; the status column
+    // says `not_checked` in exactly that case and never claims the
+    // document is unsigned.
+    signatureVerdict:
+      (parseJsonbColumn(row.signature_verdict) as PdfSignatureReport | null) ?? null,
   };
 }
 
@@ -577,6 +588,7 @@ export function registerLoaRoutes(
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
+  pdfTrustAnchors: TrustAnchorStore,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   tenantRoute(
@@ -615,6 +627,15 @@ export function registerLoaRoutes(
         await assertNotDuplicateUpload(tx, sha256);
       });
       await assertNotMalware(scanner, body);
+
+      // Signature verification runs on the bytes as received, before
+      // anything else touches them, and its verdict is stored with the
+      // row it describes (migration 0060). It never refuses the upload:
+      // an unsigned or badly-signed letter is still the letter the
+      // organisation was sent, and refusing it here would take the
+      // decision away from the owner, who has to make it per document
+      // type. Pure CPU, so it runs outside the transaction.
+      const signature = verifyUploadedPdf(body, pdfTrustAnchors, request.log);
 
       const documentId = crypto.randomUUID();
       const objectKey = `${organisationId}/loa/${documentId}.pdf`;
@@ -667,16 +688,18 @@ export function registerLoaRoutes(
             insert into loa_documents (
               id, organisation_id, object_key, original_filename, sha256,
               media_type, size_bytes, extraction_status, extraction_payload,
-              uploaded_by_user_id
+              uploaded_by_user_id, signature_status, signature_verdict,
+              signature_verified_at
             )
             values (
               ${documentId}, ${organisationId}, ${objectKey}, ${filename},
               ${sha256}, 'application/pdf', ${body.length}, ${status},
-              ${jsonb(tx, payload)}, ${user.id}
+              ${jsonb(tx, payload)}, ${user.id}, ${signature.status},
+              ${jsonb(tx, signature.verdict)}, ${signature.verifiedAt}
             )
             returning id, original_filename, sha256, size_bytes,
                       extraction_status, confirmed_work_id, created_at,
-                      extraction_payload
+                      extraction_payload, signature_status, signature_verdict
           `;
         if (!inserted) throw new Error('loa_documents insert returned no row');
 
@@ -687,7 +710,13 @@ export function registerLoaRoutes(
             values (
               ${organisationId}, ${user.id}, 'loa.uploaded', 'loa_documents',
               ${documentId},
-              ${jsonb(tx, { filename, sha256, sizeBytes: body.length, extractionStatus: status })}
+              ${jsonb(tx, {
+                filename,
+                sha256,
+                sizeBytes: body.length,
+                extractionStatus: status,
+                signatureStatus: signature.status,
+              })}
             )
           `;
         // Computed in the same transaction that inserted the row, so the
@@ -731,7 +760,8 @@ export function registerLoaRoutes(
           // writers who run intake, on request.
           return tx<LoaDocumentRow[]>`
               select id, original_filename, sha256, size_bytes,
-                     extraction_status, confirmed_work_id, created_at
+                     extraction_status, confirmed_work_id, created_at,
+                     signature_status
               from loa_documents
               where document_kind = 'loa'
                 and (${includeDiscarded} or extraction_status <> 'discarded')
@@ -744,7 +774,8 @@ export function registerLoaRoutes(
         const full = membership !== undefined && membership.work_scope !== 'assigned';
         return tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
-                   extraction_status, confirmed_work_id, created_at
+                   extraction_status, confirmed_work_id, created_at,
+                   signature_status
             from loa_documents
             where document_kind = 'loa'
               and confirmed_work_id is not null
@@ -775,7 +806,7 @@ export function registerLoaRoutes(
         const [found] = await tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at,
-                   extraction_payload
+                   extraction_payload, signature_status, signature_verdict
             from loa_documents
             where id = ${id} and document_kind = 'loa'
           `;
