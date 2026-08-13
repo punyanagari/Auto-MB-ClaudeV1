@@ -793,6 +793,10 @@ describe('warranty/guarantee certificate (Milestone 7)', () => {
         : (event?.details as Record<string, unknown>);
     expect(Object.keys(details).sort()).toEqual([
       'challanNumber',
+      // Which movement was issued (migration 0056): a work challan and a
+      // standalone one are different documents with different numbering,
+      // and the trail says which one this was.
+      'kind',
       'sequence',
       'totalAmount',
     ]);

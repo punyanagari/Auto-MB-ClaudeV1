@@ -199,12 +199,24 @@ export function ChallanDetail({
     api
       .getChallan(organisationId, challanId)
       .then(async (loaded) => {
+        // This screen is a WORK challan's: its evidence, its serials, its
+        // corrections all read through the Work. A standalone challan
+        // (migration 0056) has none of that and lives in the Delivery
+        // Challan register instead, so it is turned away here rather than
+        // half-rendered.
+        if (loaded.challan.workId === null) {
+          setLoadError(
+            'This is a standalone Delivery Challan; open it from the Delivery Challans register.',
+          );
+          return;
+        }
+        const workId = loaded.challan.workId;
         // Delivery evidence only exists once the challan is issued.
         if (loaded.challan.status === 'issued') {
           const [loadedReceipt, workSerials, loadedEligibility, loadedNotices] =
             await Promise.all([
               api.getReceipt(organisationId, challanId),
-              api.listWorkSerials(organisationId, loaded.challan.workId),
+              api.listWorkSerials(organisationId, workId),
               api.challanCorrectionEligibility(organisationId, challanId),
               api.listChallanCorrectionNotices(organisationId, challanId),
             ]);
@@ -226,7 +238,7 @@ export function ChallanDetail({
           // the draft page is missing.
           const [work, workSerials] = await Promise.all([
             api.getWork(organisationId, loaded.challan.workId),
-            api.listWorkSerials(organisationId, loaded.challan.workId),
+            api.listWorkSerials(organisationId, workId),
           ]);
           setReceipt(null);
           setSerials(workSerials.filter((s) => s.deliveryChallanId === challanId));
@@ -301,6 +313,12 @@ export function ChallanDetail({
   }
 
   const { challan, items } = detail;
+  // The lines a correction can restate: Work item lines only. A manual
+  // (non-LOA) line names no schedule item, so there is no sanctioned
+  // quantity for a correction to move, and the server says so by name.
+  const correctableItems = items.filter(
+    (item): item is ChallanItem & { workItemId: string } => item.workItemId !== null,
+  );
   const total = exactTotal(items);
   const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
   const recordedOn = (challanItemId: string) =>
@@ -308,7 +326,7 @@ export function ChallanDetail({
   // The draft's serial-tracked lines, with what is recorded against each.
   // The server counts the same way before it lets the challan be issued.
   const trackedLines = items
-    .filter((item) => serialTracked.has(item.workItemId))
+    .filter((item) => item.workItemId !== null && serialTracked.has(item.workItemId))
     .map((item) => ({
       item,
       recorded: recordedOn(item.id),
@@ -929,7 +947,11 @@ export function ChallanDetail({
                           address: formValue(data, 'correction-consignee-address'),
                           ...(phone.length > 0 ? { phone } : {}),
                         },
-                        items: items.map((item) => ({
+                        // A correction restates Work item quantities; the
+                        // server refuses a manual line here by name
+                        // (CORRECTION_LINE_REQUIRES_WORK_ITEM), so the
+                        // form never offers one.
+                        items: correctableItems.map((item) => ({
                           workItemId: item.workItemId,
                           quantity: formValue(
                             data,
@@ -994,7 +1016,7 @@ export function ChallanDetail({
                     maxLength={30}
                   />
                 </Field>
-                {items.map((item) => (
+                {correctableItems.map((item) => (
                   <Field key={item.workItemId}>
                     <label htmlFor={`correction-qty-${item.workItemId}`}>
                       Quantity — {item.description}

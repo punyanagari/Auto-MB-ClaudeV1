@@ -62,12 +62,45 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
 7. Cancelling an issued challan requires a note, retains the number forever, reverses its ledger contribution, and never deletes history.
 8. A signed-copy attachment may be added after issue.
 
+### Delivery Challan module (three movements)
+
+The Delivery Challan is the MOVEMENT document. The Issue Challan is stock
+issuance out of a consignee's store and is a different instrument entirely.
+Delivery Challans therefore cover three cases, and the register lists all of
+them side by side:
+
+| Movement        | Work | Lines                                  | Quantity ledger |
+| --------------- | ---- | -------------------------------------- | --------------- |
+| `loa_supply`    | yes  | Work items only                        | counted         |
+| `work_material` | yes  | Work items plus manual (non-LOA) lines | Work items only |
+| `standalone`    | no   | manual lines only                      | never           |
+
+- A **manual line** carries its own description, unit, rate and quantity. It is
+  the installation material — poles, bolts, consumables — that rides on the
+  same document as sanctioned supply but is on no LOA schedule.
+- A **standalone challan** is a despatch to a private customer, a vendor, or a
+  job worker. Its consignee comes from the contacts master and is snapshotted
+  onto the document at draft time; at most one open draft exists per consignee.
+  Its number is gap-free per (organisation, financial year), default
+  `DC/{FY}/{SEQ:3}`.
+- **Ledger inertness** is the governing rule: only a line that names a Work
+  item, on a challan that names a Work, may move the quantity ledger. Manual
+  and standalone lines take no purchase-order receipt link, take no serials,
+  are invisible to Measurement Book sourcing and to the work-completion maths,
+  and never enter the delivery-ceiling check.
+- **Reach:** work-scope binds through a Work. A member without organisation-wide
+  work scope reaches no standalone challan at all, because no assignment could
+  ever grant one.
+- Statutory movement facts (HSN, movement reason, party GSTIN) and e-way bills
+  for these documents are a later stage and are not part of this module.
+
 ### Quantity ledger
 
 For each Work item:
 
 ```text
-issued_quantity    = sum(quantity on issued, non-cancelled DC lines)
+issued_quantity    = sum(quantity on issued, non-cancelled DC lines
+                         that name this Work item)
 remaining_quantity = max(awarded_quantity - issued_quantity, 0)
 ```
 
@@ -75,19 +108,20 @@ The system must prevent issue above the awarded quantity unless the Work explici
 
 ## 3. Domain glossary
 
-| Term         | Meaning                                                                 |
-| ------------ | ----------------------------------------------------------------------- |
-| Organisation | A tenant/legal entity using Auto-MB                                     |
-| LOA          | Railway Letter of Acceptance defining the awarded contract              |
-| Work         | One awarded contract created from one confirmed LOA                     |
-| Schedule     | A grouping of awarded lines inside a Work                               |
-| Work item    | One awarded description, unit, quantity, and effective rate             |
-| DC           | Delivery Challan accompanying delivered material                        |
-| Consignee    | Railway/site party receiving material                                   |
-| MB           | Record, on-account, or final Measurement Book used for staged billing   |
-| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records                 |
-| GST invoice  | Direct or MB-backed tax invoice; locally issued before IRP registration |
-| E-way bill   | Statutory movement record associated with a submitted tax invoice       |
+| Term         | Meaning                                                                  |
+| ------------ | ------------------------------------------------------------------------ |
+| Organisation | A tenant/legal entity using Auto-MB                                      |
+| LOA          | Railway Letter of Acceptance defining the awarded contract               |
+| Work         | One awarded contract created from one confirmed LOA                      |
+| Schedule     | A grouping of awarded lines inside a Work                                |
+| Work item    | One awarded description, unit, quantity, and effective rate              |
+| DC           | Delivery Challan accompanying moving material (Work-bound or standalone) |
+| Manual line  | A DC line that names no Work item: non-LOA material, inert to the ledger |
+| Consignee    | Railway/site party receiving material                                    |
+| MB           | Record, on-account, or final Measurement Book used for staged billing    |
+| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records                  |
+| GST invoice  | Direct or MB-backed tax invoice; locally issued before IRP registration  |
+| E-way bill   | Statutory movement record associated with a submitted tax invoice        |
 
 ## 4. Initial roles
 
@@ -104,11 +138,11 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 
 1. **Work identity:** `work_code` is 1–20 uppercase letters, digits, `-`, `_`, or `/`, begins alphanumeric, and is unique forever within an organisation, including soft-deleted Works.
 2. **Letter identity:** LOA letter number is unique forever within an organisation.
-3. **One draft:** at most one draft DC per Work.
-4. **Gap-free issue sequence:** numbers are assigned only at issue, serialised per Work, and never reused after cancellation.
-5. **Quantity ceiling:** issued quantity cannot exceed awarded quantity unless excess delivery is explicitly enabled.
+3. **One draft:** at most one draft DC per Work, and at most one open standalone draft per consignee contact.
+4. **Gap-free issue sequence:** numbers are assigned only at issue, serialised per Work — or per financial year for a standalone challan — and never reused after cancellation.
+5. **Quantity ceiling:** issued quantity cannot exceed awarded quantity unless excess delivery is explicitly enabled. Only Work item lines count towards it; manual and standalone lines are inert.
 6. **Positive quantities:** quantities are strictly positive; authoritative rates are non-negative decimal values.
-7. **No duplicate item line:** one Work item appears at most once in a DC.
+7. **No duplicate item line:** one Work item appears at most once in a DC. A challan may carry any number of manual lines, which name no Work item.
 8. **Date rules:** document dates are not in the future and not before the LOA date.
 9. **Lifecycle:** drafts may be deleted; issued records cancel and remain immutable. Where a table is denied DELETE for retention, its pre-issue exit is a terminal soft state instead — an LOA intake package discards while it is still nobody's Work, and never afterwards.
 10. **Snapshot integrity:** issued PDF content is generated from the stored issued snapshot, not current master data.

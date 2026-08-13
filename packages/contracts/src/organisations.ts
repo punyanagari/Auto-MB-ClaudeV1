@@ -130,14 +130,18 @@ export const IrpReportingWindowDaysSchema = Type.Integer({
 });
 export type IrpReportingWindowDays = Static<typeof IrpReportingWindowDaysSchema>;
 
-/** The five documents whose number format an organisation may define.
- * Every other numbered document keeps its fixed format. */
+/** The six documents whose number format an organisation may define.
+ * Every other numbered document keeps its fixed format. The standalone
+ * Delivery Challan is its own type because it belongs to no Work: it
+ * counts per financial year rather than per Work, so it can neither share
+ * the work challan's counter nor its {WORK} token. */
 export const NUMBERED_DOCUMENT_TYPES = [
   'delivery_challan',
   'issue_challan',
   'tax_invoice',
   'budgetary_quotation',
   'credit_note',
+  'standalone_challan',
 ] as const;
 export const NumberedDocumentTypeSchema = Type.Union(
   NUMBERED_DOCUMENT_TYPES.map((value) => Type.Literal(value)),

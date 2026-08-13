@@ -292,15 +292,10 @@ export function trimmedDescription(value: string): string {
   return trimmed;
 }
 
-/** April-to-March financial year label from a date-only string —
- * '2027-03-31' -> '2026-27', '2027-04-01' -> '2027-28'. String parts
- * only; a legal date never round-trips through a timezone (rule 6). */
-export function financialYearLabel(invoiceDate: string): string {
-  const year = Number(invoiceDate.slice(0, 4));
-  const month = Number(invoiceDate.slice(5, 7));
-  const startYear = month >= 4 ? year : year - 1;
-  return `${String(startYear)}-${String((startYear + 1) % 100).padStart(2, '0')}`;
-}
+/** Re-exported from its own module (apps/server/src/financial-year.ts)
+ * since migration 0056 gave the standalone Delivery Challan a
+ * per-financial-year counter too; every existing importer is unchanged. */
+export { financialYearLabel } from '../../financial-year.js';
 
 export interface BuyerRow {
   id: string;

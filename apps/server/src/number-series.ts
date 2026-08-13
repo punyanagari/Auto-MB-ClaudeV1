@@ -1,11 +1,11 @@
 /**
  * Document number templates, defined by the organisation.
  *
- * Four documents let their format be configured — the delivery challan,
- * the issue challan, the tax invoice and the budgetary quotation. Every
- * other numbered document keeps its fixed format; a template engine
- * pointed at documents nobody asked to re-format is surface area with no
- * demand behind it.
+ * Six documents let their format be configured — the delivery challan,
+ * the standalone delivery challan, the issue challan, the tax invoice,
+ * the credit note and the budgetary quotation. Every other numbered
+ * document keeps its fixed format; a template engine pointed at documents
+ * nobody asked to re-format is surface area with no demand behind it.
  *
  * An organisation that configures nothing keeps exactly the numbers it
  * has always had: DEFAULT_TEMPLATES below are the strings the routes used
@@ -26,6 +26,7 @@ export const NUMBERED_DOCUMENT_TYPES = [
   'tax_invoice',
   'budgetary_quotation',
   'credit_note',
+  'standalone_challan',
 ] as const;
 
 export type NumberedDocumentType = (typeof NUMBERED_DOCUMENT_TYPES)[number];
@@ -41,6 +42,17 @@ export const DEFAULT_TEMPLATES: Readonly<Record<NumberedDocumentType, string>> =
     tax_invoice: 'TI/{FY}/{SEQ:3}',
     budgetary_quotation: 'BQ-{SEQ:2}',
     credit_note: 'CN/{FY}/{SEQ:3}',
+    // The standalone challan is new in 0056, so this is a CHOICE rather
+    // than a compatibility contract, made on three grounds. It carries
+    // {FY} because the counter restarts each financial year while
+    // challan_number is unique across the organisation — the default must
+    // not be the one shape that wedges the series at the year boundary
+    // (finding 8). It reads 'DC' because that is what the trade calls the
+    // paper the consignee signs, and a standalone challan is handed to a
+    // private customer who has never heard of a Work code. Three digits
+    // matches the tax invoice's {SEQ:3}: a year's factory movements are
+    // hundreds, not tens.
+    standalone_challan: 'DC/{FY}/{SEQ:3}',
   });
 
 /** The values a template may draw on. Absent ones make their token
@@ -277,6 +289,10 @@ export const ALLOWED_TOKENS: Readonly<
   // prefix and buyer division come from the invoice, the financial year
   // from the note's own date.
   credit_note: new Set(['PREFIX', 'DIV', 'FY', 'FY2', 'YYYY', 'YY', 'SEQ']),
+  // {WORK} is deliberately absent: a standalone challan belongs to no
+  // Work, so the token could never be filled and offering it would only
+  // produce an issue-time refusal on a finished document.
+  standalone_challan: new Set(['PREFIX', 'FY', 'FY2', 'YYYY', 'YY', 'SEQ']),
 });
 
 /** The tokens that widen a template to its counter's scope, per document
@@ -313,6 +329,18 @@ const SCOPE_TOKENS: Readonly<
     why: 'tax invoices count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — and {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary',
   },
   budgetary_quotation: { tokens: [], why: '' },
+  // Standalone challans count per financial year, so {FY}/{FY2} is the
+  // structural mark. {PREFIX} is admitted on the footing 0047 gives it to
+  // the work challan: the prefix is operator text on an EDITABLE draft, so
+  // a repeat answers as a named 409 at issue time with the prefix as the
+  // way out, and the series never wedges. It is the weaker of the two —
+  // scoping only by prefix means changing it every April — which is why
+  // DEFAULT_TEMPLATES uses {FY}. {YYYY}/{YY} still do not qualify: they
+  // follow the calendar year, which straddles the financial-year boundary.
+  standalone_challan: {
+    tokens: ['FY', 'FY2', 'PREFIX'],
+    why: 'standalone challans count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary, and {PREFIX} qualifies only because the draft prefix can be changed when a repeat is refused at issue time',
+  },
   credit_note: {
     tokens: ['FY', 'FY2'],
     why: 'credit notes count per financial year while their numbers are unique across the organisation, so without the financial year a second year would repeat the first one’s numbers — and {YYYY}/{YY} follow the calendar year, which straddles the financial-year boundary',

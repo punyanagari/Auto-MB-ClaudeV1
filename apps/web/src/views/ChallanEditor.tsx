@@ -19,6 +19,7 @@ import {
   FieldError,
   Hint,
 } from '../ui/form.js';
+import { formatRate } from '../format.js';
 
 interface ChallanEditorProps {
   readonly api: ApiClient;
@@ -30,6 +31,18 @@ interface ChallanEditorProps {
   readonly onSaved: (challanId: string) => void;
   readonly onCancel: () => void;
   readonly onDirtyChange?: (dirty: boolean) => void;
+}
+
+/** A manual (non-LOA) line already on the draft, exactly as the server
+ * stored it. This editor draws its rows from the Work's BALANCE, so a
+ * line with no work item has no row here — and a save replaces the whole
+ * line set, which would quietly drop it. It is carried through untouched
+ * instead, and shown so the operator knows it is on the document. */
+interface CarriedManualLine {
+  readonly description: string;
+  readonly unit: string;
+  readonly quantity: string;
+  readonly rate: string;
 }
 
 interface EditorState {
@@ -161,6 +174,9 @@ export function ChallanEditor({
   const [poLineChoices, setPoLineChoices] = useState<
     ReadonlyMap<string, readonly PoLineChoice[]>
   >(new Map());
+  const [carriedManualLines, setCarriedManualLines] = useState<
+    readonly CarriedManualLine[]
+  >([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -221,9 +237,22 @@ export function ChallanEditor({
           setConsignees(loadedConsignees);
           setWorkConsignees(loadedWorkConsignees);
           setPoLineChoices(poLineChoicesOf(openOrders));
+          setCarriedManualLines(
+            (existing?.items ?? [])
+              .filter((item) => item.workItemId === null)
+              .map((item) => ({
+                description: item.description,
+                unit: item.unit,
+                quantity: item.quantity,
+                rate: item.rate,
+              })),
+          );
           const quantities: Record<string, string> = {};
           const poLines: Record<string, string> = {};
           for (const item of existing?.items ?? []) {
+            // A manual (non-LOA) line has no work item to key on; it is
+            // collected separately and carried through the save.
+            if (item.workItemId === null) continue;
             quantities[item.workItemId] = item.quantity;
             if (typeof item.purchaseOrderLineId === 'string') {
               poLines[item.workItemId] = item.purchaseOrderLineId;
@@ -379,14 +408,17 @@ export function ChallanEditor({
       focusField(firstInvalidField);
       return;
     }
-    const items = entries.map(([workItemId, quantity]) => {
-      const purchaseOrderLineId = state.poLines[workItemId] ?? '';
-      return {
-        workItemId,
-        quantity: quantity.trim(),
-        ...(purchaseOrderLineId.length > 0 ? { purchaseOrderLineId } : {}),
-      };
-    });
+    const items = [
+      ...entries.map(([workItemId, quantity]) => {
+        const purchaseOrderLineId = state.poLines[workItemId] ?? '';
+        return {
+          workItemId,
+          quantity: quantity.trim(),
+          ...(purchaseOrderLineId.length > 0 ? { purchaseOrderLineId } : {}),
+        };
+      }),
+      ...carriedManualLines,
+    ];
     if (items.length === 0) {
       setSaveError('Enter a quantity for at least one item.');
       // No single box is wrong here, so focus goes to the first one that can
@@ -805,6 +837,46 @@ export function ChallanEditor({
             })}
           </tbody>
         </DataTable>
+
+        {carriedManualLines.length > 0 && (
+          <>
+            <h2>Installation material</h2>
+            <Hint>
+              Lines that are not on the Work&rsquo;s schedule. They travel on this
+              challan and count towards nothing in the quantity ledger. Saving keeps
+              them exactly as they are; edit them from the Delivery Challans register.
+            </Hint>
+            <DataTable scroll>
+              <caption className="sr-only">
+                Non-schedule lines already on this challan
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Description</th>
+                  <th scope="col">Unit</th>
+                  <th scope="col" className={numericCell}>
+                    Quantity
+                  </th>
+                  <th scope="col" className={numericCell}>
+                    Rate
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {carriedManualLines.map((line, index) => (
+                  // These lines are read-only here and never reordered, so
+                  // their position is a stable identity.
+                  <tr key={index}>
+                    <td className={wrapCell}>{line.description}</td>
+                    <td>{line.unit}</td>
+                    <td className={numericCell}>{line.quantity}</td>
+                    <td className={numericCell}>{formatRate(line.rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          </>
+        )}
 
         {saveError !== null && <FormError>{saveError}</FormError>}
 

@@ -28,6 +28,7 @@ import {
   assertLinkedPurchaseOrderLocksCurrent,
   lockLinkedPurchaseOrdersForChallan,
   reopenClosedPurchaseOrders,
+  requireWorkBoundChallan,
   writeLines as writeChallanLines,
 } from './routes/challans.js';
 import { writeLines as writeIssueChallanLines } from './routes/issue-challans.js';
@@ -154,20 +155,28 @@ export async function applyChallanCancelReplace(
   // entry writes all serialise on this row, so the evidence check below
   // cannot race new evidence.
   const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, proposed.challanId);
-  const [challan] = await tx<
-    { id: string; work_id: string; status: string; challan_number: string | null }[]
+  const [row] = await tx<
+    {
+      id: string;
+      work_id: string | null;
+      status: string;
+      challan_number: string | null;
+    }[]
   >`
     select id, work_id, status, challan_number
     from delivery_challans where id = ${proposed.challanId}
     for update
   `;
-  if (!challan) {
+  if (!row) {
     throw httpError(
       409,
       'CORRECTION_TARGET_MISSING',
       'The challan this correction targets no longer exists.',
     );
   }
+  // A correction is a Work-challan flow; propose already refused a
+  // standalone target, and this holds the same rule at apply time.
+  const challan = { ...row, work_id: requireWorkBoundChallan(row) };
   await assertLinkedPurchaseOrderLocksCurrent(tx, challan.id, linkedOrders);
   if (challan.status !== 'issued') {
     throw httpError(

@@ -18,6 +18,7 @@ import type {
   ContractSourceDocumentKind,
   ContractSourceUploadResponse,
   Contact,
+  DeliveryChallanRegisterEntry,
   CreateOrganisationRequest,
   DashboardResponse,
   DiscardLoaDocumentResponse,
@@ -51,6 +52,7 @@ import type {
   GstRateMaster,
   SaveChallanRequest,
   SaveContactRequest,
+  SaveStandaloneChallanRequest,
   SaveExtensionRequest,
   SaveInstrumentRequest,
   SaveLocationMasterRequest,
@@ -319,6 +321,20 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly Challan[]>;
+  /** The Delivery Challan module's register: every movement in the
+   * organisation the caller may see, of all three kinds. */
+  readonly listDeliveryChallans: (
+    organisationId: string,
+  ) => Promise<readonly DeliveryChallanRegisterEntry[]>;
+  readonly createStandaloneChallan: (
+    organisationId: string,
+    body: SaveStandaloneChallanRequest,
+  ) => Promise<ChallanDetailResponse>;
+  readonly updateStandaloneChallan: (
+    organisationId: string,
+    challanId: string,
+    body: SaveStandaloneChallanRequest,
+  ) => Promise<ChallanDetailResponse>;
   readonly getChallan: (
     organisationId: string,
     challanId: string,
@@ -1653,6 +1669,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return payload.challans;
+    },
+    async listDeliveryChallans(organisationId) {
+      const payload = await request<{ challans: DeliveryChallanRegisterEntry[] }>(
+        '/api/delivery-challans',
+        { organisationId },
+      );
+      return payload.challans;
+    },
+    async createStandaloneChallan(organisationId, body) {
+      return request<ChallanDetailResponse>('/api/delivery-challans', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async updateStandaloneChallan(organisationId, challanId, body) {
+      return request<ChallanDetailResponse>(`/api/delivery-challans/${challanId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
     },
     async getChallan(organisationId, challanId) {
       return request<ChallanDetailResponse>(`/api/challans/${challanId}`, {
