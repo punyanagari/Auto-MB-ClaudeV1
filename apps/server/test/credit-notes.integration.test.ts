@@ -93,8 +93,10 @@ let secondOwner: CookieJar;
 const registerInvoiceProvider = vi.fn<StatutoryProvider['registerInvoice']>();
 const findInvoiceProvider = vi.fn<StatutoryProvider['findInvoiceByDocument']>();
 const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
+const STUB_PORTAL = 'NIC1 via apisandbox.whitebooks.in';
 const providerStub: StatutoryProvider = {
   name: 'whitebooks',
+  portal: STUB_PORTAL,
   environment: 'sandbox',
   registerInvoice: registerInvoiceProvider,
   findInvoiceByDocument: findInvoiceProvider,
@@ -302,6 +304,11 @@ function irpEvidence(seed: string, ackDate: string) {
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
     rawResponse: `{"status_cd":"1","seed":"${seed}"}`,
+    // The stub replaces the adapter, so it bypasses the local IRN and
+    // signed-QR verification the real one runs (audit finding 2; proved in
+    // whitebooks.test.ts). The portal must still be present: the operation
+    // ledger records which portal answered.
+    portal: STUB_PORTAL,
   };
 }
 

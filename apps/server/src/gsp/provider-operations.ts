@@ -120,14 +120,14 @@ export async function startStatutoryOperation(
     const [row] = await tx<{ id: string }[]>`
       insert into statutory_provider_operations (
         organisation_id, tax_invoice_id, eway_bill_id, credit_note_id,
-        provider, environment, operation, request_sha256,
+        provider, provider_portal, environment, operation, request_sha256,
         request_body, request_body_truncated,
         created_by_user_id
       )
       values (
         ${input.organisationId}, ${input.taxInvoiceId ?? null},
         ${input.ewayBillId ?? null}, ${input.creditNoteId ?? null},
-        ${input.provider.name},
+        ${input.provider.name}, ${input.provider.portal},
         ${input.provider.environment}, ${input.operation},
         ${input.requestSha256},
         ${request.body}, ${request.truncated},

@@ -15,6 +15,7 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import { deriveIrn } from '../src/gsp/irn.js';
 import {
   StatutoryProviderError,
   type StatutoryProvider,
@@ -89,6 +90,8 @@ let workId: string;
 let itemId: string;
 let buyerContactId: string;
 let barePincodeBuyerId: string;
+/** A complete buyer profile with no GSTIN — an unregistered (B2C) buyer. */
+let unregisteredBuyerId: string;
 let retiredContactId: string;
 
 // Finalized MBs and their invoices, built up in order.
@@ -116,8 +119,10 @@ const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
 const generateEwayBillProvider = vi.fn<StatutoryProvider['generateEwayBillByIrn']>();
 const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
 const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
+const STUB_PORTAL = 'NIC1 via apisandbox.whitebooks.in';
 const providerStub: StatutoryProvider = {
   name: 'whitebooks',
+  portal: STUB_PORTAL,
   environment: 'sandbox',
   registerInvoice: registerInvoiceProvider,
   findInvoiceByDocument: findInvoiceProvider,
@@ -314,7 +319,32 @@ function irpEvidence(seed: string) {
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
     rawResponse: `{"status_cd":"1","seed":"${seed}"}`,
+    // These stubs replace the adapter wholesale, so they never travel
+    // through the local IRN/signed-QR verification the real one applies
+    // (audit finding 2) — that is proved at the adapter, in
+    // whitebooks.test.ts. What they must still carry is the portal the
+    // answering adapter reports, because the operation ledger records it.
+    portal: STUB_PORTAL,
   };
+}
+
+/**
+ * The IRN the NIC portal would issue for this invoice, derived from the
+ * invoice's own frozen issued snapshot (audit finding 2). Manual evidence
+ * entry now refuses any other value, so the compatibility-path fixtures
+ * below must offer the real one.
+ */
+function derivedIrnFor(detail: TaxInvoiceDetailResponse): string {
+  const snapshot = detail.issuedSnapshot as {
+    supplier: { gstin: string };
+    invoiceNumber: string;
+    invoiceDate: string;
+  };
+  return deriveIrn({
+    gstin: snapshot.supplier.gstin,
+    documentNumber: snapshot.invoiceNumber,
+    documentDate: snapshot.invoiceDate,
+  });
 }
 
 async function expirePendingProviderOperation(invoiceId: string): Promise<void> {
@@ -478,6 +508,7 @@ beforeAll(async () => {
   buyerContactId = randomUUID();
   barePincodeBuyerId = randomUUID();
   retiredContactId = randomUUID();
+  unregisteredBuyerId = randomUUID();
   await admin`
     insert into contacts (
       id, organisation_id, designation, contact_person, address, gstin,
@@ -491,6 +522,13 @@ beforeAll(async () => {
        'Kashmere Gate, Delhi', null, null, null, null, true, true, ${ownerUserId}),
       (${retiredContactId}, ${organisationId}, 'Retired DEE', null,
        ${BUYER_ADDRESS}, null, '110055', '07', 'New Delhi', true, false,
+       ${ownerUserId}),
+      -- A complete buyer profile that simply holds no GSTIN: an
+      -- unregistered customer. Complete enough to submit an invoice, so
+      -- the B2C refusal (finding 4) is reached at the IRP boundary rather
+      -- than short-circuited earlier by a missing address field.
+      (${unregisteredBuyerId}, ${organisationId}, 'Ram Prasad Traders', 'R Prasad',
+       ${BUYER_ADDRESS}, null, '110055', '07', 'New Delhi', true, true,
        ${ownerUserId})
   `;
 }, 90_000);
@@ -2900,7 +2938,7 @@ describe('manual IRP evidence truth (migration 0053)', () => {
   it('walks the registered_unverified lifecycle: record, interlock, cancel', async () => {
     const detail = await submittedDirectInvoice('manual truth lifecycle');
     const invoiceId = detail.invoice.id;
-    const irn = 'ab12'.repeat(16);
+    const irn = derivedIrnFor(detail);
 
     const recorded = await authed(owner, {
       method: 'POST',
@@ -2979,7 +3017,7 @@ describe('manual IRP evidence truth (migration 0053)', () => {
       url: `/api/tax-invoices/${invoiceId}/irp-response`,
       organisationId,
       payload: {
-        irn: 'cd34'.repeat(16),
+        irn: derivedIrnFor(detail),
         ackNumber: '112010099002',
         ackDate: '2026-08-01T11:30:00.000Z',
         ackDateText: '01/08/2026 17:00:00',
@@ -3015,5 +3053,197 @@ describe('manual IRP evidence truth (migration 0053)', () => {
     } finally {
       await admin.unsafe(`set session_replication_role = 'origin'`);
     }
+  });
+});
+
+/**
+ * Audit finding 4. The B2C refusal has existed since the adapter was
+ * written — `SupTyp` is pinned to `'B2B'` and the snapshot throws when the
+ * frozen buyer carries no GSTIN — but nothing proved it, so a later change
+ * that quietly widened the payload to unregistered buyers would have gone
+ * out green. A B2C invoice pushed through the B2B IRP model is a wrong
+ * statutory filing, not a cosmetic defect.
+ */
+describe('finding 4: a B2C invoice is refused at the IRP boundary', () => {
+  /** An invoice to a buyer with no GSTIN — the definition of B2C here. */
+  async function submittedB2cInvoice(
+    suffix: string,
+  ): Promise<TaxInvoiceDetailResponse> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-15',
+        sacCode: '998734',
+        serviceDescription: `Unregistered buyer probe ${suffix}.`,
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId: unregisteredBuyerId,
+        taxableValue: '1000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const submitted = await submitInvoice(
+      created.json<TaxInvoiceDetailResponse>().invoice.id,
+    );
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    return submitted.json<TaxInvoiceDetailResponse>();
+  }
+
+  it('refuses IRP registration for an invoice whose frozen buyer has no GSTIN', async () => {
+    const detail = await submittedB2cInvoice('register');
+    // The buyer really is unregistered on the FROZEN snapshot, not merely
+    // on live master data — that is the fact the refusal must read.
+    expect(
+      (detail.issuedSnapshot as { buyer: { gstin: string | null } }).buyer.gstin,
+    ).toBeNull();
+
+    const refused = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('E_INVOICE_B2C_UNSUPPORTED');
+
+    // The refusal is a wall, not a state change: no provider operation was
+    // opened and the invoice did not move into `registering`.
+    const after = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${detail.invoice.id}`,
+      organisationId,
+    });
+    expect(after.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
+      'not_requested',
+    );
+    const [operations] = await admin<{ count: number }[]>`
+      select count(*)::int as count from statutory_provider_operations
+      where tax_invoice_id = ${detail.invoice.id}
+    `;
+    expect(operations?.count).toBe(0);
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+  });
+
+  it('refuses to even build the IRP payload for a B2C invoice', async () => {
+    const detail = await submittedB2cInvoice('payload');
+    // The payload endpoint is the operator's "what would we file?" view.
+    // It must refuse for the same reason rather than rendering a payload
+    // that claims B2B for an unregistered buyer.
+    const refused = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-payload`,
+      organisationId,
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('E_INVOICE_B2C_UNSUPPORTED');
+  });
+});
+
+/**
+ * Audit finding 2 residue: local verification of provider evidence, and a
+ * record of which portal answered.
+ */
+describe('finding 2: IRP evidence is verified locally, and the portal is recorded', () => {
+  it('refuses a manually recorded IRN that does not derive from the invoice', async () => {
+    const detail = await submittedDirectInvoice('manual irn derivation');
+    const invoiceId = detail.invoice.id;
+    // Well-formed — 64 hex characters, so the schema admits it — but it is
+    // not the SHA-256 of THIS invoice's supplier GSTIN, document type,
+    // number and financial year, so it is not this invoice's IRN. Before
+    // this check it would have been written onto the legal document as the
+    // government's own identifier.
+    const foreignIrn = 'ab12'.repeat(16);
+    expect(foreignIrn).not.toBe(derivedIrnFor(detail));
+
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/irp-response`,
+      organisationId,
+      payload: {
+        irn: foreignIrn,
+        ackNumber: '112010099003',
+        ackDate: '2026-08-01T10:30:00.000Z',
+        ackDateText: '01/08/2026 16:00:00',
+        signedQr: 'manual-signed-qr-foreign',
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('IRP_IRN_DERIVATION_MISMATCH');
+
+    // Nothing was recorded: the invoice keeps no IRN and no provider.
+    const after = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoiceId}`,
+      organisationId,
+    });
+    expect(after.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
+      irn: null,
+      irpProvider: null,
+      irpProviderState: 'not_requested',
+    });
+
+    // The correctly derived IRN for the same invoice is accepted — the
+    // check refuses wrong evidence, not the manual door itself. It still
+    // lands as registered_unverified: deriving correctly proves the IRN is
+    // arithmetically this invoice's, not that the portal ever issued it.
+    const accepted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/irp-response`,
+      organisationId,
+      payload: {
+        irn: derivedIrnFor(detail),
+        ackNumber: '112010099003',
+        ackDate: '2026-08-01T10:30:00.000Z',
+        ackDateText: '01/08/2026 16:00:00',
+        signedQr: 'manual-signed-qr-derived',
+      },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect(accepted.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
+      'registered_unverified',
+    );
+  });
+
+  it('records which portal answered on the operation ledger, immutably', async () => {
+    const detail = await submittedDirectInvoice('portal evidence');
+    registerInvoiceProvider.mockResolvedValueOnce(irpEvidence('7'));
+
+    const registered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(registered.statusCode, registered.body).toBe(200);
+
+    const [operation] = await admin<
+      { id: string; provider: string; provider_portal: string | null }[]
+    >`
+      select id, provider, provider_portal
+      from statutory_provider_operations
+      where tax_invoice_id = ${detail.invoice.id} and operation = 'register_irp'
+    `;
+    // `provider` says which GSP the deployment bought; `provider_portal`
+    // says which government portal actually answered. A later dispute
+    // needs the second fact, and it was not recorded before.
+    expect(operation?.provider).toBe('whitebooks');
+    expect(operation?.provider_portal).toBe(STUB_PORTAL);
+
+    // The completed row is frozen outright, so the portal cannot be
+    // rewritten afterwards to name a different one (migration 0056 also
+    // pins it into the pending-row identity ROW).
+    const guarded = await admin`
+      update statutory_provider_operations
+      set provider_portal = 'NIC2 via elsewhere.example'
+      where id = ${operation?.id ?? ''}
+    `
+      .then(() => null)
+      .catch((error: unknown) => error as { code?: string; message: string });
+    expect(guarded).not.toBeNull();
+    expect(guarded?.code).toBe('23514');
+    expect(guarded?.message).toContain(
+      'completed statutory provider operations are immutable',
+    );
   });
 });

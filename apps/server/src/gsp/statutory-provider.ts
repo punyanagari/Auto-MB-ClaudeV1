@@ -38,6 +38,11 @@ export interface IrpRegistrationEvidence {
   /** The raw provider response body the evidence above was normalised
    * from, verbatim (migration 0053 evidence ledger). */
   readonly rawResponse: string;
+  /** Which portal answered — the same value as the answering provider's
+   * `portal` (audit finding 2). Carried on the evidence as well as the
+   * provider so a reader of one registration knows who registered it
+   * without having to know which provider instance was live at the time. */
+  readonly portal: string;
 }
 
 export interface EwayBillProviderEvidence {
@@ -68,6 +73,19 @@ export interface GenerateEwayBillByIrnRequest {
 export interface StatutoryProvider {
   readonly name: 'whitebooks';
   readonly environment: StatutoryEnvironment;
+  /**
+   * Which portal this instance talks to, as evidence — the NIC IRP it
+   * routes to and the provider host it routes through, e.g.
+   * `NIC1 via api.whitebooks.in` (audit finding 2).
+   *
+   * `name` says which GSP the deployment bought; this says which
+   * government portal actually answered, and they are not the same fact.
+   * A GSP can move an organisation between IRPs, and a later dispute over
+   * one registration needs to know which portal's records to ask for.
+   * Persisted on every operation ledger row, so the answer survives a
+   * configuration change.
+   */
+  readonly portal: string;
   registerInvoice(
     identity: IrpDocumentIdentity,
     payloadJson: string,

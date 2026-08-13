@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { deriveIrn } from '../src/gsp/irn.js';
 import {
   WhitebooksProvider,
   readWhitebooksConfig,
@@ -87,8 +88,47 @@ describe('Whitebooks IRP transport', () => {
     DocDtls: { Typ: 'INV', No: identity.documentNumber, Dt: '12/08/2026' },
   });
 
+  /**
+   * The IRN the NIC portal actually issues for this identity. Since audit
+   * finding 2 the adapter derives it locally and refuses anything else, so
+   * a fixture can no longer be an arbitrary 64-character string.
+   */
+  const derivedIrn = deriveIrn(identity);
+
+  /**
+   * A signed QR in the real shape: JWS compact serialization whose payload
+   * carries a `data` member that is itself a JSON string of the document
+   * facts. The signature segment is a placeholder — the adapter checks the
+   * QR's CLAIMS against the document, deliberately not its signature (no
+   * NIC certificate is provisioned; see gsp/irn.ts).
+   */
+  function signedQr(
+    overrides: Partial<Record<'Irn' | 'SellerGstin' | 'DocNo' | 'DocTyp' | 'DocDt', string>> = {},
+  ): string {
+    const header = Buffer.from(
+      JSON.stringify({ alg: 'RS256', typ: 'JWT' }),
+      'utf8',
+    ).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({
+        data: JSON.stringify({
+          SellerGstin: baseConfig.gstin,
+          DocNo: identity.documentNumber,
+          DocTyp: 'INV',
+          DocDt: '12/08/2026',
+          Irn: derivedIrn,
+          ...overrides,
+        }),
+      }),
+      'utf8',
+    ).toString('base64url');
+    return `${header}.${payload}.c2lnbmF0dXJlLXBsYWNlaG9sZGVy`;
+  }
+
   it('authenticates, sends exact registration bytes, and preserves a large acknowledgement number', async () => {
     const ackNumber = '9007199254740993123';
+    const qr = signedQr();
+    const body = `{"status_cd":"1","data":{"Irn":"${derivedIrn.toUpperCase()}","AckNo":${ackNumber},"AckDt":"12/08/2026 14:30:00","SignedQRCode":"${qr}","SignedInvoice":"signed-invoice"}}`;
     const fetchImpl = vi.fn<typeof fetch>((input, init) => {
       const url = inputUrl(input);
       if (url.pathname === '/einvoice/authenticate') {
@@ -115,25 +155,154 @@ describe('Whitebooks IRP transport', () => {
       expect(headers.get('auth-token')).toBe('irp-auth-token');
       expect(headers.get('username')).toBe(baseConfig.username);
       return Promise.resolve(
-        new Response(
-          `{"status_cd":"1","data":{"Irn":"${'A'.repeat(64)}","AckNo":${ackNumber},"AckDt":"12/08/2026 14:30:00","SignedQRCode":"signed-qr","SignedInvoice":"signed-invoice"}}`,
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
+        new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
       );
     });
     const provider = new WhitebooksProvider(baseConfig, fetchImpl);
 
     await expect(provider.registerInvoice(identity, payloadJson)).resolves.toEqual({
-      irn: 'a'.repeat(64),
+      irn: derivedIrn,
       ackNumber,
       ackDateText: '12/08/2026 14:30:00',
       ackDate: '2026-08-12T09:00:00.000Z',
-      signedQr: 'signed-qr',
+      signedQr: qr,
       signedInvoice: 'signed-invoice',
       // The full response body verbatim, for the 0053 evidence ledger.
-      rawResponse: `{"status_cd":"1","data":{"Irn":"${'A'.repeat(64)}","AckNo":${ackNumber},"AckDt":"12/08/2026 14:30:00","SignedQRCode":"signed-qr","SignedInvoice":"signed-invoice"}}`,
+      rawResponse: body,
+      // Which portal answered (audit finding 2), recorded on every
+      // operation ledger row so a later dispute knows whose records to ask
+      // for.
+      portal: 'NIC1 via apisandbox.whitebooks.in',
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * Audit finding 2 residue: the evidence is now CHECKED, not merely
+   * retained. The IRN is the SHA-256 of the supplier GSTIN, document type,
+   * number and financial year, so an IRN for a different document does not
+   * reproduce — and the adapter refuses it rather than writing it onto a
+   * legal record as the government's identifier.
+   */
+  describe('local verification of registration evidence', () => {
+    function respondWith(irn: string, qr: string): typeof fetch {
+      return vi.fn<typeof fetch>((input) => {
+        if (inputUrl(input).pathname === '/einvoice/authenticate') {
+          return Promise.resolve(
+            jsonResponse({
+              status_cd: '1',
+              data: { AuthToken: 'irp-auth-token', UserName: baseConfig.username },
+            }),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            status_cd: '1',
+            data: {
+              Irn: irn,
+              AckNo: '112010099001',
+              AckDt: '12/08/2026 14:30:00',
+              SignedQRCode: qr,
+              SignedInvoice: 'signed-invoice',
+            },
+          }),
+        );
+      });
+    }
+
+    it('refuses a registration IRN that does not derive from the document, as unknown', async () => {
+      const foreign = 'ab12'.repeat(16);
+      expect(foreign).not.toBe(derivedIrn);
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(foreign, signedQr({ Irn: foreign })),
+      );
+
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        code: 'WHITEBOOKS_IRP_IRN_DERIVATION_MISMATCH',
+        // GENERATE already mutated. We will not adopt the answer, but we
+        // cannot claim the document was NOT registered — 'unknown' leaves
+        // the invoice reconcilable rather than falsely failed.
+        outcome: 'unknown',
+      });
+    });
+
+    it('refuses the same mismatch from a LOOKUP as failed, because nothing was mutated', async () => {
+      const foreign = 'cd34'.repeat(16);
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(foreign, signedQr({ Irn: foreign })),
+      );
+
+      await expect(provider.findInvoiceByDocument(identity)).rejects.toMatchObject({
+        code: 'WHITEBOOKS_IRP_IRN_DERIVATION_MISMATCH',
+        outcome: 'failed',
+      });
+    });
+
+    it('refuses a signed QR naming a different IRN from the response', async () => {
+      // Internal incoherence: the top-level IRN derives correctly, but the
+      // portal's own signed statement is about something else. Neither
+      // half can be trusted, so the response is not evidence.
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(derivedIrn, signedQr({ Irn: 'ef56'.repeat(16) })),
+      );
+
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        code: 'WHITEBOOKS_IRP_SIGNED_QR_IRN_MISMATCH',
+      });
+    });
+
+    it('refuses a signed QR naming a different document', async () => {
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(derivedIrn, signedQr({ DocNo: 'INV/2026/999' })),
+      );
+
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        code: 'WHITEBOOKS_IRP_SIGNED_QR_IDENTITY_MISMATCH',
+      });
+    });
+
+    it('refuses a signed QR that is not a readable JWS', async () => {
+      // The IRP always returns one. Accepting an unreadable value would
+      // reopen exactly the hole this closes: evidence nobody can check.
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(derivedIrn, 'not-a-jws'),
+      );
+
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        code: 'WHITEBOOKS_IRP_SIGNED_QR_UNREADABLE',
+      });
+    });
+
+    it('carries the refused body with the refusal, for the evidence ledger', async () => {
+      const foreign = 'ab12'.repeat(16);
+      const provider = new WhitebooksProvider(
+        baseConfig,
+        respondWith(foreign, signedQr({ Irn: foreign })),
+      );
+
+      // Evidence we refuse is exactly the evidence an operator needs whole.
+      await expect(
+        provider.registerInvoice(identity, payloadJson),
+      ).rejects.toMatchObject({
+        rawResponse: expect.stringContaining(foreign) as unknown as string,
+      });
+    });
   });
 
   it('treats only an HTTP 404 document lookup as conclusively absent', async () => {
