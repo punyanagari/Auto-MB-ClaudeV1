@@ -295,11 +295,25 @@ async function issuedCreditNote(
   return issued.json<CreditNoteDetailResponse>();
 }
 
+/** DD/MM/YYYY HH:mm:ss in IST (UTC+05:30), the NIC portal's text form. */
+function istText(instant: Date): string {
+  const ist = new Date(instant.getTime() + (5 * 60 + 30) * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${pad(ist.getUTCDate())}/${pad(ist.getUTCMonth() + 1)}/${ist.getUTCFullYear()} ` +
+    `${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())}`
+  );
+}
+
 function irpEvidence(seed: string, ackDate: string) {
   return {
     irn: seed.repeat(64).slice(0, 64),
     ackNumber: '900719925474099312345',
-    ackDateText: '12/08/2026 14:30:00',
+    // The real adapter derives ackDate by parsing the portal's IST text
+    // (whitebooks.ts), so the two forms always describe one instant.
+    // Deriving the text here keeps the stub honest and avoids the frozen
+    // literal that time-bombed tax-invoices.integration.test.ts.
+    ackDateText: istText(new Date(ackDate)),
     ackDate,
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
@@ -629,10 +643,11 @@ describe('stage 1: the 24-hour IRN cancellation window', () => {
     expect(
       registered.json<TaxInvoiceDetailResponse>().invoice.irpCancelWindowOpen,
     ).toBe(true);
+    const cancelledAt = new Date();
     cancelInvoiceProvider.mockResolvedValueOnce({
-      cancelledAtText: '2026-08-12 15:00:00',
-      cancelledAt: new Date().toISOString(),
-      rawResponse: '{"status_cd":"1","CancelDate":"2026-08-12 15:00:00"}',
+      cancelledAtText: istText(cancelledAt),
+      cancelledAt: cancelledAt.toISOString(),
+      rawResponse: `{"status_cd":"1","CancelDate":"${istText(cancelledAt)}"}`,
     });
     const cancel = await authedOn(providerApp, owner, {
       method: 'POST',
@@ -1047,10 +1062,11 @@ describe('the CRN transport under the 0049 gates and the provider ledger', () =>
     expect(ledger).toEqual({ operation: 'register_crn', status: 'succeeded' });
 
     // Cancel the CRN IRN inside its own 24-hour window.
+    const crnCancelledAt = new Date();
     cancelInvoiceProvider.mockResolvedValueOnce({
-      cancelledAtText: '2026-08-12 16:00:00',
-      cancelledAt: new Date().toISOString(),
-      rawResponse: '{"status_cd":"1","CancelDate":"2026-08-12 16:00:00"}',
+      cancelledAtText: istText(crnCancelledAt),
+      cancelledAt: crnCancelledAt.toISOString(),
+      rawResponse: `{"status_cd":"1","CancelDate":"${istText(crnCancelledAt)}"}`,
     });
     const cancel = await authedOn(providerApp, owner, {
       method: 'POST',
