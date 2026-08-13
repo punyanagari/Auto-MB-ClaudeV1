@@ -3,7 +3,7 @@ import { copyFile, mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Sql } from 'postgres';
+import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../../src/pool.js';
 import { runMigrations } from '../../src/migration-runner.js';
 import { applyGrants } from '../../src/bootstrap.js';
@@ -238,4 +238,36 @@ export async function seedTenant(pool: Sql): Promise<Tenant> {
     buyerId: buyer.id,
     userId,
   };
+}
+
+/**
+ * Opens a transaction and binds the tenant GUCs the way `tenant.ts` did
+ * BEFORE migration 0069 — two raw `set_config(..., is_local = true)`
+ * calls, with no membership proof of any kind.
+ *
+ * This is the shape any future code path that skipped `bind_tenant` would
+ * have, and it is how the tenancy suites prove the property that actually
+ * matters: the floor is `app_private.current_organisation_id()`, which
+ * every policy calls, and it denies a binding the user does not hold
+ * whether or not anything checked at bind time. Asserting that through
+ * `withTenant` would prove nothing after 0069, because `withTenant` now
+ * refuses before a statement runs.
+ *
+ * Deliberately shared rather than hand-rolled per suite: three copies of a
+ * two-statement bind is three chances for one of them to drift into
+ * binding something subtly different from what the assertion claims.
+ */
+export async function bindTenantGucsDirectly<T>(
+  pool: Sql,
+  organisationId: string,
+  userId: string,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  const result = await pool.begin(async (tx) => {
+    await tx`select set_config('app.organisation_id', ${organisationId}, true)`;
+    await tx`select set_config('app.user_id', ${userId}, true)`;
+    return work(tx);
+  });
+  // postgres.js types begin() as UnwrapPromiseArray<T>, identity here.
+  return result as T;
 }

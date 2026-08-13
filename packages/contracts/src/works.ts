@@ -351,13 +351,19 @@ export type WorkStatusResponse = Static<typeof WorkStatusResponseSchema>;
 /** What the item still owes before the Work is 100% executed. The
  * requirement follows the item's payment category over EFFECTIVE
  * quantities (spec §8 + R8): supply categories owe delivery, pure
- * installation owes installation, supply-and-installation owes both, and
- * an uncategorised item owes installation when its description mentions
- * installation and delivery otherwise. */
+ * installation owes installation, supply-and-installation owes both, AMC
+ * owes certified service, and an uncategorised item owes installation
+ * when its description mentions installation and delivery otherwise.
+ *
+ * 'service' is the AMC requirement (migration 0068). An annual
+ * maintenance item is never delivered and never installed — the period
+ * is served and the railway certifies it — so what it owes is certified
+ * quantity, summed over its non-cancelled acceptance certificates. */
 export const WorkCompletionRequirementSchema = Type.Union([
   Type.Literal('delivery'),
   Type.Literal('installation'),
   Type.Literal('delivery_and_installation'),
+  Type.Literal('service'),
 ]);
 export type WorkCompletionRequirement = Static<typeof WorkCompletionRequirementSchema>;
 
@@ -389,6 +395,11 @@ export const UnfinishedWorkItemSchema = Type.Object(
     requiredQuantity: DecimalStringSchema,
     deliveredQuantity: DecimalStringSchema,
     installedQuantity: DecimalStringSchema,
+    /** SUM over the item's non-cancelled acceptance certificates. The
+     * measured dimension of the 'service' requirement, and 0 on every
+     * other requirement — an AMC item is the only one certification can
+     * finish, because it is the only one that takes no movement. */
+    certifiedQuantity: DecimalStringSchema,
   },
   { additionalProperties: false },
 );

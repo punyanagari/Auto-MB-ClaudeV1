@@ -420,9 +420,7 @@ describe('WorkDetail retention', () => {
 
     // Clicking the card selects the matching tab rather than opening a
     // separate surface — one architecture, not two.
-    await screen.findByRole('heading', {
-      name: (accessibleName: string) => accessibleName === 'Measurement evidence',
-    });
+    await screen.findByRole('heading', { name: 'Measurement evidence' });
     const active = within(tabs)
       .getAllByRole('button')
       .find((candidate) => candidate.getAttribute('aria-current') === 'page');

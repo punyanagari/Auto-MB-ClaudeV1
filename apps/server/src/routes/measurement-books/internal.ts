@@ -209,6 +209,11 @@ export interface ItemInputRow {
  * `items` is referenced by every stage, so PostgreSQL materialises it:
  * one scan of the Work's live items feeds all six aggregates, and each
  * aggregate scans its own evidence once.
+ *
+ * Six, and deliberately still six after migration 0068. The AMC
+ * final-bill base is the one quantity this statement does NOT carry —
+ * `loadAmcCertified` fetches it separately, and `computeForBook`'s note
+ * explains why.
  */
 export const ITEM_INPUTS_SQL = `
   with items as (
@@ -332,17 +337,78 @@ export async function loadItemInputs(
     priorFinalBill: row.prior_final_bill,
     cumulativeDelivered: row.cumulative_delivered,
     cumulativeInstalled: row.cumulative_installed,
+    // Not loaded here — see `loadAmcCertified`. '0' is the correct value
+    // for every item this statement can be asked about that is not an
+    // AMC item on a final MB, which is the overwhelming majority, and
+    // `computeForBook` overlays the real figure for the rest.
+    cumulativeAmcCertified: '0',
   }));
+}
+
+/**
+ * The certified totals of a Work's AMC items — the final-bill base of an
+ * item that is neither delivered nor installed (migration 0068).
+ *
+ * WHY THIS IS NOT A SEVENTH CTE IN `ITEM_INPUTS_SQL`. It was, and it
+ * cost about 500 shared blocks on the 40-item aggregate fixture, because
+ * the planner has to read `pac_certificate_items` before it can discover
+ * that none of them belong to an AMC item. That is real work on the
+ * hottest read in the module — every draft Measurement Book preview
+ * re-runs the loader — and it is spent on a number that only ONE branch
+ * of `resolveFinalBillBase` consults, only on the FINAL MB, and only for
+ * AMC items. It also ate most of the margin in P11's buffer ratchet
+ * (`test/query-aggregates.integration.test.ts`), which is a fair signal
+ * rather than an inconvenience: the guard noticed the loader had grown a
+ * scan it did not need.
+ *
+ * So the loader is unchanged — byte for byte the statement P11 shipped —
+ * and this runs instead, on the only path that can use its answer. A
+ * Work with no maintenance schedule never issues it at all.
+ *
+ * Scoped to the Work and to AMC items; the caller is inside its own
+ * tenant-bound transaction.
+ */
+export async function loadAmcCertified(
+  tx: TransactionSql,
+  workId: string,
+): Promise<Map<string, string>> {
+  const rows = await tx<{ work_item_id: string; total: string }[]>`
+    select pci.work_item_id, sum(pci.certified_quantity)::numeric(18,3)::text as total
+    from pac_certificate_items pci
+    join pac_certificates pc on pc.id = pci.pac_certificate_id
+    join work_items wi on wi.id = pci.work_item_id
+    where wi.work_id = ${workId} and wi.deleted_at is null
+      and wi.payment_category = 'AMC'
+      and pc.status = 'recorded'
+    group by pci.work_item_id
+  `;
+  return new Map(rows.map((row) => [row.work_item_id, row.total]));
 }
 
 export async function computeForBook(
   tx: TransactionSql,
   book: { work_id: string; id: string; is_final: boolean },
 ): Promise<MbComputation> {
-  const [matrix, items] = [
+  const [matrix, loaded] = [
     await loadPaymentMatrix(tx, book.work_id),
     await loadItemInputs(tx, book.work_id, book.id),
   ];
+  // The AMC final-bill base, fetched only where it can change an answer:
+  // the certified quantity is read by one branch of resolveFinalBillBase,
+  // which runs only on the final MB. A non-final MB, and a final MB on a
+  // Work with no maintenance schedule, issue no extra statement at all —
+  // see `loadAmcCertified` for what that saves and why it is not a CTE.
+  const needsAmcBase =
+    book.is_final && loaded.some((item) => item.paymentCategory === 'AMC');
+  const certified = needsAmcBase
+    ? await loadAmcCertified(tx, book.work_id)
+    : new Map<string, string>();
+  const items = needsAmcBase
+    ? loaded.map((item) => ({
+        ...item,
+        cumulativeAmcCertified: certified.get(item.workItemId) ?? '0',
+      }))
+    : loaded;
   return computeMeasurementBook({ matrix, isFinal: book.is_final, items });
 }
 

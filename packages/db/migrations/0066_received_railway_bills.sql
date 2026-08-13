@@ -33,12 +33,12 @@ SET LOCAL statement_timeout = '5min';
 -- discarded, carries a settleable stored verdict and at least three
 -- signatures; and that a bill cannot become `paid`, on insert or update,
 -- while its book is open. The per-signature RULING — integrity, reaching a
--- configured anchor, three DISTINCT signing certificates, the last
--- signature covering the file — lives once, in
+-- configured anchor, three DISTINCT signing certificates (owner ruling,
+-- 2026-08-14), the last signature covering the file — lives once, in
 -- `apps/server/src/railway-bill-verdict.ts`, because it is the owner's
--- judgement rather than a fact about the schema and is expected to be
--- revisited. `docs/PRODUCT.md` §5.4 states the same split in the same
--- terms.
+-- judgement rather than a fact about the schema and is the kind of thing
+-- that gets revisited. `docs/PRODUCT.md` §5.5 states the same split in the
+-- same terms.
 --
 -- WHY A NEW TABLE RATHER THAN A loa_documents DOCUMENT KIND. The pack row
 -- proposed reusing `loa_documents`, and the machinery IS reused — the same
@@ -425,7 +425,7 @@ BEGIN
   --
   -- The shape CHECK on this table only says the three columns move
   -- together and that the book is finalized. That is not the claim the
-  -- header and `docs/PRODUCT.md` §5.4 make, which is that closure is
+  -- header and `docs/PRODUCT.md` §5.5 make, which is that closure is
   -- enforced twice. So the structural half of the gate is enforced here,
   -- against the bill row itself, and a writer that never went through the
   -- route gets the same answer:
@@ -438,12 +438,12 @@ BEGIN
   -- What is deliberately NOT duplicated here: the per-signature predicate
   -- — integrity, reaching a configured anchor, distinct signing
   -- certificates, and the last signature covering the file. That is the
-  -- OWNER'S RULING rather than a structural fact, it is expected to be
-  -- revisited (the distinct-signer clause is itself a proposed
-  -- strengthening awaiting ratification), and a ruling that lives in two
-  -- languages drifts between them. It lives once, in
+  -- OWNER'S RULING rather than a structural fact, it is the kind of thing
+  -- that gets revisited (the distinct-signer clause is itself an extension
+  -- the owner ruled on a day later, on 2026-08-14), and a ruling that
+  -- lives in two languages drifts between them. It lives once, in
   -- `apps/server/src/railway-bill-verdict.ts`. The split is stated in
-  -- exactly these words in §5.4, so the two-layer claim is true of what
+  -- exactly these words in §5.5, so the two-layer claim is true of what
   -- each layer actually does.
   IF OLD.closed_at IS NULL AND NEW.closed_at IS NOT NULL THEN
     DECLARE

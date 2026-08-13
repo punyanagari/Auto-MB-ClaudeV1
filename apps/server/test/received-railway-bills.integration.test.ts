@@ -626,8 +626,8 @@ describe('the verdict gate on closing a measurement', () => {
   it('refuses three signatures made by ONE certificate', async () => {
     // The cardinality rule alone cannot tell three signers from one signer
     // signing three times, and one signer three times is what a forged
-    // approval chain looks like. PROPOSED STRENGTHENING of the 2026-08-13
-    // ruling -- see the note in railway-bill-verdict.ts.
+    // approval chain looks like. Owner ruling of 2026-08-14 -- see the
+    // note in railway-bill-verdict.ts.
     const oneCertificate = signerPkis[0];
     if (oneCertificate === undefined) throw new Error('no signing hierarchy');
     const bookId = await bookWith('RBCS', (letterNumber) =>

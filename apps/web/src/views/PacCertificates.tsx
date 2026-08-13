@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   Contact,
   PacCertificateListResponse,
+  PacCertificationBasis,
   RecordPacCertificateRequest,
   WorkItem,
 } from '@auto-mb/contracts';
@@ -13,6 +14,17 @@ import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+
+/** Which quantity the R18 cap measures against, in the operator's own
+ * words. An installable item is capped at what was installed; an AMC
+ * item is never installed at all, so it is capped at the quantity the
+ * LOA sanctioned (migration 0068). The column names the rule rather than
+ * leaving the operator to work out why an item with nothing installed
+ * still has certification available. */
+const BASIS_LABELS: Record<PacCertificationBasis, string> = {
+  installed: 'installed',
+  sanctioned: 'sanctioned',
+};
 
 interface PacCertificatesProps {
   readonly api: ApiClient;
@@ -138,8 +150,10 @@ export function PacCertificates({
     <>
       <h2>PAC certificates</h2>
       <p className="text-muted-foreground">
-        Railway certification of installed quantities, issued in parts. Per item the
-        certified total can never exceed what installation records support; cancelling a
+        Railway certification, issued in parts. Per item the certified total can never
+        exceed the supporting quantity in the table below — what installation records
+        support for an installable item, and the sanctioned quantity for an annual
+        maintenance item, which is certified rather than installed. Cancelling a
         certificate releases its quantities.
       </p>
       {actionError !== null && <FormError>{actionError}</FormError>}
@@ -159,6 +173,10 @@ export function PacCertificates({
             <th scope="col" className={numericCell}>
               Installed
             </th>
+            <th scope="col">Capped against</th>
+            <th scope="col" className={numericCell}>
+              Supporting
+            </th>
             <th scope="col" className={numericCell}>
               PAC certified
             </th>
@@ -172,6 +190,8 @@ export function PacCertificates({
             <tr key={summary.workItemId}>
               <th scope="row">{summary.itemNumber}</th>
               <td className={numericCell}>{summary.installedQuantity}</td>
+              <td>{BASIS_LABELS[summary.certificationBasis]}</td>
+              <td className={numericCell}>{summary.supportingQuantity}</td>
               <td className={numericCell}>{summary.pacCertifiedQuantity}</td>
               <td className={numericCell}>{summary.availableQuantity}</td>
             </tr>
@@ -408,7 +428,7 @@ export function PacCertificates({
             <fieldset>
               <legend>
                 Certified quantities — leave an item blank to omit it; each entry is
-                capped at installed minus already certified
+                capped at the supporting quantity minus what is already certified
               </legend>
               {workItems.map((item) => {
                 const summary = summaryByItem.get(item.id);
@@ -418,7 +438,7 @@ export function PacCertificates({
                       {item.itemNumber} —{' '}
                       {item.effectiveDescription ?? item.description}
                       {summary !== undefined
-                        ? ` (installed ${summary.installedQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
+                        ? ` (${BASIS_LABELS[summary.certificationBasis]} ${summary.supportingQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
                         : ''}
                     </label>
                     <input

@@ -178,29 +178,26 @@ function certificateIdentity(signature: PdfSignatureVerdict): string | null {
 /**
  * The three signatures must come from three different CERTIFICATES.
  *
- * ## This is a PROPOSED STRENGTHENING of the 2026-08-13 ruling
+ * Owner ruling, 2026-08-14, extending the gating rulings of 2026-08-13.
  *
- * The ruling as written — "intact, chains to CCA India, expiry ignored" —
- * is satisfied by one certificate signing the same bill three times.
- * Every clause holds: three intact signatures, three chains to a
- * configured anchor, no expiry complaint. And any DSC that chains to an
- * installed anchor qualifies, which includes the agency's own staff
- * certificates, because a trust anchor says who issued a certificate and
- * nothing whatever about who the holder is.
+ * Those rulings — "intact, chains to CCA India, expiry ignored" — were
+ * satisfied by one certificate signing the same bill three times. Every
+ * clause held: three intact signatures, three chains to a configured
+ * anchor, no expiry complaint. And any DSC that chains to an installed
+ * anchor qualifies, which includes the agency's own staff certificates,
+ * because a trust anchor says who issued a certificate and nothing
+ * whatever about who the holder is.
  *
- * That shape is fraud-shaped. The three signatures on an On-Account Bill
- * are the point of the document: the contractor claims the measurement,
- * the engineer's representative accepts it, and the Sr. DSTE authorises
- * payment against it. Three impressions of one key is one person doing
- * all three, and cardinality alone cannot tell that from the real thing.
+ * That is not what the three signatures on an On-Account Bill mean. The
+ * contractor claims the measurement, the engineer's representative
+ * accepts it, and the Sr. DSTE authorises payment against it; three
+ * impressions of one key is one person doing all three, and cardinality
+ * alone cannot tell that from the real thing.
  *
- * So this function is deliberately separable: one named check, its own
- * refusal code, its own tests. If the owner ratifies the stricter reading
- * it stays; if the owner knows a legitimate case for one signer thrice —
- * a delegated departmental certificate, a re-signing workflow — deleting
- * this function and its call site reverts to the ruling exactly as
- * written, and `docs/PRODUCT.md` §5.4 must be corrected in the same
- * change to describe whichever rule ships.
+ * It stays one named check with its own refusal code and its own tests,
+ * which is how a rule that may be revisited should be written — but it is
+ * the rule now, not a proposal. `docs/PRODUCT.md` §5.5 states it, and any
+ * future change moves both together.
  *
  * Note what it does NOT do: it does not check WHO signed, or in what
  * order, or that one of them is a railway officer. Those are claims about

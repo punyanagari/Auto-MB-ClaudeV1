@@ -431,6 +431,8 @@ describe('PAC certificates', () => {
         workItemId: ITEM_ONE,
         itemNumber: 'A/1',
         installedQuantity: '0.000',
+        certificationBasis: 'installed',
+        supportingQuantity: '0.000',
         pacCertifiedQuantity: '0.000',
         availableQuantity: '0.000',
       },
@@ -438,6 +440,8 @@ describe('PAC certificates', () => {
         workItemId: ITEM_TWO,
         itemNumber: 'A/2',
         installedQuantity: '3.000',
+        certificationBasis: 'installed',
+        supportingQuantity: '3.000',
         pacCertifiedQuantity: '2.000',
         availableQuantity: '1.000',
       },
@@ -469,10 +473,34 @@ describe('PAC certificates', () => {
     renderPac(pacApi());
 
     await screen.findByRole('button', { name: 'New PAC certificate' });
-    // Summary: installed / certified / available per item.
-    expect(screen.getByText('3.000')).toBeTruthy();
-    expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
-    expect(screen.getByText('1.000')).toBeTruthy();
+    // Summary per item: installed, the ceiling the R18 cap is measured
+    // against and which rule chose it, certified, and available. Read as
+    // whole rows, because the installed total and the supporting
+    // quantity coincide for an installable item and a bare text query
+    // could not tell one column from the other.
+    const rows = screen
+      .getAllByRole('row')
+      .map((row) =>
+        Array.from(row.querySelectorAll('th, td')).map(
+          (cell) => cell.textContent ?? '',
+        ),
+      );
+    expect(rows).toContainEqual([
+      'A/1',
+      '0.000',
+      'installed',
+      '0.000',
+      '0.000',
+      '0.000',
+    ]);
+    expect(rows).toContainEqual([
+      'A/2',
+      '3.000',
+      'installed',
+      '3.000',
+      '2.000',
+      '1.000',
+    ]);
     // The certificate block with its consignee snapshot and status.
     expect(
       screen.getByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),

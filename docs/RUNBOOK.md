@@ -196,6 +196,35 @@ $COMPOSE up -d --no-build --force-recreate
 Migrations are additive and advisory-lock-guarded (packages/db); a
 concurrent double-run is harmless.
 
+### Migrations that take heavy locks: 0069
+
+Most migrations here add a table, a column or a trigger and finish in
+milliseconds. **Migration 0069 is different, and should be run in a quiet
+window.** It rewrites the row-level-security policy on every tenant table
+(64 `ALTER POLICY` statements), and `ALTER POLICY` takes `ACCESS
+EXCLUSIVE` on its table. The runner applies each migration in one
+transaction — that is its contract, and it is what makes a half-applied
+policy set impossible — so all 64 locks are held together until commit.
+
+Against live traffic that means the migration waits behind every open
+transaction touching a tenant table, and with `lock_timeout = '2s'` it
+will abort rather than queue. The deploy sequence above already runs
+migrations **before** recreating the app containers, so the old containers
+are still serving while it happens.
+
+It is safe to retry. The transaction is all-or-nothing, the ledger records
+nothing on abort, and the advisory lock is released with the connection —
+so a `lock_timeout` abort leaves the database exactly as it was and the
+same command can simply be run again. If it aborts repeatedly, stop the
+app containers for the few seconds it needs rather than raising
+`lock_timeout`:
+
+```bash
+$COMPOSE stop server            # brief planned outage; postgres stays up
+# …run the bootstrap command from the manual upgrade sequence above…
+$COMPOSE up -d
+```
+
 ## 4. Backups
 
 Nightly cron on the host, not inside a container. Two lines: the backup

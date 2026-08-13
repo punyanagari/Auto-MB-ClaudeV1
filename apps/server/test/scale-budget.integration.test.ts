@@ -2,11 +2,14 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { PlanNode, Sql, TransactionSql } from '@auto-mb/db';
 import {
+  aggregateLoops,
   createDatabasePool,
+  explainPlan,
   removeOrganisationResidue,
   runMigrations,
+  sharedBlocks,
   withTenant,
 } from '@auto-mb/db';
 import { writeLines as writeChallanLines } from '../src/routes/challans.js';
@@ -82,18 +85,6 @@ const ITEMS = 120;
 const CHALLANS = 4;
 const SIBLING_WORKS = 12;
 
-interface PlanNode extends Record<string, unknown> {
-  'Node Type': string;
-  'Actual Loops'?: number;
-  'Shared Hit Blocks'?: number;
-  'Shared Read Blocks'?: number;
-  Plans?: PlanNode[];
-}
-
-function planNodes(node: PlanNode): PlanNode[] {
-  return [node, ...(node.Plans ?? []).flatMap(planNodes)];
-}
-
 /**
  * The tables the measured statements read.
  *
@@ -123,35 +114,24 @@ async function analyzeFixtureTables(): Promise<void> {
   await admin.unsafe(`analyze ${FIXTURE_TABLES.join(', ')}`);
 }
 
+/** The EXPLAIN kit lives in `@auto-mb/db` (`src/explain.ts`). This file,
+ * `scale-budget.integration.test.ts` and the RLS plan-shape guards in
+ * `packages/db/test` each carried a copy of it declaring only the plan
+ * fields that copy happened to read, and a plan assertion is only as good
+ * as its field names. `explainPlan` takes ANALYZE and BUFFERS as options;
+ * both are on here, because these budgets read `Actual Loops` and buffer
+ * counts.
+ *
+ * `aggregateLoops` is the highest loop count over the plan's AGGREGATE
+ * nodes — how many times PostgreSQL had to compute a sum. Join nodes may
+ * legitimately loop (a nested loop over 40 items is linear work); an
+ * aggregate that loops is the per-row shape pack P11 removed. */
 async function explain(
   tx: TransactionSql,
   sql: string,
   parameters: readonly unknown[],
 ): Promise<PlanNode[]> {
-  const rows = (await tx.unsafe(`explain (analyze, buffers, format json) ${sql}`, [
-    ...parameters,
-  ] as never)) as unknown as { 'QUERY PLAN': unknown }[];
-  const raw = rows[0]?.['QUERY PLAN'];
-  const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-    Plan: PlanNode;
-  }[];
-  const root = parsed[0]?.Plan;
-  if (!root) throw new Error('EXPLAIN returned no plan');
-  return planNodes(root);
-}
-
-function aggregateLoops(nodes: readonly PlanNode[]): number {
-  const aggregates = nodes.filter((node) => node['Node Type'].includes('Aggregate'));
-  if (aggregates.length === 0) throw new Error('plan has no aggregate node');
-  return Math.max(...aggregates.map((node) => node['Actual Loops'] ?? 1));
-}
-
-function sharedBlocks(nodes: readonly PlanNode[]): number {
-  return nodes.reduce(
-    (total, node) =>
-      total + (node['Shared Hit Blocks'] ?? 0) + (node['Shared Read Blocks'] ?? 0),
-    0,
-  );
+  return explainPlan(tx, sql, parameters, { analyze: true, buffers: true });
 }
 
 /** Counts the statements a helper issues. postgres.js transactions are
@@ -337,10 +317,17 @@ describe('write budgets do not grow with the document', () => {
         return { short: short.statements.length, long: long.statements.length };
       },
     );
-    // Two deletes and one insert, whatever the document holds. Before
-    // this pack the long document cost 55 more round-trips than the
-    // short one.
-    expect(counts.short).toBe(3);
+    // Two deletes, one row-lock read over the referenced items, and one
+    // insert — whatever the document holds. Before P11 the long document
+    // cost 55 more round-trips than the short one; the property this
+    // test holds is the SECOND assertion, that the two counts are equal.
+    //
+    // The count moved from 3 to 4 with migration 0068, which added the
+    // `FOR UPDATE` read that serialises a draft save against a
+    // concurrent payment-category change. It is one statement over the
+    // whole line set, not one per line, so it raises the constant
+    // without touching the invariant.
+    expect(counts.short).toBe(4);
     expect(counts.long).toBe(counts.short);
   });
 

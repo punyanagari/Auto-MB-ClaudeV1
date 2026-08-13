@@ -170,6 +170,14 @@ const FUNCTION_GRANTS = [
   'app_private.current_organisation_id()',
   'app_private.current_user_id()',
   'app_private.create_organisation_with_owner(text, text, uuid)',
+  // The tenant binding (0069). Every tenant transaction opens with this
+  // call, so a database whose migrations ran before the application role
+  // existed — or one restored onto a fresh cluster with --no-owner — must
+  // get the grant and the definer ownership back here, exactly like the
+  // three above. Without the ownership repair the membership proof inside
+  // it reads organisation_memberships through RLS and finds nothing, and
+  // every bind fails 28000.
+  'app_private.bind_tenant(uuid, text)',
 ];
 
 /** Functions that MUST be owned by the BYPASSRLS definer role: they are

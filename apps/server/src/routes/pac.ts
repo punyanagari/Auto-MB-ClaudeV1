@@ -6,6 +6,7 @@ import {
   RecordPacCertificateRequestSchema,
   type PacCapExceededDetails,
   type PacCertificate,
+  type PacCertificationBasis,
   type PacItemSummary,
   type WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
@@ -39,9 +40,12 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * R18). PACs are railway-issued acceptance certificates recorded by
  * office staff (owner/office — not the site evidence role), certifying
  * installed quantities per item, in parts. Per item the certified total
- * across non-cancelled certificates never exceeds the installed total;
- * the cap runs in exact SQL numeric under the work_items row locks, the
- * same discipline installations use. Certificates cancel with a note
+ * across non-cancelled certificates never exceeds the supporting
+ * quantity — the installed total for an installable item, and the
+ * sanctioned quantity for an AMC one, which is never installed at all
+ * (CERTIFICATION_BASIS_SQL below; migration 0068). The cap runs in exact
+ * SQL numeric under the work_items row locks, the same discipline
+ * installations use. Certificates cancel with a note
  * (releasing their certified quantities); they are never edited or
  * deleted. The reference-level work_instruments rows with kind 'pac'
  * stay untouched — those are banking-reference records, this table is the
@@ -211,8 +215,42 @@ async function readCertificate(
   return rows[0];
 }
 
+/**
+ * The R18 ceiling, as one SQL expression, correlated to a `work_items`
+ * alias named `wi`.
+ *
+ * Written once and interpolated into both places that need it — the
+ * per-item read below and the cap check on record — because two spellings
+ * of a quantity ceiling is exactly how the screen and the refusal come to
+ * disagree, and the screen is the one the operator believes.
+ *
+ * Two rules. Every installable item caps at its installed total: a
+ * certificate accepts work that exists, so it can never certify more
+ * than was installed. An AMC item caps at its SANCTIONED quantity
+ * instead. Annual maintenance is never installed — migration 0068 makes
+ * an installation record naming an AMC item structurally impossible — so
+ * the installed rule would cap it at zero, which is the shape of the
+ * defect 0068 closes: uncertifiable, therefore unbillable, therefore a
+ * Work that can never honestly complete. The sanctioned quantity is the
+ * same ceiling R5 already puts on installation, read through the same
+ * amendment overlay the completion predicate reads.
+ *
+ * Contains no interpolated values; it is a constant fragment, and every
+ * value around it stays parameterised.
+ */
+const CERTIFICATION_BASIS_SQL = `
+  case when wi.payment_category = 'AMC'
+    then coalesce(wi.effective_quantity, wi.awarded_quantity)
+    else coalesce((
+      select sum(i.quantity) from installations i
+      where i.work_item_id = wi.id and i.status = 'recorded'
+    ), 0)
+  end::numeric(18,3)
+`;
+
 /** Per-item aggregates for a Work: installed (SUM over non-cancelled
  * installations — the authoritative aggregate from installations.ts),
+ * the quantity that supports certification (CERTIFICATION_BASIS_SQL),
  * certified (SUM over non-cancelled PAC certificates), and the R18
  * remainder. pacCertifiedQuantity is THE pac_qty the Measurement Book
  * engine will consume (legacy §8) — do not derive it anywhere else. */
@@ -225,14 +263,19 @@ async function readItemSummaries(
       work_item_id: string;
       item_number: string;
       installed_quantity: string;
+      certification_basis: PacItemSummary['certificationBasis'];
+      supporting_quantity: string;
       pac_certified_quantity: string;
       available_quantity: string;
     }[]
   >`
     select wi.id as work_item_id, wi.item_number,
            installed.total::text as installed_quantity,
+           case when wi.payment_category = 'AMC' then 'sanctioned' else 'installed' end
+             as certification_basis,
+           supporting.total::text as supporting_quantity,
            certified.total::text as pac_certified_quantity,
-           (installed.total - certified.total)::numeric(18,3)::text as available_quantity
+           (supporting.total - certified.total)::numeric(18,3)::text as available_quantity
     from work_items wi
     cross join lateral (
       select coalesce((
@@ -240,6 +283,19 @@ async function readItemSummaries(
         where i.work_item_id = wi.id and i.status = 'recorded'
       ), 0)::numeric(18,3) as total
     ) installed
+    -- Reuses the installed lateral above rather than interpolating
+    -- CERTIFICATION_BASIS_SQL, whose else-branch is that same subquery:
+    -- this read already reports the installed total as a column of its
+    -- own, so re-deriving it would scan installations twice per item for
+    -- one number. The rule is identical to the shared fragment's, and
+    -- the cap check below -- which reports no installed column -- uses
+    -- the fragment.
+    cross join lateral (
+      select case when wi.payment_category = 'AMC'
+               then coalesce(wi.effective_quantity, wi.awarded_quantity)
+               else installed.total
+             end::numeric(18,3) as total
+    ) supporting
     cross join lateral (
       select coalesce((
         select sum(pci.certified_quantity)
@@ -255,6 +311,8 @@ async function readItemSummaries(
     workItemId: row.work_item_id,
     itemNumber: row.item_number,
     installedQuantity: row.installed_quantity,
+    certificationBasis: row.certification_basis,
+    supportingQuantity: row.supporting_quantity,
     pacCertifiedQuantity: row.pac_certified_quantity,
     availableQuantity: row.available_quantity,
   }));
@@ -462,34 +520,34 @@ export function registerPacRoutes(
 
         // R18, in exact SQL numeric arithmetic: per item, certified
         // total across non-cancelled certificates plus the requested
-        // quantity may not exceed the installed total (SUM over
-        // non-cancelled installations — the authoritative aggregate
-        // from installations.ts).
+        // quantity may not exceed the supporting quantity —
+        // CERTIFICATION_BASIS_SQL, which is the installed total for an
+        // installable item and the sanctioned quantity for an AMC one.
         const quantities = body.items.map((item) => item.certifiedQuantity);
         const capRows = await tx<
           {
             work_item_id: string;
             item_number: string;
-            installed: string;
+            basis: PacCertificationBasis;
+            supporting: string;
             covered: string;
             available: string;
             exceeded: boolean;
           }[]
         >`
             select wi.id as work_item_id, wi.item_number,
-                   installed.total::text as installed,
+                   case when wi.payment_category = 'AMC'
+                     then 'sanctioned' else 'installed' end as basis,
+                   supporting.total::text as supporting,
                    covered.total::text as covered,
-                   (installed.total - covered.total)::numeric(18,3)::text as available,
-                   (req.qty > installed.total - covered.total) as exceeded
+                   (supporting.total - covered.total)::numeric(18,3)::text as available,
+                   (req.qty > supporting.total - covered.total) as exceeded
             from unnest(${itemIds}::uuid[], ${quantities}::numeric(18,3)[])
               as req(item_id, qty)
             join work_items wi on wi.id = req.item_id
             cross join lateral (
-              select coalesce((
-                select sum(i.quantity) from installations i
-                where i.work_item_id = wi.id and i.status = 'recorded'
-              ), 0)::numeric(18,3) as total
-            ) installed
+              select ${tx.unsafe(CERTIFICATION_BASIS_SQL)} as total
+            ) supporting
             cross join lateral (
               select coalesce((
                 select sum(pci.certified_quantity)
@@ -506,25 +564,39 @@ export function registerPacRoutes(
             items: offending.map((row) => ({
               workItemId: row.work_item_id,
               itemNumber: row.item_number,
-              installed: row.installed,
+              basis: row.basis,
+              supporting: row.supporting,
               covered: row.covered,
               available: row.available,
             })),
           };
-          // R18's requirement: the error states installed, covered and
-          // available.
+          // R18's requirement: the error states the supporting quantity,
+          // what is already covered, and what is left. Two codes rather
+          // than one, because the two ceilings have different remedies —
+          // an installable item is short of installation records, an AMC
+          // item is short of contract, and telling a maintenance clerk to
+          // "record the installation" would be an instruction migration
+          // 0068's trigger refuses.
+          const sanctioned = offending.filter((row) => row.basis === 'sanctioned');
           const message = offending
             .map(
               (row) =>
-                `${row.item_number}: installed ${row.installed}, already certified ${row.covered}, available ${row.available}`,
+                `${row.item_number}: ${row.basis === 'sanctioned' ? 'sanctioned' : 'installed'} ${row.supporting}, already certified ${row.covered}, available ${row.available}`,
             )
             .join('; ');
-          throw httpError(
-            409,
-            'PAC_EXCEEDS_INSTALLED',
-            `The certified quantity exceeds what installation records support — ${message}.`,
-            details,
-          );
+          throw sanctioned.length === offending.length
+            ? httpError(
+                409,
+                'PAC_EXCEEDS_SANCTIONED',
+                `The certified quantity exceeds the sanctioned quantity of the maintenance item — ${message}.`,
+                details,
+              )
+            : httpError(
+                409,
+                'PAC_EXCEEDS_INSTALLED',
+                `The certified quantity exceeds what installation records support — ${message}.`,
+                details,
+              );
         }
 
         const [row] = await tx<{ id: string }[]>`

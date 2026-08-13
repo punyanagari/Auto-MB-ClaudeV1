@@ -22,6 +22,7 @@ const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
   SUPPLY_AND_INSTALLATION: 'Supply + installation',
   PURE_INSTALLATION: 'Purely installation',
   SPARE_SUPPLY: 'Spare supply',
+  AMC: 'Annual maintenance (AMC)',
   UNCATEGORISED: 'Uncategorised items',
 };
 
@@ -138,14 +139,23 @@ function rowProblem(draft: MatrixDraft): string | null {
   return total === 10000n ? null : 'The four stages must sum to exactly 100.';
 }
 
+/** The two stages an AMC row may never bill on (migration 0068). */
+const LOCKED_AMC_STAGES: ReadonlySet<(typeof STAGES)[number][0]> = new Set([
+  'pctSupply',
+  'pctInstallation',
+]);
+
 function rowOf(
   category: PaymentMatrixCategory,
   draft: MatrixDraft,
 ): ConfirmPaymentMatrixRow {
+  // The AMC row submits 0 on its two unbillable stages whatever the
+  // draft holds, so the row that is validated is the row that is sent.
+  const locked = category === 'AMC';
   return {
     category,
-    pctSupply: draft.pctSupply.trim(),
-    pctInstallation: draft.pctInstallation.trim(),
+    pctSupply: locked ? '0' : draft.pctSupply.trim(),
+    pctInstallation: locked ? '0' : draft.pctInstallation.trim(),
     pctPac: draft.pctPac.trim(),
     pctFinalBill: draft.pctFinalBill.trim(),
   };
@@ -373,20 +383,35 @@ export function TenderTermsReview({
                     />
                   </td>
                   <th scope="row">{CATEGORY_LABELS[category]}</th>
-                  {STAGES.map(([field, label]) => (
-                    <td key={field}>
-                      <input
-                        className="min-w-24"
-                        inputMode="decimal"
-                        aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
-                        value={draft[field]}
-                        disabled={!canModify || !draft.enabled}
-                        onChange={(event) => {
-                          update(category, { [field]: event.target.value });
-                        }}
-                      />
-                    </td>
-                  ))}
+                  {STAGES.map(([field, label]) => {
+                    // The AMC row's two unbillable stages (migration
+                    // 0068). Held at 0 and disabled here for the same
+                    // reason the Payment matrix screen does it: an AMC
+                    // item is never delivered and never installed, the
+                    // confirm route refuses a nonzero value, and a
+                    // reviewer should meet the rule while typing rather
+                    // than at the end of a long confirmation form.
+                    const locked = category === 'AMC' && LOCKED_AMC_STAGES.has(field);
+                    return (
+                      <td key={field}>
+                        <input
+                          className="min-w-24"
+                          inputMode="decimal"
+                          aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
+                          value={locked ? '0' : draft[field]}
+                          disabled={!canModify || !draft.enabled || locked}
+                          title={
+                            locked
+                              ? 'Annual maintenance is certified rather than delivered or installed, so this stage can never carry a quantity.'
+                              : undefined
+                          }
+                          onChange={(event) => {
+                            update(category, { [field]: event.target.value });
+                          }}
+                        />
+                      </td>
+                    );
+                  })}
                   <td className={wrapCell}>
                     {evidence.length === 0 ? (
                       <span className="text-xs text-muted-foreground">Not found</span>

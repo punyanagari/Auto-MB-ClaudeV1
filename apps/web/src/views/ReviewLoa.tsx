@@ -1858,6 +1858,7 @@ export function ReviewLoa({
                           </option>
                           <option value="PURE_INSTALLATION">Purely installation</option>
                           <option value="SPARE_SUPPLY">Spare supply</option>
+                          <option value="AMC">Annual maintenance (AMC)</option>
                         </select>
                       </td>
                       <td>

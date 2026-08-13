@@ -65,6 +65,7 @@ beforeAll(async () => {
     'app_private.current_organisation_id()',
     'app_private.current_user_id()',
     'app_private.create_organisation_with_owner(text, text, uuid)',
+    'app_private.bind_tenant(uuid, text)',
   ]) {
     await bootAdmin.unsafe(`alter function ${fn} owner to auto_mb_owner`);
   }
@@ -135,10 +136,10 @@ describe('production bootstrap', () => {
       where n.nspname = 'app_private'
         and p.proname in (
           'current_organisation_id', 'current_user_id',
-          'create_organisation_with_owner'
+          'create_organisation_with_owner', 'bind_tenant'
         )
     `;
-    expect(owners).toHaveLength(3);
+    expect(owners).toHaveLength(4);
     for (const row of owners) {
       expect(row.owner, row.proname).toBe('auto_mb_definer');
     }

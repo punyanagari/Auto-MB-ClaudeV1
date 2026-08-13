@@ -257,10 +257,11 @@ describe('whether a railway bill may settle money', () => {
   });
 
   it('refuses three signatures made by ONE certificate', () => {
-    // PROPOSED STRENGTHENING of the 2026-08-13 ruling. Every clause of the
-    // ruling as written holds here — three intact signatures, three chains
-    // to a configured anchor, no expiry complaint — and it is still one
-    // person signing their own approval three times.
+    // Owner ruling of 2026-08-14. Every clause of the 2026-08-13 rulings
+    // holds here — three intact signatures, three chains to a configured
+    // anchor, no expiry complaint — and it is still one person signing
+    // their own approval three times, which is what the newer ruling
+    // refuses.
     const one = distinctSignature(1);
     const same = [
       { ...one, index: 1 },
