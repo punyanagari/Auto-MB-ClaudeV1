@@ -344,6 +344,18 @@ describe('dashboard', () => {
     expect(dashboard.totals.loaAwaitingReview).toBe(1);
     expect(dashboard.totals.openDrafts).toBe(0);
 
+    // The GST basis (migration 0062). This Work was seeded without one, so
+    // it carries the column default — the ordinary Indian works contract,
+    // rates inclusive of 18%.
+    const [seeded] = dashboard.works;
+    expect(seeded?.gstBasis).toBe('inclusive');
+    expect(seeded?.gstRate).toBe('18.00');
+    // 300 billed against 4,520,000, computed on that basis and to four
+    // decimal places. Computed on the SERVER: the browser used to divide
+    // these two strings itself, where the basis was invisible.
+    expect(seeded?.executedPercent).toBe('0.0066');
+    expect(dashboard.totals.executedPercent).toBe('0.0066');
+
     const kinds = dashboard.alerts.map((alert) => alert.kind);
     expect(kinds).toContain('instrument_expired');
     expect(kinds).toContain('instrument_expiring');
@@ -371,5 +383,55 @@ describe('dashboard', () => {
     const work = dashboard.works[0];
     expect(work?.workCode).toBe('DASH-1');
     expect(work?.issuedChallans).toBe(0);
+  });
+
+  it('aggregates a MIXED-basis portfolio on one basis, not on printed rupees', async () => {
+    // The regression the per-Work attribute exists for, at the API level.
+    // DASH-1 is an inclusive Work worth 4,520,000 inclusive — 3,830,508.47
+    // taxable. This second Work is an EXCLUSIVE one of exactly that
+    // taxable size, so the two contracts are equal in real terms and the
+    // portfolio percentage must be exactly half of DASH-1's own.
+    const exclusiveWorkId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, gst_basis, gst_rate,
+        created_by_user_id
+      )
+      values (
+        ${exclusiveWorkId}, ${organisationId}, 'DASH-EXCL', 'L-78/2026',
+        '2026-01-16', 'Rates quoted exclusive of GST', '4000000.00',
+        '3830508.47', 'per_schedule', 'exclusive', 18.00, ${ownerUserId}
+      )
+    `;
+    try {
+      const response = await authed(viewer, {
+        method: 'GET',
+        url: '/api/dashboard',
+        organisationId,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const dashboard = response.json<DashboardResponse>();
+
+      const exclusive = dashboard.works.find((row) => row.workCode === 'DASH-EXCL');
+      expect(exclusive?.gstBasis).toBe('exclusive');
+      // Nothing billed on it, so it is pure denominator.
+      expect(exclusive?.executedPercent).toBe('0.0000');
+
+      // 0.0066 halved: the same 254.24 of taxable billing measured against
+      // twice the taxable contract.
+      expect(dashboard.totals.executedPercent).toBe('0.0033');
+
+      // What adding the printed rupees would have said instead —
+      // 300 / (4,520,000 + 3,830,508.47) = 0.0036%. It reads HIGH, because
+      // the billed Work's figure carries GST that its neighbour's contract
+      // value does not. Three ten-thousandths of a percent here; the same
+      // error is 18% of the answer once both Works are actually executing.
+      const naive = (300 / Number(dashboard.totals.contractValue)) * 100;
+      expect(naive.toFixed(4)).toBe('0.0036');
+      expect(dashboard.totals.executedPercent).not.toBe('0.0036');
+    } finally {
+      await admin`delete from works where id = ${exclusiveWorkId}`;
+    }
   });
 });

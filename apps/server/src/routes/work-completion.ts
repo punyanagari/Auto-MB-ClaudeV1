@@ -55,6 +55,8 @@ interface WorkStatusRow {
   pricing_shape: 'letter_percentage' | 'per_schedule';
   letter_percentage: string | null;
   letter_percentage_direction: 'below' | 'at_par' | 'above' | null;
+  gst_basis: 'inclusive' | 'exclusive';
+  gst_rate: string;
   pbg_required_amount: string | null;
   pbg_submission_days: number | null;
   pbg_extension_days: number | null;
@@ -71,6 +73,7 @@ const WORK_COLUMNS = `
   id, work_code, letter_number, letter_date::text as letter_date, title,
   advertised_value, contract_value, pricing_shape, letter_percentage,
   letter_percentage_direction,
+  gst_basis, gst_rate::text as gst_rate,
   pbg_required_amount::text as pbg_required_amount,
   pbg_submission_days, pbg_extension_days,
   pbg_penal_interest_percent::text as pbg_penal_interest_percent,
@@ -91,6 +94,8 @@ function toWorkStatusResponse(row: WorkStatusRow) {
       pricingShape: row.pricing_shape,
       letterPercentage: row.letter_percentage,
       letterPercentageDirection: row.letter_percentage_direction,
+      gstBasis: row.gst_basis,
+      gstRate: row.gst_rate,
       pbgRequiredAmount: row.pbg_required_amount,
       pbgSubmissionDays: row.pbg_submission_days,
       pbgExtensionDays: row.pbg_extension_days,

@@ -74,6 +74,15 @@
  *    composes around the parsed rows.
  *  - `paymentCategory` and the initial payment matrix: the parser never
  *    proposes either; both are the reviewer's judgement (spec §8).
+ *  - `gstBasis` / `gstRate` (migration 0062): whether the letter's rates are
+ *    quoted inclusive or exclusive of GST. The letter does not say —
+ *    searching the PL-270 corpus letter for "inclusive of GST", "GST extra"
+ *    and every neighbouring phrasing returns nothing, which is recorded in
+ *    `corpus.json` under `executed_value_rule.evidence_for_this_work`; the
+ *    declaration appears on the railway's own BILL ("Rate is inclusive of
+ *    GST: Yes"), not on the award. So the parser asserts nothing here and
+ *    there is no extracted truth to defend. By rule 1 it is a hole, and it
+ *    is recorded as one below so the audit shows a human established it.
  *  - Rows the reviewer ADDS (`manualEntry: true`): not extracted values.
  *    They stay allowed and stay marked manual.
  *  - Rows the reviewer REMOVES: a parsed row omitted from the payload is
@@ -532,6 +541,13 @@ function checkHeader(
     PERCENT_SCALE,
     body.letterPercentage,
   );
+
+  // The GST basis is ALWAYS a hole: no parse asserts it, on any letter
+  // (see the note above). Recorded unconditionally rather than skipped, so
+  // the confirm audit shows that this Work's basis was established by a
+  // human and not inherited from a default nobody looked at — which is the
+  // whole reason it is a per-Work attribute.
+  tally.letterHole('gstBasis');
 }
 
 function checkPbgRequirement(

@@ -3,8 +3,10 @@ import {
   DashboardResponseSchema,
   type DashboardAlert,
   type DashboardResponse,
+  type GstBasis,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
+import { executedPercent, portfolioExecutedPercent } from '../executed-value.js';
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
 import type { AppInstance } from '../app-instance.js';
@@ -34,6 +36,8 @@ interface ProgressRow extends Record<string, unknown> {
   contract_value: string;
   delivered_value: string;
   billed_value: string;
+  gst_basis: GstBasis;
+  gst_rate: string;
   issued_challans: string;
 }
 
@@ -103,6 +107,12 @@ export function registerDashboardRoutes(
             w.contract_value::text as contract_value,
             coalesce(delivered.total, 0)::numeric(18,2)::text as delivered_value,
             coalesce(billed.total, 0)::numeric(18,2)::text as billed_value,
+            -- The basis all three of those figures are stated on: the
+            -- delivered and billed sums are built from the Work's own item
+            -- rates, which came off the LOA schedule, so they carry the
+            -- letter's basis exactly as contract_value does (0062).
+            w.gst_basis,
+            w.gst_rate::text as gst_rate,
             coalesce(delivered.challans, 0)::text as issued_challans
           from works w
           left join lateral (
@@ -416,12 +426,41 @@ export function registerDashboardRoutes(
           return `${sign}${rupees.toString()}.${cents}`;
         };
 
+        const gstOf = (row: ProgressRow) => ({
+          basis: row.gst_basis,
+          ratePercent: row.gst_rate,
+        });
+
         return {
           totals: {
             works: works.length,
+            // The three money sums stay what they have always been: the
+            // Works' own printed figures added up, so the Contract value
+            // tile still shows the rupees the letters state.
+            //
+            // On a portfolio that MIXES bases that sum is on no single
+            // basis, and the honest fix is to state every term as taxable
+            // value first. Not done here, deliberately: it would drop the
+            // tile by a sixth for today's all-inclusive portfolio, which
+            // is a visible change to a number the owner reads off the
+            // LOA, and that is the owner's call rather than this change's.
+            // The RATIO below does not have that problem — it normalises
+            // internally — so the number that drives completion talk is
+            // already correct while the tiles are unchanged.
             contractValue: sumDecimal(works.map((row) => row.contract_value)),
             deliveredValue: sumDecimal(works.map((row) => row.delivered_value)),
             billedValue: sumDecimal(works.map((row) => row.billed_value)),
+            // Billed against contract across every Work, each term
+            // restated as taxable value before it joins either sum, so a
+            // portfolio holding both kinds of letter aggregates coherently.
+            executedPercent: portfolioExecutedPercent(
+              works.map((row) => ({
+                contractValue: row.contract_value,
+                numerator: row.billed_value,
+                numeratorBasis: row.gst_basis,
+                gst: gstOf(row),
+              })),
+            ),
             openDrafts,
             loaAwaitingReview,
             irpReportingDue,
@@ -433,9 +472,20 @@ export function registerDashboardRoutes(
             workCode: row.work_code,
             title: row.title,
             status: row.status,
+            // Per-Work figures stay on the Work's OWN basis — that is what
+            // its letter says and what its operator recognises — and the
+            // basis travels with them so the screen can label it.
             contractValue: row.contract_value,
             deliveredValue: row.delivered_value,
             billedValue: row.billed_value,
+            gstBasis: row.gst_basis,
+            gstRate: row.gst_rate,
+            executedPercent: executedPercent(
+              row.billed_value,
+              row.gst_basis,
+              row.contract_value,
+              gstOf(row),
+            ),
             issuedChallans: Number(row.issued_challans),
           })),
         };

@@ -117,7 +117,30 @@ export function todayIso(): string {
   return new Intl.DateTimeFormat('en-CA').format(new Date());
 }
 
-/** Whole-percent progress, clamped to 0–100 for display. */
+/**
+ * Renders a percentage the SERVER computed — `executedPercent` on the
+ * dashboard — for display, without recomputing it.
+ *
+ * Executed value is compared against a contract value whose GST basis
+ * varies per Work (migration 0062), so the arithmetic belongs on the
+ * server where the basis is known; the browser's job is to print it. The
+ * string arrives with four fraction digits because a mixed-basis error is
+ * recognisable in them (29.4874 against 24.9893); one is enough on screen.
+ * `null` means the contract value is zero, which is not 0% — it is no
+ * answer, and the caller shows a dash.
+ */
+export function formatServerPercent(value: string | null): string | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return `${parsed.toFixed(1)}%`;
+}
+
+/** Whole-percent progress, clamped to 0–100 for display. Only for ratios
+ * of two figures already known to be on the SAME GST basis — the
+ * dashboard's delivered-against-contract bars, where both sides come from
+ * the same Work's own rates. Anything compared across works, or against a
+ * figure from a tax document, must be computed on the server instead. */
 export function progressPercent(part: string, whole: string): number {
   const partValue = Number(part);
   const wholeValue = Number(whole);

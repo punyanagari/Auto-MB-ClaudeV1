@@ -743,6 +743,81 @@ describe('the LOA extracted-value lock', () => {
     expect(lock?.parsedRowsOmitted).toBe(0);
   }, 30_000);
 
+  /* --- the GST basis (migration 0062) -------------------------------- */
+
+  it('defaults the GST basis to inclusive at 18% when the payload omits it', async () => {
+    // The common case, and the one an older client sends. PL270-CRB is an
+    // inclusive letter (the corpus records the evidence), so the default
+    // is also the right answer here.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, lockCase.request);
+    expect(response.statusCode, response.body).toBe(201);
+    const work = response.json<WorkDetailResponse>().work;
+    expect(work.gstBasis).toBe('inclusive');
+    expect(work.gstRate).toBe('18.00');
+
+    const [row] = await admin<{ gst_basis: string; gst_rate: string }[]>`
+      select gst_basis, gst_rate::text as gst_rate from works where id = ${work.id}
+    `;
+    expect(row?.gst_basis).toBe('inclusive');
+    expect(row?.gst_rate).toBe('18.00');
+  }, 30_000);
+
+  it('records an EXCLUSIVE letter when the reviewer says so', async () => {
+    // The rare case the attribute exists for. It is accepted as a value,
+    // not refused as a modification: the parser asserts nothing about GST,
+    // so there is no extracted truth here to contradict.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      gstBasis: 'exclusive',
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json<WorkDetailResponse>().work.gstBasis).toBe('exclusive');
+  }, 30_000);
+
+  it('audits the basis and whether a human stated it', async () => {
+    // The basis appears in no document, so this audit row is the only
+    // evidence of which way the question was answered if a Work's
+    // execution percentage is ever disputed.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      gstBasis: 'exclusive',
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const workId = response.json<WorkDetailResponse>().work.id;
+    const [event] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'work.created' and entity_id = ${workId}
+    `;
+    expect(event?.details['gst']).toEqual({
+      basis: 'exclusive',
+      rate: '18.00',
+      stated: true,
+    });
+    // And the lock records it as a hole the reviewer filled — never as a
+    // locked field, on any letter, because no parse asserts it.
+    const lock = event?.details['extractedValueLock'] as
+      { letterHolesFilled: string[] } | undefined;
+    expect(lock?.letterHolesFilled).toContain('gstBasis');
+  }, 30_000);
+
+  it('refuses a GST rate the organisation has not notified on the letter date', async () => {
+    // Same master and same refusal every other tax-bearing document uses,
+    // asked as of the LETTER date rather than today: the basis is a fact
+    // about rates quoted in a letter signed then.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      gstRate: '17.00',
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('GST_RATE_NOT_NOTIFIED');
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
   it('refuses a changed letter date, naming the field and both values', async () => {
     const lockCase = await seedLockCase('PL270-CRB');
     const response = await confirmLock(lockCase, {

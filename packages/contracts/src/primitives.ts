@@ -32,6 +32,29 @@ export const DecimalStringSchema = Type.String({
 });
 export type DecimalString = Static<typeof DecimalStringSchema>;
 
+/**
+ * A COMPUTED percentage transported as a string, with up to four fraction
+ * digits — one more than DecimalString allows.
+ *
+ * The extra digit is not decoration. Executed value on the PL-270 corpus
+ * is 29.4874% computed on a consistent GST basis and 24.9893% computed on
+ * a mixed one, and the two are related by exactly 1.18 — the ratio is how
+ * a basis mistake is recognised in a report rather than merely suspected
+ * (apps/server/test/fixtures/railway-settlement/corpus.json). Rounding to
+ * three digits blurs that check for no gain: nothing is STORED at this
+ * scale, so the wider shape costs nothing but a pattern.
+ *
+ * Not a money type. Percentages here are always derived on the server
+ * from two exact money figures; they are never summed, stored, or fed
+ * back into arithmetic.
+ */
+export const PercentStringSchema = Type.String({
+  pattern: '^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,4})?$',
+  description:
+    'Computed percentage transported as a string; up to four fraction digits.',
+});
+export type PercentString = Static<typeof PercentStringSchema>;
+
 /** RATE fields carry up to six fraction digits (rate columns are
  * numeric(18,6); v1 agreement rates run to 0.8517/mtr and finer).
  * Quantities and money amounts keep the 3dp DecimalString shape. */
