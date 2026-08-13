@@ -311,7 +311,21 @@ Activated with Milestone 4 (pilot engineering):
   and live-HTTP tests; the production compose runs ClamAV and configures
   it. Local development runs unscanned by explicit posture (magic-byte,
   size, and media-type validation still apply, and uploads are never
-  executed);
+  executed). Because that posture is one unset variable away from
+  production, a process that is not an explicit `NODE_ENV=development` or
+  `NODE_ENV=test` run and would register the upload routes refuses to
+  boot without `CLAMAV_HOST`
+  (`assertProductionMalwareScanning`, `apps/server/src/upload-guards.ts`),
+  on the same reasoning as the auth-secret and `MFA_ENFORCE` gates;
+- one upload guard, derived — the magic-byte, size and media-type checks
+  live in a single `consumeUpload()` (`apps/server/src/upload-guards.ts`)
+  rather than being copied into each handler, and the per-address upload
+  throttle is derived from the routes the tenant-route registrar
+  registered with a raw-body `bodyLimit` instead of from a path list.
+  `apps/server/test/upload-inventory.integration.test.ts` enumerates every
+  upload route and proves, per route, that the guard refuses a
+  wrong-signature body and that the throttle covers it, so a new upload
+  route cannot be added without both;
 - metrics — Prometheus text format behind a bearer token, refused at the
   public edge; route templates as labels, never raw URLs, so tenant and
   document ids cannot leak into label values. The bearer comparison is

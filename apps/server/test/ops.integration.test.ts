@@ -80,7 +80,24 @@ describe('rate limiting', () => {
     // Both endpoints take 25MB PDF bodies through the malware scan, so
     // they must share the per-address upload limiter with the other
     // scan-bearing uploads (review hardening; previously unlimited).
+    //
+    // The instance is database-configured because which requests count as
+    // uploads is now DERIVED from the routes the tenant-route registrar
+    // registered with a bodyLimit (improvement programme P4) instead of
+    // being restated as a path list in app.ts — and those routes exist
+    // only where authentication and a database do. The probes below stay
+    // unauthenticated: the limiter still runs ahead of the session check,
+    // so an allowed attempt answers 401 and an exhausted one answers 429.
+    const admin = createDatabasePool({
+      url: adminUrl,
+      max: 1,
+      applicationName: 'auto-mb-ops-upload-window-admin',
+    });
+    await runMigrations(admin, migrationsDirectory);
     const uploads = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
       objectStorageDir: storageDir,
       rateLimits: { upload: { windowMs: 60_000, max: 2 } },
     });
@@ -108,8 +125,11 @@ describe('rate limiting', () => {
       expect(read.statusCode).not.toBe(429);
     } finally {
       await uploads.close();
+      await admin.end();
     }
-  });
+    // Generous: on a database that has not been migrated yet this test is
+    // the one that applies the ledger, which the default 5s does not cover.
+  }, 120_000);
 
   it('keys per forwarded client behind a trusted proxy hop', async () => {
     // Production topology: every connection reaches Fastify from the

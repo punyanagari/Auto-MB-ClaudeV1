@@ -28,7 +28,11 @@ import {
 } from '../issue-challan-html.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import type { MalwareScanner } from '../malware-scan.js';
-import { assertNotMalware } from '../upload-guards.js';
+import {
+  assertNotMalware,
+  consumeUpload,
+  MAX_PDF_UPLOAD_BYTES,
+} from '../upload-guards.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertWorkOperable } from '../work-status.js';
 import { isPositiveDecimal } from './challans.js';
@@ -47,9 +51,6 @@ const PdfQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 interface IssueChallanRow {
   id: string;
@@ -902,7 +903,7 @@ export function registerIssueChallanRoutes(
     {
       method: 'POST',
       url: '/api/issue-challans/:id/signed-copy',
-      bodyLimit: MAX_PDF_BYTES,
+      bodyLimit: MAX_PDF_UPLOAD_BYTES,
       schema: {
         params: IdParamsSchema,
         response: { 200: IssueChallanDetailResponseSchema, ...errorResponses },
@@ -910,17 +911,10 @@ export function registerIssueChallanRoutes(
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw httpError(
-          400,
-          'PDF_REQUIRED',
-          'Send the signed copy as an application/pdf request body.',
-        );
-      }
-      if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
-        throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
-      }
+      const { bytes: body } = consumeUpload(request.body, {
+        format: 'pdf',
+        description: 'the signed copy',
+      });
       // Authorisation before the expensive scan: an unauthorised caller
       // must not spend scanner capacity.
       await tenant(async (tx) => {
