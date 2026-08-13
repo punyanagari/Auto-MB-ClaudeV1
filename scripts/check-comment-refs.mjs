@@ -10,8 +10,8 @@
 //
 // This script makes it fail a build. It extracts the comments from every
 // tracked source file, pulls out every repository-path-shaped reference, and
-// requires each one to name a real file. A reference carrying a line number
-// (`foo.ts:42`) additionally has to point inside that file.
+// requires each one to name a real file. A reference that carries a line
+// number after a colon additionally has to point inside that file.
 //
 // Resolution is deliberately lenient about *where* a path is rooted: comments
 // legitimately write `items.ts`, `routes/challans.ts` and
@@ -63,9 +63,9 @@ const REFERENCE_EXTENSIONS = [
   'toml',
 ];
 
-// Longest first, so `corpus.json` is not read as `corpus.js` + stray `on`,
-// and the extension must not run on into more word characters, so a digest
-// name like `adbe.pkcs7.sha1` is not read as a shell script.
+// Longest first, so a JSON filename is not read as a JavaScript one with a
+// stray `on` after it, and the extension must not run on into more word
+// characters, so a digest name ending in `sha1` is not read as a shell script.
 const EXTENSION_ALTERNATION = [...REFERENCE_EXTENSIONS]
   .sort((left, right) => right.length - left.length)
   .join('|');
