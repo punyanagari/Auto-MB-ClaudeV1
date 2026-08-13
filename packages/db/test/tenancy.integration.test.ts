@@ -6,7 +6,14 @@ import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
 import { removeOrganisationResidue } from '../src/testing.js';
-import { withTenant, withTenantSnapshot, withUserContext } from '../src/tenant.js';
+import {
+  TENANT_BIND_REFUSED_SQLSTATE,
+  TenantBindRefusedError,
+  withTenant,
+  withTenantSnapshot,
+  withUserContext,
+} from '../src/tenant.js';
+import { bindTenantGucsDirectly } from './support/invariant-db.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -284,13 +291,20 @@ async function seedTenantGraph(
   workCode: string,
   shaFill: string,
 ): Promise<TenantGraph> {
-  return withTenant(app, { organisationId, userId }, async (tx) => {
-    // The bootstrap function is the only path that can create an
-    // organisation under the membership floor: it atomically creates the
-    // organisation, the owner membership, and the audit event.
+  // The bootstrap function is the only path that can create an
+  // organisation under the membership floor: it atomically creates the
+  // organisation, the owner membership, and the audit event. It runs with
+  // a USER context and no organisation, exactly as POST /api/organisations
+  // does — since migration 0069 a tenant binding is refused outright when
+  // no membership backs it, and at this point the membership is the thing
+  // being created.
+  await withUserContext(app, userId, async (tx) => {
     await tx`
       select app_private.create_organisation_with_owner(${name}, ${slug}, ${organisationId})
     `;
+  });
+
+  return withTenant(app, { organisationId, userId }, async (tx) => {
     // The 0052 split guard judges every money-carrying invoice against the
     // organisation's own state; the seeded invoice below is an intra-state
     // (27 -> 27) CGST/SGST split, so the organisation must carry state 27.
@@ -1395,32 +1409,117 @@ describe('statutory document delete guards', () => {
   });
 });
 
+/**
+ * The floor is `app_private.current_organisation_id()`, which every policy
+ * calls and which proves an ACTIVE membership on the definer's authority.
+ *
+ * Since migration 0069 `withTenant` also proves the binding before the
+ * transaction runs anything, so a non-member binding no longer reaches the
+ * policies at all. That is a semantics improvement, not the floor — and
+ * the difference matters enough that both are asserted here.
+ * `bindDirectly` writes the two GUCs the way `tenant.ts` did before 0069,
+ * which is what any future code path that skipped `bind_tenant` would do;
+ * the assertions after it are the floor holding on its own.
+ */
+async function bindDirectly<T>(
+  organisationId: string,
+  userId: string,
+  work: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  return bindTenantGucsDirectly(app, organisationId, userId, work);
+}
+
 describe('membership floor', () => {
-  it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
-    // userB is not a member of organisation A: every read is empty and
-    // every write is denied, no matter what the handler stamped.
-    await withTenant(
+  it('binds an active member through the raw GUCs, so the negative cases mean something', async () => {
+    // The positive control for `bindDirectly` itself. Every assertion
+    // below reads "nothing is visible" through this same path, and a
+    // coordinated rename of the two GUCs would make all of them
+    // vacuously true — an unbound transaction also sees nothing. This
+    // case fails in exactly that scenario, so the negatives keep their
+    // meaning.
+    await bindDirectly(organisationA.id, userA, async (tx) => {
+      const [bound] = await tx<{ organisation_id: string | null }[]>`
+        select app_private.current_organisation_id() as organisation_id
+      `;
+      expect(bound?.organisation_id).toBe(organisationA.id);
+      const works = await tx<{ id: string }[]>`select id from works`;
+      expect(works.map((row) => row.id)).toEqual([graphA.workId]);
+    });
+  });
+
+  it('refuses the binding outright for a non-member, before any statement runs', async () => {
+    // The bind-refusal contract, asserted once and here: the typed error
+    // `@auto-mb/db` raises, Auto-MB's own SQLSTATE underneath it, and that
+    // the callback never ran. The SQLSTATE is deliberately NOT 28000 —
+    // that is PostgreSQL's own invalid_authorization_specification, which
+    // a pg_hba or LOGIN failure raises, and a caller mapping it to
+    // "not a member" would report an authentication outage as a fleet of
+    // permission refusals.
+    let statementsRan = 0;
+    const outcome = await withTenant(
       app,
       { organisationId: organisationA.id, userId: userB },
       async (tx) => {
-        const [bound] = await tx<{ organisation_id: string | null }[]>`
-          select app_private.current_organisation_id() as organisation_id
-        `;
-        expect(bound?.organisation_id).toBeNull();
-
-        for (const table of TENANT_TABLES) {
-          expect(
-            await countAs(tx as unknown as Sql, table, organisationA.id),
-            table,
-          ).toBe(0);
-        }
+        statementsRan += 1;
+        return tx`select 1 as unreachable`;
       },
+    ).then(
+      () => null,
+      (error: unknown) => error,
     );
+    expect(outcome).toBeInstanceOf(TenantBindRefusedError);
+    expect((outcome as TenantBindRefusedError).organisationId).toBe(organisationA.id);
+    expect(
+      ((outcome as TenantBindRefusedError).cause as { code?: string } | undefined)
+        ?.code,
+    ).toBe(TENANT_BIND_REFUSED_SQLSTATE);
+    expect(statementsRan).toBe(0);
+  });
+
+  it('lets a genuine driver failure keep its own shape', async () => {
+    // The other half of the discrimination: only the bind statement is
+    // wrapped and only Auto-MB's SQLSTATE is converted, so an error the
+    // callback itself raises — including one carrying a PostgreSQL class
+    // 28 code — is never relabelled a membership decision.
+    const outcome = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      (tx) => tx`
+        do $$ begin
+          raise exception 'simulated connection authorisation failure'
+            using errcode = '28000';
+        end $$
+      `,
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(outcome).not.toBeInstanceOf(TenantBindRefusedError);
+    expect(outcome).toMatchObject({ code: '28000' });
+  });
+
+  it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
+    // userB is not a member of organisation A: every read is empty and
+    // every write is denied, no matter what the handler stamped — and this
+    // holds with the GUCs written directly, without bind_tenant's help.
+    await bindDirectly(organisationA.id, userB, async (tx) => {
+      const [bound] = await tx<{ organisation_id: string | null }[]>`
+        select app_private.current_organisation_id() as organisation_id
+      `;
+      expect(bound?.organisation_id).toBeNull();
+
+      for (const table of TENANT_TABLES) {
+        expect(
+          await countAs(tx as unknown as Sql, table, organisationA.id),
+          table,
+        ).toBe(0);
+      }
+    });
 
     await expect(
-      withTenant(
-        app,
-        { organisationId: organisationA.id, userId: userB },
+      bindDirectly(
+        organisationA.id,
+        userB,
         (tx) => tx`
           insert into audit_events (organisation_id, action, entity_type)
           values (${organisationA.id}, 'integration.floor-breach', 'works')
@@ -1435,14 +1534,20 @@ describe('membership floor', () => {
       where organisation_id = ${organisationB.id} and user_id = ${userB}
     `;
     try {
-      await withTenant(
-        app,
-        { organisationId: organisationB.id, userId: userB },
-        async (tx) => {
-          const works = await tx`select id from works`;
-          expect(works).toHaveLength(0);
-        },
-      );
+      // Disabling the membership is enough to fail the bind …
+      await expect(
+        withTenant(
+          app,
+          { organisationId: organisationB.id, userId: userB },
+          (tx) => tx`select 1`,
+        ),
+      ).rejects.toBeInstanceOf(TenantBindRefusedError);
+      // … and enough for the policies to deny on their own if something
+      // wrote the GUCs without asking.
+      await bindDirectly(organisationB.id, userB, async (tx) => {
+        const works = await tx`select id from works`;
+        expect(works).toHaveLength(0);
+      });
     } finally {
       await admin`
         update organisation_memberships set status = 'active'
