@@ -14,6 +14,7 @@ import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
 import { mastersHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { FormError } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { CreditNotesPanel } from './work-tax-invoices/CreditNotesPanel.js';
 import { EwayBillsPanel } from './work-tax-invoices/EwayBillsPanel.js';
 import { InvoiceDraftForm } from './work-tax-invoices/InvoiceDraftForm.js';
@@ -206,18 +207,15 @@ export function WorkTaxInvoices({
     return (
       <>
         <h2>Tax Invoices</h2>
-        <FormError>
-          Tax invoices could not be loaded. Existing invoices remain unknown, so
-          drafting is paused.
-        </FormError>
-        <Button
-          variant="outline"
-          onClick={() => {
+        <ErrorState
+          retryLabel="Retry tax invoices"
+          onRetry={() => {
             setLoadVersion((current) => current + 1);
           }}
         >
-          Retry tax invoices
-        </Button>
+          Tax invoices could not be loaded. Existing invoices remain unknown, so
+          drafting is paused.
+        </ErrorState>
       </>
     );
   }
@@ -226,9 +224,7 @@ export function WorkTaxInvoices({
     return (
       <>
         <h2>Tax Invoices</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading tax invoices…
-        </p>
+        <LoadingState label="the tax invoices" rows={4} columns={4} />
       </>
     );
   }
@@ -274,25 +270,28 @@ export function WorkTaxInvoices({
 
       <InvoiceList invoices={invoices} pending={pending} onOpen={openInvoice} />
 
-      {pickerFailure !== null && (
-        <>
-          <FormError>
+      {/* A 403 is not a transient failure and has no retry: it is the
+          permission-limited state `docs/UX.md` keeps separate from a
+          service failure, so it reads as an inline refusal rather than
+          offering an action that would refuse identically. */}
+      {pickerFailure !== null &&
+        (pickerFailure.retryable ? (
+          <ErrorState
+            retryLabel="Retry"
+            onRetry={() => {
+              setLoadVersion((current) => current + 1);
+            }}
+          >
             {pickerFailure.message} Drafting is unavailable until it loads — the
             invoices above are unaffected, and this does not mean there is nothing to
             bill.
+          </ErrorState>
+        ) : (
+          <FormError>
+            {pickerFailure.message} Drafting is unavailable — the invoices above are
+            unaffected, and this does not mean there is nothing to bill.
           </FormError>
-          {pickerFailure.retryable && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setLoadVersion((current) => current + 1);
-              }}
-            >
-              Retry
-            </Button>
-          )}
-        </>
-      )}
+        ))}
 
       {draftBlockedByMissingClient && (
         <>

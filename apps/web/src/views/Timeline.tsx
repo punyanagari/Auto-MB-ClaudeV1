@@ -4,7 +4,8 @@ import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { CardHeader } from '../ui/card.js';
-import { Actions, FormError } from '../ui/form.js';
+import { Actions } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 /** Where the event stream comes from: a whole Work's trail (work detail
  * screen) or one record's history (challan detail reuses this). */
@@ -176,6 +177,8 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [entityFilter, setEntityFilter] = useState('');
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   const scopeKey =
     scope.kind === 'work'
@@ -221,7 +224,11 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
     return () => {
       cancelled = true;
     };
-  }, [fetchPage]);
+  }, [fetchPage, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   async function loadMore() {
     if (nextCursor === null) return;
@@ -267,14 +274,19 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
           </span>
         )}
       </CardHeader>
-      {error !== null && <FormError>{error}</FormError>}
+      {error !== null && (
+        <ErrorState onRetry={retry} retryLabel="Retry timeline">
+          {error}
+        </ErrorState>
+      )}
       {events === null && error === null && (
-        <p className="text-muted-foreground" role="status">
-          Loading timeline…
-        </p>
+        <LoadingState label="the timeline" rows={3} />
       )}
       {events !== null && events.length === 0 && (
-        <p className="text-muted-foreground">No activity recorded yet.</p>
+        <EmptyState>
+          No activity recorded yet. Every issued document, receipt and correction
+          appears here as it is recorded.
+        </EmptyState>
       )}
       {events !== null && events.length > 0 && (
         <ol className="m-0 list-none border-l-2 border-[#cbc9c0] p-0">

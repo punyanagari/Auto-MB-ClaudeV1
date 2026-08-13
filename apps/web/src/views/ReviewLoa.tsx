@@ -37,6 +37,7 @@ import {
   FieldError,
   Hint,
 } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { TenderTermsReview } from './TenderTermsReview.js';
 import {
   asExtractionPayload,
@@ -420,6 +421,12 @@ export function ReviewLoa({
   >([]);
   const [paymentMatrixProblem, setPaymentMatrixProblem] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /* Two counters, deliberately. Re-running the document load rebuilds
+   * every draft from the stored extraction, which is right after a failed
+   * load and destructive after a good one — so the tender-evidence retry
+   * must never reach it. */
+  const [documentLoadVersion, setDocumentLoadVersion] = useState(0);
+  const [contextLoadVersion, setContextLoadVersion] = useState(0);
   const [header, setHeader] = useState<HeaderDraft | null>(null);
   const [items, setItems] = useState<ItemDraft[] | null>(null);
   const [pbg, setPbg] = useState<PbgDraft | null>(null);
@@ -486,7 +493,7 @@ export function ReviewLoa({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, documentId]);
+  }, [api, organisationId, documentId, documentLoadVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -508,7 +515,7 @@ export function ReviewLoa({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, documentId]);
+  }, [api, organisationId, documentId, contextLoadVersion]);
 
   const handlePaymentMatrixChange = useCallback(
     (rows: readonly ConfirmPaymentMatrixRow[], problem: string | null) => {
@@ -869,7 +876,14 @@ export function ReviewLoa({
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
-        <FormError>{loadError}</FormError>
+        <ErrorState
+          retryLabel="Retry document"
+          onRetry={() => {
+            setDocumentLoadVersion((current) => current + 1);
+          }}
+        >
+          {loadError}
+        </ErrorState>
       </Card>
     );
   }
@@ -880,9 +894,7 @@ export function ReviewLoa({
         <h1 id="review-title" tabIndex={-1}>
           Review LOA
         </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading document…
-        </p>
+        <LoadingState label="the document" rows={6} columns={3} />
       </Card>
     );
   }
@@ -1078,15 +1090,21 @@ export function ReviewLoa({
       )}
 
       {contractContextError !== null && (
-        <FormError>
-          {contractContextError} Reload before confirming so tender evidence is not
+        // The retry re-runs the evidence load only: the corrections typed
+        // into this screen are not saved anywhere yet, and reloading the
+        // document would take them with it.
+        <ErrorState
+          retryLabel="Retry tender evidence"
+          onRetry={() => {
+            setContextLoadVersion((current) => current + 1);
+          }}
+        >
+          {contractContextError} Load it before confirming, so tender evidence is not
           omitted silently.
-        </FormError>
+        </ErrorState>
       )}
       {contractContext === null && contractContextError === null ? (
-        <p className="my-4 text-sm text-muted-foreground" role="status">
-          Loading matched tender evidence…
-        </p>
+        <LoadingState label="the matched tender evidence" rows={2} />
       ) : contractContext !== null ? (
         <TenderTermsReview
           context={contractContext}

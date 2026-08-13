@@ -15,6 +15,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface CompletionExtensionsProps {
@@ -47,6 +48,8 @@ export function CompletionExtensions({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +71,11 @@ export function CompletionExtensions({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const reload = useCallback(async () => {
     setCompletion(await api.getWorkCompletion(organisationId, workId));
@@ -105,7 +112,9 @@ export function CompletionExtensions({
     return (
       <>
         <h2>Completion &amp; extensions</h2>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry completion details">
+          {loadError}
+        </ErrorState>
       </>
     );
   }
@@ -114,9 +123,7 @@ export function CompletionExtensions({
     return (
       <>
         <h2>Completion &amp; extensions</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading completion details…
-        </p>
+        <LoadingState label="the completion details" rows={3} />
       </>
     );
   }

@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface WorkConsigneesProps {
@@ -38,6 +39,11 @@ export function WorkConsignees({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
+  /** True while the screen has nothing on it because the load failed —
+   * distinct from an action that failed with the list still on screen. */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const reload = useCallback(async () => {
     const [loadedLinked, loadedContacts] = await Promise.all([
@@ -54,8 +60,10 @@ export function WorkConsignees({
     let cancelled = false;
     setLinked(null);
     setError(null);
+    setLoadFailed(false);
     reload().catch((cause: unknown) => {
       if (cancelled) return;
+      setLoadFailed(true);
       setError(
         cause instanceof RequestFailedError
           ? cause.message
@@ -65,7 +73,11 @@ export function WorkConsignees({
     return () => {
       cancelled = true;
     };
-  }, [reload]);
+  }, [reload, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const act = useCallback(
     async (work: () => Promise<void>, done: string) => {
@@ -97,17 +109,22 @@ export function WorkConsignees({
     <>
       <h2>Consignees for this Work</h2>
       {notice !== null && <FormNotice>{notice}</FormNotice>}
-      {error !== null && <FormError>{error}</FormError>}
-      {linked === null ? (
-        <p className="text-muted-foreground" role="status">
-          Loading consignees…
-        </p>
-      ) : linked.length === 0 ? (
-        <p className="text-muted-foreground">
+      {error !== null &&
+        (loadFailed ? (
+          <ErrorState onRetry={retry} retryLabel="Retry consignees">
+            {error}
+          </ErrorState>
+        ) : (
+          <FormError>{error}</FormError>
+        ))}
+      {linked === null && !loadFailed ? (
+        <LoadingState label="the Work consignees" rows={3} columns={3} />
+      ) : linked !== null && linked.length === 0 ? (
+        <EmptyState>
           No consignees linked yet — linked consignees appear first in the challan and
           PAC pickers.
-        </p>
-      ) : (
+        </EmptyState>
+      ) : linked !== null ? (
         <DataTable>
           <caption className="sr-only">Consignees linked to this Work</caption>
           <thead>
@@ -153,7 +170,7 @@ export function WorkConsignees({
             ))}
           </tbody>
         </DataTable>
-      )}
+      ) : null}
       {(linked ?? []).some((contact) => !contact.active) && (
         <p className="text-muted-foreground">
           A retired consignee keeps its link to this Work but is no longer offered in

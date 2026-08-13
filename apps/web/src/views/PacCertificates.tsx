@@ -11,6 +11,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface PacCertificatesProps {
@@ -45,6 +46,8 @@ export function PacCertificates({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +77,11 @@ export function PacCertificates({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const act = useCallback(async (work: () => Promise<void>, done: string) => {
     setPending(true);
@@ -102,7 +109,9 @@ export function PacCertificates({
     return (
       <>
         <h2>PAC certificates</h2>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry PAC certificates">
+          {loadError}
+        </ErrorState>
       </>
     );
   }
@@ -111,9 +120,7 @@ export function PacCertificates({
     return (
       <>
         <h2>PAC certificates</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading PAC certificates…
-        </p>
+        <LoadingState label="the PAC certificates" rows={3} columns={3} />
       </>
     );
   }

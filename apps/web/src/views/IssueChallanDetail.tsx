@@ -9,6 +9,7 @@ import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 
 /** True when the Work's approval list carries a pending cancel-and-replace
  * request for THIS Issue Challan — surfaced instead of the correction form
@@ -130,7 +131,9 @@ export function IssueChallanDetail({
         <h1 id="issue-challan-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={reload} retryLabel="Retry Issue Challan">
+          {loadError}
+        </ErrorState>
       </Card>
     );
   }
@@ -141,9 +144,7 @@ export function IssueChallanDetail({
         <h1 id="issue-challan-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading Issue Challan…
-        </p>
+        <LoadingState label="the Issue Challan" rows={4} />
       </Card>
     );
   }

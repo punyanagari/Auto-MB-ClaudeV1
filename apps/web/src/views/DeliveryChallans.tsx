@@ -13,6 +13,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 /**
@@ -129,6 +130,8 @@ export function DeliveryChallans({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   const [challanDate, setChallanDate] = useState(todayIso);
   const [prefix, setPrefix] = useState('DC');
@@ -165,7 +168,11 @@ export function DeliveryChallans({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const act = useCallback(async (run: () => Promise<void>, done: string) => {
     setPending(true);
@@ -285,11 +292,13 @@ export function DeliveryChallans({
         aria-labelledby="delivery-challans-title"
         className="flex flex-col gap-4"
       >
-        {loadError !== null && <FormError>{loadError}</FormError>}
+        {loadError !== null && (
+          <ErrorState onRetry={retry} retryLabel="Retry delivery challans">
+            {loadError}
+          </ErrorState>
+        )}
         {loadError === null && challans === null && (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading delivery challans…
-          </p>
+          <LoadingState label="the delivery challans" rows={5} columns={4} />
         )}
         {actionError !== null && <FormError>{actionError}</FormError>}
         {notice !== null && (
@@ -388,9 +397,21 @@ export function DeliveryChallans({
               </tbody>
             </DataTable>
           ) : challans.length > 0 ? (
-            <p className="text-muted-foreground">No challans of this kind yet.</p>
+            <EmptyState
+              action={{
+                label: 'Show all challans',
+                onClick: () => {
+                  setFilter('all');
+                },
+              }}
+            >
+              No challans of this kind yet.
+            </EmptyState>
           ) : (
-            <p className="text-muted-foreground">No delivery challans yet.</p>
+            <EmptyState>
+              No delivery challans yet. A challan is raised from a Work, or as a
+              standalone despatch below.
+            </EmptyState>
           ))}
 
         {challans !== null && canModify && (

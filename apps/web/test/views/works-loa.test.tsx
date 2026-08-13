@@ -152,6 +152,8 @@ describe('UploadLoa', () => {
         api={api}
         organisationId={ORG_ID}
         onUploaded={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onOpenWork={vi.fn()}
         onCancel={vi.fn()}
       />,
     );
@@ -165,6 +167,87 @@ describe('UploadLoa', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Choose the Letter of Acceptance PDF');
     expect(api.uploadLoa).not.toHaveBeenCalled();
+  });
+
+  /** A duplicate-file refusal names the document already holding these
+   * bytes. Naming a record the operator then has to go and hunt for is
+   * the dead end pack P8 removed: the id is rendered as the control that
+   * opens it. */
+  it('opens the document a duplicate refusal names', async () => {
+    const uploadLoa = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'LOA_DOCUMENT_DUPLICATE',
+          'This is the same file as letter.pdf, uploaded on 2026-08-01 and awaiting review.',
+          { existingRecordId: DOC_ID, confirmedWorkId: null },
+        ),
+      );
+    const onOpenDocument = vi.fn();
+    render(
+      <UploadLoa
+        api={stubApi({ uploadLoa })}
+        organisationId={ORG_ID}
+        onUploaded={vi.fn()}
+        onOpenDocument={onOpenDocument}
+        onOpenWork={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText('LOA PDF');
+    fireEvent.change(input, {
+      target: {
+        files: [new File(['%PDF-1.7'], 'letter.pdf', { type: 'application/pdf' })],
+      },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: 'Upload and analyse' }).closest('form') ??
+        (() => {
+          throw new Error('form missing');
+        })(),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open that document' }));
+    expect(onOpenDocument).toHaveBeenCalledWith(DOC_ID);
+  });
+
+  it('opens the Work a confirmed duplicate became', async () => {
+    const uploadLoa = vi.fn().mockRejectedValue(
+      new RequestFailedError(409, 'LOA_DOCUMENT_DUPLICATE', 'Already confirmed.', {
+        existingRecordId: DOC_ID,
+        confirmedWorkId: WORK_ID,
+      }),
+    );
+    const onOpenWork = vi.fn();
+    render(
+      <UploadLoa
+        api={stubApi({ uploadLoa })}
+        organisationId={ORG_ID}
+        onUploaded={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onOpenWork={onOpenWork}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('LOA PDF'), {
+      target: {
+        files: [new File(['%PDF-1.7'], 'letter.pdf', { type: 'application/pdf' })],
+      },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: 'Upload and analyse' }).closest('form') ??
+        (() => {
+          throw new Error('form missing');
+        })(),
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open the Work it became' }),
+    );
+    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
   });
 });
 

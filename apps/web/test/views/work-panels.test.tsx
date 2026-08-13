@@ -831,7 +831,7 @@ describe('Approvals queue', () => {
         onChanged={vi.fn()}
       />,
     );
-    expect(await screen.findByText('Nothing is waiting for a decision.')).toBeTruthy();
+    expect(await screen.findByText(/Nothing is waiting for a decision\./)).toBeTruthy();
   });
 
   it('will not let an omission be approved before its variation order is cited', async () => {

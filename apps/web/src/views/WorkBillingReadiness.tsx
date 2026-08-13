@@ -8,8 +8,7 @@ import type {
 import { CheckCircle, CircleAlert } from 'lucide-react';
 import type { ApiClient } from '../api.js';
 import { mastersHash, SETTINGS_HASH, workHash } from '../lib/workspace-routes.js';
-import { FormError } from '../ui/form.js';
-import { Button } from '../ui/button.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 
 interface WorkBillingReadinessProps {
   readonly api: ApiClient;
@@ -114,19 +113,15 @@ export function WorkBillingReadiness({
     return (
       <section aria-labelledby="billing-readiness-heading">
         <h3 id="billing-readiness-heading">Billing readiness</h3>
-        <FormError>
-          The billing prerequisites could not be checked. Invoicing itself is unaffected
-          — the server still verifies everything at submit.
-        </FormError>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
+        <ErrorState
+          retryLabel="Retry readiness check"
+          onRetry={() => {
             setLoadVersion((current) => current + 1);
           }}
         >
-          Retry readiness check
-        </Button>
+          The billing prerequisites could not be checked. Invoicing itself is unaffected
+          — the server still verifies everything at submit.
+        </ErrorState>
       </section>
     );
   }
@@ -135,9 +130,7 @@ export function WorkBillingReadiness({
     return (
       <section aria-labelledby="billing-readiness-heading">
         <h3 id="billing-readiness-heading">Billing readiness</h3>
-        <p className="text-muted-foreground" role="status">
-          Checking billing prerequisites…
-        </p>
+        <LoadingState label="the billing prerequisites" rows={2} />
       </section>
     );
   }

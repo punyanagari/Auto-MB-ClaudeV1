@@ -18,7 +18,41 @@ interface UploadLoaProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly onUploaded: (document: LoaDocumentDetail) => void;
+  /** Opens the LOA document a refusal named — the duplicate this upload
+   * turned out to be. */
+  readonly onOpenDocument: (documentId: string) => void;
+  /** Opens the Work a duplicate letter was already confirmed into. */
+  readonly onOpenWork: (workId: string) => void;
   readonly onCancel: () => void;
+}
+
+/**
+ * Where a refusal points.
+ *
+ * LOA_DOCUMENT_DUPLICATE answers with the document already holding these
+ * bytes (`details.existingRecordId`) and, when it has been confirmed,
+ * the Work it became. The message has always named the file and the
+ * date; naming a record and then making the operator go and find it is
+ * the shape of dead end this pack exists to remove, so the id becomes
+ * the button that opens it.
+ */
+interface ExistingRecord {
+  readonly documentId: string;
+  readonly confirmedWorkId: string | null;
+}
+
+function existingRecordOf(cause: unknown): ExistingRecord | null {
+  if (!(cause instanceof RequestFailedError)) return null;
+  const details = cause.details as {
+    existingRecordId?: unknown;
+    confirmedWorkId?: unknown;
+  } | null;
+  if (typeof details?.existingRecordId !== 'string') return null;
+  return {
+    documentId: details.existingRecordId,
+    confirmedWorkId:
+      typeof details.confirmedWorkId === 'string' ? details.confirmedWorkId : null,
+  };
 }
 
 interface OptionalDocumentDefinition {
@@ -68,10 +102,13 @@ export function UploadLoa({
   api,
   organisationId,
   onUploaded,
+  onOpenDocument,
+  onOpenWork,
   onCancel,
 }: UploadLoaProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existing, setExisting] = useState<ExistingRecord | null>(null);
   const [uploadedLoa, setUploadedLoa] = useState<LoaDocumentDetail | null>(null);
   const [supportStates, setSupportStates] = useState<
     Record<ContractSourceDocumentKind, UploadState>
@@ -125,6 +162,7 @@ export function UploadLoa({
     event.preventDefault();
     setPending(true);
     setError(null);
+    setExisting(null);
     const form = event.currentTarget;
     const loaFile = fileOf(form.elements.namedItem('loa') as HTMLInputElement | null);
     if (uploadedLoa === null && loaFile === null) {
@@ -159,6 +197,7 @@ export function UploadLoa({
 
       if (allAccepted) onUploaded(loa);
     } catch (cause) {
+      setExisting(existingRecordOf(cause));
       setError(
         cause instanceof RequestFailedError
           ? cause.message
@@ -369,7 +408,34 @@ export function UploadLoa({
           </div>
         </section>
 
-        {error !== null && <FormError className="mt-5">{error}</FormError>}
+        {error !== null && (
+          <div className="mt-5">
+            <FormError>{error}</FormError>
+            {existing !== null && (
+              <Actions className="mt-2">
+                {existing.confirmedWorkId === null ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      onOpenDocument(existing.documentId);
+                    }}
+                  >
+                    Open that document
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      onOpenWork(existing.confirmedWorkId as string);
+                    }}
+                  >
+                    Open the Work it became
+                  </Button>
+                )}
+              </Actions>
+            )}
+          </div>
+        )}
 
         <Actions className="mt-6 justify-end border-t border-border pt-5">
           <Button variant="outline" onClick={onCancel} disabled={pending}>

@@ -7,6 +7,7 @@ import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 interface SerialLookupProps {
   readonly api: ApiClient;
@@ -29,6 +30,35 @@ export function SerialLookup({
   const [query, setQuery] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** The serial the failed search asked for. Retrying the SAME search is
+   * the point, and the box may have been edited since, so the attempt is
+   * remembered rather than re-read from the form. */
+  const [failedQuery, setFailedQuery] = useState<string | null>(null);
+
+  function runSearch(q: string): void {
+    setPending(true);
+    setError(null);
+    setFailedQuery(null);
+    api
+      .searchSerials(organisationId, q)
+      .then((found) => {
+        setResult(found);
+        setQuery(q);
+      })
+      .catch((cause: unknown) => {
+        setResult(null);
+        setQuery(null);
+        setFailedQuery(q);
+        setError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The serial search could not be completed.',
+        );
+      })
+      .finally(() => {
+        setPending(false);
+      });
+  }
 
   return (
     <Card className="w-full" aria-labelledby="serial-lookup-title">
@@ -46,30 +76,12 @@ export function SerialLookup({
           const q = formValue(data, 'serial-query').trim();
           if (q.length < 2) {
             setError('Enter at least 2 characters of the serial number.');
+            setFailedQuery(null);
             setResult(null);
             setQuery(null);
             return;
           }
-          setPending(true);
-          setError(null);
-          api
-            .searchSerials(organisationId, q)
-            .then((found) => {
-              setResult(found);
-              setQuery(q);
-            })
-            .catch((cause: unknown) => {
-              setResult(null);
-              setQuery(null);
-              setError(
-                cause instanceof RequestFailedError
-                  ? cause.message
-                  : 'The search failed; try again.',
-              );
-            })
-            .finally(() => {
-              setPending(false);
-            });
+          runSearch(q);
         }}
       >
         <Field>
@@ -89,12 +101,28 @@ export function SerialLookup({
         </Actions>
       </form>
 
-      {error !== null && <FormError>{error}</FormError>}
+      {error !== null &&
+        (failedQuery === null ? (
+          // A too-short query is the operator's own input, corrected in
+          // the box above; there is nothing to re-run.
+          <FormError>{error}</FormError>
+        ) : (
+          <ErrorState
+            retryLabel="Retry search"
+            onRetry={() => {
+              runSearch(failedQuery);
+            }}
+          >
+            {error}
+          </ErrorState>
+        ))}
 
-      {result !== null && result.matches.length === 0 && (
-        <p className="text-muted-foreground" role="status">
-          No serial matches “{query}”.
-        </p>
+      {pending && (
+        <LoadingState label="the serial search results" rows={3} columns={4} />
+      )}
+
+      {!pending && result !== null && result.matches.length === 0 && (
+        <EmptyState>No serial matches “{query}”.</EmptyState>
       )}
 
       {result !== null && result.matches.length > 0 && (

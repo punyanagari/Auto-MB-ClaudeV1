@@ -11,6 +11,7 @@ import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { DataTable } from '../ui/table.js';
 
@@ -44,6 +45,9 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
   /** Null while loading — distinct from "none configured", which the
    * server reports as four rows carrying the product defaults. */
   const [series, setSeries] = useState<readonly NumberSeries[] | null>(null);
+  const [seriesError, setSeriesError] = useState(false);
+  /** Bumped by the failure states' retry, to re-run the loads below. */
+  const [loadVersion, setLoadVersion] = useState(0);
   const [seriesType, setSeriesType] = useState<NumberedDocumentType>('tax_invoice');
   /** Drives which declaration fields the e-invoicing form shows; the
    * applicable-from date and the window exist only while applicable. */
@@ -106,18 +110,22 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
     // Read separately from the profile: a number series that fails to
     // load must not blank the company details, which is the screen's
     // main job.
+    setSeriesError(false);
     api
       .listNumberSeries(organisationId)
       .then((loaded) => {
         if (!cancelled) setSeries(loaded);
       })
       .catch(() => {
-        if (!cancelled) setSeries([]);
+        // Not an empty list. An unreadable series table used to render as
+        // one, which reads as "nothing is configured" — the same lie an
+        // empty register tells about records that exist.
+        if (!cancelled) setSeriesError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +149,11 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       cancelled = true;
       if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -296,11 +308,11 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       <Card>
         <h1 tabIndex={-1}>Settings</h1>
         {error === null ? (
-          <p className="text-muted-foreground" role="status">
-            Loading…
-          </p>
+          <LoadingState label="the organisation settings" rows={4} />
         ) : (
-          <FormError>{error}</FormError>
+          <ErrorState onRetry={retry} retryLabel="Retry settings">
+            {error}
+          </ErrorState>
         )}
       </Card>
     );
@@ -679,10 +691,13 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         product default, shown here so you can see what your numbers will look like.
         Changing a series never renumbers anything already issued.
       </p>
-      {series === null ? (
-        <p className="text-muted-foreground" role="status">
-          Loading number series…
-        </p>
+      {seriesError ? (
+        <ErrorState onRetry={retry} retryLabel="Retry number series">
+          The number formats could not be read. Issuing still works — the server mints
+          numbers from the stored series, not from this table.
+        </ErrorState>
+      ) : series === null ? (
+        <LoadingState label="the number series" rows={4} columns={3} />
       ) : (
         <DataTable>
           <caption className="sr-only">Number formats for each document</caption>
