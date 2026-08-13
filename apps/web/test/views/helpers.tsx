@@ -637,6 +637,7 @@ export function taxInvoice(overrides: Record<string, unknown> = {}) {
     sequenceNumber: null,
     fyLabel: null,
     invoiceDate: '2026-07-30',
+    lineShape: 'service_cumulative',
     sacCode: '998734',
     serviceDescription: 'Provision of passenger amenity services.',
     gstRate: '18',

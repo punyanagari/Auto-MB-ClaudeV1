@@ -103,7 +103,9 @@ when the separate pair is unavailable.
 Do not enable production transport until sandbox requests, IP allowlisting,
 credential rotation, redacted failure handling, unknown-outcome recovery, and
 provider-specific monitoring have been reviewed. Fresh EWB generation remains
-blocked for the current cumulative SAC service-invoice model.
+blocked for every invoice, cumulative or itemised, until the applicability
+decision follows from the document's own goods lines and a dispatch model
+exists to carry it.
 
 ## 3. Upgrades
 

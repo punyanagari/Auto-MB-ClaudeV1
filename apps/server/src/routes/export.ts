@@ -241,6 +241,12 @@ export function registerExportRoutes(
           `,
           ['buyer_snapshot', 'ship_to_snapshot', 'issued_snapshot'],
         );
+        // An ITEMISED invoice's document IS its lines (0057), so an
+        // export without them would hand back an incomplete invoice.
+        const taxInvoiceLines = await tx<Record<string, unknown>[]>`
+          select * from tax_invoice_lines
+          order by tax_invoice_id, position, id
+        `;
         const taxInvoiceRenders = await tx<Record<string, unknown>[]>`
           select * from tax_invoice_renders
           order by tax_invoice_id, version, created_at, id
@@ -450,9 +456,10 @@ export function registerExportRoutes(
 
         return {
           exportedAt: new Date().toISOString(),
-          // export-v10: credit notes and their counters (0051) join the
-          // record.
-          formatVersion: 'export-v10',
+          // export-v11: an ITEMISED invoice's lines (0057) join the
+          // record — without them such an invoice would export as a
+          // header with no document.
+          formatVersion: 'export-v11',
           organisation,
           members,
           workAssignments: assignments,
@@ -497,6 +504,7 @@ export function registerExportRoutes(
           budgetaryQuotations,
           budgetaryQuotationLines,
           taxInvoices,
+          taxInvoiceLines,
           taxInvoiceRenders,
           creditNotes,
           ewayBills,

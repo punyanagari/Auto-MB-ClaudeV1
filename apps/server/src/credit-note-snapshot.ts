@@ -15,10 +15,11 @@
 
 import { buildIrpPayload, type IrpPayload } from './gsp/irp-payload.js';
 import {
+  frozenIrpItems,
   parseTaxInvoiceIssuedSnapshot,
   TaxInvoiceSnapshotError,
   EInvoiceB2cUnsupportedError,
-  type TaxInvoiceIssuedSnapshotV1,
+  type TaxInvoiceIssuedSnapshot,
 } from './tax-invoice-snapshot.js';
 
 export const CREDIT_NOTE_TEMPLATE_VERSION = 'cn-v1';
@@ -31,7 +32,7 @@ export interface CreditNoteIssuedSnapshotV1 {
   readonly reason: string;
   /** The superseded invoice's whole issued snapshot, verbatim. Its
    * invoiceNumber/invoiceDate are the reference printed on the face. */
-  readonly invoice: TaxInvoiceIssuedSnapshotV1;
+  readonly invoice: TaxInvoiceIssuedSnapshot;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -115,18 +116,17 @@ export function buildFrozenCrnPayload(value: unknown): IrpPayload {
     documentType: 'CRN',
     invoiceNumber: snapshot.noteNumber,
     invoiceDate: snapshot.noteDate,
-    sacCode: base.line.sacCode,
-    serviceDescription: base.line.description,
     placeOfSupply: base.placeOfSupply,
     reverseChargeApplicable: base.reverseChargeApplicable,
-    gstRate: base.line.gstRate,
+    // A full-value credit note bills the superseded invoice's own lines,
+    // whatever shape it was issued in (0051 + 0057).
+    items: frozenIrpItems(base),
     taxableValue: base.totals.taxableValue,
     cgstAmount: base.totals.cgstAmount,
     sgstAmount: base.totals.sgstAmount,
     igstAmount: base.totals.igstAmount,
     totalAmount: base.totals.totalAmount,
     roundOff: base.totals.roundOff,
-    lineValue: base.line.lineValue,
     seller: {
       gstin: base.supplier.gstin,
       legalName: base.supplier.name,

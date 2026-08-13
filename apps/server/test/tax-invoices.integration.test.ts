@@ -1757,6 +1757,476 @@ describe('direct invoices: no Work, no Measurement Book', () => {
   });
 });
 
+/**
+ * ITEMISED invoices (migration 0057). The owner's requirement: the
+ * goods-vs-service shape is a PER-DOCUMENT choice — never derived from
+ * the buyer — so the same organisation, the same railway consignee and
+ * the same Work all keep working with either shape.
+ *
+ * What has to hold here: the per-line money is quantity x rate at the
+ * LINE's own GST rate; the header is the exact SUM of the lines; the
+ * frozen snapshot is v2 while a cumulative invoice keeps freezing v1
+ * unchanged; the IRP ItemList becomes the mapped lines with IsServc and
+ * HsnCd per line; and a full-value credit note against an itemised
+ * invoice still works end to end.
+ */
+describe('itemised invoices (migration 0057)', () => {
+  let itemisedInvoiceId: string;
+
+  it('drafts, edits and submits an itemised direct invoice, summing the lines', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-20',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Signalling cable, 4 core',
+            quantity: '100.000',
+            unitLabel: 'm',
+            unitRate: '85.50',
+            gstRate: '18',
+          },
+          {
+            isService: true,
+            hsnSacCode: '995461',
+            description: 'Laying and termination',
+            quantity: '1.000',
+            unitLabel: 'job',
+            unitRate: '4500.00',
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draft = created.json<TaxInvoiceDetailResponse>();
+    itemisedInvoiceId = draft.invoice.id;
+    expect(draft.invoice).toMatchObject({
+      lineShape: 'itemised',
+      // An itemised invoice carries no header line at all.
+      sacCode: null,
+      serviceDescription: null,
+      gstRate: null,
+      // Derived from the lines, never asked for twice:
+      // 100 x 85.50 = 8550.00 plus 1 x 4500.00.
+      statedTaxableValue: '13050.00',
+      status: 'draft',
+    });
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines[0]).toMatchObject({
+      position: 1,
+      isService: false,
+      hsnSacCode: '85444999',
+      unitRate: '85.50',
+      // Draft money is open, exactly as the header's is.
+      taxableValue: null,
+      cgstAmount: null,
+    });
+    expect(draft.lines[1]).toMatchObject({ position: 2, isService: true });
+
+    // Editing replaces the lines wholesale, like every other field.
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/tax-invoices/${itemisedInvoiceId}`,
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-20',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Signalling cable, 4 core',
+            quantity: '100.000',
+            unitLabel: 'm',
+            unitRate: '85.50',
+            gstRate: '18',
+          },
+          {
+            isService: true,
+            hsnSacCode: '995461',
+            description: 'Laying and termination',
+            quantity: '1.000',
+            unitLabel: 'job',
+            unitRate: '5000.00',
+            gstRate: '5',
+          },
+        ],
+      },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect(edited.json<TaxInvoiceDetailResponse>().invoice.statedTaxableValue).toBe(
+      '13550.00',
+    );
+
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${itemisedInvoiceId}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    const issued = submitted.json<TaxInvoiceDetailResponse>();
+    // Line 1: 8550.00 at 18% -> 769.50 each half.
+    // Line 2: 5000.00 at 5%  -> 125.00 each half.
+    // Header: 13550.00 taxable, 894.50 + 894.50, 15339.00 exactly.
+    expect(issued.invoice).toMatchObject({
+      taxableValue: '13550.00',
+      cgstAmount: '894.50',
+      sgstAmount: '894.50',
+      igstAmount: '0.00',
+      roundOff: '0.00',
+      totalAmount: '15339.00',
+    });
+    expect(issued.lines).toHaveLength(2);
+    expect(issued.lines[0]).toMatchObject({
+      taxableValue: '8550.00',
+      cgstAmount: '769.50',
+      sgstAmount: '769.50',
+      igstAmount: '0.00',
+    });
+    expect(issued.lines[1]).toMatchObject({
+      taxableValue: '5000.00',
+      cgstAmount: '125.00',
+      sgstAmount: '125.00',
+      igstAmount: '0.00',
+    });
+
+    // Snapshot v2: `lines`, and never a `line`.
+    const snapshot = issued.issuedSnapshot as {
+      templateVersion: string;
+      lines: { position: number; isService: boolean; hsnSacCode: string }[];
+      line?: unknown;
+    };
+    expect(snapshot.templateVersion).toBe('ti-v2');
+    expect(snapshot.line).toBeUndefined();
+    expect(snapshot.lines).toHaveLength(2);
+    expect(snapshot.lines[0]).toMatchObject({
+      position: 1,
+      isService: false,
+      hsnSacCode: '85444999',
+    });
+  });
+
+  it('maps the IRP ItemList from the frozen lines, one item each', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${itemisedInvoiceId}/irp-payload`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const payload = response.json<{
+      TranDtls: { SupTyp: string };
+      ItemList: Record<string, unknown>[];
+      ValDtls: Record<string, unknown>;
+    }>();
+    // The supply type is about the TRANSACTION, not the lines: a
+    // registered buyer is B2B whether the lines are goods or services.
+    expect(payload.TranDtls.SupTyp).toBe('B2B');
+    expect(payload.ItemList).toStrictEqual([
+      {
+        SlNo: '1',
+        PrdDesc: 'Signalling cable, 4 core',
+        IsServc: 'N',
+        HsnCd: '85444999',
+        Qty: 100,
+        Unit: 'OTH',
+        UnitPrice: 85.5,
+        TotAmt: 8550,
+        AssAmt: 8550,
+        GstRt: 18,
+        CgstAmt: 769.5,
+        SgstAmt: 769.5,
+        IgstAmt: 0,
+        TotItemVal: 10089,
+      },
+      {
+        SlNo: '2',
+        PrdDesc: 'Laying and termination',
+        IsServc: 'Y',
+        HsnCd: '995461',
+        Qty: 1,
+        Unit: 'OTH',
+        UnitPrice: 5000,
+        TotAmt: 5000,
+        AssAmt: 5000,
+        GstRt: 5,
+        CgstAmt: 125,
+        SgstAmt: 125,
+        IgstAmt: 0,
+        TotItemVal: 5250,
+      },
+    ]);
+    expect(payload.ValDtls).toStrictEqual({
+      AssVal: 13550,
+      CgstVal: 894.5,
+      SgstVal: 894.5,
+      IgstVal: 0,
+      RndOffAmt: 0,
+      TotInvVal: 15339,
+    });
+  });
+
+  it('renders the itemised document with a row per line', async () => {
+    const pdf = Buffer.from('%PDF-1.7\nitemised-invoice\n%%EOF');
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (_input, init) => {
+        // The HTML the renderer posted to Gotenberg is the assertion
+        // subject; the PDF it answers with is a stand-in.
+        const body = init?.body;
+        if (body instanceof FormData) {
+          const file = body.get('files');
+          if (file instanceof Blob) renderedHtml = await file.text();
+        }
+        return new Response(pdf, { status: 200 });
+      });
+    let renderedHtml = '';
+    try {
+      const rendered = await authed(owner, {
+        method: 'POST',
+        url: `/api/tax-invoices/${itemisedInvoiceId}/render`,
+        organisationId,
+      });
+      expect(rendered.statusCode, rendered.body).toBe(200);
+    } finally {
+      fetchMock.mockRestore();
+    }
+    expect(renderedHtml).toContain('HSN / SAC');
+    expect(renderedHtml).toContain('85444999');
+    expect(renderedHtml).toContain('995461');
+    expect(renderedHtml).toContain('Laying and termination');
+  });
+
+  it('takes a full-value credit note against an itemised invoice', async () => {
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${itemisedInvoiceId}/credit-notes`,
+      organisationId,
+      payload: {
+        noteDate: '2026-01-25',
+        reason: 'The itemised supply was returned in full.',
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const noteId = drafted.json<{ creditNote: { id: string } }>().creditNote.id;
+
+    const issuedNote = await authed(owner, {
+      method: 'POST',
+      url: `/api/credit-notes/${noteId}/issue`,
+      organisationId,
+    });
+    expect(issuedNote.statusCode, issuedNote.body).toBe(201);
+    // 0051's rule, unchanged by the shape: the note copies the invoice's
+    // frozen money in full and the invoice becomes superseded.
+    expect(
+      issuedNote.json<{ creditNote: Record<string, unknown> }>().creditNote,
+    ).toMatchObject({
+      status: 'issued',
+      taxableValue: '13550.00',
+      cgstAmount: '894.50',
+      sgstAmount: '894.50',
+      igstAmount: '0.00',
+      totalAmount: '15339.00',
+    });
+
+    const invoiceAfter = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${itemisedInvoiceId}`,
+      organisationId,
+    });
+    expect(invoiceAfter.statusCode, invoiceAfter.body).toBe(200);
+    expect(invoiceAfter.json<TaxInvoiceDetailResponse>().invoice.status).toBe(
+      'superseded',
+    );
+
+    // The CRN payload carries the invoice's own itemised lines.
+    const crn = await authed(owner, {
+      method: 'GET',
+      url: `/api/credit-notes/${noteId}/irp-payload`,
+      organisationId,
+    });
+    expect(crn.statusCode, crn.body).toBe(200);
+    const crnPayload = crn.json<{
+      DocDtls: { Typ: string };
+      ItemList: { HsnCd: string; IsServc: string }[];
+    }>();
+    expect(crnPayload.DocDtls.Typ).toBe('CRN');
+    expect(crnPayload.ItemList.map((item) => [item.HsnCd, item.IsServc])).toStrictEqual(
+      [
+        ['85444999', 'N'],
+        ['995461', 'Y'],
+      ],
+    );
+  });
+
+  it('refuses an MB-backed itemised invoice whose lines miss the measured total', async () => {
+    const book = await finalizedMb('2026-02-01', '3');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/tax-invoices`,
+      organisationId,
+      payload: {
+        measurementBookId: book.id,
+        invoiceDate: '2026-02-02',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Deliberately short of the measured total',
+            quantity: '1.000',
+            unitRate: '1.00',
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(409);
+    expect(submitted.json<{ code: string }>().code).toBe(
+      'ITEMISED_LINES_TOTAL_MISMATCH',
+    );
+
+    // Corrected to the measured total, the same invoice submits.
+    const fixed = await authed(owner, {
+      method: 'PUT',
+      url: `/api/tax-invoices/${invoiceId}`,
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-02',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Exactly what the Measurement Book measured',
+            quantity: '1.000',
+            unitRate: book.total,
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(fixed.statusCode, fixed.body).toBe(200);
+    const resubmitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${invoiceId}/submit`,
+      organisationId,
+    });
+    expect(resubmitted.statusCode, resubmitted.body).toBe(201);
+    expect(resubmitted.json<TaxInvoiceDetailResponse>().invoice.taxableValue).toBe(
+      book.total,
+    );
+  });
+
+  it('refuses an eight-digit code on a service line, and a rate the master does not cover', async () => {
+    const badCode = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-20',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: true,
+            hsnSacCode: '99546199',
+            description: 'A SAC does not deepen to eight digits',
+            quantity: '1.000',
+            unitRate: '100.00',
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(badCode.statusCode, badCode.body).toBe(400);
+    expect(badCode.json<{ code: string }>().code).toBe('TAX_INVOICE_LINE_CODE_INVALID');
+
+    const badRate = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-01-20',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'A rate nobody notified',
+            quantity: '1.000',
+            unitRate: '100.00',
+            gstRate: '1.8',
+          },
+        ],
+      },
+    });
+    expect(badRate.statusCode, badRate.body).toBe(400);
+    expect(badRate.json<{ code: string; message: string }>()).toMatchObject({
+      code: 'GST_RATE_NOT_NOTIFIED',
+    });
+    expect(badRate.json<{ message: string }>().message).toContain('Line 1');
+  });
+
+  it('keeps a CUMULATIVE invoice on snapshot v1, unchanged', async () => {
+    // The golden proof that 0057 changed nothing for the document the
+    // railway trade issues most: the first invoice of this suite was
+    // frozen before any of this existed in the run's own history, and it
+    // still says ti-v1 with a single `line` and no `lines`.
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoice1Id}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const detail = response.json<TaxInvoiceDetailResponse>();
+    expect(detail.invoice.lineShape).toBe('service_cumulative');
+    expect(detail.lines).toStrictEqual([]);
+    const snapshot = detail.issuedSnapshot as {
+      templateVersion: string;
+      line: Record<string, unknown>;
+      lines?: unknown;
+    };
+    expect(snapshot.templateVersion).toBe('ti-v1');
+    expect(snapshot.lines).toBeUndefined();
+    expect(snapshot.line).toMatchObject({
+      sacCode: SAC,
+      description: SERVICE_DESCRIPTION,
+      quantity: '1.00',
+    });
+  });
+});
+
 describe('Whitebooks IRP provider routes', () => {
   it('registers and cancels once, preserving exact provider evidence', async () => {
     resetProviderMocks();
