@@ -10,6 +10,7 @@ import { formValue, type ApiClient } from '../../api.js';
 import { formatDate, formatInr } from '../../format.js';
 import { openPdf } from '../../lib/openPdf.js';
 import { Button } from '../../ui/button.js';
+import { ConfirmDialog } from '../../ui/confirm.js';
 import { StatusChip } from '../../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../../ui/form.js';
@@ -537,9 +538,10 @@ export function InvoiceDetail({
             Submit invoice
           </Button>
         )}
-        {invoice.status === 'draft' && canModify && !confirmingDelete && (
+        {invoice.status === 'draft' && canModify && (
           <Button
             variant="ghost"
+            aria-haspopup="dialog"
             onClick={() => {
               setConfirmingDelete(true);
             }}
@@ -585,34 +587,23 @@ export function InvoiceDetail({
       </Actions>
 
       {confirmingDelete && invoice.status === 'draft' && (
-        <Actions>
-          <p role="status">
-            Delete this draft tax invoice? Nothing has been numbered, so nothing is lost
-            but the typing.
-          </p>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              void act(async () => {
-                await api.deleteTaxInvoice(organisationId, invoice.id);
-                setConfirmingDelete(false);
-                await onDeleted();
-              }, 'Draft tax invoice deleted.');
-            }}
-            disabled={pending}
-          >
-            Delete it
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
+        <ConfirmDialog
+          title="Delete this draft tax invoice?"
+          description="Nothing has been numbered, so nothing is lost but the typing."
+          cancelLabel="Keep it"
+          confirmLabel="Delete it"
+          pending={pending}
+          onCancel={() => {
+            setConfirmingDelete(false);
+          }}
+          onConfirm={() => {
+            void act(async () => {
+              await api.deleteTaxInvoice(organisationId, invoice.id);
               setConfirmingDelete(false);
-            }}
-            disabled={pending}
-          >
-            Keep it
-          </Button>
-        </Actions>
+              await onDeleted();
+            }, 'Draft tax invoice deleted.');
+          }}
+        />
       )}
     </>
   );

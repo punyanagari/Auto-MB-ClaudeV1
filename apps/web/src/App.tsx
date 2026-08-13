@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import { AlertTriangle, Building2 } from 'lucide-react';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
+import { useDocumentTitle } from './lib/document-title.js';
 import { Button } from './ui/button.js';
 import { OperationsWorkspace } from './views/OperationsWorkspace.js';
 import { OrganisationOnboarding } from './views/OrganisationOnboarding.js';
@@ -71,6 +72,28 @@ function activeOrganisations(
       .map((membership) => membership.organisationId),
   );
   return organisations.filter((organisation) => activeIds.has(organisation.id));
+}
+
+/** What the tab is called before a workspace exists. `workspace` returns
+ * null because `OperationsWorkspace` names the tab after the open view; two
+ * writers would race on effect order. */
+function phaseTitle(phase: Phase): string | null {
+  switch (phase.name) {
+    case 'loading':
+      return 'Opening your workspace';
+    case 'session-error':
+      return 'Workspace unavailable';
+    case 'signed-out':
+      return 'Sign in';
+    case 'mfa-enrolment':
+      return 'Two-factor authentication';
+    case 'no-organisation':
+      return 'Create your organisation';
+    case 'pick-organisation':
+      return 'Select an organisation';
+    case 'workspace':
+      return null;
+  }
 }
 
 interface AppProps {
@@ -164,6 +187,9 @@ export function App({ api: providedApi }: AppProps) {
   useEffect(() => {
     mainRef.current?.querySelector('h1')?.focus();
   }, [phase.name]);
+
+  const title = phaseTitle(phase);
+  useDocumentTitle(title === null ? null : [title]);
 
   function selectOrganisation(organisation: Organisation): void {
     sessionRefreshIdRef.current += 1;

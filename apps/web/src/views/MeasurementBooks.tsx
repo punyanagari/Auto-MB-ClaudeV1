@@ -23,6 +23,7 @@ import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
@@ -951,55 +952,49 @@ export function MeasurementBooks({
             )}
             {/* A record MB never finalizes — it merges or is deleted — so
                 the offer would only ever be a refusal. */}
-            {book.status === 'draft' &&
-              canIssue &&
-              book.kind !== 'record' &&
-              !confirmingFinalize && (
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingDelete(false);
-                    setConfirmingUnmerge(false);
-                    setConfirmingFinalize(true);
-                  }}
-                >
-                  Finalize…
-                </Button>
-              )}
+            {book.status === 'draft' && canIssue && book.kind !== 'record' && (
+              <Button
+                disabled={pending}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setConfirmingUnmerge(false);
+                  setConfirmingFinalize(true);
+                }}
+              >
+                Finalize…
+              </Button>
+            )}
             {/* An absorbing draft cannot be deleted (the server refuses with
                 MB_HAS_MERGED_RECORDS); un-merge is its way apart. */}
-            {book.status === 'draft' &&
-              canModify &&
-              absorbedRecords.length === 0 &&
-              !confirmingDelete && (
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingFinalize(false);
-                    setConfirmingUnmerge(false);
-                    setConfirmingDelete(true);
-                  }}
-                >
-                  Delete draft…
-                </Button>
-              )}
-            {book.status === 'draft' &&
-              canModify &&
-              absorbedRecords.length > 0 &&
-              !confirmingUnmerge && (
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingFinalize(false);
-                    setConfirmingDelete(false);
-                    setConfirmingUnmerge(true);
-                  }}
-                >
-                  Unmerge record drafts…
-                </Button>
-              )}
+            {book.status === 'draft' && canModify && absorbedRecords.length === 0 && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setConfirmingFinalize(false);
+                  setConfirmingUnmerge(false);
+                  setConfirmingDelete(true);
+                }}
+              >
+                Delete draft…
+              </Button>
+            )}
+            {book.status === 'draft' && canModify && absorbedRecords.length > 0 && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setConfirmingFinalize(false);
+                  setConfirmingDelete(false);
+                  setConfirmingUnmerge(true);
+                }}
+              >
+                Unmerge record drafts…
+              </Button>
+            )}
             {book.status === 'finalized' &&
               canIssue &&
               canPrepareBill &&
@@ -1053,79 +1048,52 @@ export function MeasurementBooks({
             canIssue &&
             book.kind !== 'record' &&
             confirmingFinalize && (
-              <div className="my-3">
-                <h4>Confirm finalize</h4>
-                <p>
-                  Finalizing freezes this Measurement Book as an immutable numbered
-                  snapshot — next number {nextNumber} — and claims its sources for good.
-                  Continue?
-                </p>
-                <Actions>
-                  <Button
-                    disabled={pending}
-                    onClick={() => {
-                      tryAct(async () => {
-                        const finalized = await api.finalizeMeasurementBook(
-                          organisationId,
-                          book.id,
-                        );
-                        setDetail(finalized);
-                        setConfirmingFinalize(false);
-                        setCandidates(null);
-                        await refreshList();
-                      }, 'Measurement Book finalized.');
-                    }}
-                  >
-                    Finalize now
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => {
-                      setConfirmingFinalize(false);
-                    }}
-                  >
-                    Keep drafting
-                  </Button>
-                </Actions>
-              </div>
+              <ConfirmDialog
+                title="Confirm finalize"
+                description={`Finalizing freezes this Measurement Book as an immutable numbered snapshot — next number ${nextNumber} — and claims its sources for good. Continue?`}
+                cancelLabel="Keep drafting"
+                confirmLabel="Finalize now"
+                tone="default"
+                pending={pending}
+                onCancel={() => {
+                  setConfirmingFinalize(false);
+                }}
+                onConfirm={() => {
+                  tryAct(async () => {
+                    const finalized = await api.finalizeMeasurementBook(
+                      organisationId,
+                      book.id,
+                    );
+                    setDetail(finalized);
+                    setConfirmingFinalize(false);
+                    setCandidates(null);
+                    await refreshList();
+                  }, 'Measurement Book finalized.');
+                }}
+              />
             )}
 
           {/* Deleting is the one unrecoverable draft action, so it gets the
               same two-step treatment as the recoverable finalize above. */}
           {book.status === 'draft' && canModify && confirmingDelete && (
-            <div className="my-3">
-              <h4>Confirm delete</h4>
-              <p>
-                Deleting discards this draft and its lines for good, and releases every
-                source it claimed — those challans, installations and PACs become
-                billable by another Measurement Book again. Continue?
-              </p>
-              <Actions>
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    tryAct(async () => {
-                      await api.deleteMeasurementBook(organisationId, book.id);
-                      setDetail(null);
-                      setConfirmingDelete(false);
-                      await refreshList();
-                    }, 'Draft deleted; its source claims are released.');
-                  }}
-                >
-                  Delete draft now
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingDelete(false);
-                  }}
-                >
-                  Keep drafting
-                </Button>
-              </Actions>
-            </div>
+            <ConfirmDialog
+              title="Confirm delete"
+              description="Deleting discards this draft and its lines for good, and releases every source it claimed — those challans, installations and PACs become billable by another Measurement Book again. Continue?"
+              cancelLabel="Keep drafting"
+              confirmLabel="Delete draft now"
+              pending={pending}
+              onCancel={() => {
+                setConfirmingDelete(false);
+              }}
+              onConfirm={() => {
+                tryAct(async () => {
+                  await api.deleteMeasurementBook(organisationId, book.id);
+                  setDetail(null);
+                  setConfirmingDelete(false);
+                  await refreshList();
+                }, 'Draft deleted; its source claims are released.');
+              }}
+            />
           )}
 
           {/* Un-merge undoes a merge exactly: it restores what the merge
@@ -1133,41 +1101,33 @@ export function MeasurementBooks({
               goes. Irreversible in the same way delete is, so it gets the
               same two-step treatment. */}
           {book.status === 'draft' && canModify && confirmingUnmerge && (
-            <div className="my-3">
-              <h4>Confirm unmerge</h4>
-              <p>
-                Un-merging takes this draft apart: each of the{' '}
-                {String(absorbedRecords.length)} absorbed record Measurement Book
-                {absorbedRecords.length === 1 ? '' : 's'} returns to draft holding
-                exactly the sources the merge took from it, sources selected on this
-                draft after the merge are released, and this emptied draft is deleted.
-                Continue?
-              </p>
-              <Actions>
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    tryAct(async () => {
-                      await api.unmergeMeasurementBook(organisationId, book.id);
-                      setDetail(null);
-                      setConfirmingUnmerge(false);
-                      await refreshList();
-                    }, 'Unmerged: the record drafts are restored and the absorbing draft is deleted.');
-                  }}
-                >
-                  Unmerge now
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setConfirmingUnmerge(false);
-                  }}
-                >
-                  Keep the merged draft
-                </Button>
-              </Actions>
-            </div>
+            <ConfirmDialog
+              title="Confirm unmerge"
+              description={
+                <>
+                  Un-merging takes this draft apart: each of the{' '}
+                  {String(absorbedRecords.length)} absorbed record Measurement Book
+                  {absorbedRecords.length === 1 ? '' : 's'} returns to draft holding
+                  exactly the sources the merge took from it, sources selected on this
+                  draft after the merge are released, and this emptied draft is deleted.
+                  Continue?
+                </>
+              }
+              cancelLabel="Keep the merged draft"
+              confirmLabel="Unmerge now"
+              pending={pending}
+              onCancel={() => {
+                setConfirmingUnmerge(false);
+              }}
+              onConfirm={() => {
+                tryAct(async () => {
+                  await api.unmergeMeasurementBook(organisationId, book.id);
+                  setDetail(null);
+                  setConfirmingUnmerge(false);
+                  await refreshList();
+                }, 'Unmerged: the record drafts are restored and the absorbing draft is deleted.');
+              }}
+            />
           )}
 
           {book.status === 'finalized' && canCancel && book.billId === null && (
@@ -1205,51 +1165,39 @@ export function MeasurementBooks({
                       maxLength={1000}
                     />
                   </Field>
-                  {!confirmingCancel && (
-                    <Button type="submit" variant="outline" disabled={pending}>
-                      Continue to confirmation
-                    </Button>
-                  )}
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={pending}
+                    aria-haspopup="dialog"
+                  >
+                    Continue to confirmation
+                  </Button>
                 </form>
               </Disclosure>
               {confirmingCancel && (
-                <div className="my-3">
-                  <h4>Confirm cancellation</h4>
-                  <p>
-                    Measurement Book {mbNumberLabel} will be cancelled. This cannot be
-                    undone: the number {mbNumberLabel} is retained forever and can never
-                    be reused, the sources it billed are released for a later MB, and
-                    the note above is stored on the record.
-                  </p>
-                  <Actions>
-                    <Button
-                      disabled={pending}
-                      onClick={() => {
-                        tryAct(async () => {
-                          const cancelled = await api.cancelMeasurementBook(
-                            organisationId,
-                            book.id,
-                            cancelNote.trim(),
-                          );
-                          setDetail(cancelled);
-                          setConfirmingCancel(false);
-                          await refreshList();
-                        }, 'Measurement Book cancelled; its number is retained and its sources are released.');
-                      }}
-                    >
-                      Cancel {mbNumberLabel} now
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => {
-                        setConfirmingCancel(false);
-                      }}
-                    >
-                      Keep this Measurement Book
-                    </Button>
-                  </Actions>
-                </div>
+                <ConfirmDialog
+                  title="Confirm cancellation"
+                  description={`Measurement Book ${mbNumberLabel} will be cancelled. This cannot be undone: the number ${mbNumberLabel} is retained forever and can never be reused, the sources it billed are released for a later MB, and the note above is stored on the record.`}
+                  cancelLabel="Keep this Measurement Book"
+                  confirmLabel={`Cancel ${mbNumberLabel} now`}
+                  pending={pending}
+                  onCancel={() => {
+                    setConfirmingCancel(false);
+                  }}
+                  onConfirm={() => {
+                    tryAct(async () => {
+                      const cancelled = await api.cancelMeasurementBook(
+                        organisationId,
+                        book.id,
+                        cancelNote.trim(),
+                      );
+                      setDetail(cancelled);
+                      setConfirmingCancel(false);
+                      await refreshList();
+                    }, 'Measurement Book cancelled; its number is retained and its sources are released.');
+                  }}
+                />
               )}
             </>
           )}

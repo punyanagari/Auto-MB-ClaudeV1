@@ -58,10 +58,14 @@ test('organisation picker and members workspace pass the axe scan', async ({
   // A Masters category opens from the rail, without a stop on Contacts first.
   await page.getByRole('button', { name: 'Masters' }).click();
   await rail.getByRole('button', { name: 'Locations' }).click();
-  await expect(page.getByRole('tab', { name: 'Locations' })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  // The category strip is a navigation, not a tablist: each category is its
+  // own address and Back walks between them, so the open one says
+  // aria-current="page" the way the Work workspace's sections do.
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Master data categories' })
+      .getByRole('button', { name: 'Locations' }),
+  ).toHaveAttribute('aria-current', 'page');
   await expect(rail.getByRole('button', { name: 'All Works' })).toHaveCount(0);
   await expectNoAxeViolations(page, 'masters locations from the rail');
 

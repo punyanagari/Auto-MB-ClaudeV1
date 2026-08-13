@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SaveChallanRequest } from '@auto-mb/contracts';
 import { RequestFailedError } from '../../src/api.js';
@@ -319,11 +319,23 @@ describe('ChallanEditor', () => {
     fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
       target: { value: '2' },
     });
+    // Focused first, because that is the state a real click or Enter leaves
+    // the trigger in and it is where the dialog must hand focus back.
+    cancel.focus();
     fireEvent.click(cancel);
     expect(onCancel).toHaveBeenCalledTimes(1);
-    const discard = screen.getByRole('button', { name: 'Discard and leave' });
-    expect(document.activeElement).toBe(discard);
+    const dialog = screen.getByRole('dialog', { name: 'Discard your changes?' });
+    // The safe choice is the one focus lands on: Enter on an unread
+    // confirmation must not be the destructive answer.
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole('button', { name: 'Keep editing' }),
+    );
+    // And it is a real modal — Escape declines.
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(cancel);
 
+    fireEvent.click(cancel);
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
     expect(screen.queryByRole('button', { name: 'Discard and leave' })).toBeNull();
     expect(document.activeElement).toBe(cancel);

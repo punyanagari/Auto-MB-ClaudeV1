@@ -9,18 +9,11 @@ import type {
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
-import {
-  Field,
-  FieldRow,
-  Actions,
-  ActionBar,
-  FormError,
-  FieldError,
-  Hint,
-} from '../ui/form.js';
+import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
 import { formatRate } from '../format.js';
 
 interface ChallanEditorProps {
@@ -318,8 +311,6 @@ export function ChallanEditor({
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const discardRef = useRef<HTMLButtonElement>(null);
   /* comparableContent sorts and stringifies every entered quantity, so on
    * a 129-item Work it is the most expensive thing a keystroke does — and
    * it ran twice per render, once for each side. Memoised per side: the
@@ -437,19 +428,6 @@ export function ChallanEditor({
     if (prefix === null || !(node instanceof HTMLInputElement)) return;
     node.setCustomValidity(PREFIX_PATTERN.test(prefix) ? '' : PREFIX_RULE);
   }, [prefix]);
-
-  // The confirmation takes over the decision the Cancel button was about to
-  // make, so focus moves into it rather than leaving a keyboard user parked
-  // on a button whose meaning just changed.
-  useEffect(() => {
-    if (!confirmingDiscard) {
-      // Declining unmounts the button that held focus, so hand it back to
-      // Cancel rather than dropping the operator at the top of the document.
-      cancelRef.current?.focus();
-      return;
-    }
-    discardRef.current?.focus();
-  }, [confirmingDiscard]);
 
   useEffect(() => {
     onDirtyChange?.(edited);
@@ -979,7 +957,7 @@ export function ChallanEditor({
           </Button>
           <Button
             variant="outline"
-            ref={cancelRef}
+            aria-haspopup="dialog"
             onClick={() => {
               if (edited) {
                 setConfirmingDiscard(true);
@@ -993,26 +971,16 @@ export function ChallanEditor({
         </ActionBar>
 
         {confirmingDiscard && (
-          <div className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3">
-            <h2>Discard your changes?</h2>
-            <p>
-              Nothing entered here has been saved yet. Leaving now throws away the
-              consignee details and every quantity you typed.
-            </p>
-            <Actions>
-              <Button ref={discardRef} onClick={onCancel}>
-                Discard and leave
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setConfirmingDiscard(false);
-                }}
-              >
-                Keep editing
-              </Button>
-            </Actions>
-          </div>
+          <ConfirmDialog
+            title="Discard your changes?"
+            description="Nothing entered here has been saved yet. Leaving now throws away the consignee details and every quantity you typed."
+            cancelLabel="Keep editing"
+            confirmLabel="Discard and leave"
+            onCancel={() => {
+              setConfirmingDiscard(false);
+            }}
+            onConfirm={onCancel}
+          />
         )}
       </form>
     </Card>

@@ -7,6 +7,7 @@ import { cn } from '../lib/cn.js';
 import { navigateOnClick, workHash, workspaceHashOf } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 
 interface WorksProps {
   readonly api: ApiClient;
@@ -343,7 +344,10 @@ export function Works({
           <h2 id="loa-documents-title" className="text-sm font-semibold">
             LOA documents
           </h2>
-          {discardError !== null && (
+          {/* Only while the confirmation is closed. A refusal arriving with
+              the dialog still open is shown inside it, where the operator
+              is — behind a modal it would be unreadable. */}
+          {discardError !== null && discardCandidate === null && (
             <p className="text-sm font-medium text-destructive" role="alert">
               {discardError}
             </p>
@@ -417,33 +421,11 @@ export function Works({
                               truth, and the server refuses it by name. */}
                           {canModify &&
                             document.confirmedWorkId === null &&
-                            document.extractionStatus !== 'confirmed' &&
-                            (discardCandidate === document.id ? (
-                              <>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  disabled={discardPending}
-                                  onClick={() => void discard(document.id)}
-                                >
-                                  Confirm discard
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={discardPending}
-                                  onClick={() => {
-                                    setDiscardCandidate(null);
-                                    setDiscardError(null);
-                                  }}
-                                >
-                                  Keep
-                                </Button>
-                              </>
-                            ) : (
+                            document.extractionStatus !== 'confirmed' && (
                               <Button
                                 variant="outline"
                                 size="sm"
+                                aria-haspopup="dialog"
                                 aria-label={`Discard ${document.originalFilename}`}
                                 onClick={() => {
                                   setDiscardCandidate(document.id);
@@ -452,13 +434,29 @@ export function Works({
                               >
                                 Discard
                               </Button>
-                            ))}
+                            )}
                         </span>
                         {discardCandidate === document.id && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            The file stays on record for retention, but leaves this
-                            list. Upload it again if you need it back.
-                          </p>
+                          <ConfirmDialog
+                            title={`Discard ${document.originalFilename}?`}
+                            description="The file stays on record for retention, but leaves this list. Upload it again if you need it back."
+                            confirmLabel="Confirm discard"
+                            pending={discardPending}
+                            onCancel={() => {
+                              setDiscardCandidate(null);
+                              setDiscardError(null);
+                            }}
+                            onConfirm={() => void discard(document.id)}
+                          >
+                            {discardError !== null && (
+                              <p
+                                className="mt-2 text-sm font-medium text-destructive"
+                                role="alert"
+                              >
+                                {discardError}
+                              </p>
+                            )}
+                          </ConfirmDialog>
                         )}
                       </td>
                     </tr>

@@ -325,18 +325,18 @@ const WCAG_TAGS = [
   'best-practice',
 ];
 
-/** Findings the widened gate surfaced on its first run, in files this pack
- * does not own. Frozen: an id may only be listed here with the node it was
- * measured on and the file that owns the fix, and anything not listed
- * fails the build. Delete an entry when its owner lands the fix. */
-const KNOWN_VIOLATIONS: ReadonlyMap<string, string> = new Map([
-  [
-    'heading-order',
-    'Work → Bills: `#billing-readiness-heading` in views/WorkBillingReadiness.tsx ' +
-      'is an h3 whose nearest preceding heading is the page h1. Moderate, so the ' +
-      'old severity filter discarded it. Owner: P13 (accessibility completion).',
-  ],
-]);
+/** Findings the widened gate surfaced on its first run, in files the pack
+ * that widened it did not own. Frozen: an id may only be listed here with
+ * the node it was measured on and the file that owns the fix, and anything
+ * not listed fails the build. Delete an entry when its owner lands the fix.
+ *
+ * It is empty, and the intent is that it stays empty. Its one entry was
+ * `heading-order` at `#billing-readiness-heading`, an h3 whose nearest
+ * preceding heading was the page h1; `views/WorkBillingReadiness.tsx` now
+ * carries an h2, which is the level the section actually sits at beside
+ * `WorkBills`'s own "Bills". Adding an entry back means shipping a known
+ * WCAG failure, so the entry has to name an owner who will remove it. */
+const KNOWN_VIOLATIONS: ReadonlyMap<string, string> = new Map<string, string>();
 
 export async function expectNoAxeViolations(page: Page, context: string) {
   const results = await new AxeBuilder({ page })

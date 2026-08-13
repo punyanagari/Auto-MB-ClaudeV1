@@ -112,7 +112,7 @@ export function WorkBillingReadiness({
   if (failed) {
     return (
       <section aria-labelledby="billing-readiness-heading">
-        <h3 id="billing-readiness-heading">Billing readiness</h3>
+        <h2 id="billing-readiness-heading">Billing readiness</h2>
         <ErrorState
           retryLabel="Retry readiness check"
           onRetry={() => {
@@ -129,7 +129,7 @@ export function WorkBillingReadiness({
   if (matrix === null || contacts === null || profile === null) {
     return (
       <section aria-labelledby="billing-readiness-heading">
-        <h3 id="billing-readiness-heading">Billing readiness</h3>
+        <h2 id="billing-readiness-heading">Billing readiness</h2>
         <LoadingState label="the billing prerequisites" rows={2} />
       </section>
     );
@@ -192,7 +192,7 @@ export function WorkBillingReadiness({
 
   return (
     <section aria-labelledby="billing-readiness-heading">
-      <h3 id="billing-readiness-heading">Billing readiness</h3>
+      <h2 id="billing-readiness-heading">Billing readiness</h2>
       <p className="text-muted-foreground">
         {unmet.length === 0
           ? 'Every invoice prerequisite is in place.'
