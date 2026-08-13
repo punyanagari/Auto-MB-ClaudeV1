@@ -1,6 +1,14 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +18,37 @@ import type { Sql } from '../src/index.js';
 import { createDatabasePool, runMigrations } from '../src/index.js';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Options for every temporary-directory removal in this file.
+ *
+ * The suite shells out to `bash`, `pg_dump` and `tar` inside these
+ * directories. On Windows a child process that has just exited can still
+ * hold an open handle for a few milliseconds — and Windows refuses to
+ * unlink an open file — so a bare `rm(dir, { recursive: true })` fails with
+ * EBUSY/EPERM often enough to have been the suite's standing flake. Node's
+ * own retry loop is the fix: `rm` re-attempts on exactly those codes.
+ */
+const RM_TEMP = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 };
+
+/** What `promisify(execFile)` rejects with: an Error carrying the child's
+ * exit status and both captured streams. */
+type ExecFailure = Error & {
+  readonly code?: number | string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+};
+
+/** Runs a command expected to FAIL and returns the rejection, so the test
+ * can assert on the actual failure rather than on "something threw". */
+async function failureOf(promise: Promise<unknown>): Promise<ExecFailure> {
+  try {
+    await promise;
+  } catch (error) {
+    return error as ExecFailure;
+  }
+  throw new Error('expected the command to fail, but it succeeded');
+}
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -114,7 +153,7 @@ afterAll(async () => {
     }
     await admin.end();
   }
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (workDir) await rm(workDir, RM_TEMP);
 });
 
 describe('backup and restore', () => {
@@ -202,7 +241,7 @@ describe('backup last-success marker', () => {
       const markerPath = path.join(backupRoot, 'last-success');
       await writeFile(markerPath, '12345\n');
       await copyFile(backupScript, path.join(scratch, 'backup.sh'));
-      await expect(
+      const failure = await failureOf(
         execFileAsync('bash', ['backup.sh'], {
           cwd: scratch,
           env: {
@@ -217,10 +256,30 @@ describe('backup last-success marker', () => {
             BACKUP_ROOT: 'backups',
           },
         }),
-      ).rejects.toThrow();
+      );
+      // Name the failure the test means: `set -euo pipefail` must carry
+      // PG_DUMP's non-zero status out of the script. A bare "it threw"
+      // would pass just as happily on a typo in the script's own path,
+      // which is the opposite of what this test claims to prove.
+      expect(failure.code, failure.stderr).not.toBe(0);
+      expect(failure.stderr).toMatch(/pg_dump: error:/);
+      expect(failure.stderr).toMatch(/connection|could not connect/i);
+      // pg_dump creates its output file before it can know the connection
+      // will be refused, so a truncated `database.dump` is expected. What
+      // must NOT exist is the object archive or the manifest: without
+      // SHA256SUMS the directory can never pass restore.sh's own check, so
+      // no later operator can mistake this wreckage for a backup.
+      const stamped = (await readdir(backupRoot)).filter(
+        (entry) => entry !== 'last-success',
+      );
+      for (const directory of stamped) {
+        const produced = await readdir(path.join(backupRoot, directory));
+        expect(produced).not.toContain('objects.tar.gz');
+        expect(produced).not.toContain('SHA256SUMS');
+      }
       expect((await readFile(markerPath, 'utf8')).trim()).toBe('12345');
     } finally {
-      await rm(scratch, { recursive: true, force: true });
+      await rm(scratch, RM_TEMP);
     }
   }, 30_000);
 
@@ -250,11 +309,14 @@ describe('backup last-success marker', () => {
       const marker = await readFile(path.join(markerDir, 'last-success'), 'utf8');
       expect(marker.trim()).toMatch(/^\d+$/);
       // Redirection means exactly that: nothing lands at the default path.
+      // The specific failure matters — ENOENT proves the file is absent,
+      // where a bare toThrow() would also accept a permission error or a
+      // mistyped path and call that a pass.
       await expect(
         readFile(path.join(backupRoot, 'last-success'), 'utf8'),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
-      await rm(scratch, { recursive: true, force: true });
+      await rm(scratch, RM_TEMP);
     }
   }, 120_000);
 });

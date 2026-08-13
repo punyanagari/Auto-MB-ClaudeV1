@@ -45,6 +45,9 @@ const mappingPath = path.resolve(
   'import-v1.mapping.json',
 );
 
+// skip-reason: the real v1 production backup is not in the repository and
+// must not be; this suite runs only where AUTO_MB_V1_BACKUP_PATH points at a
+// copy of it. The companion suite below asserts the absence, loudly.
 describe.skipIf(!backupPresent)(
   'v1 importer dry-run against the real production backup',
   () => {
@@ -206,6 +209,8 @@ describe.skipIf(!backupPresent)(
   },
 );
 
+// skip-reason: the inverse of the suite above — it exists to announce the
+// missing backup, so it is inert on any machine that actually has one.
 describe.runIf(!backupPresent)('v1 importer real-backup smoke (skipped)', () => {
   it('skips because the production backup is not present on this machine', () => {
     console.log(

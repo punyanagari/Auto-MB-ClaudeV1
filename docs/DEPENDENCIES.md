@@ -50,6 +50,23 @@ reads both stdout and stderr and ignores the exit status, because the two
 implementations disagree on both: Poppler writes the banner to stderr and
 exits 0, Xpdf writes it to stdout and exits 99.
 
+The banner probe answers "is this Poppler", not "is this the Poppler the
+corpus was calibrated against". A Poppler release that changed the `-layout`
+column geometry would pass the probe and corrupt extraction just as quietly,
+so the version is pinned and the behaviour is tested:
+
+- `.github/workflows/ci.yml` declares `POPPLER_VERSION` once, pins the jobs
+  that need it to `ubuntu-24.04` so apt resolves that exact upstream version,
+  and fails the build if `pdftotext -v` reports anything else.
+- `apps/server/test/loa-extract-roundtrip.test.ts` runs a synthetic item
+  table through the installed binary and asserts the three layout properties
+  the parser reads: description and figures on one line, a wrapped
+  description continuing on the next line, and a schedule total that is not
+  hoisted into the item row. All three fail under Xpdf's `-layout`.
+- `deploy/Dockerfile.server` still installs `poppler-utils` unpinned from
+  Alpine, so the production version can differ from the CI one. Pinning it to
+  the same upstream version is outstanding.
+
 Operational notes:
 
 - CI (`.github/workflows/ci.yml`) and the server image
