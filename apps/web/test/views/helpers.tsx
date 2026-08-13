@@ -335,23 +335,30 @@ export const REVIEW_PAYLOAD = {
       letter_percentage_direction: 'below',
       needsReview: false,
     },
+    /** One row carrying both halves of the extracted-value lock: its
+     * description, quantity and rate are clean extracted truth (read-only
+     * on the review screen), while its printed unit resolved to no
+     * canonical unit — the one hole the parser itself declares, which the
+     * reviewer may fill. */
     items: [
       {
         schedule: { id: 'A' },
         itemSno: '1',
         itemCode: 'S01',
         description: 'Main switchboard, floor mounted',
+        descriptionSource: 'raw-exact',
         qty: '2.000',
-        qtyUnit: 'Numbers',
+        qtyUnit: 'Route Kilo Meter (RKM)',
         unitRate: '450.00',
         bidAmount: '900.00',
-        needsReview: false,
+        reconciliation: { ok: true },
+        needsReview: true,
         raw: { anchorLine: '1  S01  Main switchboard ...' },
       },
     ],
     flags: [
       {
-        code: 'unresolved_units',
+        code: 'unresolved_unit',
         scope: 'item',
         targetId: 'A#1',
         message: 'The printed unit could not be resolved.',

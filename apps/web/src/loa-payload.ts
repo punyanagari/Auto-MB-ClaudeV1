@@ -18,10 +18,19 @@ export interface ParsedItemView {
   readonly itemSno: string;
   readonly itemCode: string;
   readonly description: string;
+  /** Whether the description is the exact row-owned reading from the PDF's
+   * own reading order, or the conservative layout fallback that
+   * deliberately claims a neighbour's prose too. Only the exact reading is
+   * an extracted truth. Optional: older stored payloads predate it. */
+  readonly descriptionSource?: 'raw-exact' | 'layout-overinclusive';
   readonly qty: string;
   readonly qtyUnit: string | null;
   readonly unitRate: string;
   readonly bidAmount: string;
+  /** `qty × unitRate` against the printed bid amount. A row that does not
+   * reconcile is the letter contradicting itself, and neither figure is a
+   * truth. Optional for the same reason as `descriptionSource`. */
+  readonly reconciliation?: { readonly ok?: boolean };
   readonly needsReview: boolean;
   readonly raw: { readonly anchorLine: string };
 }
@@ -29,6 +38,9 @@ export interface ParsedItemView {
 export interface ReviewFlagView {
   readonly code: string;
   readonly scope: string;
+  /** `<scheduleId>#<itemSno>` for an item flag; the letter number for a
+   * letter-scoped one. */
+  readonly targetId?: string;
   readonly message: string;
   readonly rawBlock: string;
 }
