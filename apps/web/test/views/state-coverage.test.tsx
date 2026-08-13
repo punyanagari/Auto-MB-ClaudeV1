@@ -85,6 +85,11 @@ describe.each(
 
   const { empty } = kase;
   if ('notApplicable' in empty) {
+    // skip-reason: this view has no legitimate empty state — a detail
+    // screen shows one record, a fixed-row form shows its rows. The case
+    // in state-coverage-cases.tsx says which, and the skipped test prints
+    // it. Replacing that case's `notApplicable` with the sentence the
+    // screen shows is what turns this back on.
     it.skip(`has no empty state: ${empty.notApplicable}`, () => undefined);
   } else {
     it('says so when there is nothing yet', async () => {
