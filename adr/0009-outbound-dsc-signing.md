@@ -64,6 +64,16 @@ those same three and the library has no ESS support anywhere. Setting
 `subFilter: ETSI.CAdES.detached` on top of it produces a document that
 claims PAdES and fails PAdES.
 
+There is a second and more serious reason not to reach for node-forge,
+found independently by the inbound verification work: it carries
+March/April 2026 advisories for RSA signature forgery and certificate
+chain bypass — the two operations a signature implementation exists to
+get right. That work reports them as CVE-2026-33894 and CVE-2026-33896;
+confirm the identifiers against the advisory database before citing
+them, but the conclusion does not depend on the numbers. node-forge is
+not currently in this repository's dependency tree (it appears nowhere
+in `pnpm-lock.yaml`), and it should not be added by this work.
+
 CMS assembly uses `@peculiar/asn1-cms` + `@peculiar/asn1-ess` +
 `@peculiar/asn1-tsp`. If that proves heavier than it looks, the
 fallback is a pyHanko sidecar (MIT), which is the only open-source
@@ -130,6 +140,15 @@ was signed, and that proof is the only thing that makes an expired
 certificate irrelevant later. CCA's own guidance is that a signature is
 valid if the certificate was valid at signing time — which is
 unprovable without trusted time.
+
+The inbound verification work supplies the empirical case. Against the
+real CCA India root, a genuine four-signature variation order from the
+customer corpus verifies as `signed_chain_expired`: every signature is
+intact and every chain reaches CCA India, but the Class 3 certificates
+have since lapsed and IREPS applied no timestamp, so nothing in the
+document proves they were valid when it was signed. That is precisely
+the failure this decision avoids for our own outbound documents, and it
+is already visible in documents Railways issues today.
 
 So: RFC 3161 timestamp at signing (B-T), and an asynchronous job that
 fetches OCSP/CRL and appends the DSS by incremental update (B-LT).
