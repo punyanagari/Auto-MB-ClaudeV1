@@ -215,6 +215,149 @@ describe('WorkDetail tax invoices', () => {
     });
   });
 
+  it('drafts an ITEMISED invoice, sending lines instead of a header SAC', async () => {
+    const createWorkTaxInvoice = vi.fn().mockResolvedValue({
+      invoice: taxInvoice(),
+      buyerSnapshot: null,
+      signedQr: null,
+      lines: [],
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listContacts: vi.fn().mockResolvedValue([CLIENT_CONTACT]),
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [billableBook()] }),
+      createWorkTaxInvoice,
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: taxInvoice(),
+        buyerSnapshot: null,
+        signedQr: null,
+        lines: [],
+      }),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.change(await screen.findByLabelText('Measurement Book to bill'), {
+      target: { value: BILLABLE_MB_ID },
+    });
+    fireEvent.change(screen.getByLabelText('Invoice date'), {
+      target: { value: '2026-07-30' },
+    });
+    // The shape switch replaces the header SAC/description/rate fields
+    // with the line editor.
+    fireEvent.change(screen.getByLabelText('Invoice lines'), {
+      target: { value: 'itemised' },
+    });
+    expect(screen.queryByLabelText('SAC code')).toBeNull();
+    expect(screen.queryByLabelText('Service description')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('HSN code'), {
+      target: { value: '85444999' },
+    });
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Signalling cable, 4 core' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity'), {
+      target: { value: '100' },
+    });
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'm' } });
+    fireEvent.change(screen.getByLabelText('Unit rate'), {
+      target: { value: '85.50' },
+    });
+    fireEvent.change(screen.getByLabelText('GST rate (%)'), {
+      target: { value: '18' },
+    });
+    fireEvent.change(screen.getByLabelText('Place of supply'), {
+      target: { value: '27' },
+    });
+    fireEvent.change(screen.getByLabelText('Tax payable on reverse charge'), {
+      target: { value: 'false' },
+    });
+    fireEvent.change(screen.getByLabelText('Buyer'), {
+      target: { value: CLIENT_CONTACT_ID },
+    });
+    fireEvent.click(submitButton('Create draft'));
+
+    await waitFor(() => {
+      expect(createWorkTaxInvoice).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        measurementBookId: BILLABLE_MB_ID,
+        invoiceDate: '2026-07-30',
+        placeOfSupply: '27',
+        reverseChargeApplicable: false,
+        buyerContactId: CLIENT_CONTACT_ID,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Signalling cable, 4 core',
+            quantity: '100',
+            unitRate: '85.50',
+            gstRate: '18',
+            unitLabel: 'm',
+          },
+        ],
+      });
+    });
+  });
+
+  it('shows an itemised invoice as a line table, not one description', async () => {
+    const itemised = taxInvoice({
+      status: 'submitted',
+      invoiceNumber: 'TI/2026-27/002',
+      lineShape: 'itemised',
+      sacCode: null,
+      serviceDescription: null,
+      gstRate: null,
+      reverseChargeApplicable: false,
+      taxableValue: '8550.00',
+      cgstAmount: '769.50',
+      sgstAmount: '769.50',
+      igstAmount: '0.00',
+      totalAmount: '10089.00',
+    });
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+      listWorkTaxInvoices: vi.fn().mockResolvedValue([itemised]),
+      getTaxInvoice: vi.fn().mockResolvedValue({
+        invoice: itemised,
+        buyerSnapshot: null,
+        shipToSnapshot: null,
+        issuedSnapshot: null,
+        signedQr: null,
+        lines: [
+          {
+            id: 'aaaa1111-1111-4111-8111-aaaaaaaaaa11',
+            position: 1,
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Signalling cable, 4 core',
+            quantity: '100.000',
+            unitLabel: 'm',
+            unitRate: '85.50',
+            gstRate: '18.00',
+            taxableValue: '8550.00',
+            cgstAmount: '769.50',
+            sgstAmount: '769.50',
+            igstAmount: '0.00',
+          },
+        ],
+      }),
+      listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
+    });
+    renderInvoiceWork(api);
+    await openWorkTab('Bills');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/002' }));
+    expect(await screen.findByText('Itemised HSN/SAC lines')).toBeTruthy();
+    expect(screen.getByText('85444999 · goods')).toBeTruthy();
+    expect(screen.getByText('Signalling cable, 4 core')).toBeTruthy();
+    // The header SAC and GST rate rows are absent: an itemised invoice
+    // has neither, and printing an empty one would invite a reader to
+    // wonder what it means.
+    expect(screen.queryByText('SAC')).toBeNull();
+  });
+
   it('shows the frozen CGST/SGST split and hides the IGST row within the state', async () => {
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),

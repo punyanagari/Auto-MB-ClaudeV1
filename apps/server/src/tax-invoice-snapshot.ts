@@ -1,6 +1,6 @@
 /** Strict parser for the immutable tax-invoice snapshot frozen at submit. */
 
-import { buildIrpPayload, type IrpPayload } from './gsp/irp-payload.js';
+import { buildIrpPayload, type IrpItem, type IrpPayload } from './gsp/irp-payload.js';
 import { amountInWords as renderAmountInWords } from './amount-in-words.js';
 
 export interface FrozenParty {
@@ -23,6 +23,23 @@ export interface FrozenSupplier {
   readonly locality: string | null;
   readonly phone: string | null;
   readonly msmeNumber: string | null;
+}
+
+/** One line of an ITEMISED invoice, as frozen at submit (snapshot v2,
+ * migration 0057). The v1 snapshot's single cumulative service line
+ * NORMALISES into the same shape through `snapshotLines`, so every
+ * consumer — the printed document, the IRP payload — reads one thing. */
+export interface FrozenInvoiceLine {
+  readonly position: number;
+  readonly isService: boolean;
+  readonly hsnSacCode: string;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unitLabel: string;
+  readonly rate: string;
+  readonly gstRate: string;
+  readonly amount: string;
+  readonly lineValue: string;
 }
 
 export interface TaxInvoiceIssuedSnapshotV1 {
@@ -60,6 +77,38 @@ export interface TaxInvoiceIssuedSnapshotV1 {
   readonly amountInWords: string;
   readonly notes: string | null;
 }
+
+/** Snapshot v2 (migration 0057): the ITEMISED invoice. Identical to v1
+ * in every party, total and word — it differs in exactly one place, the
+ * single `line` becoming a `lines` array. v1 is NOT rewritten or
+ * upgraded: an invoice renders from the snapshot it was issued under,
+ * forever, and every stored invoice today is v1. */
+export interface TaxInvoiceIssuedSnapshotV2 {
+  readonly templateVersion: 'ti-v2';
+  readonly invoiceNumber: string;
+  readonly invoiceDate: string;
+  readonly fyLabel: string | null;
+  readonly supplier: FrozenSupplier;
+  readonly buyer: FrozenParty;
+  readonly shipTo: FrozenParty | null;
+  readonly placeOfSupply: string;
+  readonly reverseChargeApplicable: boolean | null;
+  readonly customerPoReference: string | null;
+  readonly lines: readonly FrozenInvoiceLine[];
+  readonly totals: {
+    readonly taxableValue: string;
+    readonly cgstAmount: string;
+    readonly sgstAmount: string;
+    readonly igstAmount: string;
+    readonly roundOff: string;
+    readonly totalAmount: string;
+  };
+  readonly amountInWords: string;
+  readonly notes: string | null;
+}
+
+export type TaxInvoiceIssuedSnapshot =
+  TaxInvoiceIssuedSnapshotV1 | TaxInvoiceIssuedSnapshotV2;
 
 export class TaxInvoiceSnapshotError extends Error {
   readonly code = 'TAX_INVOICE_SNAPSHOT_INVALID';
@@ -177,10 +226,63 @@ function paiseText(value: bigint): string {
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 }
 
+function integer(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new TaxInvoiceSnapshotError(`${path} is not a positive integer`);
+  }
+  return value;
+}
+
+function boolean_(value: unknown, path: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new TaxInvoiceSnapshotError(`${path} is not a boolean`);
+  }
+  return value;
+}
+
+/**
+ * The strict entry point. Dispatches on the frozen template version and
+ * NEVER migrates one shape into the other: a v1 snapshot is parsed by the
+ * v1 parser, byte for byte as it always was, and a v2 snapshot by the v2
+ * one. Consumers that want a uniform view take `snapshotLines` below.
+ */
 export function parseTaxInvoiceIssuedSnapshot(
   value: unknown,
-): TaxInvoiceIssuedSnapshotV1 {
+): TaxInvoiceIssuedSnapshot {
   const root = object(value, 'issuedSnapshot');
+  if (root.templateVersion === 'ti-v2') {
+    return parseIssuedSnapshotV2(root);
+  }
+  return parseIssuedSnapshotV1(root);
+}
+
+/**
+ * The ITEMISED lines a snapshot carries, in print order. A v1 snapshot
+ * has exactly one — its cumulative service line, which is a SERVICE at a
+ * SAC by construction — so this is the ONLY place the two shapes meet and
+ * no consumer branches on the version itself.
+ */
+export function snapshotLines(
+  snapshot: TaxInvoiceIssuedSnapshot,
+): readonly FrozenInvoiceLine[] {
+  if (snapshot.templateVersion === 'ti-v2') return snapshot.lines;
+  return [
+    {
+      position: 1,
+      isService: true,
+      hsnSacCode: snapshot.line.sacCode,
+      description: snapshot.line.description,
+      quantity: snapshot.line.quantity,
+      unitLabel: snapshot.line.unitLabel,
+      rate: snapshot.line.rate,
+      gstRate: snapshot.line.gstRate,
+      amount: snapshot.line.amount,
+      lineValue: snapshot.line.lineValue,
+    },
+  ];
+}
+
+function parseIssuedSnapshotV1(root: JsonObject): TaxInvoiceIssuedSnapshotV1 {
   if (root.templateVersion !== 'ti-v1') {
     throw new TaxInvoiceSnapshotError('issuedSnapshot.templateVersion is unsupported');
   }
@@ -256,6 +358,169 @@ export function parseTaxInvoiceIssuedSnapshot(
   };
 }
 
+function parseIssuedSnapshotLine(value: unknown, index: number): FrozenInvoiceLine {
+  const path = `issuedSnapshot.lines[${String(index)}]`;
+  const row = object(value, path);
+  const hsnSacCode = text(row.hsnSacCode, `${path}.hsnSacCode`);
+  const isService = boolean_(row.isService, `${path}.isService`);
+  if (!/^[0-9]{6,8}$/.test(hsnSacCode)) {
+    throw new TaxInvoiceSnapshotError(`${path}.hsnSacCode is invalid`);
+  }
+  // A SAC takes no eight-digit deepening: the frozen document says which
+  // reading applies, and a service line that carries a longer code is not
+  // a document this parser will hand to a statutory payload.
+  if (isService && !/^[0-9]{6}$/.test(hsnSacCode)) {
+    throw new TaxInvoiceSnapshotError(
+      `${path}.hsnSacCode is not a six-digit SAC on a service line`,
+    );
+  }
+  return {
+    position: integer(row.position, `${path}.position`),
+    isService,
+    hsnSacCode,
+    description: text(row.description, `${path}.description`),
+    quantity: decimal(row.quantity, `${path}.quantity`),
+    unitLabel: text(row.unitLabel, `${path}.unitLabel`),
+    rate: decimal(row.rate, `${path}.rate`),
+    gstRate: decimal(row.gstRate, `${path}.gstRate`),
+    amount: decimal(row.amount, `${path}.amount`),
+    lineValue: decimal(row.lineValue, `${path}.lineValue`),
+  };
+}
+
+function parseIssuedSnapshotV2(root: JsonObject): TaxInvoiceIssuedSnapshotV2 {
+  const totals = object(root.totals, 'issuedSnapshot.totals');
+  const rawLines = root.lines;
+  if (!Array.isArray(rawLines) || rawLines.length === 0) {
+    throw new TaxInvoiceSnapshotError('issuedSnapshot.lines is not a non-empty array');
+  }
+  const lines = rawLines.map((line, index) => parseIssuedSnapshotLine(line, index));
+  const invoiceDate = text(root.invoiceDate, 'issuedSnapshot.invoiceDate');
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(invoiceDate)) {
+    throw new TaxInvoiceSnapshotError('issuedSnapshot.invoiceDate is invalid');
+  }
+  const fyLabel = nullableText(root.fyLabel, 'issuedSnapshot.fyLabel');
+  if (fyLabel !== null && !/^[0-9]{4}-[0-9]{2}$/.test(fyLabel)) {
+    throw new TaxInvoiceSnapshotError('issuedSnapshot.fyLabel is invalid');
+  }
+  const totalAmount = decimal(totals.totalAmount, 'issuedSnapshot.totals.totalAmount');
+  return {
+    templateVersion: 'ti-v2',
+    invoiceNumber: text(root.invoiceNumber, 'issuedSnapshot.invoiceNumber'),
+    invoiceDate,
+    fyLabel,
+    supplier: supplier(root.supplier),
+    buyer: party(root.buyer, 'issuedSnapshot.buyer'),
+    shipTo: root.shipTo === null ? null : party(root.shipTo, 'issuedSnapshot.shipTo'),
+    placeOfSupply: text(root.placeOfSupply, 'issuedSnapshot.placeOfSupply'),
+    reverseChargeApplicable: nullableBoolean(
+      root.reverseChargeApplicable,
+      'issuedSnapshot.reverseChargeApplicable',
+    ),
+    customerPoReference: nullableText(
+      root.customerPoReference,
+      'issuedSnapshot.customerPoReference',
+    ),
+    lines,
+    totals: {
+      taxableValue: decimal(totals.taxableValue, 'issuedSnapshot.totals.taxableValue'),
+      cgstAmount: decimal(totals.cgstAmount, 'issuedSnapshot.totals.cgstAmount'),
+      sgstAmount: decimal(totals.sgstAmount, 'issuedSnapshot.totals.sgstAmount'),
+      igstAmount: decimal(totals.igstAmount, 'issuedSnapshot.totals.igstAmount'),
+      roundOff: decimal(totals.roundOff, 'issuedSnapshot.totals.roundOff'),
+      totalAmount,
+    },
+    amountInWords:
+      root.amountInWords === undefined
+        ? renderAmountInWords(totalAmount)
+        : text(root.amountInWords, 'issuedSnapshot.amountInWords'),
+    notes: nullableText(root.notes, 'issuedSnapshot.notes'),
+  };
+}
+
+/**
+ * The ItemList, mapped from the frozen document.
+ *
+ * A v1 (cumulative) snapshot produces EXACTLY the bytes it always has:
+ * one item, `Qty` the integer 1 rather than the snapshot's '1.00', and
+ * UnitPrice/TotAmt/AssAmt all the invoice's taxable value with the header
+ * tax heads. That is not a shortcut — it is the wire this system has been
+ * sending since the payload existed, and an itemised feature has no
+ * business rewriting the statutory bytes of a cumulative invoice.
+ *
+ * A v2 (itemised) snapshot produces one item per line, at the line's own
+ * quantity, rate, GST rate and tax heads.
+ */
+export function frozenIrpItems(snapshot: TaxInvoiceIssuedSnapshot): IrpItem[] {
+  if (snapshot.templateVersion === 'ti-v1') {
+    return [
+      {
+        description: snapshot.line.description,
+        isService: true,
+        hsnCode: snapshot.line.sacCode,
+        quantity: '1',
+        unitPrice: snapshot.totals.taxableValue,
+        totalAmount: snapshot.totals.taxableValue,
+        assessableAmount: snapshot.totals.taxableValue,
+        gstRate: snapshot.line.gstRate,
+        cgstAmount: snapshot.totals.cgstAmount,
+        sgstAmount: snapshot.totals.sgstAmount,
+        igstAmount: snapshot.totals.igstAmount,
+        totalItemValue: snapshot.line.lineValue,
+      },
+    ];
+  }
+  return snapshot.lines.map((line) => {
+    const heads = lineTaxHeads(line, snapshot);
+    return {
+      description: line.description,
+      isService: line.isService,
+      hsnCode: line.hsnSacCode,
+      quantity: line.quantity,
+      unitPrice: line.rate,
+      totalAmount: line.amount,
+      assessableAmount: line.amount,
+      gstRate: line.gstRate,
+      ...heads,
+      totalItemValue: line.lineValue,
+    };
+  });
+}
+
+/**
+ * A line's own CGST/SGST/IGST, recovered exactly from what was frozen:
+ * `lineValue - amount` is the tax the line carries, and the INVOICE's
+ * split decides which heads hold it (the 0035 split-coherence CHECK and
+ * the 0052 place-of-supply guard both make that one decision per
+ * document). All arithmetic in scaled paise integers — never floats.
+ */
+function lineTaxHeads(
+  line: FrozenInvoiceLine,
+  snapshot: TaxInvoiceIssuedSnapshot,
+): { cgstAmount: string; sgstAmount: string; igstAmount: string } {
+  const tax =
+    scaledPaise(line.lineValue, 'lineValue') - scaledPaise(line.amount, 'amount');
+  const interState = scaledPaise(snapshot.totals.igstAmount, 'igstAmount') > 0n;
+  if (interState) {
+    return {
+      cgstAmount: '0.00',
+      sgstAmount: '0.00',
+      igstAmount: paiseText(tax),
+    };
+  }
+  const half = tax / 2n;
+  if (half * 2n !== tax) {
+    throw new TaxInvoiceSnapshotError(
+      'issuedSnapshot line tax does not split into two equal intra-state halves',
+    );
+  }
+  return {
+    cgstAmount: paiseText(half),
+    sgstAmount: paiseText(half),
+    igstAmount: '0.00',
+  };
+}
+
 /** Build the provider payload exclusively from frozen issued facts. */
 export function buildFrozenIrpPayload(value: unknown): IrpPayload {
   const snapshot = parseTaxInvoiceIssuedSnapshot(value);
@@ -296,18 +561,15 @@ export function buildFrozenIrpPayload(value: unknown): IrpPayload {
   return buildIrpPayload({
     invoiceNumber: snapshot.invoiceNumber,
     invoiceDate: snapshot.invoiceDate,
-    sacCode: snapshot.line.sacCode,
-    serviceDescription: snapshot.line.description,
     placeOfSupply: snapshot.placeOfSupply,
     reverseChargeApplicable: snapshot.reverseChargeApplicable,
-    gstRate: snapshot.line.gstRate,
+    items: frozenIrpItems(snapshot),
     taxableValue: snapshot.totals.taxableValue,
     cgstAmount: snapshot.totals.cgstAmount,
     sgstAmount: snapshot.totals.sgstAmount,
     igstAmount: snapshot.totals.igstAmount,
     totalAmount: snapshot.totals.totalAmount,
     roundOff: snapshot.totals.roundOff,
-    lineValue: snapshot.line.lineValue,
     seller: {
       gstin: snapshot.supplier.gstin,
       legalName: snapshot.supplier.name,

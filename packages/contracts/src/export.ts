@@ -59,6 +59,9 @@ export const OrganisationExportSchema = Type.Object(
     budgetaryQuotations: ExportRowsSchema,
     budgetaryQuotationLines: ExportRowsSchema,
     taxInvoices: ExportRowsSchema,
+    /** The lines of an ITEMISED invoice (migration 0057). Empty for
+     * an organisation that only raises cumulative service invoices. */
+    taxInvoiceLines: ExportRowsSchema,
     taxInvoiceRenders: ExportRowsSchema,
     ewayBills: ExportRowsSchema,
     documentNumberSeries: ExportRowsSchema,

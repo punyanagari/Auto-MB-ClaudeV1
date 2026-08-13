@@ -519,6 +519,8 @@ describe('export completeness', () => {
       'budgetaryQuotations',
       'budgetaryQuotationLines',
       'taxInvoices',
+      // export-v11: the lines of an ITEMISED invoice (0057).
+      'taxInvoiceLines',
       'taxInvoiceRenders',
       // export-v10: the Section 34 credit note register (0051).
       'creditNotes',

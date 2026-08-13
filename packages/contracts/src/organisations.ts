@@ -1,5 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, GstStateCodeSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  GstStateCodeSchema,
+  TaxInvoiceLineShapeSchema,
+  UuidSchema,
+} from './primitives.js';
 
 export const MembershipRoleSchema = Type.Union([
   Type.Literal('owner'),
@@ -235,6 +240,12 @@ export const OrganisationProfileSchema = Type.Object(
     invoiceNotes: Type.Optional(
       Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
     ),
+    /** Which line shape the invoice CREATE FORM starts on (migration
+     * 0057). A form default only: the shape is chosen per document, and
+     * changing this never touches an invoice that already exists.
+     * Optional on the wire like the other later tax facts, so a reader
+     * that predates it omits rather than invents it. */
+    defaultInvoiceShape: Type.Optional(TaxInvoiceLineShapeSchema),
     /** Warranty agreement template for a later document generator;
      * stored verbatim, never rendered here (Milestone 7: CRUD only). */
     warrantyTemplateText: Type.Union([
@@ -290,6 +301,10 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
     invoiceNotes: Type.Optional(
       Type.Union([Type.String({ minLength: 3, maxLength: 4000 }), Type.Null()]),
     ),
+    /** The invoice create form's starting shape (migration 0057). Never
+     * nullable: every organisation has one, defaulting to the cumulative
+     * service invoice the railway trade writes most often. */
+    defaultInvoiceShape: Type.Optional(TaxInvoiceLineShapeSchema),
     warrantyTemplateText: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 20000 }), Type.Null()]),
     ),

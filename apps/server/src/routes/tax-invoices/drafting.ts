@@ -25,16 +25,19 @@ import {
   assertInvoiceDate,
   assertInvoiceDateNotFuture,
   assertInvoiceWorkAccess,
+  auditLineSummary,
   documentFields,
+  headerLineFields,
   lockInvoice,
   lockInvoiceableBook,
   readDetail,
+  replaceInvoiceLines,
   requireBuyer,
   requireStatus,
+  statedTaxableValueOfLines,
   TI_COLUMNS,
   TI_FROM,
   toInvoice,
-  trimmedDescription,
 } from './internal.js';
 import type { InvoiceRow } from './internal.js';
 
@@ -88,7 +91,7 @@ export function registerTaxInvoiceDraftingRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const body = request.body;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
+      const header = headerLineFields(body);
       const document = documentFields(body);
 
       const detail = await tenant(async (tx) => {
@@ -97,8 +100,12 @@ export function registerTaxInvoiceDraftingRoutes(
         // The rate must be one the Government had notified on the
         // invoice date (gst_rates master, finding 19) — checked here so
         // a 1.8-instead-of-18 typo is a named 400, and re-checked at
-        // submit because the date can change until then.
-        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
+        // submit because the date can change until then. An ITEMISED
+        // invoice has no header rate; its per-line rates are checked by
+        // replaceInvoiceLines below, line by line.
+        if (header.gstRate !== null) {
+          await assertGstRateNotified(tx, header.gstRate, body.invoiceDate);
+        }
         await assertWorkAccess(tx, user.id, workId);
         const book = await lockInvoiceableBook(tx, workId, body.measurementBookId);
         assertInvoiceDate(body.invoiceDate, book);
@@ -108,15 +115,17 @@ export function registerTaxInvoiceDraftingRoutes(
         const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
               organisation_id, work_id, measurement_book_id, invoice_date,
-              sac_code, service_description, gst_rate, place_of_supply,
+              line_shape, sac_code, service_description, gst_rate,
+              place_of_supply,
               reverse_charge_applicable, buyer_contact_id,
               customer_po_reference, unit_label, notes, ship_to_contact_id,
               number_prefix, created_by_user_id
             )
             values (
               ${organisationId}, ${workId}, ${body.measurementBookId},
-              ${body.invoiceDate}, ${body.sacCode}, ${serviceDescription},
-              ${body.gstRate}, ${body.placeOfSupply},
+              ${body.invoiceDate}, ${header.lineShape}, ${header.sacCode},
+              ${header.serviceDescription},
+              ${header.gstRate}, ${body.placeOfSupply},
               ${body.reverseChargeApplicable ?? null}, ${body.buyerContactId},
               ${document.customerPoReference}, ${document.unitLabel},
               ${document.notes}, ${document.shipToContactId},
@@ -137,6 +146,15 @@ export function registerTaxInvoiceDraftingRoutes(
           throw error;
         });
         if (!created) throw new Error('tax invoice insert returned no row');
+        if (body.lineShape === 'itemised') {
+          await replaceInvoiceLines(
+            tx,
+            organisationId,
+            created.id,
+            body.invoiceDate,
+            body.lines,
+          );
+        }
 
         // `buyerContactId` in the details is the draft's buyer store —
         // see the module note. Always written, never diffed away.
@@ -153,8 +171,10 @@ export function registerTaxInvoiceDraftingRoutes(
             mbNumber: book?.mb_number ?? null,
             buyerContactId: body.buyerContactId,
             invoiceDate: body.invoiceDate,
-            sacCode: body.sacCode,
-            gstRate: body.gstRate,
+            lineShape: header.lineShape,
+            sacCode: header.sacCode,
+            gstRate: header.gstRate,
+            lines: body.lineShape === 'itemised' ? auditLineSummary(body.lines) : null,
             placeOfSupply: body.placeOfSupply,
             reverseChargeApplicable: body.reverseChargeApplicable ?? null,
           },
@@ -192,25 +212,39 @@ export function registerTaxInvoiceDraftingRoutes(
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
+      const header = headerLineFields(body);
       const document = documentFields(body);
 
       const detail = await tenant(async (tx) => {
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
-        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
+        if (header.gstRate !== null) {
+          await assertGstRateNotified(tx, header.gstRate, body.invoiceDate);
+        }
         await requireBuyer(tx, body.buyerContactId);
+        // A direct invoice has no Measurement Book, so the 0039 CHECK
+        // makes it STATE its taxable value. An itemised one does not
+        // state it twice: the lines already say what the supply is worth,
+        // so the figure is summed from them in SQL numeric before the
+        // header row exists.
+        const taxableValue =
+          body.lineShape === 'itemised'
+            ? await statedTaxableValueOfLines(tx, body.lines)
+            : body.taxableValue;
         const [created] = await tx<{ id: string }[]>`
             insert into tax_invoices (
-              organisation_id, invoice_date, sac_code, service_description,
+              organisation_id, invoice_date, line_shape, sac_code,
+              service_description,
               gst_rate, place_of_supply, stated_taxable_value,
               reverse_charge_applicable, buyer_contact_id,
               customer_po_reference, unit_label, notes, ship_to_contact_id,
               number_prefix, created_by_user_id
             )
             values (
-              ${organisationId}, ${body.invoiceDate}, ${body.sacCode},
-              ${serviceDescription}, ${body.gstRate}, ${body.placeOfSupply},
-              ${body.taxableValue}, ${body.reverseChargeApplicable ?? null},
+              ${organisationId}, ${body.invoiceDate}, ${header.lineShape},
+              ${header.sacCode},
+              ${header.serviceDescription}, ${header.gstRate},
+              ${body.placeOfSupply},
+              ${taxableValue}, ${body.reverseChargeApplicable ?? null},
               ${body.buyerContactId},
               ${document.customerPoReference}, ${document.unitLabel},
               ${document.notes}, ${document.shipToContactId},
@@ -219,6 +253,15 @@ export function registerTaxInvoiceDraftingRoutes(
             returning id
           `;
         if (!created) throw new Error('direct tax invoice insert returned no row');
+        if (body.lineShape === 'itemised') {
+          await replaceInvoiceLines(
+            tx,
+            organisationId,
+            created.id,
+            body.invoiceDate,
+            body.lines,
+          );
+        }
         await audit(
           tx,
           organisationId,
@@ -228,7 +271,9 @@ export function registerTaxInvoiceDraftingRoutes(
           created.id,
           {
             direct: true,
-            taxableValue: body.taxableValue,
+            lineShape: header.lineShape,
+            taxableValue,
+            lines: body.lineShape === 'itemised' ? auditLineSummary(body.lines) : null,
             reverseChargeApplicable: body.reverseChargeApplicable ?? null,
             buyerContactId: body.buyerContactId,
           },
@@ -275,11 +320,13 @@ export function registerTaxInvoiceDraftingRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      const serviceDescription = trimmedDescription(body.serviceDescription);
+      const header = headerLineFields(body);
       const document = documentFields(body);
       return tenant(async (tx) => {
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
-        await assertGstRateNotified(tx, body.gstRate, body.invoiceDate);
+        if (header.gstRate !== null) {
+          await assertGstRateNotified(tx, header.gstRate, body.invoiceDate);
+        }
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'draft');
@@ -295,11 +342,39 @@ export function registerTaxInvoiceDraftingRoutes(
           assertInvoiceDate(body.invoiceDate, book);
         }
         await requireBuyer(tx, body.buyerContactId);
+        // The lines are replaced BEFORE the header moves, so the 0057
+        // deferred shape check never sees a cumulative header owning
+        // lines (or the reverse) as the transaction's RESULT, and the
+        // per-line rate guard judges every new line against the date the
+        // update is setting.
+        if (body.lineShape === 'itemised') {
+          await replaceInvoiceLines(
+            tx,
+            organisationId,
+            id,
+            body.invoiceDate,
+            body.lines,
+          );
+        } else if (invoice.line_shape === 'itemised') {
+          await tx`delete from tax_invoice_lines where tax_invoice_id = ${id}`;
+        }
+        // A DIRECT invoice must keep stating a taxable value (0039); an
+        // itemised one restates it from its new lines, in SQL numeric.
+        const statedTaxableValue =
+          invoice.measurement_book_id !== null
+            ? null
+            : body.lineShape === 'itemised'
+              ? await statedTaxableValueOfLines(tx, body.lines)
+              : invoice.stated_taxable_value;
         await tx`
           update tax_invoices
-          set invoice_date = ${body.invoiceDate}, sac_code = ${body.sacCode},
-              service_description = ${serviceDescription},
-              gst_rate = ${body.gstRate}, place_of_supply = ${body.placeOfSupply},
+          set invoice_date = ${body.invoiceDate},
+              line_shape = ${header.lineShape},
+              sac_code = ${header.sacCode},
+              service_description = ${header.serviceDescription},
+              gst_rate = ${header.gstRate},
+              stated_taxable_value = ${statedTaxableValue},
+              place_of_supply = ${body.placeOfSupply},
               reverse_charge_applicable = ${body.reverseChargeApplicable ?? null},
               buyer_contact_id = ${body.buyerContactId},
               customer_po_reference = ${document.customerPoReference},
@@ -314,13 +389,14 @@ export function registerTaxInvoiceDraftingRoutes(
         const [stored] = await tx<
           {
             invoice_date: string;
-            sac_code: string;
-            service_description: string;
-            gst_rate: string;
+            line_shape: string;
+            sac_code: string | null;
+            service_description: string | null;
+            gst_rate: string | null;
             place_of_supply: string;
           }[]
         >`
-          select invoice_date::text as invoice_date, sac_code,
+          select invoice_date::text as invoice_date, line_shape, sac_code,
                  service_description, gst_rate::text as gst_rate,
                  place_of_supply
           from tax_invoices where id = ${id}
@@ -329,6 +405,7 @@ export function registerTaxInvoiceDraftingRoutes(
         const changes = auditDiff(
           {
             invoiceDate: invoice.invoice_date,
+            lineShape: invoice.line_shape,
             sacCode: invoice.sac_code,
             serviceDescription: invoice.service_description,
             gstRate: invoice.gst_rate,
@@ -337,6 +414,7 @@ export function registerTaxInvoiceDraftingRoutes(
           },
           {
             invoiceDate: stored.invoice_date,
+            lineShape: stored.line_shape,
             sacCode: stored.sac_code,
             serviceDescription: stored.service_description,
             gstRate: stored.gst_rate,
@@ -357,6 +435,7 @@ export function registerTaxInvoiceDraftingRoutes(
             before: changes.before,
             after: changes.after,
             buyerContactId: body.buyerContactId,
+            lines: body.lineShape === 'itemised' ? auditLineSummary(body.lines) : null,
           },
         );
         return readDetail(tx, id);
@@ -383,6 +462,11 @@ export function registerTaxInvoiceDraftingRoutes(
         // also releases the MB it would have billed (the one-live index
         // and the 0035 MB-cancel guard both stop seeing it).
         requireStatus(invoice, 'draft');
+        // The lines are the draft's own; they go with it. The 0057
+        // mutation guard permits this precisely because the parent is
+        // still a draft, and the deferred shape check sees no invoice
+        // left to judge.
+        await tx`delete from tax_invoice_lines where tax_invoice_id = ${id}`;
         await tx`delete from tax_invoices where id = ${id}`;
         await audit(
           tx,

@@ -8,7 +8,10 @@
  *
  * This provider integration deliberately supports B2B only. Local invoices
  * may name an unregistered buyer, but an IRP payload is refused until an
- * explicit provider-backed B2C contract exists.
+ * explicit provider-backed B2C contract exists. SupTyp therefore stays
+ * 'B2B' whatever the ItemList carries: migration 0057 made the invoice's
+ * LINES goods-or-service, which is IsServc per item, and said nothing
+ * about the supply type.
  */
 
 import {
@@ -43,25 +46,51 @@ export type IrpShipTo = IrpBuyer;
  * is that the document type, not a sign, marks the credit. */
 export type IrpDocumentType = 'INV' | 'CRN';
 
+/**
+ * One ItemList entry. A CUMULATIVE invoice contributes exactly one, built
+ * from its header line and the invoice totals; an ITEMISED invoice
+ * (migration 0057) contributes one per frozen line, each with its own
+ * HSN/SAC, goods-or-services flag, quantity, rate and tax heads.
+ *
+ * `SlNo` is not stated here: it is the item's 1-based position in the
+ * list, which is what NIC means by it and what the single-line payload
+ * has always sent.
+ */
+export interface IrpItem {
+  description: string;
+  /** Goods or services — becomes IsServc. Stated by the frozen document,
+   * never inferred from the code's length. */
+  isService: boolean;
+  /** HSN (goods, 6-8 digits) or SAC (services, 6 digits). */
+  hsnCode: string;
+  quantity: string;
+  unitPrice: string;
+  totalAmount: string;
+  assessableAmount: string;
+  gstRate: string;
+  cgstAmount: string;
+  sgstAmount: string;
+  igstAmount: string;
+  /** The item's own unrounded taxable + tax sum, for TotItemVal. */
+  totalItemValue: string;
+}
+
 export interface IrpInvoiceInput {
   /** 'INV' (default) or 'CRN'. */
   documentType?: IrpDocumentType;
   invoiceNumber: string;
   /** Date-only YYYY-MM-DD, converted to DD/MM/YYYY on the wire. */
   invoiceDate: string;
-  sacCode: string;
-  serviceDescription: string;
   placeOfSupply: string;
   reverseChargeApplicable: boolean;
-  gstRate: string;
+  /** At least one item; see IrpItem. */
+  items: readonly IrpItem[];
   taxableValue: string;
   cgstAmount: string;
   sgstAmount: string;
   igstAmount: string;
   totalAmount: string;
   roundOff: string;
-  /** Unrounded taxable + tax sum for TotItemVal. */
-  lineValue: string;
   seller: IrpSeller;
   buyer: IrpBuyer;
   /** Null means Bill-To and Ship-To are the same frozen party. */
@@ -89,24 +118,7 @@ export interface IrpPayload {
   SellerDtls: WirePartyAddress & { Gstin: string; TrdNm?: string };
   BuyerDtls: WirePartyAddress & { Gstin: string; Pos: string };
   ShipDtls?: WirePartyAddress & { Gstin: string };
-  ItemList: [
-    {
-      SlNo: '1';
-      PrdDesc: string;
-      IsServc: 'Y';
-      HsnCd: string;
-      Qty: ExactJsonNumber;
-      Unit: 'OTH';
-      UnitPrice: ExactJsonNumber;
-      TotAmt: ExactJsonNumber;
-      AssAmt: ExactJsonNumber;
-      GstRt: ExactJsonNumber;
-      CgstAmt: ExactJsonNumber;
-      SgstAmt: ExactJsonNumber;
-      IgstAmt: ExactJsonNumber;
-      TotItemVal: ExactJsonNumber;
-    },
-  ];
+  ItemList: IrpWireItem[];
   ValDtls: {
     AssVal: ExactJsonNumber;
     CgstVal: ExactJsonNumber;
@@ -114,6 +126,46 @@ export interface IrpPayload {
     IgstVal: ExactJsonNumber;
     RndOffAmt: ExactJsonNumber;
     TotInvVal: ExactJsonNumber;
+  };
+}
+
+interface IrpWireItem {
+  SlNo: string;
+  PrdDesc: string;
+  IsServc: 'Y' | 'N';
+  HsnCd: string;
+  Qty: ExactJsonNumber;
+  /** OTH for every line. The frozen unit label is the trade's own word
+   * ('set', 'm'), not a NIC UQC code, and inventing a mapping from one to
+   * the other would put a claim on the wire that the document does not
+   * make. The single-line payload has always sent OTH. */
+  Unit: 'OTH';
+  UnitPrice: ExactJsonNumber;
+  TotAmt: ExactJsonNumber;
+  AssAmt: ExactJsonNumber;
+  GstRt: ExactJsonNumber;
+  CgstAmt: ExactJsonNumber;
+  SgstAmt: ExactJsonNumber;
+  IgstAmt: ExactJsonNumber;
+  TotItemVal: ExactJsonNumber;
+}
+
+function wireItem(item: IrpItem, index: number): IrpWireItem {
+  return {
+    SlNo: String(index + 1),
+    PrdDesc: item.description,
+    IsServc: item.isService ? 'Y' : 'N',
+    HsnCd: item.hsnCode,
+    Qty: exactJsonNumber(item.quantity),
+    Unit: 'OTH',
+    UnitPrice: exactJsonNumber(item.unitPrice),
+    TotAmt: exactJsonNumber(item.totalAmount),
+    AssAmt: exactJsonNumber(item.assessableAmount),
+    GstRt: exactJsonNumber(item.gstRate),
+    CgstAmt: exactJsonNumber(item.cgstAmount),
+    SgstAmt: exactJsonNumber(item.sgstAmount),
+    IgstAmt: exactJsonNumber(item.igstAmount),
+    TotItemVal: exactJsonNumber(item.totalItemValue),
   };
 }
 
@@ -141,6 +193,9 @@ function wireShipTo(party: IrpShipTo): WirePartyAddress & { Gstin: string } {
 
 export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
   const taxable = exactJsonNumber(input.taxableValue);
+  if (input.items.length === 0) {
+    throw new Error('an IRP payload needs at least one item');
+  }
   return {
     Version: '1.1',
     TranDtls: {
@@ -167,24 +222,7 @@ export function buildIrpPayload(input: IrpInvoiceInput): IrpPayload {
       Pos: input.placeOfSupply,
     },
     ...(input.shipTo === null ? {} : { ShipDtls: wireShipTo(input.shipTo) }),
-    ItemList: [
-      {
-        SlNo: '1',
-        PrdDesc: input.serviceDescription,
-        IsServc: 'Y',
-        HsnCd: input.sacCode,
-        Qty: exactJsonNumber('1'),
-        Unit: 'OTH',
-        UnitPrice: taxable,
-        TotAmt: taxable,
-        AssAmt: taxable,
-        GstRt: exactJsonNumber(input.gstRate),
-        CgstAmt: exactJsonNumber(input.cgstAmount),
-        SgstAmt: exactJsonNumber(input.sgstAmount),
-        IgstAmt: exactJsonNumber(input.igstAmount),
-        TotItemVal: exactJsonNumber(input.lineValue),
-      },
-    ],
+    ItemList: input.items.map(wireItem),
     ValDtls: {
       AssVal: taxable,
       CgstVal: exactJsonNumber(input.cgstAmount),

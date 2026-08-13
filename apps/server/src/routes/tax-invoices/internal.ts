@@ -1,13 +1,18 @@
 import {
+  type CreateDirectTaxInvoiceRequest,
   type CreateTaxInvoiceRequest,
   type IrpProviderState,
   type TaxInvoice,
   type TaxInvoiceDetailResponse,
+  type TaxInvoiceLine,
+  type TaxInvoiceLineInput,
+  type TaxInvoiceLineShape,
   type TaxInvoiceStatus,
   type UpdateTaxInvoiceRequest,
 } from '@auto-mb/contracts';
 import type { TransactionSql } from '@auto-mb/db';
 import { assertWorkAccess } from '../../authz.js';
+import { assertGstRateNotified } from '../../gst-rates.js';
 import { draftConflictError } from '../../draft-conflict.js';
 import { stringifyStatutoryJson } from '../../gsp/statutory-json.js';
 import { sha256Hex } from '../../gsp/provider-operations.js';
@@ -17,9 +22,21 @@ import type { TaxInvoiceIrpRenderEvidence } from '../../tax-invoice-html.js';
 import type { parseTaxInvoiceIssuedSnapshot } from '../../tax-invoice-snapshot.js';
 
 /**
- * The GST tax invoice (migration 0035): CUMULATIVE, one service line at
- * a SAC for a finalized Measurement Book's total — a works contract is a
- * supply of services, so there are no per-item HSN lines, ever.
+ * The GST tax invoice (migrations 0035 and 0057). Its LINE SHAPE is a
+ * per-document choice:
+ *
+ * - `service_cumulative` — the 0035 model and still the common railway
+ *   works-contract bill: one service line at a SAC for a finalized
+ *   Measurement Book's total, carried by the header columns;
+ * - `itemised` — those header columns are NULL and the document is its
+ *   `tax_invoice_lines` rows, each with its own HSN (goods) or SAC
+ *   (services) code, quantity, unit rate and GST rate.
+ *
+ * The choice is NEVER derived from the buyer or the Work. The owner's
+ * account is that practice varies by company: some vendors put HSN goods
+ * items on Railway invoices too, and private customers commonly take HSN
+ * goods supply. The organisation's `default_invoice_shape` seeds the
+ * create FORM and nothing else.
  *
  * Draft (unnumbered, amounts open) -> submitted (the money moment: a
  * gapless per-organisation PER-FINANCIAL-YEAR number under the counter
@@ -61,9 +78,13 @@ export interface InvoiceRow {
   sequence_number: number | null;
   fy_label: string | null;
   invoice_date: string;
-  sac_code: string;
-  service_description: string;
-  gst_rate: string;
+  /** The per-document goods-vs-service shape (0057). */
+  line_shape: TaxInvoiceLineShape;
+  /** The cumulative service line, in the header. All three are NULL on
+   * an ITEMISED invoice, whose document is its lines. */
+  sac_code: string | null;
+  service_description: string | null;
+  gst_rate: string | null;
   place_of_supply: string;
   reverse_charge_applicable: boolean | null;
   buyer_contact_id: string;
@@ -127,7 +148,8 @@ export interface InvoiceRow {
 export const TI_COLUMNS = `
   ti.id, ti.work_id, ti.measurement_book_id, mb.mb_number,
   ti.status, ti.invoice_number, ti.sequence_number, ti.fy_label,
-  ti.invoice_date::text as invoice_date, ti.sac_code, ti.service_description,
+  ti.invoice_date::text as invoice_date, ti.line_shape,
+  ti.sac_code, ti.service_description,
   ti.gst_rate::text as gst_rate, ti.place_of_supply,
   ti.reverse_charge_applicable,
   ti.buyer_contact_id,
@@ -182,6 +204,7 @@ export function toInvoice(row: InvoiceRow): TaxInvoice {
     sequenceNumber: row.sequence_number,
     fyLabel: row.fy_label,
     invoiceDate: row.invoice_date,
+    lineShape: row.line_shape,
     sacCode: row.sac_code,
     serviceDescription: row.service_description,
     gstRate: row.gst_rate,
@@ -246,7 +269,220 @@ export async function readDetail(
     shipToSnapshot: parseJsonbColumn(row.ship_to_snapshot),
     issuedSnapshot: parseJsonbColumn(row.issued_snapshot),
     signedQr: row.signed_qr,
+    // A cumulative invoice has none; the read is one indexed lookup and
+    // keeps the detail response one shape for both.
+    lines: (await readInvoiceLines(tx, invoiceId)).map(toInvoiceLine),
   };
+}
+
+// --- The lines of an ITEMISED invoice (migration 0057) ----------------------
+
+export interface InvoiceLineRow {
+  id: string;
+  position: number;
+  is_service: boolean;
+  hsn_sac_code: string;
+  description: string;
+  quantity: string;
+  unit_label: string | null;
+  unit_rate: string;
+  gst_rate: string;
+  taxable_value: string | null;
+  cgst_amount: string | null;
+  sgst_amount: string | null;
+  igst_amount: string | null;
+  /** The line's own UNROUNDED taxable + tax sum, summed in SQL numeric.
+   * Derived, never stored — the e-invoice payload needs it as TotItemVal
+   * and adding four money strings in binary floating point would be a
+   * money error (rule 5). NULL while the parent invoice is a draft. */
+  line_value: string | null;
+}
+
+export function toInvoiceLine(row: InvoiceLineRow): TaxInvoiceLine {
+  return {
+    id: row.id,
+    position: row.position,
+    isService: row.is_service,
+    hsnSacCode: row.hsn_sac_code,
+    description: row.description,
+    quantity: row.quantity,
+    unitLabel: row.unit_label,
+    unitRate: row.unit_rate,
+    gstRate: row.gst_rate,
+    taxableValue: row.taxable_value,
+    cgstAmount: row.cgst_amount,
+    sgstAmount: row.sgst_amount,
+    igstAmount: row.igst_amount,
+  };
+}
+
+/** Every stored line of one invoice, in the order it prints. */
+export async function readInvoiceLines(
+  tx: TransactionSql,
+  invoiceId: string,
+): Promise<InvoiceLineRow[]> {
+  return tx<InvoiceLineRow[]>`
+    select id, position, is_service, hsn_sac_code, description,
+           quantity::text as quantity, unit_label,
+           unit_rate::text as unit_rate, gst_rate::text as gst_rate,
+           taxable_value::text as taxable_value,
+           cgst_amount::text as cgst_amount,
+           sgst_amount::text as sgst_amount,
+           igst_amount::text as igst_amount,
+           (taxable_value + cgst_amount + sgst_amount + igst_amount)
+             ::numeric(18,2)::text as line_value
+    from tax_invoice_lines
+    where tax_invoice_id = ${invoiceId}
+    order by position
+  `;
+}
+
+/** A SAC is exactly six digits — services take no eight-digit deepening —
+ * while a goods HSN may be deepened to eight. The 0057 CHECK binds the
+ * same pairing; this makes the refusal a named 400 that says WHICH line. */
+export function assertLineCodeShape(line: TaxInvoiceLineInput, position: number): void {
+  if (line.isService && !/^[0-9]{6}$/.test(line.hsnSacCode)) {
+    throw httpError(
+      400,
+      'TAX_INVOICE_LINE_CODE_INVALID',
+      `Line ${String(position)}: a service line carries a SAC of exactly six digits (received ${line.hsnSacCode}). Uncheck 'service' if this is a goods HSN.`,
+    );
+  }
+}
+
+/** The line's own text, trimmed to what the column holds — the same rule
+ * `trimmedDescription` applies to the cumulative header line. */
+function trimmedLineDescription(value: string, position: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length < 3 || trimmed.length > 1000) {
+    throw httpError(
+      400,
+      'TAX_INVOICE_LINE_DESCRIPTION_INVALID',
+      `Line ${String(position)}: the description must be between 3 and 1000 characters that are not blank.`,
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * Replaces an invoice's lines wholesale: create and edit share one
+ * whole-object shape, exactly as the header fields do, so there is no
+ * per-line PATCH surface to keep coherent. Positions are assigned from
+ * the array order, so what the operator sees is what prints.
+ *
+ * Every line's (rate, date) pair is checked against the organisation's own
+ * `gst_rates` master before it is written — the same rule the cumulative
+ * header rate has obeyed since 0048, one level down, and re-checked at
+ * submit because the date can still move.
+ *
+ * The 0057 mutation guard refuses all of this once the invoice leaves
+ * draft; the route checks the status first so the refusal is a named 409.
+ */
+export async function replaceInvoiceLines(
+  tx: TransactionSql,
+  organisationId: string,
+  invoiceId: string,
+  invoiceDate: string,
+  lines: readonly TaxInvoiceLineInput[],
+): Promise<void> {
+  await tx`delete from tax_invoice_lines where tax_invoice_id = ${invoiceId}`;
+  let position = 0;
+  for (const line of lines) {
+    position += 1;
+    assertLineCodeShape(line, position);
+    await assertGstRateNotified(
+      tx,
+      line.gstRate,
+      invoiceDate,
+      `Line ${String(position)}`,
+    );
+    await tx`
+      insert into tax_invoice_lines (
+        organisation_id, tax_invoice_id, position, is_service, hsn_sac_code,
+        description, quantity, unit_label, unit_rate, gst_rate
+      )
+      values (
+        ${organisationId}, ${invoiceId}, ${position}, ${line.isService},
+        ${line.hsnSacCode},
+        ${trimmedLineDescription(line.description, position)},
+        ${line.quantity}, ${line.unitLabel?.trim() ?? null},
+        ${line.unitRate}, ${line.gstRate}
+      )
+    `;
+  }
+}
+
+/**
+ * A DIRECT invoice must state its taxable value (the 0039 CHECK), and an
+ * itemised one already says it line by line — so the figure is SUMMED
+ * from the lines rather than asked for twice and left to disagree.
+ *
+ * Summed in SQL numeric with the same `round(quantity * unit_rate, 2)`
+ * the 0057 line CHECK and the submit arithmetic use, so the stated value
+ * and the frozen one cannot drift; never in JavaScript (rule 5).
+ */
+export async function statedTaxableValueOfLines(
+  tx: TransactionSql,
+  lines: readonly TaxInvoiceLineInput[],
+): Promise<string> {
+  const quantities = lines.map((line) => line.quantity);
+  const rates = lines.map((line) => line.unitRate);
+  const [row] = await tx<{ total: string }[]>`
+    select coalesce(sum(round(t.quantity * t.rate, 2)), 0)
+             ::numeric(18,2)::text as total
+    from unnest(
+      ${quantities}::numeric[], ${rates}::numeric[]
+    ) as t(quantity, rate)
+  `;
+  if (!row) throw new Error('line taxable-value sum returned no row');
+  return row.total;
+}
+
+/**
+ * The header's line fields, decided by the request's SHAPE. A cumulative
+ * invoice carries its single service line here; an itemised one carries
+ * NULL in all three and its lines in `tax_invoice_lines`, which is exactly
+ * what the 0057 header-shape CHECK demands.
+ *
+ * `lineShape` is optional on the cumulative wire variant, so a client
+ * written before 0057 keeps working unchanged.
+ */
+export function headerLineFields(
+  body:
+    CreateTaxInvoiceRequest | CreateDirectTaxInvoiceRequest | UpdateTaxInvoiceRequest,
+): {
+  lineShape: TaxInvoiceLineShape;
+  sacCode: string | null;
+  serviceDescription: string | null;
+  gstRate: string | null;
+} {
+  if (body.lineShape === 'itemised') {
+    return {
+      lineShape: 'itemised',
+      sacCode: null,
+      serviceDescription: null,
+      gstRate: null,
+    };
+  }
+  return {
+    lineShape: 'service_cumulative',
+    sacCode: body.sacCode,
+    serviceDescription: trimmedDescription(body.serviceDescription),
+    gstRate: body.gstRate,
+  };
+}
+
+/** What the audit trail records about a set of lines: enough to prove
+ * what changed without copying the whole document into the event. */
+export function auditLineSummary(
+  lines: readonly TaxInvoiceLineInput[],
+): { position: number; hsnSacCode: string; isService: boolean; gstRate: string }[] {
+  return lines.map((line, index) => ({
+    position: index + 1,
+    hsnSacCode: line.hsnSacCode,
+    isService: line.isService,
+    gstRate: line.gstRate,
+  }));
 }
 
 /** Locks the invoice row for the rest of the transaction and returns it.
@@ -433,6 +669,13 @@ export async function lockInvoiceableBook(
  * snapshot it was issued under, never from today's template. */
 export const TAX_INVOICE_TEMPLATE_VERSION = 'ti-v1';
 
+/** The ITEMISED document's snapshot version (migration 0057). It differs
+ * from ti-v1 in exactly one place — `lines` instead of `line` — and does
+ * NOT supersede it: a cumulative invoice still freezes ti-v1, so no
+ * stored document's shape moves and the v1 parser stays the truth for
+ * every invoice issued before this existed. */
+export const TAX_INVOICE_ITEMISED_TEMPLATE_VERSION = 'ti-v2';
+
 /** The unit word when the invoice does not name one. A works-contract
  * invoice bills one whole thing, and 'set' is what the trade writes. */
 export const DEFAULT_UNIT_LABEL = 'set';
@@ -442,7 +685,8 @@ export const DEFAULT_UNIT_LABEL = 'set';
  * own text, not a PATCH surface, because create and update share one
  * whole-object shape. */
 export function documentFields(
-  body: CreateTaxInvoiceRequest | UpdateTaxInvoiceRequest,
+  body:
+    CreateTaxInvoiceRequest | CreateDirectTaxInvoiceRequest | UpdateTaxInvoiceRequest,
 ): {
   customerPoReference: string | null;
   unitLabel: string | null;
