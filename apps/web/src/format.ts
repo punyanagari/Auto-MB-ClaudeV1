@@ -49,16 +49,44 @@ export function compareDecimalStrings(left: string, right: string): number {
   return leftValue < rightValue ? -1 : 1;
 }
 
+/* Date formatters, constructed once.
+ *
+ * `toLocaleDateString(locale, options)` and `toLocaleString` build a fresh
+ * Intl formatter on every call, and constructing one costs roughly two
+ * orders of magnitude more than formatting with an existing one. A dense
+ * ledger calls these once per cell, so a 129-item table built 129
+ * throwaway formatters per render. These are the same objects the
+ * toLocale* calls would have made — `Intl.DateTimeFormat.prototype.format`
+ * is exactly what those methods delegate to — so every output is
+ * unchanged. */
+const dateOnlyFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const viewerDayFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
+
+const viewerInstantFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const isoDayFormat = new Intl.DateTimeFormat('en-CA');
+
 /** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
 export function formatDate(isoDate: string): string {
   const parsed = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return isoDate;
-  return parsed.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return dateOnlyFormat.format(parsed);
 }
 
 /** Date-time instant → the VIEWER'S calendar day, in formatDate's style:
@@ -70,11 +98,7 @@ export function formatDate(isoDate: string): string {
 export function formatTimestampDate(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return viewerDayFormat.format(parsed);
 }
 
 /** Instant with wall-clock time in the viewer's zone — used where a
@@ -83,13 +107,7 @@ export function formatTimestampDate(iso: string): string {
 export function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return viewerInstantFormat.format(parsed);
 }
 
 /** Rupee display for RATES, which carry up to six fraction digits
@@ -114,7 +132,7 @@ export function formatRate(decimal: string): string {
  * server revalidates every legal date it is sent. en-CA formats as
  * YYYY-MM-DD without any UTC round-trip of the local day. */
 export function todayIso(): string {
-  return new Intl.DateTimeFormat('en-CA').format(new Date());
+  return isoDayFormat.format(new Date());
 }
 
 /**

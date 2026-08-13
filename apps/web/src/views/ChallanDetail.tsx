@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ChallanDetailResponse,
   ChallanItem,
@@ -97,6 +97,64 @@ function cancelClosedReason(
   }
   return null;
 }
+
+/** The serials recorded against a challan, grouped by the line they sit
+ * on. The page needs a per-line count and a per-line list, and both used
+ * to be a full scan of every serial on the challan — O(lines × serials)
+ * on a document with a serial per delivered unit. */
+function serialsByLine(
+  serials: readonly Serial[] | null,
+): ReadonlyMap<string, readonly Serial[]> {
+  const grouped = new Map<string, Serial[]>();
+  for (const serial of serials ?? []) {
+    const group = grouped.get(serial.challanItemId);
+    if (group === undefined) grouped.set(serial.challanItemId, [serial]);
+    else group.push(serial);
+  }
+  return grouped;
+}
+
+/** One line of the challan's item table. Memoised: the table is the
+ * document, and the page re-renders on every action, note and pending
+ * flag around it. */
+const ChallanLineRow = memo(function ChallanLineRow({
+  item,
+}: {
+  readonly item: ChallanItem;
+}) {
+  return (
+    <tr>
+      <th scope="row">{item.position}</th>
+      <td className={wrapCell}>{item.description}</td>
+      <td>{item.unit}</td>
+      <td className={numericCell}>{item.quantity}</td>
+      <td className={numericCell}>{formatRate(item.rate)}</td>
+      <td className={numericCell}>{formatInr(item.lineAmount)}</td>
+    </tr>
+  );
+});
+
+/** One recorded serial. Memoised for the same reason as the line rows:
+ * a challan carries one serial per delivered unit. */
+const SerialRow = memo(function SerialRow({ serial }: { readonly serial: Serial }) {
+  return (
+    <tr>
+      <th scope="row">{serial.serialNumber}</th>
+      <td className={wrapCell}>{serial.itemDescription}</td>
+      <td>
+        {serial.installedOn !== null ? (
+          <StatusChip status="installed">installed {serial.installedOn}</StatusChip>
+        ) : (
+          <span className="text-muted-foreground">not installed</span>
+        )}
+      </td>
+    </tr>
+  );
+});
+
+/** Stable empty line list, so the memo over a not-yet-loaded challan does
+ * not see a fresh array on every render. */
+const NO_ITEMS: readonly ChallanItem[] = [];
 
 interface RecordSerialsFormProps {
   /** The lines the operator may record against: every line once the
@@ -269,6 +327,16 @@ export function ChallanDetail({
     reload();
   }, [reload]);
 
+  /* Derived once per load rather than once per render, and above the two
+   * early returns below so the hook order never depends on load state. */
+  const items = detail?.items ?? NO_ITEMS;
+  const total = useMemo(() => exactTotal(items), [items]);
+  const serialsOfLine = useMemo(() => serialsByLine(serials), [serials]);
+  const uninstalled = useMemo(
+    () => (serials ?? []).filter((serial) => serial.installedOn === null),
+    [serials],
+  );
+
   async function act(work: () => Promise<ChallanDetailResponse | null>, done: string) {
     setPending(true);
     setActionError(null);
@@ -312,24 +380,20 @@ export function ChallanDetail({
     );
   }
 
-  const { challan, items } = detail;
+  const { challan } = detail;
   // The lines a correction can restate: Work item lines only. A manual
   // (non-LOA) line names no schedule item, so there is no sanctioned
   // quantity for a correction to move, and the server says so by name.
   const correctableItems = items.filter(
     (item): item is ChallanItem & { workItemId: string } => item.workItemId !== null,
   );
-  const total = exactTotal(items);
-  const uninstalled = (serials ?? []).filter((s) => s.installedOn === null);
-  const recordedOn = (challanItemId: string) =>
-    (serials ?? []).filter((serial) => serial.challanItemId === challanItemId).length;
   // The draft's serial-tracked lines, with what is recorded against each.
   // The server counts the same way before it lets the challan be issued.
   const trackedLines = items
     .filter((item) => item.workItemId !== null && serialTracked.has(item.workItemId))
     .map((item) => ({
       item,
-      recorded: recordedOn(item.id),
+      recorded: (serialsOfLine.get(item.id) ?? []).length,
       required: unitsOf(item.quantity),
     }));
   const shortLines = trackedLines.filter((line) => line.recorded !== line.required);
@@ -401,14 +465,7 @@ export function ChallanDetail({
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.id}>
-              <th scope="row">{item.position}</th>
-              <td className={wrapCell}>{item.description}</td>
-              <td>{item.unit}</td>
-              <td className={numericCell}>{item.quantity}</td>
-              <td className={numericCell}>{formatRate(item.rate)}</td>
-              <td className={numericCell}>{formatInr(item.lineAmount)}</td>
-            </tr>
+            <ChallanLineRow key={item.id} item={item} />
           ))}
           <tr>
             <th scope="row" colSpan={5}>
@@ -563,8 +620,7 @@ export function ChallanDetail({
                     {line.recorded} of {line.required}
                   </td>
                   <td className={wrapCell}>
-                    {(serials ?? [])
-                      .filter((serial) => serial.challanItemId === line.item.id)
+                    {(serialsOfLine.get(line.item.id) ?? [])
                       .map((serial) => serial.serialNumber)
                       .join(', ') || (
                       <span className="text-muted-foreground">none yet</span>
@@ -696,19 +752,7 @@ export function ChallanDetail({
               </thead>
               <tbody>
                 {serials.map((serial) => (
-                  <tr key={serial.id}>
-                    <th scope="row">{serial.serialNumber}</th>
-                    <td className={wrapCell}>{serial.itemDescription}</td>
-                    <td>
-                      {serial.installedOn !== null ? (
-                        <StatusChip status="installed">
-                          installed {serial.installedOn}
-                        </StatusChip>
-                      ) : (
-                        <span className="text-muted-foreground">not installed</span>
-                      )}
-                    </td>
-                  </tr>
+                  <SerialRow key={serial.id} serial={serial} />
                 ))}
               </tbody>
             </DataTable>

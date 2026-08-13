@@ -21,6 +21,7 @@
     "architecture:check": "node scripts/check-architecture.mjs",
     "config:check": "node scripts/check-config.mjs",
     "comments:check": "node scripts/check-comment-refs.mjs",
+    "bundle:check": "node apps/web/scripts/check-bundle-size.mjs",
     "deadcode:check": "knip --no-config-hints",
     "security:secrets": "secretlint \"**/*\"",
     "design:contrast": "node node_modules/ux-ui-agent-skills/scripts/measure_render.mjs",
@@ -28,7 +29,7 @@
     "design:a11y": "node node_modules/ux-ui-agent-skills/scripts/axe_audit.mjs",
     "design:rtl": "node node_modules/ux-ui-agent-skills/scripts/verify_rtl.mjs",
     "design:taste": "node node_modules/ux-ui-agent-skills/scripts/taste_audit.mjs",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm db:check && pnpm architecture:check && pnpm config:check && pnpm comments:check && pnpm deadcode:check && pnpm security:secrets"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm bundle:check && pnpm test && pnpm db:check && pnpm architecture:check && pnpm config:check && pnpm comments:check && pnpm deadcode:check && pnpm security:secrets"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

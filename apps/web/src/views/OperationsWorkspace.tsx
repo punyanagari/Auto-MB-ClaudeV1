@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react';
 import type { Organisation, Work } from '@auto-mb/contracts';
 import {
   ArrowLeftRight,
@@ -31,26 +40,133 @@ import {
 } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
-import { Approvals } from './Approvals.js';
-import { ChallanDetail } from './ChallanDetail.js';
-import { ChallanEditor } from './ChallanEditor.js';
-import { DeliveryChallans } from './DeliveryChallans.js';
-import { IssueChallanDetail } from './IssueChallanDetail.js';
-import { IssueChallanEditor } from './IssueChallanEditor.js';
-import { Masters, type MastersTab } from './Masters.js';
-import { Members } from './Members.js';
-import { OperationsDashboard } from './OperationsDashboard.js';
-import { Quotations } from './Quotations.js';
-import { ReviewLoa } from './ReviewLoa.js';
-import { Search as SearchView } from './Search.js';
-import { SerialLookup } from './SerialLookup.js';
-import { AccountSecurity } from './AccountSecurity.js';
-import { AppearanceSettings } from './AppearanceSettings.js';
-import { Settings } from './Settings.js';
-import { OrganisationAccessSettings } from './OrganisationAccessSettings.js';
-import { UploadLoa } from './UploadLoa.js';
-import { WorkDetail, type WorkTab } from './WorkDetail.js';
-import { Works } from './Works.js';
+import type { MastersTab } from './Masters.js';
+import type { WorkTab } from './WorkDetail.js';
+
+/* The views are code-split at this switch.
+ *
+ * Statically imported, all twenty of them plus everything they pull in
+ * landed in one 899 KiB entry chunk, so signing in downloaded and parsed
+ * the LOA review screen, the quotation editor and the Masters registers
+ * before the Dashboard could paint. Each view is now its own chunk,
+ * fetched the first time it is opened and cached thereafter; the entry
+ * chunk carries the shell, the sign-in path and the shared primitives.
+ *
+ * `lazy` wants a module whose default export is the component, and these
+ * are all named exports, so each import is mapped rather than re-exported
+ * — a default export would be a second name for the same component and
+ * the views are imported by name in the tests. */
+const Approvals = lazy(() =>
+  import('./Approvals.js').then((module) => ({ default: module.Approvals })),
+);
+const ChallanDetail = lazy(() =>
+  import('./ChallanDetail.js').then((module) => ({ default: module.ChallanDetail })),
+);
+const ChallanEditor = lazy(() =>
+  import('./ChallanEditor.js').then((module) => ({ default: module.ChallanEditor })),
+);
+const DeliveryChallans = lazy(() =>
+  import('./DeliveryChallans.js').then((module) => ({
+    default: module.DeliveryChallans,
+  })),
+);
+const IssueChallanDetail = lazy(() =>
+  import('./IssueChallanDetail.js').then((module) => ({
+    default: module.IssueChallanDetail,
+  })),
+);
+const IssueChallanEditor = lazy(() =>
+  import('./IssueChallanEditor.js').then((module) => ({
+    default: module.IssueChallanEditor,
+  })),
+);
+const Masters = lazy(() =>
+  import('./Masters.js').then((module) => ({ default: module.Masters })),
+);
+const Members = lazy(() =>
+  import('./Members.js').then((module) => ({ default: module.Members })),
+);
+const OperationsDashboard = lazy(() =>
+  import('./OperationsDashboard.js').then((module) => ({
+    default: module.OperationsDashboard,
+  })),
+);
+const Quotations = lazy(() =>
+  import('./Quotations.js').then((module) => ({ default: module.Quotations })),
+);
+const ReviewLoa = lazy(() =>
+  import('./ReviewLoa.js').then((module) => ({ default: module.ReviewLoa })),
+);
+const SearchView = lazy(() =>
+  import('./Search.js').then((module) => ({ default: module.Search })),
+);
+const SerialLookup = lazy(() =>
+  import('./SerialLookup.js').then((module) => ({ default: module.SerialLookup })),
+);
+const AccountSecurity = lazy(() =>
+  import('./AccountSecurity.js').then((module) => ({
+    default: module.AccountSecurity,
+  })),
+);
+const AppearanceSettings = lazy(() =>
+  import('./AppearanceSettings.js').then((module) => ({
+    default: module.AppearanceSettings,
+  })),
+);
+const Settings = lazy(() =>
+  import('./Settings.js').then((module) => ({ default: module.Settings })),
+);
+const OrganisationAccessSettings = lazy(() =>
+  import('./OrganisationAccessSettings.js').then((module) => ({
+    default: module.OrganisationAccessSettings,
+  })),
+);
+const UploadLoa = lazy(() =>
+  import('./UploadLoa.js').then((module) => ({ default: module.UploadLoa })),
+);
+const WorkDetail = lazy(() =>
+  import('./WorkDetail.js').then((module) => ({ default: module.WorkDetail })),
+);
+const Works = lazy(() =>
+  import('./Works.js').then((module) => ({ default: module.Works })),
+);
+
+/**
+ * Moves focus onto the heading of whichever view has just opened.
+ *
+ * It renders nothing and exists only for its effect's timing: the
+ * workspace's own `[view]` effect fires as soon as the switch changes,
+ * which — with the views code-split — can be while the fallback is on
+ * screen and the heading does not exist yet. Rendered inside the
+ * Suspense boundary, this one fires when the view itself commits.
+ */
+function ViewFocus({
+  routeKey,
+  containerRef,
+}: {
+  readonly routeKey: WorkspaceView;
+  readonly containerRef: RefObject<HTMLDivElement | null>;
+}) {
+  useEffect(() => {
+    containerRef.current?.querySelector('h1')?.focus();
+  }, [routeKey, containerRef]);
+  return null;
+}
+
+/** What the main column shows while a view's chunk is in flight: the
+ * shape of a screen, in the same muted-panel idiom the Dashboard already
+ * uses for its own loading state. `animate-pulse` is disabled wholesale
+ * under `prefers-reduced-motion: reduce` by globals.css, so this needs no
+ * media query of its own. */
+function ViewSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" role="status" aria-label="Opening the screen">
+      <div className="h-8 w-64 animate-pulse rounded-lg bg-card" />
+      <div className="h-28 animate-pulse rounded-2xl border border-border bg-card" />
+      <div className="h-64 animate-pulse rounded-2xl border border-border bg-card" />
+    </div>
+  );
+}
 
 interface OperationsWorkspaceProps {
   readonly api: ApiClient;
@@ -362,8 +478,11 @@ export function OperationsWorkspace({
       ? challanWork.workCode
       : '';
 
+  // Closing the transient menus belongs here, where it can happen the
+  // instant the view changes. Moving focus onto the new view's heading
+  // does not: with the views code-split the heading may not exist yet,
+  // so that lives in ViewFocus, inside the Suspense boundary.
   useEffect(() => {
-    containerRef.current?.querySelector('h1')?.focus();
     setMobileMenuOpen(false);
     setMobileMoreOpen(false);
     setHeaderQuickActionsOpen(false);
@@ -1060,343 +1179,351 @@ export function OperationsWorkspace({
           ref={containerRef}
           className="mx-auto flex w-full max-w-[100rem] flex-col gap-5 px-4 py-5 pb-24 sm:px-6 lg:px-8 lg:py-7 lg:pb-10"
         >
-          {view.name === 'dashboard' && (
-            <OperationsDashboard
-              api={api}
-              organisationId={organisation.id}
-              canModify={canModify}
-              onOpenWork={(workId) => {
-                navigate({ name: 'work', workId });
-              }}
-              onOpenWorks={() => {
-                navigate({ name: 'works' });
-              }}
-              onUploadLoa={() => {
-                navigate({ name: 'upload' });
-              }}
-              onOpenApprovals={() => {
-                navigate({ name: 'approvals' });
-              }}
-            />
-          )}
-
-          {view.name === 'settings' && (
-            <>
-              <Settings
+          <Suspense fallback={<ViewSkeleton />}>
+            {/* Restores the heading focus the outer effect cannot take
+                while a chunk is still loading: it runs inside the
+                boundary, so its effect fires when the real view commits
+                rather than when the fallback does. */}
+            <ViewFocus routeKey={view} containerRef={containerRef} />
+            {view.name === 'dashboard' && (
+              <OperationsDashboard
                 api={api}
                 organisationId={organisation.id}
-                isOwner={membership?.role === 'owner'}
+                canModify={canModify}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
+                onOpenWorks={() => {
+                  navigate({ name: 'works' });
+                }}
+                onUploadLoa={() => {
+                  navigate({ name: 'upload' });
+                }}
+                onOpenApprovals={() => {
+                  navigate({ name: 'approvals' });
+                }}
               />
-              <AppearanceSettings />
-              <AccountSecurity api={api} />
-              <OrganisationAccessSettings
+            )}
+
+            {view.name === 'settings' && (
+              <>
+                <Settings
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={membership?.role === 'owner'}
+                />
+                <AppearanceSettings />
+                <AccountSecurity api={api} />
+                <OrganisationAccessSettings
+                  api={api}
+                  currentOrganisation={organisation}
+                  organisations={organisations}
+                  canCreate={isOwner}
+                  onCreated={onOrganisationCreated}
+                />
+              </>
+            )}
+
+            {view.name === 'works' && (
+              <Works
                 api={api}
-                currentOrganisation={organisation}
-                organisations={organisations}
-                canCreate={isOwner}
-                onCreated={onOrganisationCreated}
+                organisationId={organisation.id}
+                canModify={canModify}
+                onUpload={() => {
+                  navigate({ name: 'upload' });
+                }}
+                onReview={(documentId) => {
+                  navigate({ name: 'review', documentId });
+                }}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
               />
-            </>
-          )}
+            )}
 
-          {view.name === 'works' && (
-            <Works
-              api={api}
-              organisationId={organisation.id}
-              canModify={canModify}
-              onUpload={() => {
-                navigate({ name: 'upload' });
-              }}
-              onReview={(documentId) => {
-                navigate({ name: 'review', documentId });
-              }}
-              onOpenWork={(workId) => {
-                navigate({ name: 'work', workId });
-              }}
-            />
-          )}
+            {view.name === 'upload' && (
+              <UploadLoa
+                api={api}
+                organisationId={organisation.id}
+                onUploaded={(document) => {
+                  navigate(
+                    document.extractionStatus === 'review'
+                      ? { name: 'review', documentId: document.id }
+                      : { name: 'works' },
+                  );
+                }}
+                onCancel={() => {
+                  navigate({ name: 'works' });
+                }}
+              />
+            )}
 
-          {view.name === 'upload' && (
-            <UploadLoa
-              api={api}
-              organisationId={organisation.id}
-              onUploaded={(document) => {
-                navigate(
-                  document.extractionStatus === 'review'
-                    ? { name: 'review', documentId: document.id }
-                    : { name: 'works' },
-                );
-              }}
-              onCancel={() => {
-                navigate({ name: 'works' });
-              }}
-            />
-          )}
+            {view.name === 'review' && (
+              <ReviewLoa
+                api={api}
+                organisationId={organisation.id}
+                documentId={view.documentId}
+                canModify={canModify}
+                onConfirmed={(created) => {
+                  // The letter is now a Work; the corrections are saved, so
+                  // there is nothing left to confirm.
+                  navigate(
+                    { name: 'work', workId: created.work.id },
+                    { confirmed: true },
+                  );
+                }}
+                onBack={() => {
+                  navigate({ name: 'works' });
+                }}
+                onDiscarded={() => {
+                  navigate({ name: 'works' }, { confirmed: true });
+                }}
+                onDirtyChange={setEditorDirty}
+              />
+            )}
 
-          {view.name === 'review' && (
-            <ReviewLoa
-              api={api}
-              organisationId={organisation.id}
-              documentId={view.documentId}
-              canModify={canModify}
-              onConfirmed={(created) => {
-                // The letter is now a Work; the corrections are saved, so
-                // there is nothing left to confirm.
-                navigate(
-                  { name: 'work', workId: created.work.id },
-                  { confirmed: true },
-                );
-              }}
-              onBack={() => {
-                navigate({ name: 'works' });
-              }}
-              onDiscarded={() => {
-                navigate({ name: 'works' }, { confirmed: true });
-              }}
-              onDirtyChange={setEditorDirty}
-            />
-          )}
+            {(view.name === 'delivery-challans' ||
+              view.name === 'delivery-challan') && (
+              <DeliveryChallans
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                openChallanId={view.name === 'delivery-challan' ? view.challanId : null}
+                onOpenChallan={(challanId) => {
+                  navigate(
+                    challanId === null
+                      ? { name: 'delivery-challans' }
+                      : { name: 'delivery-challan', challanId },
+                  );
+                }}
+                onOpenWorkChallan={(workId, challanId) => {
+                  navigate({ name: 'challan', workId, workCode: '', challanId });
+                }}
+              />
+            )}
 
-          {(view.name === 'delivery-challans' || view.name === 'delivery-challan') && (
-            <DeliveryChallans
-              api={api}
-              organisationId={organisation.id}
-              canModify={canModify}
-              canIssue={canIssue}
-              canCancel={canCancel}
-              openChallanId={view.name === 'delivery-challan' ? view.challanId : null}
-              onOpenChallan={(challanId) => {
-                navigate(
-                  challanId === null
-                    ? { name: 'delivery-challans' }
-                    : { name: 'delivery-challan', challanId },
-                );
-              }}
-              onOpenWorkChallan={(workId, challanId) => {
-                navigate({ name: 'challan', workId, workCode: '', challanId });
-              }}
-            />
-          )}
+            {view.name === 'quotations' && (
+              <Quotations
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+              />
+            )}
 
-          {view.name === 'quotations' && (
-            <Quotations
-              api={api}
-              organisationId={organisation.id}
-              canModify={canModify}
-              canIssue={canIssue}
-              canCancel={canCancel}
-            />
-          )}
+            {view.name === 'approvals' && (
+              <Approvals
+                api={api}
+                organisationId={organisation.id}
+                currentUserId={me.user.id}
+                canApprove={canApprove}
+                onChanged={refreshPendingApprovals}
+              />
+            )}
 
-          {view.name === 'approvals' && (
-            <Approvals
-              api={api}
-              organisationId={organisation.id}
-              currentUserId={me.user.id}
-              canApprove={canApprove}
-              onChanged={refreshPendingApprovals}
-            />
-          )}
-
-          {view.name === 'work' && (
-            <WorkDetail
-              api={api}
-              organisationId={organisation.id}
-              workId={view.workId}
-              canModify={canModify}
-              canRecordEvidence={canRecordEvidence}
-              canIssue={canIssue}
-              canCancel={canCancel}
-              canApprove={canApprove}
-              canManageStatutory={canManageStatutory}
-              isOwner={isOwner}
-              onNewChallan={(workId, workCode) => {
-                navigate({ name: 'challan-new', workId, workCode });
-              }}
-              onOpenChallan={(challanId) => {
-                navigate({
-                  name: 'challan',
-                  workId: view.workId,
-                  workCode: '',
-                  challanId,
-                });
-              }}
-              onNewIssueChallan={(workId) => {
-                navigate({ name: 'issue-challan-new', workId });
-              }}
-              onOpenIssueChallan={(challanId) => {
-                navigate({ name: 'issue-challan', workId: view.workId, challanId });
-              }}
-              onBack={() => {
-                navigate({ name: 'works' });
-              }}
-              tab={view.workId === tabbedWorkId ? workTab : 'overview'}
-              onTabChange={(next) => {
-                setTabbedWorkId(view.workId);
-                setWorkTab(next);
-              }}
-            />
-          )}
-
-          {/* The decorative 1-2-3 stepper that used to sit here never
-              advanced; the editor's own sections carry the order. */}
-          {(view.name === 'challan-new' || view.name === 'challan-edit') && (
-            <ChallanEditor
-              api={api}
-              organisationId={organisation.id}
-              workId={view.workId}
-              workCode={view.workCode === '' ? challanWorkCode : view.workCode}
-              challanId={view.name === 'challan-edit' ? view.challanId : null}
-              onSaved={(challanId) => {
-                // Saved, or cancelled after the editor's own discard
-                // confirmation: either way the decision has been taken
-                // once already and must not be asked again here.
-                navigate(
-                  {
+            {view.name === 'work' && (
+              <WorkDetail
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                canModify={canModify}
+                canRecordEvidence={canRecordEvidence}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                canApprove={canApprove}
+                canManageStatutory={canManageStatutory}
+                isOwner={isOwner}
+                onNewChallan={(workId, workCode) => {
+                  navigate({ name: 'challan-new', workId, workCode });
+                }}
+                onOpenChallan={(challanId) => {
+                  navigate({
                     name: 'challan',
+                    workId: view.workId,
+                    workCode: '',
+                    challanId,
+                  });
+                }}
+                onNewIssueChallan={(workId) => {
+                  navigate({ name: 'issue-challan-new', workId });
+                }}
+                onOpenIssueChallan={(challanId) => {
+                  navigate({ name: 'issue-challan', workId: view.workId, challanId });
+                }}
+                onBack={() => {
+                  navigate({ name: 'works' });
+                }}
+                tab={view.workId === tabbedWorkId ? workTab : 'overview'}
+                onTabChange={(next) => {
+                  setTabbedWorkId(view.workId);
+                  setWorkTab(next);
+                }}
+              />
+            )}
+
+            {/* The decorative 1-2-3 stepper that used to sit here never
+              advanced; the editor's own sections carry the order. */}
+            {(view.name === 'challan-new' || view.name === 'challan-edit') && (
+              <ChallanEditor
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                workCode={view.workCode === '' ? challanWorkCode : view.workCode}
+                challanId={view.name === 'challan-edit' ? view.challanId : null}
+                onSaved={(challanId) => {
+                  // Saved, or cancelled after the editor's own discard
+                  // confirmation: either way the decision has been taken
+                  // once already and must not be asked again here.
+                  navigate(
+                    {
+                      name: 'challan',
+                      workId: view.workId,
+                      workCode: view.workCode,
+                      challanId,
+                    },
+                    { confirmed: true },
+                  );
+                }}
+                onCancel={() => {
+                  navigate({ name: 'work', workId: view.workId }, { confirmed: true });
+                }}
+                onDirtyChange={setEditorDirty}
+              />
+            )}
+
+            {view.name === 'challan' && (
+              <ChallanDetail
+                api={api}
+                organisationId={organisation.id}
+                challanId={view.challanId}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                canRecordEvidence={canRecordEvidence}
+                workActive={challanWorkActive}
+                onEdit={(challanId) => {
+                  navigate({
+                    name: 'challan-edit',
                     workId: view.workId,
                     workCode: view.workCode,
                     challanId,
-                  },
-                  { confirmed: true },
-                );
-              }}
-              onCancel={() => {
-                navigate({ name: 'work', workId: view.workId }, { confirmed: true });
-              }}
-              onDirtyChange={setEditorDirty}
-            />
-          )}
+                  });
+                }}
+                onDeleted={() => {
+                  navigate({ name: 'work', workId: view.workId });
+                }}
+                onBack={() => {
+                  navigate({ name: 'work', workId: view.workId });
+                }}
+              />
+            )}
 
-          {view.name === 'challan' && (
-            <ChallanDetail
-              api={api}
-              organisationId={organisation.id}
-              challanId={view.challanId}
-              canModify={canModify}
-              canIssue={canIssue}
-              canCancel={canCancel}
-              canRecordEvidence={canRecordEvidence}
-              workActive={challanWorkActive}
-              onEdit={(challanId) => {
-                navigate({
-                  name: 'challan-edit',
-                  workId: view.workId,
-                  workCode: view.workCode,
-                  challanId,
-                });
-              }}
-              onDeleted={() => {
-                navigate({ name: 'work', workId: view.workId });
-              }}
-              onBack={() => {
-                navigate({ name: 'work', workId: view.workId });
-              }}
-            />
-          )}
+            {view.name === 'masters' && (
+              <Masters
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                isOwner={isOwner}
+                tab={mastersTab}
+                onTabChange={setMastersTab}
+              />
+            )}
 
-          {view.name === 'masters' && (
-            <Masters
-              api={api}
-              organisationId={organisation.id}
-              canModify={canModify}
-              isOwner={isOwner}
-              tab={mastersTab}
-              onTabChange={setMastersTab}
-            />
-          )}
+            {(view.name === 'issue-challan-new' ||
+              view.name === 'issue-challan-edit') && (
+              <IssueChallanEditor
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                challanId={view.name === 'issue-challan-edit' ? view.challanId : null}
+                onSaved={(challanId) => {
+                  navigate(
+                    { name: 'issue-challan', workId: view.workId, challanId },
+                    { confirmed: true },
+                  );
+                }}
+                onCancel={() => {
+                  navigate({ name: 'work', workId: view.workId }, { confirmed: true });
+                }}
+                onDirtyChange={setEditorDirty}
+              />
+            )}
 
-          {(view.name === 'issue-challan-new' ||
-            view.name === 'issue-challan-edit') && (
-            <IssueChallanEditor
-              api={api}
-              organisationId={organisation.id}
-              workId={view.workId}
-              challanId={view.name === 'issue-challan-edit' ? view.challanId : null}
-              onSaved={(challanId) => {
-                navigate(
-                  { name: 'issue-challan', workId: view.workId, challanId },
-                  { confirmed: true },
-                );
-              }}
-              onCancel={() => {
-                navigate({ name: 'work', workId: view.workId }, { confirmed: true });
-              }}
-              onDirtyChange={setEditorDirty}
-            />
-          )}
+            {view.name === 'issue-challan' && (
+              <IssueChallanDetail
+                api={api}
+                organisationId={organisation.id}
+                challanId={view.challanId}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                workActive={challanWorkActive}
+                onEdit={(challanId) => {
+                  navigate({
+                    name: 'issue-challan-edit',
+                    workId: view.workId,
+                    challanId,
+                  });
+                }}
+                onDeleted={() => {
+                  navigate({ name: 'work', workId: view.workId });
+                }}
+                onBack={() => {
+                  navigate({ name: 'work', workId: view.workId });
+                }}
+              />
+            )}
 
-          {view.name === 'issue-challan' && (
-            <IssueChallanDetail
-              api={api}
-              organisationId={organisation.id}
-              challanId={view.challanId}
-              canModify={canModify}
-              canIssue={canIssue}
-              canCancel={canCancel}
-              workActive={challanWorkActive}
-              onEdit={(challanId) => {
-                navigate({
-                  name: 'issue-challan-edit',
-                  workId: view.workId,
-                  challanId,
-                });
-              }}
-              onDeleted={() => {
-                navigate({ name: 'work', workId: view.workId });
-              }}
-              onBack={() => {
-                navigate({ name: 'work', workId: view.workId });
-              }}
-            />
-          )}
+            {view.name === 'serials' && (
+              <SerialLookup
+                api={api}
+                organisationId={organisation.id}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
+                onOpenChallan={(workId, challanId) => {
+                  navigate({ name: 'challan', workId, workCode: '', challanId });
+                }}
+              />
+            )}
 
-          {view.name === 'serials' && (
-            <SerialLookup
-              api={api}
-              organisationId={organisation.id}
-              onOpenWork={(workId) => {
-                navigate({ name: 'work', workId });
-              }}
-              onOpenChallan={(workId, challanId) => {
-                navigate({ name: 'challan', workId, workCode: '', challanId });
-              }}
-            />
-          )}
+            {view.name === 'search' && (
+              <SearchView
+                api={api}
+                organisationId={organisation.id}
+                query={view.query}
+                onQueryChange={(next) => {
+                  navigate({ name: 'search', query: next });
+                }}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
+                onOpenChallan={(workId, challanId) => {
+                  navigate({ name: 'challan', workId, workCode: '', challanId });
+                }}
+                onOpenIssueChallan={(workId, challanId) => {
+                  navigate({ name: 'issue-challan', workId, challanId });
+                }}
+                onOpenSerials={() => {
+                  navigate({ name: 'serials' });
+                }}
+                onOpenQuotations={() => {
+                  navigate({ name: 'quotations' });
+                }}
+              />
+            )}
 
-          {view.name === 'search' && (
-            <SearchView
-              api={api}
-              organisationId={organisation.id}
-              query={view.query}
-              onQueryChange={(next) => {
-                navigate({ name: 'search', query: next });
-              }}
-              onOpenWork={(workId) => {
-                navigate({ name: 'work', workId });
-              }}
-              onOpenChallan={(workId, challanId) => {
-                navigate({ name: 'challan', workId, workCode: '', challanId });
-              }}
-              onOpenIssueChallan={(workId, challanId) => {
-                navigate({ name: 'issue-challan', workId, challanId });
-              }}
-              onOpenSerials={() => {
-                navigate({ name: 'serials' });
-              }}
-              onOpenQuotations={() => {
-                navigate({ name: 'quotations' });
-              }}
-            />
-          )}
-
-          {view.name === 'members' && (
-            <Members
-              api={api}
-              organisationId={organisation.id}
-              currentUserId={me.user.id}
-            />
-          )}
+            {view.name === 'members' && (
+              <Members
+                api={api}
+                organisationId={organisation.id}
+                currentUserId={me.user.id}
+              />
+            )}
+          </Suspense>
         </main>
       </div>
 
