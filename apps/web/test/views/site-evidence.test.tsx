@@ -345,8 +345,11 @@ describe('Installations', () => {
   it('hides recording and cancellation from read-only members', async () => {
     renderInstallations(installationsApi(), { canRecordEvidence: false });
 
-    await screen.findByRole('heading', { name: 'Installations' });
-    expect(screen.getByText('SN-003')).toBeTruthy();
+    // Awaited on a loaded record, not the "Installations" heading: the
+    // panel's loading branch renders that heading too, so waiting on it
+    // resolves against the loading state and the absence checks below
+    // would pass vacuously while the list is still loading (§2.7 hazard).
+    expect(await screen.findByText('SN-003')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'New installation' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel record' })).toBeNull();
   });
@@ -608,9 +611,10 @@ describe('PAC certificates', () => {
   it('hides recording, cancellation and upload from read-only members', async () => {
     renderPac(pacApi(), { canModify: false });
 
-    await screen.findByRole('heading', { name: 'PAC certificates' });
+    // Awaited on the loaded certificate, not the "PAC certificates"
+    // heading, which the panel's loading branch renders too (§2.7 hazard).
     expect(
-      screen.getByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),
+      await screen.findByRole('heading', { name: 'PAC PAC/2026/01 · 2026-08-01' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'New PAC certificate' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel certificate' })).toBeNull();

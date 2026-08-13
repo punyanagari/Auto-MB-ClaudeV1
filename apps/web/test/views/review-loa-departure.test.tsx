@@ -121,7 +121,14 @@ describe('ReviewLoa arrival announcements', () => {
 describe('ReviewLoa departure protection', () => {
   it('lets an untouched letter be left without a question', async () => {
     renderReview();
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    /* The heading name is the LOADED one, filename and all: the loading
+       branch renders a level-1 "Review LOA" heading too, so a /^Review /
+       matcher resolves against the loading state — and this test, which
+       types nothing before leaving, would then pass vacuously against a
+       letter that never arrived. Same §2.7 hazard the announcements test
+       above documents; the other cases in this file are additionally
+       anchored by `correctTheLetter`, which waits on a loaded-only field. */
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
 
     fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
 
@@ -131,7 +138,7 @@ describe('ReviewLoa departure protection', () => {
 
   it('asks before a corrected letter is abandoned by navigation', async () => {
     renderReview();
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
     fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
@@ -147,7 +154,7 @@ describe('ReviewLoa departure protection', () => {
 
   it('leaves once the reviewer accepts the loss', async () => {
     renderReview();
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
     fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
@@ -159,7 +166,7 @@ describe('ReviewLoa departure protection', () => {
 
   it('asks before the screen’s own Back to Works discards corrections', async () => {
     renderReview();
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to Works' }));
@@ -191,7 +198,7 @@ describe('ReviewLoa departure protection', () => {
         schedules: [],
       }),
     });
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
     fireEvent.change(screen.getByLabelText(/^Unit for row 1/), {
       target: { value: 'Nos' },
@@ -214,7 +221,7 @@ describe('ReviewLoa departure protection', () => {
         discardedSupportingDocumentIds: [],
       }),
     });
-    await screen.findByRole('heading', { name: /^Review /, level: 1 });
+    await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard this letter' }));
