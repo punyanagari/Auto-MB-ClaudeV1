@@ -38,6 +38,7 @@ export const OrganisationExportSchema = Type.Object(
     installations: ExportRowsSchema,
     installationSerials: ExportRowsSchema,
     approvalRequests: ExportRowsSchema,
+    amendmentVariationOrders: ExportRowsSchema,
     correctionNotices: ExportRowsSchema,
     paymentMatrices: ExportRowsSchema,
     pacCertificates: ExportRowsSchema,
