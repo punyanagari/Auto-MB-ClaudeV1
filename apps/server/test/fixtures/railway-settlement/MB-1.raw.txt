@@ -1,0 +1,442 @@
+CMB No. 00341490147964/CSTM/1139316                                                           For Normal Bill
+
+          On Account Measurement No. 00341490147964/CSTM/1139316/OAM/L2/01
+
+        UWID:010253243038              State:MAHARASHTRA                           Exp. Type:Capital (Works)
+
+
+
+  1. Division/Construction Unit :             SRDSTECO/BB
+
+                                              Supply, installation, testing and commissioning of additional train
+                                              information display boards and other telecom assets at CSMT,
+  2. Name Of Work :                           Dadar,Thane, Kalyan, Panvel and Roha stations in Mumbai
+                                              division.
+
+  3. Situation of work :                      Kalyan
+
+
+  4. Agency By which work executed :          ParElectronics
+
+
+  5. Reference to agreement of work order :   CR/BBY/S&T/2026/0009                            Dated : 30/04/2026
+
+
+  6. Date of commencement :                   01/01/2026
+
+
+  7. Date of Completion :                     In Progress
+
+
+  8. Date of Measurement :                    08/05/2026
+
+
+
+ Certificate:
+
+
+
+
+I have certified all testchecked items are as per approved specification and quantity measured
+in conformity with engineering code and CE circulars.
+                                                Signature Not Verified
+                                                   Digitally signed by RAILWAY
+                                                   ENGINEER REP
+                                                   Date: 2026.05.11 17:51:30 IST                         Page 1 of 7
+                                                   Reason: CMB Signed by
+                                                   Engineer's Rep.
+           On Account Measurement No. 00341490147964/CSTM/1139316/OAM/L2/01
+
+                                                                                                                   Test
+   Particulars           Unit     Numbers        Coeff.         L            B             H         Contents     Check
+                                                                                                                  by ER
+SCHEDULE A
+Group : Not Applicable
+Item No. : 01      Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display
+Board (TADDB) as per RDSO specification No. RDSO/SPN/TC/ 108/ 2019, Ver.- 1.0 or later. Inspection ....
+Supply of True
+colour MLDB
+(Outdoor Video
+display (OVD) 6      Number 1.0 x 1.0 x 1.0
+Line for Train                                  0.7                     3.0                         = 2.1        Yes
+                        s
+Arrival departure
+Display Board
+(TADDB) as per
+RDSO s...
+                                                                                        Total         2.1
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 03 Nos                      Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 03       Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size
+Pixel Resolution (WxH) 432x256 (12-line Single face) as per RDSO specification No. RDSO/SPN/TC/ 108/ 2....
+Supply Installation
+Testing and
+Commissioning of
+True color Outdoor Number 1.0 x 1.0 x 1.0           0.64                    1.0                     = 0.64        Yes
+Video Display            s
+(OVD) of size Pixel
+Resolution (WxH)
+432x256...
+                                                                                           Total      0.64
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 01 Nos                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 06       Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 Ver.- 1.0 or latest. Inspection by....
+Supply, Installation,
+Testing and
+Commissioning of
+Single line Double Number 1.0 x 1.0 x 1.0            0.64                   10.0                       = 6.4         Yes
+face train               s
+Arrival/Departure
+display board as
+per RDSO S...
+                                                                                            Total         6.4
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 10 Nos                          Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 07      Supply of at a glance display board (Double Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or latest. Inspection by RDSO.
+Supply of at a
+glance display
+board (Double
+Face) with coach
+guidance display as Number      1.0 x 1.0 x 1.0    0.7                     13.0                     = 9.1           Yes
+                        s
+per RDSO
+Specification No.
+RDSO/SPN/TC/108
+/20...
+                                                                                         Total        9.1
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 13 Nos.                       Now to pay      100.0%
+
+
+Group : Not Applicable
+                                                                                                             Page 2 of 7
+Item No. : 08      Supply of at a glance display board (Single Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or latest. Inspection by RDSO.
+Supply of at a
+glance display
+board (Single Face)
+with coach
+guidance display as Number      1.0 x 1.0 x 1.0    0.7                      9.0                      = 6.3        Yes
+                        s
+per RDSO
+Specification No.
+RDSO/SPN/TC/108
+/20...
+                                                                                          Total        6.3
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 09 Nos.                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 15        Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+Supply of FRP
+perforated cable
+tray of size 150 mm
+x 50 mm x 4 mm         Metre     1.0 x 1.0 x 1.0      0.7                    3450.0                = 2415.0      Yes
+with all accessories,
+as per technical
+specifications in c...
+                                                                                          Total      2415
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 3450 Mtr.                      Now to pay    100.0%
+
+
+Group : Not Applicable
+Item No. : 16         Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+Supply of FRP
+perforated cable
+tray of size 300 mm
+x 50 mm x 4 mm          Metre    1.0 x 1.0 x 1.0      0.7                    1800.0                 = 1260.0      Yes
+with all accessories,
+as per technical
+specifications in ...
+                                                                                          Total      1260
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 1800 Mtr                       Now to pay     100.0%
+
+
+Group : Not Applicable
+Item No. : 18        Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch
+with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports as per technical specifications in chapter III of tender....
+Supply, installation,
+testing and
+commissioning of
+28 Port Managed       Number 1.0 x 1.0 x 1.0           0.64                   11.0                    = 7.04     Yes
+Non PoE Layer 2           s
+Access Switch with
+24 x 1GSFP Ports
+and 4 x...
+                                                                                            Total        7.04
+Reason for Reduction : Prepaid Nil Now to Pay 64% For 11 Nos.                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 19       Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with
+switchs supplied above. Inspection by consignee.
+Supply of SFP 1G
+transreceiver SFP
+Small form-factor
+pluggable
+transceiver suitable Number     1.0 x 1.0 x 1.0    0.7                    132.0                     = 92.4         Yes
+                         s
+to work with switchs
+supplied above.
+Inspection by
+consignee.
+                                                                                         Total        92.4
+                                                                                                           Page 3 of 7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 132 Nos.                         Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 20      Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+Supply of SFP's
+10Gbps suitable to
+work with switchs    Number 1.0 x 1.0 x 1.0      0.7                      44.0                      = 30.8       Yes
+supplied above.         s
+Inspection by
+consignee.
+                                                                                          Total       30.8
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 44 Nos.                      Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 28       Supply of 6 core armored optical single mode fiber cables as per technical specifications in chapter III
+of tender document. Inspection by consignee.
+Supply of 6 core
+armored optical
+single mode fiber
+cables as per
+technical             Metre      1.0 x 1.0 x 1.0   0.7                     1000.0                      = 700.0       Yes
+specifications in
+chapter III of tender
+document.
+Inspection by
+consignee.
+                                                                                            Total        700
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 1000 Mtr                        Now to pay       100.0%
+
+
+SCHEDULE C
+Group : Not Applicable
+Item No. : 01      Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display
+Board (TADDB) No. RDSO/SPN/TC/ 108/ 2019, Ver.-1.0. Inspection by RDSO.
+Supply of True
+colour MLDB
+(Outdoor Video
+display (OVD) 6      Number 1.0 x 1.0 x 1.0
+Line for Train                                  0.7                     1.0                         = 0.7        Yes
+                        s
+Arrival departure
+Display Board
+(TADDB) No.
+RDSO/SPN/...
+                                                                                        Total         0.7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 01 Nos                      Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 03       Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size
+Pixel Resolution (WxH) 432x256 (12-line Single face) as per RDSO specification No.: RDSO / SPN / TC / ....
+Supply Installation
+Testing and
+Commissioning of
+True color Outdoor Number 1.0 x 1.0 x 1.0           0.64                    1.0                     = 0.64        Yes
+Video Display            s
+(OVD) of size Pixel
+Resolution (WxH)
+432x256...
+                                                                                           Total      0.64
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 01 Nos                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 06      Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+
+
+
+
+                                                                                                               Page 4 of 7
+Supply, Installation,
+Testing and
+Commissioning of
+Single line Double Number      1.0 x 1.0 x 1.0    0.64                     2.0                      = 1.28          Yes
+face train            s
+Arrival/Departure
+display board as
+per RDSO S...
+                                                                                         Total       1.28
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 02 Nos                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 07      Supply of at a glance display board (Double Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+Supply of at a
+glance display
+board (Double
+Face) with coach
+guidance display as Number      1.0 x 1.0 x 1.0    0.7                     10.0                     = 7.0           Yes
+                        s
+per RDSO
+Specification No.
+RDSO/SPN/TC/108
+/20...
+                                                                                         Total         7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 10 Nos                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 08      Supply of at a glance display board (Single Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+Supply of at a
+glance display
+board (Single Face)
+with coach
+guidance display as Number      1.0 x 1.0 x 1.0    0.7                      3.0                      = 2.1          Yes
+                        s
+per RDSO
+Specification No.
+RDSO/SPN/TC/108
+/20...
+                                                                                          Total        2.1
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 03 Nos                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 14        Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch
+with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports as per technical specifications in chapter III of tender....
+Supply, installation,
+testing and
+commissioning of
+28 Port Managed       Number 1.0 x 1.0 x 1.0           0.64                    4.0                    = 2.56     Yes
+Non PoE Layer 2           s
+Access Switch with
+24 x 1GSFP Ports
+and 4 x...
+                                                                                            Total        2.56
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 04 Nos                          Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 15       Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with
+switchs supplied above. Inspection by consignee.
+Supply of SFP 1G
+transreceiver SFP
+Small form-factor
+pluggable
+transceiver suitable Number     1.0 x 1.0 x 1.0    0.7                     40.0                     = 28.0         Yes
+                         s
+to work with switchs
+supplied above.
+Inspection by
+consignee.
+                                                                                         Total         28
+                                                                                                             Page 5 of 7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 40 Nos                         Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 16      Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+Supply of SFP's
+10Gbps suitable to
+work with switchs    Number 1.0 x 1.0 x 1.0      0.7                      10.0                      = 7.0        Yes
+supplied above.         s
+Inspection by
+consignee.
+                                                                                          Total        7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 10 Nos                       Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 17      Supply of layer 2 manageable switch 24 port and 4 SFP ports with1G network module, 1000 Mbps
+single mode rugged SFP= 4 Nos. &amp; other accessories, software. as per RDSO specification no. RDSO/SPN....
+Supply of layer 2
+manageable switch
+24 port and 4 SFP
+ports with1G         Number 1.0 x 1.0 x 1.0      0.7                     14.0                    = 9.8       Yes
+network module,         s
+1000 Mbps single
+mode rugged SFP=
+4 Nos. &...
+                                                                                        Total      9.8
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 14 Nos                       Now to pay    100.0%
+
+
+SCHEDULE E
+Group : Not Applicable
+Item No. : 07       Supply, Installation, Testing and Commissioning of Double Faced Coach Guidance Display Boards as
+per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+Supply, Installation,
+Testing and
+Commissioning of
+Double Faced          Number 1.0 x 1.0 x 1.0
+Coach Guidance                                       0.64                  52.0                   = 33.28      Yes
+                         s
+Display Boards as
+per RDSO
+Specification No.
+RD...
+                                                                                         Total     33.28
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 52 Nos                        Now to pay    100.0%
+
+
+Group : Not Applicable
+Item No. : 08       Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+Supply, Installation,
+Testing and
+Commissioning of
+Single line Double Number 1.0 x 1.0 x 1.0            0.64                    1.0                       = 0.64        Yes
+face train               s
+Arrival/Departure
+display board as
+per RDSO S...
+                                                                                            Total         0.64
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 01 Nos                          Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 20        Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+
+
+
+
+                                                                                                             Page 6 of 7
+Supply of FRP
+perforated cable
+tray of size 150 mm
+x 50 mm x 4 mm           Metre   1.0 x 1.0 x 1.0   0.7                   900.0                     = 630.0       Yes
+with all accessories,
+as per technical
+specifications in c...
+                                                                                        Total         630
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 900 Mtr                      Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 21         Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+Supply of FRP
+perforated cable
+tray of size 300 mm
+x 50 mm x 4 mm          Metre    1.0 x 1.0 x 1.0      0.7                    300.0                  = 210.0       Yes
+with all accessories,
+as per technical
+specifications in ...
+                                                                                          Total       210
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 300 Mtr                        Now to pay     100.0%
+
+
+
+
+                                                                                                          Page 7 of 7
+
