@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
+  MeasurementBookDetailResponse,
   PacCapExceededDetails,
   WorkBalanceResponse,
   PacCertificateListResponse,
@@ -97,6 +98,10 @@ let raceWorkId: string;
 let raceItemId: string;
 let raceAmcItemId: string;
 let raceIssueItemId: string;
+/** A third Work, for the final-Measurement-Book billing path. Its own
+ * Work so the MB lifecycle cannot disturb the completion walk. */
+let billWorkId: string;
+let billAmcItemId: string;
 let consigneeId: string;
 let locationId: string;
 
@@ -312,6 +317,37 @@ beforeAll(async () => {
        'AMC for the Cable drum installation, 5 year', 'Year', 5.000, 1000.00, 'AMC'),
       (${raceIssueItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId}, 'A/3',
        'Junction box', 'Nos', 10.000, 300.00, 'SUPPLY')
+  `;
+
+  // The billing Work: one AMC item and nothing else, so a final
+  // Measurement Book over it bills exactly the maintenance line.
+  billWorkId = randomUUID();
+  billAmcItemId = randomUUID();
+  const billScheduleId = randomUUID();
+  await admin`
+    insert into works (
+      id, organisation_id, work_code, letter_number, letter_date, title,
+      advertised_value, contract_value, pricing_shape, created_by_user_id
+    )
+    values (
+      ${billWorkId}, ${organisationId}, ${`AMCB${runId.slice(0, 5).toUpperCase()}`},
+      ${`amc-bill-letter-${runId}`}, '2025-06-01', 'AMC billing fixture work',
+      20000.00, 18000.00, 'per_schedule', ${ownerUserId}
+    )
+  `;
+  await admin`
+    insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+    values (${billScheduleId}, ${organisationId}, ${billWorkId}, 'B', 'Schedule B — AMC', 1)
+  `;
+  await admin`
+    insert into work_items (
+      id, organisation_id, work_id, schedule_id, item_number, description,
+      unit_code, awarded_quantity, effective_rate, payment_category
+    )
+    values (
+      ${billAmcItemId}, ${organisationId}, ${billWorkId}, ${billScheduleId}, 'B/1',
+      'AMC for SCH A items for the period of 2 year', 'Year', 2.000, 1000.00, 'AMC'
+    )
   `;
 
   const consignee = await authed(owner, {
@@ -956,6 +992,91 @@ describe('the issue transition re-reads the category', () => {
     await admin`
       update work_items set payment_category = 'SUPPLY' where id = ${raceIssueItemId}
     `;
+  });
+});
+
+describe('the final Measurement Book bills the AMC item on its certified quantity', () => {
+  it('earns the final-bill stage on the certified quantity, not on 0', async () => {
+    // The wiring this holds: `resolveFinalBillBase` sends an AMC item
+    // down a 'certified' branch, and the certified total reaches it
+    // through `loadAmcCertified` + `computeForBook` rather than through
+    // the Measurement Book loader (see that function's note for why it
+    // is not a seventh CTE). If the overlay were missing the base would
+    // silently be 0 — a final bill that pays nothing for the maintenance
+    // — and every other assertion in this suite would still pass.
+    const matrix = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${billWorkId}/payment-matrix/AMC`,
+      organisationId,
+      payload: {
+        pctSupply: '0.00',
+        pctInstallation: '0.00',
+        pctPac: '60.00',
+        pctFinalBill: '40.00',
+      },
+    });
+    expect(matrix.statusCode, matrix.body).toBe(200);
+
+    // Two years served and certified, at the sanctioned ceiling.
+    const certificate = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${billWorkId}/pac-certificates`,
+      organisationId,
+      payload: {
+        reference: `AMC-BILL-${runId}`,
+        issueDate: '2026-08-05',
+        consigneeMasterId: consigneeId,
+        items: [{ workItemId: billAmcItemId, certifiedQuantity: '2.000' }],
+      },
+    });
+    expect(certificate.statusCode, certificate.body).toBe(201);
+    const certificateId = certificate.json<{ id: string }>().id;
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${billWorkId}/measurement-books`,
+      organisationId,
+      payload: { mbDate: '2026-08-08', kind: 'final' },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const bookId = draft.json<MeasurementBookDetailResponse>().book.id;
+
+    const sources = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${bookId}/sources`,
+      organisationId,
+      payload: {
+        sources: [{ sourceType: 'pac_certificate', sourceId: certificateId }],
+      },
+    });
+    expect(sources.statusCode, sources.body).toBe(200);
+
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${bookId}/finalize`,
+      organisationId,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    const line = detail.lines.find((entry) => entry.itemNumber === 'B/1');
+
+    // The certification stage bills the delta this MB claimed; the
+    // final-bill stage bills the CERTIFIED base — 2.000, the number that
+    // would be 0 if the overlay never ran.
+    expect(line).toMatchObject({
+      paymentCategory: 'AMC',
+      deltaPac: '2.000',
+      deltaFinalBill: '2.000',
+      amountPac: '1200.00',
+      amountFinalBill: '800.00',
+    });
+    // 2 Year x 1000.00 = 2000.00, split 60/40 across the two stages an
+    // AMC row may bill on, and nothing on supply or installation.
+    expect(line).toMatchObject({
+      amountSupply: '0.00',
+      amountInstallation: '0.00',
+      lineTotal: '2000.00',
+    });
   });
 });
 
