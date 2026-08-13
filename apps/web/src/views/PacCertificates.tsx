@@ -239,7 +239,7 @@ export function PacCertificates({
             </Actions>
             {canModify && certificate.status === 'recorded' && (
               <>
-                <Disclosure label="Upload scanned certificate">
+                <Disclosure label="Upload scanned certificate…">
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
@@ -281,7 +281,7 @@ export function PacCertificates({
                     </Actions>
                   </form>
                 </Disclosure>
-                <Disclosure label="Cancel certificate">
+                <Disclosure label="Cancel certificate…">
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
@@ -326,7 +326,7 @@ export function PacCertificates({
 
       {canModify && workItems.length > 0 && (
         <Disclosure
-          label="Record PAC certificate"
+          label="New PAC certificate"
           startOpen={data.certificates.length === 0}
         >
           <form

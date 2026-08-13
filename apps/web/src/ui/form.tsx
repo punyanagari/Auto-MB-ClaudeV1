@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cn } from '../lib/cn.js';
 
 /** A labelled control. The label rule rides the wrapper because every field
@@ -75,14 +76,41 @@ export function FieldError({ className, ...props }: React.ComponentProps<'p'>) {
   return <p className={cn(ERROR_TEXT, className)} {...props} />;
 }
 
-/** What an action changed. Always announced. */
-export function FormNotice({ className, ...props }: React.ComponentProps<'p'>) {
+/** How long a success stays on screen. Long enough to read twice;
+ * short enough that stale confirmations never pile up across
+ * workflows. */
+const NOTICE_LIFETIME_MS = 6000;
+
+/** What an action changed. Announced once, then quietly retired: a
+ * success is news, not state, so it expires on its own. Errors
+ * (FormError) stay put until the operator fixes them — that asymmetry
+ * is deliberate and repo-wide. */
+export function FormNotice({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<'p'>) {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    const timer = window.setTimeout(() => {
+      setExpired(true);
+    }, NOTICE_LIFETIME_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+    // A NEW message restarts the clock; the same message re-rendered
+    // does not.
+  }, [children]);
+  if (expired) return null;
   return (
     <p
       role="status"
       className={cn('my-2 text-[13px] font-medium text-success', className)}
       {...props}
-    />
+    >
+      {children}
+    </p>
   );
 }
 

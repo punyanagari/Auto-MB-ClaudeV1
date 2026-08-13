@@ -17,6 +17,7 @@ import type {
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
@@ -31,6 +32,7 @@ import { WorkIssueChallans } from './WorkIssueChallans.js';
 import { WorkAmendments } from './WorkAmendments.js';
 import { WorkSchedules } from './WorkSchedules.js';
 import { WorkMeasurement } from './WorkMeasurement.js';
+import { WorkBillingReadiness } from './WorkBillingReadiness.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
@@ -322,7 +324,11 @@ export function WorkDetail({
   const [relatedFailures, setRelatedFailures] = useState<ReadonlySet<RelatedLabel>>(
     new Set(),
   );
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{
+    readonly message: string;
+    /** Where the refusal is actually fixed, when it names another screen. */
+    readonly wayfind: Wayfind | null;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [unfinished, setUnfinished] = useState<readonly UnfinishedWorkItem[]>([]);
@@ -562,23 +568,28 @@ export function WorkDetail({
     }
   }
 
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
+  const act = useCallback(
+    async (work: () => Promise<void>, done: string) => {
+      setPending(true);
+      setActionError(null);
+      setNotice(null);
+      try {
+        await work();
+        setNotice(done);
+      } catch (cause) {
+        setActionError({
+          message:
+            cause instanceof RequestFailedError
+              ? cause.message
+              : 'The action failed; nothing was changed.',
+          wayfind: wayfindingOf(cause, { workId }),
+        });
+      } finally {
+        setPending(false);
+      }
+    },
+    [workId],
+  );
 
   /** The R8 lifecycle transitions. Unlike `act`, these keep the 409's
    * structured worklist so the panel can render it: the message alone
@@ -599,16 +610,18 @@ export function WorkDetail({
       } catch (cause) {
         setUnfinished(unfinishedItemsOf(cause));
         setBlockers(completionBlockersOf(cause));
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The action failed; nothing was changed.',
-        );
+        setActionError({
+          message:
+            cause instanceof RequestFailedError
+              ? cause.message
+              : 'The action failed; nothing was changed.',
+          wayfind: wayfindingOf(cause, { workId }),
+        });
       } finally {
         setPending(false);
       }
     },
-    [],
+    [workId],
   );
 
   if (loadError !== null) {
@@ -1166,6 +1179,15 @@ export function WorkDetail({
 
       {tab === 'bills' && (
         <>
+          {/* Whether an invoice can actually be reached from here —
+              asked up front, with a link per unmet prerequisite, instead
+              of letting the operator discover each refusal in turn. */}
+          <WorkBillingReadiness
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            workItems={workItems}
+          />
           <RelatedSectionGate
             labels={[RELATED.bills]}
             pending={relatedPending}
@@ -1251,7 +1273,17 @@ export function WorkDetail({
       )}
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
-      {actionError !== null && <FormError>{actionError}</FormError>}
+      {actionError !== null && (
+        <FormError>
+          {actionError.message}
+          {actionError.wayfind !== null && (
+            <>
+              {' '}
+              <a href={actionError.wayfind.hash}>{actionError.wayfind.label}</a>
+            </>
+          )}
+        </FormError>
+      )}
 
       <Actions>
         <Button variant="outline" onClick={onBack}>

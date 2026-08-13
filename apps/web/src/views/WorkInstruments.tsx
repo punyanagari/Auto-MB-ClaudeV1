@@ -149,7 +149,7 @@ export function WorkInstruments({
         </p>
       )}
       {canModify && (
-        <Disclosure label="Add instrument" startOpen={instruments.length === 0}>
+        <Disclosure label="New instrument" startOpen={instruments.length === 0}>
           <form
             onSubmit={(event) => {
               event.preventDefault();

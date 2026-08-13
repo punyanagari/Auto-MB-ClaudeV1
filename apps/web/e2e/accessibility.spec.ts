@@ -795,13 +795,13 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Record installation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   await expectNoSeriousViolations(page, 'work detail — deliveries');
 
   await openTab('Measurement');
   await expect(
-    page.getByRole('heading', { name: 'Measurement Book', exact: true }),
+    page.getByRole('heading', { name: 'Measurement evidence', exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
@@ -828,17 +828,17 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // The record-and-create forms sit behind the verb that names them, so the
   // page opens as what is true and asks only when asked. Each one still
   // holds exactly the fields it always did.
-  await page.getByRole('button', { name: 'Record serials', expanded: false }).click();
-  await expect(page.getByLabel('Serial numbers (one per line)')).toBeVisible();
   await page
-    .getByRole('button', { name: 'Record installation', expanded: false })
+    .getByRole('button', { name: 'New serial numbers', expanded: false })
     .click();
+  await expect(page.getByLabel('Serial numbers (one per line)')).toBeVisible();
+  await page.getByRole('button', { name: 'New installation', expanded: false }).click();
   await expect(page.getByLabel('Installed on')).toBeVisible();
   // The correction flow states the lawful path for an evidence-carrying
   // challan and offers the notice form.
   await expect(page.getByRole('heading', { name: 'Request correction' })).toBeVisible();
   await page
-    .getByRole('button', { name: 'Request correction notice', expanded: false })
+    .getByRole('button', { name: 'Request correction notice…', expanded: false })
     .click();
   await expect(page.getByLabel('Correction statement')).toBeVisible();
   await expectNoSeriousViolations(page, 'challan detail with evidence');

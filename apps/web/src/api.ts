@@ -1187,6 +1187,157 @@ export function formValue(data: FormData, name: string): string {
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/* ------------------------------------------------------------------ *
+ * Schema-refusal translation. Fastify answers an invalid request with
+ * ajv's own prose — "body/slug must match pattern …" — which is
+ * addressed to a developer, not to the clerk reading the form. The
+ * translation happens here, at the one place every response passes
+ * through, so no view can leak `body/…` again.
+ * ------------------------------------------------------------------ */
+
+/** Known fields whose generated names or formats deserve better words
+ * than a de-camelled identifier next to a regex. */
+const FIELD_LABELS: Readonly<Record<string, string>> = {
+  slug: 'organisation slug',
+  sourceRef: 'source reference',
+  itemSno: 'source item number',
+  scheduleId: 'source schedule id',
+  gstin: 'GSTIN',
+  sacCode: 'SAC code',
+  hsnCode: 'HSN code',
+  pincode: 'PIN code',
+  stateCode: 'state code',
+  placeOfSupply: 'place of supply',
+  numberPrefix: 'number prefix',
+  workCode: 'Work code',
+  gstRate: 'GST rate',
+};
+
+/** What the format actually is, for fields whose pattern refusal would
+ * otherwise just say "invalid". */
+const FORMAT_HINTS: Readonly<Record<string, string>> = {
+  slug: '2–63 lowercase letters, digits and hyphens, starting with a letter or digit',
+  gstin: 'exactly 15 digits and capital letters',
+  pincode: 'a 6-digit PIN code',
+  stateCode: 'a 2-digit GST state code',
+  sacCode: 'a 6-digit SAC code',
+  hsnCode: 'a 4, 6 or 8-digit HSN code',
+  placeOfSupply: 'a 2-digit GST state code',
+  numberPrefix: 'a capital letter followed by up to 7 capital letters or digits',
+  workCode: 'capital letters, digits, "/", "-" or "_", up to 20 characters',
+};
+
+/** 'body/schedules/0/items/2/sourceRef/itemSno' → a person's reading of
+ * the same place: "schedules 1 › items 3 › source item number". */
+function fieldLabelOf(path: string): string {
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  const withoutSource =
+    segments[0] === 'body' ||
+    segments[0] === 'querystring' ||
+    segments[0] === 'params' ||
+    segments[0] === 'headers'
+      ? segments.slice(1)
+      : segments;
+  if (withoutSource.length === 0) return 'request';
+  const parts: string[] = [];
+  for (const segment of withoutSource) {
+    if (/^\d+$/.test(segment)) {
+      const previous = parts.pop();
+      const ordinal = String(Number(segment) + 1);
+      parts.push(
+        previous === undefined ? `entry ${ordinal}` : `${previous} ${ordinal}`,
+      );
+      continue;
+    }
+    parts.push(
+      FIELD_LABELS[segment] ??
+        segment
+          .replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2')
+          .replaceAll('_', ' ')
+          .toLowerCase(),
+    );
+  }
+  return parts.join(' › ');
+}
+
+/** The last path segment that is a name (not an index) — the field the
+ * format hints are keyed by. */
+function leafFieldOf(path: string): string {
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    if (segment !== undefined && !/^\d+$/.test(segment)) return segment;
+  }
+  return '';
+}
+
+/** One ajv clause → one human sentence fragment. */
+function humanizeConstraint(field: string, constraint: string): string {
+  const required = /^must have required property '(.+)'$/.exec(constraint);
+  if (required !== null && required[1] !== undefined) {
+    const missing = FIELD_LABELS[required[1]] ?? fieldLabelOf(required[1]);
+    return `is missing ${missing} — fill it in`;
+  }
+  if (constraint.startsWith('must match pattern')) {
+    const hint = FORMAT_HINTS[field];
+    return hint === undefined ? 'has an invalid format' : `must be ${hint}`;
+  }
+  const tooShort = /^must NOT have fewer than (\d+) characters$/.exec(constraint);
+  if (tooShort !== null) return `must be at least ${tooShort[1] ?? ''} characters`;
+  const tooLong = /^must NOT have more than (\d+) characters$/.exec(constraint);
+  if (tooLong !== null) return `must be at most ${tooLong[1] ?? ''} characters`;
+  const atLeast = /^must be >= (.+)$/.exec(constraint);
+  if (atLeast !== null) return `must be at least ${atLeast[1] ?? ''}`;
+  const atMost = /^must be <= (.+)$/.exec(constraint);
+  if (atMost !== null) return `must be at most ${atMost[1] ?? ''}`;
+  if (constraint === 'must NOT have additional properties') {
+    return 'contains a field the server does not accept';
+  }
+  if (constraint.startsWith('must be equal to one of the allowed values')) {
+    return 'is not one of the allowed choices';
+  }
+  if (constraint.startsWith('must be ')) {
+    return `must be ${constraint.slice('must be '.length).split(',')[0] ?? 'valid'}`;
+  }
+  return 'is invalid';
+}
+
+/** Splits fastify's joined message on error boundaries only — patterns
+ * themselves may contain ", ", so the lookahead anchors each split to
+ * the next `body/…`-style prefix. */
+function humanizeValidationMessage(raw: string): string {
+  const clauses = raw.split(/, (?=(?:body|querystring|params|headers)(?:\/| ))/);
+  const sentences = clauses.map((clause) => {
+    // "<source>[/path…] <constraint>" — split at the first space, no
+    // backtracking-prone pattern needed.
+    const spaceAt = clause.indexOf(' ');
+    if (spaceAt <= 0) return null;
+    const path = clause.slice(0, spaceAt);
+    const constraintText = clause.slice(spaceAt + 1);
+    const source = path.split('/', 1)[0];
+    if (
+      source !== 'body' &&
+      source !== 'querystring' &&
+      source !== 'params' &&
+      source !== 'headers'
+    ) {
+      return null;
+    }
+    if (constraintText.length === 0) return null;
+    const label = fieldLabelOf(path);
+    const constraint = humanizeConstraint(leafFieldOf(path), constraintText);
+    const subject = label === 'request' ? 'The form' : `The ${label}`;
+    return `${subject} ${constraint}.`;
+  });
+  const readable = sentences.filter(
+    (sentence): sentence is string => sentence !== null,
+  );
+  if (readable.length === 0) {
+    return 'The form has a value the server could not accept. Check the highlighted fields and try again.';
+  }
+  return readable.join(' ');
+}
+
 async function parseError(response: Response): Promise<RequestFailedError> {
   let code = 'REQUEST_ERROR';
   let message = `The server answered ${String(response.status)}.`;
@@ -1200,6 +1351,14 @@ async function parseError(response: Response): Promise<RequestFailedError> {
     details = body.details;
   } catch {
     // Non-JSON error body: keep the status-based message.
+  }
+  // A schema refusal reaches the operator in words, never as ajv's
+  // `body/...` developer prose.
+  if (
+    code === 'FST_ERR_VALIDATION' ||
+    /^(?:body|querystring|params|headers)[/ ]/.test(message)
+  ) {
+    message = humanizeValidationMessage(message);
   }
   return new RequestFailedError(response.status, code, message, details, requestId);
 }

@@ -1,4 +1,5 @@
 import type { IssueChallan } from '@auto-mb/contracts';
+import { issueChallanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
@@ -74,16 +75,17 @@ export function WorkIssueChallans({
             {issueChallans.map((challan) => (
               <tr key={challan.id}>
                 <th scope="row">
-                  <Button
-                    variant="link"
-                    size="inline"
+                  {/* A real link so an Issue Challan can be middle-clicked
+                      into its own tab; a left click stays in-app. */}
+                  <a
+                    href={issueChallanHash(workId, challan.id)}
                     className="font-medium"
-                    onClick={() => {
+                    onClick={navigateOnClick(() => {
                       onOpenIssueChallan(challan.id);
-                    }}
+                    })}
                   >
                     {challan.challanNumber ?? 'Draft'}
-                  </Button>
+                  </a>
                 </th>
                 <td>{MOVEMENT_LABELS[challan.movementType]}</td>
                 <td>{challan.challanDate}</td>
