@@ -30,6 +30,9 @@ export interface ChallanBranding {
 
 export interface ChallanSnapshotItem {
   readonly position: number;
+  /** The LOA schedule item number, or '' on a manual (non-LOA) line —
+   * printed as an em dash. Empty is impossible on every challan issued
+   * before migration 0056, so their rendering is byte-identical. */
   readonly itemNumber: string;
   readonly description: string;
   readonly unit: string;
@@ -44,7 +47,11 @@ export interface ChallanSnapshot {
   readonly challanNumber: string;
   readonly challanDate: string;
   readonly issuedAt: string;
-  readonly work: {
+  /** Absent on a STANDALONE challan (migration 0056): goods leaving the
+   * factory for a private customer, a vendor, or a job worker belong to
+   * no Work, and printing a Work block there would be a claim about a
+   * contract that does not exist. Every work challan still carries it. */
+  readonly work?: {
     readonly workCode: string;
     readonly title: string;
     readonly letterNumber: string;
@@ -108,7 +115,9 @@ export function renderChallanHtml(
     <h1>Warranty / Guarantee Certificate</h1>
     <p>Dated ${escapeHtml(snapshot.challanDate)}</p>
   </div>
-  <p class="label">Against Delivery Challan ${escapeHtml(snapshot.challanNumber)} · Work ${escapeHtml(snapshot.work.workCode)}</p>
+  <p class="label">Against Delivery Challan ${escapeHtml(snapshot.challanNumber)}${
+    snapshot.work !== undefined ? ` · Work ${escapeHtml(snapshot.work.workCode)}` : ''
+  }</p>
   <div class="warranty-text">${escapeHtml(snapshot.warranty.text)}</div>
   <section class="sign">
     <div>Received by (Consignee)</div>
@@ -132,7 +141,7 @@ export function renderChallanHtml(
     .map(
       (item) => `<tr>
   <td class="num">${String(item.position)}</td>
-  <td>${escapeHtml(item.itemNumber)}</td>
+  <td>${item.itemNumber.length > 0 ? escapeHtml(item.itemNumber) : '&mdash;'}</td>
   <td class="desc">${escapeHtml(item.description)}</td>
   <td>${escapeHtml(item.unit)}</td>
   <td class="num">${escapeHtml(item.quantity)}</td>
@@ -180,9 +189,14 @@ export function renderChallanHtml(
 </header>
 <section class="meta">
   <div>
-    <p class="label">Work</p>
+    ${
+      snapshot.work !== undefined
+        ? `<p class="label">Work</p>
     <p>${escapeHtml(snapshot.work.workCode)} — ${escapeHtml(snapshot.work.title)}<br />
-    LOA ${escapeHtml(snapshot.work.letterNumber)} dated ${escapeHtml(snapshot.work.letterDate)}</p>
+    LOA ${escapeHtml(snapshot.work.letterNumber)} dated ${escapeHtml(snapshot.work.letterDate)}</p>`
+        : `<p class="label">Movement</p>
+    <p>Standalone delivery — no works contract</p>`
+    }
   </div>
   <div>
     <p class="label">Consignee</p>

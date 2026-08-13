@@ -77,6 +77,17 @@ Primary risks:
   below), so a production process can no longer come up one unset or
   mistyped environment variable away from an open gate;
 - sensitive issue/cancel actions require explicit authority;
+- **work-free documents and work scope** (migration 0056): work scope is the
+  reach mechanism and it binds THROUGH a Work — an `assigned`-scoped membership
+  reaches exactly the Works it is assigned to. A standalone Delivery Challan
+  has no Work, so no assignment could ever grant it, and such a membership
+  reaches none of them: they are excluded from the register in SQL, and an
+  addressed one answers 404 (never 403 — a guessed id must not confirm the
+  document exists). Full-scope memberships see them, and writing, issuing, and
+  cancelling still need the writer role and the issue/cancel authorities on top.
+  Proved in `apps/server/test/delivery-challan-module.integration.test.ts` with
+  an office member who holds both authorities and an assignment to the fixture
+  Work, so only the scope gate can be what turns them away;
 - every membership read that runs inside a bound-tenant transaction
   filters on `app_private.current_organisation_id()` as well as the user.
   The SELECT policy on `organisation_memberships` deliberately carries an

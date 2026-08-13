@@ -39,6 +39,7 @@ import {
   isPositiveDecimal,
   lockLinkedPurchaseOrdersForChallan,
   normaliseConsignee,
+  requireWorkBoundChallan,
 } from './challans.js';
 import { normaliseHeader } from './issue-challans.js';
 import type { ObjectStorage } from '../storage.js';
@@ -125,19 +126,25 @@ interface LockedChallan {
 
 /** Locks a delivery challan for a correction proposal: the same row lock
  * every state transition takes, so a propose serialises against a
- * concurrent cancel or evidence write. */
+ * concurrent cancel or evidence write.
+ *
+ * A standalone challan (migration 0056) is refused here: a correction is
+ * a cancel-and-replace whose whole subject is Work item quantities, and a
+ * standalone challan has none. */
 async function lockDeliveryChallan(
   tx: TransactionSql,
   challanId: string,
 ): Promise<LockedChallan> {
-  const [row] = await tx<LockedChallan[]>`
+  const [row] = await tx<
+    (Omit<LockedChallan, 'work_id'> & { work_id: string | null })[]
+  >`
     select id, work_id, status, challan_number,
            challan_date::text as challan_date, prefix, consignee_snapshot
     from delivery_challans where id = ${challanId}
     for update
   `;
   if (!row) throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
-  return row;
+  return { ...row, work_id: requireWorkBoundChallan(row) };
 }
 
 async function requireActiveWork(tx: TransactionSql, workId: string): Promise<void> {
@@ -222,13 +229,13 @@ export function registerCorrectionRoutes(
     async ({ request, user, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx): Promise<CorrectionEligibilityResponse> => {
-        const [challan] = await tx<{ work_id: string; status: string }[]>`
+        const [challan] = await tx<{ work_id: string | null; status: string }[]>`
             select work_id, status from delivery_challans where id = ${id}
           `;
         if (!challan) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertWorkAccess(tx, user.id, requireWorkBoundChallan(challan));
         const evidence = await challanEvidenceCounts(tx, id);
         const hasEvidence =
           evidence.receipts > 0 || evidence.serials > 0 || evidence.measurements > 0;
@@ -277,13 +284,13 @@ export function registerCorrectionRoutes(
         // Self-approving proposals apply cancellation in this same
         // transaction. Authorise before locking linked POs, then follow
         // PO-close order (POs -> challan) to avoid a deadlock.
-        const [challanRef] = await tx<{ work_id: string }[]>`
+        const [challanRef] = await tx<{ work_id: string | null }[]>`
             select work_id from delivery_challans where id = ${id}
           `;
         if (!challanRef) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, challanRef.work_id);
+        await assertWorkAccess(tx, user.id, requireWorkBoundChallan(challanRef));
         const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
         const challan = await lockDeliveryChallan(tx, id);
         await assertWorkAccess(tx, user.id, challan.work_id);
@@ -323,6 +330,21 @@ export function registerCorrectionRoutes(
         const replacementLabels: { label: string; quantity: string }[] = [];
         for (const [index, item] of body.replacement.items.entries()) {
           const lineLabel = `Replacement line ${String(index + 1)}`;
+          // Migration 0056 let a challan line be MANUAL (non-LOA
+          // installation material with no schedule item). The correction
+          // flow is a cancel-and-replace of an ISSUED work challan whose
+          // whole purpose is to restate quantities the ledger already
+          // counted, and a manual line counts for nothing there — so it
+          // is refused by name rather than accepted and silently ignored.
+          // Correcting the manual half of a work challan is not yet a
+          // supported flow.
+          if (item.workItemId === undefined) {
+            throw httpError(
+              400,
+              'CORRECTION_LINE_REQUIRES_WORK_ITEM',
+              `${lineLabel}: a correction restates Work item quantities; manual lines cannot be corrected this way.`,
+            );
+          }
           if (seen.has(item.workItemId)) {
             throw httpError(
               409,

@@ -140,7 +140,13 @@ export function registerDashboardRoutes(
           }[]
         >`
           select
-            (select count(*) from delivery_challans where status = 'draft')::text
+            -- Work challans only. This tile sits beside the per-Work
+            -- progress table above and has always meant "drafts open on
+            -- the Works below"; a standalone challan (migration 0056)
+            -- belongs to no Work and has its own register, so counting it
+            -- here would change what the number says.
+            (select count(*) from delivery_challans
+              where status = 'draft' and work_id is not null)::text
               as open_drafts,
             (select count(*) from loa_documents where extraction_status = 'review')::text
               as loa_review,

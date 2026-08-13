@@ -38,6 +38,8 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'issue-challan-new', workId: WORK_ID } },
   { view: { name: 'issue-challan-edit', workId: WORK_ID, challanId: CHALLAN_ID } },
   { view: { name: 'issue-challan', workId: WORK_ID, challanId: CHALLAN_ID } },
+  { view: { name: 'delivery-challans' } },
+  { view: { name: 'delivery-challan', challanId: CHALLAN_ID } },
   { view: { name: 'quotations' } },
   { view: { name: 'approvals' } },
   { view: { name: 'serials' } },

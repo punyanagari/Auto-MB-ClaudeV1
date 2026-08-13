@@ -196,6 +196,48 @@ describe('counter scope (finding 8) — a template must be as wide as the unique
     }).toThrow(/\{FY\} or \{FY2\}/);
   });
 
+  it('refuses a standalone challan template with no financial year or prefix', () => {
+    // Migration 0056 gave the standalone challan a counter that restarts
+    // each financial year, while challan_number stays unique across the
+    // organisation. 0047's CHECK ends in ELSE true, so a new document
+    // type that is not given an explicit arm is exempted from the scope
+    // rule entirely — finding 8 straight back through the door it was
+    // closed at. Both the validator and the CHECK carry the arm.
+    expect(() => {
+      assertValidTemplate('DC/{SEQ:3}', 'standalone_challan');
+    }).toThrow(/\{FY\} or \{FY2\} or \{PREFIX\}/);
+    expect(() => {
+      assertValidTemplate('DC/{YYYY}/{SEQ:3}', 'standalone_challan');
+    }).toThrow(/\{FY\} or \{FY2\} or \{PREFIX\}/);
+  });
+
+  it('accepts a standalone challan template scoped by {FY} or {PREFIX}', () => {
+    expect(() => {
+      assertValidTemplate(DEFAULT_TEMPLATES.standalone_challan, 'standalone_challan');
+    }).not.toThrow();
+    expect(() => {
+      assertValidTemplate('{PREFIX}/{SEQ:3}', 'standalone_challan');
+    }).not.toThrow();
+  });
+
+  it('offers no {WORK} on a standalone challan', () => {
+    // It belongs to no Work, so the token could never be filled; refusing
+    // it here beats an issue-time refusal on a finished document.
+    expect(() => {
+      assertValidTemplate('{WORK}/DC/{FY}/{SEQ}', 'standalone_challan');
+    }).toThrow(/not available on this document/);
+  });
+
+  it('renders the standalone default against a financial year', () => {
+    expect(
+      renderNumberTemplate(DEFAULT_TEMPLATES.standalone_challan, {
+        prefix: 'DC',
+        financialYear: '2026-27',
+        sequence: 4,
+      }),
+    ).toBe('DC/2026-27/004');
+  });
+
   it('needs no scope mark on a budgetary quotation', () => {
     // The BQ counter runs per organisation — exactly as wide as the
     // uniqueness key — so a bare serial is already collision-free.

@@ -18,6 +18,12 @@ export type WorkspaceView =
   | { name: 'issue-challan-new'; workId: string }
   | { name: 'issue-challan-edit'; workId: string; challanId: string }
   | { name: 'issue-challan'; workId: string; challanId: string }
+  /** The Delivery Challan module's own register: every movement, of all
+   * three kinds. A work challan still opens through its Work
+   * (`challan` above) — this is the way in for the two kinds that have
+   * no Work to open through. */
+  | { name: 'delivery-challans' }
+  | { name: 'delivery-challan'; challanId: string }
   | { name: 'quotations' }
   | { name: 'approvals' }
   | { name: 'serials' }
@@ -108,6 +114,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       const tab = route.mastersTab ?? 'contacts';
       return tab === 'contacts' ? '#/masters' : `#/masters/${tab}`;
     }
+    case 'delivery-challans':
+      return '#/delivery-challans';
+    case 'delivery-challan':
+      return `#/delivery-challans/${view.challanId}`;
     case 'quotations':
       return '#/quotations';
     case 'approvals':
@@ -145,6 +155,11 @@ export function mastersHash(tab?: MastersTab): string {
     view: { name: 'masters' },
     ...(tab === undefined ? {} : { mastersTab: tab }),
   });
+}
+
+/** `#/delivery-challans/<id>` as a plain href — a register row's link. */
+export function deliveryChallanHash(challanId: string): string {
+  return workspaceHashOf({ view: { name: 'delivery-challan', challanId } });
 }
 
 export const SETTINGS_HASH = '#/settings';
@@ -209,6 +224,12 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (extra.length > 0) return null;
       if (tab === undefined) return { view: { name: 'masters' } };
       return isMastersTab(tab) ? { view: { name: 'masters' }, mastersTab: tab } : null;
+    }
+    case 'delivery-challans': {
+      const [challanId, ...extra] = rest;
+      if (challanId === undefined) return { view: { name: 'delivery-challans' } };
+      if (!isRecordId(challanId) || extra.length > 0) return null;
+      return { view: { name: 'delivery-challan', challanId } };
     }
     case 'quotations':
     case 'approvals':
