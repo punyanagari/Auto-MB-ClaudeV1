@@ -21,12 +21,11 @@
  * left-to-right for `item_sno`. The qty_unit column can be EMPTY on the
  * anchor line itself — the one PL276-GTL "Route Kilo Meter (RKM)" item
  * (fixture lines 497-501) wraps its unit across four adjacent unit-column
- * lines around the anchor instead (research §4.4, mirrored here from the
- * same geometry `packages/db/test/units-master.dbtest.ts`'s
- * `extractUnitColumn`/`harvestWrappedUnit` proved against the same fixture,
- * re-implemented in this package rather than imported so `@auto-mb/loa-parser`
- * stays free of any dependency on `@auto-mb/db`, kernel loa-purity — see
- * `test/corpus-manifest.test.ts`'s purity block).
+ * lines around the anchor instead (research §4.4, whose unit-column census
+ * measured that item and named the wrapped unit a `needsReview`-grade trap).
+ * The harvest lives in this package rather than beside the units master so
+ * `@auto-mb/loa-parser` stays free of any dependency on `@auto-mb/db` —
+ * kernel loa-purity, see `test/corpus-manifest.test.ts`'s purity block.
  *
  * DESCRIPTION (research §2 step 3): collected from lines BOTH above AND
  * below the anchor — never assumed to precede it — bounded by the
@@ -440,10 +439,9 @@ function peelAnchorTail(preDesc: string): PeeledTail | null {
 }
 
 // ---------------------------------------------------------------------------
-// wrapped-unit harvest (research §4.4 — mirrors the reference geometry in
-// packages/db/test/units-master.dbtest.ts's extractUnitColumn/
-// harvestWrappedUnit, re-implemented here so this package stays free of any
-// dependency on @auto-mb/db)
+// wrapped-unit harvest (research §4.4 — the unit-column geometry that census
+// measured, implemented here rather than beside the units master so this
+// package stays free of any dependency on @auto-mb/db)
 // ---------------------------------------------------------------------------
 
 /**

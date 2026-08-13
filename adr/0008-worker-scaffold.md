@@ -28,15 +28,31 @@ Keep the scaffold. It is a boundary declaration, not a framework.
   that the first real async workflow (LOA extraction offload and
   scheduled backup verification are the standing candidates on the
   roadmap) decides those shapes when it arrives.
-- Folding into the server and re-extracting later would churn the compose
-  files, CI, and the process supervisor twice, and would invite the
-  tempting wrong default of running background work on the request
-  process in the meantime.
+- Folding into the server would invite the tempting wrong default of
+  running background work on the request process in the meantime, and
+  re-extracting it later would be a second decision made under whatever
+  pressure produced the first job rather than in advance.
 
 ## Consequences
 
 - The worker stays in `pnpm dev`, typecheck and test fan-outs at
   near-zero cost (its test suite is empty and vitest exits cleanly).
+- The scaffold is **not deployed**. Correcting a claim this ADR carried as
+  accepted until 2026-08-13: the third decision bullet argued that folding
+  the worker into the server and re-extracting it would "churn the compose
+  files, CI, and the process supervisor twice". It would not, because none
+  of those name the worker. `docker-compose.yml`, `deploy/docker-compose.prod.yml`,
+  `deploy/Dockerfile.server` and every workflow under `.github/workflows`
+  mention it nowhere; the only places it exists are the workspace globs
+  in `pnpm-workspace.yaml` and the four files under `apps/worker`. So the
+  cost of removing the scaffold is the two authority documents plus those
+  four files, and the case for keeping it rests on the boundary
+  declaration and the wrong-default hazard alone — which is why the
+  decision above is stated that way and this consequence records what the
+  scaffold does not buy.
+- A corollary the tripwire below depends on: the first pull request to
+  land a real job must also give the worker a deployment, because today
+  nothing would run it.
 - Tripwire: the first PR that lands a real asynchronous workflow must
   either put its jobs here or, if it concludes in-process execution is
   correct for that workload, replace this ADR with one that removes the

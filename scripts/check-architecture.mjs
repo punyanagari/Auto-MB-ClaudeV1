@@ -136,16 +136,14 @@ function lineOf(source, index) {
 }
 
 /**
- * `apps/web/src/views/Workspace.tsx` is the retired shell superseded by
- * `OperationsWorkspace.tsx`: zero importers anywhere in `src`, `test` and
- * `e2e`, and no departure protection of any kind. Pack P1 of the
- * 2026-08-13 improvement programme deletes it. Exempted rather than
- * rewritten because that file belongs to that pack; this entry goes with
- * the file.
+ * Files the departure rule does not apply to. Empty, and meant to stay that
+ * way: the one entry it ever held was the retired workspace shell that
+ * `OperationsWorkspace.tsx` superseded, exempted by Pack P5 with the note
+ * that the exemption travels with the file. Pack P1 deleted the file, so the
+ * exemption went with it — an exempt list naming something that no longer
+ * exists is a hole nobody can see.
  */
-const DEPARTURE_RULE_EXEMPT = new Set([
-  path.join('apps', 'web', 'src', 'views', 'Workspace.tsx'),
-]);
+const DEPARTURE_RULE_EXEMPT = new Set([]);
 
 for (const file of await collectFiles(root)) {
   const source = await readFile(file, 'utf8');

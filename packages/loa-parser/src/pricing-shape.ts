@@ -90,11 +90,13 @@
  * already mirrors DB/schema column names verbatim for the same reason (it
  * IS the eventual row shape). Diagnostic-only fields (`needsReview`,
  * `scheduleTotals`, …) keep this package's usual camelCase FieldResult-style
- * convention (field.ts, header.ts, items.ts). `packages/works/src/service.ts`'s
- * `CreateWorkInput` mirrors the same five columns under ITS OWN camelCase
- * convention for its own DB-insert purpose — this module does not import it
- * (this package stays free of any `@auto-mb/works`/`@auto-mb/db` dependency,
- * the purity contract `test/corpus-manifest.test.ts` enforces) and is not
+ * convention (field.ts, header.ts, items.ts).
+ * `packages/contracts/src/works.ts`'s `ConfirmWorkRequest` — the body
+ * `apps/server/src/routes/loa.ts`'s confirm route inserts from — mirrors the
+ * same five columns under ITS OWN camelCase convention for its own DB-insert
+ * purpose. This module does not import it (this package stays free of any
+ * `@auto-mb/contracts`/`@auto-mb/db` dependency, the purity contract
+ * `test/corpus-manifest.test.ts` enforces) and is not
  * required to share its exact TS spelling, only its column SET, which
  * `test/pricing-shape.test.ts`'s type-level + runtime key-set assertions
  * prove independently.
@@ -152,8 +154,9 @@ export interface ScheduleTotalEntry {
 }
 
 /** The exact DC-14 `works` pricing-column subset this module is
- * authoritative for (migrations/0050_add_works_pricing_columns.sql;
- * packages/db/src/schema/index.ts's `works` table). `pricing_shape` and
+ * authoritative for (the `works` table in
+ * `packages/db/migrations/0001_core.sql`, which is the schema — there is no
+ * separate schema module). `pricing_shape` and
  * `letter_percentage_direction` use the DB's own CHECK-constraint enum
  * literals verbatim. `null` across all three shape/percentage fields is the
  * "unrecognised totals block" / "arithmetic did not reconcile" case

@@ -168,18 +168,7 @@ export function mastersHash(tab?: MastersTab): string {
   });
 }
 
-/** `#/delivery-challans/<id>` as a plain href — a register row's link. */
-export function deliveryChallanHash(challanId: string): string {
-  return workspaceHashOf({ view: { name: 'delivery-challan', challanId } });
-}
-
 export const SETTINGS_HASH = '#/settings';
-
-/** `#/search/<query>` as a plain href. */
-export function searchHash(query: string): string {
-  return workspaceHashOf({ view: { name: 'search', query } });
-}
-
 export const SERIALS_HASH = '#/serials';
 export const QUOTATIONS_HASH = '#/quotations';
 
