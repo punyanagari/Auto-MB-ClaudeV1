@@ -187,6 +187,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={onConfirmed}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -275,6 +276,7 @@ describe('ReviewLoa', () => {
       discardedSupportingDocumentIds: [],
     });
     const onBack = vi.fn();
+    const onDiscarded = vi.fn();
     const api = stubApi({
       getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
       discardLoaDocument,
@@ -287,6 +289,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={onBack}
+        onDiscarded={onDiscarded}
       />,
     );
 
@@ -298,9 +301,12 @@ describe('ReviewLoa', () => {
     await waitFor(() => {
       expect(discardLoaDocument).toHaveBeenCalledWith(ORG_ID, DOC_ID);
     });
+    // The withdrawal exit, not the plain one: the shell must leave without
+    // asking about corrections the reviewer has just thrown away.
     await waitFor(() => {
-      expect(onBack).toHaveBeenCalledOnce();
+      expect(onDiscarded).toHaveBeenCalledOnce();
     });
+    expect(onBack).not.toHaveBeenCalled();
   });
 
   it('keeps the letter, and its values, when the reviewer backs out of the discard', async () => {
@@ -317,6 +323,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -348,6 +355,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={onBack}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -371,6 +379,7 @@ describe('ReviewLoa', () => {
         canModify={false}
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -409,6 +418,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -436,6 +446,7 @@ describe('ReviewLoa', () => {
         canModify={false}
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -471,6 +482,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -520,6 +532,7 @@ describe('ReviewLoa', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -642,6 +655,7 @@ describe('ReviewLoa PBG requirement and row editing', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
     return confirmLoa;
@@ -1043,6 +1057,7 @@ describe('ReviewLoa payment categories', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 
@@ -1085,6 +1100,7 @@ describe('ReviewLoa payment categories', () => {
         canModify
         onConfirmed={vi.fn()}
         onBack={vi.fn()}
+        onDiscarded={vi.fn()}
       />,
     );
 

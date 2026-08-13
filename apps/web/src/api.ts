@@ -221,6 +221,15 @@ export interface ApiClient {
   readonly signUp: (email: string, name: string, password: string) => Promise<void>;
   readonly signIn: (email: string, password: string) => Promise<SignInResult>;
   readonly signOut: () => Promise<void>;
+  /** Asks the server to email a single-use password-reset link. Answers
+   * the same way for a known and an unknown address, so nothing here
+   * reveals whether an account exists; `redirectTo` is where the link
+   * lands once the server has checked the token, and must be an origin
+   * the server trusts. */
+  readonly requestPasswordReset: (email: string, redirectTo: string) => Promise<void>;
+  /** Spends a reset token on a new password. The second factor is
+   * untouched: the next sign-in still asks for the authenticator code. */
+  readonly resetPassword: (token: string, newPassword: string) => Promise<void>;
   /** Completes a pending two-factor sign-in challenge with an
    * authenticator code. */
   readonly verifyTotp: (code: string, trustDevice?: boolean) => Promise<void>;
@@ -1489,6 +1498,18 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async signOut() {
       await request('/api/auth/sign-out', { method: 'POST', body: {} });
+    },
+    async requestPasswordReset(email, redirectTo) {
+      await request('/api/auth/request-password-reset', {
+        method: 'POST',
+        body: { email, redirectTo },
+      });
+    },
+    async resetPassword(token, newPassword) {
+      await request('/api/auth/reset-password', {
+        method: 'POST',
+        body: { token, newPassword },
+      });
     },
     async verifyTotp(code, trustDevice) {
       await request('/api/auth/two-factor/verify-totp', {

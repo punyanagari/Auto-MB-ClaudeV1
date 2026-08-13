@@ -62,6 +62,14 @@ interface ReviewLoaProps {
   readonly canModify: boolean;
   readonly onConfirmed: (work: WorkDetailResponse) => void;
   readonly onBack: () => void;
+  /** Leaving after the letter was deliberately withdrawn. Separate from
+   * `onBack` because there is nothing left to protect: the reviewer has
+   * already answered the only question a departure prompt could ask. */
+  readonly onDiscarded: () => void;
+  /** Whether the reviewer has corrected anything the parser proposed.
+   * The workspace shell holds the departure confirmation, and this is
+   * how this screen joins it. */
+  readonly onDirtyChange?: (dirty: boolean) => void;
 }
 
 /** The product's words for the two classifications, so a read-only fact
@@ -194,6 +202,32 @@ function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
     // rarer answer a deliberate act rather than a discovery.
     gstBasis: 'inclusive',
   };
+}
+
+/** Everything on this screen the reviewer can change, and nothing else.
+ * Locks, parser flags and anchor lines are the letter's, not theirs, so
+ * they are left out: comparing them would only make the comparison
+ * sensitive to a re-render. Row identity is included, so adding or
+ * removing a row counts as an edit even when the remaining values are
+ * untouched. */
+function comparableDraft(
+  header: HeaderDraft,
+  items: readonly ItemDraft[],
+  pbg: PbgDraft,
+): string {
+  return JSON.stringify({
+    header,
+    pbg,
+    items: items.map((item) => ({
+      key: item.key,
+      itemNumber: item.itemNumber,
+      description: item.description,
+      unitCode: item.unitCode,
+      awardedQuantity: item.awardedQuantity,
+      effectiveRate: item.effectiveRate,
+      paymentCategory: item.paymentCategory,
+    })),
+  });
 }
 
 function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
@@ -373,6 +407,8 @@ export function ReviewLoa({
   canModify,
   onConfirmed,
   onBack,
+  onDiscarded,
+  onDirtyChange,
 }: ReviewLoaProps) {
   const [document, setDocument] = useState<LoaDocumentDetail | null>(null);
   const [contractContext, setContractContext] = useState<ContractSourceContext | null>(
@@ -398,6 +434,15 @@ export function ReviewLoa({
   const [discardAsked, setDiscardAsked] = useState(false);
   const [discardPending, setDiscardPending] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
+  /** The drafts exactly as the extraction produced them. Everything that
+   * differs from this is the reviewer's work, and losing it is what the
+   * shell's departure confirmation exists to prevent. */
+  const [loadedDraft, setLoadedDraft] = useState<string | null>(null);
+  /** The payment matrix is derived from the matched tender the moment
+   * TenderTermsReview mounts, so its first emission is a starting point,
+   * not an edit. Anything after that is the reviewer's. */
+  const matrixBaselineRef = useRef<string | null>(null);
+  const [matrixEdited, setMatrixEdited] = useState(false);
   const manualSequence = useRef(1);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
 
@@ -409,6 +454,9 @@ export function ReviewLoa({
     setPbg(null);
     setLoadError(null);
     setFieldErrors({});
+    setLoadedDraft(null);
+    matrixBaselineRef.current = null;
+    setMatrixEdited(false);
     api
       .getLoaDocument(organisationId, documentId)
       .then((loaded) => {
@@ -417,9 +465,12 @@ export function ReviewLoa({
         const payload = asExtractionPayload(loaded.extractionPayload);
         if (payload !== null) {
           const drafts = buildItemDrafts(payload);
-          setHeader(buildHeaderDraft(payload));
+          const headerDraft = buildHeaderDraft(payload);
+          const pbgDraft = buildPbgDraft(payload);
+          setHeader(headerDraft);
           setItems(drafts);
-          setPbg(buildPbgDraft(payload));
+          setPbg(pbgDraft);
+          setLoadedDraft(comparableDraft(headerDraft, drafts, pbgDraft));
           const lastDraft = drafts[drafts.length - 1];
           setAddSchedule(lastDraft !== undefined ? lastDraft.scheduleId : 'A');
         }
@@ -463,8 +514,38 @@ export function ReviewLoa({
     (rows: readonly ConfirmPaymentMatrixRow[], problem: string | null) => {
       setInitialPaymentMatrix(rows);
       setPaymentMatrixProblem(problem);
+      const signature = JSON.stringify(rows);
+      if (matrixBaselineRef.current === null) {
+        matrixBaselineRef.current = signature;
+        return;
+      }
+      setMatrixEdited(signature !== matrixBaselineRef.current);
     },
     [],
+  );
+
+  /** What the reviewer would lose by leaving. */
+  const edited =
+    (loadedDraft !== null &&
+      header !== null &&
+      items !== null &&
+      pbg !== null &&
+      comparableDraft(header, items, pbg) !== loadedDraft) ||
+    matrixEdited;
+
+  useEffect(() => {
+    onDirtyChange?.(edited);
+  }, [edited, onDirtyChange]);
+
+  // Unmounting this screen ends its claim on the shell's confirmation.
+  // Without this a discarded or confirmed letter would leave the flag
+  // set behind it and the next navigation would ask about a form that no
+  // longer exists.
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
   );
 
   const payload = useMemo(
@@ -485,7 +566,9 @@ export function ReviewLoa({
     setDiscardError(null);
     try {
       await api.discardLoaDocument(organisationId, documentId);
-      onBack();
+      // Not onBack: the letter is gone, so there is no unsaved work left
+      // to warn about and the shell must leave without asking again.
+      onDiscarded();
     } catch (cause) {
       setDiscardError(
         cause instanceof RequestFailedError
