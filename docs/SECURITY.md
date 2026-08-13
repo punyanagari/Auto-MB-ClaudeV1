@@ -22,7 +22,11 @@ Primary risks:
 - `organisation_id` on every tenant-owned table;
 - RLS and `FORCE ROW LEVEL SECURITY`;
 - application role is not superuser, owner, or `BYPASSRLS`;
-- organisation context set transaction-locally;
+- organisation context set transaction-locally, by
+  `app_private.bind_tenant` (migration 0069), which proves the active
+  membership on the definer's authority and raises SQLSTATE `28000` when
+  it does not hold — so a binding the user is not entitled to fails at the
+  top of the transaction instead of silently reading nothing;
 - explicit query scoping plus RLS defense in depth;
 - cross-tenant tests for every table and endpoint.
 
@@ -251,7 +255,16 @@ Activated with Milestone 1 (authenticated endpoints exist):
   `--metrics=off`) as a blocking CI job; it proves no match against those
   rules, not the absence of logic-level vulnerabilities;
 - the database membership floor — `current_organisation_id()` binds only
-  for an active membership of the session user, proven by live tests;
+  for an active membership of the session user, proven by live tests.
+  Since migration 0069 every policy calls it through an uncorrelated
+  scalar subquery, `organisation_id = (SELECT
+app_private.current_organisation_id())`, so the planner evaluates it
+  once per statement rather than once per candidate row. The membership
+  `EXISTS` is unchanged and still runs inside the SECURITY DEFINER
+  function, so the floor still holds against arbitrary SQL executed as the
+  application role; the wrapping is a planning change and
+  `packages/db/test/rls-initplan.integration.test.ts` censuses the catalog
+  so no later policy can land in the per-row shape;
 - identity audit trail — sign-up/sign-in/sign-out and the two-factor
   lifecycle (enable-completion, verification, backup-code use, disable,
   verification lockout) are appended to the user-scoped
