@@ -992,6 +992,30 @@ export function registerRetentionRoutes(
             `A ${current.status} bill cannot move to ${body.status}.`,
           );
         }
+        // Recording money as received rests on the railway having settled
+        // the measurement behind it (migration 0066). Until the railway's
+        // own signed On-Account Bill has closed the Measurement Book,
+        // "paid" would be an assertion with nothing behind it.
+        //
+        // Enforced here AND by `app_private.guard_bill_paid_needs_closed_book`.
+        // The improvement programme's recurring finding 2 is that this
+        // repository enforces security twice and money once; a money rule
+        // living only in a handler is one forgotten import from being no
+        // rule at all.
+        if (body.status === 'paid') {
+          const [book] = await tx<{ closed_at: Date | null }[]>`
+            select mb.closed_at from bills b
+            join measurement_books mb on mb.id = b.mb_id
+            where b.id = ${id}
+          `;
+          if (book?.closed_at == null) {
+            throw httpError(
+              409,
+              'BILL_MEASUREMENT_BOOK_NOT_CLOSED',
+              "This bill's Measurement Book is not closed by a verified railway bill.",
+            );
+          }
+        }
         const [row] = await tx<BillRow[]>`
           update bills
           set status = ${body.status},

@@ -74,6 +74,8 @@ export interface BookRow {
   created_at: Date;
   finalized_at: Date | null;
   cancelled_at: Date | null;
+  closed_at: Date | null;
+  closed_by_received_bill_id: string | null;
 }
 
 export function toBook(row: BookRow): MeasurementBook {
@@ -97,6 +99,8 @@ export function toBook(row: BookRow): MeasurementBook {
     createdAt: row.created_at.toISOString(),
     finalizedAt: row.finalized_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    closedAt: row.closed_at?.toISOString() ?? null,
+    closedByReceivedBillId: row.closed_by_received_bill_id,
   };
 }
 
@@ -108,7 +112,8 @@ export const BOOK_COLUMNS = `
   mb.cancellation_note,
   (select b.id from bills b
     where b.mb_id = mb.id) as bill_id,
-  mb.created_at, mb.finalized_at, mb.cancelled_at
+  mb.created_at, mb.finalized_at, mb.cancelled_at,
+  mb.closed_at, mb.closed_by_received_bill_id
 `;
 
 export async function readBook(

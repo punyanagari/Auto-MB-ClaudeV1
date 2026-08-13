@@ -86,3 +86,30 @@ document vs payment tracking) into one table.
 - The MB remark algorithm (spec §"The MB remark algorithm") renders
   per-line contractual wording from the finalised snapshot alone, with
   the template versioned so historical MBs never re-render differently.
+
+## Addendum, 2026-08-14 (migration 0066)
+
+The lifecycle above describes the documents this agency AUTHORS. Migration
+0066 adds the one it receives — the railway's own On-Account Bill — and with
+it a second, orthogonal axis on `measurement_books`:
+
+- `closed_at` / `closed_by_user_id` / `closed_by_received_bill_id` record
+  that the railway settled the measurement. This is deliberately NOT a
+  fifth `status` value: `status` tracks the agency's own drafting
+  lifecycle, closure is the counterparty's answer to it, and folding the
+  two together would collide with `measurement_books_status_shape`, the
+  kind/status coherence CHECK, and the forward-only transition rule while
+  saying something none of them means.
+- Closure is append-once, and a closed book can no longer be cancelled:
+  the alternative is a settled railway bill stranded against a withdrawn
+  measurement.
+- Decision 2's "bills cannot be cancelled" is unchanged, and decision 3's
+  "a billed MB is permanently locked" still holds. What 0066 adds is that
+  a bill also cannot become `paid` until its book is closed — the payment
+  ledger now depends on the railway's signature, not only on the agency's
+  own record.
+
+Note the word "closed" was already taken twice in this area — migration
+0035 uses it for "a live tax invoice bills this book", and `kind = 'final'`
+closes the Work's payment cycle. All three are distinct, and the railway
+sense is the only one that is a fact about the counterparty.

@@ -28,6 +28,7 @@ import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { RailwayBillPanel } from './RailwayBillPanel.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -1206,6 +1207,24 @@ export function MeasurementBooks({
               A bill was prepared from this Measurement Book; it is permanently locked —
               corrections happen as compensating entries on the next MB.
             </p>
+          )}
+          {/* The other side of the contract. A finalized measurement is
+              this agency's statement; the railway's own On-Account Bill is
+              its answer, and until that answer arrives and verifies the
+              measurement is outstanding with the railway. */}
+          {book.status === 'finalized' && (
+            <RailwayBillPanel
+              api={api}
+              organisationId={organisationId}
+              workId={workId}
+              book={book}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              onClosed={async () => {
+                await openBook(book.id);
+                await refreshList();
+              }}
+            />
           )}
         </div>
       )}

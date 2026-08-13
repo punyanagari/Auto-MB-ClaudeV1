@@ -5,6 +5,7 @@ import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
+import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
 import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
@@ -23,7 +24,14 @@ import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
-import { challanWork, ORG_ID, DOC_ID, REVIEW_DOCUMENT, WORK_ID } from './helpers.js';
+import {
+  billableBook,
+  challanWork,
+  ORG_ID,
+  DOC_ID,
+  REVIEW_DOCUMENT,
+  WORK_ID,
+} from './helpers.js';
 
 /** How the server fails when it is simply unreachable — the case every
  * one of these views must survive. */
@@ -282,6 +290,26 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'A Work with no tender documents shows no comparison panel rather than an empty one.',
     },
+  },
+  {
+    view: 'RailwayBillPanel.tsx',
+    name: "the railway's bill against a measurement",
+    loads: ['listReceivedRailwayBills'],
+    render: (api) => (
+      <RailwayBillPanel
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        book={billableBook()}
+        canIssue
+        canCancel
+        onClosed={async () => {
+          await Promise.resolve();
+        }}
+      />
+    ),
+    retry: /Retry railway bills/,
+    empty: { text: /still\s+outstanding with the railway/ },
   },
   {
     view: 'Quotations.tsx',

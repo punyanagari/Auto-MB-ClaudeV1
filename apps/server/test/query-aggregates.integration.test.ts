@@ -398,6 +398,15 @@ describe('the Measurement Book loader is one grouped statement', () => {
   });
 
   it('executes every aggregate once, not once per item', async () => {
+    // Re-analyzed here, not only after seeding. This suite shares its
+    // database with every other integration file, and vitest runs them in
+    // parallel: a sibling suite inserting Works and Measurement Books
+    // between `beforeAll` and this line leaves the planner acting on stale
+    // statistics, and the two statements below are then planned from
+    // different pictures of the same tables. The buffer comparison is a
+    // statement about PLAN SHAPE, so both plans have to be chosen from the
+    // same, current statistics for it to mean anything.
+    await admin.unsafe('analyze');
     const { current, retired } = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },
@@ -476,6 +485,15 @@ describe('the dashboard pre-aggregates its evidence', () => {
   });
 
   it('scans the challan lines once, not once per Work', async () => {
+    // Re-analyzed here, not only after seeding. This suite shares its
+    // database with every other integration file, and vitest runs them in
+    // parallel: a sibling suite inserting Works and Measurement Books
+    // between `beforeAll` and this line leaves the planner acting on stale
+    // statistics, and the two statements below are then planned from
+    // different pictures of the same tables. The buffer comparison is a
+    // statement about PLAN SHAPE, so both plans have to be chosen from the
+    // same, current statistics for it to mean anything.
+    await admin.unsafe('analyze');
     const { current, retired } = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },

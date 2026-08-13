@@ -219,7 +219,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
-16. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
+16. **Settlement rests on the railway's own signed bill:** a finalized Measurement Book is closed, and the bill prepared from it recorded as paid, only against an On-Account Bill received from the railway whose three signatures are intact and chain to an installed trust anchor. See §5.4.
+17. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
 ### 5.1 Verifying a variation order
 
@@ -351,6 +352,62 @@ real letters, up to 29%) it overstated every figure, and above par it
 understated them — the contractor invoicing a quarter less than the agreement
 entitled them to.
 
+### 5.4 The received railway bill
+
+Every other document in the chain is one the agency **writes**. The railway's
+On-Account Bill is the one it only ever **receives**: IWRCMS raises it from a
+finalized Measurement Book, the contractor signs it, the engineer's
+representative signs it, the Sr. DSTE signs it, and it comes back as a PDF.
+It is the document that says the railway agreed, and until it exists the
+measurement is outstanding with the railway however complete the agency's own
+paperwork looks.
+
+**Nothing about it is typed.** The bill number, its date, its GST-inclusive
+amount, the agreement and letter it is raised under, and the measurement it
+settles are all extracted from the uploaded PDF's own text layer, through the
+same Poppler-only path the LOA and the variation order use. There is no field
+for an operator to assert any of them. A bill number somebody typed is a
+claim; one found in the bill is a fact.
+
+**The link is by measurement sequence, never by string.** The Measurement Book
+prints `…/OAM/L2/02` and the bill raised from it prints `…/OAM/FL2/02`. The
+`L2` → `FL2` change marks the ledger as finalised: it is not an error and not a
+different measurement. Matching the raw strings would silently fail to link
+every pair, and a link that never happens reports nothing. The bill is
+additionally refused if the letter number it prints is not the Work's.
+
+Two further properties of the paper, both of which a naive check gets wrong:
+the number **wraps across lines** in the extracted layout, arriving as two
+fragments on either side of its own label; and an invoice may legitimately be
+dated **before** the bill that settles it, so no ordering is enforced between
+them.
+
+**The verdict, and what it gates.** The signature verdict is taken once, at
+upload, and stored beside the bytes as evidence. Per the owner's rulings of
+13 August 2026 a bill may settle money when its signatures are intact and its
+chains reach an installed trust anchor — and **certificate expiry is ignored**.
+Indian signing certificates run two to three years, these bills carry no
+trusted timestamp, and treating expiry as fatal would eventually refuse every
+bill the agency holds, for no change in any document. What expiry cannot excuse
+is a modified document or an unknown issuer.
+
+A bill is always **recorded**, whatever its verdict says: refusing to file a
+document because its verdict is inconvenient loses the very record that proves
+it. Two later acts are gated instead:
+
+1. **Closing the measurement.** A finalized Measurement Book closes only
+   against a recorded bill whose verdict passes. Closure is append-once, and a
+   closed book can no longer be cancelled.
+2. **Recording payment.** A prepared bill moves to `paid` only once its
+   Measurement Book is closed.
+
+Both are enforced in the route **and** by a database trigger.
+
+Note that "closed" here is a railway fact and is deliberately separate from the
+older sense in which a submitted tax invoice closes the Measurement Book it
+bills. The two are independent, and a measurement can be invoiced before its
+railway bill arrives.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.
@@ -386,6 +443,10 @@ The current product also includes:
   warranty certificates, instruments, and PAC certificates;
 - record, on-account, and final Measurement Books with category payment
   matrices, stage-wise billing, immutable snapshots, and generated documents;
+- the railway's own received On-Account Bill, linked to the Measurement Book
+  it settles by measurement sequence, with every fact extracted from the PDF
+  and a three-signature verdict that gates measurement closure and payment
+  (§5.4);
 - vendor contacts, purchase orders, and budgetary quotations;
 - MB-backed and direct GST invoices with configurable numbering, exact GST
   split and whole-rupee rounding, immutable supplier/buyer/ship-to snapshots,

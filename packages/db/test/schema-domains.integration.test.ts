@@ -180,7 +180,7 @@ describe('the schema at head names all three shapes', () => {
     const adopted = columns.filter(
       (column) => column.type === 'money_amount' || column.type === 'quantity_amount',
     );
-    expect(adopted.length).toBe(52);
+    expect(adopted.length).toBe(53);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -193,7 +193,7 @@ describe('the schema at head names all three shapes', () => {
     expect(wrong, `digest columns not typed sha256_hex: ${wrong.join(', ')}`).toEqual(
       [],
     );
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(21);
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(22);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

@@ -89,6 +89,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Issue Challan; an issued one is changed by cancelling and re-issuing, and a draft is edited directly.',
   MB_STATUS_CONFLICT:
     'Reload the Measurement Book; a draft is edited or deleted, a finalized one is cancelled with a note, and a merged one moves only through the book that absorbed it.',
+  MB_ALREADY_CLOSED:
+    'Reload the Measurement Book; the railway bill that settled this measurement is already recorded against it, and a closure is never re-taken.',
+  MB_NOT_FINALIZED:
+    'Finalize the Measurement Book first; a draft has measured nothing the railway could have billed.',
   TAX_INVOICE_STATUS_CONFLICT:
     'Reload the invoice; a submitted invoice is corrected by issuing a credit note against it, never by editing.',
   CREDIT_NOTE_STATUS_CONFLICT:
@@ -117,6 +121,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Cancel the final Measurement Book first — it closes the Work's payment cycle, so anything recorded after it could never be billed.",
   MB_SOURCE_ALREADY_BILLED:
     'Pick measurements no live Measurement Book already carries; each source is billed exactly once.',
+  RAILWAY_BILL_ALREADY_RECORDED:
+    'Discard the railway bill already recorded against this measurement before uploading another; one bill settles one measurement.',
   CONTACT_EXISTS:
     'Open the existing contact in Masters, Contacts and edit it rather than adding a second under the same designation and address.',
   DUPLICATE_ENTRY:
@@ -161,6 +167,27 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Change at least one line before filing the correction; a notice identical to the issued document corrects nothing.',
   WORK_NOT_FULLY_EXECUTED:
     'Deliver and install the balance, or amend the outstanding quantities down, before completing the Work.',
+
+  // ---- The settlement chain the agency does not control -------------------
+  //
+  // The railway's own On-Account Bill is the only chain document this
+  // product receives rather than writes, so the remedy for every refusal
+  // around it names something OUTSIDE the product: a bill to obtain, a
+  // signature to chase, a trust anchor for whoever runs the server. A
+  // remedy that said "try again" would be a lie about who is holding the
+  // work up.
+  MB_RAILWAY_BILL_MISSING:
+    "Upload the railway's On-Account Bill for this measurement on the Measurement Book's Railway bill panel; the measurement stays open until it arrives.",
+  MB_RAILWAY_BILL_UNVERIFIED:
+    'Read the signature panel on the recorded railway bill, and ask the railway for a correctly signed copy if the bill itself is at fault.',
+  BILL_MEASUREMENT_BOOK_NOT_CLOSED:
+    "Close the Measurement Book with the railway's verified On-Account Bill first; payment is recorded against a settlement the railway signed.",
+  RAILWAY_BILL_EXTRACTION_FAILED:
+    'Upload the IWRCMS bill PDF as downloaded rather than a scan or a print; the bill number, date, amount and measurement are read from its text layer.',
+  RAILWAY_BILL_MEASUREMENT_UNMATCHED:
+    'Finalize the Measurement Book this bill measures before recording the bill, and check the measurement number printed on the bill names this Work.',
+  RAILWAY_BILL_NOT_FOR_WORK:
+    'Open the Work whose LOA number the bill prints and record it there; a bill is filed against the letter it names.',
 
   // ---- Masters and configuration -----------------------------------------
   CONTACT_RETIRED:

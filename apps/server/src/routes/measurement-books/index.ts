@@ -2,6 +2,7 @@ import type { Sql } from '@auto-mb/db';
 import type { AppInstance } from '../../app-instance.js';
 import type { Auth } from '../../auth.js';
 import type { ObjectStorage } from '../../storage.js';
+import { registerMeasurementBookCloseRoute } from './close.js';
 import { registerMeasurementBookDraftingRoutes } from './drafting.js';
 import { registerMeasurementBookFinalizeRoutes } from './finalize.js';
 import { registerMeasurementBookMergeRoutes } from './merge.js';
@@ -15,6 +16,7 @@ export { assertSourceNotBilled } from './internal.js';
  * per-concern modules. The module documentation, row shapes, live-state
  * computation and source-claim helpers live in ./internal.ts; the
  * lifecycle is drafting (and merge) -> sources -> finalize -> render,
+ * with closure against the railway's own bill after that (0066),
  * and each of those is its own file.
  *
  * One register function, as before: app.ts calls this and gets every
@@ -31,5 +33,6 @@ export function registerMeasurementBookRoutes(
   registerMeasurementBookMergeRoutes(app, auth, database);
   registerMeasurementBookSourceRoutes(app, auth, database);
   registerMeasurementBookFinalizeRoutes(app, auth, database);
+  registerMeasurementBookCloseRoute(app, auth, database);
   registerMeasurementBookRenderRoutes(app, auth, database, storage, gotenbergUrl);
 }
