@@ -14,11 +14,15 @@ import { runMigrations } from './migration-runner.js';
  *
  * The matrix below is the CANONICAL final state, mirroring migrations
  * all migrations after all revokes. Adding a table? Update the matrix AND the
- * tenancy suite's table lists.
+ * tenancy suite's table lists — the catalog-driven drift test in
+ * `test/bootstrap.integration.test.ts` (audit finding 10) fails the build
+ * if a table exists in the database and not here.
  */
 
-/** table → privileges the application role holds. */
-const TABLE_PRIVILEGES: Record<string, string> = {
+/** table → privileges the application role holds. Exported so the
+ * catalog-driven drift test (audit finding 10) can diff it against
+ * `information_schema` rather than against a second hand-kept list. */
+export const TABLE_PRIVILEGES: Record<string, string> = {
   // Business tables that must never lose rows keep no DELETE (0003).
   organisations: 'SELECT, INSERT, UPDATE',
   works: 'SELECT, INSERT, UPDATE',
