@@ -942,3 +942,506 @@ describe('upload malware scanning (Milestone 4)', () => {
     expect(clean.statusCode, clean.body).toBe(201);
   });
 });
+
+/** Seeds a reviewable LOA whose STORED extraction payload carries exactly
+ * this letter number — the field the review screen's collision warning is
+ * built from. Seeded rather than uploaded because the synthetic
+ * single-line PDFs these tests build carry no clause the parser can read
+ * a letter number out of, and the behaviour under test is the server's
+ * matching, not the parser's extraction. */
+async function seedDocumentWithLetterNumber(
+  filename: string,
+  letterNumber: string,
+): Promise<string> {
+  const documentId = randomUUID();
+  const payload = {
+    sourceText: `letter ${letterNumber}`,
+    rawSourceText: `letter ${letterNumber}`,
+    review: {
+      header: {
+        letterNumber: { value: letterNumber, raw: letterNumber, needsReview: false },
+      },
+      items: [],
+    },
+  };
+  await admin`
+    insert into loa_documents (
+      id, organisation_id, object_key, original_filename, sha256, media_type,
+      size_bytes, extraction_status, extraction_payload, uploaded_by_user_id
+    )
+    values (
+      ${documentId}, ${organisationId},
+      ${`${organisationId}/loa/${documentId}.pdf`}, ${filename},
+      ${createHash('sha256').update(documentId).digest('hex')}, 'application/pdf',
+      512, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+    )
+  `;
+  return documentId;
+}
+
+describe('duplicate LOA uploads', () => {
+  const duplicatePdf = () => buildTestPdf(`duplicate letter ${runId}`);
+  let firstUploadId: string;
+
+  it('refuses a byte-identical re-upload, naming the document already held', async () => {
+    const first = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=duplicate-original.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: duplicatePdf(),
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    firstUploadId = first.json<{ id: string }>().id;
+
+    const again = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=duplicate-again.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: duplicatePdf(),
+    });
+    expect(again.statusCode, again.body).toBe(409);
+    const error = again.json<{
+      code: string;
+      message: string;
+      details: {
+        existingRecordId: string;
+        originalFilename: string;
+        extractionStatus: string;
+        confirmedWorkId: string | null;
+      };
+    }>();
+    expect(error.code).toBe('LOA_DOCUMENT_DUPLICATE');
+    // The refusal names the file, not merely the fact of a collision.
+    expect(error.message).toContain('duplicate-original.pdf');
+    expect(error.message).toContain('has not been confirmed into a Work');
+    expect(error.details).toMatchObject({
+      existingRecordId: firstUploadId,
+      originalFilename: 'duplicate-original.pdf',
+      extractionStatus: 'review',
+      confirmedWorkId: null,
+    });
+
+    // Nothing of the refused upload survives.
+    const [count] = await admin<{ count: string }[]>`
+      select count(*)::text as count from loa_documents
+      where organisation_id = ${organisationId}
+        and original_filename = 'duplicate-again.pdf'
+    `;
+    expect(count?.count).toBe('0');
+  });
+
+  it('accepts the very same file again once the earlier upload is discarded', async () => {
+    const discarded = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${firstUploadId}/discard`,
+      organisationId,
+      payload: { reason: 'wrong letter attached to the intake' },
+    });
+    expect(discarded.statusCode, discarded.body).toBe(200);
+
+    const again = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=duplicate-replacement.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: duplicatePdf(),
+    });
+    expect(again.statusCode, again.body).toBe(201);
+    expect(again.json<{ id: string }>().id).not.toBe(firstUploadId);
+  });
+
+  it('warns about an earlier document carrying the same letter number instead of refusing it', async () => {
+    const letterNumber = `LN-WARN-${runId}`;
+    const earlier = await seedDocumentWithLetterNumber(
+      'earlier-intake.pdf',
+      letterNumber,
+    );
+    const revised = await seedDocumentWithLetterNumber(
+      'revised-intake.pdf',
+      letterNumber,
+    );
+
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/loa-documents/${revised}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const matches = detail.json<{
+      letterNumberMatches: {
+        kind: string;
+        id: string;
+        label: string;
+        letterNumber: string;
+      }[];
+    }>().letterNumberMatches;
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({
+      kind: 'document',
+      id: earlier,
+      label: 'earlier-intake.pdf',
+      letterNumber,
+    });
+
+    // The warning is symmetric and never names the document itself.
+    const own = await authed(owner, {
+      method: 'GET',
+      url: `/api/loa-documents/${earlier}`,
+      organisationId,
+    });
+    expect(
+      own
+        .json<{ letterNumberMatches: { id: string }[] }>()
+        .letterNumberMatches.map((match) => match.id),
+    ).toEqual([revised]);
+  });
+
+  it('names the Work when the earlier intake became one', async () => {
+    const [work] = await admin<{ letter_number: string; work_code: string }[]>`
+      select letter_number, work_code from works
+      where organisation_id = ${organisationId}
+      order by created_at
+      limit 1
+    `;
+    if (!work) throw new Error('no confirmed Work to match against');
+    const documentId = await seedDocumentWithLetterNumber(
+      'same-number-as-a-work.pdf',
+      work.letter_number,
+    );
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/loa-documents/${documentId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    expect(
+      detail.json<{
+        letterNumberMatches: { kind: string; label: string }[];
+      }>().letterNumberMatches,
+    ).toContainEqual(expect.objectContaining({ kind: 'work', label: work.work_code }));
+  });
+
+  it('does not warn about a discarded earlier intake', async () => {
+    const letterNumber = `LN-GONE-${runId}`;
+    const earlier = await seedDocumentWithLetterNumber('withdrawn.pdf', letterNumber);
+    const later = await seedDocumentWithLetterNumber('kept.pdf', letterNumber);
+    const discard = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${earlier}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(discard.statusCode, discard.body).toBe(200);
+
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/loa-documents/${later}`,
+      organisationId,
+    });
+    expect(
+      detail.json<{ letterNumberMatches: unknown[] }>().letterNumberMatches,
+    ).toEqual([]);
+  });
+});
+
+describe('discarding an unconfirmed LOA intake package', () => {
+  /** An LOA whose stored identity a supporting tender document can match
+   * against, mirroring the contract-source suite's own fixture. */
+  async function seedMatchableParent(): Promise<string> {
+    const id = randomUUID();
+    const payload = {
+      sourceText: 'synthetic parent identity',
+      review: {
+        header: {
+          tenderNumber: { value: 'NCR-SNT-2026-0042' },
+          workDescription: {
+            value:
+              'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+          },
+        },
+      },
+    };
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, extraction_status, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
+        'discardable-parent-loa.pdf',
+        ${createHash('sha256').update(id).digest('hex')},
+        'application/pdf', 1, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+      )
+    `;
+    return id;
+  }
+
+  function matchingSpecPdf(): Buffer {
+    return buildMultilineTestPdf([
+      'Tender No.: NCR-SNT-2026-0042',
+      'Name of Work: Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+      'Payment terms Supply and Installation category:',
+      '60% on supply, 25% on successful installation, 10% on issue of PAC and 5% on final acceptance.',
+      'Warranty period: 36 months for Item ITM-001 from commissioning.',
+    ]);
+  }
+
+  async function seedSupportingDocument(parentId: string): Promise<string> {
+    const id = randomUUID();
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256, media_type,
+        size_bytes, extraction_status, extraction_payload, uploaded_by_user_id,
+        document_kind, parent_loa_document_id, match_status, identity_match
+      )
+      values (
+        ${id}, ${organisationId}, ${`${organisationId}/contractsource/${id}.pdf`},
+        'tender-spec.pdf', ${createHash('sha256').update(id).digest('hex')},
+        'application/pdf', 256, 'review',
+        ${jsonb(admin, { sourceText: 'spec', review: {} })}, ${ownerUserId},
+        'tender_specification', ${parentId}, 'matched',
+        ${jsonb(admin, { matched: true })}
+      )
+    `;
+    return id;
+  }
+
+  it('discards the letter with its supporting documents, hides it, and audits both', async () => {
+    const documentId = await seedDocumentWithLetterNumber(
+      'to-discard.pdf',
+      `LN-DISCARD-${runId}`,
+    );
+    const supportingId = await seedSupportingDocument(documentId);
+
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: { reason: 'uploaded the wrong scan' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json<{
+      document: { id: string; extractionStatus: string };
+      discardedSupportingDocumentIds: string[];
+    }>();
+    expect(body.document).toMatchObject({
+      id: documentId,
+      extractionStatus: 'discarded',
+    });
+    expect(body.discardedSupportingDocumentIds).toEqual([supportingId]);
+
+    // Gone from the working list...
+    const list = await authed(owner, {
+      method: 'GET',
+      url: '/api/loa-documents',
+      organisationId,
+    });
+    expect(
+      list.json<{ documents: { id: string }[] }>().documents.map((row) => row.id),
+    ).not.toContain(documentId);
+
+    // ...but still on record for the writers who run intake.
+    const withDiscarded = await authed(owner, {
+      method: 'GET',
+      url: '/api/loa-documents?includeDiscarded=true',
+      organisationId,
+    });
+    expect(
+      withDiscarded
+        .json<{ documents: { id: string; extractionStatus: string }[] }>()
+        .documents.filter((row) => row.id === documentId),
+    ).toEqual([expect.objectContaining({ extractionStatus: 'discarded' })]);
+
+    // The stored row keeps who withdrew it, when, and why.
+    const [stored] = await admin<
+      {
+        extraction_status: string;
+        discarded_at: Date | null;
+        discarded_by_user_id: string | null;
+        discard_reason: string | null;
+      }[]
+    >`
+      select extraction_status, discarded_at, discarded_by_user_id, discard_reason
+      from loa_documents where id = ${documentId}
+    `;
+    expect(stored?.extraction_status).toBe('discarded');
+    expect(stored?.discarded_at).not.toBeNull();
+    expect(stored?.discarded_by_user_id).toBe(ownerUserId);
+    expect(stored?.discard_reason).toBe('uploaded the wrong scan');
+
+    const events = await admin<{ action: string; entity_id: string }[]>`
+      select action, entity_id from audit_events
+      where organisation_id = ${organisationId}
+        and entity_id in (${documentId}, ${supportingId})
+        and action in ('loa.discarded', 'contract_source.discarded')
+    `;
+    expect(events).toEqual(
+      expect.arrayContaining([
+        { action: 'loa.discarded', entity_id: documentId },
+        { action: 'contract_source.discarded', entity_id: supportingId },
+      ]),
+    );
+  });
+
+  it('discards one supporting document on its own and drops its evidence from the package', async () => {
+    const parentId = await seedMatchableParent();
+    const upload = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=discardable-spec.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingSpecPdf(),
+    });
+    expect(upload.statusCode, upload.body).toBe(201);
+    const documentId = upload.json<{ document: { id: string } }>().document.id;
+    expect(
+      upload.json<{ context: ContractSourceContext }>().context.paymentMatrix.length,
+    ).toBeGreaterThan(0);
+
+    const discard = await authed(owner, {
+      method: 'POST',
+      url: `/api/contract-source-documents/${documentId}/discard`,
+      organisationId,
+      payload: { reason: 'attached the wrong tender' },
+    });
+    expect(discard.statusCode, discard.body).toBe(200);
+    // The package answers with what is left: no document, and none of the
+    // clauses that document contributed.
+    const context = discard.json<ContractSourceContext>();
+    expect(context.documents).toEqual([]);
+    expect(context.paymentMatrix).toEqual([]);
+    expect(context.periods).toEqual([]);
+
+    // And the letter can no longer take a new supporting document once it
+    // is itself discarded.
+    const discardParent = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(discardParent.statusCode, discardParent.body).toBe(200);
+    const rejected = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/contract-sources?kind=tender_specification&filename=too-late.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: matchingSpecPdf(),
+    });
+    expect(rejected.statusCode, rejected.body).toBe(409);
+    expect(rejected.json()).toMatchObject({ code: 'LOA_DOCUMENT_DISCARDED' });
+  });
+
+  it('refuses a second discard and freezes the discarded document', async () => {
+    const documentId = await seedDocumentWithLetterNumber(
+      'discard-twice.pdf',
+      `LN-TWICE-${runId}`,
+    );
+    const first = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ code: 'DOCUMENT_ALREADY_DISCARDED' });
+
+    // Terminal at the database too: not even the table-owning role revives it.
+    await expect(
+      admin`
+        update loa_documents set extraction_status = 'review',
+          discarded_at = null, discarded_by_user_id = null, discard_reason = null
+        where id = ${documentId}
+      `,
+    ).rejects.toThrow(/discarded LOA documents are immutable/);
+  });
+
+  it('refuses to confirm a discarded document', async () => {
+    const letter = loadCorpus()[0];
+    if (!letter) throw new Error('empty corpus');
+    const documentId = await seedReviewDocument(letter);
+    const discard = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(discard.statusCode, discard.body).toBe(200);
+
+    const confirm = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: {
+        ...buildConfirmRequest(letter, reviewLoaLetter(letter.text)),
+        workCode: `DISCARDED-1`,
+        letterNumber: `discarded-${runId}`,
+      },
+    });
+    expect(confirm.statusCode, confirm.body).toBe(409);
+    expect(confirm.json()).toMatchObject({ code: 'DOCUMENT_DISCARDED' });
+  });
+
+  it('refuses to discard a document already confirmed into a Work, at the route and at the database', async () => {
+    const [confirmed] = await admin<{ id: string; confirmed_work_id: string }[]>`
+      select id, confirmed_work_id from loa_documents
+      where organisation_id = ${organisationId}
+        and extraction_status = 'confirmed'
+        and confirmed_work_id is not null
+      limit 1
+    `;
+    if (!confirmed) throw new Error('no confirmed document to test against');
+
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${confirmed.id}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    const error = response.json<{ code: string; message: string }>();
+    expect(error.code).toBe('DOCUMENT_CONFIRMED');
+    expect(error.message).toContain('source of truth');
+
+    // Defence in depth: the trigger refuses the same move for every
+    // writer, including the table-owning role the API never runs as.
+    await expect(
+      admin`
+        update loa_documents
+        set extraction_status = 'discarded', discarded_at = now(),
+            discarded_by_user_id = ${ownerUserId}
+        where id = ${confirmed.id}
+      `,
+    ).rejects.toThrow(/confirmed into a Work/);
+
+    const [unchanged] = await admin<{ extraction_status: string }[]>`
+      select extraction_status from loa_documents where id = ${confirmed.id}
+    `;
+    expect(unchanged?.extraction_status).toBe('confirmed');
+  });
+
+  it('refuses a discard from viewers', async () => {
+    const documentId = await seedDocumentWithLetterNumber(
+      'viewer-cannot-discard.pdf',
+      `LN-VIEWER-${runId}`,
+    );
+    const response = await authed(viewer, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: {},
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
+  });
+});

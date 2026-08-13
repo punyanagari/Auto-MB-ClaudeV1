@@ -35,8 +35,21 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
 5. A human reviews and corrects the proposal.
 6. Confirmation atomically creates the Work, schedules, and items.
 7. Empty numeric and category fields are stored as null, never as zero or empty strings.
+8. A byte-identical re-upload within the organisation is refused, naming the
+   document already held — its filename, upload date, status, and whether it
+   became a Work.
+9. A letter number matching an earlier document or Work is **not** refused;
+   revised and re-issued letters legitimately repeat one. The review screen
+   names the earlier intake so the reviewer decides.
+10. An intake package that has not become a Work can be **discarded**: it leaves
+    the working list with its supporting contract documents, keeps its stored
+    object for the retention path, and records who discarded it, when, and why.
+    A single supporting document can be discarded on its own. Discard is
+    terminal — the repair is to upload the file again.
 
 **No extraction output may directly create authoritative contract records without explicit confirmation.**
+
+**A letter that has become a Work is that Work's source of truth and can never be discarded.**
 
 ### Delivery Challan
 
@@ -97,7 +110,7 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 6. **Positive quantities:** quantities are strictly positive; authoritative rates are non-negative decimal values.
 7. **No duplicate item line:** one Work item appears at most once in a DC.
 8. **Date rules:** document dates are not in the future and not before the LOA date.
-9. **Lifecycle:** drafts may be deleted; issued records cancel and remain immutable.
+9. **Lifecycle:** drafts may be deleted; issued records cancel and remain immutable. Where a table is denied DELETE for retention, its pre-issue exit is a terminal soft state instead — an LOA intake package discards while it is still nobody's Work, and never afterwards.
 10. **Snapshot integrity:** issued PDF content is generated from the stored issued snapshot, not current master data.
 11. **Rounding:** round each line to two decimals, then sum lines.
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.

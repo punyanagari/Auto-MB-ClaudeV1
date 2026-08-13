@@ -695,9 +695,9 @@ export function ReviewLoa({
             ))}
           </ul>
           <p className="mt-2 text-sm text-muted-foreground">
-            The file you uploaded is not byte-identical to it, so this may be a revised
-            or re-issued letter. Confirming it creates a SECOND Work — check that this
-            is what the letter says before you do.
+            {document.letterNumberMatches.some((match) => match.kind === 'work')
+              ? 'This file is not byte-identical to the earlier intake, so it may be a revised or re-issued letter — but a letter number belongs to one Work forever, so confirming under this number will be refused. Record the revision under the number the revised letter actually prints, or amend the existing Work instead.'
+              : 'This file is not byte-identical to the earlier upload, so it may be a revised or re-issued letter. Only one of them can become a Work: confirm the one that governs, and discard the other.'}
           </p>
         </div>
       )}
