@@ -69,7 +69,9 @@ export function OrgPicker({ organisations, memberships, onSelect }: OrgPickerPro
                     <BriefcaseBusiness className="size-3.5" aria-hidden="true" />
                     {membership.workScope === 'all' ? 'All Works' : 'Assigned Works'}
                   </span>
-                  {(membership.canIssueDocuments || membership.canCancelDocuments) && (
+                  {(membership.canIssueDocuments ||
+                    membership.canCancelDocuments ||
+                    membership.canManageStatutoryReporting) && (
                     <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
                       <ShieldCheck className="size-3.5" aria-hidden="true" />
                       Sensitive authority

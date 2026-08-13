@@ -47,6 +47,9 @@ interface WorkDetailProps {
   readonly canCancel: boolean;
   /** Holds can_approve_amendments — gates manual back-fill deletion. */
   readonly canApprove: boolean;
+  /** Holds can_manage_statutory_reporting — gates the IRP/NIC portal
+   * surfaces inside the tax-invoice tab (migration 0061). */
+  readonly canManageStatutory: boolean;
   readonly isOwner: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
@@ -292,6 +295,7 @@ export function WorkDetail({
   canIssue,
   canCancel,
   canApprove,
+  canManageStatutory,
   isOwner,
   onNewChallan,
   onOpenChallan,
@@ -1214,6 +1218,7 @@ export function WorkDetail({
             canCreateDocuments={canCreateDocuments}
             canIssue={canIssueDocuments}
             canCancel={canCancel}
+            canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
           />

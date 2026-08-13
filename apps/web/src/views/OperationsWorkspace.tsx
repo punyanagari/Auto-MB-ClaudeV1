@@ -293,6 +293,11 @@ export function OperationsWorkspace({
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
   const canApprove = membership?.canApproveAmendments ?? false;
+  // The compliance authority (migration 0061). It gates the IRP and NIC
+  // portal surfaces ON TOP of issue/cancel — a member who may issue an
+  // invoice does not thereby register it at the IRP. The server refuses
+  // either way; hiding the controls only spares the useless attempt.
+  const canManageStatutory = membership?.canManageStatutoryReporting ?? false;
   const isOwner = membership?.role === 'owner';
   const canSwitchOrganisation = organisations.length > 1;
   const activeModule = activeModuleOf(view);
@@ -1171,6 +1176,7 @@ export function OperationsWorkspace({
               canIssue={canIssue}
               canCancel={canCancel}
               canApprove={canApprove}
+              canManageStatutory={canManageStatutory}
               isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });

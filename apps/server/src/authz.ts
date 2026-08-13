@@ -6,6 +6,7 @@ export interface MembershipRow {
   work_scope: string;
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
+  can_manage_statutory_reporting: boolean;
 }
 
 export async function membershipOf(
@@ -13,7 +14,8 @@ export async function membershipOf(
   userId: string,
 ): Promise<MembershipRow | undefined> {
   const [membership] = await tx<MembershipRow[]>`
-    select role, work_scope, can_issue_documents, can_cancel_documents
+    select role, work_scope, can_issue_documents, can_cancel_documents,
+           can_manage_statutory_reporting
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -74,25 +76,60 @@ export async function requireEvidenceRole(
   }
 }
 
-/** Issue and cancel are explicit per-member authorities, separate from
- * role (docs/SECURITY.md: "sensitive issue/cancel actions require
- * explicit authority"). */
+/** The explicit per-member authorities, separate from role
+ * (docs/SECURITY.md: "sensitive issue/cancel actions require explicit
+ * authority"). `statutory` (migration 0061) is the compliance authority:
+ * talking to the IRP or the NIC E-way Bill portal in the organisation's
+ * name — and recording what those portals are said to have answered — is
+ * a different act from issuing a document of our own, so it carries its
+ * own grant on top of issue/cancel rather than replacing them. */
+export type DocumentAuthority = 'issue' | 'cancel' | 'statutory';
+
+/** Named refusals, so a denial says which authority is missing rather
+ * than interpolating an internal token into prose. */
+const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
+  issue: 'Your membership does not carry the issue authority for documents.',
+  cancel: 'Your membership does not carry the cancel authority for documents.',
+  statutory:
+    'Your membership does not carry the statutory reporting authority, which is required to register, reconcile, cancel, or record government e-invoice and E-way Bill evidence.',
+};
+
+function authorityGranted(
+  membership: MembershipRow | undefined,
+  authority: DocumentAuthority,
+): boolean {
+  if (authority === 'issue') return membership?.can_issue_documents ?? false;
+  if (authority === 'cancel') return membership?.can_cancel_documents ?? false;
+  return membership?.can_manage_statutory_reporting ?? false;
+}
+
 export async function requireAuthority(
   tx: TransactionSql,
   userId: string,
-  authority: 'issue' | 'cancel',
+  authority: DocumentAuthority,
 ): Promise<void> {
   const membership = await membershipOf(tx, userId);
-  const granted =
-    authority === 'issue'
-      ? (membership?.can_issue_documents ?? false)
-      : (membership?.can_cancel_documents ?? false);
-  if (!granted) {
-    throw httpError(
-      403,
-      'AUTHORITY_REQUIRED',
-      `Your membership does not carry the ${authority} authority for documents.`,
-    );
+  if (!authorityGranted(membership, authority)) {
+    throw httpError(403, 'AUTHORITY_REQUIRED', AUTHORITY_REFUSALS[authority]);
+  }
+}
+
+/** The declarative form: every listed authority must be held, checked in
+ * the order given so the refusal a caller sees is stable. One membership
+ * read serves them all, and it stays pinned to the bound organisation
+ * exactly as `membershipOf` pins it (docs/SECURITY.md's explicit-scoping
+ * rule). */
+export async function requireAuthorities(
+  tx: TransactionSql,
+  userId: string,
+  authorities: readonly DocumentAuthority[],
+): Promise<void> {
+  if (authorities.length === 0) return;
+  const membership = await membershipOf(tx, userId);
+  for (const authority of authorities) {
+    if (!authorityGranted(membership, authority)) {
+      throw httpError(403, 'AUTHORITY_REQUIRED', AUTHORITY_REFUSALS[authority]);
+    }
   }
 }
 

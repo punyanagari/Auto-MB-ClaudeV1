@@ -33,6 +33,9 @@ interface WorkTaxInvoicesProps {
   readonly canCreateDocuments: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** The compliance authority (migration 0061). Every IRP/NIC portal
+   * control needs it IN ADDITION to canIssue/canCancel. */
+  readonly canManageStatutory: boolean;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
@@ -69,6 +72,7 @@ export function WorkTaxInvoices({
   canCreateDocuments,
   canIssue,
   canCancel,
+  canManageStatutory,
   pending,
   act,
 }: WorkTaxInvoicesProps) {
@@ -352,6 +356,7 @@ export function WorkTaxInvoices({
             invoice={invoice}
             canIssue={canIssue}
             canCancel={canCancel}
+            canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
             refresh={refreshOpenInvoice}
@@ -366,6 +371,7 @@ export function WorkTaxInvoices({
             canModify={canModify}
             canIssue={canIssue}
             canCancel={canCancel}
+            canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
             refresh={refreshOpenInvoice}
@@ -378,6 +384,7 @@ export function WorkTaxInvoices({
             ewayBills={ewayBills}
             canIssue={canIssue}
             canCancel={canCancel}
+            canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
             onEwayBillsChanged={setEwayBills}

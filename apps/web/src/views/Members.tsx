@@ -214,7 +214,8 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       ) : (
         <DataTable>
           <caption className="sr-only">
-            Organisation members with role, work scope, and document authority
+            Organisation members with role, work scope, and document and statutory
+            authority
           </caption>
           <thead>
             <tr>
@@ -224,6 +225,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
               <th scope="col">Can issue</th>
               <th scope="col">Can cancel</th>
               <th scope="col">Can approve</th>
+              <th scope="col">Can report statutory</th>
               <th scope="col">Two-factor</th>
               <th scope="col">Status</th>
             </tr>
@@ -240,6 +242,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                     <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
                     <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
                     <td>{member.canApproveAmendments ? 'Yes' : 'No'}</td>
+                    <td>{member.canManageStatutoryReporting ? 'Yes' : 'No'}</td>
                     <td>
                       <StatusChip
                         status={member.twoFactorEnabled ? 'active' : 'review'}
@@ -345,6 +348,28 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                           member.userId,
                           { canApproveAmendments: event.currentTarget.checked },
                           `Amendment approval authority updated for ${label}.`,
+                        );
+                      }}
+                    />
+                  </td>
+                  <td>
+                    {/* The compliance authority (migration 0061): who may
+                        register, reconcile or cancel documents at the IRP
+                        and the NIC E-way Bill portal, and who may record
+                        what those portals answered. It is granted on top
+                        of issue/cancel, never inherited from them. */}
+                    <input
+                      type="checkbox"
+                      aria-label={`Statutory reporting authority of ${label}`}
+                      checked={member.canManageStatutoryReporting}
+                      disabled={pending}
+                      onChange={(event) => {
+                        void change(
+                          member.userId,
+                          {
+                            canManageStatutoryReporting: event.currentTarget.checked,
+                          },
+                          `Statutory reporting authority updated for ${label}.`,
                         );
                       }}
                     />

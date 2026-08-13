@@ -29,6 +29,7 @@ interface MembershipRow {
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
   can_approve_amendments: boolean;
+  can_manage_statutory_reporting: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
    * granting to an unenrolled account walls them off on their next
@@ -46,6 +47,7 @@ function toMembership(row: MembershipRow): Membership {
     canIssueDocuments: row.can_issue_documents,
     canCancelDocuments: row.can_cancel_documents,
     canApproveAmendments: row.can_approve_amendments,
+    canManageStatutoryReporting: row.can_manage_statutory_reporting,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
@@ -71,7 +73,7 @@ export function registerIdentityRoutes(
           memberships: await tx<MembershipRow[]>`
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
-                   m.can_approve_amendments,
+                   m.can_approve_amendments, m.can_manage_statutory_reporting,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -179,7 +181,7 @@ export function registerIdentityRoutes(
           tx<MembershipRow[]>`
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
-                   m.can_approve_amendments,
+                   m.can_approve_amendments, m.can_manage_statutory_reporting,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -233,7 +235,7 @@ export function registerIdentityRoutes(
             insert into organisation_memberships (
               organisation_id, user_id, role, work_scope,
               can_issue_documents, can_cancel_documents,
-              can_approve_amendments, status
+              can_approve_amendments, can_manage_statutory_reporting, status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -241,6 +243,7 @@ export function registerIdentityRoutes(
               ${body.canIssueDocuments ?? false},
               ${body.canCancelDocuments ?? false},
               ${body.canApproveAmendments ?? false},
+              ${body.canManageStatutoryReporting ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -268,7 +271,7 @@ export function registerIdentityRoutes(
         return tx<MembershipRow[]>`
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
-                   m.can_approve_amendments,
+                   m.can_approve_amendments, m.can_manage_statutory_reporting,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -325,10 +328,13 @@ export function registerIdentityRoutes(
             work_scope: string;
             can_issue_documents: boolean;
             can_cancel_documents: boolean;
+            can_approve_amendments: boolean;
+            can_manage_statutory_reporting: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
-                   can_cancel_documents
+                   can_cancel_documents, can_approve_amendments,
+                   can_manage_statutory_reporting
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -369,18 +375,30 @@ export function registerIdentityRoutes(
                 coalesce(${body.canCancelDocuments ?? null}, can_cancel_documents),
               can_approve_amendments =
                 coalesce(${body.canApproveAmendments ?? null}, can_approve_amendments),
+              can_manage_statutory_reporting =
+                coalesce(
+                  ${body.canManageStatutoryReporting ?? null},
+                  can_manage_statutory_reporting
+                ),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
           `;
         // Milestone 6: the trail records what each changed field was
-        // and became, not just which keys were touched.
+        // and became, not just which keys were touched. Every authority
+        // the coalesce above can move is compared here — the amendment
+        // approval authority was updatable but silently absent from the
+        // trail, and the statutory reporting authority (migration 0061)
+        // is the last one a compliance reviewer must be able to see
+        // change hands.
         const changes = auditDiff(
           {
             role: current.role,
             workScope: current.work_scope,
             canIssueDocuments: current.can_issue_documents,
             canCancelDocuments: current.can_cancel_documents,
+            canApproveAmendments: current.can_approve_amendments,
+            canManageStatutoryReporting: current.can_manage_statutory_reporting,
             status: current.status,
           },
           {
@@ -388,6 +406,11 @@ export function registerIdentityRoutes(
             workScope: body.workScope ?? current.work_scope,
             canIssueDocuments: body.canIssueDocuments ?? current.can_issue_documents,
             canCancelDocuments: body.canCancelDocuments ?? current.can_cancel_documents,
+            canApproveAmendments:
+              body.canApproveAmendments ?? current.can_approve_amendments,
+            canManageStatutoryReporting:
+              body.canManageStatutoryReporting ??
+              current.can_manage_statutory_reporting,
             status: body.status ?? current.status,
           },
         );
@@ -404,7 +427,7 @@ export function registerIdentityRoutes(
         return tx<MembershipRow[]>`
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
-                   m.can_approve_amendments,
+                   m.can_approve_amendments, m.can_manage_statutory_reporting,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m

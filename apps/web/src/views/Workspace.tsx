@@ -274,6 +274,9 @@ export function Workspace({
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
   const canApprove = membership?.canApproveAmendments ?? false;
+  // The compliance authority (migration 0061): IRP and NIC portal
+  // actions, on top of issue/cancel rather than implied by them.
+  const canManageStatutory = membership?.canManageStatutoryReporting ?? false;
   const isOwner = membership?.role === 'owner';
 
   // The nav badge: how many amendment requests await a decision. Refreshed
@@ -572,6 +575,7 @@ export function Workspace({
               canIssue={canIssue}
               canCancel={canCancel}
               canApprove={canApprove}
+              canManageStatutory={canManageStatutory}
               isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
                 setView({ name: 'challan-new', workId, workCode });

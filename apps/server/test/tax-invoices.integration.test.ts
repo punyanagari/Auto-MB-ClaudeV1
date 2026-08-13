@@ -464,7 +464,12 @@ beforeAll(async () => {
   ownerUserId = ownerUser.id;
   await admin`
     update organisation_memberships
-    set can_issue_documents = true, can_cancel_documents = true
+    set can_issue_documents = true, can_cancel_documents = true,
+        -- Migration 0061: the statutory provider routes now demand the
+        -- dedicated compliance authority ON TOP of issue/cancel. Without
+        -- this grant every IRP/NIC case in this file 403s, which is
+        -- exactly the proof that the new gate binds.
+        can_manage_statutory_reporting = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 
@@ -2549,7 +2554,10 @@ describe('Whitebooks IRP provider routes', () => {
     if (!clerkUser) throw new Error('clerk user missing');
     await admin`
       update organisation_memberships
-      set work_scope = 'assigned', can_issue_documents = true
+      -- Both authorities the route now demands, so the ONLY thing that
+      -- can turn this clerk away is the work-scope gate under test.
+      set work_scope = 'assigned', can_issue_documents = true,
+          can_manage_statutory_reporting = true
       where organisation_id = ${organisationId} and user_id = ${clerkUser.id}
     `;
     await admin`
@@ -2612,7 +2620,8 @@ describe('Whitebooks IRP provider routes', () => {
     `;
     await admin`
       update organisation_memberships
-      set work_scope = 'all', can_issue_documents = false
+      set work_scope = 'all', can_issue_documents = false,
+          can_manage_statutory_reporting = false
       where organisation_id = ${organisationId} and user_id = ${clerkUser.id}
     `;
   });
@@ -3109,7 +3118,12 @@ describe('e-invoice applicability and the IRP reporting window (finding 20)', ()
     applicabilityOrganisationId = orgId;
     await admin`
       update organisation_memberships
-      set can_issue_documents = true, can_cancel_documents = true
+      set can_issue_documents = true, can_cancel_documents = true,
+        -- Migration 0061: the statutory provider routes now demand the
+        -- dedicated compliance authority ON TOP of issue/cancel. Without
+        -- this grant every IRP/NIC case in this file 403s, which is
+        -- exactly the proof that the new gate binds.
+        can_manage_statutory_reporting = true
       where organisation_id = ${orgId} and user_id = ${ownerUserId}
     `;
     // Tax facts only — deliberately NO e-invoicing declaration yet.
@@ -3728,5 +3742,176 @@ describe('finding 2: IRP evidence is verified locally, and the portal is recorde
     expect(guarded?.message).toContain(
       'completed statutory provider operations are immutable',
     );
+  });
+});
+
+/**
+ * Audit finding 2 residue: the dedicated compliance authority
+ * (`can_manage_statutory_reporting`, migration 0061). The audit named its
+ * absence directly — "no dedicated compliance authority" — and the owner
+ * ruled on 13 August 2026 that the column defaults false and is granted
+ * explicitly rather than backfilled from `can_issue_documents`.
+ *
+ * The subject is the clerk: an office member holding
+ * `can_issue_documents`, which was the ONLY authority these routes
+ * checked before this migration. Every case sets the clerk's authorities
+ * itself and clears them afterwards, so no case inherits another's grant.
+ */
+describe('finding 2: the statutory reporting authority is separate from issue', () => {
+  let clerkUserId: string;
+
+  async function setClerkAuthorities(authorities: {
+    issue?: boolean;
+    cancel?: boolean;
+    statutory?: boolean;
+  }): Promise<void> {
+    await admin`
+      update organisation_memberships
+      set can_issue_documents = ${authorities.issue ?? false},
+          can_cancel_documents = ${authorities.cancel ?? false},
+          can_manage_statutory_reporting = ${authorities.statutory ?? false}
+      where organisation_id = ${organisationId} and user_id = ${clerkUserId}
+    `;
+  }
+
+  beforeAll(async () => {
+    const [clerkUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${clerkEmail}
+    `;
+    if (!clerkUser) throw new Error('clerk user missing');
+    clerkUserId = clerkUser.id;
+  });
+
+  afterAll(async () => {
+    await setClerkAuthorities({});
+  });
+
+  it('refuses IRP registration to a member who may issue but not report', async () => {
+    resetProviderMocks();
+    const detail = await submittedDirectInvoice('authority separation');
+    await setClerkAuthorities({ issue: true });
+
+    const refused = await authedOn(providerApp, clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('AUTHORITY_REQUIRED');
+    // Named, not generic: the refusal says WHICH authority is missing, so
+    // an owner reading a support ticket knows what to grant.
+    expect(body.message).toContain('statutory reporting authority');
+    // The provider was never reached and nothing was written: no ledger
+    // operation was opened, and the invoice never left `not_requested`.
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
+    const operations = await admin<{ id: string }[]>`
+      select id from statutory_provider_operations
+      where tax_invoice_id = ${detail.invoice.id}
+    `;
+    expect(operations).toHaveLength(0);
+    const [before] = await admin<{ irp_provider_state: string; irn: string | null }[]>`
+      select irp_provider_state, irn from tax_invoices
+      where id = ${detail.invoice.id}
+    `;
+    expect(before).toEqual({ irp_provider_state: 'not_requested', irn: null });
+
+    // Granting the compliance authority — and changing nothing else —
+    // admits the same member on the same invoice.
+    await setClerkAuthorities({ issue: true, statutory: true });
+    registerInvoiceProvider.mockResolvedValueOnce(irpEvidence('c'));
+    const admitted = await authedOn(providerApp, clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(admitted.statusCode, admitted.body).toBe(200);
+    expect(admitted.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
+      'registered',
+    );
+  });
+
+  it('refuses the manual IRP evidence door on the same authority', async () => {
+    resetProviderMocks();
+    const detail = await submittedDirectInvoice('manual door authority');
+    await setClerkAuthorities({ issue: true });
+
+    const payload = {
+      irn: derivedIrnFor(detail),
+      ackNumber: '112010099004',
+      ackDate: '2026-08-01T10:30:00.000Z',
+      ackDateText: '01/08/2026 16:00:00',
+      signedQr: 'manual-signed-qr-authority',
+    };
+    // The manual door is the compatibility path for a deployment with no
+    // configured transport, so it is the one an ordinary writer could
+    // most plausibly reach. It answers to the same authority.
+    const refused = await authed(clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-response`,
+      organisationId,
+      payload,
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
+
+    await setClerkAuthorities({ issue: true, statutory: true });
+    const accepted = await authed(clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/irp-response`,
+      organisationId,
+      payload,
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect(accepted.json<TaxInvoiceDetailResponse>().invoice.irpProviderState).toBe(
+      'registered_unverified',
+    );
+  });
+
+  it('refuses IRN cancellation to a member who may cancel but not report', async () => {
+    resetProviderMocks();
+    const detail = await submittedDirectInvoice('cancel authority separation');
+    registerInvoiceProvider.mockResolvedValueOnce(irpEvidence('d'));
+    const registered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(registered.statusCode, registered.body).toBe(200);
+
+    await setClerkAuthorities({ cancel: true });
+    const refused = await authedOn(providerApp, clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/cancel-irp`,
+      organisationId,
+      payload: { reasonCode: '2', remark: 'authority separation probe' },
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
+    expect(cancelInvoiceProvider).not.toHaveBeenCalled();
+    const [row] = await admin<{ irp_provider_state: string }[]>`
+      select irp_provider_state from tax_invoices where id = ${detail.invoice.id}
+    `;
+    expect(row?.irp_provider_state).toBe('registered');
+  });
+
+  it('the reporting authority alone does not admit a member who cannot issue', async () => {
+    resetProviderMocks();
+    const detail = await submittedDirectInvoice('statutory without issue');
+    // Defence in depth cuts both ways: the compliance authority is added
+    // ON TOP of the document authority, not substituted for it, so
+    // holding only the new column still cannot register. The refusal
+    // names the issue authority, because that is the one checked first.
+    await setClerkAuthorities({ statutory: true });
+    const refused = await authedOn(providerApp, clerk, {
+      method: 'POST',
+      url: `/api/tax-invoices/${detail.invoice.id}/register-irp`,
+      organisationId,
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('AUTHORITY_REQUIRED');
+    expect(body.message).toContain('issue authority');
+    expect(registerInvoiceProvider).not.toHaveBeenCalled();
   });
 });

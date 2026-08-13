@@ -855,6 +855,7 @@ describe('WorkDetail Issue Challans section', () => {
         canIssue
         canCancel
         canApprove={false}
+        canManageStatutory={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

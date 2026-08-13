@@ -22,6 +22,10 @@ interface EwayBillsPanelProps {
   readonly ewayBills: readonly EwayBill[];
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** The compliance authority (migration 0061). Gates the NIC portal
+   * controls only — cancelling the LOCAL e-way-bill record is not a
+   * portal act and keeps the cancel authority alone. */
+  readonly canManageStatutory: boolean;
   readonly pending: boolean;
   readonly act: ActRunner;
   readonly onEwayBillsChanged: (bills: readonly EwayBill[]) => void;
@@ -40,11 +44,14 @@ export function EwayBillsPanel({
   ewayBills,
   canIssue,
   canCancel,
+  canManageStatutory,
   pending,
   act,
   onEwayBillsChanged,
 }: EwayBillsPanelProps) {
   if (invoice.status !== 'submitted') return null;
+  const mayReconcile = canIssue && canManageStatutory;
+  const mayCancelAtPortal = canCancel && canManageStatutory;
   const reloadEwayBills = async () => {
     onEwayBillsChanged(await api.listInvoiceEwayBills(organisationId, invoice.id));
   };
@@ -95,7 +102,7 @@ export function EwayBillsPanel({
                 </td>
                 <td>
                   {bill.status === 'draft' &&
-                  canIssue &&
+                  mayReconcile &&
                   (bill.providerState === 'generating' ||
                     bill.providerState === 'generation_unknown') ? (
                     <Button
@@ -135,7 +142,7 @@ export function EwayBillsPanel({
         </p>
       )}
 
-      {canCancel &&
+      {mayCancelAtPortal &&
         ewayBills
           .filter(
             (bill) =>
@@ -208,7 +215,7 @@ export function EwayBillsPanel({
             </Disclosure>
           ))}
 
-      {canCancel &&
+      {mayCancelAtPortal &&
         ewayBills
           .filter(
             (bill) =>

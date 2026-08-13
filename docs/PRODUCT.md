@@ -183,7 +183,16 @@ The system must prevent issue above the awarded quantity unless the Work explici
 | Site   | Assigned Works, receipts, delivery/installation evidence |
 | Viewer | Read-only                                                |
 
-Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-action flags for issue and cancel.
+Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-action flags. Four authorities exist, each granted per member by an owner and each defaulting off:
+
+| Authority                        | What it permits                                                                                                 |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `can_issue_documents`            | Issue a numbered document                                                                                       |
+| `can_cancel_documents`           | Cancel an issued document                                                                                       |
+| `can_approve_amendments`         | Decide an approval request                                                                                      |
+| `can_manage_statutory_reporting` | Register, reconcile or cancel a document at the IRP or NIC E-way Bill portal, and record manual portal evidence |
+
+The statutory authority is checked **in addition to** issue or cancel, never instead of either: issuing an invoice and reporting it to the government are separate permissions. Any of the four, or an owner role, obliges the account to enrol in two-factor authentication.
 
 ## 5. Business invariants
 

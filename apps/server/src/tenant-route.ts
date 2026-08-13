@@ -13,10 +13,11 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { AppInstance } from './app-instance.js';
 import type { Auth } from './auth.js';
 import {
-  requireAuthority,
+  requireAuthorities,
   requireEvidenceRole,
   requireOwnerRole,
   requireWriterRole,
+  type DocumentAuthority,
 } from './authz.js';
 import { requireUser, type SessionUser } from './session.js';
 import {
@@ -66,7 +67,11 @@ export interface TenantRouteOptions<Schema extends FastifySchema> {
    * case ahead of validation). */
   readonly preValidation?: preValidationHookHandler;
   readonly role?: TenantRouteRole;
-  readonly authority?: 'issue' | 'cancel';
+  /** One authority, or every authority the route needs. A statutory
+   * provider action declares `['issue', 'statutory']`: the compliance
+   * authority (migration 0061) is defence in depth ON TOP of the
+   * document authority, not a substitute for it. */
+  readonly authority?: DocumentAuthority | readonly DocumentAuthority[];
 }
 
 /** The request as the TypeBox provider types it from the route's schema. */
@@ -158,6 +163,12 @@ export function createTenantRouteRegistrar(
     handler: TenantRouteHandler<Schema>,
   ): void {
     const { method, url, schema, bodyLimit, preValidation, role, authority } = options;
+    const authorities: readonly DocumentAuthority[] =
+      authority === undefined
+        ? []
+        : typeof authority === 'string'
+          ? [authority]
+          : authority;
     routes.set(`${method} ${url}`, {
       method,
       url,
@@ -171,7 +182,7 @@ export function createTenantRouteRegistrar(
       if (role === 'writer') await requireWriterRole(tx, userId);
       else if (role === 'owner') await requireOwnerRole(tx, userId);
       else if (role === 'evidence') await requireEvidenceRole(tx, userId);
-      if (authority !== undefined) await requireAuthority(tx, userId, authority);
+      await requireAuthorities(tx, userId, authorities);
     };
 
     // Widened to the base FastifySchema for registration so the reply

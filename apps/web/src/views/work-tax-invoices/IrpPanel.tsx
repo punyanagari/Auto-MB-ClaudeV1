@@ -14,6 +14,11 @@ interface IrpPanelProps {
   readonly invoice: TaxInvoice;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** The compliance authority (migration 0061). Every control in this
+   * panel except the local payload copy talks to — or records what is
+   * claimed to have come back from — the IRP, so each needs this in
+   * addition to its document authority. */
+  readonly canManageStatutory: boolean;
   readonly pending: boolean;
   readonly act: ActRunner;
   /** Reloads the register and reopens this invoice's detail. */
@@ -33,11 +38,14 @@ export function IrpPanel({
   invoice,
   canIssue,
   canCancel,
+  canManageStatutory,
   pending,
   act,
   refresh,
 }: IrpPanelProps) {
   if (invoice.status !== 'submitted') return null;
+  const mayRegister = canIssue && canManageStatutory;
+  const mayCancel = canCancel && canManageStatutory;
   return (
     <>
       <h4>Government e-invoicing</h4>
@@ -49,7 +57,7 @@ export function IrpPanel({
             generated twice.
           </p>
           <Actions>
-            {canIssue && invoice.irpProviderState !== 'cancelling' && (
+            {mayRegister && invoice.irpProviderState !== 'cancelling' && (
               <Button
                 onClick={() => {
                   void act(async () => {
@@ -94,7 +102,7 @@ export function IrpPanel({
           <p className="text-muted-foreground">
             Provider state: <strong>{invoice.irpProviderState}</strong>
           </p>
-          {canIssue && (
+          {mayRegister && (
             <Disclosure label="Manual compatibility import (unverified)">
               <form
                 onSubmit={(event) => {
@@ -224,7 +232,7 @@ export function IrpPanel({
               invented to fill the gap.
             </FormError>
           )}
-          {canCancel &&
+          {mayCancel &&
             invoice.irpProvider === 'whitebooks' &&
             invoice.irpProviderState === 'registered' &&
             !invoice.irpCancelWindowOpen && (
@@ -237,7 +245,7 @@ export function IrpPanel({
                 invoice and releases its Measurement Book.
               </p>
             )}
-          {canCancel &&
+          {mayCancel &&
             invoice.irpProvider === 'whitebooks' &&
             ((invoice.irpProviderState === 'registered' &&
               invoice.irpCancelWindowOpen) ||
@@ -299,7 +307,7 @@ export function IrpPanel({
                 </form>
               </Disclosure>
             )}
-          {canCancel &&
+          {mayCancel &&
             ((invoice.irpProvider === 'manual' &&
               invoice.irpProviderState === 'registered_unverified') ||
               invoice.irpProviderState === 'cancellation_unknown') && (
