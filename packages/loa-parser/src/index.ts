@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 export type { FieldResult } from './field.js';
 export { found, notFound, optionalAbsent, preview } from './field.js';
 export { isPrintFurnitureLine, stripPrintFurniture } from './furniture.js';
-export { toIsoDate, parseDdMmYyyy } from './dates.js';
+export { toIsoDate, parseDdMmYyyy, isRealCalendarDate } from './dates.js';
 export { indianWordsToNumber, parseRupeesWords } from './words-to-number.js';
 export { flatten, paragraphs, hyphenJoin, nonBlankLines } from './text.js';
 export {

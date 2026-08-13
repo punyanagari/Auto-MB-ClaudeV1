@@ -210,14 +210,28 @@ describe('guard 1: no tenant policy calls a helper in bare filter position', () 
   });
 
   it('finds them on the pre-fix tree, so the census is known to bite', async () => {
-    // Derived, not counted: before 0069 EVERY policy that names a helper
-    // names it in bare position, so the bare population IS the whole
-    // helper population. Stating it that way keeps the guard honest
-    // against a census that silently narrowed — a broken matcher makes
-    // these two lists disagree — while letting a sibling pack add tenant
-    // tables without editing a literal here.
+    // Derived, not counted: before 0069 every policy that names a helper
+    // names it in bare position, so the bare population is the whole
+    // helper population MINUS the few authored in the target shape
+    // already. Stating it that way keeps the guard honest against a
+    // census that silently narrowed — a broken matcher would push
+    // policies out of `bare` and into the difference below — while
+    // letting a sibling pack add tenant tables without editing a literal.
+    //
+    // The difference is a real and expected population, not a fudge.
+    // ADR-0010 asks new policies to be written wrapped from the start, so
+    // a pack landing between the ADR and 0069 arrives already in the
+    // target shape and has nothing for 0069 to rewrite. Pack P14's
+    // received railway bill (migration 0066) is the first, and naming it
+    // is the point: if this list grows without a pack saying so, a policy
+    // has changed shape and nobody decided that.
     const bare = await bareHelperPolicies(staged.pool);
-    expect(bare).toEqual(await helperPolicies(staged.pool));
+    const named = await helperPolicies(staged.pool);
+    const alreadyWrapped = named.filter((policy) => !bare.includes(policy));
+    expect(alreadyWrapped).toEqual([
+      'received_railway_bills.received_railway_bills_tenant_policy',
+    ]);
+    expect(bare).toEqual(named.filter((policy) => !alreadyWrapped.includes(policy)));
     expect(bare.length).toBeGreaterThan(0);
     expect(bare).toContain('works.works_tenant_policy');
     expect(bare).toContain('work_items.work_items_tenant_policy');

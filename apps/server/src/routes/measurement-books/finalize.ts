@@ -394,9 +394,10 @@ export function registerMeasurementBookFinalizeRoutes(
             status: string;
             sequence_number: number | null;
             mb_number: string | null;
+            closed_at: Date | null;
           }[]
         >`
-          select id, work_id, status, sequence_number, mb_number
+          select id, work_id, status, sequence_number, mb_number, closed_at
           from measurement_books
           where id = ${id}
           for update
@@ -431,6 +432,19 @@ export function registerMeasurementBookFinalizeRoutes(
             409,
             'MB_ALREADY_CANCELLED',
             'This Measurement Book is already cancelled.',
+          );
+        }
+        // A measurement the railway has settled cannot be withdrawn: the
+        // received bill that closed it would be left describing a
+        // measurement that no longer exists. The 0066 guard refuses this
+        // too — which is exactly why the check belongs here as well,
+        // because a database refusal with no route in front of it reaches
+        // the operator as a 500 rather than as a sentence.
+        if (book.closed_at !== null) {
+          throw httpError(
+            409,
+            'MB_ALREADY_CLOSED',
+            'The railway has settled this measurement, so it can no longer be cancelled.',
           );
         }
         // The Work row lock serialises cancel against a concurrent

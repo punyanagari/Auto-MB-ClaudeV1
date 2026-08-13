@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parseMeasurementNumber } from '../src/railway-bill-parse.js';
+import { canonicalMeasurementNumber } from './helpers/measurement-number.js';
 
 /**
  * The PL-270 settlement corpus, held to its own manifest.
@@ -26,6 +28,15 @@ import { describe, expect, it } from 'vitest';
  * `pdf-signature-corpus.test.ts`, which is env-gated because it needs the
  * PDFs. The verdicts it produced are recorded in this manifest so they
  * survive without them.
+ *
+ * The measurement-number arithmetic below runs through the SHIPPED reader
+ * (`apps/server/src/railway-bill-parse.ts`) rather than through a local copy of the
+ * rule. It used to hold a private regex, which meant this file could stay
+ * green while the product's own understanding of a measurement number
+ * drifted away from it — the 2026-08-13 review's note that this corpus
+ * test imported zero production code. Reading the bills themselves is
+ * `apps/server/test/railway-bill-parse.test.ts`; what stays here is the manifest's own
+ * internal consistency.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -65,11 +76,19 @@ const manifest = JSON.parse(
 
 const byId = new Map(manifest.documents.map((d) => [d.id, d]));
 
-/** '.../OAM/L2/03' and '.../OAM/FL2/03' both yield 3. */
+/** '.../OAM/L2/03' and '.../OAM/FL2/03' both yield 3, through the reader
+ * the product actually uses. */
 function measurementSequence(measurementNumber: string): number {
-  const match = /\/OAM\/F?L\d+\/(\d+)$/.exec(measurementNumber);
-  expect(match, `unparseable measurement number: ${measurementNumber}`).not.toBeNull();
-  return Number(match?.[1]);
+  const parts = parseMeasurementNumber(measurementNumber);
+  expect(parts, `unparseable measurement number: ${measurementNumber}`).not.toBeNull();
+  return parts?.sequence ?? 0;
+}
+
+/** The canonical form the MB-to-bill link is made on. */
+function canonical(measurementNumber: string): string {
+  const parts = parseMeasurementNumber(measurementNumber);
+  expect(parts, `unparseable measurement number: ${measurementNumber}`).not.toBeNull();
+  return parts === null ? '' : canonicalMeasurementNumber(parts);
 }
 
 describe('PL-270 settlement corpus', () => {
@@ -103,6 +122,11 @@ describe('PL-270 settlement corpus', () => {
       expect(bill.measurement_number).not.toBe(book?.measurement_number);
       expect(measurementSequence(bill.measurement_number ?? '')).toBe(
         measurementSequence(book?.measurement_number ?? ''),
+      );
+      // ...and the normalisation the product applies makes them one
+      // string, which is what the link is actually made on.
+      expect(canonical(bill.measurement_number ?? '')).toBe(
+        canonical(book?.measurement_number ?? ''),
       );
     }
   });

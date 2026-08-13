@@ -204,6 +204,28 @@ const RETIRED_DASHBOARD_PBG_SQL = `
   order by w.created_at desc
 `;
 
+/**
+ * The tables both measured statements read. Named rather than swept so the
+ * ANALYZE stays proportional to what is being measured.
+ */
+const FIXTURE_TABLES = [
+  'works',
+  'work_items',
+  'work_schedules',
+  'delivery_challans',
+  'delivery_challan_items',
+  'installations',
+  'pac_certificates',
+  'measurement_books',
+  'measurement_book_lines',
+  'mb_sources',
+  'bills',
+] as const;
+
+async function analyzeFixtureTables(): Promise<void> {
+  await admin.unsafe(`analyze ${FIXTURE_TABLES.join(', ')}`);
+}
+
 /** The EXPLAIN kit lives in `@auto-mb/db` (`src/explain.ts`). This file,
  * `scale-budget.integration.test.ts` and the RLS plan-shape guards in
  * `packages/db/test` each carried a copy of it declaring only the plan
@@ -372,6 +394,25 @@ describe('the Measurement Book loader is one grouped statement', () => {
   });
 
   it('executes every aggregate once, not once per item', async () => {
+    // Statistics refreshed immediately before measuring, not only after
+    // seeding.
+    //
+    // Both statements below are always planned from ONE snapshot of the
+    // statistics, so they never see different pictures of the tables as
+    // each other. What they can see is a picture that has gone stale:
+    // this suite shares its database with every other integration file
+    // and vitest runs those in parallel, so sibling suites insert and
+    // delete Works and Measurement Books throughout this one's lifetime.
+    // Planned from `beforeAll`'s snapshot, the retired statement can pick
+    // a cheaper plan than it would on the tables as they now are — which
+    // moves the measured ratio without anything about either statement
+    // changing. Fresh statistics for both plans is the fix.
+    //
+    // Scoped to the fixture's own tables rather than a database-wide
+    // ANALYZE: this runs twice per suite on a database several parallel
+    // workers are writing to, and a whole-database pass there is lock
+    // churn nobody asked for.
+    await analyzeFixtureTables();
     const { current, retired } = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },
@@ -474,6 +515,25 @@ describe('the dashboard pre-aggregates its evidence', () => {
   });
 
   it('scans the challan lines once, not once per Work', async () => {
+    // Statistics refreshed immediately before measuring, not only after
+    // seeding.
+    //
+    // Both statements below are always planned from ONE snapshot of the
+    // statistics, so they never see different pictures of the tables as
+    // each other. What they can see is a picture that has gone stale:
+    // this suite shares its database with every other integration file
+    // and vitest runs those in parallel, so sibling suites insert and
+    // delete Works and Measurement Books throughout this one's lifetime.
+    // Planned from `beforeAll`'s snapshot, the retired statement can pick
+    // a cheaper plan than it would on the tables as they now are — which
+    // moves the measured ratio without anything about either statement
+    // changing. Fresh statistics for both plans is the fix.
+    //
+    // Scoped to the fixture's own tables rather than a database-wide
+    // ANALYZE: this runs twice per suite on a database several parallel
+    // workers are writing to, and a whole-database pass there is lock
+    // churn nobody asked for.
+    await analyzeFixtureTables();
     const { current, retired } = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },
