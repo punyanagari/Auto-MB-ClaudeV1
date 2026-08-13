@@ -1,4 +1,7 @@
 import net from 'node:net';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { HealthResponseSchema, ReadinessResponseSchema } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import type { ObjectStorage } from '../storage.js';
@@ -15,6 +18,99 @@ export interface ReadinessDeps {
   readonly storage?: ObjectStorage;
   readonly gotenbergUrl?: string;
   readonly clamav?: { readonly host: string; readonly port: number };
+}
+
+/* --- schema-version gate ---------------------------------------------- */
+
+const MIGRATION_FILE = /^(\d{4})_[a-z0-9_]+\.sql$/;
+
+/** Where the migrations this build expects live. The production image sets
+ * `AUTO_MB_MIGRATIONS_DIR` explicitly, because the compiled bundle no
+ * longer sits beside the workspace source (deploy/Dockerfile.server);
+ * running from source falls back to the workspace path, which is what the
+ * test suites use. Read per request rather than cached, so a test can point
+ * the gate at a directory it controls. */
+function resolveMigrationsDirectory(): string {
+  const configured = process.env.AUTO_MB_MIGRATIONS_DIR;
+  if (configured !== undefined && configured !== '') return configured;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // apps/server/src/routes -> repository root -> packages/db/migrations
+  return path.resolve(here, '..', '..', '..', '..', 'packages', 'db', 'migrations');
+}
+
+// The migration directory inside an image never changes while the process
+// lives, so it is read once per directory rather than on every probe: an
+// uptime monitor polls this endpoint every minute forever.
+const migrationIdCache = new Map<string, readonly string[]>();
+
+async function shippedMigrationIds(directory: string): Promise<readonly string[]> {
+  const cached = migrationIdCache.get(directory);
+  if (cached !== undefined) return cached;
+  const ids = (await readdir(directory))
+    .map((name) => MIGRATION_FILE.exec(name)?.[1])
+    .filter((id): id is string => id !== undefined)
+    .sort();
+  if (ids.length === 0) throw new Error(`no migrations found in ${directory}`);
+  migrationIdCache.set(directory, ids);
+  return ids;
+}
+
+export type SchemaVersionVerdict =
+  | { readonly state: 'ok' }
+  | { readonly state: 'behind'; readonly pending: readonly string[] }
+  | { readonly state: 'unreadable'; readonly detail: string };
+
+/**
+ * Compares the applied-migration ledger with the migration directory this
+ * image carries. A container that starts against a database the deploy
+ * never migrated answers every request against a schema its code does not
+ * expect; before this gate it also answered `/api/ready` with `ready`, so
+ * the deploy's own readiness check and the uptime monitor both certified
+ * it (reconciled review, production-readiness).
+ *
+ * Only the BEHIND direction fails. A ledger AHEAD of the image is the
+ * documented rollback posture — migrations are forward-only and are
+ * deliberately not rolled back with the image (docs/OPERATIONS.md §4), so
+ * the previous release running against a migrated schema is expected and
+ * must stay ready.
+ */
+export async function checkSchemaVersion(
+  database: Sql,
+  directory: string,
+): Promise<SchemaVersionVerdict> {
+  let shipped: readonly string[];
+  try {
+    shipped = await shippedMigrationIds(directory);
+  } catch (error) {
+    return {
+      state: 'unreadable',
+      detail: error instanceof Error ? error.message : 'unknown error',
+    };
+  }
+
+  let applied: Set<string>;
+  try {
+    applied = await withTimeout(async () => {
+      // to_regclass rather than a catalog join: an unmigrated database has
+      // no ledger at all, which is "behind by everything", not an error.
+      const [present] = await database<{ present: boolean }[]>`
+        select to_regclass('public.schema_migrations') is not null as present
+      `;
+      if (present?.present !== true) return new Set<string>();
+      const rows = await database<{ id: string }[]>`
+        select id from schema_migrations
+      `;
+      return new Set(rows.map((row) => row.id));
+    });
+  } catch (error) {
+    return {
+      state: 'unreadable',
+      detail: error instanceof Error ? error.message : 'unknown error',
+    };
+  }
+
+  const pending = shipped.filter((id) => !applied.has(id));
+  return pending.length === 0 ? { state: 'ok' } : { state: 'behind', pending };
 }
 
 async function withTimeout<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -170,7 +266,9 @@ export function registerHealthRoutes(app: AppInstance, deps: ReadinessDeps = {})
       const failed = Object.entries(components)
         .filter(([, state]) => state === 'failed')
         .map(([name]) => `${name}-unreachable`);
-      if (deps.database === undefined) {
+      // Narrowing the destructured binding rather than `deps.database`, so
+      // the schema-version gate below sees a defined connection.
+      if (database === undefined) {
         return reply.status(503).send({
           status: 'not-ready',
           reason: 'database-not-configured',
@@ -185,6 +283,30 @@ export function registerHealthRoutes(app: AppInstance, deps: ReadinessDeps = {})
           components,
         });
       }
+
+      // The database answered, so the schema it answered from must be the
+      // one this image was built against. The pending ids go to the log,
+      // never to the response: readiness is public through Caddy, and the
+      // reason word is what the deploy gate and the uptime monitor match on.
+      const schema = await checkSchemaVersion(database, resolveMigrationsDirectory());
+      if (schema.state !== 'ok') {
+        const reason =
+          schema.state === 'behind'
+            ? 'schema-migrations-behind'
+            : 'schema-migrations-unreadable';
+        request.log.error(
+          schema.state === 'behind'
+            ? { pending: schema.pending }
+            : { detail: schema.detail },
+          `readiness check failed: ${reason}`,
+        );
+        return reply.status(503).send({
+          status: 'not-ready',
+          reason,
+          components,
+        });
+      }
+
       return { status: 'ready' as const, components };
     },
   );

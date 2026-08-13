@@ -1,13 +1,36 @@
 # Auto-MB API server image. Build from the repository root:
 #   docker compose -f deploy/docker-compose.prod.yml build
-FROM node:22.16.0-alpine
+#
+# The image ships COMPILED JavaScript and production dependencies only.
+# Until pack P6 it ran `tsx src/main.ts` against a tree that carried the
+# whole dev toolchain — TypeScript, vitest, tsx, eslint and their
+# transitive graph — inside the internet-facing container (reconciled
+# review, production readiness / supply chain). Two things follow from the
+# compiled layout and are load-bearing further down:
+#
+#   * the bundle no longer sits beside the workspace source, so the
+#     `/api/ready` schema-version gate is told where the migrations are
+#     with AUTO_MB_MIGRATIONS_DIR rather than resolving them relatively;
+#   * `pnpm`/`tsx` are absent, so migrations run as
+#     `node apps/server/dist/bootstrap.mjs` (deploy/.../deploy.yml,
+#     docs/RUNBOOK.md §2/§3/§5), not `pnpm --filter @auto-mb/db bootstrap`.
+#
+# Base images are pinned by DIGEST as well as tag: a tag is a mutable
+# pointer, and "the image CI scanned" and "the image the host built an hour
+# later" have to be the same bytes for the Trivy gate to mean anything.
+# Renovate updates both halves together.
+#
+# The base is `alpine3.21` rather than the floating `alpine` tag for one
+# concrete reason: Alpine 3.20 and 3.21 carry poppler-utils 24.02.0, the
+# version CI pins and the LOA corpus was measured against, while Alpine
+# 3.22 jumps to 25.04.0. Both halves read ./poppler-version.txt, which
+# explains what must move together if that number ever changes.
 
-# pdftotext (poppler-utils) is the LOA text-extraction system dependency
-# (docs/DEPENDENCIES.md).
-RUN apk add --no-cache poppler-utils
+# --- build: type-checked sources -> two self-contained bundles ----------
+FROM node:22.16.0-alpine3.21@sha256:9f3ae04faa4d2188825803bf890792f33cc39033c9241fc6bb201149470436ca AS build
 
 # Pinned directly rather than through corepack (see Dockerfile.web).
-RUN npm install -g pnpm@11.17.0
+RUN npm install -g pnpm@11.17.0 esbuild@0.28.2
 WORKDIR /app
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
@@ -15,7 +38,85 @@ COPY packages ./packages
 COPY apps/server ./apps/server
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/server..." --filter "@auto-mb/db..."
 
+# The workspace packages publish TypeScript source through their `exports`
+# maps, so "compiled" means bundling them into the entry points that use
+# them. Every REAL dependency of @auto-mb/server stays external and is
+# resolved from node_modules at runtime; `postgres` (a dependency of
+# @auto-mb/db, and therefore not resolvable from apps/server/node_modules
+# under pnpm's isolated layout) is bundled in, which it tolerates because
+# it is pure ESM.
+#
+# The list is DERIVED from apps/server/package.json rather than written out
+# here. A hand-kept copy is one dependency behind the moment somebody adds
+# one, and the failure is nasty: a CommonJS package that gets inlined into
+# an ESM bundle turns its internal `require()` calls into esbuild's dynamic
+# -require shim, which throws `Dynamic require of "events" is not
+# supported` on the first request path that touches it. That is exactly
+# what happened when nodemailer arrived with password recovery, and it
+# would have been a production incident rather than a build failure.
+RUN mkdir -p apps/server/dist \
+  && EXTERNALS="$(node -p "Object.keys(require('/app/apps/server/package.json').dependencies).filter((name) => !name.startsWith('@auto-mb/')).map((name) => '--external:' + name).join(' ')")" \
+  && echo "externals: ${EXTERNALS}" \
+  && esbuild apps/server/src/main.ts \
+    --bundle --platform=node --format=esm --target=node22 \
+    --outfile=apps/server/dist/server.mjs --log-level=warning $EXTERNALS \
+  && esbuild packages/db/src/bootstrap.ts \
+    --bundle --platform=node --format=esm --target=node22 \
+    --outfile=apps/server/dist/bootstrap.mjs --log-level=warning $EXTERNALS
+
+# Replace the full install with a production-only one. `--prod` is what
+# takes the dev toolchain out of the shipped image; doing it here rather
+# than in the runtime stage keeps the runtime free of a package manager.
+RUN rm -rf node_modules apps/server/node_modules packages/*/node_modules \
+  && pnpm install --frozen-lockfile --prod \
+    --filter "@auto-mb/server..." --filter "@auto-mb/db..."
+
+# Prove, against the pruned production install and from the directory the
+# bundles will occupy at runtime, that every retained import resolves.
+COPY scripts/check-bundle-externals.mjs ./scripts/check-bundle-externals.mjs
+RUN cd apps/server/dist \
+  && node /app/scripts/check-bundle-externals.mjs server.mjs bootstrap.mjs
+
+# --- runtime ------------------------------------------------------------
+FROM node:22.16.0-alpine3.21@sha256:9f3ae04faa4d2188825803bf890792f33cc39033c9241fc6bb201149470436ca
+
+# pdftotext (poppler-utils) is the LOA text-extraction system dependency
+# (docs/DEPENDENCIES.md). Pinned to the ONE version this repository runs at,
+# read from the file CI reads too so the two cannot drift apart silently —
+# the reader depends on `-layout` behaviours that change between Poppler
+# releases, so a runner and a production image on different versions means
+# the corpus proves nothing about production.
+#
+# `=~` matches any Alpine revision (-rN) of that upstream version: the
+# distribution's packaging revision is allowed to move, the parser-visible
+# version is not. The assertion afterwards is what actually holds the line;
+# `pdftotext -v` writes its banner to stderr.
+COPY poppler-version.txt /tmp/poppler-version.txt
+RUN POPPLER_VERSION="$(head -n1 /tmp/poppler-version.txt)" \
+  && apk add --no-cache "poppler-utils=~${POPPLER_VERSION}" \
+  && installed="$(pdftotext -v 2>&1 | sed -n 's/^pdftotext version \([0-9.]*\).*/\1/p')" \
+  && if [ "$installed" != "$POPPLER_VERSION" ]; then \
+       echo "poppler-version.txt says ${POPPLER_VERSION}, image has ${installed}." >&2; \
+       echo "Move the base image to an Alpine release carrying that version," >&2; \
+       echo "or change poppler-version.txt AND the CI runner with it." >&2; \
+       exit 1; \
+     fi \
+  && echo "pdftotext ${installed} pinned" \
+  && rm /tmp/poppler-version.txt
+
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=build /app/apps/server/dist ./apps/server/dist
+# api-version.ts reads ../package.json relative to its own module URL; from
+# apps/server/dist that is exactly this file, which is why it travels.
+COPY --from=build /app/apps/server/package.json ./apps/server/package.json
+# The migration directory the readiness gate compares the applied ledger
+# against, and the one the compiled bootstrap applies.
+COPY --from=build /app/packages/db/migrations ./apps/server/migrations
+
 ENV NODE_ENV=production
+ENV AUTO_MB_MIGRATIONS_DIR=/app/apps/server/migrations
 
 # The object-store volume mounts at /data/objects; it must be writable
 # by the unprivileged runtime user. A fresh named volume copies this
@@ -25,4 +126,4 @@ RUN mkdir -p /data/objects && chown -R node:node /data
 
 USER node
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@auto-mb/server", "start"]
+CMD ["node", "apps/server/dist/server.mjs"]

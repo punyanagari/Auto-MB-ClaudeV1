@@ -1,0 +1,45 @@
+# Prometheus for the single-host pilot topology.
+#
+# The reconciled review scored observability 4 with the note "the
+# instrumentation is disciplined, and nothing scrapes it, nothing alerts".
+# `apps/server/src/metrics.ts` has exposed the series listed in
+# docs/OPERATIONS.md §6 for some time; this is the thing that reads them.
+#
+# Prometheus is NOT published to the internet: no port mapping exists in
+# docker-compose.prod.yml, Caddy refuses /metrics publicly, and an operator
+# reaches the UI over an SSH tunnel (docs/RUNBOOK.md §6).
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    deployment: auto-mb-pilot
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # The API's own metrics endpoint. It is token-guarded (METRICS_TOKEN);
+  # the token is read from a file rather than written into this config,
+  # because Prometheus does not expand environment variables in its
+  # configuration and a committed config must never carry a secret.
+  # docs/RUNBOOK.md §6 covers writing and rotating that file.
+  - job_name: auto-mb-server
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics-token
+    static_configs:
+      - targets: ['server:3000']
+
+  # Prometheus watching itself: without this, a dead Prometheus is silent
+  # in exactly the way a dead Prometheus is dangerous.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090']

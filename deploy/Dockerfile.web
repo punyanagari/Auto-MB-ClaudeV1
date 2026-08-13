@@ -1,6 +1,10 @@
 # Auto-MB web front end: production bundle served by Caddy, which also
 # terminates TLS and proxies /api to the server container.
-FROM node:22.16.0-alpine AS build
+# Base images carry their digest as well as their tag: a tag is a mutable
+# pointer, and the Trivy gate in the deploy workflow can only mean
+# something if the bytes it scanned are the bytes that ship. Renovate
+# updates tag and digest together.
+FROM node:22.16.0-alpine3.21@sha256:9f3ae04faa4d2188825803bf890792f33cc39033c9241fc6bb201149470436ca AS build
 # Pinned directly rather than through corepack: corepack resolves the
 # packageManager field by downloading pnpm and verifying npm's registry
 # signature against keys baked into the corepack release, so an image
@@ -14,6 +18,6 @@ COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/web..." \
   && pnpm --filter @auto-mb/web build
 
-FROM caddy:2.10.0-alpine
+FROM caddy:2.10.0-alpine@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/apps/web/dist /srv/web

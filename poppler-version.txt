@@ -1,0 +1,25 @@
+24.02.0
+# The ONE Poppler version this repository runs `pdftotext` at.
+#
+# LOA extraction reads Indian Railways item tables out of `pdftotext -layout`
+# output, and the reader depends on layout behaviours that change between
+# Poppler releases: whether a wrapped item description stays on its row,
+# whether a schedule total is hoisted into the row above it. A CI runner and
+# a production image on different Poppler versions means the corpus proves
+# nothing about what production will parse (reconciled review, dimension 44).
+#
+# Two places read this file, and both FAIL rather than warn on a mismatch:
+#
+#   * CI installs Ubuntu 24.04's `poppler-utils` and asserts this version
+#     (.github/workflows/ci.yml, pack P7);
+#   * the production image installs Alpine's `poppler-utils=~<this version>`
+#     and asserts it (deploy/Dockerfile.server, pack P6). The base is pinned
+#     to `node:22.16.0-alpine3.21` for exactly this reason — Alpine 3.20 and
+#     3.21 carry poppler 24.02.0, and Alpine 3.22 jumps to 25.04.0.
+#
+# Changing this version means changing the base image or the runner image
+# with it, and re-running `apps/server/test/loa-extract-roundtrip.test.ts`
+# and the LOA corpus. It is not a number to bump on its own.
+#
+# The first line is the value; everything after it is commentary. Readers
+# take line 1.

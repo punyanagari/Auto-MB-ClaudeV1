@@ -23,6 +23,16 @@ import { runMigrations } from './migration-runner.js';
  * catalog-driven drift test (audit finding 10) can diff it against
  * `information_schema` rather than against a second hand-kept list. */
 export const TABLE_PRIVILEGES: Record<string, string> = {
+  // The migration ledger is administrator state: `runMigrations` writes it
+  // under the owner role and the application must never be able to forge
+  // migration history. It is READABLE, though, and deliberately so — the
+  // `/api/ready` schema-version gate (apps/server/src/routes/health.ts)
+  // compares the applied ledger with the migration directory the image
+  // carries, and 503s when the image is ahead of the database. Without this
+  // grant a container started against an unmigrated database reports itself
+  // ready. SELECT only; no INSERT/UPDATE/DELETE, proved in
+  // test/bootstrap.integration.test.ts.
+  schema_migrations: 'SELECT',
   // Business tables that must never lose rows keep no DELETE (0003).
   organisations: 'SELECT, INSERT, UPDATE',
   works: 'SELECT, INSERT, UPDATE',

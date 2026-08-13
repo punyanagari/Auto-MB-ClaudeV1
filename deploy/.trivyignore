@@ -1,0 +1,10 @@
+# Accepted image vulnerabilities (scripts/scan-images.sh).
+#
+# One CVE id per line, each with a comment naming who accepted it, when,
+# and why the fix cannot be taken. Entries are reviewed whenever a base
+# image digest moves — an accepted finding that the new base already fixes
+# must be deleted, not carried forward.
+#
+# Empty by design: the gate scans for HIGH/CRITICAL findings that have a
+# fix available, so an entry here is always a decision to ship a known,
+# fixable vulnerability.

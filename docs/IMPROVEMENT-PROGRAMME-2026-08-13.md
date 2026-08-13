@@ -228,9 +228,16 @@ plus the score dimension it claims, re-checked in the next review round.
 
 ## 3. Standing corrections
 
-1. `docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
+1. ~~`docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
    `scripts/backup.sh` actually does until P6 lands (encryption, retention,
-   off-host copy are currently claimed and absent). P6 owns this edit.
+   off-host copy are currently claimed and absent). P6 owns this edit.~~
+   **Done in P6.** `scripts/backup.sh` now performs envelope encryption,
+   carries `AUTH_SECRET` in the recovery set, establishes dump/archive
+   consistency by ordering, and gates the freshness marker on a configured
+   off-host copy; `docs/OPERATIONS.md` §5 and `docs/RUNBOOK.md` §4/§4a/§5
+   describe exactly that and name what is still absent — no point-in-time
+   recovery, no pruning in the script, no object-storage versioning, and no
+   chosen off-host destination.
 2. `AUDIT-2026-08-12.md` and the disposition carry three overstatements
    (constraint-trigger wording; "malware scanning fails closed" without the
    config caveat; "every membership read" while two writes lack the predicate)

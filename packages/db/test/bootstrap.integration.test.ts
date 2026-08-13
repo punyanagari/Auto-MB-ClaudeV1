@@ -162,12 +162,13 @@ describe('production bootstrap', () => {
  */
 describe('privilege matrix drift', () => {
   /**
-   * The migration ledger is the ONLY table deliberately absent from the
-   * matrix: it is administrator state, written by `runMigrations` under
-   * the owner role, and the application role must never read or write it.
-   * Every other table is tenant or platform data the application serves.
+   * Every table the migrations create carries an entry in the matrix. The
+   * migration ledger used to be the single exception; it is now declared
+   * `SELECT`-only, because the `/api/ready` schema-version gate reads it to
+   * refuse traffic when the image is ahead of the database. Writing it is
+   * still administrator-only, which the read-only proof below enforces.
    */
-  const UNGRANTED_BY_DESIGN = new Set(['schema_migrations']);
+  const UNGRANTED_BY_DESIGN = new Set<string>();
 
   it('declares every table the migrations create', async () => {
     const rows = await bootAdmin<{ table_name: string }[]>`
@@ -211,16 +212,23 @@ describe('privilege matrix drift', () => {
     ).toEqual([]);
   });
 
-  it('grants nothing on the migration ledger', async () => {
-    // The exclusion above must stay a decision, not a hole: prove the
-    // application role really holds no privilege on it.
-    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+  it('grants read-only access on the migration ledger', async () => {
+    // The readiness gate needs to READ the applied ids; nothing in the
+    // application may ever write them, so a future widening of this entry
+    // fails here rather than shipping a forgeable migration history.
+    const expected: Record<string, boolean> = {
+      SELECT: true,
+      INSERT: false,
+      UPDATE: false,
+      DELETE: false,
+    };
+    for (const [privilege, allowed] of Object.entries(expected)) {
       const [row] = await bootAdmin<{ ok: boolean }[]>`
         select has_table_privilege(
           'auto_mb_app', 'schema_migrations', ${privilege}
         ) as ok
       `;
-      expect(row?.ok, `schema_migrations ${privilege}`).toBe(false);
+      expect(row?.ok, `schema_migrations ${privilege}`).toBe(allowed);
     }
   });
 });
