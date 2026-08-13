@@ -142,6 +142,9 @@ function SetupChecklist({
     setSignatories(null);
     setContacts(null);
     setFailed(false);
+    // A read-only member is answered with one sentence below and never
+    // sees the checklist, so the three reads behind it are not made.
+    if (!canModify) return;
     Promise.all([
       api.organisationProfile(organisationId),
       api.listSignatories(organisationId),
@@ -165,7 +168,7 @@ function SetupChecklist({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, canModify, loadVersion]);
 
   if (!canModify) {
     return (
