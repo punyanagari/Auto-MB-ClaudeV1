@@ -4,12 +4,14 @@ import {
   ContractSourceContextSchema,
   ContractSourceUploadQuerySchema,
   ContractSourceUploadResponseSchema,
+  DiscardLoaDocumentRequestSchema,
   UuidSchema,
   type ContractSourceContext,
   type ContractSourceDocument,
   type ContractSourceDocumentKind,
   type ContractSourceIdentityMatch,
   type ContractSourceUploadQuery,
+  type DiscardLoaDocumentRequest,
   type TenderItemSpecificationEvidence,
   type TenderPaymentMatrixEvidence,
   type TenderPeriodEvidence,
@@ -207,6 +209,7 @@ async function contextForParent(
     where parent_loa_document_id = ${parentLoaDocumentId}
       and document_kind <> 'loa'
       and match_status = 'matched'
+      and extraction_status <> 'discarded'
     order by created_at, id
   `;
   const workItems =
@@ -329,6 +332,20 @@ async function parentLoaForWriter(
   return { parent, tenderNumber, workDescription };
 }
 
+/** A discarded LOA has no intake package left to attach evidence to
+ * (migration 0055 refuses the insert as well). Reading the context of one
+ * stays allowed — the audit trail of what was attached before it was
+ * withdrawn is not secret — so this is asserted only on the upload path. */
+function assertParentNotDiscarded(parent: ParentLoaRow): void {
+  if (parent.extraction_status === 'discarded') {
+    throw httpError(
+      409,
+      'LOA_DOCUMENT_DISCARDED',
+      'That LOA document was discarded, so supporting tender documents can no longer be attached to it. Upload the letter again first.',
+    );
+  }
+}
+
 export function registerContractSourceRoutes(
   app: FastifyInstance,
   auth: Auth,
@@ -370,6 +387,7 @@ export function registerContractSourceRoutes(
       const expected = await withBoundTenant(database, organisationId, user.id, (tx) =>
         parentLoaForWriter(tx, user.id, parentId, false),
       );
+      assertParentNotDiscarded(expected.parent);
       await assertNotMalware(scanner, body);
 
       let sourceText: string;
@@ -427,6 +445,9 @@ export function registerContractSourceRoutes(
         user.id,
         async (tx) => {
           const current = await parentLoaForWriter(tx, user.id, parentId, true);
+          // Re-checked under the row lock: the letter could have been
+          // discarded while the scan and extraction ran.
+          assertParentNotDiscarded(current.parent);
           // Prevent a time-of-check/time-of-use identity switch. LOA extraction
           // payloads are normally immutable, but the comparison keeps this
           // endpoint correct even if a future review-edit path is introduced.
@@ -547,6 +568,98 @@ export function registerContractSourceRoutes(
               itemSpecifications: [],
             }
           : contextForParent(tx, parent.id, workId);
+      });
+    },
+  );
+
+  app.post(
+    '/api/contract-source-documents/:id/discard',
+    {
+      schema: {
+        params: IdParamsSchema,
+        body: DiscardLoaDocumentRequestSchema,
+        response: { 200: ContractSourceContextSchema, ...errorResponses },
+      },
+    },
+    async (request) => {
+      const user = await requireUser(auth, request);
+      const organisationId = requireOrganisationHeader(
+        request.headers['x-organisation-id'],
+      );
+      const { id } = request.params as { id: string };
+      const { reason } = request.body as DiscardLoaDocumentRequest;
+      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+        // Attaching the wrong NIT was, until now, permanent: the upload
+        // route was the only writer and the 0040 guard freezes a
+        // supporting document's identity and bytes forever. The exit is
+        // the same soft discard the letter itself has (migration 0055) —
+        // the row and its object stay for retention, the evidence leaves
+        // the package, and the parser suggestions it contributed stop
+        // being offered to the reviewer.
+        await requireWriterRole(tx, user.id);
+        const [existing] = await tx<
+          {
+            parent_loa_document_id: string;
+            document_kind: string;
+            original_filename: string;
+            extraction_status: string;
+            confirmed_work_id: string | null;
+          }[]
+        >`
+          select parent_loa_document_id, document_kind, original_filename,
+                 extraction_status, confirmed_work_id
+          from loa_documents
+          where id = ${id} and document_kind <> 'loa'
+          for update
+        `;
+        if (existing === undefined) {
+          throw httpError(404, 'CONTRACT_SOURCE_NOT_FOUND', 'No such document.');
+        }
+        if (existing.extraction_status === 'discarded') {
+          throw httpError(
+            409,
+            'CONTRACT_SOURCE_ALREADY_DISCARDED',
+            'This supporting document has already been discarded.',
+          );
+        }
+        // The same rule the letter has, for the same reason: once the
+        // package has been confirmed into a Work, this document is part
+        // of the evidence the Work's terms were read from.
+        if (existing.confirmed_work_id !== null) {
+          throw httpError(
+            409,
+            'CONTRACT_SOURCE_CONFIRMED',
+            `${existing.original_filename} belongs to an LOA that has already been confirmed into a Work, and is part of that Work's tender evidence, so it cannot be discarded. Nothing was changed.`,
+            { confirmedWorkId: existing.confirmed_work_id },
+          );
+        }
+        await tx`
+          update loa_documents
+          set extraction_status = 'discarded', discarded_at = now(),
+              discarded_by_user_id = ${user.id},
+              discard_reason = ${reason ?? null}
+          where id = ${id}
+        `;
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, entity_id, details
+          )
+          values (
+            ${organisationId}, ${user.id}, 'contract_source.discarded',
+            'loa_documents', ${id},
+            ${jsonb(tx, {
+              parentLoaDocumentId: existing.parent_loa_document_id,
+              kind: existing.document_kind,
+              filename: existing.original_filename,
+              reason: reason ?? null,
+            })}
+          )
+        `;
+        return contextForParent(
+          tx,
+          existing.parent_loa_document_id,
+          existing.confirmed_work_id,
+        );
       });
     },
   );

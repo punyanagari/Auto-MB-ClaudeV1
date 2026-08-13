@@ -20,6 +20,7 @@ import type {
   Contact,
   CreateOrganisationRequest,
   DashboardResponse,
+  DiscardLoaDocumentResponse,
   ExtensionRequestDetailResponse,
   InstallSerialRequest,
   Instrument,
@@ -255,7 +256,23 @@ export interface ApiClient {
   ) => Promise<MemberAssignmentsResponse>;
   readonly listLoaDocuments: (
     organisationId: string,
+    options?: { readonly includeDiscarded?: boolean },
   ) => Promise<readonly LoaDocument[]>;
+  /** Withdraws an intake package that never became a Work, with its
+   * supporting contract documents. Refused with 409 DOCUMENT_CONFIRMED
+   * once a Work exists from the letter. */
+  readonly discardLoaDocument: (
+    organisationId: string,
+    documentId: string,
+    reason?: string,
+  ) => Promise<DiscardLoaDocumentResponse>;
+  /** Removes one supporting tender document from an unconfirmed intake
+   * package, answering with the package's remaining evidence. */
+  readonly discardContractSourceDocument: (
+    organisationId: string,
+    documentId: string,
+    reason?: string,
+  ) => Promise<ContractSourceContext>;
   readonly getLoaDocument: (
     organisationId: string,
     documentId: string,
@@ -1357,12 +1374,34 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'PUT', body: { workIds }, organisationId },
       );
     },
-    async listLoaDocuments(organisationId) {
+    async listLoaDocuments(organisationId, options) {
       const payload = await request<{ documents: LoaDocument[] }>(
-        '/api/loa-documents',
+        options?.includeDiscarded === true
+          ? '/api/loa-documents?includeDiscarded=true'
+          : '/api/loa-documents',
         { organisationId },
       );
       return payload.documents;
+    },
+    async discardLoaDocument(organisationId, documentId, reason) {
+      return request<DiscardLoaDocumentResponse>(
+        `/api/loa-documents/${documentId}/discard`,
+        {
+          method: 'POST',
+          body: reason === undefined ? {} : { reason },
+          organisationId,
+        },
+      );
+    },
+    async discardContractSourceDocument(organisationId, documentId, reason) {
+      return request<ContractSourceContext>(
+        `/api/contract-source-documents/${documentId}/discard`,
+        {
+          method: 'POST',
+          body: reason === undefined ? {} : { reason },
+          organisationId,
+        },
+      );
     },
     async getLoaDocument(organisationId, documentId) {
       return request<LoaDocumentDetail>(`/api/loa-documents/${documentId}`, {
