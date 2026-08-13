@@ -14,6 +14,7 @@ import {
   Menu,
   MoreHorizontal,
   Plus,
+  ScanBarcode,
   Search,
   Settings as SettingsIcon,
   Upload,
@@ -39,6 +40,7 @@ import { Members } from './Members.js';
 import { OperationsDashboard } from './OperationsDashboard.js';
 import { Quotations } from './Quotations.js';
 import { ReviewLoa } from './ReviewLoa.js';
+import { Search as SearchView } from './Search.js';
 import { SerialLookup } from './SerialLookup.js';
 import { AccountSecurity } from './AccountSecurity.js';
 import { AppearanceSettings } from './AppearanceSettings.js';
@@ -67,6 +69,7 @@ type ModuleKey =
   | 'works'
   | 'quotations'
   | 'approvals'
+  | 'search'
   | 'serials'
   | 'masters'
   | 'members'
@@ -90,7 +93,8 @@ const NAVIGATION = [
   {
     label: 'Operations',
     items: [
-      { key: 'serials' as const, label: 'Serial Lookup', icon: Search },
+      { key: 'search' as const, label: 'Search', icon: Search },
+      { key: 'serials' as const, label: 'Serial Lookup', icon: ScanBarcode },
       { key: 'masters' as const, label: 'Masters', icon: Database },
     ],
   },
@@ -106,7 +110,10 @@ const NAVIGATION = [
 const MOBILE_MORE_ITEMS = [
   { key: 'quotations', label: 'Quotations', icon: FileText },
   { key: 'approvals', label: 'Approvals', icon: CheckCircle },
-  { key: 'serials', label: 'Serial Lookup', icon: Search },
+  // The header's search box is desktop-only, so the mobile shell reaches
+  // the same view from here.
+  { key: 'search', label: 'Search', icon: Search },
+  { key: 'serials', label: 'Serial Lookup', icon: ScanBarcode },
   { key: 'masters', label: 'Masters', icon: Database },
   { key: 'members', label: 'Members', icon: Users },
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -130,6 +137,8 @@ function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'quotations' };
     case 'approvals':
       return { name: 'approvals' };
+    case 'search':
+      return { name: 'search', query: '' };
     case 'serials':
       return { name: 'serials' };
     case 'masters':
@@ -146,6 +155,7 @@ function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'dashboard':
     case 'quotations':
     case 'approvals':
+    case 'search':
     case 'serials':
     case 'masters':
     case 'members':
@@ -184,6 +194,8 @@ function pageTitleOf(view: WorkspaceView): string {
       return 'Quotations';
     case 'approvals':
       return 'Approvals';
+    case 'search':
+      return 'Search';
     case 'serials':
       return 'Serial Lookup';
     case 'masters':
@@ -240,7 +252,11 @@ export function OperationsWorkspace({
   const [pendingDeparture, setPendingDeparture] = useState<PendingDeparture | null>(
     null,
   );
+  const [headerSearchQuery, setHeaderSearchQuery] = useState(
+    initialRoute.view.name === 'search' ? initialRoute.view.query : '',
+  );
   const containerRef = useRef<HTMLDivElement>(null);
+  const headerSearchRef = useRef<HTMLInputElement>(null);
   const mobileMenuDialogRef = useRef<HTMLDivElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const keepEditingRef = useRef<HTMLButtonElement>(null);
@@ -341,6 +357,58 @@ export function OperationsWorkspace({
       if (restoreTarget?.isConnected === true) restoreTarget.focus();
     };
   }, [mobileMenuOpen]);
+
+  /**
+   * The global `/` shortcut.
+   *
+   * The header has advertised this key since the shell was written and
+   * nothing ever listened for it, so the hint was a promise the product
+   * did not keep. It focuses the header search box — a shortcut that
+   * jumped straight to a results screen would be worse, because the
+   * operator has not typed a query yet.
+   *
+   * It must never steal a keystroke from someone who is typing. The guard
+   * is by element rather than by view: any input, textarea, select or
+   * contenteditable region owns `/` while it has focus, which covers the
+   * editors, every form field, and any rich-text surface added later
+   * without this handler having to learn about it. Modifier chords are
+   * left alone as well — those belong to the browser.
+   *
+   * The box is desktop-only (`hidden md:flex`), so on a narrow viewport
+   * the ref is null and the key does nothing, which is correct: there is
+   * no keyboard shortcut to honour without a keyboard.
+   */
+  useEffect(() => {
+    function focusSearchOnSlash(event: globalThis.KeyboardEvent): void {
+      if (event.key !== '/') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented) return;
+      // A modal owns the keyboard while it is open.
+      if (mobileMenuOpen || pendingDeparture !== null) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        // `isContentEditable` is the direct question, but it is false for
+        // a plain element nested INSIDE an editable region — where the
+        // caret usually is — so the attribute lookup walks up to the
+        // region itself.
+        if (target.isContentEditable) return;
+        if (target.closest('[contenteditable]:not([contenteditable="false"])')) return;
+      }
+      const input = headerSearchRef.current;
+      if (input === null) return;
+      // Only now: otherwise a suppressed shortcut would still swallow the
+      // character the operator meant to type.
+      event.preventDefault();
+      input.focus();
+      input.select();
+    }
+    window.addEventListener('keydown', focusSearchOnSlash);
+    return () => {
+      window.removeEventListener('keydown', focusSearchOnSlash);
+    };
+  }, [mobileMenuOpen, pendingDeparture]);
 
   useEffect(() => {
     if (!editorDirty) return;
@@ -777,19 +845,46 @@ export function OperationsWorkspace({
             <p className="truncate text-sm font-semibold">{pageTitleOf(view)}</p>
           </div>
 
-          <button
-            type="button"
-            className="hidden min-w-56 max-w-md flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/35 hover:bg-card md:flex"
-            onClick={() => {
-              navigate({ name: 'works' });
+          {/* A real search box, not a button that went to the Works
+              register: the label promised records and now delivers them.
+              `/` focuses it from anywhere in the workspace. */}
+          <form
+            role="search"
+            className="hidden min-w-56 max-w-md flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 py-2 text-xs text-muted-foreground transition-colors focus-within:border-primary/60 hover:border-primary/35 md:flex"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = headerSearchQuery.trim();
+              if (query.length < 2) return;
+              navigate({ name: 'search', query });
             }}
           >
-            <Search className="size-4" aria-hidden="true" />
-            Search Works and records
-            <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 font-mono text-xs">
+            <Search className="size-4 shrink-0" aria-hidden="true" />
+            <input
+              ref={headerSearchRef}
+              type="search"
+              name="header-search"
+              aria-label="Search Works and records"
+              placeholder="Search Works and records"
+              maxLength={120}
+              autoComplete="off"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs outline-none"
+              value={headerSearchQuery}
+              onChange={(event) => {
+                setHeaderSearchQuery(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                // Escape gives the keyboard back without submitting, the
+                // same way Escape closes the mobile navigation.
+                if (event.key === 'Escape') event.currentTarget.blur();
+              }}
+            />
+            <kbd
+              aria-hidden="true"
+              className="ml-auto shrink-0 rounded border border-border bg-card px-1.5 py-0.5 font-mono text-xs"
+            >
               /
             </kbd>
-          </button>
+          </form>
 
           <div className="relative">
             <Button
@@ -1177,6 +1272,32 @@ export function OperationsWorkspace({
               }}
               onOpenChallan={(workId, challanId) => {
                 setView({ name: 'challan', workId, workCode: '', challanId });
+              }}
+            />
+          )}
+
+          {view.name === 'search' && (
+            <SearchView
+              api={api}
+              organisationId={organisation.id}
+              query={view.query}
+              onQueryChange={(next) => {
+                navigate({ name: 'search', query: next });
+              }}
+              onOpenWork={(workId) => {
+                navigate({ name: 'work', workId });
+              }}
+              onOpenChallan={(workId, challanId) => {
+                navigate({ name: 'challan', workId, workCode: '', challanId });
+              }}
+              onOpenIssueChallan={(workId, challanId) => {
+                navigate({ name: 'issue-challan', workId, challanId });
+              }}
+              onOpenSerials={() => {
+                navigate({ name: 'serials' });
+              }}
+              onOpenQuotations={() => {
+                navigate({ name: 'quotations' });
               }}
             />
           )}

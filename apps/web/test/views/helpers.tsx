@@ -134,6 +134,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWorkSerials: vi.fn().mockResolvedValue([]),
     deleteSerial: vi.fn().mockResolvedValue(undefined),
     searchSerials: vi.fn().mockResolvedValue({ matches: [], truncated: false }),
+    search: vi.fn().mockResolvedValue({ query: '', groups: [], returned: 0 }),
     updateWorkItemSerials: vi.fn(),
     listInstruments: vi.fn().mockResolvedValue([]),
     createInstrument: vi.fn(),
