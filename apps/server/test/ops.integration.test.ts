@@ -127,7 +127,9 @@ describe('rate limiting', () => {
       await uploads.close();
       await admin.end();
     }
-  });
+    // Generous: on a database that has not been migrated yet this test is
+    // the one that applies the ledger, which the default 5s does not cover.
+  }, 120_000);
 
   it('keys per forwarded client behind a trusted proxy hop', async () => {
     // Production topology: every connection reaches Fastify from the
