@@ -97,15 +97,42 @@ export const PacCertificateSchema = Type.Object(
 );
 export type PacCertificate = Static<typeof PacCertificateSchema>;
 
+/** Which quantity a certificate is capped against (R18, widened by
+ * migration 0068).
+ *
+ * 'installed' is the original rule and still the rule for every item
+ * that is installed: a certificate accepts installed work, so it can
+ * never certify more than exists. 'sanctioned' is the AMC rule. An
+ * annual-maintenance item is never installed — 0068 makes an
+ * installation record naming it structurally impossible — so capping it
+ * at the installed total would cap it at zero and make it uncertifiable
+ * and therefore uncompletable. Its ceiling is the sanctioned quantity
+ * instead, the same ceiling R5 puts on installation. */
+export const PacCertificationBasisSchema = Type.Union([
+  Type.Literal('installed'),
+  Type.Literal('sanctioned'),
+]);
+export type PacCertificationBasis = Static<typeof PacCertificationBasisSchema>;
+
 /** Per-item aggregate of non-cancelled certified quantities alongside the
- * installed total. pacCertifiedQuantity is THE pac_qty the Measurement
- * Book engine consumes (legacy §8); availableQuantity = installed minus
- * certified is what the next certificate may still cover (R18). */
+ * quantity that supports them. pacCertifiedQuantity is THE pac_qty the
+ * Measurement Book engine consumes (legacy §8); availableQuantity =
+ * supporting minus certified is what the next certificate may still
+ * cover (R18).
+ *
+ * `installedQuantity` remains the installed total as such — it is 0 for
+ * an AMC item and stays reported as 0 rather than being overwritten with
+ * the sanctioned figure, because "nothing is installed" is true and the
+ * screen says it. `supportingQuantity` is what the cap is actually
+ * measured against, and `certificationBasis` names which of the two
+ * rules produced it. */
 export const PacItemSummarySchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
     installedQuantity: DecimalStringSchema,
+    certificationBasis: PacCertificationBasisSchema,
+    supportingQuantity: DecimalStringSchema,
     pacCertifiedQuantity: DecimalStringSchema,
     availableQuantity: DecimalStringSchema,
   },
@@ -124,14 +151,17 @@ export type PacCertificateListResponse = Static<
   typeof PacCertificateListResponseSchema
 >;
 
-/** The structured `details` payload of a PAC_EXCEEDS_INSTALLED 409 (R18:
- * "the error states installed / covered / available"), one entry per
- * offending item. */
+/** The structured `details` payload of a PAC_EXCEEDS_INSTALLED or
+ * PAC_EXCEEDS_SANCTIONED 409 (R18: "the error states installed /
+ * covered / available"), one entry per offending item. `basis` names
+ * which ceiling `supporting` is, so a client never has to guess whether
+ * it is reading an installed total or a sanctioned one. */
 export const PacCapExceededItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
-    installed: DecimalStringSchema,
+    basis: PacCertificationBasisSchema,
+    supporting: DecimalStringSchema,
     covered: DecimalStringSchema,
     available: DecimalStringSchema,
   },

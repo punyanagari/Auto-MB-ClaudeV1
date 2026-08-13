@@ -70,6 +70,7 @@ describe('mb-remark workbook acceptance (character-for-character)', () => {
           description: item.description,
           deliveredQuantity: addDecimalStrings(cumSupplied, row.suppliedDelta),
           installedQuantity: addDecimalStrings(cumInstalled, row.installedDelta),
+          amcCertifiedQuantity: addDecimalStrings(cumPac, row.pacDelta),
         });
         expect(base.branch).toBe('delivered');
         expect(renderQuantity(base.baseQuantity)).toBe(
@@ -170,6 +171,7 @@ describe('computeMbRemark beyond the workbook', () => {
       description: 'Supply and Installation of signalling equipment',
       deliveredQuantity: '100',
       installedQuantity: '60',
+      amcCertifiedQuantity: '0',
     });
     expect(base).toEqual({ branch: 'installed', baseQuantity: '60' });
     const remark = computeMbRemark({
@@ -321,7 +323,11 @@ describe('computeStageAmounts (R13: line-round then sum)', () => {
 });
 
 describe('resolveFinalBillBase', () => {
-  const quantities = { deliveredQuantity: '1000', installedQuantity: '640' };
+  const quantities = {
+    deliveredQuantity: '1000',
+    installedQuantity: '640',
+    amcCertifiedQuantity: '3',
+  };
 
   it('SUPPLY and SPARE_SUPPLY bill 100% of delivered', () => {
     for (const paymentCategory of ['SUPPLY', 'SPARE_SUPPLY']) {
@@ -362,6 +368,22 @@ describe('resolveFinalBillBase', () => {
         ...quantities,
       }),
     ).toEqual({ branch: 'installed', baseQuantity: '640' });
+  });
+
+  it('AMC bills the certified quantity, not delivered and not installed', () => {
+    // An AMC item is never delivered and never installed (migration
+    // 0068 makes both structurally impossible), so the workbook's two
+    // bases are permanently zero for it and the branch it earns on is
+    // the one the railway certified. The fixture quantities above are
+    // deliberately nonzero on all three dimensions so this asserts a
+    // choice rather than the absence of alternatives.
+    expect(
+      resolveFinalBillBase({
+        paymentCategory: 'AMC',
+        description: 'AMC for SCH A items for the period of 5 year',
+        ...quantities,
+      }),
+    ).toEqual({ branch: 'certified', baseQuantity: '3' });
   });
 
   it('rejects unknown categories rather than guessing a branch', () => {

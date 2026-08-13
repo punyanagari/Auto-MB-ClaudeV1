@@ -215,6 +215,27 @@ standing rules (verify isolated; high-risk PRs are opened, not merged).
 `package.json` → P1, `check-architecture.mjs` → P5, `ci.yml` → P7,
 `app.ts` → P4. Wave 2 — `contracts/errors.ts` → P8 then P12, `api.ts` → P12.
 
+Wave 3 — the shared surfaces here are business rules rather than files,
+because three packs land in the same completion-and-settlement area:
+
+- **The R8 completion predicate** (`apps/server/src/routes/work-completion.ts`,
+  `WorkCompletionRequirement` and `UnfinishedWorkItem` in
+  `packages/contracts/src/works.ts`) → **P16**. P14 does not touch it and
+  rebases onto P16's merged result.
+- **The MB-closure and invoice-settlement gates** → **P14**. P16 does not
+  touch those, and P15's payment record builds on P14's settlement shape.
+- **The item payment-category vocabulary** (`WORK_ITEM_PAYMENT_CATEGORIES`,
+  the `work_items` and `payment_matrices` CHECKs) → **P16**, which adds
+  the fifth value. A later pack adding a sixth rebases.
+- **`docs/PRODUCT-SPEC.md` does not exist in this repository.** The
+  architecture-independent product spec is `docs/PRODUCT.md`. Every pack
+  edits its own section of it in the same commit as the behaviour, and
+  conflicts are resolved by merge order — the later pack re-reads the
+  merged section rather than replaying its own.
+- **`packages/contracts/src/errors.ts`** stays additive: a pack appends
+  its own codes to `ERROR_CODES` in sorted position and touches no other
+  line, so concurrent packs conflict only when they add adjacent codes.
+
 **Merge order within a wave:** smallest diff first (P1 → P3 → P5 → P7 → P4 →
 P2 → P6 for wave 1), each followed by branch-update of the remainder. After
 each wave: combined `pnpm verify` from a pinned worktree + fresh database,

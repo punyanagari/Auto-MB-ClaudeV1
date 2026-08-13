@@ -1,15 +1,26 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { DecimalStringSchema, UuidSchema } from './primitives.js';
 
-/** The four legacy item payment categories (spec §8, rule R10). An item
- * with no category is "uncategorised" (payment_category NULL) and
- * resolves its stage percentages through the Work's optional
- * UNCATEGORISED matrix row instead. */
+/** The item payment categories (spec §8, rule R10) — the four legacy
+ * ones plus AMC (migration 0068). An item with no category is
+ * "uncategorised" (payment_category NULL) and resolves its stage
+ * percentages through the Work's optional UNCATEGORISED matrix row
+ * instead.
+ *
+ * AMC is the annual-maintenance category. Its items are quoted in `Year`
+ * (or `Month`) and are never delivered and never installed: a period of
+ * maintenance is SERVED and the railway CERTIFIES it, which is why an
+ * AMC item is discharged by certified quantity and its matrix row may
+ * bill only on the certification and final-bill stages. Before it
+ * existed, an AMC schedule resolved to a delivery requirement and made
+ * work completion unsatisfiable without a fabricated Delivery Challan —
+ * see the migration header. */
 export const WORK_ITEM_PAYMENT_CATEGORIES = [
   'SUPPLY',
   'SUPPLY_AND_INSTALLATION',
   'PURE_INSTALLATION',
   'SPARE_SUPPLY',
+  'AMC',
 ] as const;
 
 export const WorkItemPaymentCategorySchema = Type.Union(
@@ -17,7 +28,7 @@ export const WorkItemPaymentCategorySchema = Type.Union(
 );
 export type WorkItemPaymentCategory = Static<typeof WorkItemPaymentCategorySchema>;
 
-/** Matrix rows are keyed by the four item categories plus UNCATEGORISED
+/** Matrix rows are keyed by the item categories plus UNCATEGORISED
  * (the row uncategorised items resolve through). */
 export const PAYMENT_MATRIX_CATEGORIES = [
   ...WORK_ITEM_PAYMENT_CATEGORIES,
@@ -34,7 +45,13 @@ export type PaymentMatrixCategory = Static<typeof PaymentMatrixCategorySchema>;
  * there is deliberately no per-item percentage entry). Percentages are
  * exact decimal strings (numeric(5,2) verbatim); finalised Measurement
  * Books snapshot the percentages they billed with, so editing or
- * deleting a matrix row never alters a finalised record. */
+ * deleting a matrix row never alters a finalised record.
+ *
+ * The AMC row is additionally constrained: `pctSupply` and
+ * `pctInstallation` must both be zero, because an AMC item takes no
+ * Delivery Challan line and no installation record, so those two stage
+ * deltas are permanently zero and value parked on them could never be
+ * billed (migration 0068). */
 export const PaymentMatrixRowSchema = Type.Object(
   {
     id: UuidSchema,

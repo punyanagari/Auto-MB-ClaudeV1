@@ -21,6 +21,7 @@ import {
   type LoaLetterNumberMatch,
   type PaymentMatrixCategory,
   type Work,
+  type WorkItemPaymentCategory,
   type WorkSchedule,
 } from '@auto-mb/contracts';
 import {
@@ -54,6 +55,7 @@ import {
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import { assertAmcStagePercentages } from './payment.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import type { ObjectStorage } from '../storage.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
@@ -673,6 +675,11 @@ function assertInitialPaymentMatrix(
         `The four percentages for ${row.category} must sum to exactly 100.`,
       );
     }
+    // The AMC row's extra rule (migration 0068), shared verbatim with
+    // the per-row upsert so confirmation and later edits cannot diverge:
+    // an AMC item is never delivered and never installed, so those two
+    // stages can never carry a quantity.
+    assertAmcStagePercentages(row.category, row);
   }
 }
 
@@ -1634,12 +1641,7 @@ export function registerLoaRoutes(
             effective_unit: string | null;
             amendment_added: boolean;
             requires_serials: boolean;
-            payment_category:
-              | 'SUPPLY'
-              | 'SUPPLY_AND_INSTALLATION'
-              | 'PURE_INSTALLATION'
-              | 'SPARE_SUPPLY'
-              | null;
+            payment_category: WorkItemPaymentCategory | null;
             installed_quantity: string;
             pac_certified_quantity: string;
           }[]

@@ -336,6 +336,72 @@ The PBG shall be released within 30 days after expiry of the warranty period of 
     ]);
   });
 
+  it('classifies a maintenance payment block as AMC, and a spare block as spare supply', () => {
+    // Migration 0068's fifth category. The AMC schedule is the one that
+    // made work completion unsatisfiable, so its payment terms should
+    // propose the AMC matrix row rather than fall to UNCATEGORISED and
+    // inherit a delivery-shaped stage split.
+    const review = reviewTenderDocument(
+      `Tender No.: T-11
+Name of Work: IPIS with maintenance
+AMC payment: 90% on issue of PAC for each maintenance year served and 10% on final bill.`,
+      'tender_specification',
+    );
+    expect(review.paymentMatrix).toEqual([
+      expect.objectContaining({ category: 'AMC', pctPac: '90', pctFinalBill: '10' }),
+    ]);
+
+    // A "maintenance spare" is material that MOVES under a maintenance
+    // obligation, not the maintenance service itself, so the narrower
+    // spare test keeps its precedence over the AMC one.
+    const spares = reviewTenderDocument(
+      `Tender No.: T-12
+Name of Work: IPIS with maintenance
+Maintenance spare payment: 90% on supply and 10% on final acceptance.`,
+      'tender_specification',
+    );
+    expect(spares.paymentMatrix).toEqual([
+      expect.objectContaining({ category: 'SPARE_SUPPLY' }),
+    ]);
+  });
+
+  it('does not read a mixed clause as AMC just because it names the AMC period', () => {
+    // "70% supply, 20% installation, 10% after the AMC period" is a
+    // supply-and-installation payment schedule whose last tranche falls
+    // due at the maintenance milestone. Read as AMC it would propose a
+    // row with a nonzero supply and installation percentage — exactly
+    // the shape `payment_matrices_amc_bills_on_certification` refuses —
+    // so the reviewer would be handed a suggestion that cannot be saved.
+    const review = reviewTenderDocument(
+      `Tender No.: T-14
+Name of Work: Supply and installation of IPIS with maintenance
+Payment: 70% on supply, 20% on installation and 10% after the AMC period.`,
+      'tender_specification',
+    );
+    expect(review.paymentMatrix).toEqual([
+      expect.objectContaining({
+        category: 'SUPPLY_AND_INSTALLATION',
+        pctSupply: '70',
+        pctInstallation: '20',
+      }),
+    ]);
+    expect(review.paymentMatrix.map((row) => row.category)).not.toContain('AMC');
+  });
+
+  it('does not read an ordinary maintenance-period clause as an AMC schedule', () => {
+    // Every tender carries a maintenance or defect-liability period; it
+    // describes a warranty obligation on supplied material, not a priced
+    // maintenance schedule, so it must not claim the AMC row.
+    const review = reviewTenderDocument(
+      `Tender No.: T-13
+Name of Work: Supply of routers
+Maintenance period: 5 years after warranty.
+Payment: 80% on supply, 10% on installation, 5% on PAC and 5% on final bill.`,
+      'tender_specification',
+    );
+    expect(review.paymentMatrix.map((row) => row.category)).not.toContain('AMC');
+  });
+
   it.each([
     ['Warranty valid for 36 months from commissioning.', '36'],
     ['Warranty coverage: 24 months from commissioning.', '24'],
