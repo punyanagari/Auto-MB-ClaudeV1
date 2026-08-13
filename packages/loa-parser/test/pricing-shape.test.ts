@@ -556,6 +556,83 @@ describe('pricing-shape classifier (DC-24)', () => {
     });
   });
 
+  // ---- per-schedule accepted percentage (migration 0063) ----------------
+
+  describe('each schedule carries its own accepted-rate percentage', () => {
+    /**
+     * Under Shape B the tender result is printed once per SCHEDULE, and it
+     * is the only thing that turns the item table's advertised rates into
+     * the rates the railway pays. Without it the accepted rate cannot be
+     * derived at all, so it is read here and checked against the
+     * schedule's own totals line before it is published.
+     */
+    it('reads every schedule of PL270-CRB, whose schedules differ', () => {
+      const result = classifyPricingShape(loadLetter('PL270-CRB').text);
+      expect(result.pricing_shape).toBe('per_schedule');
+      expect(
+        result.scheduleTotals.map((s) => [s.scheduleId, s.percentage, s.direction]),
+      ).toEqual([
+        ['A', 14.35, 'below'],
+        ['B', 8.1, 'below'],
+        ['C', 14.35, 'below'],
+        ['D', 8.1, 'below'],
+        ['E', 14.35, 'below'],
+      ]);
+    });
+
+    it('reads a letter that MIXES directions across its own schedules', () => {
+      // PL276-GTL is the case a single per-Work percentage could not hold:
+      // two schedules above par and two below, on one letter.
+      const result = classifyPricingShape(loadLetter('PL276-GTL').text);
+      expect(
+        result.scheduleTotals.map((s) => [s.scheduleId, s.percentage, s.direction]),
+      ).toEqual([
+        ['A1', 7.77, 'above'],
+        ['A2', 8.88, 'above'],
+        ['B1', 49.49, 'below'],
+        ['B2', 28.28, 'below'],
+      ]);
+    });
+
+    it('carries each schedule its own advertised value, and reconciles it', () => {
+      // The self-check: the printed percentage must actually carry the
+      // printed advertised value to the schedule's own total. If it did
+      // not, the reading would be dropped rather than published.
+      for (const id of ['PL270-CRB', 'PL276-GTL']) {
+        for (const schedule of classifyPricingShape(loadLetter(id).text)
+          .scheduleTotals) {
+          expect(
+            schedule.advertisedValue,
+            `${id}/${String(schedule.scheduleId)}`,
+          ).not.toBeNull();
+          const sign = schedule.direction === 'above' ? 1 : -1;
+          const computed =
+            (schedule.advertisedValue ?? 0) *
+            (1 + (sign * (schedule.percentage ?? 0)) / 100);
+          expect(Math.abs(computed - (schedule.total ?? 0))).toBeLessThanOrEqual(0.01);
+        }
+      }
+    });
+
+    it('publishes nothing per schedule on a LETTER-percentage letter', () => {
+      // Their percentage is letter-level and already on the result; a
+      // per-schedule figure there would be an invention, and a zero would
+      // read as "at par" on a letter that is nothing of the sort.
+      for (const id of ['PL273-JHS', 'PL275-BKN', 'PL280-ADI', 'PL281-BB']) {
+        const result = classifyPricingShape(loadLetter(id).text);
+        expect(result.pricing_shape).toBe('letter_percentage');
+        for (const schedule of result.scheduleTotals) {
+          expect(
+            schedule.percentage,
+            `${id}/${String(schedule.scheduleId)}`,
+          ).toBeNull();
+          expect(schedule.direction).toBeNull();
+          expect(schedule.advertisedValue).toBeNull();
+        }
+      }
+    });
+  });
+
   // ---- negative proof: whole corpus parses without throwing --------------
 
   it('classifies every corpus letter without throwing', () => {

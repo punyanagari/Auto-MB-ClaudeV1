@@ -983,15 +983,20 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       invoiceNumber: 'P1026001',
       sequenceNumber: 1,
       fyLabel: '2026-27',
-      // The MB total VERBATIM; round(25260 x 18 / 200, 2) each side.
-      taxableValue: '25260.00',
-      cgstAmount: '2273.40',
-      sgstAmount: '2273.40',
+      // This Work's LOA rates are GST-INCLUSIVE (migration 0062's
+      // default, and the ordinary case), so the measured 25260.00 already
+      // contains the tax. The taxable value is that total less the tax
+      // inside it, and round(21406.78 x 18 / 200, 2) lands on each half.
+      taxableValue: '21406.78',
+      cgstAmount: '1926.61',
+      sgstAmount: '1926.61',
       igstAmount: '0.00',
-      // The invoice is payable in whole rupees: 29806.80 rounds up and
-      // the 0.20 is kept as the Rounding line the document prints.
-      roundOff: '0.20',
-      totalAmount: '29807.00',
+      // And the grand total comes back to the measured total EXACTLY.
+      // That is the property the railway's own settlement has -- their
+      // bill amount is the invoice's grand total, never its taxable value
+      // (owner ruling 2) -- so there is nothing left to round.
+      roundOff: '0.00',
+      totalAmount: '25260.00',
       buyerContactId,
     });
     expect(detail.buyerSnapshot).toMatchObject({
@@ -1020,11 +1025,11 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
       from tax_invoices where id = ${invoice1Id}
     `;
     expect(row).toMatchObject({
-      taxable_value: '25260.00',
-      cgst_amount: '2273.40',
-      sgst_amount: '2273.40',
+      taxable_value: '21406.78',
+      cgst_amount: '1926.61',
+      sgst_amount: '1926.61',
       igst_amount: '0.00',
-      total_amount: '29807.00',
+      total_amount: '25260.00',
       fy_label: '2026-27',
     });
   });
@@ -1080,24 +1085,24 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
           HsnCd: SAC,
           Qty: 1,
           Unit: 'OTH',
-          UnitPrice: 25260,
-          TotAmt: 25260,
-          AssAmt: 25260,
+          UnitPrice: 21406.78,
+          TotAmt: 21406.78,
+          AssAmt: 21406.78,
           GstRt: 18,
-          CgstAmt: 2273.4,
-          SgstAmt: 2273.4,
+          CgstAmt: 1926.61,
+          SgstAmt: 1926.61,
           IgstAmt: 0,
-          TotItemVal: 29806.8,
+          TotItemVal: 25260,
         },
       ],
       ValDtls: {
-        AssVal: 25260,
-        CgstVal: 2273.4,
-        SgstVal: 2273.4,
+        AssVal: 21406.78,
+        CgstVal: 1926.61,
+        SgstVal: 1926.61,
         IgstVal: 0,
         // sum(TotItemVal) + RndOffAmt = TotInvVal, NIC's own identity.
-        RndOffAmt: 0.2,
-        TotInvVal: 29807,
+        RndOffAmt: 0,
+        TotInvVal: 25260,
       },
     });
 
@@ -1419,13 +1424,15 @@ describe('7 — the remainder, and the FINAL Measurement Book', () => {
       invoiceNumber: 'P1026002',
       sequenceNumber: 2,
       fyLabel: '2026-27',
-      taxableValue: '13740.00',
-      cgstAmount: '1236.60',
-      sgstAmount: '1236.60',
+      // GST-inclusive again: 13740.00 measured, less the tax inside it.
+      taxableValue: '11644.07',
+      cgstAmount: '1047.97',
+      sgstAmount: '1047.97',
       igstAmount: '0.00',
-      // Rounds DOWN here, so the delta is negative.
-      roundOff: '-0.20',
-      totalAmount: '16213.00',
+      // Rounds DOWN here, so the delta is negative -- but only by the
+      // paisa the conversion leaves, not by a fifth of a rupee.
+      roundOff: '-0.01',
+      totalAmount: '13740.00',
     });
 
     // The FY counter agrees with the numbers handed out.

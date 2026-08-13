@@ -299,12 +299,57 @@ argument — a figure whose basis the caller cannot name is a figure it cannot
 compare. Cross-Work aggregates restate every term as taxable value first, so a
 portfolio holding both kinds of letter aggregates coherently.
 
+**The tax invoice.** An MB-backed tax invoice bills the measured total on the
+Work's recorded basis. On a GST-inclusive Work the taxable value is the
+measured total less the tax already inside it, so the invoice's **grand total**
+comes back to the measured total — which is the property the railway's own
+settlement has: their bill amount is the invoice's grand total, never its
+taxable value. On a GST-exclusive Work no conversion happens. Itemised lines
+are held to the converted figure, not the raw measured total.
+
 **Known gap.** The per-Work money figures on the dashboard (contract,
 delivered, billed) are still added as printed rupees across Works. On a
 portfolio mixing bases that sum is not on any single basis. It is left that way
 deliberately — stating it correctly would drop a visible tile by a sixth for
 today's all-inclusive portfolio — and is an open question for the owner rather
 than a settled expectation.
+
+### 5.3 Rates are the ACCEPTED rates, derived from the letter
+
+An LOA's item table prints **advertised** rates. The tender result — `14.35%
+Below`, `24.5% Above` — is printed once per schedule on a per-schedule letter
+and once for the whole letter otherwise, and it is what turns an advertised
+rate into the rate the railway actually pays.
+
+**The rule.** A Work item stores both: `advertised_rate` as printed, and
+`effective_rate` as the **accepted** rate the server derives from it. Every
+money figure — challan values, Measurement Book totals, bills, invoices,
+executed value — is computed at the accepted rate.
+
+- The percentage is **read from the letter**, never derived by dividing the
+  schedule's bid total by its advertised total. That quotient does not
+  reproduce the railway's own Agreement Rate exactly, and matching it exactly
+  is the point.
+- It is recorded per **schedule**, because that is the granularity the letter
+  prints it at: one letter legitimately mixes percentages _and_ directions
+  across its own schedules. A letter-percentage letter's single figure is
+  recorded on every schedule, so no reader has to branch on pricing shape.
+- The reading **checks itself**: the schedule header's bid figure must equal
+  that schedule's own totals line, and the percentage must actually carry the
+  advertised value to it.
+- A per-schedule letter whose percentage cannot be read is **refused** at
+  confirmation. Confirming it at advertised rates would make every future
+  money figure wrong by the tender percentage, silently.
+- A row the reviewer **adds by hand** is not adjusted. It carries no printed
+  rate to move, and applying a tender rebate to a hand-entered figure would
+  change a number a human chose deliberately.
+
+**Why it matters.** Before this rule the product stored the printed rate, so
+`sum(awarded_quantity × rate)` came to the letter's advertised value rather
+than its Net Bid Value. The error followed the letter: below par (four of six
+real letters, up to 29%) it overstated every figure, and above par it
+understated them — the contractor invoicing a quarter less than the agreement
+entitled them to.
 
 ## 6. Data conventions
 

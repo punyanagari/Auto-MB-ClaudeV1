@@ -763,6 +763,87 @@ describe('the LOA extracted-value lock', () => {
     expect(row?.gst_rate).toBe('18.00');
   }, 30_000);
 
+  /* --- the accepted rate (ruling 1, migration 0063) ------------------ */
+
+  it('stores the ACCEPTED rate, not the advertised one the letter prints', async () => {
+    // PL270-CRB is a per-schedule letter; Schedule A was won at 14.35%
+    // below par. The letter's item table prints advertised rates, and the
+    // railway's own bill prints the agreement rate this must reproduce:
+    // 2,490,000.00 x 0.8565 = 2,132,685.00 exactly.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, lockCase.request);
+    expect(response.statusCode, response.body).toBe(201);
+    const workId = response.json<WorkDetailResponse>().work.id;
+
+    const rows = await admin<
+      {
+        item_number: string;
+        advertised_rate: string;
+        effective_rate: string;
+        accepted_percentage: string;
+        accepted_percentage_direction: string;
+      }[]
+    >`
+      select i.item_number,
+             i.advertised_rate::text as advertised_rate,
+             i.effective_rate::text as effective_rate,
+             s.accepted_percentage::text as accepted_percentage,
+             s.accepted_percentage_direction
+      from work_items i
+      join work_schedules s on s.id = i.schedule_id
+      where i.work_id = ${workId}
+      order by s.position, i.item_number
+    `;
+    expect(rows.length).toBe(129);
+
+    const first = rows[0];
+    expect(first?.accepted_percentage).toBe('14.350');
+    expect(first?.accepted_percentage_direction).toBe('below');
+    // The printed rate is kept...
+    expect(Number(first?.advertised_rate)).toBe(2490000);
+    // ...and the stored rate is the one the railway pays.
+    expect(Number(first?.effective_rate)).toBe(2132685);
+
+    // Every row moved, and none kept the advertised figure by accident.
+    for (const row of rows) {
+      expect(Number(row.effective_rate)).toBeLessThan(Number(row.advertised_rate));
+    }
+  }, 30_000);
+
+  it('bills the Work to its own contract value, not its advertised value', async () => {
+    // The end-to-end statement of the fix: sum(qty x rate) used to come to
+    // the letter's ADVERTISED value (195,574,112.38) and now comes to its
+    // Net Bid Value (169,228,497.35) — the figure the Work's own
+    // contract_value carries.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, lockCase.request);
+    expect(response.statusCode, response.body).toBe(201);
+    const workId = response.json<WorkDetailResponse>().work.id;
+
+    const [sums] = await admin<
+      { accepted: string; advertised: string; contract_value: string }[]
+    >`
+      select sum(i.awarded_quantity * i.effective_rate)::numeric(18,2)::text
+               as accepted,
+             sum(i.awarded_quantity * i.advertised_rate)::numeric(18,2)::text
+               as advertised,
+             (select w.contract_value::text from works w where w.id = ${workId})
+               as contract_value
+      from work_items i
+      where i.work_id = ${workId}
+    `;
+    // Within a rupee: each of the 129 rates is rounded to the rate
+    // column's six places before it is multiplied out.
+    expect(
+      Math.abs(Number(sums?.accepted) - Number(sums?.contract_value)),
+    ).toBeLessThan(1);
+    expect(Number(sums?.advertised)).toBeCloseTo(195574112.38, 2);
+    // And the two are a long way apart, which is the defect this closes.
+    expect(Number(sums?.advertised) - Number(sums?.accepted)).toBeGreaterThan(
+      26_000_000,
+    );
+  }, 30_000);
+
   it('records an EXCLUSIVE letter when the reviewer says so', async () => {
     // The rare case the attribute exists for. It is accepted as a value,
     // not refused as a modification: the parser asserts nothing about GST,
