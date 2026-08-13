@@ -228,6 +228,34 @@ plus the score dimension it claims, re-checked in the next review round.
 ≈ +0.4 on the reconciled mean with every guard in place; waves 1–2 ≈ 6.6 →
 **~7.4** with no dimension below 5; wave 3 moves adoption rather than scores.
 
+### 2.6 Wave 1 landing record (2026-08-13)
+
+All seven packs merged the same day they were briefed, plus one hotfix and
+three side-fixes the wave surfaced. Verification for every pack: isolated
+worktree, fresh database, guard-fails-on-pre-fix proof stated in the PR.
+
+| Pack | PR | Notes beyond the brief |
+| --- | --- | --- |
+| P1 | #49 | Dead hash helpers were `deliveryChallanHash`/`searchHash`; the inverted comment claimed a migration seeds units when `masters.ts` seeds from `CANONICAL_UNIT_NAMES`; applied-migration comments are checksum-sealed, handled via a `FROZEN_STALE` linter entry. The new linter caught P5's edits to the dead shell during rebase. |
+| P2 | #50 | Resolved a contradiction in this document: `extension_request_counters` must NOT carry the decrease guard — its 0029 top-of-sequence delete path decrements by design; its invariant is gaplessness. §1.3 row 21's "5 of 11" over-counted (correction 4 in §3). Migrations 0064/0065 shipped as reserved. |
+| P3 | #47 | The pack row's "scroll default + sticky offset" is impossible on one scrollport (`overflow-x: auto` forces a scroll container); resolved with a `--sticky-inset`-capped scrollport, measured in-browser. Found the e2e suite red on main since hash routing — invisible because Actions was disabled. |
+| P4 | #46 | The derived throttle closed a live unthrottled variation-order upload path. The old path-list throttle also fired on unmatched paths; the derived one covers registered routes only (accepted). |
+| P5 | #43 | Password recovery via SMTP (nodemailer); production boot now requires `SMTP_URL`/`MAIL_FROM`. PR #45 added them to the prod compose. |
+| P6 | #53 | Backup encryption is envelope (RSA-OAEP + AES-256-CBC), integrity is checksum-based not authenticated (stated posture). Local compiled-artifact run caught nodemailer inlined into the ESM bundle pre-production. CI caught two more defects before merge: a Windows-shaped openssl probe, and the ledger-read grant living only in bootstrap (fixed as migration 0070 — reserved out of order, see §2.1). Off-host destination and alert channel remain owner decisions. |
+| P7 | #48 | Amended before merge to conserve Actions minutes (owner decision): census per-PR in its own workflow, mutation weekly, flake detection manual until production deployment. Branch protection must require `census`, not the path-filtered `verify`. |
+
+Side-fixes: #44 (tax-invoice `ackDate` fixture time bomb — failed on an
+untouched tree from 2026-08-13T09:00Z), #51 (same hazard class in
+credit-notes text forms), #52 (replica-role suite cleanups left FK orphans
+breaking the restore proof; replaced by a shared tenant-closure delete +
+FK census).
+
+Process notes for wave 2, learned the hard way: the merge train ran
+review-first except once (recorded on PR #46); GitHub Actions was enabled
+mid-wave and immediately caught two real defects local verifies missed;
+seven concurrent sessions saturate this machine — stagger heavy packs, and
+treat timeout-shaped failures as contention proven per-package.
+
 ---
 
 ## 3. Standing corrections
@@ -248,6 +276,12 @@ plus the score dimension it claims, re-checked in the next review round.
    and no as-of commit marker. Any future citation should verify against code.
 3. The independent review's factual errors (§1.2) are corrected here so they
    are not re-imported.
+4. §1.3 row 21 says "5 of 11 counter tables lack the decrease guard"; P2
+   measured 4 of 11. The fifth candidate, `extension_request_counters`, is
+   exempt by design: migration 0029's top-of-sequence delete path decrements
+   the counter to keep the extension sequence gapless, so a monotonicity
+   guard would break it. The exemption is recorded in migration 0064 and
+   enforced in `migration-contract.test.ts`.
 
 _Maintained with the same rule as the audit disposition: when a pack lands,
 update its row in the same PR._
