@@ -545,6 +545,9 @@ export function Workspace({
               onBack={() => {
                 setView({ name: 'works' });
               }}
+              onDiscarded={() => {
+                setView({ name: 'works' });
+              }}
             />
           )}
           {view.name === 'quotations' && (

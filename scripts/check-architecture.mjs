@@ -45,6 +45,108 @@ async function collectFiles(directory) {
   return output;
 }
 
+/**
+ * Spans of `source` in which a `setView(` call is legitimate.
+ *
+ * Departure protection is only as good as its narrowest bypass: a view
+ * change that skips `requestDeparture` discards an editor's unsaved work
+ * with no warning, which is exactly how `ReviewLoa` came to be
+ * unprotected while the two short editors were not. The rule is therefore
+ * structural rather than advisory — `setView` may be called from the body
+ * of `navigate`, or from a callback handed to `requestDeparture`, and
+ * from nowhere else.
+ *
+ * The scanner is deliberately simple: it walks the source once, skipping
+ * comments and string/template literals so that a brace inside either
+ * cannot move the region boundaries, and pairs delimiters by depth.
+ */
+function departureSafeSpans(source) {
+  const spans = [];
+  const prose = [];
+  const openers = [];
+  let index = 0;
+  while (index < source.length) {
+    const rest = source.slice(index);
+    if (rest.startsWith('//')) {
+      const end = source.indexOf('\n', index);
+      const stop = end === -1 ? source.length : end + 1;
+      prose.push([index, stop]);
+      index = stop;
+      continue;
+    }
+    if (rest.startsWith('/*')) {
+      const end = source.indexOf('*/', index + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      prose.push([index, stop]);
+      index = stop;
+      continue;
+    }
+    const quote = source[index];
+    if (quote === '"' || quote === "'" || quote === '`') {
+      const start = index;
+      index += 1;
+      while (index < source.length) {
+        if (source[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (source[index] === quote) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      prose.push([start, index]);
+      continue;
+    }
+    // A sanctioned region starts at the delimiter that follows the name:
+    // `function navigate(` opens with the body brace, `requestDeparture(`
+    // with its own argument list.
+    const navigate = /^function\s+navigate\s*\([^)]*\)[^{]*\{/.exec(rest);
+    if (navigate !== null) {
+      openers.push({ close: '}', start: index + navigate[0].length - 1, depth: 0 });
+      index += navigate[0].length;
+      continue;
+    }
+    const departure = /^requestDeparture\s*\(/.exec(rest);
+    if (departure !== null) {
+      openers.push({ close: ')', start: index + departure[0].length - 1, depth: 0 });
+      index += departure[0].length;
+      continue;
+    }
+    const character = source[index];
+    const top = openers.at(-1);
+    if (top !== undefined) {
+      const open = top.close === '}' ? '{' : '(';
+      if (character === open) top.depth += 1;
+      else if (character === top.close) {
+        if (top.depth === 0) {
+          spans.push([top.start, index]);
+          openers.pop();
+        } else top.depth -= 1;
+      }
+    }
+    index += 1;
+  }
+  return { spans, prose };
+}
+
+function lineOf(source, index) {
+  return source.slice(0, index).split('\n').length;
+}
+
+/**
+ * `apps/web/src/views/Workspace.tsx` is the retired shell superseded by
+ * `OperationsWorkspace.tsx`: zero importers anywhere in `src`, `test` and
+ * `e2e`, and no departure protection of any kind. Pack P1 of the
+ * 2026-08-13 improvement programme deletes it. Exempted rather than
+ * rewritten because that file belongs to that pack; this entry goes with
+ * the file.
+ */
+const DEPARTURE_RULE_EXEMPT = new Set([
+  path.join('apps', 'web', 'src', 'views', 'Workspace.tsx'),
+]);
+
 for (const file of await collectFiles(root)) {
   const source = await readFile(file, 'utf8');
   const relative = path.relative(root, file);
@@ -56,6 +158,26 @@ for (const file of await collectFiles(root)) {
     /from ['"]@auto-mb\//.test(source)
   ) {
     errors.push(`LOA parser must remain independent: ${relative}`);
+  }
+  if (
+    relative.startsWith(path.join('apps', 'web', 'src')) &&
+    !DEPARTURE_RULE_EXEMPT.has(relative) &&
+    source.includes('setView(')
+  ) {
+    const { spans, prose } = departureSafeSpans(source);
+    for (const match of source.matchAll(/\bsetView\s*\(/g)) {
+      const at = match.index;
+      const covered =
+        spans.some(([start, end]) => at > start && at < end) ||
+        prose.some(([start, end]) => at >= start && at < end);
+      if (!covered) {
+        errors.push(
+          `view state must move through navigate()/requestDeparture(), so an ` +
+            `unsaved editor is never left without confirmation: ` +
+            `${relative}:${String(lineOf(source, at))}`,
+        );
+      }
+    }
   }
 }
 
