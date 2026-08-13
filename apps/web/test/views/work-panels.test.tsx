@@ -862,7 +862,7 @@ describe('Approvals queue', () => {
     // There is no field to type a letter number into: the server reads
     // every fact out of the uploaded order itself.
     expect(screen.queryByLabelText(/letter number/i)).toBeNull();
-    const input = screen.getByLabelText('Variation order (PDF)') as HTMLInputElement;
+    const input = screen.getByLabelText('Variation order (PDF)');
     const file = new File(['%PDF-1.4'], 'variation-3.pdf', { type: 'application/pdf' });
     fireEvent.change(input, { target: { files: [file] } });
     expect(screen.getByRole('button', { name: 'Cite variation order' })).toBeTruthy();
@@ -938,9 +938,7 @@ describe('Approvals queue', () => {
       />,
     );
 
-    const input = (await screen.findByLabelText(
-      'Variation order (PDF)',
-    )) as HTMLInputElement;
+    const input = await screen.findByLabelText('Variation order (PDF)');
     fireEvent.change(input, {
       target: {
         files: [new File(['%PDF-1.4'], 'wrong.pdf', { type: 'application/pdf' })],

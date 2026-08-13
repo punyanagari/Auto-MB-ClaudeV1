@@ -229,6 +229,13 @@ function readLabelledField(text: string, words: readonly string[]): string | nul
   // The value runs to a two-space column gap or the end of the line. A
   // label is anchored at a line start or after a column gap so that
   // "Agreement Date" can never be read as "Date".
+  //
+  // Built at runtime because the label words come from AGREEMENT_LABELS
+  // above — module-private constants, never a request value, never
+  // anything read out of the uploaded document. The alternative is ten
+  // hand-written near-identical literals whose whitespace tolerance would
+  // drift apart.
+  // eslint-disable-next-line security/detect-non-literal-regexp
   const pattern = new RegExp(
     `(?:^|\\s{2})${label}\\s*:\\s*(\\S(?:[^\\n]*?\\S)?)(?:\\s{2}|$)`,
     'm',
@@ -263,9 +270,44 @@ function printedDateToIso(printed: string | null): string | null {
 export function parsePrintedAmount(printed: string | null): number | null {
   if (printed === null) return null;
   const cleaned = printed.replaceAll(',', '').trim();
-  if (!/^[+-]?\d+(\.\d+)?([Ee][+-]?\d+)?$/.test(cleaned)) return null;
+  if (!isDecimalLiteral(cleaned)) return null;
   const value = Number(cleaned);
   return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * `[sign] digits [. digits] [e [sign] digits]`, scanned rather than
+ * matched. A regex for this shape nests one quantifier inside another
+ * (`(\.\d+)?`), which is the classic catastrophic-backtracking shape and
+ * which the security lint rightly refuses; the scanner is linear in the
+ * input by construction. It runs once per token of every row of a table
+ * that can carry several hundred, on text an operator uploaded, so its
+ * cost profile is worth being certain about.
+ */
+function isDecimalLiteral(text: string): boolean {
+  const isDigit = (index: number): boolean => {
+    const code = text.charCodeAt(index);
+    return code >= 48 && code <= 57;
+  };
+  let index = 0;
+  if (index < text.length && (text[index] === '+' || text[index] === '-')) index += 1;
+  const integerStart = index;
+  while (index < text.length && isDigit(index)) index += 1;
+  if (index === integerStart) return false;
+  if (index < text.length && text[index] === '.') {
+    index += 1;
+    const fractionStart = index;
+    while (index < text.length && isDigit(index)) index += 1;
+    if (index === fractionStart) return false;
+  }
+  if (index < text.length && (text[index] === 'e' || text[index] === 'E')) {
+    index += 1;
+    if (index < text.length && (text[index] === '+' || text[index] === '-')) index += 1;
+    const exponentStart = index;
+    while (index < text.length && isDigit(index)) index += 1;
+    if (index === exponentStart) return false;
+  }
+  return index === text.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,10 +342,10 @@ const NUMERIC_COLUMNS = [
   'percentageVariation',
 ] as const;
 
-const NUMERIC_TOKEN_RE = /^[+-]?[\d,]*\d(\.\d+)?([Ee][+-]?\d+)?$/;
-
+/** A printed figure, with or without the thousands separators IREPS uses
+ * on some columns. Same scanner as the amount reader, for the same reason. */
 function isNumericToken(token: string): boolean {
-  return NUMERIC_TOKEN_RE.test(token) && /\d/.test(token);
+  return isDecimalLiteral(token.replaceAll(',', ''));
 }
 
 /** The Variation Details section, i.e. everything after the LAST line that
