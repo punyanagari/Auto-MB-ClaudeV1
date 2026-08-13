@@ -58,6 +58,8 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     memberAssignments: vi.fn().mockResolvedValue({ userId: 'u', workIds: [] }),
     setMemberAssignments: vi.fn(),
     listLoaDocuments: vi.fn().mockResolvedValue([]),
+    discardLoaDocument: vi.fn(),
+    discardContractSourceDocument: vi.fn(),
     getLoaDocument: vi.fn(),
     uploadLoa: vi.fn(),
     uploadContractSource: vi.fn(),
@@ -368,6 +370,7 @@ export const REVIEW_DOCUMENT = {
   confirmedWorkId: null,
   createdAt: '2026-08-08T00:00:00.000Z',
   extractionPayload: REVIEW_PAYLOAD,
+  letterNumberMatches: [],
 };
 
 export function membership(overrides: Partial<Membership>): Membership {

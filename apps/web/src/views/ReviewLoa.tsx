@@ -15,9 +15,16 @@ import type {
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatTimestampDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
+import {
+  ScheduleAccordionControls,
+  ScheduleSection,
+  underScheduleHeader,
+  useScheduleAccordion,
+} from '../ui/schedule-section.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import {
   Field,
@@ -161,6 +168,59 @@ function buildItemDrafts(payload: ExtractionPayloadView): ItemDraft[] {
   });
 }
 
+/** One item's description cell: two rows by default, the whole thing on
+ * request. The letter's descriptions run to five or six lines each, so a
+ * table that gives every one of them its full height is a page of
+ * paragraphs with the quantities somewhere off to the right.
+ *
+ * The box is the editable field itself, so this shortens nothing: the
+ * full value is in the textarea either way, and only how much of it the
+ * box shows changes. */
+function DescriptionCell({
+  item,
+  scheduleId,
+  onChange,
+}: {
+  readonly item: ItemDraft;
+  readonly scheduleId: string;
+  readonly onChange: (description: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const clampable = item.description.length > 90 || item.description.includes('\n');
+  return (
+    <>
+      <textarea
+        aria-label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
+        value={item.description}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        required
+        minLength={3}
+        rows={expanded ? 10 : 2}
+      />
+      {clampable && (
+        <Button
+          variant="link"
+          size="inline"
+          className="mt-1 text-xs"
+          aria-expanded={expanded}
+          aria-label={
+            expanded
+              ? `Show less of the description for row ${item.itemSno}`
+              : `Show the full description for row ${item.itemSno}`
+          }
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function ReviewLoa({
   api,
   organisationId,
@@ -269,6 +329,7 @@ export function ReviewLoa({
     }
     return ids;
   }, [items]);
+  const accordion = useScheduleAccordion(scheduleIds);
 
   // Exact-decimal reconciliation over the CURRENT rows (edits, added and
   // removed rows included): Σ quantity × rate in BigInt minor units,
@@ -596,6 +657,50 @@ export function ReviewLoa({
         its printed source. Correct anything that reads wrong — nothing becomes a Work
         until you confirm.
       </p>
+
+      {/* Above the review issues on purpose: a letter number that already
+          belongs to something is the one thing that should stop a
+          reviewer BEFORE they spend twenty minutes correcting rows. It is
+          a warning and not a refusal — a corrigendum or a re-issued
+          acceptance legitimately repeats the number of the letter it
+          replaces, and only the reviewer knows which this is. */}
+      {document.letterNumberMatches.length > 0 && (
+        <div
+          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          role="note"
+          aria-labelledby="letter-number-conflict-title"
+          data-testid="letter-number-conflict"
+        >
+          <h2 id="letter-number-conflict-title">
+            Letter number {document.letterNumberMatches[0]?.letterNumber} is already on
+            record
+          </h2>
+          <ul className="mt-2 flex flex-col gap-2 pl-[1.125rem]">
+            {document.letterNumberMatches.map((match) => (
+              <li key={`${match.kind}-${match.id}`}>
+                {match.kind === 'work' ? (
+                  <>
+                    Work <strong>{match.label}</strong> was created from a letter
+                    carrying this number on {formatTimestampDate(match.at)} (
+                    {match.status}).
+                  </>
+                ) : (
+                  <>
+                    <strong>{match.label}</strong>, uploaded{' '}
+                    {formatTimestampDate(match.at)}, carries this number and is{' '}
+                    {match.status}.
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {document.letterNumberMatches.some((match) => match.kind === 'work')
+              ? 'This file is not byte-identical to the earlier intake, so it may be a revised or re-issued letter — but a letter number belongs to one Work forever, so confirming under this number will be refused. Record the revision under the number the revised letter actually prints, or amend the existing Work instead.'
+              : 'This file is not byte-identical to the earlier upload, so it may be a revised or re-issued letter. Only one of them can become a Work: confirm the one that governs, and discard the other.'}
+          </p>
+        </div>
+      )}
 
       {flagged > 0 && (
         <div
@@ -979,10 +1084,24 @@ export function ReviewLoa({
           </details>
         )}
 
+        <h2>Awarded items</h2>
+        <ScheduleAccordionControls
+          accordion={accordion}
+          scheduleCount={scheduleIds.length}
+          itemCount={items.length}
+        />
         {scheduleIds.map((scheduleId) => (
-          <div key={scheduleId}>
-            <h2>Schedule {scheduleId}</h2>
-            <DataTable scroll className="[&_input]:w-28">
+          <ScheduleSection
+            key={scheduleId}
+            code={scheduleId}
+            itemCount={items.filter((item) => item.scheduleId === scheduleId).length}
+            total={scheduleSubtotals.get(scheduleId) ?? null}
+            expanded={accordion.isExpanded(scheduleId)}
+            onToggle={() => {
+              accordion.toggle(scheduleId);
+            }}
+          >
+            <DataTable scroll className={`[&_input]:w-28 ${underScheduleHeader}`}>
               <caption className="sr-only">
                 Awarded items in schedule {scheduleId}; every field is editable
               </caption>
@@ -1016,15 +1135,12 @@ export function ReviewLoa({
                         />
                       </td>
                       <td className={wrapCell}>
-                        <textarea
-                          aria-label={`Description for row ${item.itemSno} in schedule ${scheduleId}`}
-                          value={item.description}
-                          onChange={(event) => {
-                            updateItem(item.key, { description: event.target.value });
+                        <DescriptionCell
+                          item={item}
+                          scheduleId={scheduleId}
+                          onChange={(description) => {
+                            updateItem(item.key, { description });
                           }}
-                          required
-                          minLength={3}
-                          rows={2}
                         />
                         {item.manual ? (
                           <p className="text-muted-foreground">
@@ -1149,7 +1265,7 @@ export function ReviewLoa({
                 </tr>
               </tfoot>
             </DataTable>
-          </div>
+          </ScheduleSection>
         ))}
 
         <h2>Add a row</h2>

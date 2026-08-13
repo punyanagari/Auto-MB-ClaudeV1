@@ -23,6 +23,7 @@ const STATUS_LABELS: Record<LoaDocument['extractionStatus'], string> = {
   review: 'Needs review',
   confirmed: 'Confirmed',
   failed: 'Failed',
+  discarded: 'Discarded',
 };
 
 const DOCUMENT_BADGE: Record<
@@ -34,6 +35,9 @@ const DOCUMENT_BADGE: Record<
   review: 'warning',
   confirmed: 'success',
   failed: 'destructive',
+  // A withdrawn upload is not a failure and not an alarm: it is simply
+  // no longer part of the working list.
+  discarded: 'neutral',
 };
 
 const WORK_STATUS: Record<
@@ -66,6 +70,33 @@ export function Works({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  /** The document whose discard has been asked for but not yet confirmed.
+   * Discarding is reversible only by uploading the file again, so it asks
+   * once — the same two-step the review screen uses to drop a row. */
+  const [discardCandidate, setDiscardCandidate] = useState<string | null>(null);
+  const [discardPending, setDiscardPending] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
+
+  async function discard(documentId: string) {
+    setDiscardPending(true);
+    setDiscardError(null);
+    try {
+      await api.discardLoaDocument(organisationId, documentId);
+      setDocuments(
+        (current) =>
+          current?.filter((candidate) => candidate.id !== documentId) ?? current,
+      );
+      setDiscardCandidate(null);
+    } catch (cause) {
+      setDiscardError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The document could not be discarded. Nothing was changed.',
+      );
+    } finally {
+      setDiscardPending(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +322,11 @@ export function Works({
           <h2 id="loa-documents-title" className="text-sm font-semibold">
             LOA documents
           </h2>
+          {discardError !== null && (
+            <p className="text-sm font-medium text-destructive" role="alert">
+              {discardError}
+            </p>
+          )}
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
@@ -328,31 +364,81 @@ export function Works({
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        {document.extractionStatus === 'review' && (
-                          <a
-                            href={workspaceHashOf({
-                              view: { name: 'review', documentId: document.id },
-                            })}
-                            onClick={navigateOnClick(() => {
-                              onReview(document.id);
-                            })}
-                          >
-                            Review
-                          </a>
-                        )}
-                        {document.extractionStatus === 'confirmed' &&
-                          document.confirmedWorkId !== null && (
+                        <span className="flex flex-wrap items-center gap-2">
+                          {document.extractionStatus === 'review' && (
                             <a
-                              href={workHash(document.confirmedWorkId)}
+                              href={workspaceHashOf({
+                                view: { name: 'review', documentId: document.id },
+                              })}
                               onClick={navigateOnClick(() => {
-                                if (document.confirmedWorkId !== null) {
-                                  onOpenWork(document.confirmedWorkId);
-                                }
+                                onReview(document.id);
                               })}
                             >
-                              Open Work
+                              Review
                             </a>
                           )}
+                          {document.extractionStatus === 'confirmed' &&
+                            document.confirmedWorkId !== null && (
+                              <a
+                                href={workHash(document.confirmedWorkId)}
+                                onClick={navigateOnClick(() => {
+                                  if (document.confirmedWorkId !== null) {
+                                    onOpenWork(document.confirmedWorkId);
+                                  }
+                                })}
+                              >
+                                Open Work
+                              </a>
+                            )}
+                          {/* The exit for a wrong upload. Offered only
+                              while the document is nobody's Work: a
+                              confirmed letter is that Work's source of
+                              truth, and the server refuses it by name. */}
+                          {canModify &&
+                            document.confirmedWorkId === null &&
+                            document.extractionStatus !== 'confirmed' &&
+                            (discardCandidate === document.id ? (
+                              <>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={discardPending}
+                                  onClick={() => void discard(document.id)}
+                                >
+                                  Confirm discard
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={discardPending}
+                                  onClick={() => {
+                                    setDiscardCandidate(null);
+                                    setDiscardError(null);
+                                  }}
+                                >
+                                  Keep
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                aria-label={`Discard ${document.originalFilename}`}
+                                onClick={() => {
+                                  setDiscardCandidate(document.id);
+                                  setDiscardError(null);
+                                }}
+                              >
+                                Discard
+                              </Button>
+                            ))}
+                        </span>
+                        {discardCandidate === document.id && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            The file stays on record for retention, but leaves this
+                            list. Upload it again if you need it back.
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ))}

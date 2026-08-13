@@ -79,6 +79,69 @@ describe('Works', () => {
     await screen.findByText(/No Works yet/);
     expect(screen.queryByRole('button', { name: 'Upload LOA' })).toBeNull();
   });
+
+  it('discards a wrong upload after one confirmation and drops it from the list', async () => {
+    const discardLoaDocument = vi.fn().mockResolvedValue({
+      document: { ...REVIEW_DOCUMENT, extractionStatus: 'discarded' },
+      discardedSupportingDocumentIds: [],
+    });
+    const api = stubApi({
+      listLoaDocuments: vi
+        .fn()
+        .mockResolvedValue([{ ...REVIEW_DOCUMENT, extractionPayload: undefined }]),
+      discardLoaDocument,
+    });
+    render(
+      <Works
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onUpload={vi.fn()}
+        onReview={vi.fn()}
+        onOpenWork={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Discard loa-letter.pdf' }),
+    );
+    // It asks once — the only way back is uploading the file again.
+    expect(screen.getByText(/stays on record for retention/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard' }));
+
+    await waitFor(() => {
+      expect(discardLoaDocument).toHaveBeenCalledWith(ORG_ID, DOC_ID);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('loa-letter.pdf')).toBeNull();
+    });
+  });
+
+  it('offers no discard for a document already confirmed into a Work', async () => {
+    const api = stubApi({
+      listLoaDocuments: vi.fn().mockResolvedValue([
+        {
+          ...REVIEW_DOCUMENT,
+          extractionPayload: undefined,
+          extractionStatus: 'confirmed',
+          confirmedWorkId: WORK_ID,
+        },
+      ]),
+    });
+    render(
+      <Works
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onUpload={vi.fn()}
+        onReview={vi.fn()}
+        onOpenWork={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('link', { name: 'Open Work' });
+    expect(screen.queryByRole('button', { name: /^Discard/ })).toBeNull();
+  });
 });
 
 describe('UploadLoa', () => {
@@ -185,6 +248,112 @@ describe('ReviewLoa', () => {
       screen.queryByRole('button', { name: 'Confirm and create Work' }),
     ).toBeNull();
     expect(screen.getByText(/ask an owner or office member/)).toBeTruthy();
+  });
+
+  it('warns, without refusing, when the letter number is already on record', async () => {
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue({
+        ...REVIEW_DOCUMENT,
+        letterNumberMatches: [
+          {
+            kind: 'work' as const,
+            id: WORK_ID,
+            letterNumber: 'L-42/2025',
+            label: 'PL270-CRB',
+            status: 'active',
+            confirmedWorkId: WORK_ID,
+            at: '2026-05-04T00:00:00.000Z',
+          },
+        ],
+      }),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const warning = await screen.findByTestId('letter-number-conflict');
+    expect(warning.textContent).toContain('L-42/2025');
+    expect(warning.textContent).toContain('PL270-CRB');
+    expect(warning.textContent).toContain(
+      'confirming under this number will be refused',
+    );
+    // A warning, not a refusal: the reviewer can still confirm.
+    expect(
+      screen.getByRole('button', { name: 'Confirm and create Work' }),
+    ).toBeTruthy();
+  });
+
+  it('opens only the first schedule, and expand all reveals the rest', async () => {
+    const twoSchedules = {
+      ...REVIEW_DOCUMENT,
+      extractionPayload: {
+        ...REVIEW_PAYLOAD,
+        review: {
+          ...REVIEW_PAYLOAD.review,
+          items: [
+            REVIEW_PAYLOAD.review.items[0],
+            {
+              ...REVIEW_PAYLOAD.review.items[0],
+              schedule: { id: 'B' },
+              itemSno: '1',
+              description:
+                'Distribution board with a description long enough that two lines cannot hold it, which is exactly the shape the owner reported on a real letter',
+            },
+          ],
+        },
+      },
+    };
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(twoSchedules),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByLabelText('Rate for row 1 in schedule A');
+    // Schedule B is named but shut, so none of its cells are on the page.
+    expect(screen.queryByLabelText('Rate for row 1 in schedule B')).toBeNull();
+    const scheduleB = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.includes('Schedule B'));
+    expect(scheduleB?.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByLabelText('Rate for row 1 in schedule B')).toBeTruthy();
+
+    // A long description is clamped with its own expander, and the value
+    // in the field is the whole text either way.
+    const description = screen.getByLabelText<HTMLTextAreaElement>(
+      'Description for row 1 in schedule B',
+    );
+    expect(description.value).toContain('two lines cannot hold it');
+    expect(description.rows).toBe(2);
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Show the full description for row 1',
+      }),
+    );
+    expect(
+      screen.getByLabelText<HTMLTextAreaElement>('Description for row 1 in schedule B')
+        .rows,
+    ).toBe(10);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    expect(screen.queryByLabelText('Rate for row 1 in schedule A')).toBeNull();
   });
 });
 

@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
   ConfirmWorkRequestSchema,
+  DiscardLoaDocumentRequestSchema,
+  DiscardLoaDocumentResponseSchema,
+  ListLoaDocumentsQuerySchema,
   LoaDocumentDetailSchema,
   PAYMENT_MATRIX_CATEGORIES,
   LoaDocumentListResponseSchema,
@@ -13,6 +16,7 @@ import {
   type ConfirmWorkRequest,
   type LoaDocument,
   type LoaDocumentDetail,
+  type LoaLetterNumberMatch,
   type PaymentMatrixCategory,
   type Work,
   type WorkSchedule,
@@ -41,7 +45,7 @@ import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
 import type { ObjectStorage } from '../storage.js';
-import { upstreamErrorResponses as errorResponses } from './shared.js';
+import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 
@@ -91,11 +95,171 @@ function toDocument(row: LoaDocumentRow): LoaDocument {
   };
 }
 
-function toDocumentDetail(row: LoaDocumentRow): LoaDocumentDetail {
+function toDocumentDetail(
+  row: LoaDocumentRow,
+  letterNumberMatches: readonly LoaLetterNumberMatch[],
+): LoaDocumentDetail {
   return {
     ...toDocument(row),
     extractionPayload: parseJsonbColumn(row.extraction_payload),
+    letterNumberMatches: [...letterNumberMatches],
   };
+}
+
+/** The letter number the parser read off this document, or null when the
+ * extraction failed or the clause could not be located. Read from the
+ * STORED payload, never from a client. */
+function parsedLetterNumber(payload: unknown): string | null {
+  if (payload === null || typeof payload !== 'object') return null;
+  const review = (payload as { review?: unknown }).review;
+  if (review === null || typeof review !== 'object') return null;
+  const header = (review as { header?: unknown }).header;
+  if (header === null || typeof header !== 'object') return null;
+  const letterNumber = (header as { letterNumber?: unknown }).letterNumber;
+  if (letterNumber === null || typeof letterNumber !== 'object') return null;
+  const value = (letterNumber as { value?: unknown }).value;
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+/** Earlier intakes of the same letter number, within the organisation.
+ *
+ * A repeated letter number is NOT a refusal. Railways revise letters:
+ * a corrigendum, a re-issue after a corrected schedule, an amended
+ * acceptance — all print the number the first letter printed, and the
+ * later file is the one the contractor must work from. Refusing it would
+ * strand the revision; saying nothing would let the reviewer spend an
+ * afternoon correcting rows only to have the confirm refused, because
+ * works.letter_number is unique forever (PRODUCT.md invariant 2). So the
+ * reviewer is warned, and told exactly which earlier intake it collides
+ * with.
+ *
+ * Confirmed documents are reported through their Work rather than twice:
+ * once a letter has become a Work, the Work is the thing the reviewer
+ * needs to open. Discarded documents are not reported at all — they were
+ * withdrawn, and naming them would be an alarm about nothing. */
+async function loadLetterNumberMatches(
+  tx: TransactionSql,
+  documentId: string,
+  letterNumber: string | null,
+): Promise<LoaLetterNumberMatch[]> {
+  if (letterNumber === null) return [];
+  const documents = await tx<
+    {
+      id: string;
+      original_filename: string;
+      extraction_status: string;
+      created_at: Date;
+    }[]
+  >`
+    select id, original_filename, extraction_status, created_at
+    from loa_documents
+    where document_kind = 'loa'
+      and id <> ${documentId}
+      and confirmed_work_id is null
+      and extraction_status <> 'discarded'
+      and extraction_payload -> 'review' -> 'header' -> 'letterNumber' ->> 'value'
+          = ${letterNumber}
+    order by created_at, id
+  `;
+  const works = await tx<
+    { id: string; work_code: string; status: string; created_at: Date }[]
+  >`
+    select id, work_code, status, created_at
+    from works
+    where letter_number = ${letterNumber} and deleted_at is null
+    order by created_at, id
+  `;
+  return [
+    ...documents.map((row) => ({
+      kind: 'document' as const,
+      id: row.id,
+      letterNumber,
+      label: row.original_filename,
+      status: row.extraction_status,
+      confirmedWorkId: null,
+      at: row.created_at.toISOString(),
+    })),
+    ...works.map((row) => ({
+      kind: 'work' as const,
+      id: row.id,
+      letterNumber,
+      label: row.work_code,
+      status: row.status,
+      confirmedWorkId: row.id,
+      at: row.created_at.toISOString(),
+    })),
+  ];
+}
+
+const DOCUMENT_STATE_WORDS: Record<string, string> = {
+  pending: 'waiting for extraction',
+  processing: 'being extracted',
+  review: 'waiting for review',
+  confirmed: 'confirmed',
+  failed: 'extraction failed',
+  discarded: 'discarded',
+};
+
+/** Refuses a BYTE-IDENTICAL re-upload, naming the document the
+ * organisation already holds.
+ *
+ * The hash is over the file itself, so this catches exactly one thing:
+ * the same PDF sent twice. A revised letter — different bytes, same
+ * letter number — is a different document and passes; the reviewer is
+ * warned about it instead (loadLetterNumberMatches).
+ *
+ * Discarded documents are excluded on purpose: withdrawing an upload has
+ * to leave the operator free to send the very same file again, which is
+ * the ordinary repair after discarding one by mistake.
+ *
+ * This is a usability refusal, not a database invariant, so it is not
+ * backed by a unique index: an organisation that has already uploaded
+ * the same letter twice (the state this change exists to give an exit
+ * from) must still migrate. Two byte-identical uploads racing inside the
+ * same millisecond can therefore both land; the check runs again inside
+ * the writing transaction, which narrows that window to the overlap of
+ * two transactions rather than the whole scan-and-extract. */
+async function assertNotDuplicateUpload(
+  tx: TransactionSql,
+  sha256: string,
+): Promise<void> {
+  const [existing] = await tx<
+    {
+      id: string;
+      original_filename: string;
+      extraction_status: LoaDocument['extractionStatus'];
+      confirmed_work_id: string | null;
+      created_at: Date;
+    }[]
+  >`
+    select id, original_filename, extraction_status, confirmed_work_id, created_at
+    from loa_documents
+    where document_kind = 'loa'
+      and sha256 = ${sha256}
+      and extraction_status <> 'discarded'
+    order by created_at, id
+    limit 1
+  `;
+  if (!existing) return;
+  const uploadedOn = existing.created_at.toISOString().slice(0, 10);
+  const state =
+    DOCUMENT_STATE_WORDS[existing.extraction_status] ?? existing.extraction_status;
+  const outcome =
+    existing.confirmed_work_id === null
+      ? 'It has not been confirmed into a Work.'
+      : 'It has already been confirmed into a Work.';
+  throw httpError(
+    409,
+    'LOA_DOCUMENT_DUPLICATE',
+    `This is the same file as ${existing.original_filename}, uploaded on ${uploadedOn} and ${state}. ${outcome} Open that document instead, or discard it first if you meant to replace it.`,
+    {
+      existingRecordId: existing.id,
+      originalFilename: existing.original_filename,
+      uploadedAt: existing.created_at.toISOString(),
+      extractionStatus: existing.extraction_status,
+      confirmedWorkId: existing.confirmed_work_id,
+    },
+  );
 }
 
 interface WorkRow {
@@ -439,14 +603,18 @@ export function registerLoaRoutes(
       if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
         throw httpError(400, 'NOT_A_PDF', 'The uploaded file is not a PDF.');
       }
+      const sha256 = createHash('sha256').update(body).digest('hex');
+
       // Authorisation BEFORE any expensive work: an unauthorised caller
-      // must not be able to spend a malware scan or a pdftotext run.
+      // must not be able to spend a malware scan or a pdftotext run. The
+      // duplicate refusal rides along for the same reason — re-sending a
+      // file the organisation already holds should cost nothing.
       await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
+        await assertNotDuplicateUpload(tx, sha256);
       });
       await assertNotMalware(scanner, body);
 
-      const sha256 = createHash('sha256').update(body).digest('hex');
       const documentId = crypto.randomUUID();
       const objectKey = `${organisationId}/loa/${documentId}.pdf`;
 
@@ -487,10 +655,12 @@ export function registerLoaRoutes(
         status = 'failed';
       }
 
-      const row = await tenant(async (tx) => {
-        // Re-checked inside the writing transaction: the role could
-        // have been revoked while the scan and extraction ran.
+      const stored = await tenant(async (tx) => {
+        // Re-checked inside the writing transaction: the role could have
+        // been revoked while the scan and extraction ran, and the same
+        // file could have been uploaded by somebody else.
         await requireWriterRole(tx, user.id);
+        await assertNotDuplicateUpload(tx, sha256);
 
         const [inserted] = await tx<LoaDocumentRow[]>`
             insert into loa_documents (
@@ -519,9 +689,19 @@ export function registerLoaRoutes(
               ${jsonb(tx, { filename, sha256, sizeBytes: body.length, extractionStatus: status })}
             )
           `;
-        return inserted;
+        // Computed in the same transaction that inserted the row, so the
+        // reviewer is warned about a colliding letter number from the
+        // moment the upload answers.
+        const letterNumberMatches = await loadLetterNumberMatches(
+          tx,
+          documentId,
+          parsedLetterNumber(payload),
+        );
+        return { inserted, letterNumberMatches };
       });
-      return reply.status(201).send(toDocumentDetail(row));
+      return reply
+        .status(201)
+        .send(toDocumentDetail(stored.inserted, stored.letterNumberMatches));
     },
   );
 
@@ -530,10 +710,12 @@ export function registerLoaRoutes(
       method: 'GET',
       url: '/api/loa-documents',
       schema: {
+        querystring: ListLoaDocumentsQuerySchema,
         response: { 200: LoaDocumentListResponseSchema, ...errorResponses },
       },
     },
-    async ({ user, tenant }) => {
+    async ({ request, user, tenant }) => {
+      const includeDiscarded = request.query.includeDiscarded ?? false;
       const rows = await tenant(async (tx) => {
         // Owner/office run the upload/review workflow and see every
         // document. Site/viewer members see only documents already
@@ -543,14 +725,21 @@ export function registerLoaRoutes(
         const membership = await membershipOf(tx, user.id);
         const writer = membership?.role === 'owner' || membership?.role === 'office';
         if (writer) {
+          // Discarded documents leave the working list by default; the
+          // row itself is retention material and stays readable to the
+          // writers who run intake, on request.
           return tx<LoaDocumentRow[]>`
               select id, original_filename, sha256, size_bytes,
                      extraction_status, confirmed_work_id, created_at
               from loa_documents
               where document_kind = 'loa'
+                and (${includeDiscarded} or extraction_status <> 'discarded')
               order by created_at desc, id
             `;
         }
+        // Site/viewer members read only through a confirmed Work, and a
+        // discarded document never has one, so their branch needs no
+        // discard clause.
         const full = membership !== undefined && membership.work_scope !== 'assigned';
         return tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
@@ -614,9 +803,131 @@ export function registerLoaRoutes(
             throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
           }
         }
-        return found;
+        return {
+          found,
+          letterNumberMatches: await loadLetterNumberMatches(
+            tx,
+            found.id,
+            parsedLetterNumber(parseJsonbColumn(found.extraction_payload)),
+          ),
+        };
       });
-      return toDocumentDetail(row);
+      return toDocumentDetail(row.found, row.letterNumberMatches);
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/loa-documents/:id/discard',
+      schema: {
+        params: DocumentParamsSchema,
+        body: DiscardLoaDocumentRequestSchema,
+        response: { 200: DiscardLoaDocumentResponseSchema, ...errorResponses },
+      },
+      // The same gate as upload: whoever may put an intake package into
+      // the organisation may take an unconfirmed one back out. No
+      // explicit cancel authority is demanded — unlike the cancel of an
+      // issued challan or a PAC certificate, discarding here withdraws
+      // nothing from the quantity ledger and voids no numbered document,
+      // because a discardable document has never become one.
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const { reason } = request.body;
+      return tenant(async (tx) => {
+        const [existing] = await tx<
+          {
+            extraction_status: string;
+            confirmed_work_id: string | null;
+            original_filename: string;
+          }[]
+        >`
+          select extraction_status, confirmed_work_id, original_filename
+          from loa_documents
+          where id = ${id} and document_kind = 'loa'
+          for update
+        `;
+        if (!existing) {
+          throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        if (existing.extraction_status === 'discarded') {
+          throw httpError(
+            409,
+            'DOCUMENT_ALREADY_DISCARDED',
+            'This LOA document has already been discarded.',
+          );
+        }
+        // The named refusal. A confirmed letter is the Work's source of
+        // truth: every work_item's source_evidence points into this
+        // document's extraction payload, so discarding it would leave the
+        // Work's evidence pointing at a document the product presents as
+        // thrown away. The 0055 trigger refuses the same move at the
+        // database, for every writer.
+        if (
+          existing.extraction_status === 'confirmed' ||
+          existing.confirmed_work_id !== null
+        ) {
+          throw httpError(
+            409,
+            'DOCUMENT_CONFIRMED',
+            `${existing.original_filename} has already been confirmed into a Work and is that Work's source of truth, so it cannot be discarded. Nothing was changed.`,
+            { confirmedWorkId: existing.confirmed_work_id },
+          );
+        }
+        const [discarded] = await tx<LoaDocumentRow[]>`
+          update loa_documents
+          set extraction_status = 'discarded', discarded_at = now(),
+              discarded_by_user_id = ${user.id},
+              discard_reason = ${reason ?? null}
+          where id = ${id}
+          returning id, original_filename, sha256, size_bytes,
+                    extraction_status, confirmed_work_id, created_at
+        `;
+        if (!discarded) throw new Error('loa_documents discard returned no row');
+
+        // The supporting contract documents belong to the intake package,
+        // not to themselves: a NIT or tender specification exists only as
+        // evidence attached to this letter, and the 0055 trigger refuses
+        // to attach a new one to a discarded letter. They go together.
+        const supporting = await tx<{ id: string; original_filename: string }[]>`
+          update loa_documents
+          set extraction_status = 'discarded', discarded_at = now(),
+              discarded_by_user_id = ${user.id},
+              discard_reason = ${reason ?? null}
+          where parent_loa_document_id = ${id}
+            and extraction_status <> 'discarded'
+          returning id, original_filename
+        `;
+
+        await audit(tx, organisationId, user.id, 'loa.discarded', 'loa_documents', id, {
+          filename: existing.original_filename,
+          before: { extractionStatus: existing.extraction_status },
+          after: { extractionStatus: 'discarded' },
+          reason: reason ?? null,
+          supportingDocumentIds: supporting.map((row) => row.id),
+        });
+        for (const row of supporting) {
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'contract_source.discarded',
+            'loa_documents',
+            row.id,
+            {
+              filename: row.original_filename,
+              parentLoaDocumentId: id,
+              reason: reason ?? null,
+            },
+          );
+        }
+        return {
+          document: toDocument(discarded),
+          discardedSupportingDocumentIds: supporting.map((row) => row.id),
+        };
+      });
     },
   );
 
@@ -653,6 +964,13 @@ export function registerLoaRoutes(
           `;
         if (!document) {
           throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        if (document.extraction_status === 'discarded') {
+          throw httpError(
+            409,
+            'DOCUMENT_DISCARDED',
+            'This LOA document was discarded and can no longer become a Work. Upload the letter again if it was discarded by mistake.',
+          );
         }
         if (document.extraction_status !== 'review') {
           throw httpError(
@@ -789,6 +1107,10 @@ export function registerLoaRoutes(
             `;
         }
 
+        // A discarded supporting document is excluded: it was withdrawn
+        // from the package before confirmation and is terminal, so
+        // stamping this Work onto it would both misrepresent the evidence
+        // and trip the 0055 immutability guard.
         await tx`
             update loa_documents
             set confirmed_work_id = ${work.id},
@@ -796,7 +1118,8 @@ export function registerLoaRoutes(
                   when id = ${documentId} then 'confirmed'
                   else extraction_status
                 end
-            where id = ${documentId} or parent_loa_document_id = ${documentId}
+            where (id = ${documentId} or parent_loa_document_id = ${documentId})
+              and extraction_status <> 'discarded'
           `;
 
         await tx`

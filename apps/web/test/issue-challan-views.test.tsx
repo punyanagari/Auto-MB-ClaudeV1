@@ -61,6 +61,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     memberAssignments: vi.fn().mockResolvedValue({ userId: 'u', workIds: [] }),
     setMemberAssignments: vi.fn(),
     listLoaDocuments: vi.fn().mockResolvedValue([]),
+    discardLoaDocument: vi.fn(),
+    discardContractSourceDocument: vi.fn(),
     getLoaDocument: vi.fn(),
     uploadLoa: vi.fn(),
     uploadContractSource: vi.fn(),

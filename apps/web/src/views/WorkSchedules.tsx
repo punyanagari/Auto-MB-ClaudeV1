@@ -1,9 +1,18 @@
 import type { WorkDetailResponse, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ApiClient, SetWorkItemTaxFactsRequest } from '../api.js';
+import { formatCompactInr } from '../format.js';
+import { exactRowsTotal } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import {
+  ClampedText,
+  ScheduleAccordionControls,
+  ScheduleSection,
+  underScheduleHeader,
+  useScheduleAccordion,
+} from '../ui/schedule-section.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
 
@@ -161,6 +170,27 @@ export function WorkSchedules({
 }: WorkSchedulesProps) {
   /** The one row whose GST facts are being edited; the summary elsewhere. */
   const [taxEditingItemId, setTaxEditingItemId] = useState<string | null>(null);
+  const accordion = useScheduleAccordion(schedules.map((schedule) => schedule.id));
+
+  /** Each schedule's sanctioned value, in exact BigInt minor units over
+   * the EFFECTIVE quantity and rate — what an approved amendment left,
+   * not what the letter first awarded. Display only; the server stays
+   * authoritative for every stored amount. */
+  const scheduleTotals = useMemo(() => {
+    const totals = new Map<string, string | null>();
+    for (const schedule of schedules) {
+      totals.set(
+        schedule.id,
+        exactRowsTotal(
+          schedule.items.map((item) => ({
+            awardedQuantity: item.effectiveQuantity ?? item.awardedQuantity,
+            effectiveRate: item.effectiveUnitRate ?? item.effectiveRate,
+          })),
+        ),
+      );
+    }
+    return totals;
+  }, [schedules]);
 
   /** The edits here change fields of one item in place; the loaded
    * detail is otherwise left exactly as the server sent it. */
@@ -184,16 +214,26 @@ export function WorkSchedules({
 
   return (
     <>
+      <ScheduleAccordionControls
+        accordion={accordion}
+        scheduleCount={schedules.length}
+        itemCount={workItems.length}
+      />
       {schedules.map((schedule) => (
-        <div key={schedule.id}>
-          <h2>
-            Schedule {schedule.scheduleCode}
-            <span className="text-muted-foreground">
-              {' '}
-              · {schedule.items.length} items
-            </span>
-          </h2>
-          <DataTable>
+        <ScheduleSection
+          key={schedule.id}
+          code={schedule.scheduleCode}
+          title={schedule.title}
+          itemCount={schedule.items.length}
+          total={((total) => (total === null ? null : formatCompactInr(total)))(
+            scheduleTotals.get(schedule.id) ?? null,
+          )}
+          expanded={accordion.isExpanded(schedule.id)}
+          onToggle={() => {
+            accordion.toggle(schedule.id);
+          }}
+        >
+          <DataTable className={underScheduleHeader}>
             <caption className="sr-only">
               Awarded items in schedule {schedule.scheduleCode}; amended values show the
               original beside the sanctioned change, and each item carries its GST facts
@@ -222,10 +262,16 @@ export function WorkSchedules({
                       )}
                     </th>
                     <td className={wrapCell}>
-                      <Amended
-                        original={item.description}
-                        effective={item.effectiveDescription}
-                      />
+                      {item.effectiveDescription === null ||
+                      item.effectiveDescription === undefined ||
+                      item.effectiveDescription === item.description ? (
+                        <ClampedText text={item.description} label={item.itemNumber} />
+                      ) : (
+                        <Amended
+                          original={item.description}
+                          effective={item.effectiveDescription}
+                        />
+                      )}
                     </td>
                     <td>
                       <Amended
@@ -338,7 +384,7 @@ export function WorkSchedules({
               })}
             </tbody>
           </DataTable>
-        </div>
+        </ScheduleSection>
       ))}
 
       <PaymentMatrix
