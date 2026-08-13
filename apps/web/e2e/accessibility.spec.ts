@@ -636,6 +636,24 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByLabel('Quantity of A/1 on this challan')).toBeVisible();
   await expectNoAxeViolations(page, 'challan editor');
+
+  /* An open confirmation, scanned. Every destructive confirmation in the
+     product now renders one shared primitive (`ui/confirm.tsx` over
+     `ui/dialog.tsx`), so scanning one scans the shape of all twelve — the
+     dialog role, the name it borrows from its own heading, the description,
+     and the backdrop that must stay out of the accessibility tree. */
+  await page.getByLabel('Quantity of A/1 on this challan').fill('1');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Discard your changes?' });
+  await expect(confirmation).toBeVisible();
+  // Focus lands on the safe choice, so Enter on an unread dialog is never
+  // the destructive answer.
+  await expect(
+    confirmation.getByRole('button', { name: 'Keep editing' }),
+  ).toBeFocused();
+  await expectNoAxeViolations(page, 'challan editor — discard confirmation');
+  await page.keyboard.press('Escape');
+  await expect(confirmation).toHaveCount(0);
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({

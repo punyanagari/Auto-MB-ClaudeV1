@@ -91,10 +91,13 @@ export function Modal({
   children,
 }: ModalProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
-  /* Read through a ref so a caller re-rendering with a new element does not
-   * re-run the open effect and steal focus back a second time. */
-  const initialFocusTargetRef = useRef<HTMLElement | null>(null);
-  initialFocusTargetRef.current = initialFocusRef?.current ?? null;
+  /* Both are read inside the effect, and both are held in refs so a caller's
+   * re-render cannot re-run it and take focus a second time. `initialFocusRef`
+   * in particular MUST NOT be read during render: React attaches refs during
+   * commit, so at render time the caller's ref is still null and the dialog
+   * would silently fall back to the first focusable control. */
+  const initialFocusRefRef = useRef(initialFocusRef);
+  initialFocusRefRef.current = initialFocusRef;
   const restoreOverrideRef = useRef<HTMLElement | null>(null);
   restoreOverrideRef.current = restoreFocusTo ?? null;
 
@@ -106,7 +109,7 @@ export function Modal({
     if (lockScroll) document.body.style.overflow = 'hidden';
     const surface = surfaceRef.current;
     const target =
-      initialFocusTargetRef.current ??
+      initialFocusRefRef.current?.current ??
       surface?.querySelector<HTMLElement>(FOCUSABLE) ??
       surface;
     target?.focus();
