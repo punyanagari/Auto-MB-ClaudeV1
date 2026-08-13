@@ -35,6 +35,23 @@ version freezes its logo and is retained; object-storage lifecycle policy must
 therefore preserve every key listed in `tax_invoice_renders`, not only the
 invoice's current pointer.
 
+Password recovery is the one thing the product mails, and its transport is
+mandatory: outside development and test the API refuses to start unless
+both `SMTP_URL` (a nodemailer `smtp://`/`smtps://` connection URL) and
+`MAIL_FROM` (a sender address the relay accepts) are present in its
+environment (`assertProductionMailSettings` in `apps/server/src/auth.ts`;
+docs/SECURITY.md, "Authentication and authorisation"). Both values come
+from `deploy/.env.production` exactly like `AUTH_SECRET` — mailbox
+credentials belong in the deployment secret store, never in source
+control — and `deploy/docker-compose.prod.yml` marks them required, so a
+deploy without them fails at compose interpolation rather than shipping a
+container that boot-loops. After configuring or changing them, verify
+delivery end-to-end: use "Forgot your password?" on the sign-in screen
+with a real staff address and confirm the mail arrives and its link opens.
+The request endpoint deliberately answers the same neutral message whether
+or not the send succeeded (no account-existence oracle), so an arrived
+mail is the only proof of a working transport.
+
 The API's login/upload rate limits and the account-scoped login lockout
 keep their counters in process memory: they protect a SINGLE API
 instance only. Running more than one API instance divides (and for the

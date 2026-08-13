@@ -59,6 +59,14 @@ services:
       # to true in production; set false in .env.production only while the
       # deployment is being stood up, before any partner account exists.
       MFA_ENFORCE: ${MFA_ENFORCE:-true}
+      # Password recovery mail (apps/server/src/auth.ts): outside
+      # development and test the server refuses to start unless both are
+      # set, so compose refuses the interpolation first rather than
+      # shipping a container that boot-loops. SMTP_URL may carry mailbox
+      # credentials, so like AUTH_SECRET both values come from
+      # .env.production and are never committed.
+      SMTP_URL: ${SMTP_URL:?set in .env.production}
+      MAIL_FROM: ${MAIL_FROM:?set in .env.production}
       WEB_ORIGIN: https://${SITE_ADDRESS:?set in .env.production}
       # The server sits exactly one hop behind Caddy, which replaces any
       # client-supplied X-Forwarded-For with the real peer address; one
