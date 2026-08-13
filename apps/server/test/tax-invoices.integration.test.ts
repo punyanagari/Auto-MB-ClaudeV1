@@ -488,12 +488,21 @@ beforeAll(async () => {
   await admin`
     insert into works (
       id, organisation_id, work_code, letter_number, letter_date, title,
-      advertised_value, contract_value, pricing_shape, created_by_user_id
+      advertised_value, contract_value, pricing_shape, gst_basis,
+      created_by_user_id
     )
     values (
       ${workId}, ${organisationId}, ${workCode}, ${`L-${workCode}`},
       '2025-06-01', 'Tax invoice fixture work', '10000000.00', '9000000.00',
-      'per_schedule', ${ownerUserId}
+      -- GST-EXCLUSIVE on purpose (migration 0062). This suite's subject is
+      -- the tax SPLIT, the IRP payload and MB closure, and on an exclusive
+      -- Work the measured total IS the taxable value, so every figure below
+      -- stays the round number it was written to be. The inclusive path --
+      -- where the taxable value is the measured total less the tax already
+      -- inside it -- is covered by its own cases at the end of this file
+      -- and by tax-invoice-money-basis.test.ts. Stated rather than left to
+      -- the column default, so the basis this fixture assumes is visible.
+      'per_schedule', 'exclusive', ${ownerUserId}
     )
   `;
   await admin`
@@ -3913,5 +3922,98 @@ describe('finding 2: the statutory reporting authority is separate from issue', 
     expect(body.code).toBe('AUTHORITY_REQUIRED');
     expect(body.message).toContain('issue authority');
     expect(registerInvoiceProvider).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The GST-INCLUSIVE Work — the ordinary case, and the one owner ruling 2
+ * of 13 August 2026 settles.
+ *
+ * The rest of this file runs on a deliberately GST-exclusive fixture so
+ * that the tax-split arithmetic stays legible in round numbers. This block
+ * flips the same Work to `inclusive` for its own cases and puts it back
+ * afterwards, because the basis is the ONLY thing under test here.
+ */
+describe('an MB-backed invoice on a GST-inclusive Work (rulings 0062/0063)', () => {
+  beforeAll(async () => {
+    await admin`update works set gst_basis = 'inclusive' where id = ${workId}`;
+  });
+  afterAll(async () => {
+    await admin`update works set gst_basis = 'exclusive' where id = ${workId}`;
+  });
+
+  it('bills the measured total less the tax already inside it, and returns to it', async () => {
+    const book = await finalizedMb('2026-03-02', '5');
+    const created = await createInvoice(book.id);
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const submitted = await submitInvoice(invoiceId);
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    const invoice = submitted.json<TaxInvoiceDetailResponse>().invoice;
+
+    // The measured total already carries the tax, so it is NOT the taxable
+    // value: that is the total divided by 1.18, in exact SQL numeric.
+    const measured = Number(book.total);
+    const taxable = Number(invoice.taxableValue);
+    expect(taxable).toBeLessThan(measured);
+    expect(Math.abs(taxable * 1.18 - measured)).toBeLessThanOrEqual(0.01);
+
+    // And the grand total comes back to what was measured — the property
+    // the railway's own settlement has, where the bill amount IS the
+    // invoice's grand total rather than its taxable value.
+    expect(Number(invoice.totalAmount)).toBe(Math.round(measured));
+
+    // The tax is still split in halves off the (converted) taxable value.
+    expect(invoice.cgstAmount).toBe(invoice.sgstAmount);
+    expect(invoice.igstAmount).toBe('0.00');
+    const parts =
+      Number(invoice.taxableValue) +
+      Number(invoice.cgstAmount) +
+      Number(invoice.sgstAmount);
+    expect(
+      Math.abs(parts + Number(invoice.roundOff) - Number(invoice.totalAmount)),
+    ).toBeLessThanOrEqual(0.005);
+  });
+
+  it('holds itemised lines to the CONVERTED total, and says so when they miss', async () => {
+    const book = await finalizedMb('2026-03-03', '4');
+    // Lines summing to the RAW measured total are now wrong by the tax:
+    // that is the old behaviour, and it must be refused rather than
+    // silently charging GST on a figure that already contains it.
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/tax-invoices`,
+      organisationId,
+      payload: {
+        measurementBookId: book.id,
+        invoiceDate: '2026-03-04',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: true,
+            hsnSacCode: SAC,
+            description: 'Measured supply, priced at the RAW measured total',
+            quantity: '1.000',
+            unitRate: book.total,
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    const refused = await submitInvoice(invoiceId);
+    expect(refused.statusCode, refused.body).toBe(409);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('ITEMISED_LINES_TOTAL_MISMATCH');
+    // The message must name BOTH figures, or the operator cannot tell
+    // which total their lines were supposed to add up to.
+    expect(body.message).toContain('inclusive of GST');
+    expect(body.message).toContain(book.total);
   });
 });

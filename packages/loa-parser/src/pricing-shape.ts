@@ -109,6 +109,11 @@ const SCHEDULE_TOTALS_LINE_RE = /^Schedule Totals\s+(-?[\d,]+\.\d{2})\s*$/;
 const TOTAL_VALUE_LINE_TEST_RE = /^Total Value\s+-?[\d,]+\.\d{2}/;
 const TOTAL_VALUE_LINE_PARSE_RE = /^Total Value\s+(-?[\d,]+\.\d{2})(?:\s+(.*))?$/;
 const DECIMAL_TOKEN_RE = /-?[\d,]+\.\d{2}/g;
+/** The direction word on a SCHEDULE header block. Deliberately narrower
+ * than `normalizeToken`'s vocabulary: no per-schedule "At Par" appears in
+ * any real letter, and a schedule that prints one would rather be a hole a
+ * human fills than a token this reader inferred. */
+const SCHEDULE_DIRECTION_RE = /\b(Below|Above)\b/;
 const REBATE_LABEL = 'Rebate on Total Value';
 const NET_BID_LABEL = 'Net Bid Value';
 
@@ -123,6 +128,27 @@ export type LetterPercentageDirectionValue = 'below' | 'at_par' | 'above';
 export interface ScheduleTotalEntry {
   readonly scheduleId: string | null;
   readonly total: number | null;
+  /**
+   * The schedule's OWN accepted-rate percentage, as printed on its header
+   * block, with the advertised value it applies to.
+   *
+   * Under Shape B this is the only place the tender result is stated: the
+   * item table prints ADVERTISED rates (see the module doc's "Never sums
+   * item rows"), and each schedule header carries its own percentage and
+   * direction — a single letter legitimately mixes them (PL276-GTL runs
+   * 7.77% Above, 8.88% Above and 49.49% Below across four schedules). The
+   * accepted rate of an item is its printed rate moved by ITS schedule's
+   * percentage, so without this the accepted rate cannot be derived at all.
+   *
+   * All three are `null` together, and only when the header block did not
+   * yield a self-consistent reading — the printed bid figure must equal
+   * this schedule's own `Schedule Totals` line, which is what makes the
+   * extraction check itself rather than trusting column positions. A null
+   * here is a hole for a human to fill, never a licence to assume at par.
+   */
+  readonly advertisedValue: number | null;
+  readonly percentage: number | null;
+  readonly direction: LetterPercentageDirectionValue | null;
 }
 
 /** The exact DC-14 `works` pricing-column subset this module is
@@ -211,6 +237,18 @@ export interface TotalsBlockStructure {
   readonly scheduleTotals: readonly {
     scheduleId: string | null;
     totalRaw: string | null;
+    /** The schedule header block's own three printed figures and its
+     * direction token, verbatim. Still zero arithmetic here — phase 3
+     * decides whether they reconcile.
+     *
+     * Optional because phase 2 (`classifyShapeKind`) reads only
+     * `totalRaw`: the shape of a letter is decided by whether its schedule
+     * totals are all zero, never by a schedule's own percentage. Omitting
+     * them is the same as not having found them. */
+    advertisedRaw?: string | null;
+    percentRaw?: string | null;
+    bidRaw?: string | null;
+    directionToken?: LetterPercentageDirectionValue | null;
   }[];
   readonly rebateRaw: string | null;
   readonly rawBlockText: string | null;
@@ -311,6 +349,76 @@ function extractRebateRaw(region: string): string | null {
   return m === null ? null : m[0];
 }
 
+interface ScheduleHeaderBlock {
+  advertisedRaw: string | null;
+  percentRaw: string | null;
+  bidRaw: string | null;
+  directionToken: LetterPercentageDirectionValue | null;
+}
+
+function emptyScheduleHeaderBlock(): ScheduleHeaderBlock {
+  return {
+    advertisedRaw: null,
+    percentRaw: null,
+    bidRaw: null,
+    directionToken: null,
+  };
+}
+
+/** How far past a `Schedule <id>-` header the header block's own figures
+ * and its wrapped direction word are looked for. Three lines covers every
+ * real letter (figures on the next line, direction on the one after) with
+ * one to spare, and stops the scan well short of the first item row. */
+const SCHEDULE_HEADER_SCAN_LINES = 3;
+
+/**
+ * The three figures and the direction word printed on a schedule's own
+ * header block, verbatim. STILL ZERO ARITHMETIC (module doc, phase 1) —
+ * whether they reconcile is phase 3's question.
+ *
+ * The layout is stable across both Shape-B letters in the corpus: the
+ * header names the schedule, the NEXT line carries advertised value,
+ * percentage and bid amount in that order, and the direction word wraps
+ * onto the line after it beside the title's continuation.
+ *
+ *     Schedule A-Passenger amenities and other telecom assets at CSMT,   %
+ *                                     103534252.67 14.35      88677087.41
+ *     Dadar and Thane stations (Item Directory - Not Applicable)    Below
+ *
+ * Exactly three decimal tokens are required. Fewer or more means the line
+ * is not the header block this reader understands — a schedule whose
+ * figures wrapped differently, or an item row misread as a header — and
+ * yields nothing rather than a guess at which token is the percentage.
+ */
+function readScheduleHeaderBlock(
+  lines: readonly string[],
+  headerIdx: number,
+): ScheduleHeaderBlock {
+  const numbers = (lines[headerIdx + 1] ?? '').match(DECIMAL_TOKEN_RE) ?? [];
+  if (numbers.length !== 3) return emptyScheduleHeaderBlock();
+
+  // The direction word may sit on the figures line or wrap onto the next.
+  // The header's own line is skipped: a schedule TITLE may legitimately
+  // contain the word "above", and reading it as the tender direction would
+  // invent a premium out of prose.
+  let directionToken: LetterPercentageDirectionValue | null = null;
+  const limit = Math.min(lines.length - 1, headerIdx + SCHEDULE_HEADER_SCAN_LINES);
+  for (let i = headerIdx + 1; i <= limit; i += 1) {
+    const match = SCHEDULE_DIRECTION_RE.exec(lines[i] ?? '');
+    if (match !== null) {
+      directionToken = normalizeToken(match[1] ?? '');
+      break;
+    }
+  }
+
+  return {
+    advertisedRaw: numbers[0] ?? null,
+    percentRaw: numbers[1] ?? null,
+    bidRaw: numbers[2] ?? null,
+    directionToken,
+  };
+}
+
 function captureRawBlock(
   lines: readonly string[],
   scheduleTotalsLineIdx: readonly number[],
@@ -351,15 +459,21 @@ export function parseTotalsBlockStructure(rawText: string): TotalsBlockStructure
   const scheduleTotals: {
     scheduleId: string | null;
     totalRaw: string | null;
+    advertisedRaw: string | null;
+    percentRaw: string | null;
+    bidRaw: string | null;
+    directionToken: LetterPercentageDirectionValue | null;
   }[] = [];
   const scheduleTotalsLineIdx: number[] = [];
   let currentScheduleId: string | null = null;
+  let currentHeader = emptyScheduleHeaderBlock();
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? '';
     const headerMatch = SCHEDULE_HEADER_START_RE.exec(line);
     if (headerMatch !== null) {
       currentScheduleId = (headerMatch[1] ?? '').trim();
+      currentHeader = readScheduleHeaderBlock(lines, i);
       continue;
     }
     const totalsMatch = SCHEDULE_TOTALS_LINE_RE.exec(line.trim());
@@ -367,6 +481,7 @@ export function parseTotalsBlockStructure(rawText: string): TotalsBlockStructure
       scheduleTotals.push({
         scheduleId: currentScheduleId,
         totalRaw: totalsMatch[1] ?? null,
+        ...currentHeader,
       });
       scheduleTotalsLineIdx.push(i);
     }
@@ -532,12 +647,90 @@ function computeScheduleSumContract(
 // assembly
 // ---------------------------------------------------------------------------
 
+/**
+ * Phase 3 for one schedule header block: does the printed percentage
+ * actually carry the printed advertised value to the printed bid amount,
+ * and is that bid amount this schedule's own `Schedule Totals` line?
+ *
+ * Both questions must be answered yes, in exact paisa, or all three
+ * figures are dropped. This is what makes the reader self-checking rather
+ * than positional: a mis-associated header, a wrapped figure claimed by
+ * the wrong schedule, or a percentage read out of the advertised column
+ * all fail the arithmetic and become a hole. Nothing here ever infers a
+ * percentage from the two amounts — a derived factor would not reproduce
+ * the railway's own Agreement Rate exactly, and matching it exactly is the
+ * entire point of reading the printed percentage instead.
+ *
+ * The tolerance is one paisa, the same band the totals block already
+ * allows itself: the printed bid amount is rounded to paise, so an exact
+ * equality would refuse legitimate schedules.
+ */
+function reconcileScheduleHeader(entry: {
+  totalRaw: string | null;
+  advertisedRaw?: string | null;
+  percentRaw?: string | null;
+  bidRaw?: string | null;
+  directionToken?: LetterPercentageDirectionValue | null;
+}): {
+  advertisedValue: number | null;
+  percentage: number | null;
+  direction: LetterPercentageDirectionValue | null;
+} {
+  const dropped = { advertisedValue: null, percentage: null, direction: null };
+  const advertisedRaw = entry.advertisedRaw ?? null;
+  const percentRaw = entry.percentRaw ?? null;
+  const bidRaw = entry.bidRaw ?? null;
+  const directionToken = entry.directionToken ?? null;
+  if (
+    advertisedRaw === null ||
+    percentRaw === null ||
+    bidRaw === null ||
+    directionToken === null
+  ) {
+    return dropped;
+  }
+
+  const advertisedPaisa = parseDecimalToMinorUnits(advertisedRaw, 2);
+  const bidPaisa = parseDecimalToMinorUnits(bidRaw, 2);
+  const pctMilli = parseDecimalToMinorUnits(percentRaw, 3);
+  const totalPaisa =
+    entry.totalRaw === null ? null : parseDecimalToMinorUnits(entry.totalRaw, 2);
+  if (
+    advertisedPaisa === null ||
+    bidPaisa === null ||
+    pctMilli === null ||
+    totalPaisa === null
+  ) {
+    return dropped;
+  }
+
+  // The bid figure on the header must BE the schedule's total. If it is
+  // not, this header block was not read against the right schedule.
+  if (diffPaise(bidPaisa, totalPaisa) > 0n) return dropped;
+
+  // ...and the percentage must actually produce it, by the same signed
+  // formula Shape A uses.
+  const computed = computeLetterPercentageContract(
+    advertisedPaisa,
+    pctMilli,
+    directionToken,
+  );
+  if (diffPaise(computed, bidPaisa) > 1n) return dropped;
+
+  return {
+    advertisedValue: minorToNumber(advertisedPaisa, 2),
+    percentage: minorToNumber(pctMilli, 3),
+    direction: directionToken,
+  };
+}
+
 function toScheduleTotalsOutput(
   structure: TotalsBlockStructure,
 ): readonly ScheduleTotalEntry[] {
   return structure.scheduleTotals.map((s) => ({
     scheduleId: s.scheduleId,
     total: toNumberOrNull(s.totalRaw),
+    ...reconcileScheduleHeader(s),
   }));
 }
 

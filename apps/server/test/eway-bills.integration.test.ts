@@ -431,12 +431,16 @@ beforeAll(async () => {
   await admin`
     insert into works (
       id, organisation_id, work_code, letter_number, letter_date, title,
-      advertised_value, contract_value, pricing_shape, created_by_user_id
+      advertised_value, contract_value, pricing_shape, gst_basis,
+      created_by_user_id
     )
     values (
       ${workId}, ${organisationId}, ${workCode}, ${`L-${workCode}`},
       '2025-06-01', 'E-way bill fixture work', '1000000.00', '900000.00',
-      'per_schedule', ${ownerUserId}
+      -- GST-EXCLUSIVE on purpose: this suite is about the e-way bill, not
+      -- about the GST basis, and on an exclusive Work the measured total is
+      -- the taxable value so the invoice figures stay round (0062/0063).
+      'per_schedule', 'exclusive', ${ownerUserId}
     )
   `;
   await admin`

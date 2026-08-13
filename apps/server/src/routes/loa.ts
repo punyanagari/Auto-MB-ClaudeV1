@@ -14,6 +14,7 @@ import {
   type ConfirmPbgRequirement,
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
+  type ConfirmWorkSchedule,
   type LoaDocument,
   type LoaDocumentDetail,
   type PdfSignatureReport,
@@ -39,6 +40,7 @@ import {
   membershipOf,
   requireWriterRole,
 } from '../authz.js';
+import { acceptedRateFrom, type AcceptedRateBasis } from '../accepted-rate.js';
 import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
@@ -273,6 +275,92 @@ async function assertNotDuplicateUpload(
       confirmedWorkId: existing.confirmed_work_id,
     },
   );
+}
+
+/**
+ * The accepted-rate basis for every schedule in a confirmation (owner
+ * ruling 1, migration 0063). The reviewer never supplies it: it is the
+ * letter's own percentage, taken from the confirmed header on a
+ * letter-percentage letter and from the STORED parse's per-schedule
+ * headers otherwise.
+ *
+ * Per-schedule is not a variant of letter-level — a per-schedule letter
+ * legitimately mixes both percentage AND direction across its own
+ * schedules (PL276-GTL: 7.77% above, 8.88% above, 49.49% below, 28.28%
+ * below), so there is no single letter figure to fall back to.
+ */
+function acceptedBasisByScheduleId(
+  payload: ExtractionPayload | null,
+): ReadonlyMap<string, AcceptedRateBasis> {
+  const bases = new Map<string, AcceptedRateBasis>();
+  // `extraction_payload` is JSONB and older rows carry other shapes — a
+  // synthetic identity-only payload, a failed extraction's `{ error }` —
+  // so every level is narrowed rather than assumed, exactly as
+  // loa-extracted-values.ts narrows the same column. A payload that
+  // carries no recognisable totals block simply yields no bases, and the
+  // caller's own refusal decides whether that is fatal.
+  const totals = (payload as unknown as Record<string, unknown> | null)?.['review'];
+  const shape =
+    typeof totals === 'object' && totals !== null
+      ? (totals as Record<string, unknown>)['pricingShape']
+      : null;
+  const entries =
+    typeof shape === 'object' && shape !== null
+      ? (shape as Record<string, unknown>)['scheduleTotals']
+      : null;
+  if (!Array.isArray(entries)) return bases;
+
+  for (const raw of entries) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const entry = raw as Record<string, unknown>;
+    const scheduleId = entry['scheduleId'];
+    const percentage = entry['percentage'];
+    const direction = entry['direction'];
+    if (
+      typeof scheduleId !== 'string' ||
+      typeof percentage !== 'number' ||
+      !Number.isFinite(percentage) ||
+      (direction !== 'below' && direction !== 'above' && direction !== 'at_par')
+    ) {
+      continue;
+    }
+    bases.set(scheduleId, { percentage: percentage.toFixed(3), direction });
+  }
+  return bases;
+}
+
+/**
+ * Which parsed schedule a confirmation's schedule stands for, by the
+ * `sourceRef` its own parsed rows carry.
+ *
+ * A payload schedule holding rows from two different parsed schedules
+ * would have no single accepted percentage, and recording either would
+ * make the stored figure a lie about half its items. That is refused
+ * rather than resolved. A schedule of purely manual rows binds to nothing,
+ * which is not an error — see the note on manual rows below.
+ */
+function parsedScheduleIdOf(
+  schedule: ConfirmWorkSchedule,
+  payload: ExtractionPayload | null,
+): { id: string | null } | { conflict: readonly string[] } {
+  const ids = new Set<string>();
+  for (const item of schedule.items) {
+    if (item.manualEntry === true) continue;
+    const ref = item.sourceRef;
+    if (!ref) continue; // ITEM_EVIDENCE_REQUIRED names this, per item.
+    // Only refs that actually RESOLVE count. An unresolvable one is
+    // SOURCE_REF_UNRESOLVED's to report, per item and by name — counting
+    // it here would answer a bogus reference with a confusing complaint
+    // about schedules spanning each other.
+    const resolves = payload?.review.items?.some(
+      (candidate) =>
+        (candidate.schedule?.id ?? 'UNBOUND') === ref.scheduleId &&
+        candidate.itemSno === ref.itemSno,
+    );
+    if (resolves === true) ids.add(ref.scheduleId);
+  }
+  if (ids.size > 1) return { conflict: [...ids].sort() };
+  return { id: ids.size === 1 ? ([...ids][0] ?? null) : null };
 }
 
 interface WorkRow {
@@ -1106,15 +1194,61 @@ export function registerLoaRoutes(
         });
         if (!work) throw new Error('works insert returned no row');
 
+        // The accepted-rate basis (ruling 1, migration 0063). On a
+        // letter-percentage letter the confirmed header carries it, and
+        // the header has already been through the extracted-value lock —
+        // so it is either the letter's own figure or a hole a human filled,
+        // never an invention. On a per-schedule letter it comes from the
+        // stored parse, per schedule.
+        const letterBasis: AcceptedRateBasis | null =
+          body.pricingShape === 'letter_percentage' &&
+          body.letterPercentage !== undefined &&
+          body.letterPercentageDirection !== undefined
+            ? {
+                percentage: body.letterPercentage,
+                direction: body.letterPercentageDirection,
+              }
+            : null;
+        const scheduleBases = acceptedBasisByScheduleId(payload);
+
         const schedules: WorkSchedule[] = [];
         for (const [index, schedule] of body.schedules.entries()) {
+          const binding = parsedScheduleIdOf(schedule, payload);
+          if ('conflict' in binding) {
+            throw httpError(
+              400,
+              'SCHEDULE_SPANS_MULTIPLE_PARSED_SCHEDULES',
+              `Schedule ${schedule.scheduleCode} holds rows from more than one schedule of the letter (${binding.conflict.join(', ')}). Each schedule accepts one accepted-rate percentage, so its rows must come from one printed schedule. Nothing was saved.`,
+            );
+          }
+          // The one basis that governs every parsed row in this schedule.
+          const basis =
+            letterBasis ??
+            (binding.id === null ? null : (scheduleBases.get(binding.id) ?? null));
+          if (basis === null && binding.id !== null) {
+            // A per-schedule letter whose header block did not yield a
+            // self-consistent percentage. Refused rather than stored at
+            // the advertised rate: silently billing the advertised rate is
+            // precisely the defect ruling 1 exists to end, and it is worth
+            // more to stop here than to create a Work whose every future
+            // money figure is wrong by the tender percentage.
+            throw httpError(
+              400,
+              'ACCEPTED_PERCENTAGE_UNREADABLE',
+              `The accepted-rate percentage for schedule ${binding.id} could not be read from the letter, so this schedule's rates cannot be derived. The item table prints advertised rates; without the percentage the rate the railway pays is unknown. Discard this LOA document and upload a clearer copy. Nothing was saved.`,
+              { scheduleCode: schedule.scheduleCode, parsedScheduleId: binding.id },
+            );
+          }
+
           const [scheduleRow] = await tx<{ id: string }[]>`
               insert into work_schedules (
-                organisation_id, work_id, schedule_code, title, position
+                organisation_id, work_id, schedule_code, title, position,
+                accepted_percentage, accepted_percentage_direction
               )
               values (
                 ${organisationId}, ${work.id}, ${schedule.scheduleCode},
-                ${schedule.title}, ${index + 1}
+                ${schedule.title}, ${index + 1},
+                ${basis?.percentage ?? null}, ${basis?.direction ?? null}
               )
               returning id
             `;
@@ -1123,16 +1257,34 @@ export function registerLoaRoutes(
           const items = [];
           for (const item of schedule.items) {
             const evidence = sourceEvidenceFor(payload, item);
+            // The submitted rate is the one PRINTED in the letter — that is
+            // what the extracted-value lock holds it to. The accepted rate
+            // is derived here, on the server, and is what every downstream
+            // money figure is measured at.
+            //
+            // A MANUAL row is not adjusted. It carries no printed rate to
+            // move: the reviewer typed a rate for a line the letter's item
+            // table does not contain, and applying a tender rebate to a
+            // hand-entered figure would silently change a number a human
+            // chose deliberately. Its advertised and accepted rates are the
+            // same figure, which is exactly what "at the rate entered"
+            // means.
+            const advertisedRate = item.effectiveRate;
+            const acceptedRate =
+              item.manualEntry === true || basis === null
+                ? advertisedRate
+                : acceptedRateFrom(advertisedRate, basis);
             const [itemRow] = await tx<{ id: string }[]>`
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
-                  description, unit_code, awarded_quantity, effective_rate,
+                  description, unit_code, awarded_quantity,
+                  advertised_rate, effective_rate,
                   payment_category, source_evidence
                 )
                 values (
                   ${organisationId}, ${work.id}, ${scheduleRow.id},
                   ${item.itemNumber}, ${item.description}, ${item.unitCode},
-                  ${item.awardedQuantity}, ${item.effectiveRate},
+                  ${item.awardedQuantity}, ${advertisedRate}, ${acceptedRate},
                   ${item.paymentCategory ?? null}, ${jsonb(tx, evidence)}
                 )
                 returning id
@@ -1145,7 +1297,10 @@ export function registerLoaRoutes(
               description: item.description,
               unitCode: item.unitCode,
               awardedQuantity: item.awardedQuantity,
-              effectiveRate: item.effectiveRate,
+              // The DERIVED rate, not the submitted one: the response says
+              // what was stored, and what the Work will be billed at.
+              effectiveRate: acceptedRate,
+              advertisedRate,
               // Serial traceability is switched on per item after
               // confirmation, once the contractor knows which items
               // ship serialised equipment.

@@ -1,5 +1,6 @@
-import { TaxInvoiceDetailResponseSchema } from '@auto-mb/contracts';
+import { TaxInvoiceDetailResponseSchema, type GstBasis } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
+import { toTaxableBasis, type WorkGstBasis } from '../../executed-value.js';
 import { jsonb } from '@auto-mb/db';
 import { amountInWords } from '../../amount-in-words.js';
 import type { Auth } from '../../auth.js';
@@ -193,9 +194,28 @@ async function requireCompleteBuyer(
  * Phase 3: a DIRECT invoice — one raised against a private customer —
  * names no Measurement Book, so there is nothing to lock and the taxable
  * value is the one stated on the draft. An MB-backed invoice locks its
- * book (serialising against a cancel the trigger would refuse anyway)
- * and takes the MB total VERBATIM. The 0039 CHECK guarantees exactly one
- * of the two is present, so this is a real either/or, not a fallback.
+ * book (serialising against a cancel the trigger would refuse anyway) and
+ * derives its taxable value from the MB total ON THE WORK'S RECORDED GST
+ * BASIS. The 0039 CHECK guarantees exactly one of the two is present, so
+ * this is a real either/or, not a fallback.
+ *
+ * THE BASIS (owner ruling 2, 13 August 2026;
+ * docs/FINDING-2026-08-13-invoice-money-basis.md). An MB total is
+ * quantity x the Work's accepted rate, so it is stated on whatever basis
+ * that rate is quoted on. When the LOA is GST-INCLUSIVE — which it usually
+ * is — the MB total already contains the tax, and taking it as the taxable
+ * value and adding GST charged the tax twice: an invoice 18% above the
+ * railway's own bill, sent to a government buyer who reconciles the two.
+ *
+ * The corpus settles what it should be. PL-270's bill states 24,516,112
+ * "Including Tax (GST)" and adds no tax to its own schedule total; the
+ * invoice raised against it states a taxable value of 20,776,366.10 and a
+ * GRAND total of 24,516,112 — the bill, exactly. So the taxable value is
+ * the measured total less the tax already in it, and the invoice total
+ * comes back to the bill.
+ *
+ * A GST-EXCLUSIVE Work needs no conversion and gets none: `toTaxableBasis`
+ * is identity there, and the figure passes through as it always did.
  */
 async function resolveTaxableValue(
   tx: TransactionSql,
@@ -208,13 +228,41 @@ async function resolveTaxableValue(
   if (book !== null && book.total_amount === null) {
     throw new Error(`finalized Measurement Book ${book.id} has no total`);
   }
-  const taxableValue = book?.total_amount ?? invoice.stated_taxable_value;
-  if (taxableValue === null) {
-    throw new Error(
-      `tax invoice ${invoice.id} has neither an MB total nor a stated value`,
-    );
+  if (book === null) {
+    // Direct invoice: the drafted figure is already a taxable value.
+    if (invoice.stated_taxable_value === null) {
+      throw new Error(
+        `tax invoice ${invoice.id} has neither an MB total nor a stated value`,
+      );
+    }
+    return { book, taxableValue: invoice.stated_taxable_value };
   }
-  return { book, taxableValue };
+  const gst = await readWorkGstBasis(tx, invoice.work_id ?? '');
+  return {
+    book,
+    taxableValue: toTaxableBasis(book.total_amount ?? '0', gst.basis, gst),
+  };
+}
+
+/** The Work's recorded GST basis (migration 0062). Read inside the submit
+ * transaction rather than carried on the draft: the basis belongs to the
+ * contract, not to a document raised against it, and a draft written
+ * before the basis was corrected must not bill on the stale one. */
+async function readWorkGstBasis(
+  tx: TransactionSql,
+  workId: string,
+): Promise<WorkGstBasis> {
+  const [row] = await tx<{ gst_basis: GstBasis; gst_rate: string }[]>`
+    select gst_basis, gst_rate::text as gst_rate
+    from works where id = ${workId}
+  `;
+  if (!row) {
+    // An MB-backed invoice always has a Work; a missing one is a broken
+    // invariant, not a case to default through. Defaulting here would
+    // silently pick a basis and bill on it.
+    throw new Error(`tax invoice work ${workId} not found for GST basis`);
+  }
+  return { basis: row.gst_basis, ratePercent: row.gst_rate };
 }
 
 /**
@@ -231,17 +279,27 @@ async function resolveTaxableValue(
 async function assertLinesMatchMeasuredTotal(
   tx: TransactionSql,
   book: InvoiceableBook | null,
+  expectedTaxable: string,
   linesTaxable: string,
 ): Promise<void> {
   if (book?.total_amount == null) return;
   const [row] = await tx<{ matches: boolean }[]>`
-    select ${linesTaxable}::numeric = ${book.total_amount}::numeric as matches
+    select ${linesTaxable}::numeric = ${expectedTaxable}::numeric as matches
   `;
   if (row?.matches !== true) {
+    // The expectation is the measured total ON THE INVOICE'S BASIS (ruling
+    // 2), not the raw MB total: on a GST-inclusive Work the two differ by
+    // the tax, and holding the lines to the raw figure would force every
+    // itemised invoice to overcharge. The message names both so the
+    // operator can see which one their lines were built against.
+    const measured =
+      expectedTaxable === book.total_amount
+        ? `measures ${book.total_amount}`
+        : `measures ${book.total_amount} inclusive of GST, which is ${expectedTaxable} taxable`;
     throw httpError(
       409,
       'ITEMISED_LINES_TOTAL_MISMATCH',
-      `The itemised lines total ${linesTaxable}, but Measurement Book ${book.mb_number ?? book.id} measures ${book.total_amount}. An MB-backed invoice bills exactly what was measured — correct the lines (or amend the Measurement Book) and retry.`,
+      `The itemised lines total ${linesTaxable}, but Measurement Book ${book.mb_number ?? book.id} ${measured}. An MB-backed invoice bills exactly what was measured — correct the lines (or amend the Measurement Book) and retry.`,
     );
   }
 }
@@ -651,7 +709,7 @@ export function registerTaxInvoiceSubmitRoute(
           }
           await freezeLineMoney(tx, invoice.id, intraState);
           money = await computeItemisedMoney(tx, invoice.id);
-          await assertLinesMatchMeasuredTotal(tx, book, money.taxable);
+          await assertLinesMatchMeasuredTotal(tx, book, taxableValue, money.taxable);
           lines = await readInvoiceLines(tx, invoice.id);
         } else {
           money = await computeInvoiceMoney(tx, invoice, taxableValue, intraState);

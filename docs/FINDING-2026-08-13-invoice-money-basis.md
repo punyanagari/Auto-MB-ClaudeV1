@@ -1,6 +1,12 @@
 # Finding, 13 August 2026: an MB-backed tax invoice bills the wrong amount, twice over
 
-**Status: awaiting owner ruling. No amount has been changed.**
+**Status: RULED AND FIXED, 13 August 2026.** Ruling 1 (a) — the server derives
+the accepted rate. Ruling 2 (a) — an MB-backed invoice bills the measured total
+on the Work's recorded basis. Ruling 3 was moot: the owner confirmed no work
+would be done on Auto-MB until both landed, so no interim block was needed.
+
+The analysis below is kept as written, because it is the evidence the rulings
+were made on. What changed is recorded at the end, under "Disposition".
 
 This investigates a suspected GST-basis defect in the tax-invoice pipeline,
 raised while implementing the per-Work GST basis (migration 0062, PR #40). The
@@ -234,3 +240,47 @@ implemented without knowing the answer to the others.
   one-paisa tolerance rather than demanding equality.
 - Per `CONTRIBUTING.md`, any change here touches **money** and **issued
   documents** and requires fresh human review.
+
+## Disposition
+
+Both defects are fixed. Migrations 0063 (accepted rate) and the existing 0062
+(GST basis) carry the schema; `docs/PRODUCT.md` §5.3 carries the rule.
+
+**Ruling 1 — the accepted rate.** `work_items.effective_rate` now holds the
+accepted rate, derived by the server from the printed rate and the letter's own
+percentage; `work_items.advertised_rate` retains the printed figure so the
+derivation can be shown rather than recomputed. The percentage lands on
+`work_schedules`, because that is the granularity the letter prints it at — a
+per-schedule letter legitimately mixes both percentage and direction across its
+own schedules.
+
+The parser was extended to read each schedule's percentage, and the reading
+checks itself: the header's bid figure must equal that schedule's own
+`Schedule Totals` line, and the percentage must actually carry the advertised
+value to it. A reading that fails either check is dropped, and a per-schedule
+letter whose percentage cannot be read is now REFUSED at confirmation
+(`ACCEPTED_PERCENTAGE_UNREADABLE`) rather than confirmed at advertised rates.
+
+The percentage is read rather than derived by dividing bid by advertised on
+purpose: that quotient is 0.85649999… on PL-270 Schedule A, which would put
+item 01 at 2,132,684.9997 instead of the 2,132,685.00 the railway's own bill
+prints. The derived rates reproduce that Agreement Rate column exactly, to five
+decimal places, across every item checked.
+
+End to end: `sum(qty × effective_rate)` now lands on each letter's Net Bid
+Value on all six corpus letters, within a rupee. It used to land on the
+advertised value.
+
+**Ruling 2 — the GST basis.** `resolveTaxableValue` converts the MB total onto
+the taxable basis using the Work's recorded `gst_basis`/`gst_rate`, and
+`assertLinesMatchMeasuredTotal` holds itemised lines to the converted figure
+(its refusal now names both). A GST-exclusive Work is untouched — the
+conversion is identity there. The invoice's grand total now returns to the
+measured total, which is the property the railway's settlement has.
+
+**Exposure.** Still not measured from the development environment, and now
+moot for the owner's own data: they confirmed on 13 August 2026 that no work
+would be done until this landed. Anyone with existing data should still run the
+query above before upgrading, and note that Works confirmed before 0063 keep
+their advertised rates — the migration deliberately moves no money, and the
+remedy is to discard the LOA document and confirm it again.

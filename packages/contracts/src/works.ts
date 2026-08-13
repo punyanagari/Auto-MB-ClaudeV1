@@ -241,7 +241,18 @@ export const WorkItemSchema = Type.Object(
     description: Type.String({ minLength: 3 }),
     unitCode: Type.String({ minLength: 1, maxLength: 20 }),
     awardedQuantity: DecimalStringSchema,
+    /** The ACCEPTED rate — what the railway pays per unit, and what every
+     * money figure on this item is computed at. The server derives it from
+     * `advertisedRate` and the schedule's accepted percentage (migration
+     * 0063); it is never submitted. */
     effectiveRate: RateStringSchema,
+    /** The rate as PRINTED in the LOA item table, which is the ADVERTISED
+     * rate. Kept so a screen can show the derivation — "24,90,000 less
+     * 14.35% = 21,32,685" — instead of a rate that matches neither the
+     * letter a reviewer is holding nor a recomputation they could do.
+     * Optional: readers that do not select it omit it rather than sending
+     * a false null. Null on Works confirmed before 0063. */
+    advertisedRate: Type.Optional(Type.Union([RateStringSchema, Type.Null()])),
     /** Amendment overlays (Milestone 6): null/absent means the original
      * applies. Present on the Work detail response. */
     effectiveQuantity: Type.Optional(Type.Union([DecimalStringSchema, Type.Null()])),
