@@ -39,6 +39,11 @@ export const MembershipSchema = Type.Object(
     canIssueDocuments: Type.Boolean(),
     canCancelDocuments: Type.Boolean(),
     canApproveAmendments: Type.Boolean(),
+    /** The compliance authority (migration 0061): may drive IRP and NIC
+     * E-way Bill provider operations and record portal evidence. It sits
+     * ON TOP of issue/cancel rather than replacing them, and defaults
+     * false — it is granted, never inherited. */
+    canManageStatutoryReporting: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -70,6 +75,7 @@ export const AddMemberRequestSchema = Type.Object(
     canIssueDocuments: Type.Optional(Type.Boolean()),
     canCancelDocuments: Type.Optional(Type.Boolean()),
     canApproveAmendments: Type.Optional(Type.Boolean()),
+    canManageStatutoryReporting: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -337,6 +343,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canIssueDocuments: Type.Optional(Type.Boolean()),
     canCancelDocuments: Type.Optional(Type.Boolean()),
     canApproveAmendments: Type.Optional(Type.Boolean()),
+    canManageStatutoryReporting: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

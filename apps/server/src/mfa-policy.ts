@@ -4,9 +4,9 @@ import { httpError } from './http.js';
 /**
  * Finding 36 (owner MFA): the multi-factor requirement is USER-level, not
  * membership-level. A user who holds authority anywhere — an owner role or
- * any document authority (issue, cancel, approve amendments) in ANY
- * organisation — must have TOTP two-factor enabled before any tenant-scoped
- * request is served. There is deliberately no grace period: the wall stands
+ * any document authority (issue, cancel, approve amendments, manage
+ * statutory reporting) in ANY organisation — must have TOTP two-factor
+ * enabled before any tenant-scoped request is served. There is deliberately no grace period: the wall stands
  * from the first privileged request, and enrolment happens through the
  * always-reachable identity endpoints (/api/me, /api/organisations,
  * /api/auth/two-factor/*).
@@ -94,6 +94,11 @@ export async function mfaGate(tx: TransactionSql): Promise<MfaGate> {
           or m.can_issue_documents
           or m.can_cancel_documents
           or m.can_approve_amendments
+          -- Migration 0061: the compliance authority binds the
+          -- organisation's statutory identity at a government portal, so
+          -- it is at least as worth stealing as the other three. A
+          -- member holding ONLY this one is MFA-required.
+          or m.can_manage_statutory_reporting
         ),
         false
       ) as required,

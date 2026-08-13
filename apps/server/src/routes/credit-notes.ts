@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, hasFullWorkScope, requireAuthority } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireAuthorities } from '../authz.js';
 import {
   buildFrozenCrnPayload,
   CREDIT_NOTE_TEMPLATE_VERSION,
@@ -1026,10 +1026,14 @@ export function registerCreditNoteRoutes(
       const detail = await tenant(async (tx) => {
         const note = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, note.work_id);
+        // Branched per state, so this route declares nothing and checks
+        // inline. Recovery closes out a statutory operation and moves
+        // the note's provider state, so it needs the compliance
+        // authority alongside the document one.
         if (note.irp_provider_state === 'registering') {
-          await requireAuthority(tx, user.id, 'issue');
+          await requireAuthorities(tx, user.id, ['issue', 'statutory']);
         } else if (note.irp_provider_state === 'cancelling') {
-          await requireAuthority(tx, user.id, 'cancel');
+          await requireAuthorities(tx, user.id, ['cancel', 'statutory']);
         } else {
           throw httpError(
             409,
@@ -1074,7 +1078,10 @@ export function registerCreditNoteRoutes(
           ...errorResponses,
         },
       },
-      authority: 'issue',
+      // Both branches — fresh CRN registration and reconcile-by-lookup —
+      // open a ledger operation and write the portal's answer onto a
+      // legal document, so both carry the compliance authority.
+      authority: ['issue', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -1328,7 +1335,7 @@ export function registerCreditNoteRoutes(
           ...errorResponses,
         },
       },
-      authority: 'cancel',
+      authority: ['cancel', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;

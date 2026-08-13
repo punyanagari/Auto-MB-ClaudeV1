@@ -66,7 +66,8 @@ export function registerExportRoutes(
         `;
         const members = await tx<Record<string, unknown>[]>`
           select user_id, role, work_scope, can_issue_documents,
-                 can_cancel_documents, status, created_at
+                 can_cancel_documents, can_approve_amendments,
+                 can_manage_statutory_reporting, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at

@@ -18,7 +18,7 @@ import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
   assertWorkAccess as assertScopedWorkAccess,
-  requireAuthority,
+  requireAuthorities,
   requireWriterRole,
 } from '../authz.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
@@ -558,10 +558,14 @@ export function registerEwayBillRoutes(
       const detail = await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
         await assertWorkAccess(tx, user.id, row.work_id);
+        // Branched per state, so this route declares nothing and checks
+        // inline. Recovery closes out a statutory operation and moves
+        // the bill's provider state, so it needs the compliance
+        // authority alongside the document one.
         if (row.provider_state === 'generating') {
-          await requireAuthority(tx, user.id, 'issue');
+          await requireAuthorities(tx, user.id, ['issue', 'statutory']);
         } else if (row.provider_state === 'cancelling') {
-          await requireAuthority(tx, user.id, 'cancel');
+          await requireAuthorities(tx, user.id, ['cancel', 'statutory']);
         } else {
           throw httpError(
             409,
@@ -606,7 +610,11 @@ export function registerEwayBillRoutes(
           ...errorResponses,
         },
       },
-      authority: 'issue',
+      // Only the reconcile-by-lookup branch is reachable here (fresh
+      // generation is refused for SAC service invoices, finding 1), and
+      // the lookup still opens a ledger operation and writes the NIC
+      // portal's answer onto the bill. Compliance authority required.
+      authority: ['issue', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -868,7 +876,7 @@ export function registerEwayBillRoutes(
         body: RecordEwayNicResponseRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
-      authority: 'issue',
+      authority: ['issue', 'statutory'],
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -949,7 +957,7 @@ export function registerEwayBillRoutes(
         body: RecordManualStatutoryCancellationRequestSchema,
         response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
       },
-      authority: 'cancel',
+      authority: ['cancel', 'statutory'],
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -1020,7 +1028,7 @@ export function registerEwayBillRoutes(
           ...errorResponses,
         },
       },
-      authority: 'cancel',
+      authority: ['cancel', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;

@@ -7,7 +7,7 @@ import {
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../../auth.js';
-import { requireAuthority } from '../../authz.js';
+import { requireAuthorities } from '../../authz.js';
 import { IrnDerivationError, assertIrnDerivesFrom } from '../../gsp/irn.js';
 import { stringifyStatutoryJson } from '../../gsp/statutory-json.js';
 import {
@@ -106,10 +106,14 @@ export function registerTaxInvoiceProviderRoutes(
       const detail = await tenant(async (tx) => {
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
+        // Branched per state, so this route declares nothing and checks
+        // inline. Recovery closes out a statutory operation and moves
+        // the invoice's provider state, so it needs the compliance
+        // authority alongside the document one.
         if (invoice.irp_provider_state === 'registering') {
-          await requireAuthority(tx, user.id, 'issue');
+          await requireAuthorities(tx, user.id, ['issue', 'statutory']);
         } else if (invoice.irp_provider_state === 'cancelling') {
-          await requireAuthority(tx, user.id, 'cancel');
+          await requireAuthorities(tx, user.id, ['cancel', 'statutory']);
         } else {
           throw httpError(
             409,
@@ -154,7 +158,14 @@ export function registerTaxInvoiceProviderRoutes(
           ...errorResponses,
         },
       },
-      authority: 'issue',
+      // The statutory authority covers BOTH branches of this route:
+      // fresh registration and reconcile-by-lookup. The lookup mutates
+      // nothing at the portal, but it is not a read of ours either — it
+      // opens a ledger operation, moves the invoice through
+      // `registering`, and writes whatever IRN, acknowledgement and
+      // signed QR come back onto a legal document. Whoever may do that
+      // is deciding what this invoice claims at the IRP.
+      authority: ['issue', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -417,7 +428,7 @@ export function registerTaxInvoiceProviderRoutes(
           ...errorResponses,
         },
       },
-      authority: 'cancel',
+      authority: ['cancel', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -627,7 +638,7 @@ export function registerTaxInvoiceProviderRoutes(
         body: RecordIrpResponseRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
-      authority: 'issue',
+      authority: ['issue', 'statutory'],
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -732,7 +743,7 @@ export function registerTaxInvoiceProviderRoutes(
         body: RecordManualStatutoryCancellationRequestSchema,
         response: { 200: TaxInvoiceDetailResponseSchema, ...errorResponses },
       },
-      authority: 'cancel',
+      authority: ['cancel', 'statutory'],
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
