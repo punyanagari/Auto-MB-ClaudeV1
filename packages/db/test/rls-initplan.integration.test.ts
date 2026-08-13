@@ -1,35 +1,49 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
-import { withTenant } from '../src/tenant.js';
+import {
+  explainPlan,
+  initPlanNodes,
+  predicateText,
+  type PlanNode,
+} from '../src/explain.js';
+import { TenantBindRefusedError, withTenant } from '../src/tenant.js';
 import {
   SETUP_TIMEOUT_MS,
   adminUrl,
-  appUrl,
+  bindTenantGucsDirectly,
   createTemporaryDatabase,
   dropStaleTemporaryDatabases,
   dropTemporaryDatabase,
   migrateThrough,
   migrateToHead,
-  refused,
   seedTenant,
   type TemporaryDatabase,
   type Tenant,
 } from './support/invariant-db.js';
 
 /**
- * The three catalog-and-plan guards ADR-0010 requires of migration 0069.
+ * The catalog and plan guards ADR-0010 requires of migration 0069.
  *
- * Each one is proved twice: once against a database migrated to the head
- * of the series, and once against the SAME series stopped one migration
- * short. The second half is the point — a guard that has never been shown
- * to fail is a guard nobody knows the direction of.
+ * Every one is proved in both directions: against a database migrated to
+ * the head of the series, and against the SAME series stopped one
+ * migration short. The second half is the point — a guard that has never
+ * been shown to fail is a guard nobody knows the direction of.
+ *
+ * The bind-refusal CONTRACT (which SQLSTATE, which error type, that no
+ * statement of the callback runs) lives in `tenancy.integration.test.ts`
+ * beside the rest of the membership floor. What is unique to this file,
+ * and therefore what it asserts, is the pre/post-fix PAIRING: the binding
+ * this tree refuses was accepted in silence one migration earlier.
  *
  * `PRE_FIX_THROUGH` is the last migration id before 0069. It is a string
  * comparison in `migrateThrough`, so it also excludes 0066-0068 while
- * those wave-3 packs are unmerged and includes them once they land, which
- * is what the census below wants: the pre-fix tree is "everything before
- * this pack", whatever that turns out to contain.
+ * those wave-3 packs are unmerged and includes them once they land — which
+ * is what the census wants: the pre-fix tree is "everything before this
+ * pack", whatever that turns out to contain. Nothing below hard-codes how
+ * many policies that is; both populations are derived from the catalog, so
+ * a sibling pack adding tenant tables moves the numbers without touching
+ * this file.
  */
 const PRE_FIX_THROUGH = '0068';
 
@@ -57,16 +71,9 @@ interface PolicyRow {
   readonly with_check: string;
 }
 
-/**
- * Every policy in `public` whose USING or WITH CHECK clause still calls a
- * tenancy helper in bare filter position.
- *
- * Reads the live catalog rather than the migration files: a policy's
- * predicate is whatever the last ALTER POLICY left in `pg_policy`, and a
- * future migration that re-creates one in bare style would not show up in
- * a grep of 0069 at all.
- */
-async function bareHelperPolicies(sql: Sql): Promise<string[]> {
+/** Every policy in `public` whose USING or WITH CHECK clause names a
+ * tenancy helper at all, in either position. */
+async function helperPolicyRows(sql: Sql): Promise<PolicyRow[]> {
   const rows = await sql<PolicyRow[]>`
     select tablename, policyname,
            coalesce(qual, '') as qual,
@@ -75,6 +82,25 @@ async function bareHelperPolicies(sql: Sql): Promise<string[]> {
     where schemaname = 'public'
     order by tablename, policyname
   `;
+  return rows.filter((row) => BARE_HELPER_CALL.test(`${row.qual} ${row.with_check}`));
+}
+
+async function helperPolicies(sql: Sql): Promise<string[]> {
+  return (await helperPolicyRows(sql)).map(
+    (row) => `${row.tablename}.${row.policyname}`,
+  );
+}
+
+/**
+ * Every policy that still calls a tenancy helper in BARE filter position.
+ *
+ * Reads the live catalog rather than the migration files: a policy's
+ * predicate is whatever the last ALTER POLICY left in `pg_policy`, and a
+ * future migration that re-creates one in bare style would not show up in
+ * a grep of 0069 at all.
+ */
+async function bareHelperPolicies(sql: Sql): Promise<string[]> {
+  const rows = await helperPolicyRows(sql);
   return rows
     .filter((row) =>
       BARE_HELPER_CALL.test(
@@ -84,50 +110,24 @@ async function bareHelperPolicies(sql: Sql): Promise<string[]> {
     .map((row) => `${row.tablename}.${row.policyname}`);
 }
 
-interface PlanNode extends Record<string, unknown> {
-  'Node Type': string;
-  'Subplan Name'?: string;
-  'Actual Loops'?: number;
-  Filter?: string;
-  'Index Cond'?: string;
-  'Recheck Cond'?: string;
-  Plans?: PlanNode[];
-}
+/** The register statement both trees are asked to plan. */
+const REGISTER_SCAN_SQL = `
+  select id, item_number, awarded_quantity, effective_rate
+  from work_items where work_id = $1 and deleted_at is null
+`;
 
-function planNodes(node: PlanNode): PlanNode[] {
-  return [node, ...(node.Plans ?? []).flatMap(planNodes)];
-}
-
+/**
+ * `analyze` is opt-in because only the head assertion reads `Actual
+ * Loops`; the pre-fix assertion consumes plan SHAPE alone, and planning a
+ * statement is cheaper and far less load-sensitive than running it.
+ * Neither side asserts on buffers, so BUFFERS is never requested.
+ */
 async function explainRegisterScan(
   tx: TransactionSql,
   workId: string,
+  options: { readonly analyze?: boolean } = {},
 ): Promise<PlanNode[]> {
-  const rows = (await tx.unsafe(
-    `explain (analyze, buffers, format json)
-     select id, item_number, awarded_quantity, effective_rate
-     from work_items where work_id = $1 and deleted_at is null`,
-    [workId] as never,
-  )) as unknown as { 'QUERY PLAN': unknown }[];
-  const raw = rows[0]?.['QUERY PLAN'];
-  const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-    Plan: PlanNode;
-  }[];
-  const root = parsed[0]?.Plan;
-  if (!root) throw new Error('EXPLAIN returned no plan');
-  return planNodes(root);
-}
-
-/** Every scan-level predicate string the plan carries. If the helper is
- * named in one of these, the executor runs it against candidate rows. */
-function predicateText(nodes: readonly PlanNode[]): string {
-  return nodes
-    .flatMap((node) => [node.Filter, node['Index Cond'], node['Recheck Cond']])
-    .filter((text): text is string => typeof text === 'string')
-    .join(' | ');
-}
-
-function initPlanNodes(nodes: readonly PlanNode[]): PlanNode[] {
-  return nodes.filter((node) => (node['Subplan Name'] ?? '').startsWith('InitPlan'));
+  return explainPlan(tx, REGISTER_SCAN_SQL, [workId], options);
 }
 
 /** A register worth scanning: one schedule and `REGISTER_ITEMS` items on
@@ -180,8 +180,8 @@ beforeAll(async () => {
   stagedDisposer = await migrateThrough(staged, PRE_FIX_THROUGH);
   // `applyGrants` is the CURRENT privilege matrix and names
   // app_private.bind_tenant, which this schema does not have yet, so the
-  // staged database gets by hand exactly the privileges the plan-shape
-  // comparison needs — and nothing else.
+  // staged database gets by hand exactly the privileges the comparison
+  // needs — and nothing else.
   await staged.pool.unsafe(`grant usage on schema public, app_private to auto_mb_app`);
   await staged.pool.unsafe(
     `grant select on works, work_items, work_schedules, organisations,
@@ -210,27 +210,26 @@ describe('guard 1: no tenant policy calls a helper in bare filter position', () 
   });
 
   it('finds them on the pre-fix tree, so the census is known to bite', async () => {
-    // Not "greater than zero": the exact population is stated, because a
-    // census that silently narrowed would still pass a >0 assertion.
+    // Derived, not counted: before 0069 EVERY policy that names a helper
+    // names it in bare position, so the bare population IS the whole
+    // helper population. Stating it that way keeps the guard honest
+    // against a census that silently narrowed — a broken matcher makes
+    // these two lists disagree — while letting a sibling pack add tenant
+    // tables without editing a literal here.
     const bare = await bareHelperPolicies(staged.pool);
-    expect(bare).toHaveLength(64);
+    expect(bare).toEqual(await helperPolicies(staged.pool));
+    expect(bare.length).toBeGreaterThan(0);
     expect(bare).toContain('works.works_tenant_policy');
     expect(bare).toContain('work_items.work_items_tenant_policy');
     expect(bare).toContain('organisations.organisations_member_select_policy');
   });
 
-  it('still routes every tenant policy through the membership helper', async () => {
+  it('still routes every one of those policies through a helper', async () => {
     // The counterpart to the census: moving the calls must not have
-    // DELETED any. Every tenant policy still names a helper; the InitPlan
-    // wrapping is the only thing that changed.
-    const [row] = await head.pool<{ policies: number }[]>`
-      select count(*)::int as policies
-      from pg_policies
-      where schemaname = 'public'
-        and (coalesce(qual, '') || coalesce(with_check, ''))
-              like '%current_organisation_id%'
-    `;
-    expect(row?.policies).toBe(63);
+    // DELETED any. Compared as sets against the pre-fix tree, so this
+    // measures the rewrite rather than a number somebody typed. 0070 adds
+    // no policy, so the two populations are the same policies.
+    expect(await helperPolicies(head.pool)).toEqual(await helperPolicies(staged.pool));
   });
 });
 
@@ -239,7 +238,7 @@ describe('guard 2: a register scan evaluates the helper once per statement', () 
     const nodes = await withTenant(
       head.appPool,
       { organisationId: headTenant.organisationId, userId: headTenant.userId },
-      (tx) => explainRegisterScan(tx, headTenant.workId),
+      (tx) => explainRegisterScan(tx, headTenant.workId, { analyze: true }),
     );
 
     const initPlans = initPlanNodes(nodes);
@@ -254,20 +253,22 @@ describe('guard 2: a register scan evaluates the helper once per statement', () 
 
   it('names the helper in the scan predicate on the pre-fix tree', async () => {
     // The same statement against the same fixture one migration earlier:
-    // the helper sits in the Filter, which is the executor calling it for
-    // every candidate row, and there is no InitPlan at all.
-    const nodes = await staged.appPool.begin(async (tx) => {
-      await tx`select set_config('app.organisation_id', ${stagedTenant.organisationId}, true)`;
-      await tx`select set_config('app.user_id', ${stagedTenant.userId}, true)`;
-      return explainRegisterScan(tx, stagedTenant.workId);
-    });
+    // the helper sits in the scan predicate, which is the executor calling
+    // it for every candidate row, and there is no InitPlan at all. Plan
+    // shape only, so this one is planned and not run.
+    const nodes = await bindTenantGucsDirectly(
+      staged.appPool,
+      stagedTenant.organisationId,
+      stagedTenant.userId,
+      (tx) => explainRegisterScan(tx, stagedTenant.workId),
+    );
     expect(predicateText(nodes)).toContain('current_organisation_id');
     expect(initPlanNodes(nodes)).toHaveLength(0);
   });
 
   it('returns the same rows through the same policies', async () => {
     // A plan-shape guard is worthless if the rewrite changed what the
-    // policy admits, so both trees are asked the same question.
+    // policy admits, so the register is also read for real.
     const visible = await withTenant(
       head.appPool,
       { organisationId: headTenant.organisationId, userId: headTenant.userId },
@@ -282,89 +283,44 @@ describe('guard 2: a register scan evaluates the helper once per statement', () 
   });
 });
 
-describe('guard 3: binding an organisation the user is not a member of fails at bind', () => {
-  it('raises 28000 before any statement of the transaction runs', async () => {
-    let statementsRan = 0;
-    const outcome = await refused(
-      withTenant(
-        head.appPool,
-        {
-          organisationId: headTenant.organisationId,
-          userId: 'rls-initplan-not-a-member',
-        },
-        async (tx) => {
-          statementsRan += 1;
-          return tx`select 1 as unreachable`;
-        },
-      ),
+describe('guard 3: the binding this tree refuses was silently accepted before it', () => {
+  it('refuses a non-member binding on the fixed tree', async () => {
+    // The contract itself — which SQLSTATE, which error type, and that no
+    // statement of the callback runs — is asserted in
+    // tenancy.integration.test.ts beside the rest of the membership floor.
+    // What is proved here is that this tree refuses at all, so it can be
+    // set against the pre-fix behaviour below.
+    const outcome = await withTenant(
+      head.appPool,
+      {
+        organisationId: headTenant.organisationId,
+        userId: 'rls-initplan-not-a-member',
+      },
+      (tx) => tx`select 1 as unreachable`,
+    ).then(
+      () => null,
+      (error: unknown) => error,
     );
-    expect(outcome.code).toBe('28000');
-    expect(statementsRan).toBe(0);
+    expect(outcome).toBeInstanceOf(TenantBindRefusedError);
   });
 
-  it('refuses a well-formed organisation id that exists but has no membership', async () => {
-    const other = await seedTenant(head.pool);
-    const outcome = await refused(
-      withTenant(
-        head.appPool,
-        { organisationId: other.organisationId, userId: headTenant.userId },
-        (tx) => tx`select 1`,
-      ),
-    );
-    expect(outcome.code).toBe('28000');
-  });
-
-  it('keeps the binding transaction-local and the floor independent of it', async () => {
-    // Two properties in one connection, because they are the two halves
-    // of ADR-0010's trust claim.
-    //
-    // First: bind_tenant's set_config calls are `is_local = true`, so the
-    // binding dies with the transaction rather than riding the pooled
-    // connection into the next borrower's work. The pool is pinned to one
-    // connection so the follow-up read lands on the same backend.
-    //
-    // Second: the policies do NOT trust bind_tenant. A path that writes
-    // the GUCs directly — which is what any future code that skips this
-    // module would do — still gets nothing, because the helper each policy
-    // calls re-proves the membership on the definer's authority.
-    const singleUrl = new URL(appUrl);
-    singleUrl.pathname = `/${head.name}`;
-    const single = createDatabasePool({
-      url: singleUrl.toString(),
-      max: 1,
-      applicationName: 'auto-mb-rls-initplan-single',
-    });
-    try {
-      const bound = await withTenant(
-        single,
-        { organisationId: headTenant.organisationId, userId: headTenant.userId },
-        async (tx) => {
-          const [row] = await tx<{ organisation_id: string | null }[]>`
-            select app_private.current_organisation_id() as organisation_id
-          `;
-          return row?.organisation_id ?? null;
-        },
-      );
-      expect(bound).toBe(headTenant.organisationId);
-
-      const [leaked] = await single<{ organisation: string; visible: number }[]>`
-        select current_setting('app.organisation_id', true) as organisation,
-               (select count(*)::int from work_items) as visible
-      `;
-      expect(leaked?.organisation ?? '').toBe('');
-      expect(leaked?.visible).toBe(0);
-
-      const forged = await single.begin(async (tx) => {
-        await tx`select set_config('app.organisation_id', ${headTenant.organisationId}, true)`;
-        await tx`select set_config('app.user_id', 'rls-initplan-not-a-member', true)`;
+  it('accepted the same binding in silence one migration earlier', async () => {
+    // The failure mode 0069 exists to remove: the bind succeeds, every
+    // policy denies, and the caller reads an empty database with no error
+    // anywhere. `withTenant` cannot express this any more, which is the
+    // improvement; the raw GUC bind still can, which is how the pre-fix
+    // behaviour stays visible and comparable.
+    const visible = await bindTenantGucsDirectly(
+      staged.appPool,
+      stagedTenant.organisationId,
+      'rls-initplan-not-a-member',
+      async (tx) => {
         const [row] = await tx<{ items: number }[]>`
           select count(*)::int as items from work_items
         `;
         return row?.items ?? -1;
-      });
-      expect(forged).toBe(0);
-    } finally {
-      await single.end();
-    }
+      },
+    );
+    expect(visible).toBe(0);
   });
 });

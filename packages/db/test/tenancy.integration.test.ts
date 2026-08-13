@@ -6,7 +6,14 @@ import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
 import { removeOrganisationResidue } from '../src/testing.js';
-import { withTenant, withTenantSnapshot, withUserContext } from '../src/tenant.js';
+import {
+  TENANT_BIND_REFUSED_SQLSTATE,
+  TenantBindRefusedError,
+  withTenant,
+  withTenantSnapshot,
+  withUserContext,
+} from '../src/tenant.js';
+import { bindTenantGucsDirectly } from './support/invariant-db.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -1406,41 +1413,89 @@ describe('statutory document delete guards', () => {
  * The floor is `app_private.current_organisation_id()`, which every policy
  * calls and which proves an ACTIVE membership on the definer's authority.
  *
- * Since migration 0069 `withTenant` also proves the membership at bind
- * time and raises 28000 when it does not hold, so a non-member binding no
- * longer reaches the policies at all. That is a semantics improvement, not
- * the floor — and the difference matters enough that both are asserted
- * here. `bindDirectly` writes the two GUCs the way `tenant.ts` did before
- * 0069, which is what any future code path that skipped `bind_tenant`
- * would do; the assertions after it are the floor holding on its own.
+ * Since migration 0069 `withTenant` also proves the binding before the
+ * transaction runs anything, so a non-member binding no longer reaches the
+ * policies at all. That is a semantics improvement, not the floor — and
+ * the difference matters enough that both are asserted here.
+ * `bindDirectly` writes the two GUCs the way `tenant.ts` did before 0069,
+ * which is what any future code path that skipped `bind_tenant` would do;
+ * the assertions after it are the floor holding on its own.
  */
 async function bindDirectly<T>(
   organisationId: string,
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  const result = await app.begin(async (tx) => {
-    await tx`select set_config('app.organisation_id', ${organisationId}, true)`;
-    await tx`select set_config('app.user_id', ${userId}, true)`;
-    return work(tx);
-  });
-  return result as T;
+  return bindTenantGucsDirectly(app, organisationId, userId, work);
 }
 
 describe('membership floor', () => {
+  it('binds an active member through the raw GUCs, so the negative cases mean something', async () => {
+    // The positive control for `bindDirectly` itself. Every assertion
+    // below reads "nothing is visible" through this same path, and a
+    // coordinated rename of the two GUCs would make all of them
+    // vacuously true — an unbound transaction also sees nothing. This
+    // case fails in exactly that scenario, so the negatives keep their
+    // meaning.
+    await bindDirectly(organisationA.id, userA, async (tx) => {
+      const [bound] = await tx<{ organisation_id: string | null }[]>`
+        select app_private.current_organisation_id() as organisation_id
+      `;
+      expect(bound?.organisation_id).toBe(organisationA.id);
+      const works = await tx<{ id: string }[]>`select id from works`;
+      expect(works.map((row) => row.id)).toEqual([graphA.workId]);
+    });
+  });
+
   it('refuses the binding outright for a non-member, before any statement runs', async () => {
+    // The bind-refusal contract, asserted once and here: the typed error
+    // `@auto-mb/db` raises, Auto-MB's own SQLSTATE underneath it, and that
+    // the callback never ran. The SQLSTATE is deliberately NOT 28000 —
+    // that is PostgreSQL's own invalid_authorization_specification, which
+    // a pg_hba or LOGIN failure raises, and a caller mapping it to
+    // "not a member" would report an authentication outage as a fleet of
+    // permission refusals.
     let statementsRan = 0;
-    await expect(
-      withTenant(
-        app,
-        { organisationId: organisationA.id, userId: userB },
-        async (tx) => {
-          statementsRan += 1;
-          return tx`select 1 as unreachable`;
-        },
-      ),
-    ).rejects.toMatchObject({ code: '28000' });
+    const outcome = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userB },
+      async (tx) => {
+        statementsRan += 1;
+        return tx`select 1 as unreachable`;
+      },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(outcome).toBeInstanceOf(TenantBindRefusedError);
+    expect((outcome as TenantBindRefusedError).organisationId).toBe(organisationA.id);
+    expect(
+      ((outcome as TenantBindRefusedError).cause as { code?: string } | undefined)
+        ?.code,
+    ).toBe(TENANT_BIND_REFUSED_SQLSTATE);
     expect(statementsRan).toBe(0);
+  });
+
+  it('lets a genuine driver failure keep its own shape', async () => {
+    // The other half of the discrimination: only the bind statement is
+    // wrapped and only Auto-MB's SQLSTATE is converted, so an error the
+    // callback itself raises — including one carrying a PostgreSQL class
+    // 28 code — is never relabelled a membership decision.
+    const outcome = await withTenant(
+      app,
+      { organisationId: organisationA.id, userId: userA },
+      (tx) => tx`
+        do $$ begin
+          raise exception 'simulated connection authorisation failure'
+            using errcode = '28000';
+        end $$
+      `,
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(outcome).not.toBeInstanceOf(TenantBindRefusedError);
+    expect(outcome).toMatchObject({ code: '28000' });
   });
 
   it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
@@ -1486,7 +1541,7 @@ describe('membership floor', () => {
           { organisationId: organisationB.id, userId: userB },
           (tx) => tx`select 1`,
         ),
-      ).rejects.toMatchObject({ code: '28000' });
+      ).rejects.toBeInstanceOf(TenantBindRefusedError);
       // … and enough for the policies to deny on their own if something
       // wrote the GUCs without asking.
       await bindDirectly(organisationB.id, userB, async (tx) => {
