@@ -1,0 +1,100 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+
+  // Dead-code gate. Wired into `pnpm verify` as `pnpm deadcode:check`.
+  //
+  // Everything with a "frozen 2026-08-13" note below is a BASELINE entry: a
+  // finding that existed when this gate was added and was deliberately left
+  // in place, recorded with the reason. With the baseline applied the gate
+  // reports nothing, so any newly dead file, export, type or dependency fails
+  // the build. Removing an entry is how one is paid down; adding an entry
+  // needs the same kind of justification the existing ones carry.
+  //
+  // `ignoreExportsUsedInFile` is on because this codebase exports helpers for
+  // readability and testability inside their own module; without it the
+  // report is 51 entries of noise that hide the real ones. It does not weaken
+  // the gate against the case this pack was written for: `deliveryChallanHash`
+  // and `searchHash` in apps/web/src/lib/workspace-routes.ts had no reference
+  // at all, in their own file or out of it, and are still reported with the
+  // flag on.
+  "ignoreExportsUsedInFile": true,
+
+  // Frozen 2026-08-13. Each of these is genuinely used, through a mechanism
+  // knip cannot follow:
+  //   tailwindcss — the `@import 'tailwindcss'` in apps/web/src/globals.css
+  //     and the @tailwindcss/vite plugin; knip does not read CSS imports.
+  //   @secretlint/secretlint-rule-preset-recommend — named as a string in
+  //     .secretlintrc.json and loaded by secretlint at run time.
+  //   axe-core, playwright — resolved out of node_modules by the
+  //     ux-ui-agent-skills scripts that the design:* package scripts run.
+  "ignoreDependencies": [
+    "tailwindcss",
+    "@secretlint/secretlint-rule-preset-recommend",
+    "axe-core",
+    "playwright"
+  ],
+
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", "scripts/import-v1.ts"],
+      "project": ["scripts/**/*.{ts,mjs}"]
+    },
+
+    "apps/server": {
+      "entry": ["src/main.ts", "src/import/cli.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      // Frozen 2026-08-13 — 11 unused exports and types. The ASN.1
+      // universal-tag and CMS OID constants are exported as complete named
+      // vocabularies rather than only the subset currently read, and
+      // pdf-signature.ts / rate-limit.ts export type aliases describing their
+      // public surface. Which of those to retire is a judgement about the
+      // signature-verification and rate-limit modules, not dead-code hygiene,
+      // and this pack does not own those files.
+      "ignore": ["src/pdf-signature.ts", "src/pdf-signature/**", "src/rate-limit.ts"]
+    },
+
+    "apps/web": {
+      "entry": ["src/main.tsx", "test/**/*.test.{ts,tsx}", "e2e/**/*.spec.ts"],
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "e2e/**/*.ts"]
+    },
+
+    "apps/worker": {
+      "entry": ["src/main.ts"],
+      "project": ["src/**/*.ts"]
+    },
+
+    "packages/contracts": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      // Frozen 2026-08-13 — one duplicate export.
+      // CreateCreditNoteRequestSchema and UpdateCreditNoteRequestSchema are
+      // the same object under two names on purpose, so the two request shapes
+      // can diverge later without a wire change. Collapsing them is a contract
+      // decision this pack does not own.
+      "ignore": ["src/credit-notes.ts"]
+    },
+
+    "packages/db": {
+      "entry": [
+        "src/index.ts",
+        "src/migrate.ts",
+        "src/bootstrap.ts",
+        "src/check-migrations.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+
+    "packages/loa-parser": {
+      "entry": ["src/index.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      // Frozen 2026-08-13 — one unused file. src/tender-document.test.ts is a
+      // 68-line early draft superseded by the 360-line
+      // test/tender-document.test.ts, and this package's vitest `include` is
+      // `test/**/*.{test,spec}.{js,ts}`, so no runner has ever executed it. It
+      // is dead and should go, but it is not one of the files this pack was
+      // scoped to delete, so it is recorded here rather than removed silently.
+      "ignore": ["src/tender-document.test.ts"]
+    }
+  }
+}

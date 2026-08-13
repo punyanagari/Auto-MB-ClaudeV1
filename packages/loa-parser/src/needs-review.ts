@@ -399,17 +399,26 @@ export function detectPaymentTermsProse(
  * `test/corpus-manifest.test.ts`'s purity block), so "resolves against the
  * units master" cannot mean querying it. Of the two designs the ticket
  * names, this module takes the FIRST: it carries the 12 canonical DISPLAY
- * spellings as the recognition set (mirroring
- * `packages/db/migrations/0020_create_units.sql`'s `INSERT INTO units
- * (code, name) VALUES ...` seed verbatim — that migration is the sole
- * authority this list must track), and resolves a printed unit ONLY on an
- * EXACT match against one of those twelve strings. It is NOT a synonym
- * table: `Mtr`, `Nos`, `Km`, and the wrapped `Route Kilo Meter (RKM)`
- * spelling are description-prose / wrap-harvest aliases that deliberately
- * do NOT appear as keys or values anywhere below, and deliberately do NOT
- * resolve here — resolving them is `packages/db/src/units.ts`'s
- * `resolveUnit` (via the `unit_aliases` table), never this package's.
- * `test/needs-review.test.ts` proves this two ways: behaviourally
+ * spellings as the recognition set, and resolves a printed unit ONLY on an
+ * EXACT match against one of those twelve strings.
+ *
+ * THE DEPENDENCY RUNS FROM THE DATABASE TO THIS LIST, NOT THE OTHER WAY.
+ * There is no global units seed in any migration:
+ * `packages/db/migrations/0013_masters_profile.sql` creates `unit_masters`
+ * as a TENANT-OWNED table and says in its own header that it deliberately
+ * carries no seed. Each organisation's defaults are inserted lazily by
+ * `apps/server/src/routes/masters.ts`, which imports `CANONICAL_UNIT_NAMES`
+ * from this file and inserts it with `ON CONFLICT DO NOTHING`. So the list
+ * below is the authority the database tracks, and editing it changes what
+ * new organisations are seeded with — it is not a copy of anything.
+ *
+ * It is NOT a synonym table: `Mtr`, `Nos`, `Km`, and the wrapped
+ * `Route Kilo Meter (RKM)` spelling are description-prose / wrap-harvest
+ * aliases that deliberately do NOT appear as keys or values anywhere below,
+ * and deliberately do NOT resolve here. No alias table exists anywhere in
+ * the product either: an alias spelling stays unresolved, gets flagged, and
+ * the reviewer picks the intended unit from the organisation's Units master
+ * by hand. `test/needs-review.test.ts` proves this two ways: behaviourally
  * (`resolveCanonicalUnitCode('Mtr')` etc. all return `null`) and by
  * source-scan (this file, comments stripped, contains none of those alias
  * spellings as a quoted string literal).
@@ -440,10 +449,11 @@ const CANONICAL_UNIT_CODES: ReadonlyMap<string, string> = new Map([
   ['Route Kilometre', 'ROUTE_KILOMETRE'],
 ]);
 
-/** The twelve canonical DISPLAY spellings this module recognises, in the
- * same order as the DC-45 migration's seed — exposed so a test can assert
- * `.length === 12` against DC-45's own count without hand-copying the
- * list twice. */
+/** The twelve canonical DISPLAY spellings this module recognises, in
+ * recognition-set order. Exported because it IS the seed:
+ * `apps/server/src/routes/masters.ts` inserts these names into a new
+ * organisation's `unit_masters`, and `test/needs-review.test.ts` asserts
+ * the count is still twelve, so neither side hand-copies the list. */
 export const CANONICAL_UNIT_NAMES: readonly string[] = [...CANONICAL_UNIT_CODES.keys()];
 
 /** Resolves `printedUnit` to its DC-45 canonical CODE on an EXACT match
@@ -464,8 +474,8 @@ export function resolveCanonicalUnitCode(printedUnit: string | null): string | n
  * Kilo Meter (RKM)"`, a DIFFERENT literal string from the canonical
  * `"Route Kilometre"` display spelling, so it is (correctly, per research
  * §4.4's own framing: "the wrapped unit is itself a `needsReview`-grade
- * trap") unresolved here even though a human -- or the units master's
- * alias table -- can read it unambiguously. */
+ * trap") unresolved here even though a human reading the review screen can
+ * read it unambiguously and pick the intended unit. */
 export function detectUnresolvedUnits(
   items: readonly ParsedItem[],
 ): readonly ReviewFlag[] {
