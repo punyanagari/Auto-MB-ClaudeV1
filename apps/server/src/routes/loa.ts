@@ -55,6 +55,7 @@ import {
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import { assertAmcStagePercentages } from './payment.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import type { ObjectStorage } from '../storage.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
@@ -674,6 +675,11 @@ function assertInitialPaymentMatrix(
         `The four percentages for ${row.category} must sum to exactly 100.`,
       );
     }
+    // The AMC row's extra rule (migration 0068), shared verbatim with
+    // the per-row upsert so confirmation and later edits cannot diverge:
+    // an AMC item is never delivered and never installed, so those two
+    // stages can never carry a quantity.
+    assertAmcStagePercentages(row.category, row);
   }
 }
 

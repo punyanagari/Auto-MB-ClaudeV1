@@ -1467,21 +1467,30 @@ describe('the amendment floor includes certified quantities (R7 + R18)', () => {
   });
 
   it('holds the certified floor on its own at the database (migration 0030)', async () => {
-    // The product cannot produce certified > installed (R18 forbids it),
-    // so the certified TERM of the floor is proved directly: an item with
-    // no installation at all, certified 7 by a certificate written
-    // straight to the table, cannot have its ceiling pushed below 7 by
-    // ANY writer — route, importer, or psql.
+    // The certified TERM of the floor, isolated: an item with no
+    // delivery and no installation at all, certified 7, cannot have its
+    // ceiling pushed below 7 by ANY writer — route, importer, or psql.
+    //
+    // The item is an AMC one (migration 0068), and that is what makes
+    // this scenario REACHABLE rather than merely hypothetical. Until the
+    // AMC category existed, certified > installed was a state R18
+    // forbade outright, so this fixture had to be written straight to
+    // the table to exist at all; the 0068 certification ceiling now
+    // refuses exactly that write. An AMC item certifies against its
+    // SANCTIONED quantity with nothing installed, so certified 7 of a
+    // sanctioned 10 is an ordinary state the product produces, and the
+    // floor term is proved on real data instead of on a fixture the
+    // schema would reject.
     const itemFId = randomUUID();
     const certificateId = randomUUID();
     await admin`
       insert into work_items (
         id, organisation_id, work_id, schedule_id, item_number, description,
-        unit_code, awarded_quantity, effective_rate
+        unit_code, awarded_quantity, effective_rate, payment_category
       )
       values (
         ${itemFId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/11',
-        'Relay racks', 'Nos', 10.000, 900.00
+        'AMC for the relay racks, 10 year', 'Year', 10.000, 900.00, 'AMC'
       )
     `;
     await admin`

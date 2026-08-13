@@ -283,8 +283,18 @@ async function readItemSummaries(
         where i.work_item_id = wi.id and i.status = 'recorded'
       ), 0)::numeric(18,3) as total
     ) installed
+    -- Reuses the installed lateral above rather than interpolating
+    -- CERTIFICATION_BASIS_SQL, whose else-branch is that same subquery:
+    -- this read already reports the installed total as a column of its
+    -- own, so re-deriving it would scan installations twice per item for
+    -- one number. The rule is identical to the shared fragment's, and
+    -- the cap check below -- which reports no installed column -- uses
+    -- the fragment.
     cross join lateral (
-      select ${tx.unsafe(CERTIFICATION_BASIS_SQL)} as total
+      select case when wi.payment_category = 'AMC'
+               then coalesce(wi.effective_quantity, wi.awarded_quantity)
+               else installed.total
+             end::numeric(18,3) as total
     ) supporting
     cross join lateral (
       select coalesce((

@@ -8,6 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
   PacCapExceededDetails,
+  WorkBalanceResponse,
   PacCertificateListResponse,
   UnfinishedWorkItem,
   WorkCompletionReadiness,
@@ -90,6 +91,12 @@ let scheduleBId: string;
 let supplyItemId: string;
 /** Schedule B, AMC, awarded 5.000 Year — PL270's maintenance shape. */
 let amcItemId: string;
+/** A second Work, used only by the write-skew race. It stays out of the
+ * completion walk above so a half-finished race cannot alter it. */
+let raceWorkId: string;
+let raceItemId: string;
+let raceAmcItemId: string;
+let raceIssueItemId: string;
 let consigneeId: string;
 let locationId: string;
 
@@ -270,6 +277,43 @@ beforeAll(async () => {
        3623698.84, 'AMC')
   `;
 
+  // The race Work: one SUPPLY item, nothing else. Kept separate from the
+  // fixture above so the concurrency test can leave it in whichever
+  // state the race produces without touching the completion walk.
+  raceWorkId = randomUUID();
+  raceItemId = randomUUID();
+  raceAmcItemId = randomUUID();
+  raceIssueItemId = randomUUID();
+  const raceScheduleId = randomUUID();
+  await admin`
+    insert into works (
+      id, organisation_id, work_code, letter_number, letter_date, title,
+      advertised_value, contract_value, pricing_shape, created_by_user_id
+    )
+    values (
+      ${raceWorkId}, ${organisationId}, ${`AMCR${runId.slice(0, 5).toUpperCase()}`},
+      ${`amc-race-letter-${runId}`}, '2025-06-01', 'Write-skew fixture work',
+      50000.00, 45000.00, 'per_schedule', ${ownerUserId}
+    )
+  `;
+  await admin`
+    insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+    values (${raceScheduleId}, ${organisationId}, ${raceWorkId}, 'A', 'Schedule A', 1)
+  `;
+  await admin`
+    insert into work_items (
+      id, organisation_id, work_id, schedule_id, item_number, description,
+      unit_code, awarded_quantity, effective_rate, payment_category
+    )
+    values
+      (${raceItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId}, 'A/1',
+       'Cable drum', 'Nos', 10.000, 500.00, 'SUPPLY'),
+      (${raceAmcItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId}, 'A/2',
+       'AMC for the Cable drum installation, 5 year', 'Year', 5.000, 1000.00, 'AMC'),
+      (${raceIssueItemId}, ${organisationId}, ${raceWorkId}, ${raceScheduleId}, 'A/3',
+       'Junction box', 'Nos', 10.000, 300.00, 'SUPPLY')
+  `;
+
   const consignee = await authed(owner, {
     method: 'POST',
     url: '/api/masters/contacts',
@@ -425,6 +469,61 @@ describe('an AMC item takes no movement record', () => {
     ).rejects.toThrow(/is an AMC item.*not installed/s);
   });
 
+  it('refuses a Delivery Challan line naming it, at the API', async () => {
+    // The trigger is the floor; this is the sentence the operator reads.
+    // Before this refusal existed the draft save reached the trigger and
+    // the clerk got an unhandled 500 with a PL/pgSQL message in it.
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'DC',
+        consignee: { name: 'DSTE (East) CR', address: 'Mumbai CST Division' },
+        items: [{ workItemId: amcItemId, quantity: '1.000' }],
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'ITEM_NOT_DELIVERABLE' });
+    expect(refused.json<{ message: string }>().message).toContain('B/1');
+    expect(refused.json<{ message: string }>().message).toContain(
+      'acceptance certificate',
+    );
+  });
+
+  it('refuses an installation record naming it, at the API', async () => {
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: amcItemId,
+        quantity: '1.000',
+        installedOn: '2026-08-05',
+        locationId,
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'ITEM_NOT_INSTALLABLE' });
+    expect(refused.json<{ message: string }>().message).toContain('B/1');
+  });
+
+  it('keeps it out of the delivery balance the challan editor picks from', async () => {
+    // The editors build their item pickers straight from this register,
+    // so an AMC item left in it would be offered for delivery and then
+    // refused at save. Its delivery balance is not a small number — it
+    // is not a number.
+    const balance = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/balance`,
+      organisationId,
+    });
+    expect(balance.statusCode, balance.body).toBe(200);
+    const items = balance.json<WorkBalanceResponse>().items;
+    expect(items.map((item) => item.itemNumber)).toEqual(['A/1']);
+  });
+
   it('refuses recategorising an item into AMC while it carries movement', async () => {
     // The triggers above cannot speak about rows already written, so the
     // route closes the other direction: an item that HAS moved may not
@@ -537,6 +636,107 @@ describe('certification of an AMC item', () => {
     ]);
   });
 
+  it('refuses moving the item OUT of AMC while certificates stand against it', async () => {
+    // The symmetric half of the movement guard, and the more dangerous
+    // half. An AMC item certifies against its SANCTIONED quantity with
+    // nothing installed; every other category certifies against its
+    // INSTALLED total. Relabelling it here would leave 2.000 certified
+    // against 0.000 installed — a state R18 exists to make unreachable,
+    // which shows up as a negative available quantity on the PAC screen
+    // and as certified quantities billing through a stage percentage
+    // with no installation behind them.
+    const refused = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${amcItemId}/payment-category`,
+      organisationId,
+      payload: { paymentCategory: 'PURE_INSTALLATION' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'ITEM_HAS_CERTIFICATION' });
+    expect(refused.json<{ message: string }>().message).toContain('AMC-YEAR-1-2');
+
+    // Clearing the category entirely is the same move and is refused the
+    // same way — the guard is about leaving AMC, not about the
+    // destination.
+    const cleared = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${amcItemId}/payment-category`,
+      organisationId,
+      payload: { paymentCategory: null },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(409);
+    expect(cleared.json()).toMatchObject({ code: 'ITEM_HAS_CERTIFICATION' });
+
+    // Still AMC, and still certified 2.000 — the refusals changed
+    // nothing.
+    const [item] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${amcItemId}
+    `;
+    expect(item?.payment_category).toBe('AMC');
+  });
+
+  it('caps certification in the database as well as in the route', async () => {
+    // R18 lived in exactly one layer, which is the shape recurring
+    // finding 2 names. Raw SQL as the administrator, straight past the
+    // route: the ceiling holds anyway.
+    //
+    // Run against the SEPARATE race Work, whose AMC item is sanctioned
+    // 5.000 and certified nothing. A certificate line cannot be deleted
+    // once written (0022's mutation guard refuses UPDATE and DELETE), so
+    // an accepted insert is permanent — and doing that to the flagship
+    // fixture would move the completion predicate the walk below
+    // measures.
+    const certificateId = randomUUID();
+    await admin`
+      insert into pac_certificates (
+        id, organisation_id, work_id, reference, issue_date,
+        consignee_master_id, consignee_designation, recorded_by_user_id
+      )
+      values (
+        ${certificateId}, ${organisationId}, ${raceWorkId}, ${`RAW-${runId}`},
+        '2026-08-05', ${consigneeId}, 'DSTE (East) CR', ${ownerUserId}
+      )
+    `;
+    // Sanctioned 5.000, certified nothing, so 6.000 is over.
+    await expect(
+      admin`
+        insert into pac_certificate_items (
+          organisation_id, pac_certificate_id, work_id, work_item_id,
+          certified_quantity
+        )
+        values (
+          ${organisationId}, ${certificateId}, ${raceWorkId}, ${raceAmcItemId}, 6.000
+        )
+      `,
+    ).rejects.toThrow(/certification ceiling.*sanctioned quantity 5\.000/s);
+
+    // 5.000 exactly reaches the ceiling and is accepted, so the trigger
+    // holds a ceiling rather than refusing every write.
+    await admin`
+      insert into pac_certificate_items (
+        organisation_id, pac_certificate_id, work_id, work_item_id,
+        certified_quantity
+      )
+      values (
+        ${organisationId}, ${certificateId}, ${raceWorkId}, ${raceAmcItemId}, 5.000
+      )
+    `;
+
+    // An installable item with nothing installed caps at zero, which is
+    // the original R18 rule still in force for every other category.
+    await expect(
+      admin`
+        insert into pac_certificate_items (
+          organisation_id, pac_certificate_id, work_id, work_item_id,
+          certified_quantity
+        )
+        values (
+          ${organisationId}, ${certificateId}, ${raceWorkId}, ${raceItemId}, 1.000
+        )
+      `,
+    ).rejects.toThrow(/certification ceiling.*installed quantity 0\.000/s);
+  });
+
   it('moves the completion predicate as each period is certified', async () => {
     const partway = unfinishedFor(await readiness(), 'B/1');
     expect(partway).toMatchObject({
@@ -602,7 +802,235 @@ describe('the Work completes once the maintenance is certified', () => {
   });
 });
 
+describe('a completed Work refuses a category change', () => {
+  it('refuses the payment-category PATCH once the Work is completed', async () => {
+    // R8: a completed Work is closed to edits. The category decides
+    // WHICH quantity the completion predicate measured, so changing it
+    // afterwards would rewrite the basis of a closure already recorded —
+    // and the route took no works lock and no operable check at all
+    // before this, unlike its sibling tax-facts PATCH.
+    const refused = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${supplyItemId}/payment-category`,
+      organisationId,
+      payload: { paymentCategory: 'SPARE_SUPPLY' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'WORK_COMPLETED' });
+  });
+});
+
+describe('a category change and a challan line cannot interleave', () => {
+  it('serialises a simultaneous draft save and recategorisation', async () => {
+    // The write skew this closes: the draft save used to join
+    // `work_items` lock-free while holding only the works lock, so it
+    // could read SUPPLY from an item a concurrent PATCH was turning into
+    // AMC — and neither transaction could see the other. Migration
+    // 0068's trigger cannot catch it (it fires on the line, and issuing
+    // a challan updates the challan's status rather than the line), so
+    // the guarantee has to come from the lock.
+    //
+    // Whichever order the two land in, the tree must stay consistent:
+    // either the item is AMC and no line names it, or the line exists
+    // and the item is not AMC. The one outcome that must never occur is
+    // both.
+    const [saved, patched] = await Promise.all([
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${raceWorkId}/challans`,
+        organisationId,
+        payload: {
+          challanDate: '2026-08-08',
+          prefix: 'DC',
+          consignee: { name: 'DSTE (East) CR', address: 'Mumbai CST Division' },
+          items: [{ workItemId: raceItemId, quantity: '1.000' }],
+        },
+      }),
+      authed(owner, {
+        method: 'PATCH',
+        url: `/api/work-items/${raceItemId}/payment-category`,
+        organisationId,
+        payload: { paymentCategory: 'AMC' },
+      }),
+    ]);
+
+    const [state] = await admin<{ category: string | null; lines: string }[]>`
+      select wi.payment_category as category,
+             (select count(*) from delivery_challan_items dci
+               join delivery_challans dc on dc.id = dci.delivery_challan_id
+               where dci.work_item_id = ${raceItemId}
+                 and dc.status <> 'cancelled')::text as lines
+      from work_items wi where wi.id = ${raceItemId}
+    `;
+    const bothWon = state?.category === 'AMC' && state.lines !== '0';
+    expect(
+      bothWon,
+      `save ${String(saved.statusCode)} ${saved.body} | patch ${String(patched.statusCode)} ${patched.body}`,
+    ).toBe(false);
+
+    // And each response agrees with the state that survived, rather than
+    // reporting a success the tree does not show.
+    if (state?.category === 'AMC') {
+      expect(patched.statusCode, patched.body).toBe(200);
+      // The save either lost the race outright or was refused by the
+      // category guard it can now see.
+      expect([409, 201]).toContain(saved.statusCode);
+      if (saved.statusCode === 409) {
+        expect(saved.json()).toMatchObject({ code: 'ITEM_NOT_DELIVERABLE' });
+      }
+    } else {
+      expect(saved.statusCode, saved.body).toBe(201);
+      expect(patched.statusCode, patched.body).toBe(409);
+      expect(patched.json()).toMatchObject({ code: 'ITEM_HAS_MOVEMENT' });
+    }
+  });
+});
+
+describe('the issue transition re-reads the category', () => {
+  it('refuses to issue a challan whose line became an AMC item', async () => {
+    // The second end of the write skew, made deterministic. A draft line
+    // is written legally against a SUPPLY item; the category then moves
+    // to AMC by raw SQL, which is what a lost race would leave behind.
+    //
+    // Nothing else catches this. Migration 0068's trigger fires on the
+    // LINE, and issuing a challan updates `delivery_challans.status`
+    // rather than the line, so it never gets a second look — without the
+    // gate at the issue transition, issued delivery quantity would stand
+    // against an item that can never be delivered, and the completion
+    // predicate would measure it on a dimension nothing can move.
+    // R3 allows one open draft per Work, and the race above may or may
+    // not have left one behind depending on which side won. Clear it
+    // first so this test starts from the same place either way.
+    const existing = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where work_id = ${raceWorkId} and status = 'draft'
+    `;
+    for (const stale of existing) {
+      const discarded = await authed(owner, {
+        method: 'DELETE',
+        url: `/api/challans/${stale.id}`,
+        organisationId,
+      });
+      expect(discarded.statusCode, discarded.body).toBe(204);
+    }
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${raceWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'DC',
+        consignee: { name: 'DSTE (East) CR', address: 'Mumbai CST Division' },
+        items: [{ workItemId: raceIssueItemId, quantity: '2.000' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const challanId = draft.json<ChallanDetailResponse>().challan.id;
+
+    await admin`
+      update work_items set payment_category = 'AMC' where id = ${raceIssueItemId}
+    `;
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(409);
+    expect(issued.json()).toMatchObject({ code: 'ITEM_NOT_DELIVERABLE' });
+    expect(issued.json<{ message: string }>().message).toContain('A/3');
+
+    // Still a draft, so nothing was delivered against the AMC item.
+    const [row] = await admin<{ status: string; issued: string }[]>`
+      select dc.status,
+             (select count(*) from delivery_challan_items dci
+               join delivery_challans d on d.id = dci.delivery_challan_id
+               where dci.work_item_id = ${raceIssueItemId}
+                 and d.status = 'issued')::text as issued
+      from delivery_challans dc where dc.id = ${challanId}
+    `;
+    expect(row).toEqual({ status: 'draft', issued: '0' });
+
+    // Put it back so the draft can be discarded cleanly.
+    await admin`
+      update work_items set payment_category = 'SUPPLY' where id = ${raceIssueItemId}
+    `;
+  });
+});
+
 describe('the AMC payment-matrix row', () => {
+  it('refuses value on a stage an AMC item can never move, at the API', async () => {
+    // The DB CHECK below is the backstop. This is the refusal an
+    // operator can act on: before it, the constraint violation reached
+    // the screen as an opaque failure with a constraint name in it.
+    const refused = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/AMC`,
+      organisationId,
+      payload: {
+        pctSupply: '80.00',
+        pctInstallation: '0.00',
+        pctPac: '10.00',
+        pctFinalBill: '10.00',
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json()).toMatchObject({ code: 'PAYMENT_MATRIX_AMC_STAGE_INVALID' });
+    expect(refused.json<{ message: string }>().message).toContain('supply');
+
+    // Both stages named at once when both are wrong.
+    const bothWrong = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/AMC`,
+      organisationId,
+      payload: {
+        pctSupply: '50.00',
+        pctInstallation: '30.00',
+        pctPac: '10.00',
+        pctFinalBill: '10.00',
+      },
+    });
+    expect(bothWrong.statusCode, bothWrong.body).toBe(400);
+    expect(bothWrong.json<{ message: string }>().message).toContain(
+      'supply and installation',
+    );
+
+    // The legal shape is accepted, so the rule is not refusing the row.
+    const accepted = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/AMC`,
+      organisationId,
+      payload: {
+        pctSupply: '0.00',
+        pctInstallation: '0.00',
+        pctPac: '90.00',
+        pctFinalBill: '10.00',
+      },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+
+    // And the same percentages on a category that CAN move them stay
+    // legal, so the rule is scoped to AMC.
+    const supplyRow = await authed(owner, {
+      method: 'PUT',
+      url: `/api/works/${workId}/payment-matrix/SUPPLY`,
+      organisationId,
+      payload: {
+        pctSupply: '80.00',
+        pctInstallation: '0.00',
+        pctPac: '10.00',
+        pctFinalBill: '10.00',
+      },
+    });
+    expect(supplyRow.statusCode, supplyRow.body).toBe(200);
+
+    await admin`
+      delete from payment_matrices
+      where work_id = ${workId} and category in ('AMC', 'SUPPLY')
+    `;
+  });
+
   it('refuses value on a stage an AMC item can never move', async () => {
     // pct_supply and pct_installation bill delta_supplied and
     // delta_installed, both permanently zero for an AMC item. A row that

@@ -124,6 +124,44 @@ function assertPercentagesSumTo100(body: UpsertPaymentMatrixRowRequest): void {
   }
 }
 
+/**
+ * The AMC row's extra rule (migration 0068), stated where the operator
+ * can act on it.
+ *
+ * An AMC item takes no Delivery Challan line and no installation record,
+ * so its supply and installation stage deltas are permanently zero and
+ * any percentage on either would bill nothing, forever. The database
+ * CHECK `payment_matrices_amc_bills_on_certification` holds this against
+ * every writer; this function is the same rule said in the operator's
+ * vocabulary and BEFORE the write, because a raw constraint violation
+ * reaches the screen as an opaque 500 with a constraint name in it.
+ *
+ * Shared by the per-row upsert and by the initial matrix submitted at
+ * LOA confirmation, so the two cannot drift.
+ */
+export function assertAmcStagePercentages(
+  category: string,
+  row: UpsertPaymentMatrixRowRequest,
+): void {
+  if (category !== 'AMC') return;
+  const offending = (
+    [
+      ['pctSupply', 'supply'],
+      ['pctInstallation', 'installation'],
+    ] as const
+  ).filter(([field]) => parseDecimalToMinorUnits(row[field], 2) !== 0n);
+  if (offending.length === 0) return;
+  throw httpError(
+    400,
+    'PAYMENT_MATRIX_AMC_STAGE_INVALID',
+    `The ${offending
+      .map(([, label]) => label)
+      .join(
+        ' and ',
+      )} percentage${offending.length > 1 ? 's' : ''} of the AMC row must be 0. Annual maintenance is certified rather than delivered or installed, so those two stages can never carry a quantity and value placed on them could never be billed. Put the AMC row's 100 on the PAC and final-bill stages.`,
+  );
+}
+
 interface BilledLineRecord {
   id: string;
   mb_number: string | null;
@@ -232,17 +270,77 @@ async function assertItemHasNoMovement(
   throw httpError(
     409,
     'ITEM_HAS_MOVEMENT',
-    `Item ${itemNumber} cannot become an AMC item: annual maintenance is certified rather than delivered or installed, and this item already carries movement — ${movement
-      .map((row) =>
+    `Item ${itemNumber} cannot become an AMC item: annual maintenance is certified rather than delivered or installed, and this item already carries movement — ${nameFirst(
+      movement.map((row) =>
         row.kind === 'delivery_challan'
           ? `delivery challan ${row.label}`
           : `installation dated ${row.label}`,
-      )
-      .join(
-        '; ',
-      )}. Cancel those records first if the item really is a maintenance schedule.`,
+      ),
+    )}. Cancel those records first if the item really is a maintenance schedule.`,
     { workItemId, itemNumber },
   );
+}
+
+/**
+ * Refuses moving an item OUT of the AMC category while any non-cancelled
+ * acceptance certificate names it — the symmetric half of
+ * `assertItemHasNoMovement`.
+ *
+ * An AMC item certifies against its SANCTIONED quantity; every other
+ * category certifies against its INSTALLED total (R18, migration 0068).
+ * An AMC item can therefore be legitimately certified up to its full
+ * sanctioned quantity with nothing installed at all, and relabelling it
+ * afterwards leaves certified far above installed — a state R18 exists
+ * to make unreachable. The consequences are not cosmetic: the PAC screen
+ * reports a NEGATIVE available quantity, further certificates are capped
+ * against a ceiling the item has already passed, the certified
+ * quantities start billing through the new category's own PAC stage
+ * percentage with nothing installed behind them, and the completion
+ * predicate silently changes which dimension it measures the item on.
+ *
+ * `assertItemNotBilled` does not cover this. It refuses a category
+ * change once a Measurement Book has billed the item, but certificates
+ * are recorded long before they are billed, and the whole window between
+ * is unguarded without this.
+ *
+ * The remedy is to cancel the certificates — which releases their
+ * quantities — not to relabel around them, so the refusal names them.
+ */
+async function assertItemHasNoCertification(
+  tx: TransactionSql,
+  workItemId: string,
+  itemNumber: string,
+): Promise<void> {
+  const certificates = await tx<{ reference: string; certified: string }[]>`
+    select pc.reference, pci.certified_quantity::text as certified
+    from pac_certificate_items pci
+    join pac_certificates pc on pc.id = pci.pac_certificate_id
+    where pci.work_item_id = ${workItemId} and pc.status = 'recorded'
+    order by pc.reference
+  `;
+  if (certificates.length === 0) return;
+  throw httpError(
+    409,
+    'ITEM_HAS_CERTIFICATION',
+    `Item ${itemNumber} cannot leave the AMC category: it is certified against its sanctioned quantity, which only a maintenance item may be, and moving it would leave more certified than installed — ${nameFirst(
+      certificates.map((row) => `certificate ${row.reference} for ${row.certified}`),
+    )}. Cancel those certificates first, which releases their quantities.`,
+    { workItemId, itemNumber },
+  );
+}
+
+/**
+ * Names at most the first three records and counts the rest.
+ *
+ * A refusal has to be readable in a toast. An item with sixty
+ * certificates against it would otherwise produce a sentence no operator
+ * finishes, and the first few plus a total say the same thing — the same
+ * shape `amendments.ts` uses for its own record enumerations.
+ */
+function nameFirst(labels: readonly string[]): string {
+  const shown = labels.slice(0, 3).join('; ');
+  const rest = labels.length - 3;
+  return rest > 0 ? `${shown} and ${String(rest)} more` : shown;
 }
 
 const MATRIX_COLUMNS_SQL = `
@@ -355,6 +453,7 @@ export function registerPaymentRoutes(
       const category = assertMatrixCategory(rawCategory);
       const body = request.body;
       assertPercentagesSumTo100(body);
+      assertAmcStagePercentages(category, body);
       return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
@@ -528,6 +627,37 @@ export function registerPaymentRoutes(
       const { id: workItemId } = request.params;
       const body = request.body;
       return tenant(async (tx) => {
+        // Works lock FIRST, then the item — the works -> work_items order
+        // every other writer takes, so this cannot invert a lock order
+        // and deadlock. The sibling tax-facts PATCH below does exactly
+        // this, and the category edit is the same kind of act: per-item
+        // configuration on a Work that must still be open.
+        //
+        // The lock is also what makes the AMC guards below sound. A
+        // Delivery Challan draft save takes the works lock and locks the
+        // work_items rows its lines name (routes/challans.ts), and
+        // installation recording locks the item — so a category change
+        // racing either of them waits rather than reading a state the
+        // other is about to invalidate.
+        const [work] = await tx<{ id: string; status: string }[]>`
+          select id, status from works
+          where id = (
+              select work_id from work_items
+              where id = ${workItemId} and deleted_at is null
+            )
+            and deleted_at is null
+          for update
+        `;
+        if (!work) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        await assertWorkAccess(tx, user.id, work.id);
+        // R8: a completed Work is closed to edits until it is reopened.
+        // The category decides which quantity the completion predicate
+        // measured, so changing it under a completed Work would rewrite
+        // the basis of a closure that has already been recorded.
+        assertWorkOperable(work.status, "changing an item's payment category");
+
         // Row lock: serialises concurrent category edits so the
         // before/after audit pairs chain truthfully.
         const [item] = await tx<
@@ -546,17 +676,28 @@ export function registerPaymentRoutes(
         if (!item) {
           throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
         }
-        await assertWorkAccess(tx, user.id, item.work_id);
 
         // The category is configuration only until a Measurement Book
         // bills the item; after that it is part of what was paid. Re-
         // submitting the value the item already carries changes nothing
         // and stays a harmless no-op, so the guard runs only when the
         // value actually moves.
+        //
+        // The two AMC guards are symmetric on purpose. Moving IN is
+        // refused while the item carries movement, because an AMC item
+        // takes none; moving OUT is refused while it carries
+        // certificates, because those were capped at the sanctioned
+        // quantity under the AMC rule and every other category caps at
+        // the installed total. Guarding only one direction leaves the
+        // other as a way to reach exactly the state the guard exists to
+        // prevent.
         if (body.paymentCategory !== item.payment_category) {
           await assertItemNotBilled(tx, item.id, item.item_number);
           if (body.paymentCategory === 'AMC') {
             await assertItemHasNoMovement(tx, item.id, item.item_number);
+          }
+          if (item.payment_category === 'AMC') {
+            await assertItemHasNoCertification(tx, item.id, item.item_number);
           }
         }
 

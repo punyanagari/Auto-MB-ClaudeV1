@@ -150,8 +150,10 @@ export function PacCertificates({
     <>
       <h2>PAC certificates</h2>
       <p className="text-muted-foreground">
-        Railway certification of installed quantities, issued in parts. Per item the
-        certified total can never exceed what installation records support; cancelling a
+        Railway certification, issued in parts. Per item the certified total can never
+        exceed the supporting quantity in the table below — what installation records
+        support for an installable item, and the sanctioned quantity for an annual
+        maintenance item, which is certified rather than installed. Cancelling a
         certificate releases its quantities.
       </p>
       {actionError !== null && <FormError>{actionError}</FormError>}

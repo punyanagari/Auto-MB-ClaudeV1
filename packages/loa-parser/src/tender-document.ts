@@ -202,7 +202,11 @@ function percentageNear(block: string, expressions: readonly RegExp[]): string |
   return null;
 }
 
-function matrixCategory(block: string): TenderMatrixCategory {
+/**
+ * `pricesMovement` says the block put a percentage on the SUPPLY or the
+ * INSTALLATION stage. It is what stops a mixed clause being read as AMC.
+ */
+function matrixCategory(block: string, pricesMovement: boolean): TenderMatrixCategory {
   // Spare supply is tested FIRST and stays first. A "maintenance spare"
   // is a spare part despatched under a maintenance obligation — material
   // that moves, and therefore a supply category — while AMC is the
@@ -219,7 +223,18 @@ function matrixCategory(block: string): TenderMatrixCategory {
   // clause is deliberately NOT enough: every tender carries one, and it
   // describes a warranty obligation on supplied material rather than a
   // priced maintenance schedule.
+  //
+  // Nor is a MENTION of maintenance enough when the same clause prices
+  // the supply or installation stage. "70% on supply, 20% on
+  // installation, 10% after the AMC period" is a supply-and-installation
+  // payment schedule that happens to name the maintenance period as the
+  // moment its last tranche falls due — it is not a maintenance
+  // schedule. Reading it as AMC would propose a row with a nonzero
+  // supply and installation percentage, which is precisely the shape the
+  // `payment_matrices_amc_bills_on_certification` CHECK refuses, so the
+  // reviewer would be handed a suggestion that cannot be saved.
   if (
+    !pricesMovement &&
     /\bAMC\b|annual\s+(?:comprehensive\s+)?maintenance(?:\s+contract)?/i.test(block)
   ) {
     return 'AMC';
@@ -263,7 +278,10 @@ function matrixSuggestions(
     const parsed = values.map(percentageHundredths);
     const complete = parsed.every((value) => value !== null);
     const total = parsed.reduce<bigint>((sum, value) => sum + (value ?? 0n), 0n);
-    const category = matrixCategory(block);
+    const category = matrixCategory(
+      block,
+      pctSupply !== null || pctInstallation !== null,
+    );
     byCategory.set(category, {
       category,
       pctSupply,

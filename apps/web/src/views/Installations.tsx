@@ -165,7 +165,12 @@ export function Installations({
     );
   }
 
-  const selectableItems = workItems;
+  // AMC items are not installable (migration 0068): annual maintenance
+  // is served over a period and certified by the railway, and both the
+  // record route and a database trigger refuse an installation naming
+  // one. Offering them in the picker would be offering a form that
+  // cannot succeed.
+  const selectableItems = workItems.filter((item) => item.paymentCategory !== 'AMC');
   const activeItemId =
     selectedItemId !== '' ? selectedItemId : (selectableItems[0]?.id ?? '');
   const activeItem = selectableItems.find((item) => item.id === activeItemId);

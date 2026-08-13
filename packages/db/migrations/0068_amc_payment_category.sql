@@ -53,6 +53,9 @@
 --      installation stages.
 --   3. The movement backstop: no Delivery Challan line and no
 --      installation may name an AMC item.
+--   4. The certification ceiling as a trigger, so R18 is enforced in two
+--      layers like every other quantity rule rather than in the route
+--      alone.
 --
 -- No existing row can be affected. `payment_category` has only ever held
 -- the four 0021 values or NULL, and `payment_matrices.category` only
@@ -138,12 +141,25 @@ COMMENT ON CONSTRAINT payment_matrices_amc_bills_on_certification
 -- dropped, and 0024/0027/0031/0032 have already layered four of them
 -- onto these tables.
 --
--- The category is read from `work_items` without a row lock. A lock
--- would buy nothing: `PATCH /api/work-items/:id/payment-category`
--- refuses to move an item INTO the AMC category while any delivery or
--- installation names it, so the two writers cannot cross in a direction
--- that leaves an AMC item holding movement — and the reverse direction
--- (out of AMC) can only make this guard more permissive.
+-- The category is read from `work_items` without a row lock, and that is
+-- deliberately NOT the whole guarantee. A BEFORE-ROW trigger sees only
+-- committed rows, so on its own it cannot stop a write skew: a Delivery
+-- Challan draft save that reads an item while it is still SUPPLY, and a
+-- category change to AMC that cannot see the uncommitted line, can
+-- interleave and both commit. The trigger also fires on the LINE, and
+-- issuing a challan updates `delivery_challans.status` rather than the
+-- line, so it never gets a second look at issue time.
+--
+-- The race is closed in the application, where the locks live:
+-- `routes/challans.ts` locks the referenced `work_items` rows FOR UPDATE
+-- before it writes lines and re-checks the category at the issue
+-- transition under the same locks, `routes/installations.ts` already
+-- holds the item lock, and `PATCH /api/work-items/:id/payment-category`
+-- now takes the works lock and then the item lock — the same
+-- works -> work_items order — so a category change and a line write
+-- serialise instead of interleaving. What this trigger adds is the
+-- floor: no writer, and no raw SQL, can put movement against an AMC item
+-- that was already AMC when the row was written.
 -- ---------------------------------------------------------------------
 
 CREATE FUNCTION app_private.guard_delivery_challan_item_not_amc()
@@ -215,3 +231,87 @@ $$;
 CREATE TRIGGER installations_guard_not_amc
 BEFORE INSERT OR UPDATE ON installations
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_installation_not_amc();
+
+-- ---------------------------------------------------------------------
+-- 4. The certification ceiling, in the database.
+--
+-- R18 caps certification per item, and until now it was enforced in
+-- exactly one layer: `routes/pac.ts`. That is the shape the reconciled
+-- review's recurring finding 2 names — "security is enforced twice;
+-- money once" — and this migration's own rationale above leans on the
+-- second layer, so the ceiling gets one too. The certified quantity is
+-- money: it is what the Measurement Book's certification stage bills.
+--
+-- The rule is the route's rule, verbatim: an AMC item caps at its
+-- SANCTIONED quantity (nothing is ever installed against it), every
+-- other item at its INSTALLED total. `0046` already holds exactly this
+-- shape for the installation and delivery ceilings, and this function
+-- follows it line for line, including the `FOR UPDATE` on the item —
+-- which is what makes two concurrent certifications serialise rather
+-- than jointly breaching a ceiling each of them read as satisfied.
+--
+-- INSERT only. A certificate's lines are immutable once recorded
+-- (0022's `guard_pac_certificate_item_mutation` refuses UPDATE and
+-- DELETE outright), so an UPDATE arm would be dead code guarding a
+-- statement another trigger has already refused.
+-- ---------------------------------------------------------------------
+
+CREATE FUNCTION app_private.guard_pac_certified_ceiling()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_category text;
+  v_ceiling numeric(18,3);
+  v_already numeric(18,3);
+  v_item_number text;
+BEGIN
+  SELECT item.payment_category, item.item_number,
+         CASE WHEN item.payment_category = 'AMC'
+           THEN COALESCE(item.effective_quantity, item.awarded_quantity)
+           ELSE COALESCE((
+             SELECT sum(i.quantity) FROM installations i
+             WHERE i.organisation_id = NEW.organisation_id
+               AND i.work_item_id = NEW.work_item_id
+               AND i.status = 'recorded'
+           ), 0)
+         END
+    INTO v_category, v_item_number, v_ceiling
+  FROM work_items item
+  WHERE item.organisation_id = NEW.organisation_id
+    AND item.id = NEW.work_item_id
+  FOR UPDATE;
+
+  IF v_item_number IS NULL THEN
+    RAISE EXCEPTION
+      'PAC certificate line names work item %, which this transaction cannot read',
+      NEW.work_item_id
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT COALESCE(sum(other.certified_quantity), 0) INTO v_already
+  FROM pac_certificate_items other
+  JOIN pac_certificates pc ON pc.id = other.pac_certificate_id
+  WHERE other.organisation_id = NEW.organisation_id
+    AND other.work_item_id = NEW.work_item_id
+    AND pc.status = 'recorded'
+    AND other.id <> NEW.id;
+
+  IF v_already + NEW.certified_quantity > v_ceiling THEN
+    RAISE EXCEPTION
+      'certification ceiling: cumulative certification for % would reach % against the % quantity %',
+      v_item_number, v_already + NEW.certified_quantity,
+      CASE WHEN v_category = 'AMC' THEN 'sanctioned' ELSE 'installed' END,
+      v_ceiling
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+-- Fires alongside pac_certificate_items_guard_mutation (0022), which
+-- decides whether the line may be written at all.
+CREATE TRIGGER pac_certificate_items_certified_ceiling_guard
+BEFORE INSERT ON pac_certificate_items
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_pac_certified_ceiling();

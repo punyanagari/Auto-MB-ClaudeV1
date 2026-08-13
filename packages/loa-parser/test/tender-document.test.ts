@@ -365,6 +365,29 @@ Maintenance spare payment: 90% on supply and 10% on final acceptance.`,
     ]);
   });
 
+  it('does not read a mixed clause as AMC just because it names the AMC period', () => {
+    // "70% supply, 20% installation, 10% after the AMC period" is a
+    // supply-and-installation payment schedule whose last tranche falls
+    // due at the maintenance milestone. Read as AMC it would propose a
+    // row with a nonzero supply and installation percentage — exactly
+    // the shape `payment_matrices_amc_bills_on_certification` refuses —
+    // so the reviewer would be handed a suggestion that cannot be saved.
+    const review = reviewTenderDocument(
+      `Tender No.: T-14
+Name of Work: Supply and installation of IPIS with maintenance
+Payment: 70% on supply, 20% on installation and 10% after the AMC period.`,
+      'tender_specification',
+    );
+    expect(review.paymentMatrix).toEqual([
+      expect.objectContaining({
+        category: 'SUPPLY_AND_INSTALLATION',
+        pctSupply: '70',
+        pctInstallation: '20',
+      }),
+    ]);
+    expect(review.paymentMatrix.map((row) => row.category)).not.toContain('AMC');
+  });
+
   it('does not read an ordinary maintenance-period clause as an AMC schedule', () => {
     // Every tender carries a maintenance or defect-liability period; it
     // describes a warranty obligation on supplied material, not a priced

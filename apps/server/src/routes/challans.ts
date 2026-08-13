@@ -680,6 +680,35 @@ type ResolvedLine =
  *
  * `label` names the offending line the way the caller counts lines.
  */
+/**
+ * Refuses Delivery Challan lines that name an AMC item (migration 0068).
+ *
+ * Annual maintenance is served over a period and certified by the
+ * railway; nothing is despatched, so nothing can appear on a challan. A
+ * database trigger holds this against every writer, including raw SQL —
+ * but a trigger speaks in `RAISE EXCEPTION` and reaches the operator as
+ * an unhandled 500. This is the same refusal with a code, a remedy, and
+ * the item numbers in it.
+ *
+ * Called under the caller's row locks on those items, so the category it
+ * reads cannot move before the lines are written.
+ */
+function assertItemsAreDeliverable(
+  items: readonly { item_number: string; payment_category: string | null }[],
+): void {
+  const amc = items
+    .filter((item) => item.payment_category === 'AMC')
+    .map((item) => item.item_number)
+    .sort();
+  if (amc.length === 0) return;
+  throw httpError(
+    409,
+    'ITEM_NOT_DELIVERABLE',
+    `${amc.join(', ')} ${amc.length > 1 ? 'are annual maintenance items' : 'is an annual maintenance item'}: maintenance is served and certified, never despatched, so it cannot go on a Delivery Challan. Record the acceptance certificate for the period served instead.`,
+    { itemNumbers: amc },
+  );
+}
+
 function resolveLine(item: ChallanItemInput, label: string): ResolvedLine {
   const manualFields = [item.description, item.unit, item.rate];
   const manualCount = manualFields.filter((value) => value !== undefined).length;
@@ -866,6 +895,38 @@ export async function writeLines(
   }
 
   if (itemLines.length > 0) {
+    // Lock the referenced items BEFORE reading anything off them, in id
+    // order — the discipline installations.ts and pac.ts already use,
+    // and the same works -> work_items order every writer that takes
+    // both takes.
+    //
+    // Without this the insert below joins `work_items` lock-free, so a
+    // draft save and `PATCH /api/work-items/:id/payment-category` could
+    // interleave: the save reads a category the PATCH is about to change
+    // and the PATCH cannot see the line the save has not committed. That
+    // is a write skew, and for AMC it is a hole in a structural rule —
+    // migration 0068's trigger fires only on line INSERT/UPDATE, and
+    // issuing a challan updates `delivery_challans.status`, never the
+    // line, so a line written while the item was still SUPPLY would
+    // never be re-examined. Locking here makes the two serialise: one
+    // waits, and whichever runs second sees the other's committed state.
+    const wantedItemIds = [
+      ...new Set(itemLines.map((entry) => entry.line.workItemId)),
+    ].sort();
+    const lockedItems = await tx<
+      { id: string; item_number: string; payment_category: string | null }[]
+    >`
+      select id, item_number, payment_category from work_items
+      where id = any(${wantedItemIds}::uuid[]) and work_id = ${workId}
+        and deleted_at is null
+      order by id
+      for update
+    `;
+    // The category refusal, said in the operator's own words. The 0068
+    // trigger below is the backstop that holds for every writer; this is
+    // the sentence the screen can act on.
+    assertItemsAreDeliverable(lockedItems);
+
     // The join to work_items is what snapshots description, unit and
     // rate, and what refuses an item of another Work: a line whose item
     // does not join produces no row, so a short count names the fault.
@@ -1195,6 +1256,15 @@ export function registerChallanRoutes(
           left join delivery_challan_items dci on dci.work_item_id = wi.id
           left join delivery_challans dc on dc.id = dci.delivery_challan_id
           where wi.work_id = ${workId} and wi.deleted_at is null
+            -- AMC items are excluded (migration 0068). This register is
+            -- "what is left to deliver", and an annual maintenance item
+            -- has no delivery balance at all: nothing is ever despatched
+            -- against it, the 0068 trigger refuses a line naming it, and
+            -- the editors that read this endpoint build their item
+            -- pickers straight from it. Leaving them in would offer the
+            -- operator a row whose every value is a fiction and whose
+            -- only outcome is a refusal at save.
+            and coalesce(wi.payment_category, '') <> 'AMC'
           group by wi.id
           order by wi.item_number
         `;
@@ -1878,15 +1948,27 @@ export function registerChallanRoutes(
         // amendment that could make them stale — and the join to
         // work_items would drop them anyway. The invariant this module
         // rests on is not left to a join predicate.
-        await tx`
-            select wi.id from work_items wi
+        const lockedLineItems = await tx<
+          { item_number: string; payment_category: string | null }[]
+        >`
+            select wi.id, wi.item_number, wi.payment_category from work_items wi
             where wi.id in (
               select dci.work_item_id from delivery_challan_items dci
               where dci.delivery_challan_id = ${id}
                 and dci.work_item_id is not null
             )
+            order by wi.id
             for update
           `;
+        // The category, re-checked at the issue transition (migration
+        // 0068). The draft save refuses an AMC line under these same
+        // locks, but the two acts are separate transactions and the
+        // category can move between them — and nothing else would catch
+        // it, because issuing updates `delivery_challans.status` and
+        // never the line, so the 0068 line trigger does not re-fire.
+        // This is the gate that makes "no issued challan quantity ever
+        // stands against an AMC item" true rather than merely usual.
+        assertItemsAreDeliverable(lockedLineItems);
         if (!work.allow_excess_delivery) {
           const exceeded = await tx<{ item_number: string }[]>`
               select wi.item_number

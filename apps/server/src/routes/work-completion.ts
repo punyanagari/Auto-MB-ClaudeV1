@@ -253,12 +253,19 @@ async function unfinishedItems(
                from installations i
                where i.work_item_id = wi.id and i.status = 'recorded'
              ), 0)::numeric(18,3) as installed_quantity,
-             coalesce((
+             -- Restricted to AMC items, which are the only ones the
+             -- 'service' requirement measures. Two reasons, and both
+             -- matter: the contract documents this field as 0 on every
+             -- other requirement, so computing it everywhere would make
+             -- that sentence false; and the completion path would
+             -- otherwise pay for one certificate-table descent per item
+             -- on every Work, for a number nothing reads.
+             case when wi.payment_category = 'AMC' then coalesce((
                select sum(pci.certified_quantity)
                from pac_certificate_items pci
                join pac_certificates pc on pc.id = pci.pac_certificate_id
                where pci.work_item_id = wi.id and pc.status = 'recorded'
-             ), 0)::numeric(18,3) as certified_quantity
+             ), 0) else 0 end::numeric(18,3) as certified_quantity
       from work_items wi
       where wi.work_id = ${workId} and wi.deleted_at is null
     ) measured
