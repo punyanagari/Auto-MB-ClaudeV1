@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { DashboardAlert, DashboardResponse } from '@auto-mb/contracts';
+import type {
+  Contact,
+  DashboardAlert,
+  DashboardResponse,
+  OrganisationProfile,
+  Signatory,
+} from '@auto-mb/contracts';
 import {
   AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   CheckCircle2,
+  CircleAlert,
   Clock3,
   FileSearch,
   FileText,
@@ -20,7 +27,13 @@ import {
 } from '../format.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
-import { navigateOnClick, workHash } from '../lib/workspace-routes.js';
+import {
+  mastersHash,
+  navigateOnClick,
+  SETTINGS_HASH,
+  workHash,
+  workspaceHashOf,
+} from '../lib/workspace-routes.js';
 import { Card } from '../ui/card.js';
 import { ProgressBar } from '../ui/progress.js';
 import { FormError } from '../ui/form.js';
@@ -59,6 +72,257 @@ const ALERT_TONE: Record<
     surface: 'border-primary/15 bg-primary/[0.025]',
   },
 };
+
+const UPLOAD_HASH = workspaceHashOf({ view: { name: 'upload' } });
+/** The register that lists uploaded letters and their Review action. */
+const WORKS_HASH = workspaceHashOf({ view: { name: 'works' } });
+
+interface SetupStep {
+  readonly key: string;
+  readonly label: string;
+  readonly ok: boolean;
+  /** What is still missing. Shown only while not ok. */
+  readonly detail: string;
+  readonly fix: { readonly label: string; readonly hash: string };
+}
+
+/** The seller facts a submitted invoice needs — the same list
+ * `WorkBillingReadiness` mirrors, asked one screen earlier so a new
+ * organisation meets them before a Work depends on them. */
+function missingOrganisationFacts(profile: OrganisationProfile): readonly string[] {
+  return [
+    ...((profile.stateCode ?? null) === null ? ['GST state code'] : []),
+    ...(profile.gstin === null ? ['GSTIN'] : []),
+    ...(profile.address === null ? ['address'] : []),
+    ...((profile.pincode ?? null) === null ? ['PIN code'] : []),
+    ...((profile.locality ?? null) === null ? ['locality'] : []),
+  ];
+}
+
+/**
+ * What a brand-new organisation has to do before this product can produce
+ * a document, on the one screen it lands on.
+ *
+ * Rendered only while the organisation has no Works, because that is the
+ * only moment the answer is the same for everyone; after the first Work the
+ * per-Work `WorkBillingReadiness` panel takes over, and this reuses its
+ * shape deliberately — a prerequisite, what is missing, and a link to the
+ * screen that fixes it. Everything is derived from reads the app already
+ * exposes; nothing here is a new server concept.
+ *
+ * A read-only member gets one sentence instead: sending someone to a screen
+ * whose buttons their role does not have is the dead end this replaces, not
+ * a fix for it.
+ */
+function SetupChecklist({
+  api,
+  organisationId,
+  canModify,
+  loaAwaitingReview,
+  onUploadLoa,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly canModify: boolean;
+  /** A letter already uploaded and waiting to be confirmed into a Work.
+   * The first step is then half-done, and saying so is the difference
+   * between guidance and nagging. */
+  readonly loaAwaitingReview: number;
+  readonly onUploadLoa: () => void;
+}) {
+  const [profile, setProfile] = useState<OrganisationProfile | null>(null);
+  const [signatories, setSignatories] = useState<readonly Signatory[] | null>(null);
+  const [contacts, setContacts] = useState<readonly Contact[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loadVersion, setLoadVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProfile(null);
+    setSignatories(null);
+    setContacts(null);
+    setFailed(false);
+    // A read-only member is answered with one sentence below and never
+    // sees the checklist, so the three reads behind it are not made.
+    if (!canModify) return;
+    Promise.all([
+      api.organisationProfile(organisationId),
+      api.listSignatories(organisationId),
+      api.listContacts(organisationId),
+    ])
+      .then(([organisationProfile, signatoryRows, contactRows]) => {
+        if (cancelled) return;
+        // A stubbed or degraded client may resolve nothing; render the
+        // failed state rather than crashing on a missing profile.
+        if ((organisationProfile as OrganisationProfile | undefined) === undefined) {
+          setFailed(true);
+          return;
+        }
+        setProfile(organisationProfile);
+        setSignatories(signatoryRows ?? []);
+        setContacts(contactRows ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, canModify, loadVersion]);
+
+  if (!canModify) {
+    return (
+      <Card aria-labelledby="setup-checklist-heading">
+        <h2 id="setup-checklist-heading" className="m-0 text-base">
+          Nothing is set up yet
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This organisation has no Works. An owner or office member uploads the first
+          Letter of Acceptance; everything you can see follows from it.
+        </p>
+      </Card>
+    );
+  }
+
+  if (failed) {
+    return (
+      <Card aria-labelledby="setup-checklist-heading">
+        <h2 id="setup-checklist-heading" className="m-0 text-base">
+          First steps
+        </h2>
+        <FormError>
+          The setup checklist could not be loaded. Nothing is blocked — uploading the
+          first Letter of Acceptance still works.
+        </FormError>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={onUploadLoa}>
+            <Upload aria-hidden="true" />
+            Upload the first LOA
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoadVersion((current) => current + 1);
+            }}
+          >
+            Retry the checklist
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (profile === null || signatories === null || contacts === null) {
+    return (
+      <Card aria-labelledby="setup-checklist-heading">
+        <h2 id="setup-checklist-heading" className="m-0 text-base">
+          First steps
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground" role="status">
+          Checking what this organisation still needs…
+        </p>
+      </Card>
+    );
+  }
+
+  const missingOrgFacts = missingOrganisationFacts(profile);
+  const activeSignatories = signatories.filter((row) => row.active);
+  const activeClients = contacts.filter((row) => row.isClient && row.active);
+
+  const steps: readonly SetupStep[] = [
+    {
+      key: 'loa',
+      label: 'Upload the first Letter of Acceptance',
+      // Only rendered with zero Works, so this step is never done here.
+      ok: false,
+      detail:
+        loaAwaitingReview > 0
+          ? `${String(loaAwaitingReview)} uploaded letter${loaAwaitingReview === 1 ? '' : 's'} ${loaAwaitingReview === 1 ? 'is' : 'are'} waiting for review. Confirming the extraction creates the Work.`
+          : 'The letter is where a Work comes from — its schedules, quantities and rates are read from it, not typed.',
+      fix:
+        loaAwaitingReview > 0
+          ? { label: 'Review the uploaded letter', hash: WORKS_HASH }
+          : { label: 'Upload a Letter of Acceptance', hash: UPLOAD_HASH },
+    },
+    {
+      key: 'signatory',
+      label: 'Record who signs your documents',
+      ok: activeSignatories.length > 0,
+      detail:
+        'Challans, measurement books and invoices print a signatory; there is none to choose yet.',
+      fix: { label: 'Open Masters → Signatories', hash: mastersHash('signatories') },
+    },
+    {
+      key: 'client',
+      label: 'Add the railway unit you invoice',
+      ok: activeClients.length > 0,
+      detail:
+        'A tax invoice names a client contact as the buyer, with its address, state code and PIN.',
+      fix: { label: 'Open Masters → Contacts', hash: mastersHash('contacts') },
+    },
+    {
+      key: 'org-gst',
+      label: "Complete your organisation's GST profile",
+      ok: missingOrgFacts.length === 0,
+      detail: `Missing: ${missingOrgFacts.join(', ')}. An invoice cannot be submitted without them.`,
+      fix: { label: 'Open organisation settings', hash: SETTINGS_HASH },
+    },
+  ];
+
+  const done = steps.filter((step) => step.ok).length;
+
+  return (
+    <Card aria-labelledby="setup-checklist-heading">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="setup-checklist-heading" className="m-0 text-base">
+            First steps
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {done} of {steps.length}
+            </span>{' '}
+            done. Nothing here blocks the next — the letter can be uploaded first and
+            the masters filled in as documents need them.
+          </p>
+        </div>
+        <Button onClick={onUploadLoa}>
+          <Upload aria-hidden="true" />
+          Upload the first LOA
+        </Button>
+      </div>
+      <ol className="my-3 flex list-none flex-col gap-2 p-0">
+        {steps.map((step) => (
+          <li key={step.key} className="flex items-start gap-2 text-[13px]">
+            {step.ok ? (
+              <CheckCircle2
+                className="mt-0.5 size-4 shrink-0 text-success"
+                aria-hidden="true"
+              />
+            ) : (
+              <CircleAlert
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            <span>
+              <span className="font-medium">{step.label}</span>
+              <span className="sr-only">{step.ok ? ' — done' : ' — still to do'}</span>
+              {!step.ok && (
+                <>
+                  {' '}
+                  <span className="text-muted-foreground">{step.detail}</span>{' '}
+                  <a href={step.fix.hash}>{step.fix.label}</a>
+                </>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
 
 function dueLabel(days: number | null): string | null {
   if (days === null) return null;
@@ -234,6 +498,19 @@ export function OperationsDashboard({
         </div>
       </header>
 
+      {/* First run. Above the metrics on purpose: five zero tiles and
+          "nothing needs attention" are an accurate description of an
+          organisation that has not started, and useless as a next move. */}
+      {data.works.length === 0 && (
+        <SetupChecklist
+          api={api}
+          organisationId={organisationId}
+          canModify={canModify}
+          loaAwaitingReview={data.totals.loaAwaitingReview}
+          onUploadLoa={onUploadLoa}
+        />
+      )}
+
       <section
         aria-label="Organisation summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
@@ -402,12 +679,14 @@ export function OperationsDashboard({
         {sortedWorks.length === 0 ? (
           <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
             <BriefcaseBusiness className="mb-3 size-8 text-muted-foreground" />
-            <p className="font-medium">No Works have been created yet.</p>
-            {canModify && (
-              <Button className="mt-4" onClick={onUploadLoa}>
-                Upload the first LOA
-              </Button>
-            )}
+            {/* The action lives once, in the First steps panel at the top
+                of this screen; a second copy of the same button here read
+                as a second, different thing to do. */}
+            <p className="font-medium">
+              {canModify
+                ? 'No Works yet — the first one is created from an uploaded Letter of Acceptance.'
+                : 'No Works yet. An owner or office member uploads the first Letter of Acceptance.'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

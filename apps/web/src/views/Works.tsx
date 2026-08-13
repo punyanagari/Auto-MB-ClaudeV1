@@ -310,10 +310,31 @@ export function Works({
           </>
         )}
 
+        {/* The register with nothing in it. The old copy told every reader
+            to upload a letter, including the read-only roles whose header
+            has no Upload button — an instruction that names an action the
+            reader cannot reach is a dead end, not guidance. */}
         {works !== null && works.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No Works yet. Upload a Letter of Acceptance to create the first one.
-          </p>
+          <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
+            {canModify ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {documents !== null && documents.length > 0
+                    ? 'No Works yet. An uploaded letter becomes a Work once its extraction is reviewed and confirmed.'
+                    : 'No Works yet. A Work is created from its Letter of Acceptance — schedules, quantities and rates are read from the letter, not typed.'}
+                </p>
+                <Button className="mt-4" onClick={onUpload}>
+                  <Plus className="size-4" aria-hidden="true" />
+                  Upload a Letter of Acceptance
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No Works yet. An owner or office member uploads the Letter of Acceptance
+                that creates the first one.
+              </p>
+            )}
+          </div>
         )}
       </section>
 

@@ -258,12 +258,31 @@ treat timeout-shaped failures as contention proven per-package.
 
 ### 2.7 Wave 2 landing record (2026-08-13)
 
-Same verification standard as wave 1: isolated worktree, fresh database,
-guard-fails-on-pre-fix proof stated in the PR.
+Same verification standard as wave 1: isolated worktree, freshly created
+database, full `pnpm verify`, and a guard proved to fail on the pre-fix
+tree with the command stated in the PR.
 
-| Pack | PR  | Notes beyond the brief                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P10  | #56 | "≤3 React commits per keystroke" does not separate the two trees — React batches a keystroke into one commit before and after the fix — so the spec measures ROWS RE-RENDERED per keystroke as well, counted by fiber identity through React's own devtools hook: 130 before, 2 after (the item row and the column heading). Long tasks never exceeded the browser's 50ms reporting floor on either tree, so that assertion is a standing guard rather than a proof. The bundle guard carries two lines: the programme's 220 kB budget, which the pre-fix tree fails at 220.74 kB, and a 115 kB ratchet, because 220 kB has a hundred kilobytes of slack under the code-split payload. Touched two files outside the pack's list — see the PR for both. |
+| Pack | PR  | Notes beyond the brief                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P9   | #55 | The CCA publishes four current roots; only three are bundled. `CCA India 2015 SPL` as served fails its own self-signature check (`openssl verify -check_ss_sig` → `certificate signature failure`), reproduced on three downloads from both hostnames, so it is documented and left out rather than shipped unverified. Provenance is one channel (TLS from `cca.gov.in`) corroborated for `CCA India 2022` by the fingerprint already in `docs/OPERATIONS.md` §8; the out-of-band `verifyroot@cca.gov.in` confirmation stays an operator step and the docs now say so. The Masters "auto-opened create" half of the row already existed (`MasterForm startOpen`); what was missing was the purpose sentence, so the empty states name it and point at the open form. |
+| P10  | #56 | "≤3 React commits per keystroke" does not separate the two trees — React batches a keystroke into one commit before and after the fix — so the spec measures ROWS RE-RENDERED per keystroke as well, counted by fiber identity through React's own devtools hook: 130 before, 2 after (the item row and the column heading). Long tasks never exceeded the browser's 50ms reporting floor on either tree, so that assertion is a standing guard rather than a proof. The bundle guard carries two lines: the programme's 220 kB budget, which the pre-fix tree fails at 220.74 kB, and a 115 kB ratchet, because 220 kB has a hundred kilobytes of slack under the code-split payload. Touched two files outside the pack's list — see the PR for both.               |
+
+Process notes for wave 3:
+
+- `docs/OPERATIONS.md` §8 asserted "why they are not shipped in the image".
+  Shipping a default made a documentation sentence false, and updating it
+  was part of the change, not follow-up (recurring finding 3). A pack that
+  ships an artefact should expect to own the paragraph that explains its
+  absence.
+- Wave 1's lesson repeated exactly: CI failed where a local verify passed.
+  `apps/web/test/views/masters-settings.test.tsx` awaited
+  `findByRole('heading', { name: 'Settings' })` before reading the form,
+  but that heading renders during the profile fetch as well, so all four
+  of its Settings cases were racing the mock and had been passing by
+  timing. P9's extra test file changed the scheduling enough to lose the
+  race on the runner. The class of bug — awaiting an element that exists
+  in the LOADING state — is worth a grep before wave 3 writes more view
+  tests.
 
 ---
 

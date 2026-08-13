@@ -311,22 +311,39 @@ added — variation orders, Measurement Book copies, tax invoices, bill
 copies and agreements) have their digital signatures verified at upload
 and the verdict stored with the document (migration 0060). Verifying the
 signature MATHEMATICS needs nothing; deciding WHO signed needs trust
-anchors, and those are supplied by the operator.
+anchors.
 
-### Why they are not shipped in the image
+### What the image ships, and what it does not decide
 
 Indian digital signatures chain to the Controller of Certifying
 Authorities hierarchy: signer certificate -> licensed CA's sub-CA -> that
-CA's root -> a `CCA India <year>` root. Those roots are re-issued on their
-own schedule (`CCA India 2014`, `CCA India 2015 SPL`, `CCA India 2022`,
-`CCA India 2022 SPL`), and licensed CAs are added and rekeyed several
-times a year. A snapshot compiled into the application would go stale
-silently, and there is no platform trust store to delegate to: the CCA
-roots are in neither Adobe's AATL, the Microsoft Trusted Root Program, nor
-Mozilla's store (Mozilla closed the application WONTFIX). That absence is
-also the direct cause of the "Signature Not Verified" banner Adobe shows
-on perfectly good IREPS documents — the chain is complete inside the file,
-the reader simply has no anchor for it.
+CA's root -> a `CCA India <year>` root. There is no platform trust store to
+delegate to: the CCA roots are in neither Adobe's AATL, the Microsoft
+Trusted Root Program, nor Mozilla's store (Mozilla closed the application
+WONTFIX). That absence is also the direct cause of the "Signature Not
+Verified" banner Adobe shows on perfectly good IREPS documents — the chain
+is complete inside the file, the reader simply has no anchor for it.
+
+Since pack P9 the image carries a **default** set of roots at
+`/etc/auto-mb/pdf-trust`, and `AUTO_MB_PDF_TRUST_ANCHORS` points at it out
+of the box (`deploy/trust-anchors/`, `deploy/Dockerfile.server`). Before
+that, a stock deployment showed every reviewer "no certifying authorities
+are installed" — accurate, and impossible for a new operator to act on.
+`deploy/trust-anchors/README.md` records where each certificate was fetched
+from and its SHA-256; `scripts/check-config.mjs` re-pins every one of them
+on every build, so the bundle cannot change without the change being
+deliberate. `CCA India 2015 SPL` is deliberately absent — the file the CCA
+publishes fails its own self-signature check, and the README says so rather
+than shipping something unverified.
+
+**The default is a starting point, not the trust decision.** The roots are
+re-issued on their own schedule and licensed CAs are added and rekeyed
+several times a year, so a bundle frozen in an image goes stale — silently,
+if nobody looks. The quarterly refresh below still owns this, and it is
+what makes the trust decision auditable and its age knowable. Mounting a
+host directory over `/etc/auto-mb/pdf-trust` (or pointing the variable at
+another path — see `deploy/docker-compose.prod.yml`) refreshes anchors
+without an image rebuild.
 
 ### Layout
 
@@ -367,8 +384,13 @@ Quarterly, by a human, never automatically:
    `CCA India 2022`, SHA-256
    `9A:3F:D3:17:67:98:E8:42:DD:CB:12:C2:62:F1:1C:FA:CC:A7:0A:8B:84:C6:EA:6F:DA:30:84:2A:95:A9:4C:D8`,
    valid 2022-02-02 to 2042-02-02.
-3. Diff against what is installed. Any ADDITION to the anchor directory is
-   a two-person change with a ticket, exactly like a manual database edit.
+3. Diff against what is installed — which, on a stock deployment, is the
+   bundle in `deploy/trust-anchors/` with the fingerprints its README
+   records. Any ADDITION to the anchor directory is a two-person change
+   with a ticket, exactly like a manual database edit. If the addition is
+   made in the repository rather than on the host, the manifest in
+   `scripts/check-config.mjs` moves in the same commit; the build fails
+   otherwise, which is the point.
 4. Never remove an expired root: a document signed in 2021 still needs the
    root that was current in 2021 to have its chain read.
 5. Restart the server. Anchors are loaded once at boot, and a configured
