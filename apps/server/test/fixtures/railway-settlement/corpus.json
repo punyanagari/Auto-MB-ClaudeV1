@@ -32,18 +32,25 @@
     "The bill total is whole rupees while the invoice carries paise, and they do not always agree exactly: BILL-3 states 17327888 against an invoice total of 17327888.01. A closure check that requires exact equality will refuse a legitimate settlement. Compare at rupee granularity, or allow at least one paisa.",
     "The invoice may be dated BEFORE its bill (INV-1 is 09/05/2026 against a bill dated 11/05/2026) and its IRN may be registered before the bill is fully signed. Do not enforce invoice_date >= bill_date."
   ],
-  "open_question_executed_value": {
-    "question": "Are the LOA's Total Value and Net Bid Value GST-inclusive, as the bills' rates explicitly are?",
-    "why_it_matters": "Executed value drives work completion, and a work may be marked completed only at 100% executed value. Rolling GST-inclusive bill totals up against a GST-exclusive LOA value would overstate execution by roughly 18%; the reverse understates it.",
-    "evidence": "The bill states 'Rate is inclusive of GST: Yes' and its Agreement Rate column derives from the LOA schedule. The LOA letter itself says nothing about GST -- searching PL270-CRB.txt for 'inclusive of GST', 'GST extra' and similar returns nothing.",
-    "arithmetic_both_ways": {
-      "loa_net_bid_value": 169228497.35,
+  "executed_value_rule": {
+    "ruling": "Owner ruling, 2026-08-13: LOA rates are USUALLY GST-inclusive at 18% total, works contracts in India falling in the 18% slab -- but SOME LOAs quote GST-exclusive rates. It is rare, and it does happen.",
+    "therefore": "The GST basis is a PER-WORK ATTRIBUTE captured from its LOA, never a constant in code. Default to inclusive, record what the LOA actually says, and compute executed value on the recorded basis. A hardcoded 1.18 is a latent defect that stays invisible on every ordinary work and then misreports the rare one.",
+    "why_it_matters": "Executed value drives work completion, and a work may be marked completed only at 100% executed value.",
+    "the_dangerous_direction": "Assuming inclusive when an LOA is actually exclusive compares GST-inclusive bill totals against a GST-exclusive contract value and OVERSTATES execution by 18%. Such a work reads 100% executed at about 85% of its real value, so it can be marked completed while roughly a sixth of the contract is still unbilled. The opposite mistake merely holds a finished work open, which is visible and annoying rather than silent and wrong.",
+    "the_arithmetic": "Compare like with like. Once the basis is known, executed value is the same percentage whether computed GST-inclusive (bill totals against Net Bid Value) or GST-exclusive (invoice taxable values against Net Bid Value / 1.18), because both sides scale by the same factor. What must never happen is MIXING the two bases -- which is the natural mistake, since bills state a GST-inclusive figure while invoices state a taxable one.",
+    "evidence_for_this_work": "PL-270 is an inclusive LOA. The bill states 'Rate is inclusive of GST: Yes' and its Agreement Rate column derives from the LOA schedule, so the LOA schedule carries the same basis. The LOA letter itself is silent on GST -- searching PL270-CRB.txt for 'inclusive of GST', 'GST extra' and similar returns nothing -- which is exactly why this cannot be read off the letter and must be captured as an attribute.",
+    "worked_example_pl270": {
+      "gst_basis": "inclusive",
+      "gst_rate": 0.18,
+      "loa_net_bid_value_gst_inclusive": 169228497.35,
+      "loa_net_bid_value_gst_exclusive": 143413980.81,
       "sum_of_bill_totals_gst_inclusive": 49901057,
-      "executed_percent_if_loa_is_gst_inclusive": 29.49,
       "sum_of_invoice_taxable_values": 42289031.35,
-      "executed_percent_if_compared_on_taxable": 24.99
-    },
-    "status": "UNRESOLVED - needs an owner ruling before executed value is computed from railway bills"
+      "executed_percent_on_inclusive_basis": 29.4874,
+      "executed_percent_on_exclusive_basis": 29.4874,
+      "executed_percent_if_bases_are_MIXED": 24.9893,
+      "note": "The two consistent bases agree to four decimal places. The mixed figure is out by exactly the GST wedge -- 29.4874 / 24.9893 = 1.18 -- which is what makes it recognisable when it happens."
+    }
   },
   "documents": [
     {

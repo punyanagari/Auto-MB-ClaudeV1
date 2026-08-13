@@ -45,9 +45,23 @@ interface Document {
   readonly signature_expectation: { readonly signature_count: number };
 }
 
+interface ExecutedValueRule {
+  readonly worked_example_pl270: {
+    readonly gst_basis: 'inclusive' | 'exclusive';
+    readonly gst_rate: number;
+    readonly loa_net_bid_value_gst_inclusive: number;
+    readonly loa_net_bid_value_gst_exclusive: number;
+    readonly executed_percent_on_inclusive_basis: number;
+    readonly executed_percent_if_bases_are_MIXED: number;
+  };
+}
+
 const manifest = JSON.parse(
   await readFile(path.join(FIXTURES, 'corpus.json'), 'utf8'),
-) as { readonly documents: readonly Document[] };
+) as {
+  readonly documents: readonly Document[];
+  readonly executed_value_rule: ExecutedValueRule;
+};
 
 const byId = new Map(manifest.documents.map((d) => [d.id, d]));
 
@@ -129,6 +143,65 @@ describe('PL-270 settlement corpus', () => {
       // Works contract at 18% (CGST 9 + SGST 9), rates GST-inclusive.
       expect(Math.abs(taxable * 1.18 - total), invoice.id).toBeLessThanOrEqual(0.02);
     }
+  });
+
+  it('computes the same executed value on either GST basis, but not on a mixed one', () => {
+    // Owner ruling 2026-08-13: LOA rates are USUALLY GST-inclusive at 18%
+    // (works contracts sit in the 18% slab), but some LOAs quote
+    // GST-exclusive rates. Rare, and real. So the basis is a per-Work
+    // attribute read off its LOA -- never a constant -- and executed value
+    // is computed on the recorded basis.
+    //
+    // Once the basis is known, either side gives the same percentage,
+    // because both scale by the same factor. The failure this guards is
+    // MIXING them, which is the natural mistake: bills state a
+    // GST-inclusive figure while invoices state a taxable one, so reaching
+    // for whichever number is nearest silently moves the answer by the
+    // whole GST wedge.
+    const { worked_example_pl270: example } = manifest.executed_value_rule;
+    const rate = 1 + example.gst_rate;
+    const bills = manifest.documents.filter((d) => d.kind === 'railway_bill');
+    const invoices = manifest.documents.filter((d) => d.kind === 'tax_invoice');
+
+    const billTotals = bills.reduce(
+      (sum, b) => sum + (b.bill_amount_including_gst ?? 0),
+      0,
+    );
+    const taxableTotals = invoices.reduce((sum, i) => sum + (i.taxable_value ?? 0), 0);
+
+    // This Work's LOA is an inclusive one, and its two denominators are
+    // one GST factor apart. Rounding the exclusive figure to paise leaves
+    // a one-paisa drift, so the tolerance is a paisa rather than zero.
+    expect(example.gst_basis).toBe('inclusive');
+    expect(
+      Math.abs(
+        example.loa_net_bid_value_gst_exclusive * rate -
+          example.loa_net_bid_value_gst_inclusive,
+      ),
+    ).toBeLessThanOrEqual(0.01);
+
+    const inclusive = (billTotals / example.loa_net_bid_value_gst_inclusive) * 100;
+    const exclusive = (taxableTotals / example.loa_net_bid_value_gst_exclusive) * 100;
+    const mixed = (taxableTotals / example.loa_net_bid_value_gst_inclusive) * 100;
+
+    // Consistent bases agree...
+    expect(Math.abs(inclusive - exclusive)).toBeLessThanOrEqual(0.001);
+    expect(inclusive).toBeCloseTo(example.executed_percent_on_inclusive_basis, 3);
+
+    // ...and the mixed basis is out by exactly the GST wedge, which is
+    // what makes the mistake recognisable when it shows up in a report.
+    expect(mixed).toBeCloseTo(example.executed_percent_if_bases_are_MIXED, 3);
+    expect(inclusive / mixed).toBeCloseTo(rate, 4);
+
+    // The dangerous direction, stated as arithmetic: reading an EXCLUSIVE
+    // LOA as inclusive compares GST-inclusive bill totals against a
+    // contract value that excludes GST, OVERSTATING execution by the GST
+    // factor. By the time such a work reports 100% executed it is really
+    // at 84.75%, so it can be marked completed with roughly a sixth of the
+    // contract still unbilled -- silently, and in the direction that loses
+    // money rather than the one that merely annoys.
+    const trueExecutionWhenItReportsComplete = 100 / rate;
+    expect(trueExecutionWhenItReportsComplete).toBeCloseTo(84.75, 2);
   });
 
   it('records the signature shape each document actually had', () => {
