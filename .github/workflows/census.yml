@@ -1,0 +1,45 @@
+name: Test census
+
+# The test-count ratchet, in its own workflow so it runs on EVERY pull
+# request — including the documentation-only ones that ci.yml deliberately
+# skips to conserve the monthly Actions allowance (see ci.yml's paths-ignore
+# and the reasoning there).
+#
+# It earns that by being cheap: no dependency install, no database, no build.
+# Checkout, Node, one script, well under a runner-minute. It is also the one
+# gate whose absence is invisible — a pull request that quietly deletes a
+# suite looks exactly like a pull request that does not — which is precisely
+# why it should not be behind a path filter.
+#
+# This is the workflow to make a REQUIRED check under branch protection: a
+# workflow skipped by paths-ignore reports no status at all, so requiring
+# ci.yml's `verify` would leave docs-only pull requests permanently pending.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: census-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      # Ratchet: per test FILE, declaration counts may only rise, and any
+      # suite switched off must state why. Deleting a suite to make a change
+      # pass is the failure mode this exists to catch; per-file granularity
+      # is what stops unrelated additions in the same package from hiding it.
+      - name: Test census
+        run: node scripts/check-test-census.mjs

@@ -6,10 +6,16 @@ import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 import type {
   ChallanDetailResponse,
+  Contact,
   EwayBill,
+  LoaDocumentDetail,
+  MeasurementBook,
   Membership,
   PurchaseOrder,
   PurchaseOrderDetailResponse,
+  TaxInvoice,
+  WorkBalanceResponse,
+  WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../../src/api.js';
 
@@ -41,76 +47,94 @@ export function submitButton(label: string): HTMLElement {
 
 export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
-    me: vi.fn().mockResolvedValue(null),
-    signUp: vi.fn().mockResolvedValue(undefined),
-    signIn: vi.fn().mockResolvedValue({ twoFactorRequired: false }),
-    signOut: vi.fn().mockResolvedValue(undefined),
-    requestPasswordReset: vi.fn().mockResolvedValue(undefined),
-    resetPassword: vi.fn().mockResolvedValue(undefined),
-    verifyTotp: vi.fn().mockResolvedValue(undefined),
-    verifyBackupCode: vi.fn().mockResolvedValue(undefined),
-    enableTwoFactor: vi.fn(),
-    disableTwoFactor: vi.fn().mockResolvedValue(undefined),
-    regenerateBackupCodes: vi.fn(),
-    listOrganisations: vi.fn().mockResolvedValue([]),
-    createOrganisation: vi.fn(),
-    listMembers: vi.fn().mockResolvedValue([]),
-    addMember: vi.fn(),
-    updateMember: vi.fn(),
-    memberAssignments: vi.fn().mockResolvedValue({ userId: 'u', workIds: [] }),
-    setMemberAssignments: vi.fn(),
-    listLoaDocuments: vi.fn().mockResolvedValue([]),
-    discardLoaDocument: vi.fn(),
-    discardContractSourceDocument: vi.fn(),
-    getLoaDocument: vi.fn(),
-    uploadLoa: vi.fn(),
-    uploadContractSource: vi.fn(),
-    getLoaContractSourceContext: vi.fn().mockResolvedValue({
-      documents: [],
-      paymentMatrix: [],
-      periods: [],
-      releaseClauses: [],
-      itemSpecifications: [],
-    }),
-    getWorkContractSourceContext: vi.fn().mockResolvedValue({
-      documents: [],
-      paymentMatrix: [],
-      periods: [],
-      releaseClauses: [],
-      itemSpecifications: [],
-    }),
-    downloadContractSourceFile: vi.fn().mockResolvedValue(new Blob()),
-    confirmLoa: vi.fn(),
-    listWorks: vi.fn().mockResolvedValue([]),
-    getWork: vi.fn(),
-    workBalance: vi.fn(),
-    listChallans: vi.fn().mockResolvedValue([]),
-    listDeliveryChallans: vi.fn().mockResolvedValue([]),
-    createStandaloneChallan: vi.fn(),
-    updateStandaloneChallan: vi.fn(),
-    getChallan: vi.fn(),
-    createChallan: vi.fn(),
-    updateChallan: vi.fn(),
-    deleteChallan: vi.fn(),
-    issueChallan: vi.fn(),
-    cancelChallan: vi.fn(),
-    renderChallan: vi.fn(),
-    uploadSignedCopy: vi.fn(),
-    downloadChallanPdf: vi.fn(),
-    listIssueChallans: vi.fn().mockResolvedValue([]),
-    getIssueChallan: vi.fn(),
-    createIssueChallan: vi.fn(),
-    updateIssueChallan: vi.fn(),
-    deleteIssueChallan: vi.fn(),
-    issueIssueChallan: vi.fn(),
-    cancelIssueChallan: vi.fn(),
-    renderIssueChallan: vi.fn(),
-    uploadIssueChallanSignedCopy: vi.fn(),
-    downloadIssueChallanPdf: vi.fn(),
-    dashboard: vi.fn(),
+    me: vi.fn<ApiClient['me']>().mockResolvedValue(null),
+    signUp: vi.fn<ApiClient['signUp']>().mockResolvedValue(undefined),
+    signIn: vi
+      .fn<ApiClient['signIn']>()
+      .mockResolvedValue({ twoFactorRequired: false }),
+    signOut: vi.fn<ApiClient['signOut']>().mockResolvedValue(undefined),
+    requestPasswordReset: vi
+      .fn<ApiClient['requestPasswordReset']>()
+      .mockResolvedValue(undefined),
+    resetPassword: vi.fn<ApiClient['resetPassword']>().mockResolvedValue(undefined),
+    verifyTotp: vi.fn<ApiClient['verifyTotp']>().mockResolvedValue(undefined),
+    verifyBackupCode: vi
+      .fn<ApiClient['verifyBackupCode']>()
+      .mockResolvedValue(undefined),
+    enableTwoFactor: vi.fn<ApiClient['enableTwoFactor']>(),
+    disableTwoFactor: vi
+      .fn<ApiClient['disableTwoFactor']>()
+      .mockResolvedValue(undefined),
+    regenerateBackupCodes: vi.fn<ApiClient['regenerateBackupCodes']>(),
+    listOrganisations: vi.fn<ApiClient['listOrganisations']>().mockResolvedValue([]),
+    createOrganisation: vi.fn<ApiClient['createOrganisation']>(),
+    listMembers: vi.fn<ApiClient['listMembers']>().mockResolvedValue([]),
+    addMember: vi.fn<ApiClient['addMember']>(),
+    updateMember: vi.fn<ApiClient['updateMember']>(),
+    memberAssignments: vi
+      .fn<ApiClient['memberAssignments']>()
+      .mockResolvedValue({ userId: 'u', workIds: [] }),
+    setMemberAssignments: vi.fn<ApiClient['setMemberAssignments']>(),
+    listLoaDocuments: vi.fn<ApiClient['listLoaDocuments']>().mockResolvedValue([]),
+    discardLoaDocument: vi.fn<ApiClient['discardLoaDocument']>(),
+    discardContractSourceDocument: vi.fn<ApiClient['discardContractSourceDocument']>(),
+    getLoaDocument: vi.fn<ApiClient['getLoaDocument']>(),
+    uploadLoa: vi.fn<ApiClient['uploadLoa']>(),
+    uploadContractSource: vi.fn<ApiClient['uploadContractSource']>(),
+    getLoaContractSourceContext: vi
+      .fn<ApiClient['getLoaContractSourceContext']>()
+      .mockResolvedValue({
+        documents: [],
+        paymentMatrix: [],
+        periods: [],
+        releaseClauses: [],
+        itemSpecifications: [],
+      }),
+    getWorkContractSourceContext: vi
+      .fn<ApiClient['getWorkContractSourceContext']>()
+      .mockResolvedValue({
+        documents: [],
+        paymentMatrix: [],
+        periods: [],
+        releaseClauses: [],
+        itemSpecifications: [],
+      }),
+    downloadContractSourceFile: vi
+      .fn<ApiClient['downloadContractSourceFile']>()
+      .mockResolvedValue(new Blob()),
+    confirmLoa: vi.fn<ApiClient['confirmLoa']>(),
+    listWorks: vi.fn<ApiClient['listWorks']>().mockResolvedValue([]),
+    getWork: vi.fn<ApiClient['getWork']>(),
+    workBalance: vi.fn<ApiClient['workBalance']>(),
+    listChallans: vi.fn<ApiClient['listChallans']>().mockResolvedValue([]),
+    listDeliveryChallans: vi
+      .fn<ApiClient['listDeliveryChallans']>()
+      .mockResolvedValue([]),
+    createStandaloneChallan: vi.fn<ApiClient['createStandaloneChallan']>(),
+    updateStandaloneChallan: vi.fn<ApiClient['updateStandaloneChallan']>(),
+    getChallan: vi.fn<ApiClient['getChallan']>(),
+    createChallan: vi.fn<ApiClient['createChallan']>(),
+    updateChallan: vi.fn<ApiClient['updateChallan']>(),
+    deleteChallan: vi.fn<ApiClient['deleteChallan']>(),
+    issueChallan: vi.fn<ApiClient['issueChallan']>(),
+    cancelChallan: vi.fn<ApiClient['cancelChallan']>(),
+    renderChallan: vi.fn<ApiClient['renderChallan']>(),
+    uploadSignedCopy: vi.fn<ApiClient['uploadSignedCopy']>(),
+    downloadChallanPdf: vi.fn<ApiClient['downloadChallanPdf']>(),
+    listIssueChallans: vi.fn<ApiClient['listIssueChallans']>().mockResolvedValue([]),
+    getIssueChallan: vi.fn<ApiClient['getIssueChallan']>(),
+    createIssueChallan: vi.fn<ApiClient['createIssueChallan']>(),
+    updateIssueChallan: vi.fn<ApiClient['updateIssueChallan']>(),
+    deleteIssueChallan: vi.fn<ApiClient['deleteIssueChallan']>(),
+    issueIssueChallan: vi.fn<ApiClient['issueIssueChallan']>(),
+    cancelIssueChallan: vi.fn<ApiClient['cancelIssueChallan']>(),
+    renderIssueChallan: vi.fn<ApiClient['renderIssueChallan']>(),
+    uploadIssueChallanSignedCopy: vi.fn<ApiClient['uploadIssueChallanSignedCopy']>(),
+    downloadIssueChallanPdf: vi.fn<ApiClient['downloadIssueChallanPdf']>(),
+    dashboard: vi.fn<ApiClient['dashboard']>(),
     // Complete GST facts by default, so the billing-readiness panel
     // reads "ready" unless a test arranges otherwise.
-    organisationProfile: vi.fn().mockResolvedValue({
+    organisationProfile: vi.fn<ApiClient['organisationProfile']>().mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       name: 'Sharma Constructions',
       slug: 'sharma',
@@ -128,188 +152,239 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       invoiceNotes: null,
       warrantyTemplateText: null,
     }),
-    updateOrganisationProfile: vi.fn(),
-    uploadLogo: vi.fn(),
-    removeLogo: vi.fn().mockResolvedValue(undefined),
-    logoBlob: vi.fn().mockResolvedValue(null),
-    getReceipt: vi.fn().mockResolvedValue(null),
-    recordReceipt: vi.fn(),
-    recordSerials: vi.fn(),
-    recordInstallation: vi.fn(),
-    listWorkSerials: vi.fn().mockResolvedValue([]),
-    deleteSerial: vi.fn().mockResolvedValue(undefined),
-    searchSerials: vi.fn().mockResolvedValue({ matches: [], truncated: false }),
-    search: vi.fn().mockResolvedValue({ query: '', groups: [], returned: 0 }),
-    updateWorkItemSerials: vi.fn(),
-    listInstruments: vi.fn().mockResolvedValue([]),
-    createInstrument: vi.fn(),
-    updateInstrument: vi.fn(),
-    listMbEntries: vi.fn().mockResolvedValue([]),
-    recordMbEntry: vi.fn(),
-    listBills: vi.fn().mockResolvedValue([]),
-    setBillStatus: vi.fn(),
-    workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
-    entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
-    listContacts: vi.fn().mockResolvedValue([]),
-    saveContact: vi.fn(),
-    setContactActive: vi.fn(),
-    listWorkConsignees: vi.fn().mockResolvedValue([]),
-    linkWorkConsignee: vi.fn(),
-    unlinkWorkConsignee: vi.fn(),
-    listLocationMasters: vi.fn().mockResolvedValue([]),
-    saveLocationMaster: vi.fn(),
-    setLocationMasterActive: vi.fn(),
-    listUnitMasters: vi.fn().mockResolvedValue([]),
-    saveUnitMaster: vi.fn(),
-    setUnitMasterActive: vi.fn(),
-    listSignatories: vi.fn().mockResolvedValue([]),
-    saveSignatory: vi.fn(),
-    setSignatoryActive: vi.fn(),
-    listGstRates: vi.fn().mockResolvedValue([]),
-    createGstRate: vi.fn(),
-    endDateGstRate: vi.fn(),
-    getWorkCompletion: vi.fn().mockResolvedValue({
+    updateOrganisationProfile: vi.fn<ApiClient['updateOrganisationProfile']>(),
+    uploadLogo: vi.fn<ApiClient['uploadLogo']>(),
+    removeLogo: vi.fn<ApiClient['removeLogo']>().mockResolvedValue(undefined),
+    logoBlob: vi.fn<ApiClient['logoBlob']>().mockResolvedValue(null),
+    getReceipt: vi.fn<ApiClient['getReceipt']>().mockResolvedValue(null),
+    recordReceipt: vi.fn<ApiClient['recordReceipt']>(),
+    recordSerials: vi.fn<ApiClient['recordSerials']>(),
+    recordInstallation: vi.fn<ApiClient['recordInstallation']>(),
+    listWorkSerials: vi.fn<ApiClient['listWorkSerials']>().mockResolvedValue([]),
+    deleteSerial: vi.fn<ApiClient['deleteSerial']>().mockResolvedValue(undefined),
+    searchSerials: vi
+      .fn<ApiClient['searchSerials']>()
+      .mockResolvedValue({ matches: [], truncated: false }),
+    search: vi
+      .fn<ApiClient['search']>()
+      .mockResolvedValue({ query: '', groups: [], returned: 0 }),
+    updateWorkItemSerials: vi.fn<ApiClient['updateWorkItemSerials']>(),
+    listInstruments: vi.fn<ApiClient['listInstruments']>().mockResolvedValue([]),
+    createInstrument: vi.fn<ApiClient['createInstrument']>(),
+    updateInstrument: vi.fn<ApiClient['updateInstrument']>(),
+    listMbEntries: vi.fn<ApiClient['listMbEntries']>().mockResolvedValue([]),
+    recordMbEntry: vi.fn<ApiClient['recordMbEntry']>(),
+    listBills: vi.fn<ApiClient['listBills']>().mockResolvedValue([]),
+    setBillStatus: vi.fn<ApiClient['setBillStatus']>(),
+    workTimeline: vi
+      .fn<ApiClient['workTimeline']>()
+      .mockResolvedValue({ events: [], nextCursor: null }),
+    entityTimeline: vi
+      .fn<ApiClient['entityTimeline']>()
+      .mockResolvedValue({ events: [], nextCursor: null }),
+    listContacts: vi.fn<ApiClient['listContacts']>().mockResolvedValue([]),
+    saveContact: vi.fn<ApiClient['saveContact']>(),
+    setContactActive: vi.fn<ApiClient['setContactActive']>(),
+    listWorkConsignees: vi.fn<ApiClient['listWorkConsignees']>().mockResolvedValue([]),
+    linkWorkConsignee: vi.fn<ApiClient['linkWorkConsignee']>(),
+    unlinkWorkConsignee: vi.fn<ApiClient['unlinkWorkConsignee']>(),
+    listLocationMasters: vi
+      .fn<ApiClient['listLocationMasters']>()
+      .mockResolvedValue([]),
+    saveLocationMaster: vi.fn<ApiClient['saveLocationMaster']>(),
+    setLocationMasterActive: vi.fn<ApiClient['setLocationMasterActive']>(),
+    listUnitMasters: vi.fn<ApiClient['listUnitMasters']>().mockResolvedValue([]),
+    saveUnitMaster: vi.fn<ApiClient['saveUnitMaster']>(),
+    setUnitMasterActive: vi.fn<ApiClient['setUnitMasterActive']>(),
+    listSignatories: vi.fn<ApiClient['listSignatories']>().mockResolvedValue([]),
+    saveSignatory: vi.fn<ApiClient['saveSignatory']>(),
+    setSignatoryActive: vi.fn<ApiClient['setSignatoryActive']>(),
+    listGstRates: vi.fn<ApiClient['listGstRates']>().mockResolvedValue([]),
+    createGstRate: vi.fn<ApiClient['createGstRate']>(),
+    endDateGstRate: vi.fn<ApiClient['endDateGstRate']>(),
+    getWorkCompletion: vi.fn<ApiClient['getWorkCompletion']>().mockResolvedValue({
       completion: { originalCompletionDate: null, currentCompletionDate: null },
       extensionRequests: [],
     }),
-    setCompletionDate: vi.fn(),
-    createExtensionRequest: vi.fn(),
-    updateExtensionRequest: vi.fn(),
-    deleteExtensionRequest: vi.fn().mockResolvedValue(undefined),
-    finaliseExtensionRequest: vi.fn(),
-    renderExtensionRequest: vi.fn(),
-    uploadExtensionResponse: vi.fn(),
-    respondExtensionRequest: vi.fn(),
-    downloadExtensionPdf: vi.fn(),
-    downloadExtensionDraftPreview: vi.fn(),
-    backfillExtensionRequest: vi.fn(),
-    listApprovals: vi.fn().mockResolvedValue([]),
-    listWorkAmendments: vi.fn().mockResolvedValue([]),
-    proposeAmendment: vi.fn(),
-    proposeAddItem: vi.fn(),
-    proposeItemRemoval: vi.fn(),
-    attachVariationOrder: vi.fn(),
-    downloadVariationOrderFile: vi.fn(),
-    approveAmendment: vi.fn(),
-    rejectAmendment: vi.fn(),
-    withdrawAmendment: vi.fn(),
-    setWorkSettings: vi.fn(),
+    setCompletionDate: vi.fn<ApiClient['setCompletionDate']>(),
+    createExtensionRequest: vi.fn<ApiClient['createExtensionRequest']>(),
+    updateExtensionRequest: vi.fn<ApiClient['updateExtensionRequest']>(),
+    deleteExtensionRequest: vi
+      .fn<ApiClient['deleteExtensionRequest']>()
+      .mockResolvedValue(undefined),
+    finaliseExtensionRequest: vi.fn<ApiClient['finaliseExtensionRequest']>(),
+    renderExtensionRequest: vi.fn<ApiClient['renderExtensionRequest']>(),
+    uploadExtensionResponse: vi.fn<ApiClient['uploadExtensionResponse']>(),
+    respondExtensionRequest: vi.fn<ApiClient['respondExtensionRequest']>(),
+    downloadExtensionPdf: vi.fn<ApiClient['downloadExtensionPdf']>(),
+    downloadExtensionDraftPreview: vi.fn<ApiClient['downloadExtensionDraftPreview']>(),
+    backfillExtensionRequest: vi.fn<ApiClient['backfillExtensionRequest']>(),
+    listApprovals: vi.fn<ApiClient['listApprovals']>().mockResolvedValue([]),
+    listWorkAmendments: vi.fn<ApiClient['listWorkAmendments']>().mockResolvedValue([]),
+    proposeAmendment: vi.fn<ApiClient['proposeAmendment']>(),
+    proposeAddItem: vi.fn<ApiClient['proposeAddItem']>(),
+    proposeItemRemoval: vi.fn<ApiClient['proposeItemRemoval']>(),
+    attachVariationOrder: vi.fn<ApiClient['attachVariationOrder']>(),
+    downloadVariationOrderFile: vi.fn<ApiClient['downloadVariationOrderFile']>(),
+    approveAmendment: vi.fn<ApiClient['approveAmendment']>(),
+    rejectAmendment: vi.fn<ApiClient['rejectAmendment']>(),
+    withdrawAmendment: vi.fn<ApiClient['withdrawAmendment']>(),
+    setWorkSettings: vi.fn<ApiClient['setWorkSettings']>(),
     listWorkInstallations: vi
-      .fn()
+      .fn<ApiClient['listWorkInstallations']>()
       .mockResolvedValue({ installations: [], itemSummaries: [] }),
-    recordWorkInstallation: vi.fn(),
-    cancelWorkInstallation: vi.fn(),
-    challanCorrectionEligibility: vi.fn().mockResolvedValue({
-      challanId: '44444444-4444-4444-8444-444444444444',
-      status: 'issued',
-      evidence: { receipts: 0, serials: 0, measurements: 0 },
-      path: 'cancel_replace',
-      pendingRequestId: null,
-    }),
-    proposeChallanCancelReplace: vi.fn(),
-    proposeIssueChallanCancelReplace: vi.fn(),
-    proposeChallanCorrectionNotice: vi.fn(),
-    listWorkCorrectionNotices: vi.fn().mockResolvedValue([]),
-    listChallanCorrectionNotices: vi.fn().mockResolvedValue([]),
-    getCorrectionNotice: vi.fn(),
-    renderCorrectionNotice: vi.fn(),
-    cancelCorrectionNotice: vi.fn(),
-    downloadCorrectionNoticePdf: vi.fn(),
-    getPaymentMatrix: vi.fn().mockResolvedValue([]),
-    upsertPaymentMatrixRow: vi.fn(),
-    deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
-    setWorkItemPaymentCategory: vi.fn(),
+    recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
+    cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
+    challanCorrectionEligibility: vi
+      .fn<ApiClient['challanCorrectionEligibility']>()
+      .mockResolvedValue({
+        challanId: '44444444-4444-4444-8444-444444444444',
+        status: 'issued',
+        evidence: { receipts: 0, serials: 0, measurements: 0 },
+        path: 'cancel_replace',
+        pendingRequestId: null,
+      }),
+    proposeChallanCancelReplace: vi.fn<ApiClient['proposeChallanCancelReplace']>(),
+    proposeIssueChallanCancelReplace:
+      vi.fn<ApiClient['proposeIssueChallanCancelReplace']>(),
+    proposeChallanCorrectionNotice:
+      vi.fn<ApiClient['proposeChallanCorrectionNotice']>(),
+    listWorkCorrectionNotices: vi
+      .fn<ApiClient['listWorkCorrectionNotices']>()
+      .mockResolvedValue([]),
+    listChallanCorrectionNotices: vi
+      .fn<ApiClient['listChallanCorrectionNotices']>()
+      .mockResolvedValue([]),
+    getCorrectionNotice: vi.fn<ApiClient['getCorrectionNotice']>(),
+    renderCorrectionNotice: vi.fn<ApiClient['renderCorrectionNotice']>(),
+    cancelCorrectionNotice: vi.fn<ApiClient['cancelCorrectionNotice']>(),
+    downloadCorrectionNoticePdf: vi.fn<ApiClient['downloadCorrectionNoticePdf']>(),
+    getPaymentMatrix: vi.fn<ApiClient['getPaymentMatrix']>().mockResolvedValue([]),
+    upsertPaymentMatrixRow: vi.fn<ApiClient['upsertPaymentMatrixRow']>(),
+    deletePaymentMatrixRow: vi
+      .fn<ApiClient['deletePaymentMatrixRow']>()
+      .mockResolvedValue(undefined),
+    setWorkItemPaymentCategory: vi.fn<ApiClient['setWorkItemPaymentCategory']>(),
     listWorkPacCertificates: vi
-      .fn()
+      .fn<ApiClient['listWorkPacCertificates']>()
       .mockResolvedValue({ certificates: [], itemSummaries: [] }),
-    recordWorkPacCertificate: vi.fn(),
-    cancelPacCertificate: vi.fn(),
-    uploadPacCertificateDocument: vi.fn(),
-    downloadPacCertificateDocument: vi.fn(),
-    listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [] }),
-    createWorkMeasurementBook: vi.fn(),
-    getMeasurementBook: vi.fn(),
-    setMeasurementBookSources: vi.fn(),
-    finalizeMeasurementBook: vi.fn(),
-    cancelMeasurementBook: vi.fn(),
-    deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),
-    prepareBillFromMeasurementBook: vi.fn(),
-    renderMeasurementBook: vi.fn(),
-    downloadMeasurementBookPdf: vi.fn(),
-    downloadMeasurementBookDraftPreview: vi.fn(),
-    mergeWorkMeasurementBooks: vi.fn(),
-    unmergeMeasurementBook: vi.fn().mockResolvedValue(undefined),
-    completeWork: vi.fn(),
-    reopenWork: vi.fn(),
+    recordWorkPacCertificate: vi.fn<ApiClient['recordWorkPacCertificate']>(),
+    cancelPacCertificate: vi.fn<ApiClient['cancelPacCertificate']>(),
+    uploadPacCertificateDocument: vi.fn<ApiClient['uploadPacCertificateDocument']>(),
+    downloadPacCertificateDocument:
+      vi.fn<ApiClient['downloadPacCertificateDocument']>(),
+    listWorkMeasurementBooks: vi
+      .fn<ApiClient['listWorkMeasurementBooks']>()
+      .mockResolvedValue({ books: [] }),
+    createWorkMeasurementBook: vi.fn<ApiClient['createWorkMeasurementBook']>(),
+    getMeasurementBook: vi.fn<ApiClient['getMeasurementBook']>(),
+    setMeasurementBookSources: vi.fn<ApiClient['setMeasurementBookSources']>(),
+    finalizeMeasurementBook: vi.fn<ApiClient['finalizeMeasurementBook']>(),
+    cancelMeasurementBook: vi.fn<ApiClient['cancelMeasurementBook']>(),
+    deleteMeasurementBook: vi
+      .fn<ApiClient['deleteMeasurementBook']>()
+      .mockResolvedValue(undefined),
+    prepareBillFromMeasurementBook:
+      vi.fn<ApiClient['prepareBillFromMeasurementBook']>(),
+    renderMeasurementBook: vi.fn<ApiClient['renderMeasurementBook']>(),
+    downloadMeasurementBookPdf: vi.fn<ApiClient['downloadMeasurementBookPdf']>(),
+    downloadMeasurementBookDraftPreview:
+      vi.fn<ApiClient['downloadMeasurementBookDraftPreview']>(),
+    mergeWorkMeasurementBooks: vi.fn<ApiClient['mergeWorkMeasurementBooks']>(),
+    unmergeMeasurementBook: vi
+      .fn<ApiClient['unmergeMeasurementBook']>()
+      .mockResolvedValue(undefined),
+    completeWork: vi.fn<ApiClient['completeWork']>(),
+    reopenWork: vi.fn<ApiClient['reopenWork']>(),
     // Ready by default, so a test that does not care about completion sees
     // the form it always saw.
     workCompletionReadiness: vi
-      .fn()
+      .fn<ApiClient['workCompletionReadiness']>()
       .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
-    listWorkPurchaseOrders: vi.fn().mockResolvedValue([]),
-    createWorkPurchaseOrder: vi.fn(),
-    getPurchaseOrder: vi.fn(),
-    updatePurchaseOrder: vi.fn(),
-    savePurchaseOrderLines: vi.fn(),
-    issuePurchaseOrder: vi.fn(),
-    cancelPurchaseOrder: vi.fn(),
-    closePurchaseOrder: vi.fn(),
-    deletePurchaseOrder: vi.fn().mockResolvedValue(undefined),
-    listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
-    createBudgetaryQuotation: vi.fn(),
-    getBudgetaryQuotation: vi.fn(),
-    updateBudgetaryQuotation: vi.fn(),
-    saveBudgetaryQuotationLines: vi.fn(),
-    issueBudgetaryQuotation: vi.fn(),
-    setBudgetaryQuotationOutcome: vi.fn(),
-    deleteBudgetaryQuotation: vi.fn().mockResolvedValue(undefined),
-    listWorkTaxInvoices: vi.fn().mockResolvedValue([]),
-    createWorkTaxInvoice: vi.fn(),
-    getTaxInvoice: vi.fn(),
-    updateTaxInvoice: vi.fn(),
-    submitTaxInvoice: vi.fn(),
-    renderTaxInvoice: vi.fn(),
-    downloadTaxInvoicePdf: vi.fn(),
-    cancelTaxInvoice: vi.fn(),
-    deleteTaxInvoice: vi.fn().mockResolvedValue(undefined),
-    taxInvoiceIrpPayload: vi.fn(),
-    recordTaxInvoiceIrpResponse: vi.fn(),
-    listCreditNotes: vi.fn().mockResolvedValue([]),
-    listInvoiceCreditNotes: vi.fn().mockResolvedValue([]),
-    createCreditNote: vi.fn(),
-    getCreditNote: vi.fn(),
-    updateCreditNote: vi.fn(),
-    deleteCreditNote: vi.fn(),
-    issueCreditNote: vi.fn(),
-    cancelCreditNote: vi.fn(),
-    updateCreditNoteRecipientItc: vi.fn(),
-    registerCreditNoteIrp: vi.fn(),
-    recoverCreditNoteProviderOperation: vi.fn(),
-    cancelCreditNoteIrp: vi.fn(),
-    creditNoteIrpPayload: vi.fn(),
-    renderCreditNote: vi.fn(),
-    downloadCreditNotePdf: vi.fn(),
-    registerTaxInvoiceIrp: vi.fn(),
-    recoverTaxInvoiceProviderOperation: vi.fn(),
-    cancelTaxInvoiceIrp: vi.fn(),
-    recordTaxInvoiceIrpCancellation: vi.fn(),
-    listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
-    createInvoiceEwayBill: vi.fn(),
-    getEwayBill: vi.fn(),
-    updateEwayBill: vi.fn(),
-    ewayBillNicPayload: vi.fn(),
-    generateEwayBill: vi.fn(),
-    cancelEwayBillAtProvider: vi.fn(),
-    recoverEwayBillProviderOperation: vi.fn(),
-    recordEwayBillCancellation: vi.fn(),
-    recordEwayBillNicResponse: vi.fn(),
-    cancelEwayBill: vi.fn(),
-    deleteEwayBill: vi.fn().mockResolvedValue(undefined),
-    listNumberSeries: vi.fn().mockResolvedValue([]),
-    setNumberSeries: vi.fn(),
-    clearNumberSeries: vi.fn(),
-    createDirectTaxInvoice: vi.fn(),
-    setWorkItemTaxFacts: vi.fn(),
+    listWorkPurchaseOrders: vi
+      .fn<ApiClient['listWorkPurchaseOrders']>()
+      .mockResolvedValue([]),
+    createWorkPurchaseOrder: vi.fn<ApiClient['createWorkPurchaseOrder']>(),
+    getPurchaseOrder: vi.fn<ApiClient['getPurchaseOrder']>(),
+    updatePurchaseOrder: vi.fn<ApiClient['updatePurchaseOrder']>(),
+    savePurchaseOrderLines: vi.fn<ApiClient['savePurchaseOrderLines']>(),
+    issuePurchaseOrder: vi.fn<ApiClient['issuePurchaseOrder']>(),
+    cancelPurchaseOrder: vi.fn<ApiClient['cancelPurchaseOrder']>(),
+    closePurchaseOrder: vi.fn<ApiClient['closePurchaseOrder']>(),
+    deletePurchaseOrder: vi
+      .fn<ApiClient['deletePurchaseOrder']>()
+      .mockResolvedValue(undefined),
+    listBudgetaryQuotations: vi
+      .fn<ApiClient['listBudgetaryQuotations']>()
+      .mockResolvedValue([]),
+    createBudgetaryQuotation: vi.fn<ApiClient['createBudgetaryQuotation']>(),
+    getBudgetaryQuotation: vi.fn<ApiClient['getBudgetaryQuotation']>(),
+    updateBudgetaryQuotation: vi.fn<ApiClient['updateBudgetaryQuotation']>(),
+    saveBudgetaryQuotationLines: vi.fn<ApiClient['saveBudgetaryQuotationLines']>(),
+    issueBudgetaryQuotation: vi.fn<ApiClient['issueBudgetaryQuotation']>(),
+    setBudgetaryQuotationOutcome: vi.fn<ApiClient['setBudgetaryQuotationOutcome']>(),
+    deleteBudgetaryQuotation: vi
+      .fn<ApiClient['deleteBudgetaryQuotation']>()
+      .mockResolvedValue(undefined),
+    listWorkTaxInvoices: vi
+      .fn<ApiClient['listWorkTaxInvoices']>()
+      .mockResolvedValue([]),
+    createWorkTaxInvoice: vi.fn<ApiClient['createWorkTaxInvoice']>(),
+    getTaxInvoice: vi.fn<ApiClient['getTaxInvoice']>(),
+    updateTaxInvoice: vi.fn<ApiClient['updateTaxInvoice']>(),
+    submitTaxInvoice: vi.fn<ApiClient['submitTaxInvoice']>(),
+    renderTaxInvoice: vi.fn<ApiClient['renderTaxInvoice']>(),
+    downloadTaxInvoicePdf: vi.fn<ApiClient['downloadTaxInvoicePdf']>(),
+    cancelTaxInvoice: vi.fn<ApiClient['cancelTaxInvoice']>(),
+    deleteTaxInvoice: vi
+      .fn<ApiClient['deleteTaxInvoice']>()
+      .mockResolvedValue(undefined),
+    taxInvoiceIrpPayload: vi.fn<ApiClient['taxInvoiceIrpPayload']>(),
+    recordTaxInvoiceIrpResponse: vi.fn<ApiClient['recordTaxInvoiceIrpResponse']>(),
+    listCreditNotes: vi.fn<ApiClient['listCreditNotes']>().mockResolvedValue([]),
+    listInvoiceCreditNotes: vi
+      .fn<ApiClient['listInvoiceCreditNotes']>()
+      .mockResolvedValue([]),
+    createCreditNote: vi.fn<ApiClient['createCreditNote']>(),
+    getCreditNote: vi.fn<ApiClient['getCreditNote']>(),
+    updateCreditNote: vi.fn<ApiClient['updateCreditNote']>(),
+    deleteCreditNote: vi.fn<ApiClient['deleteCreditNote']>(),
+    issueCreditNote: vi.fn<ApiClient['issueCreditNote']>(),
+    cancelCreditNote: vi.fn<ApiClient['cancelCreditNote']>(),
+    updateCreditNoteRecipientItc: vi.fn<ApiClient['updateCreditNoteRecipientItc']>(),
+    registerCreditNoteIrp: vi.fn<ApiClient['registerCreditNoteIrp']>(),
+    recoverCreditNoteProviderOperation:
+      vi.fn<ApiClient['recoverCreditNoteProviderOperation']>(),
+    cancelCreditNoteIrp: vi.fn<ApiClient['cancelCreditNoteIrp']>(),
+    creditNoteIrpPayload: vi.fn<ApiClient['creditNoteIrpPayload']>(),
+    renderCreditNote: vi.fn<ApiClient['renderCreditNote']>(),
+    downloadCreditNotePdf: vi.fn<ApiClient['downloadCreditNotePdf']>(),
+    registerTaxInvoiceIrp: vi.fn<ApiClient['registerTaxInvoiceIrp']>(),
+    recoverTaxInvoiceProviderOperation:
+      vi.fn<ApiClient['recoverTaxInvoiceProviderOperation']>(),
+    cancelTaxInvoiceIrp: vi.fn<ApiClient['cancelTaxInvoiceIrp']>(),
+    recordTaxInvoiceIrpCancellation:
+      vi.fn<ApiClient['recordTaxInvoiceIrpCancellation']>(),
+    listInvoiceEwayBills: vi
+      .fn<ApiClient['listInvoiceEwayBills']>()
+      .mockResolvedValue([]),
+    createInvoiceEwayBill: vi.fn<ApiClient['createInvoiceEwayBill']>(),
+    getEwayBill: vi.fn<ApiClient['getEwayBill']>(),
+    updateEwayBill: vi.fn<ApiClient['updateEwayBill']>(),
+    ewayBillNicPayload: vi.fn<ApiClient['ewayBillNicPayload']>(),
+    generateEwayBill: vi.fn<ApiClient['generateEwayBill']>(),
+    cancelEwayBillAtProvider: vi.fn<ApiClient['cancelEwayBillAtProvider']>(),
+    recoverEwayBillProviderOperation:
+      vi.fn<ApiClient['recoverEwayBillProviderOperation']>(),
+    recordEwayBillCancellation: vi.fn<ApiClient['recordEwayBillCancellation']>(),
+    recordEwayBillNicResponse: vi.fn<ApiClient['recordEwayBillNicResponse']>(),
+    cancelEwayBill: vi.fn<ApiClient['cancelEwayBill']>(),
+    deleteEwayBill: vi.fn<ApiClient['deleteEwayBill']>().mockResolvedValue(undefined),
+    listNumberSeries: vi.fn<ApiClient['listNumberSeries']>().mockResolvedValue([]),
+    setNumberSeries: vi.fn<ApiClient['setNumberSeries']>(),
+    clearNumberSeries: vi.fn<ApiClient['clearNumberSeries']>(),
+    createDirectTaxInvoice: vi.fn<ApiClient['createDirectTaxInvoice']>(),
+    setWorkItemTaxFacts: vi.fn<ApiClient['setWorkItemTaxFacts']>(),
     ...overrides,
   };
 }
@@ -376,7 +451,7 @@ export const REVIEW_PAYLOAD = {
   },
 };
 
-export const REVIEW_DOCUMENT = {
+export const REVIEW_DOCUMENT: LoaDocumentDetail = {
   id: DOC_ID,
   originalFilename: 'loa-letter.pdf',
   sha256: 'a'.repeat(64),
@@ -412,7 +487,7 @@ export function membership(overrides: Partial<Membership>): Membership {
 export const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
 export const ITEM_A = '55555555-5555-4555-8555-555555555555';
 
-export const BALANCE = {
+export const BALANCE: WorkBalanceResponse = {
   allowExcessDelivery: false,
   today: '2026-08-11',
   items: [
@@ -475,7 +550,7 @@ export function challanDetail(
 /** The Work behind the challan fixture. ChallanDetail reads it on a DRAFT
  * to learn which lines are flagged for serial traceability — the challan
  * line itself does not carry the flag. */
-export function challanWork(requiresSerials = false) {
+export function challanWork(requiresSerials = false): WorkDetailResponse {
   const scheduleId = '77777777-7777-4777-8777-777777777777';
   return {
     work: {
@@ -489,7 +564,18 @@ export function challanWork(requiresSerials = false) {
       pricingShape: 'per_schedule',
       letterPercentage: null,
       letterPercentageDirection: null,
+      // Migration 0062 gives every Work a basis and a rate; the server
+      // never sends these absent, so the fixture must not either.
+      gstBasis: 'inclusive',
+      gstRate: '18.00',
+      pbgRequiredAmount: null,
+      pbgSubmissionDays: null,
+      pbgExtensionDays: null,
+      pbgPenalInterestPercent: null,
       status: 'active',
+      completedAt: null,
+      completedByUserId: null,
+      completionNote: null,
       createdAt: '2026-08-08T00:00:00.000Z',
     },
     schedules: [
@@ -541,7 +627,7 @@ export const VENDOR_CONTACT_ID = 'dddd1111-1111-4111-8111-dddddddddd11';
 export const PO_ID = 'dddd2222-2222-4222-8222-dddddddddd22';
 export const PO_LINE_ID = 'dddd3333-3333-4333-8333-dddddddddd33';
 
-export const VENDOR_CONTACT = {
+export const VENDOR_CONTACT: Contact = {
   id: VENDOR_CONTACT_ID,
   designation: 'Sharma Electricals',
   contactPerson: null,
@@ -551,6 +637,8 @@ export const VENDOR_CONTACT = {
   gstin: null,
   pincode: null,
   stateCode: null,
+  locality: null,
+  divisionCode: null,
   isConsignee: false,
   isVendor: true,
   isClient: false,
@@ -609,7 +697,7 @@ export const CLIENT_CONTACT_ID = 'eeee1111-1111-4111-8111-eeeeeeeeee11';
 export const TAX_INVOICE_ID = 'eeee2222-2222-4222-8222-eeeeeeeeee22';
 export const BILLABLE_MB_ID = 'eeee3333-3333-4333-8333-eeeeeeeeee33';
 
-export const CLIENT_CONTACT = {
+export const CLIENT_CONTACT: Contact = {
   id: CLIENT_CONTACT_ID,
   designation: 'Central Railway Mumbai Division',
   contactPerson: null,
@@ -619,6 +707,8 @@ export const CLIENT_CONTACT = {
   gstin: '27AAAGM0289C2ZI',
   pincode: '400001',
   stateCode: '27',
+  locality: 'Mumbai',
+  divisionCode: null,
   isConsignee: false,
   isVendor: false,
   isClient: true,
@@ -626,7 +716,9 @@ export const CLIENT_CONTACT = {
   createdAt: '2026-07-01T00:00:00.000Z',
 };
 
-export function billableBook(overrides: Record<string, unknown> = {}) {
+export function billableBook(
+  overrides: Partial<MeasurementBook> = {},
+): MeasurementBook {
   return {
     id: BILLABLE_MB_ID,
     workId: WORK_ID,
@@ -638,11 +730,20 @@ export function billableBook(overrides: Record<string, unknown> = {}) {
     mbNumber: 'DCW-1-MB-01',
     sequenceNumber: 1,
     totalAmount: '4226994.01',
+    mergedIntoId: null,
+    remarkTemplateVersion: null,
+    templateVersion: null,
+    renderedAvailable: false,
+    cancellationNote: null,
+    billId: null,
+    createdAt: '2026-07-30T00:00:00.000Z',
+    finalizedAt: '2026-07-30T06:00:00.000Z',
+    cancelledAt: null,
     ...overrides,
   };
 }
 
-export function taxInvoice(overrides: Record<string, unknown> = {}) {
+export function taxInvoice(overrides: Partial<TaxInvoice> = {}): TaxInvoice {
   return {
     id: TAX_INVOICE_ID,
     workId: WORK_ID,
@@ -685,6 +786,8 @@ export function taxInvoice(overrides: Record<string, unknown> = {}) {
     irpCancelledAtText: null,
     irpCancelReasonCode: null,
     irpCancelRemark: null,
+    irpCancelWindowClosesAt: null,
+    irpCancelWindowOpen: false,
     irpReportingDeadline: null,
     irpReportingOverdue: false,
     cancellationNote: null,

@@ -2,6 +2,23 @@ name: CI
 
 on:
   pull_request:
+    # Owner decision, budget mode: this repository is private and its
+    # monthly Actions allowance is two-thirds spent. A pull request that
+    # only edits documentation cannot break a build, a type, a test or a
+    # migration, so it does not buy the twenty-minute verify job.
+    #
+    # This filter is workflow-level, which is why the test census lives in
+    # its own workflow (census.yml): the census is ~1 runner-minute and is
+    # exactly the gate that should run on every pull request, docs or not.
+    #
+    # Caveat for whoever configures branch protection: a workflow skipped
+    # by paths-ignore reports NO status at all rather than a passing one,
+    # so `verify` must not be a required check unless a docs-only pull
+    # request is expected to sit unmergeable. Require `census` instead —
+    # it always runs.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   # The heavy proofs (production-smoke, restore-fresh-cluster) run on demand
   # and weekly, not per pull request: they cost ~45 runner-minutes together
   # and prove deployment topology, not the changed code. The per-merge push
@@ -18,6 +35,20 @@ permissions:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # ONE Poppler version for the whole pipeline. The LOA parser and its
+  # six-letter regression corpus are calibrated against a specific
+  # `pdftotext -layout` behaviour, so "some Poppler" is not a dependency
+  # specification. This is the version Ubuntu 24.04 ships, which is why the
+  # jobs that need it pin `runs-on: ubuntu-24.04` rather than
+  # `ubuntu-latest`: an image rollover would otherwise change the extractor
+  # underneath the corpus without a single line of the repository changing.
+  # The production image must install the same upstream version
+  # (`deploy/Dockerfile.server`, currently an unpinned `apk add
+  # poppler-utils`); until it does, CI and production can differ, and
+  # apps/server/test/loa-extract-roundtrip.test.ts is what would notice.
+  POPPLER_VERSION: '24.02.0'
 
 jobs:
   # Deeper SAST (docs/SECURITY.md: required with the first authenticated
@@ -68,7 +99,7 @@ jobs:
         run: pnpm --filter @auto-mb/web test:e2e
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -102,9 +133,25 @@ jobs:
         run: pnpm install --frozen-lockfile
       # pdftotext (poppler-utils) is the LOA text-extraction system
       # dependency (docs/DEPENDENCIES.md); the server integration tests
-      # exercise it against a real PDF upload.
-      - name: Install poppler-utils
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
+      # exercise it against a real PDF upload, and
+      # test/loa-extract-roundtrip.test.ts pins the layout behaviour the
+      # parser reads. The version assertion is the pin: a runner image that
+      # moved to a different Poppler fails here, loudly, instead of shipping
+      # a differently-shaped item table into the corpus.
+      - name: Install poppler-utils (pinned)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          installed="$(pdftotext -v 2>&1 | head -n 1)"
+          echo "$installed"
+          case "$installed" in
+            *"version $POPPLER_VERSION"*) ;;
+            *)
+              echo "::error::Expected Poppler $POPPLER_VERSION, got: $installed."
+              echo "Update POPPLER_VERSION in this workflow and deploy/Dockerfile.server together, then re-run apps/server/test/loa-extract-roundtrip.test.ts to confirm the layout behaviour did not move." >&2
+              exit 1
+              ;;
+          esac
       # pg_dump 17 matches the PostgreSQL service, so the backup/restore
       # proof RUNS here instead of skipping on tooling mismatch — CI green
       # must mean the restore actually happened (external review, ops
@@ -140,6 +187,116 @@ jobs:
       # config parse checks, and the secret scan.
       - name: Verify
         run: pnpm verify
+
+  # Flake detection — DORMANT BY OWNER DECISION, manual only for now.
+  #
+  # What it does: the verify job runs every suite once, so a test that would
+  # have failed on a second attempt is indistinguishable from a good one.
+  # This job runs the same suites with `--retry=1` and reads the JSON
+  # reports: any test that PASSED while carrying a failure message got there
+  # by retry, and that is a defect — a race, an order dependency, or leaked
+  # fixture state — not a pass. Retries exist here to expose flakes, never
+  # to tolerate them.
+  #
+  # Why it does not run per pull request: it costs one extra execution of
+  # the whole test suite, and this private repository has already spent two
+  # thirds of its monthly Actions allowance. The owner's decision is that
+  # pull-request iteration speed is worth more than flake telemetry until
+  # the product is deployed to production; at that point this job earns a
+  # schedule (nightly or weekly), because a flake that only shows up under
+  # real load is worth catching before a release rather than after one.
+  #
+  # Until then it is `workflow_dispatch` only — run it from the Actions tab
+  # when a suite starts behaving oddly. The detector script it drives
+  # (`scripts/check-flake-report.mjs`) is unconditional and fully tested;
+  # only the trigger is held back.
+  #
+  # To turn it on later: give it a `schedule` entry in this workflow's `on:`
+  # block and widen the `if:` below to admit that event. Nothing else needs
+  # to change.
+  flake-detection:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: auto_mb
+          POSTGRES_USER: auto_mb_owner
+          POSTGRES_PASSWORD: local-owner-change-me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auto_mb_owner -d auto_mb"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_ADMIN_URL: postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb
+      DATABASE_URL: postgres://auto_mb_app:local-app-change-me@127.0.0.1:5432/auto_mb
+      AUTO_MB_APP_DB_PASSWORD: local-app-change-me
+      # The backup/restore proof is the suite whose flake prompted this job;
+      # letting it skip here for want of a matching client would be exactly
+      # the wrong economy.
+      RESTORE_PROOF: required
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22.16.0
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.17.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+      - name: Install poppler-utils (pinned)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          installed="$(pdftotext -v 2>&1 | head -n 1)"
+          echo "$installed"
+          case "$installed" in
+            *"version $POPPLER_VERSION"*) ;;
+            *) echo "::error::Expected Poppler $POPPLER_VERSION, got: $installed."; exit 1 ;;
+          esac
+      # Same package order the recursive `pnpm test` uses, each writing its
+      # own JSON report. `continue-on-error` so an ordinary red suite still
+      # reaches the detector below; the final step re-raises it.
+      - name: Test suites with retry
+        id: retried
+        continue-on-error: true
+        run: |
+          mkdir -p flake-reports
+          status=0
+          for pkg in contracts loa-parser db web server; do
+            # Every package runs even if an earlier one is red, so one
+            # ordinary failure cannot hide a flake in a later suite.
+            pnpm --filter "@auto-mb/$pkg" exec vitest run \
+              --retry=1 --reporter=default --reporter=json \
+              "--outputFile.json=$GITHUB_WORKSPACE/flake-reports/$pkg.json" \
+              || status=1
+          done
+          exit "$status"
+      - name: Flake detector
+        run: node scripts/check-flake-report.mjs flake-reports/*.json
+      - name: Re-raise suite failures
+        if: ${{ steps.retried.outcome == 'failure' }}
+        run: |
+          echo "::error::A suite failed even with a retry; see 'Test suites with retry'."
+          exit 1
 
   # Boots the PRODUCTION topology from scratch on every change: real
   # image builds, fresh volumes, the role/grant bootstrap, and the

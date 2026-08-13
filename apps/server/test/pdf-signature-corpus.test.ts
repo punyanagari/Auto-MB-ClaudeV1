@@ -32,6 +32,9 @@ import { loadTrustAnchors, verifyPdfSignatures } from '../src/pdf-signature.js';
 
 const corpus = process.env.AUTO_MB_SIGNED_PDF_CORPUS;
 
+// skip-reason: the signed-PDF corpus is real railway correspondence and is
+// not committed; point AUTO_MB_SIGNED_PDF_CORPUS at a directory of samples
+// to run it, as the header above describes.
 describe.skipIf(corpus === undefined || corpus === '')(
   'real signed-PDF corpus (set AUTO_MB_SIGNED_PDF_CORPUS to run)',
   () => {
