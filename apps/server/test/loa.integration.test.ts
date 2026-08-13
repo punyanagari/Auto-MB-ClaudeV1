@@ -15,6 +15,7 @@ import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
 import {
   loadCorpus,
+  loadLetter,
   resolveCanonicalUnitCode,
   reviewLoaLetter,
   type CorpusLetter,
@@ -177,6 +178,30 @@ function normaliseDecimal(raw: string, maxDp: number): string {
   return value === '0' ? '1' : value;
 }
 
+/** The performance-guarantee requirement the letter demands, exactly as
+ * the parser read it. The extracted-value lock refuses a confirmation that
+ * drops a readable clause, so this is what a reviewer actually submits. */
+function buildPbgRequirement(
+  payload: LoaReviewPayload,
+): ConfirmWorkRequest['pbgRequirement'] {
+  const clause = payload.header.performanceGuarantee;
+  if (
+    clause.needsReview ||
+    clause.amountFigures === null ||
+    clause.submissionDays === null
+  ) {
+    return undefined;
+  }
+  return {
+    requiredAmount: clause.amountFigures.toFixed(2),
+    submissionDays: clause.submissionDays,
+    ...(clause.extensionDays !== null ? { extensionDays: clause.extensionDays } : {}),
+    ...(clause.penalInterestPercent !== null
+      ? { penalInterestPercent: String(clause.penalInterestPercent) }
+      : {}),
+  };
+}
+
 /** Builds the confirm request a reviewer would submit for a corpus letter:
  * parsed values where the parser found them, manifest ground truth as the
  * reviewer's correction where it did not. Every item carries a sourceRef
@@ -198,6 +223,7 @@ function buildConfirmRequest(
 
   const letterDate = payload.header.letterDate.value;
   const title = payload.header.workDescription.value ?? manifest.id;
+  const pbgRequirement = buildPbgRequirement(payload);
   return {
     workCode: manifest.id,
     letterNumber: payload.header.letterNumber.value ?? manifest.id,
@@ -219,6 +245,7 @@ function buildConfirmRequest(
             : ('at_par' as const),
         }
       : {}),
+    ...(pbgRequirement !== undefined ? { pbgRequirement } : {}),
     schedules: [...groups.entries()].map(([scheduleId, items]) => ({
       scheduleCode: scheduleId,
       title: `Schedule ${scheduleId}`,
@@ -596,6 +623,315 @@ describe('review and confirm across the legacy corpus', () => {
     `;
     expect(events.length).toBeGreaterThanOrEqual(corpus.length);
   });
+});
+
+/**
+ * The extracted-value lock (owner ruling, 2026-08-13). The review screen
+ * renders locked values as read-only text, but the screen is not the
+ * control: these tests drive the confirm route directly, the way any other
+ * client could, and prove the refusal lives on the server.
+ *
+ * Each case seeds its own document from a real corpus letter with one
+ * edit to the STORED parse — a unique letter number, because
+ * `works.letter_number` is unique forever and the corpus letters are
+ * already confirmed above. Everything else, including the values under
+ * test, is what the parser actually read.
+ */
+describe('the LOA extracted-value lock', () => {
+  interface LockCase {
+    readonly documentId: string;
+    readonly request: ConfirmWorkRequest;
+    readonly workCode: string;
+  }
+
+  let lockSequence = 0;
+
+  /** Seeds one review document whose stored parse is the letter's own,
+   * and the confirm request a reviewer would submit against it. */
+  async function seedLockCase(letterId: string): Promise<LockCase> {
+    lockSequence += 1;
+    const letter = loadLetter(letterId);
+    const parsed = reviewLoaLetter(letter.text);
+    const letterNumber = `LOCK-${String(lockSequence)}-${runId}`;
+    const review: LoaReviewPayload = {
+      ...parsed,
+      header: {
+        ...parsed.header,
+        letterNumber: { ...parsed.header.letterNumber, value: letterNumber },
+      },
+    };
+    const documentId = randomUUID();
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256, media_type,
+        size_bytes, extraction_status, extraction_payload, uploaded_by_user_id
+      )
+      values (
+        ${documentId}, ${organisationId},
+        ${`${organisationId}/loa/${documentId}.pdf`},
+        ${`${letterId}-lock-${String(lockSequence)}.pdf`},
+        ${createHash('sha256').update(documentId).digest('hex')},
+        'application/pdf', ${Buffer.byteLength(letter.text)}, 'review',
+        ${jsonb(admin, { sourceText: letter.text, review })}, ${ownerUserId}
+      )
+    `;
+    const workCode = `LK${String(lockSequence)}${runId}`.toUpperCase().slice(0, 20);
+    return {
+      documentId,
+      workCode,
+      request: { ...buildConfirmRequest(letter, review), workCode, letterNumber },
+    };
+  }
+
+  async function confirmLock(lockCase: LockCase, request: ConfirmWorkRequest) {
+    return authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${lockCase.documentId}/confirm`,
+      organisationId,
+      payload: request,
+    });
+  }
+
+  /** Every refusal must also be a no-op: no Work, and the document still
+   * waiting for review rather than burned. */
+  async function expectNothingSaved(lockCase: LockCase): Promise<void> {
+    const works = await admin<{ id: string }[]>`
+      select id from works
+      where organisation_id = ${organisationId} and work_code = ${lockCase.workCode}
+    `;
+    expect(works).toHaveLength(0);
+    const [document] = await admin<{ extraction_status: string }[]>`
+      select extraction_status from loa_documents where id = ${lockCase.documentId}
+    `;
+    expect(document?.extraction_status).toBe('review');
+  }
+
+  it('confirms a payload that matches the stored parse, and audits the verdict', async () => {
+    // PL270-CRB parses without a single review flag, so this is the lock
+    // at its strictest: 129 rows of extracted truth, all held.
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, lockCase.request);
+    expect(response.statusCode, response.body).toBe(201);
+    const workId = response.json<WorkDetailResponse>().work.id;
+
+    const [event] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'work.created' and entity_id = ${workId}
+    `;
+    const lock = event?.details['extractedValueLock'] as
+      | {
+          lockedFieldsVerified: number;
+          letterHolesFilled: string[];
+          itemHolesFilled: number;
+          manualRows: number;
+          parsedRowsOmitted: number;
+        }
+      | undefined;
+    expect(lock).toBeDefined();
+    // Three header fields, both totals figures, the pricing shape and four
+    // PBG values, plus a unit, quantity and rate on every one of the 129
+    // rows — all verified against the letter rather than trusted.
+    expect(lock?.lockedFieldsVerified).toBe(10 + 129 * 3);
+    // The holes the parser itself declared: a per-schedule letter prints no
+    // percentage, and without the PDF's reading order no description
+    // boundary is exact.
+    expect(lock?.letterHolesFilled).toContain('letterPercentage');
+    expect(lock?.letterHolesFilled).toContain('letterPercentageDirection');
+    expect(lock?.itemHolesFilled).toBe(129);
+    expect(lock?.manualRows).toBe(0);
+    expect(lock?.parsedRowsOmitted).toBe(0);
+  }, 30_000);
+
+  it('refuses a changed letter date, naming the field and both values', async () => {
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      letterDate: '2026-01-02',
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    const body = response.json<{
+      code: string;
+      message: string;
+      details: { field: string; extracted: string; submitted: string };
+    }>();
+    expect(body.code).toBe('LOA_EXTRACTED_VALUE_MODIFIED');
+    expect(body.details.field).toBe('letterDate');
+    expect(body.details.extracted).toBe('"2026-01-01"');
+    expect(body.details.submitted).toBe('"2026-01-02"');
+    // The remedy is named, because under this ruling there is only one.
+    expect(body.message).toContain('discard this LOA document');
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
+  it('refuses a changed accepted value', async () => {
+    const lockCase = await seedLockCase('PL270-CRB');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      contractValue: '1.00',
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ details: { field: string } }>().details.field).toBe(
+      'contractValue',
+    );
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
+  it('refuses a changed above/below percentage — the ruling’s own example', async () => {
+    // PL280-ADI prints 0.5% below par.
+    const lockCase = await seedLockCase('PL280-ADI');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      letterPercentage: '1.000',
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    const details = response.json<{
+      details: { field: string; extracted: string };
+    }>().details;
+    expect(details.field).toBe('letterPercentage');
+    expect(details.extracted).toBe('"0.5"');
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
+  it('refuses a changed item quantity and rate', async () => {
+    for (const [field, patch] of [
+      ['item A#01.awardedQuantity', { awardedQuantity: '7' }],
+      ['item A#01.effectiveRate', { effectiveRate: '2490001.00' }],
+      ['item A#01.unitCode', { unitCode: 'PAIR' }],
+    ] as const) {
+      const lockCase = await seedLockCase('PL270-CRB');
+      const [first, ...rest] = lockCase.request.schedules;
+      if (first === undefined) throw new Error('no schedules parsed');
+      const [firstItem, ...otherItems] = first.items;
+      if (firstItem === undefined) throw new Error('no items parsed');
+      const response = await confirmLock(lockCase, {
+        ...lockCase.request,
+        schedules: [
+          { ...first, items: [{ ...firstItem, ...patch }, ...otherItems] },
+          ...rest,
+        ],
+      });
+      expect(response.statusCode, response.body).toBe(400);
+      expect(response.json<{ details: { field: string } }>().details.field).toBe(field);
+      await expectNothingSaved(lockCase);
+    }
+  }, 60_000);
+
+  it('refuses dropping the performance guarantee the letter demands', async () => {
+    const lockCase = await seedLockCase('PL270-CRB');
+    const { pbgRequirement: _dropped, ...withoutPbg } = lockCase.request;
+    const response = await confirmLock(lockCase, withoutPbg);
+    expect(response.statusCode, response.body).toBe(400);
+    const details = response.json<{
+      details: { field: string; submitted: string };
+    }>().details;
+    expect(details.field).toBe('pbgRequirement');
+    expect(details.submitted).toBe('nothing');
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
+  it('accepts a unit for the row the parser flagged as unresolved', async () => {
+    // PL276-GTL's RKM row (B1#13) is the corpus's only `unresolved_unit`:
+    // the printed spelling resolves to no canonical unit, so the parser
+    // asks the question and the reviewer answers it.
+    const lockCase = await seedLockCase('PL276-GTL');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      schedules: lockCase.request.schedules.map((schedule) => ({
+        ...schedule,
+        items: schedule.items.map((item) =>
+          item.sourceRef?.scheduleId === 'B1' && item.sourceRef.itemSno === '13'
+            ? { ...item, unitCode: 'ROUTE_KILOMETRE' }
+            : item,
+        ),
+      })),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const detail = response.json<WorkDetailResponse>();
+    const filled = detail.schedules
+      .flatMap((schedule) => schedule.items)
+      .find((item) => item.itemNumber === 'B1/13');
+    expect(filled?.unitCode).toBe('ROUTE_KILOMETRE');
+  }, 30_000);
+
+  it('still refuses a changed unit on an unflagged row of the same letter', async () => {
+    const lockCase = await seedLockCase('PL276-GTL');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      schedules: lockCase.request.schedules.map((schedule) => ({
+        ...schedule,
+        items: schedule.items.map((item) =>
+          item.sourceRef?.scheduleId === 'A1' && item.sourceRef.itemSno === '1'
+            ? { ...item, unitCode: 'KILOMETRE' }
+            : item,
+        ),
+      })),
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    const details = response.json<{
+      details: { field: string; extracted: string };
+    }>().details;
+    expect(details.field).toBe('item A1#1.unitCode');
+    expect(details.extracted).toBe('"Metre"');
+    await expectNothingSaved(lockCase);
+  }, 30_000);
+
+  it('accepts a row the reviewer adds, and keeps it marked manual', async () => {
+    const lockCase = await seedLockCase('PL270-CRB');
+    const [first, ...rest] = lockCase.request.schedules;
+    if (first === undefined) throw new Error('no schedules parsed');
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      schedules: [
+        {
+          ...first,
+          items: [
+            ...first.items,
+            {
+              itemNumber: 'A/MANUAL-1',
+              description: 'Row the letter prints but the parser did not read',
+              unitCode: 'NUMBERS',
+              awardedQuantity: '2',
+              effectiveRate: '1000.00',
+              manualEntry: true,
+            },
+          ],
+        },
+        ...rest,
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const workId = response.json<WorkDetailResponse>().work.id;
+    const [manual] = await admin<{ manual_entry: boolean }[]>`
+      select (source_evidence->>'manualEntry')::boolean as manual_entry
+      from work_items
+      where work_id = ${workId} and item_number = 'A/MANUAL-1'
+    `;
+    expect(manual?.manual_entry).toBe(true);
+    const [event] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'work.created' and entity_id = ${workId}
+    `;
+    expect(
+      (event?.details['extractedValueLock'] as { manualRows: number } | undefined)
+        ?.manualRows,
+    ).toBe(1);
+  }, 30_000);
+
+  it('leaves a performance-guarantee clause the parser flagged to the reviewer', async () => {
+    // PL281-BB's clause parses with `needsReview: true`; nothing about it
+    // is verified truth, so the reviewer establishes all of it — including
+    // whether the letter demands one at all.
+    const lockCase = await seedLockCase('PL281-BB');
+    expect(lockCase.request.pbgRequirement).toBeUndefined();
+    const response = await confirmLock(lockCase, {
+      ...lockCase.request,
+      pbgRequirement: { requiredAmount: '7376797.39', submissionDays: 30 },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json<WorkDetailResponse>().work.pbgSubmissionDays).toBe(30);
+  }, 30_000);
 });
 
 describe('matched tender and contract-source package', () => {

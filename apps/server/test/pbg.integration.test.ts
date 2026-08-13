@@ -113,9 +113,36 @@ function normaliseDecimal(raw: string, maxDp: number): string {
   return value === '0' ? '1' : value;
 }
 
+/** The performance-guarantee requirement the letter demands, exactly as the
+ * parser read it. The extracted-value lock refuses a confirmation that
+ * drops a readable clause, so this is what a reviewer actually submits. */
+function buildPbgRequirement(
+  payload: LoaReviewPayload,
+): ConfirmWorkRequest['pbgRequirement'] {
+  const clause = payload.header.performanceGuarantee;
+  if (
+    clause.needsReview ||
+    clause.amountFigures === null ||
+    clause.submissionDays === null
+  ) {
+    return undefined;
+  }
+  return {
+    requiredAmount: clause.amountFigures.toFixed(2),
+    submissionDays: clause.submissionDays,
+    ...(clause.extensionDays !== null ? { extensionDays: clause.extensionDays } : {}),
+    ...(clause.penalInterestPercent !== null
+      ? { penalInterestPercent: String(clause.penalInterestPercent) }
+      : {}),
+  };
+}
+
 /** The confirm request a reviewer would submit for a corpus letter, with a
- * unique work code/letter number per call so repeated confirms in this
- * suite never collide. */
+ * unique work code per call so repeated confirms in this suite never
+ * collide. The letter number comes from the SEEDED parse rather than the
+ * work code: it is an extracted value, and the lock refuses a confirmation
+ * that submits any other — `seedReviewDocument` is what makes each one
+ * unique. */
 function buildConfirmRequest(
   letter: CorpusLetter,
   payload: LoaReviewPayload,
@@ -134,9 +161,10 @@ function buildConfirmRequest(
 
   const letterDate = payload.header.letterDate.value;
   const title = payload.header.workDescription.value ?? manifest.id;
+  const pbgRequirement = buildPbgRequirement(payload);
   return {
     workCode,
-    letterNumber: `${workCode}-${runId}`,
+    letterNumber: payload.header.letterNumber.value ?? `${workCode}-${runId}`,
     letterDate:
       letterDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(letterDate)
         ? letterDate
@@ -155,6 +183,7 @@ function buildConfirmRequest(
             : ('at_par' as const),
         }
       : {}),
+    ...(pbgRequirement !== undefined ? { pbgRequirement } : {}),
     schedules: [...groups.entries()].map(([scheduleId, items]) => ({
       scheduleCode: scheduleId,
       title: `Schedule ${scheduleId}`,
@@ -173,8 +202,30 @@ function buildConfirmRequest(
   };
 }
 
-async function seedReviewDocument(letter: CorpusLetter): Promise<string> {
-  const payload = { sourceText: letter.text, review: reviewLoaLetter(letter.text) };
+/** Seeds one review document from a corpus letter, with a letter number
+ * unique to this call written into the STORED parse.
+ *
+ * `works.letter_number` is unique forever, and the letter number is an
+ * extracted value the confirm route now holds the payload to, so the two
+ * requirements meet in one place: the seeded parse is the truth, the
+ * confirmation repeats it, and every case still gets its own number. The
+ * returned review is what the caller must build its request from. */
+async function seedReviewDocument(
+  letter: CorpusLetter,
+  workCode: string,
+): Promise<{ documentId: string; review: LoaReviewPayload }> {
+  const parsed = reviewLoaLetter(letter.text);
+  const review: LoaReviewPayload = {
+    ...parsed,
+    header: {
+      ...parsed.header,
+      letterNumber: {
+        ...parsed.header.letterNumber,
+        value: `${workCode}-${runId}`,
+      },
+    },
+  };
+  const payload = { sourceText: letter.text, review };
   const documentId = randomUUID();
   const sha256 = createHash('sha256')
     .update(`${letter.text}-${documentId}`)
@@ -192,7 +243,7 @@ async function seedReviewDocument(letter: CorpusLetter): Promise<string> {
       ${jsonb(admin, payload)}, ${ownerUserId}
     )
   `;
-  return documentId;
+  return { documentId, review };
 }
 
 /** Seeds a Work carrying a PBG requirement directly (admin), with the
@@ -319,7 +370,10 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
     // to completion plus 60 days, penal interest 12% p.a. — asserted as
     // exact values below, so a parser regression fails loudly here.
     const letter = loadLetter('PL273-JHS');
-    const payload = reviewLoaLetter(letter.text);
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-PARSER-1',
+    );
     const guarantee = payload.header.performanceGuarantee;
     expect(guarantee.amountFigures).toBe(152321.33);
     expect(guarantee.submissionDays).toBe(21);
@@ -327,7 +381,6 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
     expect(guarantee.penalInterestPercent).toBe(12);
     expect(guarantee.needsReview).toBe(false);
 
-    const documentId = await seedReviewDocument(letter);
     const request: ConfirmWorkRequest = {
       ...buildConfirmRequest(letter, payload, 'PBG-PARSER-1'),
       pbgRequirement: {
@@ -372,10 +425,19 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
     expect(fetched.json<WorkDetailResponse>().work.pbgRequiredAmount).toBe('152321.33');
   }, 30_000);
 
-  it('persists reviewer-corrected values with corrected provenance and the parser proposal retained', async () => {
-    const letter = loadLetter('PL280-ADI');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+  it('persists reviewer-established values with corrected provenance and the parser proposal retained', async () => {
+    // PL281-BB's guarantee clause parses with `needsReview: true`, so the
+    // extracted-value lock leaves the whole requirement to the reviewer —
+    // this is the only shape in which a value can differ from the parser's
+    // proposal at all. A clause the parser read cleanly is locked, and a
+    // confirmation that changes it is refused by name
+    // (loa.integration.test.ts, "the LOA extracted-value lock").
+    const letter = loadLetter('PL281-BB');
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-CORRECTED-1',
+    );
+    expect(payload.header.performanceGuarantee.needsReview).toBe(true);
     const request: ConfirmWorkRequest = {
       ...buildConfirmRequest(letter, payload, 'PBG-CORRECTED-1'),
       pbgRequirement: {
@@ -409,15 +471,21 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
     // Corrections never overwrite evidence: the parser's own proposal and
     // printed raw block ride along verbatim.
     expect(source.provenance).toBe('corrected');
-    expect(source.raw).toContain('amounting to Rs. 207238.77');
-    expect(source.parser.amountFigures).toBe(207238.77);
+    expect(source.raw).toContain('amounting to Rs. 7376797.39');
+    expect(source.parser.amountFigures).toBe(7376797.39);
     expect(source.parser.submissionDays).toBe(21);
   }, 30_000);
 
-  it('confirms a letter without a PBG requirement (letters without one exist)', async () => {
-    const letter = loadLetter('PL275-BKN');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+  it('confirms without a PBG requirement when the parser could not read the clause', async () => {
+    // Also PL281-BB's flagged clause: nothing about it is verified truth,
+    // so recording no requirement at all is the reviewer's to decide. A
+    // letter whose clause the parser DID read cannot be confirmed without
+    // it — dropping it is a modification like any other.
+    const letter = loadLetter('PL281-BB');
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-NONE-1',
+    );
     const response = await authed(owner, {
       method: 'POST',
       url: `/api/loa-documents/${documentId}/confirm`,
@@ -439,8 +507,10 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
 
   it('rejects a non-positive required amount', async () => {
     const letter = loadLetter('PL273-JHS');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-ZERO-1',
+    );
     const response = await authed(owner, {
       method: 'POST',
       url: `/api/loa-documents/${documentId}/confirm`,
@@ -458,8 +528,10 @@ describe('PBG requirement confirmation (Milestone 5)', () => {
 describe('review-row editing (Milestone 6)', () => {
   it('confirms a reviewer-added manual row with an explicit manual marker and zero unresolved evidence', async () => {
     const letter = loadLetter('PL276-GTL');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-MANUAL-1',
+    );
     const request = buildConfirmRequest(letter, payload, 'PBG-MANUAL-1');
     const firstSchedule = request.schedules[0];
     if (!firstSchedule) throw new Error('fixture yielded no schedules');
@@ -509,8 +581,10 @@ describe('review-row editing (Milestone 6)', () => {
 
   it('confirms with a parsed row removed while the stored extraction payload stays intact', async () => {
     const letter = loadLetter('PL281-BB');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-REMOVE-1',
+    );
     const request = buildConfirmRequest(letter, payload, 'PBG-REMOVE-1');
     const firstSchedule = request.schedules[0];
     if (!firstSchedule) throw new Error('fixture yielded no schedules');
@@ -546,8 +620,10 @@ describe('review-row editing (Milestone 6)', () => {
 
   it('refuses items lacking an evidence link, with a bogus sourceRef, or claiming both kinds', async () => {
     const letter = loadLetter('PL270-CRB');
-    const payload = reviewLoaLetter(letter.text);
-    const documentId = await seedReviewDocument(letter);
+    const { documentId, review: payload } = await seedReviewDocument(
+      letter,
+      'PBG-EVIDENCE-1',
+    );
 
     const base = () => buildConfirmRequest(letter, payload, 'PBG-EVIDENCE-1');
 
@@ -696,13 +772,14 @@ describe('dashboard PBG alerts', () => {
 describe('cross-tenant denial', () => {
   it('hides another organisation’s review document from confirm', async () => {
     const letter = loadLetter('PL273-JHS');
-    const documentId = await seedReviewDocument(letter); // belongs to org A
+    // Belongs to org A.
+    const { documentId, review } = await seedReviewDocument(letter, 'PBG-EVIL-1');
     const response = await authed(otherOwner, {
       method: 'POST',
       url: `/api/loa-documents/${documentId}/confirm`,
       organisationId: otherOrganisationId,
       payload: {
-        ...buildConfirmRequest(letter, reviewLoaLetter(letter.text), 'PBG-EVIL-1'),
+        ...buildConfirmRequest(letter, review, 'PBG-EVIL-1'),
         pbgRequirement: { requiredAmount: '1.00', submissionDays: 21 },
       },
     });
