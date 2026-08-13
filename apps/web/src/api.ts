@@ -3,6 +3,7 @@ import type {
   ApiError,
   ApprovalRequest,
   ApprovalStatus,
+  AttachVariationOrderResponse,
   CorrectionEligibilityResponse,
   CorrectionNotice,
   CorrectionNoticeDetailResponse,
@@ -680,6 +681,19 @@ export interface ApiClient {
     workId: string,
     body: ProposeRemoveItemRequest,
   ) => Promise<ApprovalRequest>;
+  /** Cites the railway variation order that authorises an omission. The
+   * server extracts and verifies every fact from the PDF itself; the
+   * client sends only the file. */
+  readonly attachVariationOrder: (
+    organisationId: string,
+    approvalId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<AttachVariationOrderResponse>;
+  readonly downloadVariationOrderFile: (
+    organisationId: string,
+    approvalId: string,
+  ) => Promise<Blob>;
   readonly approveAmendment: (
     organisationId: string,
     approvalId: string,
@@ -2269,6 +2283,34 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async attachVariationOrder(organisationId, approvalId, file, filename) {
+      const query = new URLSearchParams({ filename });
+      const response = await fetchImpl(
+        `/api/approvals/${approvalId}/variation-order?${query.toString()}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as AttachVariationOrderResponse;
+    },
+    async downloadVariationOrderFile(organisationId, approvalId) {
+      const response = await fetchImpl(
+        `/api/approvals/${approvalId}/variation-order/file`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async approveAmendment(organisationId, approvalId, note) {
       return request<ApprovalRequest>(`/api/approvals/${approvalId}/approve`, {

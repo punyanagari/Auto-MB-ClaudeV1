@@ -510,6 +510,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
         decidedByUserId: null,
         decidedAt: null,
         decisionNote: null,
+        variationOrder: null,
         createdAt: '2026-08-09T00:00:00.000Z',
       },
     ]);

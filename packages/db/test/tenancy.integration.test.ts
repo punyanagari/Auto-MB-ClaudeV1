@@ -56,6 +56,9 @@ const TENANT_TABLES = [
   'extension_requests',
   'extension_request_counters',
   'approval_requests',
+  // The railway variation order cited for an omission (0058): uploaded
+  // evidence, so the application role holds SELECT and INSERT only.
+  'amendment_variation_orders',
   'installations',
   'installation_serials',
   'correction_notices',
@@ -119,7 +122,10 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // Render versions are append-only; the application role has no UPDATE.
     table !== 'tax_invoice_renders' &&
     // Merge provenance is append-only operational evidence (0045).
-    table !== 'measurement_book_merge_provenance',
+    table !== 'measurement_book_merge_provenance' &&
+    // A cited variation order is immutable evidence (0058): the
+    // application role has no UPDATE, and a trigger refuses one anyway.
+    table !== 'amendment_variation_orders',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -145,6 +151,9 @@ const DELETE_REVOKED_TABLES = [
   'organisation_signatories',
   'extension_request_counters',
   'approval_requests',
+  // A cited variation order is immutable evidence: no UPDATE and no
+  // DELETE privilege at all (0058).
+  'amendment_variation_orders',
   // Installation records cancel with a note; attachments release (0017).
   'installations',
   'installation_serials',
@@ -471,6 +480,25 @@ async function seedTenantGraph(
       returning id
     `;
     if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // The railway variation order an omission cites (0058). Only verified
+    // orders exist, so the seed writes one.
+    await tx`
+      insert into amendment_variation_orders (
+        organisation_id, approval_request_id, work_id, loa_number, loa_date,
+        agreement_number, variation_number, object_key, original_filename,
+        sha256, media_type, size_bytes, verdict, verified,
+        uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${approvalRequest.id}, ${work.id},
+        ${`${workCode}-LOA`}, '2026-01-02', ${`${workCode}/AGR/1`}, '1',
+        ${`${organisationId}/variationorder/seed.pdf`}, 'variation-1.pdf',
+        ${'a'.repeat(64)}, 'application/pdf', 1024,
+        '{"verified":true,"claims":[],"failedClaims":[]}'::jsonb, true,
+        ${userId}
+      )
+    `;
 
     // Milestone 7 correction-flow tables: one row each.
     await tx`
