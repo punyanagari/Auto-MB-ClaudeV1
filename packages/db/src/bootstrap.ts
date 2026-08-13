@@ -29,6 +29,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   work_items: 'SELECT, INSERT, UPDATE',
   loa_documents: 'SELECT, INSERT, UPDATE',
   delivery_challan_counters: 'SELECT, INSERT, UPDATE',
+  // The standalone Delivery Challan's per-financial-year sequence (0056):
+  // numbering state, so no DELETE, like every other counter. Found missing
+  // by the catalog-driven drift test below — the migration's own grant sits
+  // in a role-guarded block, so a database migrated before the application
+  // role existed would have had no grant at all and nothing to repair it.
+  standalone_challan_counters: 'SELECT, INSERT, UPDATE',
   // Drafts and structural rows remain deletable.
   organisation_memberships: 'SELECT, INSERT, UPDATE, DELETE',
   work_schedules: 'SELECT, INSERT, UPDATE, DELETE',
