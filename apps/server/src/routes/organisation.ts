@@ -8,6 +8,7 @@ import {
   SaveNumberSeriesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
   type EinvoiceApplicability,
+  type TaxInvoiceLineShape,
   type NumberSeries,
   type NumberedDocumentType,
   type OrganisationProfile,
@@ -83,6 +84,7 @@ interface ProfileRow extends Record<string, unknown> {
   msme_number: string | null;
   invoice_number_prefix: string | null;
   invoice_notes: string | null;
+  default_invoice_shape: TaxInvoiceLineShape;
   einvoice_applicability: EinvoiceApplicability;
   einvoice_applicable_from: string | null;
   irp_reporting_window_days: number | null;
@@ -105,6 +107,7 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     msmeNumber: row.msme_number,
     invoiceNumberPrefix: row.invoice_number_prefix,
     invoiceNotes: row.invoice_notes,
+    defaultInvoiceShape: row.default_invoice_shape,
     warrantyTemplateText: row.warranty_template_text,
     einvoiceApplicability: row.einvoice_applicability,
     einvoiceApplicableFrom: row.einvoice_applicable_from,
@@ -121,7 +124,7 @@ async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
     select id, name, slug, address, gstin, contact_phone,
            contact_email, logo_object_key, warranty_template_text, state_code,
            pincode, locality, trade_name, msme_number, invoice_number_prefix,
-           invoice_notes, einvoice_applicability,
+           invoice_notes, default_invoice_shape, einvoice_applicability,
            einvoice_applicable_from::text as einvoice_applicable_from,
            irp_reporting_window_days
     from organisations
@@ -307,6 +310,14 @@ export function registerOrganisationRoutes(
               : current.invoice_number_prefix,
           invoice_notes:
             body.invoiceNotes !== undefined ? body.invoiceNotes : current.invoice_notes,
+          // Which line shape the invoice CREATE FORM starts on
+          // (migration 0057). A form default and nothing more: the
+          // shape is a per-document choice, and changing this never
+          // reaches an invoice that already exists.
+          default_invoice_shape:
+            body.defaultInvoiceShape !== undefined
+              ? body.defaultInvoiceShape
+              : current.default_invoice_shape,
           warranty_template_text:
             body.warrantyTemplateText !== undefined
               ? body.warrantyTemplateText
@@ -349,6 +360,7 @@ export function registerOrganisationRoutes(
             msme_number = ${next.msme_number},
             invoice_number_prefix = ${next.invoice_number_prefix},
             invoice_notes = ${next.invoice_notes},
+            default_invoice_shape = ${next.default_invoice_shape},
             warranty_template_text = ${next.warranty_template_text},
             einvoice_applicability = ${next.einvoice_applicability},
             einvoice_applicable_from = ${next.einvoice_applicable_from},
@@ -359,7 +371,7 @@ export function registerOrganisationRoutes(
                     contact_email, logo_object_key, warranty_template_text,
                     state_code, pincode, locality, trade_name, msme_number,
                     invoice_number_prefix, invoice_notes,
-                    einvoice_applicability,
+                    default_invoice_shape, einvoice_applicability,
                     einvoice_applicable_from::text as einvoice_applicable_from,
                     irp_reporting_window_days
         `;
@@ -380,6 +392,7 @@ export function registerOrganisationRoutes(
             msmeNumber: current.msme_number,
             invoiceNumberPrefix: current.invoice_number_prefix,
             invoiceNotes: current.invoice_notes,
+            defaultInvoiceShape: current.default_invoice_shape,
             einvoiceApplicability: current.einvoice_applicability,
             einvoiceApplicableFrom: current.einvoice_applicable_from,
             irpReportingWindowDays: current.irp_reporting_window_days,
@@ -397,6 +410,7 @@ export function registerOrganisationRoutes(
             msmeNumber: next.msme_number,
             invoiceNumberPrefix: next.invoice_number_prefix,
             invoiceNotes: next.invoice_notes,
+            defaultInvoiceShape: next.default_invoice_shape,
             einvoiceApplicability: next.einvoice_applicability,
             einvoiceApplicableFrom: next.einvoice_applicable_from,
             irpReportingWindowDays: next.irp_reporting_window_days,

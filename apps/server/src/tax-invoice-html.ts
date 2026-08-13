@@ -9,7 +9,10 @@
 
 import QRCode from 'qrcode';
 import { escapeHtml } from './challan-html.js';
-import type { TaxInvoiceIssuedSnapshotV1 } from './tax-invoice-snapshot.js';
+import {
+  snapshotLines,
+  type TaxInvoiceIssuedSnapshot,
+} from './tax-invoice-snapshot.js';
 
 export const TAX_INVOICE_PDF_TEMPLATE_VERSION = 'ti-v1';
 
@@ -60,7 +63,7 @@ export function formatInvoiceAmount(value: string): string {
   return `${sign}${groupedLeading === '' ? '' : `${groupedLeading},`}${lastThree}.${fraction}`;
 }
 
-function partyBlock(label: string, party: TaxInvoiceIssuedSnapshotV1['buyer']): string {
+function partyBlock(label: string, party: TaxInvoiceIssuedSnapshot['buyer']): string {
   return `<section class="party">
   <h2>${escapeHtml(label)}</h2>
   <strong>${escapeHtml(party.designation)}</strong>
@@ -87,7 +90,7 @@ async function qrDataUri(signedQr: string | null): Promise<string | null> {
 }
 
 export async function renderTaxInvoiceHtml(
-  snapshot: TaxInvoiceIssuedSnapshotV1,
+  snapshot: TaxInvoiceIssuedSnapshot,
   evidence: TaxInvoiceIrpRenderEvidence,
   branding: TaxInvoiceRenderBranding = {},
 ): Promise<string> {
@@ -109,6 +112,19 @@ export async function renderTaxInvoiceHtml(
     snapshot.totals.roundOff === '0.00'
       ? ''
       : `<tr><th>Rounding</th><td>${money(snapshot.totals.roundOff)}</td></tr>`;
+  // One row per frozen line. A v1 (cumulative) snapshot normalises to
+  // exactly one, so its row — and therefore its stored PDF's bytes — is
+  // character for character what it has always been; only the two column
+  // HEADINGS below widen for an itemised document, which has none.
+  const lineRows = snapshotLines(snapshot)
+    .map(
+      (line) =>
+        `<tr><td>${String(line.position)}</td><td>${escapeHtml(line.description)}</td><td>${escapeHtml(line.hsnSacCode)}</td><td class="number">${escapeHtml(line.quantity)}</td><td>${escapeHtml(line.unitLabel)}</td><td class="number">${money(line.rate)}</td><td class="number">${escapeHtml(line.gstRate)}%</td><td class="number">${money(line.amount)}</td></tr>`,
+    )
+    .join('');
+  const itemised = snapshot.templateVersion === 'ti-v2';
+  const descriptionHeading = itemised ? 'Description' : 'Description of service';
+  const codeHeading = itemised ? 'HSN / SAC' : 'SAC';
   const taxRows =
     snapshot.totals.igstAmount === '0' ||
     snapshot.totals.igstAmount === '0.0' ||
@@ -192,8 +208,8 @@ export async function renderTaxInvoiceHtml(
   ${partyBlock(snapshot.shipTo === null ? 'Ship to (same as bill to)' : 'Ship to', shipTo)}
 </section>
 <table class="line-table">
-  <thead><tr><th>#</th><th class="description">Description of service</th><th>SAC</th><th class="number">Qty</th><th>Unit</th><th class="number">Rate</th><th class="number">GST rate</th><th class="number">Taxable value</th></tr></thead>
-  <tbody><tr><td>1</td><td>${escapeHtml(snapshot.line.description)}</td><td>${escapeHtml(snapshot.line.sacCode)}</td><td class="number">${escapeHtml(snapshot.line.quantity)}</td><td>${escapeHtml(snapshot.line.unitLabel)}</td><td class="number">${money(snapshot.line.rate)}</td><td class="number">${escapeHtml(snapshot.line.gstRate)}%</td><td class="number">${money(snapshot.line.amount)}</td></tr></tbody>
+  <thead><tr><th>#</th><th class="description">${descriptionHeading}</th><th>${codeHeading}</th><th class="number">Qty</th><th>Unit</th><th class="number">Rate</th><th class="number">GST rate</th><th class="number">Taxable value</th></tr></thead>
+  <tbody>${lineRows}</tbody>
 </table>
 <section class="summary-wrap">
   <div>

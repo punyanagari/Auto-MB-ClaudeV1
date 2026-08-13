@@ -316,10 +316,33 @@ The credit note is that remedy, modelled as a first-class document:
   tax reduction on the recipient reversing ITC: the note records that fact
   (not applicable / pending / reversal confirmed) without enforcing it.
 
-The current invoice model is one cumulative SAC service line. The UI does not
-offer fresh e-way-bill generation, and the provider-generation and NIC-payload
-endpoints reject it until goods/HSN delivery facts exist. Historical records
-remain readable and cancellable, and compatibility imports remain explicitly
+An invoice's line shape is a PER-DOCUMENT choice, with an organisation-level
+default that seeds the create form and nothing else. It is never derived from
+the buyer or the Work: practice varies by company — some vendors put HSN goods
+items on Railway invoices too, and private customers commonly take HSN goods
+supply — so a Railway invoice may be itemised and a private one cumulative.
+
+- `service_cumulative`: one SAC service line for the whole finalized
+  Measurement Book total (or the stated value of a direct invoice), carried by
+  the invoice's own SAC, description and GST rate. This is what every invoice
+  raised before the choice existed is, and it is unchanged;
+- `itemised`: no header line at all; the document is its lines, each with its
+  own HSN (goods, six to eight digits) or SAC (services, exactly six),
+  description, quantity, unit, unit rate and GST rate — each rate checked
+  against the GST rate master for the invoice date. Line money is frozen at
+  submit as quantity x rate with the tax split at the line's own rate, and the
+  invoice's taxable value and tax heads are the exact sum of the lines. An
+  MB-backed itemised invoice must add up to the measured total; submit refuses
+  it otherwise rather than billing something the measurement never said.
+
+Editing the shape is a draft-only act. Once submitted it is frozen with every
+other business fact, and the lines become immutable with the invoice.
+
+The UI does not offer fresh e-way-bill generation, and the provider-generation
+and NIC-payload endpoints reject it. That refusal is being re-based on whether
+the document itself carries goods lines rather than on the invoice model as a
+whole; until then it applies to every invoice. Historical records remain
+readable and cancellable, and compatibility imports remain explicitly
 unverified.
 
 Reverse-charge liability is an explicit invoice fact rather than printed from
@@ -333,8 +356,9 @@ missing historical value as unknown.
   defined by current design-partner evidence;
 - unattended or scheduled statutory filing, and blind replay of an uncertain
   provider mutation;
-- fresh e-way-bill generation for cumulative SAC service invoices until a
-  goods/HSN dispatch model exists;
+- fresh e-way-bill generation, for either line shape, until the applicability
+  decision follows from the document's own goods lines and a dispatch model
+  exists to carry it;
 - tenant-specific multi-GSTIN provider credential routing; the current adapter
   is bound to one configured GSTIN and refuses a mismatch;
 - broad reporting;

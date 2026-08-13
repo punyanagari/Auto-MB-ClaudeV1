@@ -226,9 +226,14 @@ facts, regenerated after IRP evidence arrives to embed the signed QR, and
 downloaded through an authenticated tenant-bound request. Every render retains
 its own PDF, source digest, and frozen logo; the current version remains readable
 after local cancellation and all versions are included in the owner export.
-Fresh e-way-bill generation is unavailable for the current cumulative SAC
-service invoice. Historical records remain visible, reconcilable, and
-cancellable.
+The invoice form offers both line shapes: one cumulative SAC service line, or
+itemised HSN/SAC lines with their own quantity, unit, rate and GST rate. The
+switch starts on the organisation's default and is a choice about the document
+in hand, never about the buyer. An itemised invoice's detail and PDF print a
+line table instead of a single description.
+
+Fresh e-way-bill generation is unavailable for either shape. Historical records
+remain visible, reconcilable, and cancellable.
 
 ## Definition of UX completion
 

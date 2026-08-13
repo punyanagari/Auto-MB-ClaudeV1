@@ -7,6 +7,7 @@ import type {
   MeasurementBook,
   TaxInvoice,
   TaxInvoiceDetailResponse,
+  TaxInvoiceLineShape,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { mastersHash } from '../lib/workspace-routes.js';
@@ -40,10 +41,13 @@ interface WorkTaxInvoicesProps {
  * The GST tax invoice raised against a finalized Measurement Book, and
  * the e-way bill that moves it.
  *
- * The invoice is CUMULATIVE — one service line at a SAC for the whole MB
- * total, never a per-item HSN document — which is why the form asks for
- * one SAC and one description rather than editing lines. Submitting is
- * what closes the MB it bills, so it is the money moment: the number, the
+ * The invoice's LINE SHAPE is a per-document choice (migration 0057):
+ * one cumulative service line at a SAC for the whole MB total, or
+ * itemised HSN/SAC lines each with their own quantity, rate and GST rate.
+ * The organisation's default seeds the create form and nothing else — the
+ * shape is never derived from the buyer, because practice varies by
+ * company and the same consignee may take either. Submitting is what
+ * closes the MB it bills, so it is the money moment: the number, the
  * buyer snapshot and every amount freeze together, and only a cancellation
  * (with a note) releases the MB for a corrected invoice.
  *
@@ -72,6 +76,11 @@ export function WorkTaxInvoices({
   const [clients, setClients] = useState<readonly Contact[]>([]);
   const [shipToContacts, setShipToContacts] = useState<readonly Contact[]>([]);
   const [gstRates, setGstRates] = useState<readonly GstRateMaster[]>([]);
+  // The create form's STARTING shape (migration 0057). A default only —
+  // the operator chooses per document — so an unavailable profile simply
+  // starts the form on the cumulative service invoice.
+  const [defaultInvoiceShape, setDefaultInvoiceShape] =
+    useState<TaxInvoiceLineShape>('service_cumulative');
   const [detail, setDetail] = useState<TaxInvoiceDetailResponse | null>(null);
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
   const [creditNotes, setCreditNotes] = useState<readonly CreditNote[]>([]);
@@ -120,6 +129,17 @@ export function WorkTaxInvoices({
       .catch(() => {
         // The rate picker degrades to a plain input; the server still
         // refuses a rate the master does not cover.
+      });
+    api
+      .organisationProfile(organisationId)
+      .then((profile) => {
+        if (!cancelled && profile.defaultInvoiceShape !== undefined) {
+          setDefaultInvoiceShape(profile.defaultInvoiceShape);
+        }
+      })
+      .catch(() => {
+        // The form starts on the cumulative shape, which is what every
+        // invoice raised before this setting existed was.
       });
     return () => {
       cancelled = true;
@@ -249,6 +269,7 @@ export function WorkTaxInvoices({
           clients={clients}
           shipToContacts={shipToContacts}
           gstRates={gstRates}
+          defaultInvoiceShape={defaultInvoiceShape}
           startOpen={invoices.length === 0}
           pending={pending}
           act={act}
@@ -266,6 +287,7 @@ export function WorkTaxInvoices({
             api={api}
             organisationId={organisationId}
             invoice={invoice}
+            lines={detail?.lines ?? []}
             clients={clients}
             shipToContacts={shipToContacts}
             gstRates={gstRates}

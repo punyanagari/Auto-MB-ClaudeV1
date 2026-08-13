@@ -103,11 +103,15 @@ export type StorableDecimalString = Static<typeof StorableDecimalStringSchema>;
  * its column holds, so a mistyped code is a 400 naming the field rather
  * than a CHECK violation surfacing as an opaque 500. */
 
-/** HSN (goods) or SAC (services) code: 6 to 8 digits — optional metadata
- * everywhere it appears, because the tax invoice is cumulative (one service
- * line at a SAC for the MB total), never per-item. Which reading
+/** HSN (goods) or SAC (services) code: 6 to 8 digits. Which reading
  * applies follows the item's `isService` flag, not the code's shape —
- * both are digits, and both columns hold the same CHECK. */
+ * both are digits, and both columns hold the same CHECK.
+ *
+ * Optional metadata on a Work item; load-bearing on an ITEMISED tax
+ * invoice line (migration 0057), where a service line narrows to exactly
+ * six digits because a SAC takes no eight-digit deepening. A CUMULATIVE
+ * invoice carries no code here at all — its single service line's SAC is
+ * a header column with its own six-digit shape. */
 export const HsnCodeSchema = Type.String({
   pattern: '^[0-9]{6,8}$',
   description: 'HSN (goods) or SAC (services) code: 6 to 8 digits.',
@@ -135,6 +139,25 @@ export const GstRateSchema = Type.String({
     'GST percentage between 0 and 100 inclusive, with up to two fraction digits.',
 });
 export type GstRate = Static<typeof GstRateSchema>;
+
+/** The goods-vs-service shape of a tax invoice (migration 0057):
+ * `service_cumulative` carries ONE service line at a SAC in the invoice
+ * header, `itemised` carries its own HSN/SAC lines instead. A PER-DOCUMENT
+ * choice — never derived from the buyer or the Work — with an
+ * organisation-level default that seeds the create form only.
+ *
+ * It lives here rather than in tax-documents.ts because the organisation
+ * profile states the same vocabulary as its default, and organisations.ts
+ * is imported BY tax-documents.ts. */
+export const TAX_INVOICE_LINE_SHAPES = ['service_cumulative', 'itemised'] as const;
+export const TaxInvoiceLineShapeSchema = Type.Union(
+  TAX_INVOICE_LINE_SHAPES.map((shape) => Type.Literal(shape)),
+  {
+    description:
+      'Whether a tax invoice carries one cumulative service line or its own itemised lines.',
+  },
+);
+export type TaxInvoiceLineShape = Static<typeof TaxInvoiceLineShapeSchema>;
 
 /** The two-digit GST state code. It is the first two characters of a
  * registered GSTIN, but it is a fact in its own right: an unregistered

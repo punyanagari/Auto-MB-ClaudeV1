@@ -79,6 +79,8 @@ const TENANT_TABLES = [
   'budgetary_quotation_counters',
   // The GST tax invoice and the e-way bill that moves it (0035).
   'tax_invoices',
+  // The lines of an ITEMISED invoice (0057).
+  'tax_invoice_lines',
   'tax_invoice_renders',
   'tax_invoice_counters',
   // The Section 34 credit note and its FY counter (0051).
@@ -200,6 +202,9 @@ const DELETE_ALLOWED_TABLES = [
   'work_schedules',
   'delivery_challans',
   'delivery_challan_items',
+  // An itemised invoice's lines are draft-editable exactly like challan
+  // lines; the 0057 guard refuses every write once the invoice is issued.
+  'tax_invoice_lines',
   'issue_challans',
   'issue_challan_lines',
   'challan_item_serials',
@@ -847,6 +852,31 @@ async function seedTenantGraph(
     await tx`
       insert into tax_invoice_counters (organisation_id, fy_label, next_value)
       values (${organisationId}, '2026-27', 2)
+    `;
+    // An ITEMISED direct invoice and its line (0057). Drafted, so the
+    // header money and the line money are both open and the deferred
+    // shape check sees a coherent pair: itemised, at least one line, no
+    // frozen money anywhere.
+    const [itemisedInvoice] = await tx<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, status, line_shape, invoice_date, place_of_supply,
+        buyer_contact_id, stated_taxable_value, reverse_charge_applicable,
+        number_prefix, created_by_user_id
+      )
+      values (${organisationId}, 'draft', 'itemised', '2026-02-07', '27',
+              ${consigneeContact.id}, '100.00', false, 'TI', ${userId})
+      returning id
+    `;
+    if (!itemisedInvoice) {
+      throw new Error('seed itemised tax invoice insert returned no row');
+    }
+    await tx`
+      insert into tax_invoice_lines (
+        organisation_id, tax_invoice_id, position, is_service,
+        hsn_sac_code, description, quantity, unit_label, unit_rate, gst_rate
+      )
+      values (${organisationId}, ${itemisedInvoice.id}, 1, false,
+              '85444999', 'Signalling cable', '2.000', 'm', '50.00', '18.00')
     `;
     // A draft credit note against the seeded submitted invoice (0051):
     // a draft carries no number/money, so the cross-record and

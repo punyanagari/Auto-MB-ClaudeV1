@@ -25,12 +25,19 @@ import {
   lockInvoice,
   lockInvoiceableBook,
   readDetail,
+  readInvoiceLines,
   requireBuyer,
   requireShipTo,
   requireStatus,
+  TAX_INVOICE_ITEMISED_TEMPLATE_VERSION,
   TAX_INVOICE_TEMPLATE_VERSION,
 } from './internal.js';
-import type { BuyerRow, InvoiceableBook, InvoiceRow } from './internal.js';
+import type {
+  BuyerRow,
+  InvoiceableBook,
+  InvoiceLineRow,
+  InvoiceRow,
+} from './internal.js';
 
 /**
  * Submitting is the money moment, and it is one transaction with five
@@ -211,6 +218,35 @@ async function resolveTaxableValue(
 }
 
 /**
+ * Phase 3b, ITEMISED only: the lines are the document, so they are what
+ * the money is computed from — but an MB-backed invoice still BILLS its
+ * Measurement Book, and a set of lines that does not add up to the
+ * measured total would silently charge something the measurement never
+ * said. Compared in SQL numeric, so '118.00' and '118' are one figure.
+ *
+ * A DIRECT itemised invoice needs no such check: its stated taxable value
+ * was derived from these same lines when the draft was written, and the
+ * 0057 tax-heads guard re-proves the identity at the database.
+ */
+async function assertLinesMatchMeasuredTotal(
+  tx: TransactionSql,
+  book: InvoiceableBook | null,
+  linesTaxable: string,
+): Promise<void> {
+  if (book?.total_amount == null) return;
+  const [row] = await tx<{ matches: boolean }[]>`
+    select ${linesTaxable}::numeric = ${book.total_amount}::numeric as matches
+  `;
+  if (row?.matches !== true) {
+    throw httpError(
+      409,
+      'ITEMISED_LINES_TOTAL_MISMATCH',
+      `The itemised lines total ${linesTaxable}, but Measurement Book ${book.mb_number ?? book.id} measures ${book.total_amount}. An MB-backed invoice bills exactly what was measured — correct the lines (or amend the Measurement Book) and retry.`,
+    );
+  }
+}
+
+/**
  * Phase 4: gapless per (organisation, financial year) under the counter
  * row lock — concurrent submits serialise here, and a rolled-back
  * transaction rolls the number back with it.
@@ -280,6 +316,76 @@ interface InvoiceMoney {
 }
 
 /**
+ * Phase 5a, ITEMISED only: freeze each line's own money, then sum the
+ * header from the lines. Two statements, both entirely in SQL numeric:
+ *
+ *   1. every line's taxable value is round(quantity * unit_rate, 2), and
+ *      its tax is split at ITS OWN GST rate the way the invoice's supply
+ *      geography says — intra-state two equal halves of
+ *      round(taxable * rate / 200, 2), inter-state
+ *      round(taxable * rate / 100, 2) as IGST. This is the cumulative
+ *      arithmetic, per line, and the 0057 line CHECKs re-prove it;
+ *   2. the header's four money columns are the SUM of the lines', and the
+ *      total rounds to the whole rupee exactly as it always has.
+ *
+ * The lines are written while the invoice is still a DRAFT, which is the
+ * only window the 0057 mutation guard leaves open — the header moves to
+ * submitted afterwards, in the same transaction.
+ */
+async function freezeLineMoney(
+  tx: TransactionSql,
+  invoiceId: string,
+  intraState: boolean,
+): Promise<void> {
+  await tx`
+    update tax_invoice_lines l
+    set taxable_value = priced.taxable,
+        cgst_amount = priced.half,
+        sgst_amount = priced.half,
+        igst_amount = priced.igst
+    from (
+      select id,
+             round(quantity * unit_rate, 2)::numeric(18,2) as taxable,
+             case when ${intraState}
+               then round(round(quantity * unit_rate, 2) * gst_rate / 200, 2)
+               else 0 end::numeric(18,2) as half,
+             case when ${intraState}
+               then 0
+               else round(round(quantity * unit_rate, 2) * gst_rate / 100, 2)
+               end::numeric(18,2) as igst
+      from tax_invoice_lines
+      where tax_invoice_id = ${invoiceId}
+    ) as priced
+    where l.id = priced.id
+  `;
+}
+
+async function computeItemisedMoney(
+  tx: TransactionSql,
+  invoiceId: string,
+): Promise<InvoiceMoney> {
+  const [money] = await tx<InvoiceMoney[]>`
+    with base as (
+      select sum(taxable_value)::numeric(18,2) as taxable,
+             sum(cgst_amount)::numeric(18,2) as cgst,
+             sum(sgst_amount)::numeric(18,2) as sgst,
+             sum(igst_amount)::numeric(18,2) as igst
+      from tax_invoice_lines
+      where tax_invoice_id = ${invoiceId}
+    )
+    select taxable::text as taxable, cgst::text as cgst, sgst::text as sgst,
+           igst::text as igst,
+           round(taxable + cgst + sgst + igst, 0)::numeric(18,2)::text as total,
+           (round(taxable + cgst + sgst + igst, 0)
+             - (taxable + cgst + sgst + igst))::numeric(18,2)::text as round_off,
+           (taxable + cgst + sgst + igst)::numeric(18,2)::text as line_value
+    from base
+  `;
+  if (!money) throw new Error('itemised tax computation returned no row');
+  return money;
+}
+
+/**
  * Phase 5: THE MONEY, entirely in SQL numeric arithmetic. Taxable is the
  * MB total verbatim; intra-state (organisation state = place of supply)
  * splits into equal CGST and SGST halves of round(taxable*rate/200, 2);
@@ -342,6 +448,7 @@ async function freezeIssuedSnapshot(
   money: InvoiceMoney,
   invoiceNumber: string,
   fyLabel: string,
+  lines: readonly InvoiceLineRow[],
 ): Promise<{
   buyerSnapshot: Record<string, unknown>;
   shipToSnapshot: Record<string, unknown> | null;
@@ -398,8 +505,44 @@ async function freezeIssuedSnapshot(
           locality: shipTo.locality,
         };
 
+  // The itemised document freezes SNAPSHOT V2, which differs from v1 in
+  // exactly one place: `lines` instead of `line`. A cumulative invoice
+  // keeps freezing v1 byte for byte — an itemised feature has no business
+  // changing the frozen shape of the document the railway trade issues
+  // most, and every stored invoice is v1.
+  const itemised = invoice.line_shape === 'itemised';
+  const lineBlock = itemised
+    ? {
+        templateVersion: TAX_INVOICE_ITEMISED_TEMPLATE_VERSION,
+        lines: lines.map((line) => ({
+          position: line.position,
+          isService: line.is_service,
+          hsnSacCode: line.hsn_sac_code,
+          description: line.description,
+          quantity: line.quantity,
+          unitLabel: line.unit_label ?? DEFAULT_UNIT_LABEL,
+          rate: line.unit_rate,
+          gstRate: line.gst_rate,
+          amount: line.taxable_value ?? '0.00',
+          lineValue: line.line_value ?? '0.00',
+        })),
+      }
+    : {
+        templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
+        line: {
+          sacCode: invoice.sac_code ?? '',
+          description: invoice.service_description ?? '',
+          quantity: '1.00',
+          unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
+          rate: money.taxable,
+          gstRate: invoice.gst_rate ?? '0.00',
+          amount: money.taxable,
+          lineValue: money.line_value,
+        },
+      };
+
   const issuedSnapshot = {
-    templateVersion: TAX_INVOICE_TEMPLATE_VERSION,
+    ...lineBlock,
     invoiceNumber,
     invoiceDate: invoice.invoice_date,
     fyLabel,
@@ -419,16 +562,6 @@ async function freezeIssuedSnapshot(
     placeOfSupply: invoice.place_of_supply,
     reverseChargeApplicable: invoice.reverse_charge_applicable,
     customerPoReference: invoice.customer_po_reference,
-    line: {
-      sacCode: invoice.sac_code,
-      description: invoice.service_description,
-      quantity: '1.00',
-      unitLabel: invoice.unit_label ?? DEFAULT_UNIT_LABEL,
-      rate: money.taxable,
-      gstRate: invoice.gst_rate,
-      amount: money.taxable,
-      lineValue: money.line_value,
-    },
     totals: {
       taxableValue: money.taxable,
       cgstAmount: money.cgst,
@@ -479,7 +612,10 @@ export function registerTaxInvoiceSubmitRoute(
         // been edited since, and the rate master itself may have been
         // end-dated between drafting and submit. Nothing is computed
         // from a rate the Government had not notified on this date.
-        await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
+        const itemised = invoice.line_shape === 'itemised';
+        if (invoice.gst_rate !== null) {
+          await assertGstRateNotified(tx, invoice.gst_rate, invoice.invoice_date);
+        }
 
         assertReverseChargeAnswered(invoice);
         const organisation = await requireCompleteSupplierProfile(tx);
@@ -493,7 +629,33 @@ export function registerTaxInvoiceSubmitRoute(
           buyer,
         );
         const intraState = organisation.state_code === invoice.place_of_supply;
-        const money = await computeInvoiceMoney(tx, invoice, taxableValue, intraState);
+        let money: InvoiceMoney;
+        let lines: InvoiceLineRow[] = [];
+        if (itemised) {
+          // Every line's rate is re-checked at the money moment for the
+          // same reason the header's is: the invoice date may have moved
+          // since drafting, and the rate master itself may have been
+          // end-dated. Nothing is monetised from a rate the Government
+          // had not notified on this date.
+          const drafted = await readInvoiceLines(tx, invoice.id);
+          if (drafted.length === 0) {
+            throw new Error(`itemised tax invoice ${invoice.id} has no lines`);
+          }
+          for (const line of drafted) {
+            await assertGstRateNotified(
+              tx,
+              line.gst_rate,
+              invoice.invoice_date,
+              `Line ${String(line.position)}`,
+            );
+          }
+          await freezeLineMoney(tx, invoice.id, intraState);
+          money = await computeItemisedMoney(tx, invoice.id);
+          await assertLinesMatchMeasuredTotal(tx, book, money.taxable);
+          lines = await readInvoiceLines(tx, invoice.id);
+        } else {
+          money = await computeInvoiceMoney(tx, invoice, taxableValue, intraState);
+        }
         const { buyerSnapshot, shipToSnapshot, issuedSnapshot } =
           await freezeIssuedSnapshot(
             tx,
@@ -503,6 +665,7 @@ export function registerTaxInvoiceSubmitRoute(
             money,
             invoiceNumber,
             fyLabel,
+            lines,
           );
 
         // THE REPORTING WINDOW, frozen with the rest (migration 0049):
@@ -562,6 +725,8 @@ export function registerTaxInvoiceSubmitRoute(
             invoiceNumber,
             fyLabel,
             sequence,
+            lineShape: invoice.line_shape,
+            lineCount: itemised ? lines.length : 1,
             measurementBookId: invoice.measurement_book_id,
             mbNumber: book?.mb_number ?? null,
             buyerContactId: buyer.id,
