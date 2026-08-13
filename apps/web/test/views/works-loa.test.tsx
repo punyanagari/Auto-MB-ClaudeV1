@@ -169,7 +169,7 @@ describe('UploadLoa', () => {
 });
 
 describe('ReviewLoa', () => {
-  it('prefills parsed values, shows flags with printed source, and confirms', async () => {
+  it('shows extracted values as read-only facts, keeps the flagged hole editable, and confirms', async () => {
     const confirmLoa = vi.fn().mockResolvedValue({
       work: { id: WORK_ID },
       schedules: [],
@@ -190,21 +190,55 @@ describe('ReviewLoa', () => {
       />,
     );
 
-    // Parsed values arrive as editable prefills with their provenance.
-    const letterNumber = await screen.findByLabelText('Letter number');
-    expect((letterNumber as HTMLInputElement).value).toBe('L-42/2025');
+    // The letter's own values are text, not fields: there is no control to
+    // type a different letter number, date, percentage or rate into.
+    expect((await screen.findByTestId('fact-letter-number')).textContent).toBe(
+      'L-42/2025',
+    );
+    expect(screen.getByTestId('fact-letter-date').textContent).toBe('01 Jun 2025');
+    expect(screen.getByTestId('fact-advertised-value').textContent).toBe('₹1000.00');
+    expect(screen.getByTestId('fact-contract-value').textContent).toBe('₹900.00');
+    expect(screen.getByTestId('fact-letter-percentage').textContent).toBe('10.000%');
+    expect(screen.getByTestId('fact-percentage-direction').textContent).toBe('Below');
+    expect(screen.queryByRole('textbox', { name: 'Letter number' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: 'Letter date' })).toBeNull();
+
+    // Numbers keep the product's mono, tabular figures.
+    expect(screen.getByTestId('fact-contract-value').className).toContain('font-mono');
+    expect(screen.getByTestId('fact-contract-value').className).toContain(
+      'tabular-nums',
+    );
+
+    // The rule and its remedy are stated where the reviewer will look.
+    const note = screen.getByTestId('extracted-lock-note');
+    expect(note.textContent).toContain('Extracted values are read-only');
+    expect(note.textContent).toContain(
+      'Discard this letter and upload a corrected one',
+    );
+
     expect(
       screen.getByRole('heading', { name: '1 review issue needs attention' }),
     ).toBeTruthy();
     expect(screen.getByText('The printed unit could not be resolved.')).toBeTruthy();
-    expect(screen.getByText('Route Kilo Meter (RKM)')).toBeTruthy();
+
+    // The parsed row's quantity and rate are read-only; only the unit the
+    // parser could not resolve is still a field, and it carries the flag.
+    const rate = screen.getByLabelText('Rate for row 1 in schedule A');
+    expect(rate.tagName).toBe('SPAN');
+    expect(rate.textContent).toBe('450');
+    expect(screen.getByLabelText('Quantity for row 1 in schedule A').tagName).toBe(
+      'SPAN',
+    );
+    const unit = screen.getByLabelText<HTMLInputElement>(
+      'Unit for row 1 in schedule A',
+    );
+    expect(unit.tagName).toBe('INPUT');
+    expect(screen.getAllByText('unresolved_unit').length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
       target: { value: 'PL270-CRB' },
     });
-    fireEvent.change(screen.getByLabelText('Rate for row 1 in schedule A'), {
-      target: { value: '451.00' },
-    });
+    fireEvent.change(unit, { target: { value: 'ROUTE_KILOMETRE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and create Work' }));
 
     await waitFor(() => {
@@ -218,14 +252,176 @@ describe('ReviewLoa', () => {
     expect(orgArg).toBe(ORG_ID);
     expect(docArg).toBe(DOC_ID);
     expect(requestArg.workCode).toBe('PL270-CRB');
+    // Every extracted value is submitted exactly as the parser read it —
+    // the server compares each one against the stored parse and refuses a
+    // mismatch by name.
+    expect(requestArg.letterNumber).toBe('L-42/2025');
+    expect(requestArg.letterDate).toBe('2025-06-01');
     expect(requestArg.letterPercentage).toBe('10.000');
     expect(requestArg.letterPercentageDirection).toBe('below');
     expect(requestArg.schedules).toHaveLength(1);
     expect(requestArg.schedules[0]?.items[0]).toMatchObject({
       itemNumber: 'A/1',
-      effectiveRate: '451.00',
+      awardedQuantity: '2',
+      effectiveRate: '450',
+      unitCode: 'ROUTE_KILOMETRE',
       sourceRef: { scheduleId: 'A', itemSno: '1' },
     });
+  });
+
+  it('discards the letter from the review screen and returns to the register', async () => {
+    const discardLoaDocument = vi.fn().mockResolvedValue({
+      document: { ...REVIEW_DOCUMENT, extractionStatus: 'discarded' },
+      discardedSupportingDocumentIds: [],
+    });
+    const onBack = vi.fn();
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      discardLoaDocument,
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={onBack}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard this letter' }));
+    // It asks once: the way back is uploading the corrected letter.
+    expect(screen.getByText(/Upload the corrected letter to start again/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard' }));
+
+    await waitFor(() => {
+      expect(discardLoaDocument).toHaveBeenCalledWith(ORG_ID, DOC_ID);
+    });
+    await waitFor(() => {
+      expect(onBack).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('keeps the letter, and its values, when the reviewer backs out of the discard', async () => {
+    const discardLoaDocument = vi.fn();
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      discardLoaDocument,
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard this letter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }));
+    expect(discardLoaDocument).not.toHaveBeenCalled();
+    expect(screen.getByTestId('fact-letter-number').textContent).toBe('L-42/2025');
+  });
+
+  it('reports a refused discard without leaving the review screen', async () => {
+    const onBack = vi.fn();
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+      discardLoaDocument: vi
+        .fn()
+        .mockRejectedValue(
+          new RequestFailedError(
+            409,
+            'DOCUMENT_CONFIRMED',
+            'loa-letter.pdf has already been confirmed into a Work.',
+          ),
+        ),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={onBack}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard this letter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard' }));
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'already been confirmed into a Work',
+    );
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it('offers no discard to a role that cannot modify', async () => {
+    const api = stubApi({
+      getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT),
+    });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify={false}
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId('fact-letter-number');
+    expect(screen.queryByRole('button', { name: 'Discard this letter' })).toBeNull();
+  });
+
+  it('opens a field for every value the parser could not read', async () => {
+    // A letter whose header and totals block both defeated the parser: with
+    // nothing extracted there is nothing to lock, and the whole form is the
+    // reviewer's to complete.
+    const unreadable = {
+      ...REVIEW_DOCUMENT,
+      extractionPayload: {
+        ...REVIEW_PAYLOAD,
+        review: {
+          ...REVIEW_PAYLOAD.review,
+          header: {
+            letterNumber: { value: null, raw: 'Letter No:', needsReview: true },
+            letterDate: { value: null, raw: 'Dated:', needsReview: true },
+            workDescription: { value: null, raw: 'Name of work:', needsReview: true },
+          },
+          pricingShape: {
+            ...REVIEW_PAYLOAD.review.pricingShape,
+            needsReview: true,
+          },
+        },
+      },
+    };
+    const api = stubApi({ getLoaDocument: vi.fn().mockResolvedValue(unreadable) });
+    render(
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const letterNumber =
+      await screen.findByLabelText<HTMLInputElement>('Letter number');
+    expect(letterNumber.tagName).toBe('INPUT');
+    expect(letterNumber.value).toBe('');
+    expect(screen.getByLabelText('Letter date').tagName).toBe('INPUT');
+    expect(screen.getByLabelText('Work description').tagName).toBe('TEXTAREA');
+    expect(screen.getByLabelText('Advertised value (₹)').tagName).toBe('INPUT');
+    expect(screen.getByLabelText('Contract value (₹)').tagName).toBe('INPUT');
+    // Nothing was extracted, so no panel of facts is shown at all.
+    expect(screen.queryByTestId('letter-facts')).toBeNull();
   });
 
   it('lets read-only roles review but not confirm', async () => {
@@ -243,7 +439,7 @@ describe('ReviewLoa', () => {
       />,
     );
 
-    await screen.findByLabelText('Letter number');
+    await screen.findByTestId('fact-letter-number');
     expect(
       screen.queryByRole('button', { name: 'Confirm and create Work' }),
     ).toBeNull();
@@ -303,6 +499,9 @@ describe('ReviewLoa', () => {
               ...REVIEW_PAYLOAD.review.items[0],
               schedule: { id: 'B' },
               itemSno: '1',
+              // The conservative layout reading, whose per-row boundary the
+              // parser never verified, so it stays editable.
+              descriptionSource: 'layout-overinclusive',
               description:
                 'Distribution board with a description long enough that two lines cannot hold it, which is exactly the shape the owner reported on a real letter',
             },
@@ -359,8 +558,11 @@ describe('ReviewLoa', () => {
 
 describe('ReviewLoa PBG requirement and row editing', () => {
   // The base REVIEW_PAYLOAD (untouched above) has no performance-guarantee
-  // field; this variant carries the parsed clause plus a second item row
-  // so removal leaves a confirmable Work.
+  // field; this variant carries the parsed clause plus a second item row.
+  // Row 2's own arithmetic does NOT reconcile — the letter contradicts
+  // itself there — so the parser vouches for neither its quantity nor its
+  // rate and both stay editable, which is what the totals and removal
+  // cases below need to exercise.
   const PBG_PAYLOAD = {
     ...REVIEW_PAYLOAD,
     review: {
@@ -385,17 +587,41 @@ describe('ReviewLoa PBG requirement and row editing', () => {
           itemSno: '2',
           itemCode: 'S02',
           description: 'Distribution board, wall mounted',
+          descriptionSource: 'raw-exact',
           qty: '1.000',
           qtyUnit: 'Numbers',
           unitRate: '100.00',
-          bidAmount: '100.00',
-          needsReview: false,
+          bidAmount: '95.00',
+          reconciliation: { ok: false },
+          needsReview: true,
           raw: { anchorLine: '2  S02  Distribution board ...' },
         },
       ],
     },
   };
   const PBG_DOCUMENT = { ...REVIEW_DOCUMENT, extractionPayload: PBG_PAYLOAD };
+
+  /** The same letter with nothing the parser could vouch for in its totals
+   * block or its guarantee clause: both carry `needsReview`, so both are
+   * the reviewer's to establish and both render as fields. */
+  const UNVERIFIED_PAYLOAD = {
+    ...PBG_PAYLOAD,
+    review: {
+      ...PBG_PAYLOAD.review,
+      header: {
+        ...PBG_PAYLOAD.review.header,
+        performanceGuarantee: {
+          ...PBG_PAYLOAD.review.header.performanceGuarantee,
+          needsReview: true,
+        },
+      },
+      pricingShape: { ...PBG_PAYLOAD.review.pricingShape, needsReview: true },
+    },
+  };
+  const UNVERIFIED_DOCUMENT = {
+    ...REVIEW_DOCUMENT,
+    extractionPayload: UNVERIFIED_PAYLOAD,
+  };
 
   function renderReview(
     confirmLoa = vi.fn(),
@@ -421,21 +647,22 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     return confirmLoa;
   }
 
-  it('prefills the parsed PBG requirement and submits it with the confirmation', async () => {
+  it('shows a cleanly read PBG requirement as fact and submits it unchanged', async () => {
     const confirmLoa = renderReview();
 
-    const amount = await screen.findByLabelText('Required amount (₹)');
-    expect((amount as HTMLInputElement).value).toBe('152321.33');
-    expect(screen.getByLabelText<HTMLInputElement>('Submit within (days)').value).toBe(
-      '21',
+    expect((await screen.findByTestId('fact-pbg-amount')).textContent).toBe(
+      '₹152321.33',
     );
-    expect(
-      screen.getByLabelText<HTMLInputElement>('Extension window (days)').value,
-    ).toBe('60');
-    expect(
-      screen.getByLabelText<HTMLInputElement>('Penal interest (% p.a.)').value,
-    ).toBe('12');
+    expect(screen.getByTestId('fact-pbg-submission-days').textContent).toBe('21 days');
+    expect(screen.getByTestId('fact-pbg-extension-days').textContent).toBe('60 days');
+    expect(screen.getByTestId('fact-pbg-penal-interest').textContent).toBe('12% p.a.');
     expect(screen.getByText(/amounting to Rs\. 152321\.33/)).toBeTruthy();
+    // What the letter demands is not the reviewer's to drop: there is no
+    // control to turn the requirement off and none to retype its figures.
+    expect(
+      screen.queryByLabelText('The letter demands a Performance Bank Guarantee'),
+    ).toBeNull();
+    expect(screen.queryByLabelText('Required amount (₹)')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Work code (your reference)'), {
       target: { value: 'PL273-JHS' },
@@ -458,9 +685,11 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     });
   });
 
-  it('confirms without a PBG requirement when the reviewer unchecks it', async () => {
-    const confirmLoa = renderReview();
+  it('leaves a flagged guarantee clause entirely to the reviewer', async () => {
+    const confirmLoa = renderReview(vi.fn(), UNVERIFIED_DOCUMENT);
 
+    // The parser could not read the clause, so whether the letter demands
+    // one at all is the reviewer's answer.
     fireEvent.click(
       await screen.findByLabelText('The letter demands a Performance Bank Guarantee'),
     );
@@ -583,9 +812,6 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     expect(screen.getByLabelText('Rate for row 2 in schedule A')).toBeTruthy();
   });
 
-  // Submitting through the form rather than the button: the controls under
-  // test are `required`, and a click would be stopped by the browser's own
-  // validation before the view's checks ever run.
   // Click the real button. Dispatching submit on the <form> would prove
   // nothing: it is exactly the step native constraint validation used to
   // abort, which is why these checks were unreachable before the form
@@ -595,7 +821,7 @@ describe('ReviewLoa PBG requirement and row editing', () => {
   }
 
   it('binds each rejected field to its own message, reports them together, and focuses the first', async () => {
-    const confirmLoa = renderReview();
+    const confirmLoa = renderReview(vi.fn(), UNVERIFIED_DOCUMENT);
 
     const direction = await screen.findByLabelText('Direction');
     fireEvent.change(direction, { target: { value: '' } });
@@ -673,7 +899,8 @@ describe('ReviewLoa PBG requirement and row editing', () => {
     expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe('₹1000.00');
 
     // Mid-edit and malformed cells report nothing rather than a total that
-    // silently omits a row.
+    // silently omits a row. Row 2 is the one the letter's own arithmetic
+    // failed, so its rate is still the reviewer's to establish.
     fireEvent.change(screen.getByLabelText('Rate for row 2 in schedule A'), {
       target: { value: '' },
     });
@@ -685,11 +912,11 @@ describe('ReviewLoa PBG requirement and row editing', () => {
   it('keeps the advertised-value difference exact for six-decimal rates', async () => {
     renderReview();
 
-    fireEvent.change(await screen.findByLabelText('Rate for row 1 in schedule A'), {
-      target: { value: '450.000001' },
+    fireEvent.change(await screen.findByLabelText('Rate for row 2 in schedule A'), {
+      target: { value: '100.000002' },
     });
-    // 2 × 450.000001 plus 1 × 100 against an advertised value of 1000.00: the
-    // comparison survives at the row total's own nine-digit scale.
+    // 2 × 450 plus 1 × 100.000002 against an advertised value of 1000.00:
+    // the comparison survives at the row total's own nine-digit scale.
     expect(screen.getByTestId('schedule-subtotal-A').textContent).toBe('₹1000.000002');
     expect(screen.getByTestId('reconciliation-totals').textContent).toContain(
       'Entered rows total ₹1000.000002 across 2 rows — advertised value ₹1000.00 ' +
@@ -787,9 +1014,10 @@ describe('ReviewLoa PBG requirement and row editing', () => {
       'The database is temporarily unavailable. Nothing was saved. Try again. Reference: req-db-1.',
     );
     expect(workCode.value).toBe('PL281-BB');
-    expect(
-      screen.getByLabelText<HTMLInputElement>('Rate for row 1 in schedule A').value,
-    ).toBe('450');
+    // The extracted rate is still on screen, unchanged and still read-only.
+    expect(screen.getByLabelText('Rate for row 1 in schedule A').textContent).toBe(
+      '450',
+    );
     expect(
       screen.getByRole<HTMLButtonElement>('button', {
         name: 'Confirm and create Work',
