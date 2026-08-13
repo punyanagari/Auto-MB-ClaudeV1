@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import net from 'node:net';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -772,4 +772,148 @@ describe('readiness components', () => {
       }
     },
   );
+});
+
+describe('operational metrics wiring (finding 37)', () => {
+  // The unit suite proves the counters render; this proves they are
+  // actually reached by the real choke points — the rate limiter, the
+  // account lockout, the auth handler, and the membership floor — through
+  // a database-backed application and the real /metrics endpoint.
+  const runId = randomBytes(5).toString('hex');
+  const email = `metrics-wiring-${runId}@integration.test`;
+  const namespace = `finding37-${runId}`;
+  const metricsToken = `metrics-token-${runId}`;
+
+  let admin: Sql;
+  let app: FastifyInstance;
+
+  const scrape = async (): Promise<string> => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/metrics',
+      headers: { authorization: `Bearer ${metricsToken}` },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.body;
+  };
+
+  // Exact-prefix line lookup rather than a built regex: the series names
+  // contain regex metacharacters ({ } " ) and an absent series reads 0,
+  // which is what "this counter has not fired yet" means in the text
+  // format (unlabelled counters are only emitted once they have a value).
+  const counterValue = (body: string, series: string): number => {
+    for (const line of body.split('\n')) {
+      if (line.startsWith(`${series} `)) {
+        return Number(line.slice(series.length + 1).trim());
+      }
+    }
+    return 0;
+  };
+
+  beforeAll(async () => {
+    admin = createDatabasePool({
+      url: adminUrl,
+      max: 1,
+      applicationName: 'auto-mb-metrics-admin',
+    });
+    await admin`select 1 as ready`;
+    await runMigrations(admin, migrationsDirectory);
+    app = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      metricsToken,
+      throttleNamespace: namespace,
+      rateLimits: {
+        auth: { windowMs: 60_000, max: 4 },
+        accountLockout: { windowMs: 60_000, maxFailures: 2, lockMs: 60_000 },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    if (admin) {
+      await admin`
+        delete from identity_audit_events
+        where user_id in (
+          select "id" from auth_users where "email" = ${email}
+        )
+      `;
+      await admin`delete from auth_users where "email" = ${email}`;
+    }
+    await app?.close();
+    await admin?.end();
+  });
+
+  it('counts sign-in failures, the account lockout, and rate-limit rejections', async () => {
+    const before = await scrape();
+    const failuresBefore = counterValue(
+      before,
+      'auth_failures_total{surface="sign_in"}',
+    );
+    const lockoutsBefore = counterValue(before, 'account_lockouts_total');
+    const rejectionsBefore = counterValue(
+      before,
+      'rate_limit_rejections_total{scope="account_lockout"}',
+    );
+
+    const signIn = () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/sign-in/email',
+        payload: { email, password: 'wrong-password' },
+      });
+
+    // Two failures reach the lockout threshold; the third is refused by
+    // the lock itself.
+    expect((await signIn()).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await signIn()).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await signIn()).statusCode).toBe(429);
+
+    const after = await scrape();
+    expect(
+      counterValue(after, 'auth_failures_total{surface="sign_in"}'),
+    ).toBeGreaterThanOrEqual(failuresBefore + 2);
+    expect(counterValue(after, 'account_lockouts_total')).toBe(lockoutsBefore + 1);
+    expect(
+      counterValue(after, 'rate_limit_rejections_total{scope="account_lockout"}'),
+    ).toBeGreaterThan(rejectionsBefore);
+  });
+
+  it('counts a tenant-boundary denial and exposes database pool saturation', async () => {
+    const signUp = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: { email, password: `metrics-password-${runId}`, name: 'Metrics User' },
+    });
+    expect(signUp.statusCode, signUp.body).toBe(200);
+    const cookie = ([] as string[])
+      .concat(signUp.headers['set-cookie'] ?? [])
+      .map((entry) => entry.split(';')[0] ?? '')
+      .join('; ');
+
+    const denialsBefore = counterValue(
+      await scrape(),
+      'tenant_denials_total{reason="not_a_member"}',
+    );
+    // A syntactically valid organisation the user holds no membership in:
+    // the membership floor refuses with NOT_A_MEMBER before any tenant row
+    // is touched.
+    const denied = await app.inject({
+      method: 'GET',
+      url: '/api/organisations/current/members',
+      headers: { cookie, 'x-organisation-id': randomUUID() },
+    });
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json<{ code: string }>().code).toBe('NOT_A_MEMBER');
+
+    const after = await scrape();
+    expect(counterValue(after, 'tenant_denials_total{reason="not_a_member"}')).toBe(
+      denialsBefore + 1,
+    );
+    // Sampled live from pg_stat_activity against the configured budget.
+    expect(after).toMatch(/^db_pool_connections\{state="\w+"\} \d+$/m);
+    expect(after).toContain('db_pool_connections_max 10');
+  });
 });
