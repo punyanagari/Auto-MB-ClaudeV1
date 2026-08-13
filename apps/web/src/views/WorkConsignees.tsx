@@ -83,6 +83,9 @@ export function WorkConsignees({
     async (work: () => Promise<void>, done: string) => {
       setPending(true);
       setError(null);
+      // An action's failure is not the load's: it leaves the list on
+      // screen and is answered by fixing the input, not by retrying.
+      setLoadFailed(false);
       setNotice(null);
       try {
         await work();

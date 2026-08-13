@@ -35,7 +35,7 @@ function loadingApi(kase: StateCase): ApiClient {
   for (const method of kase.loads) {
     overrides[method] = vi.fn().mockReturnValue(new Promise(() => undefined));
   }
-  return stubApi({ ...kase.stub, ...overrides } as Partial<ApiClient>);
+  return stubApi({ ...kase.stub, ...overrides });
 }
 
 /** The stub with this case's load — and only this case's load — failing.
@@ -47,7 +47,7 @@ function failingApi(kase: StateCase): ApiClient {
   for (const method of kase.loads) {
     overrides[method] = vi.fn().mockRejectedValue(outage());
   }
-  return stubApi({ ...kase.stub, ...overrides } as Partial<ApiClient>);
+  return stubApi({ ...kase.stub, ...overrides });
 }
 
 function callsTo(api: ApiClient, method: keyof ApiClient): number {

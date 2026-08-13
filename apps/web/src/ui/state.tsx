@@ -1,3 +1,4 @@
+import { AlertCircle } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { Button } from './button.js';
 
@@ -133,22 +134,19 @@ interface ErrorStateProps {
   /** Names what is retried when a screen has more than one failure on it
    * ("Retry consignees"). Defaults to the plain verb. */
   readonly retryLabel?: string;
-  /** Anything else that resolves this particular failure — a link to the
-   * record the refusal named, for instance. Sits beside the retry. */
-  readonly action?: React.ReactNode;
   readonly className?: string;
 }
 
 /** A failure that persists until it is fixed, with the way to fix it.
  *
  * Announced as an alert, unlike the success notice beside it, which
- * expires: an error is state, a success is news. The lamp is the same
- * destructive ink the rest of the product refuses in. */
+ * expires: an error is state, a success is news. The tinted panel and the
+ * icon are the shape the product's warning and success panels already
+ * use, in the destructive ink it already refuses in. */
 export function ErrorState({
   children,
   onRetry,
   retryLabel = 'Try again',
-  action,
   className,
 }: ErrorStateProps) {
   return (
@@ -160,18 +158,12 @@ export function ErrorState({
       )}
     >
       <p className="m-0 flex items-start gap-2 text-[13px] font-medium text-destructive">
-        <span
-          aria-hidden="true"
-          className="mt-1.5 size-2 shrink-0 rounded-full bg-destructive"
-        />
+        <AlertCircle className="mt-px size-4 shrink-0" aria-hidden="true" />
         <span>{children}</span>
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          {retryLabel}
-        </Button>
-        {action}
-      </div>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        {retryLabel}
+      </Button>
     </div>
   );
 }

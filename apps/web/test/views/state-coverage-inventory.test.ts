@@ -61,20 +61,41 @@ function spansOf(text: string, head: string): readonly (readonly [number, string
  * that can reject while the operator is looking at the screen, which is
  * the only property this test cares about.
  */
+/** Every identifier called as a function anywhere in the span. */
+function calledNames(span: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  const pattern = /([A-Za-z_$][\w$]*)\s*\(/g;
+  let match = pattern.exec(span);
+  while (match !== null) {
+    names.add(match[1] as string);
+    match = pattern.exec(span);
+  }
+  return names;
+}
+
+/** The name a `useCallback(` at this offset was assigned to, if any. Read
+ * backwards from the call rather than forwards from a declaration, so a
+ * type annotation or a line break between the two changes nothing. */
+function assignedName(source: string, at: number): string | null {
+  const head = source.slice(Math.max(0, at - 160), at);
+  const start = head.lastIndexOf('const ');
+  if (start === -1) return null;
+  const declaration = /^const\s+([A-Za-z_$][\w$]*)/.exec(head.slice(start));
+  return declaration === null ? null : (declaration[1] as string);
+}
+
 function hasLoadPath(source: string): boolean {
   const loaders = new Set<string>();
   for (const [at, span] of spansOf(source, 'useCallback')) {
     if (!/\bapi\b|\.then\(|\bawait\b/.test(span)) continue;
-    const declaration = /const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*$/.exec(
-      source.slice(Math.max(0, at - 160), at),
-    );
-    if (declaration !== null) loaders.add(declaration[1] as string);
+    const name = assignedName(source, at);
+    if (name !== null) loaders.add(name);
   }
-  return spansOf(source, 'useEffect').some(
-    ([, span]) =>
-      /\bapi\b/.test(span) ||
-      [...loaders].some((name) => new RegExp(`\\b${name}\\s*\\(`).test(span)),
-  );
+  return spansOf(source, 'useEffect').some(([, span]) => {
+    if (/\bapi\b/.test(span)) return true;
+    const called = calledNames(span);
+    return [...loaders].some((name) => called.has(name));
+  });
 }
 
 function viewsWithLoadPath(): readonly string[] {

@@ -23,14 +23,7 @@ import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
-import {
-  challanWork,
-  ORG_ID,
-  DOC_ID,
-  REVIEW_DOCUMENT,
-  stubApi,
-  WORK_ID,
-} from './helpers.js';
+import { challanWork, ORG_ID, DOC_ID, REVIEW_DOCUMENT, WORK_ID } from './helpers.js';
 
 /** How the server fails when it is simply unreachable — the case every
  * one of these views must survive. */
@@ -491,7 +484,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canManageStatutory
         pending={false}
-        act={async () => undefined}
+        act={() => Promise.resolve()}
       />
     ),
     retry: /Retry tax invoices/,
@@ -512,7 +505,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canManageStatutory
         pending={false}
-        act={async () => undefined}
+        act={() => Promise.resolve()}
       />
     ),
     retry: /Retry$/,
