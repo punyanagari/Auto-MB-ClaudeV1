@@ -14,6 +14,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface QuotationsProps {
@@ -358,6 +359,8 @@ export function Quotations({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -391,7 +394,11 @@ export function Quotations({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const act = useCallback(async (run: () => Promise<void>, done: string) => {
     setPending(true);
@@ -487,11 +494,13 @@ export function Quotations({
       </header>
 
       <section aria-labelledby="quotations-title" className="flex flex-col gap-4">
-        {loadError !== null && <FormError>{loadError}</FormError>}
+        {loadError !== null && (
+          <ErrorState onRetry={retry} retryLabel="Retry quotations">
+            {loadError}
+          </ErrorState>
+        )}
         {loadError === null && quotations === null && (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading quotations…
-          </p>
+          <LoadingState label="the quotations" rows={5} columns={4} />
         )}
         {actionError !== null && <FormError>{actionError}</FormError>}
         {notice !== null && (
@@ -587,9 +596,21 @@ export function Quotations({
               </tbody>
             </DataTable>
           ) : quotations.length > 0 ? (
-            <p className="text-muted-foreground">No quotations with this status yet.</p>
+            <EmptyState
+              action={{
+                label: 'Show all quotations',
+                onClick: () => {
+                  setFilter('all');
+                },
+              }}
+            >
+              No quotations with this status yet.
+            </EmptyState>
           ) : (
-            <p className="text-muted-foreground">No quotations yet.</p>
+            <EmptyState>
+              No quotations yet. A budgetary quotation is raised below and numbered only
+              when it is issued.
+            </EmptyState>
           ))}
 
         {/* The register's primary action, and distinct from the submit

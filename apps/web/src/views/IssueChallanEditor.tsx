@@ -17,6 +17,7 @@ import {
   FormError,
   FieldError,
 } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 
 interface IssueChallanEditorProps {
   readonly api: ApiClient;
@@ -107,6 +108,8 @@ export function IssueChallanEditor({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
   const manualSequence = useRef(0);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const discardRef = useRef<HTMLButtonElement>(null);
@@ -169,7 +172,11 @@ export function IssueChallanEditor({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId, challanId]);
+  }, [api, organisationId, workId, challanId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   // The confirmation takes over the decision the Cancel button was about to
   // make, so focus moves into it rather than leaving a keyboard user parked
@@ -388,7 +395,9 @@ export function IssueChallanEditor({
         <h1 id="issue-challan-editor-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry items">
+          {loadError}
+        </ErrorState>
       </Card>
     );
   }
@@ -399,9 +408,7 @@ export function IssueChallanEditor({
         <h1 id="issue-challan-editor-title" tabIndex={-1}>
           Issue Challan
         </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading items…
-        </p>
+        <LoadingState label="the Work items" rows={5} columns={3} />
       </Card>
     );
   }

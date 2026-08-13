@@ -38,6 +38,7 @@ import {
   type AccountLockoutRule,
   type RateLimitRule,
 } from './rate-limit.js';
+import { remedyFor } from './remedies.js';
 import { registerAmendmentRoutes } from './routes/amendments.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerExportRoutes } from './routes/export.js';
@@ -375,38 +376,44 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       'expose' in error &&
       error.expose === true &&
       declaredStatusCode !== null;
-    void reply.status(statusCode).send(
-      databaseUnavailable
+    const body = databaseUnavailable
+      ? {
+          code: 'DATABASE_UNAVAILABLE',
+          message:
+            'The database is temporarily unavailable. Nothing was saved. Try again.',
+          requestId: request.id,
+        }
+      : statusCode >= 500 && !explicitlyPublic
         ? {
-            code: 'DATABASE_UNAVAILABLE',
-            message:
-              'The database is temporarily unavailable. Nothing was saved. Try again.',
+            code: 'INTERNAL_ERROR',
+            message: 'The request could not be completed.',
             requestId: request.id,
           }
-        : statusCode >= 500 && !explicitlyPublic
-          ? {
-              code: 'INTERNAL_ERROR',
-              message: 'The request could not be completed.',
-              requestId: request.id,
-            }
-          : {
-              code:
-                error instanceof Error &&
-                'code' in error &&
-                typeof error.code === 'string'
-                  ? error.code
-                  : 'REQUEST_ERROR',
-              message: error instanceof Error ? error.message : 'Request failed.',
-              requestId: request.id,
-              // Structured conflict payloads (e.g. the one-draft 409s'
-              // { existingRecordId }) ride along verbatim.
-              ...(error instanceof Error &&
-              'details' in error &&
-              error.details !== undefined
-                ? { details: error.details }
-                : {}),
-            },
-    );
+        : {
+            code:
+              error instanceof Error &&
+              'code' in error &&
+              typeof error.code === 'string'
+                ? error.code
+                : 'REQUEST_ERROR',
+            message: error instanceof Error ? error.message : 'Request failed.',
+            requestId: request.id,
+            // Structured conflict payloads (e.g. the one-draft 409s'
+            // { existingRecordId }) ride along verbatim.
+            ...(error instanceof Error &&
+            'details' in error &&
+            error.details !== undefined
+              ? { details: error.details }
+              : {}),
+          };
+    // The message states the fact; the remedy states the action. Attached
+    // here rather than at 633 call sites because the action belongs to the
+    // code — see apps/server/src/remedies.ts. A code with no reviewed
+    // remedy sends no field at all, never filler.
+    const remedy = remedyFor(body.code);
+    void reply
+      .status(statusCode)
+      .send(remedy === undefined ? body : { ...body, remedy });
   });
 
   if (options.trustedOrigins !== undefined) {
@@ -490,10 +497,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   // they carry per-address sliding-window limits. The identical envelope
   // is shared with the account-scoped lockout below so a locked account
   // is indistinguishable from an exhausted address window.
+  // This envelope is written straight to the reply rather than thrown, so
+  // it reads its remedy from the same catalog by hand.
+  const rateLimitedRemedy = remedyFor('RATE_LIMITED');
   const rateLimitedBody = (requestId: string) => ({
     code: 'RATE_LIMITED',
     message: 'Too many attempts; wait a few minutes and try again.',
     requestId,
+    ...(rateLimitedRemedy === undefined ? {} : { remedy: rateLimitedRemedy }),
   });
   // Database-configured instances share the throttle state through
   // PostgreSQL (finding 38, migration 0054), so a second replica divides

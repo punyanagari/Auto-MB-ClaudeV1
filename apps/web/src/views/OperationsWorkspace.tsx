@@ -1252,6 +1252,12 @@ export function OperationsWorkspace({
                       : { name: 'works' },
                   );
                 }}
+                onOpenDocument={(documentId) => {
+                  navigate({ name: 'review', documentId });
+                }}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
                 onCancel={() => {
                   navigate({ name: 'works' });
                 }}

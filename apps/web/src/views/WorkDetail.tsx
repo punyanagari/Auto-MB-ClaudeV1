@@ -23,6 +23,7 @@ import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { Timeline } from './Timeline.js';
 import { CompletionExtensions } from './CompletionExtensions.js';
 import { WorkConsignees } from './WorkConsignees.js';
@@ -121,28 +122,28 @@ function RelatedSectionGate({
   labels,
   pending,
   failures,
+  onRetry,
   children,
 }: {
   readonly labels: readonly RelatedLabel[];
   readonly pending: ReadonlySet<RelatedLabel>;
   readonly failures: ReadonlySet<RelatedLabel>;
+  /** Re-runs every supporting register that failed — the same handler the
+   * card-level banner uses, so a tab's own failure is fixable from the tab
+   * rather than only from the top of the page. */
+  readonly onRetry: () => void;
   readonly children: ReactNode;
 }) {
   const failed = labels.filter((label) => failures.has(label));
   if (failed.length > 0) {
     return (
-      <FormError>
-        This section is unavailable because {failed.join(', ')} could not be loaded. Try
-        again later.
-      </FormError>
+      <ErrorState onRetry={onRetry} retryLabel="Retry this section">
+        This section is unavailable because {failed.join(', ')} could not be loaded.
+      </ErrorState>
     );
   }
   if (labels.some((label) => pending.has(label))) {
-    return (
-      <p className="text-muted-foreground" role="status">
-        Loading this Work section…
-      </p>
-    );
+    return <LoadingState label="this Work section" rows={3} columns={3} />;
   }
   return children;
 }
@@ -322,6 +323,8 @@ export function WorkDetail({
     readonly CorrectionNotice[]
   >([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Bumped by the failure state's retry, to re-run the Work load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
   const [relatedPending, setRelatedPending] = useState<ReadonlySet<RelatedLabel>>(
     new Set(),
   );
@@ -471,7 +474,11 @@ export function WorkDetail({
         relatedGenerationRef.current += 1;
       }
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
+
+  function retryWork(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   function retryFailedSections(): void {
     const labels = new Set(relatedFailures);
@@ -634,7 +641,9 @@ export function WorkDetail({
         <h1 id="work-title" tabIndex={-1}>
           Work
         </h1>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retryWork} retryLabel="Retry Work">
+          {loadError}
+        </ErrorState>
       </Card>
     );
   }
@@ -645,9 +654,7 @@ export function WorkDetail({
         <h1 id="work-title" tabIndex={-1}>
           Work
         </h1>
-        <p className="text-muted-foreground" role="status">
-          Loading Work…
-        </p>
+        <LoadingState label="the Work" rows={5} columns={3} />
       </Card>
     );
   }
@@ -766,15 +773,13 @@ export function WorkDetail({
         {work.workCode} — {work.title}
       </h1>
       {failedSections.length > 0 && (
-        <>
-          <FormError>
-            Some Work sections could not be loaded: {failedSections.join(', ')}. The
-            available Work information remains open.
-          </FormError>
-          <Button size="sm" variant="outline" onClick={retryFailedSections}>
-            Retry supporting sections
-          </Button>
-        </>
+        <ErrorState
+          onRetry={retryFailedSections}
+          retryLabel="Retry supporting sections"
+        >
+          Some Work sections could not be loaded: {failedSections.join(', ')}. The
+          available Work information remains open.
+        </ErrorState>
       )}
       <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
         <div>
@@ -1124,6 +1129,7 @@ export function WorkDetail({
           labels={[RELATED.purchaseOrders]}
           pending={relatedPending}
           failures={relatedFailures}
+          onRetry={retryFailedSections}
         >
           <WorkPurchaseOrders
             api={api}
@@ -1147,6 +1153,7 @@ export function WorkDetail({
           labels={[RELATED.issueChallans]}
           pending={relatedPending}
           failures={relatedFailures}
+          onRetry={retryFailedSections}
         >
           <WorkIssueChallans
             workId={workId}
@@ -1196,6 +1203,7 @@ export function WorkDetail({
             labels={[RELATED.bills]}
             pending={relatedPending}
             failures={relatedFailures}
+            onRetry={retryFailedSections}
           >
             <WorkBills
               api={api}
@@ -1230,6 +1238,7 @@ export function WorkDetail({
           labels={[RELATED.instruments]}
           pending={relatedPending}
           failures={relatedFailures}
+          onRetry={retryFailedSections}
         >
           <WorkInstruments
             api={api}
@@ -1252,6 +1261,7 @@ export function WorkDetail({
           labels={[RELATED.amendments]}
           pending={relatedPending}
           failures={relatedFailures}
+          onRetry={retryFailedSections}
         >
           <WorkAmendments
             api={api}

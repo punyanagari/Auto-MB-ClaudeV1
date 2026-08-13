@@ -7,6 +7,7 @@ import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 
 interface MembersProps {
   readonly api: ApiClient;
@@ -75,11 +76,7 @@ function AssignmentsEditor({
   }
 
   if (assigned === null) {
-    return (
-      <p className="text-muted-foreground" role="status">
-        Loading assignments…
-      </p>
-    );
+    return <LoadingState label="the Work assignments" rows={2} />;
   }
   if (works.length === 0) {
     return <p className="text-muted-foreground">No Works exist yet.</p>;
@@ -112,6 +109,8 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,7 +133,11 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   const isOwner =
     members?.some(
@@ -196,7 +199,9 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
         <h1 id="members-title" tabIndex={-1}>
           Members
         </h1>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry members">
+          {loadError}
+        </ErrorState>
       </Card>
     );
   }
@@ -208,9 +213,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       </h1>
 
       {members === null ? (
-        <p className="text-muted-foreground" role="status">
-          Loading members…
-        </p>
+        <LoadingState label="the members" rows={4} columns={4} />
       ) : (
         <DataTable>
           <caption className="sr-only">

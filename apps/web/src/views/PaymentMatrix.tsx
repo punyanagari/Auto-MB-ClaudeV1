@@ -12,6 +12,7 @@ import { RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix editor and item
@@ -171,6 +172,8 @@ export function PaymentMatrix({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the loads below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,7 +203,11 @@ export function PaymentMatrix({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -222,7 +229,7 @@ export function PaymentMatrix({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
 
   const tenderWarnings = useMemo(
     () => (tenderContext === null ? [] : matrixEvidenceWarnings(tenderContext, drafts)),
@@ -262,7 +269,9 @@ export function PaymentMatrix({
     return (
       <>
         <h2 id="payment-matrix">Payment matrix</h2>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry payment matrix">
+          {loadError}
+        </ErrorState>
       </>
     );
   }
@@ -270,9 +279,7 @@ export function PaymentMatrix({
     return (
       <>
         <h2 id="payment-matrix">Payment matrix</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading payment matrix…
-        </p>
+        <LoadingState label="the payment matrix" rows={5} columns={4} />
       </>
     );
   }
@@ -288,16 +295,12 @@ export function PaymentMatrix({
         later matrix edits never change a raised MB.
       </p>
       {tenderContextError !== null && (
-        <div
-          className="my-4 rounded-xl border border-warning/35 bg-warning/[0.06] p-4"
-          role="note"
-        >
-          <p className="flex items-center gap-2 text-sm font-semibold text-warning-foreground">
-            <AlertTriangle className="size-4" aria-hidden="true" />
-            Tender comparison unavailable
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">{tenderContextError}</p>
-        </div>
+        // Degraded rather than blocked: the percentages below are editable
+        // and saveable without the tender to compare them against. It is
+        // still a load that failed, so it still says how to re-run it.
+        <ErrorState onRetry={retry} retryLabel="Retry tender comparison">
+          Tender comparison unavailable. {tenderContextError}
+        </ErrorState>
       )}
       {tenderContext !== null && tenderContext.documents.length > 0 && (
         <div

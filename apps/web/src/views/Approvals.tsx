@@ -6,6 +6,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { DataTable } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 interface ApprovalsProps {
   readonly api: ApiClient;
@@ -318,6 +319,8 @@ export function Approvals({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   const reload = useCallback(async () => {
     const loaded = await api.listApprovals(organisationId, 'pending');
@@ -344,7 +347,11 @@ export function Approvals({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId]);
+  }, [api, organisationId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   /** Opens the cited order in a new tab. The endpoint needs the
    * organisation header, so the bytes are fetched and handed to the
@@ -398,17 +405,22 @@ export function Approvals({
         immediately; original awarded values and issued snapshots are never overwritten.
       </p>
 
-      {loadError !== null && <FormError>{loadError}</FormError>}
+      {loadError !== null && (
+        <ErrorState onRetry={retry} retryLabel="Retry approvals">
+          {loadError}
+        </ErrorState>
+      )}
       {approvals === null && loadError === null && (
-        <p className="text-muted-foreground" role="status">
-          Loading approvals…
-        </p>
+        <LoadingState label="the approvals queue" rows={3} />
       )}
       {notice !== null && <FormNotice>{notice}</FormNotice>}
       {actionError !== null && <FormError>{actionError}</FormError>}
 
       {approvals !== null && approvals.length === 0 && (
-        <p className="text-muted-foreground">Nothing is waiting for a decision.</p>
+        <EmptyState>
+          Nothing is waiting for a decision. Amendment and correction requests arrive
+          here as colleagues raise them.
+        </EmptyState>
       )}
       {approvals !== null &&
         approvals.map((approval) => (

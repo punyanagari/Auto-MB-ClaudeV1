@@ -14,6 +14,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface InstallationsProps {
@@ -63,6 +64,8 @@ export function Installations({
   const [pending, setPending] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [locationChoice, setLocationChoice] = useState<string>(NEW_LOCATION);
+  /** Bumped by the failure state's retry, to re-run the load below. */
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +88,11 @@ export function Installations({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId]);
+  }, [api, organisationId, workId, loadVersion]);
+
+  function retry(): void {
+    setLoadVersion((current) => current + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -142,7 +149,9 @@ export function Installations({
     return (
       <>
         <h2>Installations</h2>
-        <FormError>{loadError}</FormError>
+        <ErrorState onRetry={retry} retryLabel="Retry installation records">
+          {loadError}
+        </ErrorState>
       </>
     );
   }
@@ -151,9 +160,7 @@ export function Installations({
     return (
       <>
         <h2>Installations</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading installation records…
-        </p>
+        <LoadingState label="the installation records" rows={4} columns={3} />
       </>
     );
   }
@@ -186,26 +193,18 @@ export function Installations({
         </p>
       )}
       {canRecordEvidence && locationsState === 'loading' && (
-        <p className="text-muted-foreground" role="status">
-          Loading installation locations…
-        </p>
+        <LoadingState label="the installation locations" rows={1} />
       )}
       {canRecordEvidence && locationsState === 'unavailable' && (
-        <div className="space-y-3">
-          <FormError>
-            The location master could not be loaded. Existing installation records
-            remain available, but new recording is paused.
-          </FormError>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setLocationsLoadVersion((version) => version + 1);
-            }}
-          >
-            Retry locations
-          </Button>
-        </div>
+        <ErrorState
+          retryLabel="Retry locations"
+          onRetry={() => {
+            setLocationsLoadVersion((version) => version + 1);
+          }}
+        >
+          The location master could not be loaded. Existing installation records remain
+          available, but new recording is paused.
+        </ErrorState>
       )}
 
       <DataTable>

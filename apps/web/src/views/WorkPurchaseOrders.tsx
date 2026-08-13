@@ -13,6 +13,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
+import { LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 interface WorkPurchaseOrdersProps {
@@ -129,9 +130,9 @@ export function WorkPurchaseOrders({
     return (
       <>
         <h2>Purchase Orders</h2>
-        <p className="text-muted-foreground" role="status">
-          Loading purchase orders…
-        </p>
+        {/* The list is loaded by WorkDetail, which owns its failure state
+            and its retry; this branch only covers the wait. */}
+        <LoadingState label="the purchase orders" rows={3} columns={4} />
       </>
     );
   }

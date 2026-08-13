@@ -3,6 +3,7 @@ import { formatDate, formatInr } from '../../format.js';
 import { Button } from '../../ui/button.js';
 import { StatusChip } from '../../ui/chip.js';
 import { DataTable, numericCell } from '../../ui/table.js';
+import { EmptyState } from '../../ui/state.js';
 
 interface InvoiceListProps {
   readonly invoices: readonly TaxInvoice[];
@@ -15,9 +16,10 @@ interface InvoiceListProps {
 export function InvoiceList({ invoices, pending, onOpen }: InvoiceListProps) {
   if (invoices.length === 0) {
     return (
-      <p className="text-muted-foreground">
-        No tax invoice has been raised for this Work yet.
-      </p>
+      <EmptyState>
+        No tax invoice has been raised for this Work yet. An invoice is raised from a
+        finalized Measurement Book below.
+      </EmptyState>
     );
   }
   return (

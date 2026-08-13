@@ -4,6 +4,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { ErrorState, LoadingState } from '../ui/state.js';
 import { TwoFactorEnrolment } from './TwoFactorEnrolment.js';
 
 interface AccountSecurityProps {
@@ -121,11 +122,16 @@ export function AccountSecurity({ api }: AccountSecurityProps) {
       <h2 className="mt-0">Account security</h2>
       {state === null ? (
         loadError === null ? (
-          <p className="text-muted-foreground" role="status">
-            Loading…
-          </p>
+          <LoadingState label="the account security status" rows={2} />
         ) : (
-          <FormError>{loadError}</FormError>
+          <ErrorState
+            retryLabel="Retry security status"
+            onRetry={() => {
+              void reload();
+            }}
+          >
+            {loadError}
+          </ErrorState>
         )
       ) : (
         <>

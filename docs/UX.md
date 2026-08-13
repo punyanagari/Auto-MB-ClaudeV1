@@ -178,6 +178,33 @@ Every register and detail page provides distinct patterns for:
 - blocked action with corrective workflow;
 - unsaved draft with navigation warning where data loss is possible.
 
+Three of these are shared components rather than a convention each screen
+re-implements: `ui/state.tsx` carries the wait (`LoadingState`, skeleton
+blocks announced as busy), the legitimate empty state (`EmptyState`, one
+plain operational sentence and at most one action), and the service
+failure (`ErrorState`, a persistent alert). `ErrorState` takes its retry
+handler as a **required** prop — a failure with no way back is a dead end,
+and the type checker is what refuses one. A screen with more than one
+independent read carries one failure state per read, each naming what it
+retries, so a failed picker stays distinguishable from a failed register.
+
+The permission-limited state is deliberately NOT an `ErrorState`: a 403
+does not become a success on the second attempt, so it reads as an inline
+refusal rather than offering an action that would refuse identically.
+
+`apps/web/test/views/state-coverage*` holds these to the screen. It derives
+the views with a mount load path from the source and fails if one is
+neither covered by a case that renders all three states nor exempt with a
+stated reason.
+
+The server side of a failure is the shared error envelope
+(`packages/contracts/src/errors.ts`):
+`message` states the fact that was refused, and the optional `remedy`
+states the action that clears it. A remedy belongs to the error code
+rather than to the call site, so the reviewed text lives in one catalog
+(`apps/server/src/remedies.ts`) instead of drifting across the routes that
+throw it.
+
 ## Screen inventory
 
 The approved design pack covers:
@@ -224,7 +251,9 @@ Administration navigation, Work workspace, LOA and contract-source review,
 delivery/issue documents, installation, Measurement Book, billing, tax invoice,
 and e-way-bill surfaces are implemented. Shared loading, empty, retry,
 read-only, permission, and blocked-action states cover the primary paths, with
-component and Playwright/axe regression coverage.
+component and Playwright/axe regression coverage. Every view that reads on
+mount renders the three shared states from `ui/state.tsx`, enforced per view
+by `apps/web/test/views/state-coverage*`.
 
 Workspace navigation is serialized into `location.hash` (hand-rolled, no
 router library): a refresh restores the exact view including the Work

@@ -17,7 +17,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
-import { FormError } from '../ui/form.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 interface SearchProps {
   readonly api: ApiClient;
@@ -208,29 +208,19 @@ export function Search({
       )}
 
       {error !== null && (
-        <>
-          <FormError>{error}</FormError>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setAttempt((current) => current + 1);
-            }}
-          >
-            Try again
-          </Button>
-        </>
+        <ErrorState
+          onRetry={() => {
+            setAttempt((current) => current + 1);
+          }}
+        >
+          {error}
+        </ErrorState>
       )}
 
-      {pending && (
-        <p className="text-muted-foreground" role="status">
-          Searching…
-        </p>
-      )}
+      {pending && <LoadingState label="the search results" rows={3} columns={3} />}
 
       {!pending && error === null && result !== null && !hasResults && (
-        <p className="text-muted-foreground" role="status">
-          Nothing in the registers matches “{result.query}”.
-        </p>
+        <EmptyState>Nothing in the registers matches “{result.query}”.</EmptyState>
       )}
 
       {!pending && error === null && hasResults && (

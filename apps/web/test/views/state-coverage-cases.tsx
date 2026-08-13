@@ -1,0 +1,546 @@
+/** The per-view state inventory that `state-coverage.test.tsx` and
+ * `state-coverage-inventory.test.ts` both read. Not a suite of its own —
+ * the runner's `include` is `*.{test,spec}.{ts,tsx}`. */
+import type { ReactElement } from 'react';
+import { vi } from 'vitest';
+import { RequestFailedError, type ApiClient } from '../../src/api.js';
+import { AccountSecurity } from '../../src/views/AccountSecurity.js';
+import { Approvals } from '../../src/views/Approvals.js';
+import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
+import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
+import { Installations } from '../../src/views/Installations.js';
+import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
+import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
+import { Members } from '../../src/views/Members.js';
+import { PacCertificates } from '../../src/views/PacCertificates.js';
+import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
+import { Quotations } from '../../src/views/Quotations.js';
+import { ReviewLoa } from '../../src/views/ReviewLoa.js';
+import { Search } from '../../src/views/Search.js';
+import { Settings } from '../../src/views/Settings.js';
+import { Timeline } from '../../src/views/Timeline.js';
+import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
+import { WorkConsignees } from '../../src/views/WorkConsignees.js';
+import { WorkDetail } from '../../src/views/WorkDetail.js';
+import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
+import { challanWork, ORG_ID, DOC_ID, REVIEW_DOCUMENT, WORK_ID } from './helpers.js';
+
+/** How the server fails when it is simply unreachable — the case every
+ * one of these views must survive. */
+export function outage(): RequestFailedError {
+  return new RequestFailedError(
+    503,
+    'DATABASE_UNAVAILABLE',
+    'The database is temporarily unavailable. Nothing was saved. Try again.',
+  );
+}
+
+export interface StateCase {
+  /** The file in `src/views` this case covers, so the inventory test can
+   * match cases against the views that have a load path. */
+  readonly view: string;
+  /** What is loading, for the test name. A view with two independent
+   * loads (a register and its picker) gets one case each. */
+  readonly name: string;
+  /**
+   * The `ApiClient` methods that make up THIS load. Only these are made
+   * to hang or to fail: a view whose picker fails while its register
+   * loads is a different state from one where everything is down, and
+   * the point of the case is to pin the right one.
+   */
+  readonly loads: readonly (keyof ApiClient)[];
+  /** Anything else the view needs before it will render at all. */
+  readonly stub?: Partial<ApiClient>;
+  readonly render: (api: ApiClient) => ReactElement;
+  /** The accessible name of the control that re-runs the failed load. */
+  readonly retry: RegExp;
+  /**
+   * The legitimate empty state, or an explicit statement that the view
+   * has none. `docs/UX.md` asks for "loaded with records" and
+   * "legitimate empty state" as separate patterns; a detail screen that
+   * always shows one record has no second pattern to show, and saying so
+   * here is the decision being recorded rather than skipped.
+   */
+  readonly empty:
+    | { readonly text: RegExp; readonly stub?: Partial<ApiClient> }
+    | { readonly notApplicable: string };
+}
+
+const noop = (): void => undefined;
+
+export const STATE_CASES: readonly StateCase[] = [
+  {
+    view: 'AccountSecurity.tsx',
+    name: 'the account security status',
+    loads: ['me'],
+    render: (api) => <AccountSecurity api={api} />,
+    retry: /Retry security status/,
+    empty: { notApplicable: 'An account always has a two-factor status.' },
+  },
+  {
+    view: 'Approvals.tsx',
+    name: 'the approvals queue',
+    loads: ['listApprovals'],
+    render: (api) => (
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-1"
+        canApprove
+        onChanged={noop}
+      />
+    ),
+    retry: /Retry approvals/,
+    empty: { text: /Nothing is waiting for a decision/ },
+  },
+  {
+    view: 'CompletionExtensions.tsx',
+    name: 'the completion details',
+    loads: ['getWorkCompletion'],
+    render: (api) => (
+      <CompletionExtensions
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canIssue
+        canApprove
+      />
+    ),
+    retry: /Retry completion details/,
+    empty: {
+      notApplicable:
+        'A Work always has a completion position, even when no extension has been asked for.',
+    },
+  },
+  {
+    view: 'DeliveryChallans.tsx',
+    name: 'the delivery challan register',
+    loads: ['listDeliveryChallans'],
+    render: (api) => (
+      <DeliveryChallans
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        canIssue
+        canCancel
+        openChallanId={null}
+        onOpenChallan={noop}
+        onOpenWorkChallan={noop}
+      />
+    ),
+    retry: /Retry delivery challans/,
+    empty: { text: /No delivery challans yet/ },
+  },
+  {
+    view: 'Installations.tsx',
+    name: 'the installation records',
+    loads: ['listWorkInstallations'],
+    render: (api) => (
+      <Installations
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canRecordEvidence
+        workItems={[]}
+        serials={[]}
+        onSerialsChanged={noop}
+      />
+    ),
+    retry: /Retry installation records/,
+    empty: {
+      notApplicable:
+        'The register is one row per Work item, so it is empty only when the Work has no items — a state the Work screen itself answers for.',
+    },
+  },
+  {
+    view: 'Installations.tsx',
+    name: 'the installation location master',
+    loads: ['listLocationMasters'],
+    render: (api) => (
+      <Installations
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canRecordEvidence
+        workItems={[]}
+        serials={[]}
+        onSerialsChanged={noop}
+      />
+    ),
+    retry: /Retry locations/,
+    empty: {
+      notApplicable:
+        'An unlisted location master is offered as a free-text location, not as an empty picker.',
+    },
+  },
+  {
+    view: 'IssueChallanDetail.tsx',
+    name: 'the Issue Challan',
+    loads: ['getIssueChallan'],
+    render: (api) => (
+      <IssueChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId="ic-1"
+        canModify
+        canIssue
+        canCancel
+        onEdit={noop}
+        onDeleted={noop}
+        onBack={noop}
+      />
+    ),
+    retry: /Retry Issue Challan/,
+    empty: { notApplicable: 'A detail screen shows one record or none at all.' },
+  },
+  {
+    view: 'IssueChallanEditor.tsx',
+    name: 'the Work items to issue against',
+    loads: ['workBalance'],
+    render: (api) => (
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={noop}
+        onCancel={noop}
+      />
+    ),
+    retry: /Retry items/,
+    empty: { notApplicable: 'An editor with no items is a Work with no schedule.' },
+  },
+  {
+    view: 'Members.tsx',
+    name: 'the member list',
+    loads: ['listMembers'],
+    render: (api) => (
+      <Members api={api} organisationId={ORG_ID} currentUserId="user-1" />
+    ),
+    retry: /Retry members/,
+    empty: {
+      notApplicable:
+        'An organisation always has at least the owner who created it; migration 0064 keeps it that way.',
+    },
+  },
+  {
+    view: 'PacCertificates.tsx',
+    name: 'the PAC certificates',
+    loads: ['listWorkPacCertificates'],
+    render: (api) => (
+      <PacCertificates
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        workItems={[]}
+      />
+    ),
+    retry: /Retry PAC certificates/,
+    empty: {
+      notApplicable:
+        'The screen leads with the per-item acceptance position, which exists before any certificate does.',
+    },
+  },
+  {
+    view: 'PaymentMatrix.tsx',
+    name: 'the payment matrix',
+    loads: ['getPaymentMatrix'],
+    render: (api) => (
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        canModify
+        onItemCategoryChanged={noop}
+      />
+    ),
+    retry: /Retry payment matrix/,
+    empty: {
+      notApplicable:
+        'The matrix is a fixed row per payment category; an unconfigured category is a blank row, not an empty register.',
+    },
+  },
+  {
+    view: 'PaymentMatrix.tsx',
+    name: 'the tender evidence to compare the matrix against',
+    loads: ['getWorkContractSourceContext'],
+    render: (api) => (
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        canModify
+        onItemCategoryChanged={noop}
+      />
+    ),
+    retry: /Retry tender comparison/,
+    empty: {
+      notApplicable:
+        'A Work with no tender documents shows no comparison panel rather than an empty one.',
+    },
+  },
+  {
+    view: 'Quotations.tsx',
+    name: 'the quotations register',
+    loads: ['listBudgetaryQuotations'],
+    render: (api) => (
+      <Quotations api={api} organisationId={ORG_ID} canModify canIssue canCancel />
+    ),
+    retry: /Retry quotations/,
+    empty: { text: /No quotations yet/ },
+  },
+  {
+    view: 'ReviewLoa.tsx',
+    name: 'the LOA document under review',
+    loads: ['getLoaDocument'],
+    render: (api) => (
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={noop}
+        onBack={noop}
+        onDiscarded={noop}
+      />
+    ),
+    retry: /Retry document/,
+    empty: { notApplicable: 'A review screen reviews exactly one letter.' },
+  },
+  {
+    view: 'ReviewLoa.tsx',
+    name: 'the tender evidence matched to the letter',
+    loads: ['getLoaContractSourceContext'],
+    stub: { getLoaDocument: vi.fn().mockResolvedValue(REVIEW_DOCUMENT) },
+    render: (api) => (
+      <ReviewLoa
+        api={api}
+        organisationId={ORG_ID}
+        documentId={DOC_ID}
+        canModify
+        onConfirmed={noop}
+        onBack={noop}
+        onDiscarded={noop}
+      />
+    ),
+    retry: /Retry tender evidence/,
+    empty: {
+      notApplicable:
+        'A letter uploaded without supporting documents shows no evidence panel rather than an empty one.',
+    },
+  },
+  {
+    view: 'Search.tsx',
+    name: 'the search results',
+    loads: ['search'],
+    render: (api) => (
+      <Search
+        api={api}
+        organisationId={ORG_ID}
+        query="switchboard"
+        onQueryChange={noop}
+        onOpenWork={noop}
+        onOpenChallan={noop}
+        onOpenIssueChallan={noop}
+        onOpenSerials={noop}
+        onOpenQuotations={noop}
+      />
+    ),
+    retry: /Try again/,
+    empty: { text: /Nothing in the registers matches/ },
+  },
+  {
+    view: 'Settings.tsx',
+    name: 'the organisation profile',
+    loads: ['organisationProfile'],
+    render: (api) => <Settings api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry settings/,
+    empty: { notApplicable: 'An organisation always has a profile, however sparse.' },
+  },
+  {
+    view: 'Settings.tsx',
+    name: 'the number series',
+    loads: ['listNumberSeries'],
+    render: (api) => <Settings api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry number series/,
+    empty: {
+      notApplicable:
+        'Every document type has a series — the product default when nothing is configured — so the table is never empty.',
+    },
+  },
+  {
+    view: 'Timeline.tsx',
+    name: "the Work's timeline",
+    loads: ['workTimeline'],
+    render: (api) => (
+      <Timeline
+        api={api}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />
+    ),
+    retry: /Retry timeline/,
+    empty: { text: /No activity recorded yet/ },
+  },
+  {
+    view: 'WorkBillingReadiness.tsx',
+    name: 'the billing prerequisites',
+    loads: ['getPaymentMatrix'],
+    render: (api) => (
+      <WorkBillingReadiness
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+      />
+    ),
+    retry: /Retry readiness check/,
+    empty: {
+      notApplicable: 'A readiness check answers met or unmet, never nothing.',
+    },
+  },
+  {
+    view: 'WorkConsignees.tsx',
+    name: "the Work's consignees",
+    loads: ['listWorkConsignees'],
+    render: (api) => (
+      <WorkConsignees api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />
+    ),
+    retry: /Retry consignees/,
+    empty: { text: /No consignees linked yet/ },
+  },
+  {
+    view: 'WorkDetail.tsx',
+    name: 'the Work',
+    loads: ['getWork'],
+    render: (api) => (
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove
+        canManageStatutory
+        isOwner
+        onNewChallan={noop}
+        onOpenChallan={noop}
+        onNewIssueChallan={noop}
+        onOpenIssueChallan={noop}
+        onBack={noop}
+      />
+    ),
+    retry: /Retry Work/,
+    empty: { notApplicable: 'A Work screen shows one Work.' },
+  },
+  {
+    view: 'WorkDetail.tsx',
+    name: "the Work's supporting registers",
+    loads: ['listWorkPurchaseOrders'],
+    stub: { getWork: vi.fn().mockResolvedValue(challanWork()) },
+    render: (api) => (
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove
+        canManageStatutory
+        isOwner
+        onNewChallan={noop}
+        onOpenChallan={noop}
+        onNewIssueChallan={noop}
+        onOpenIssueChallan={noop}
+        onBack={noop}
+      />
+    ),
+    retry: /Retry supporting sections/,
+    empty: {
+      notApplicable:
+        'Each supporting register carries its own empty state inside its tab.',
+    },
+  },
+  {
+    view: 'WorkTaxInvoices.tsx',
+    name: 'the tax invoices',
+    loads: ['listWorkTaxInvoices'],
+    render: (api) => (
+      <WorkTaxInvoices
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canCreateDocuments
+        canIssue
+        canCancel
+        canManageStatutory
+        pending={false}
+        act={() => Promise.resolve()}
+      />
+    ),
+    retry: /Retry tax invoices/,
+    empty: { text: /No tax invoice has been raised for this Work yet/ },
+  },
+  {
+    view: 'WorkTaxInvoices.tsx',
+    name: 'the Measurement Books available to bill',
+    loads: ['listWorkMeasurementBooks'],
+    render: (api) => (
+      <WorkTaxInvoices
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canCreateDocuments
+        canIssue
+        canCancel
+        canManageStatutory
+        pending={false}
+        act={() => Promise.resolve()}
+      />
+    ),
+    retry: /Retry$/,
+    empty: {
+      notApplicable:
+        'A Work with nothing billable offers no draft form rather than an empty picker.',
+    },
+  },
+];
+
+/**
+ * Views with a mount load path that this table deliberately does not
+ * cover, each with the reason. The inventory test reads it, so an
+ * exemption is a recorded decision rather than an omission — and
+ * deleting one is how a later pack claims the view.
+ */
+export const EXEMPT_VIEWS: Readonly<Record<string, string>> = {
+  // Owned by pack P9 this wave; their state branches are not this pack's
+  // to edit. All three dead-end on a failed load today.
+  'OperationsDashboard.tsx': 'pack P9 owns this view in wave 2',
+  'Masters.tsx': 'pack P9 owns this view in wave 2',
+  'Works.tsx': 'pack P9 owns this view in wave 2',
+  // Owned by pack P10 this wave. ChallanDetail and ChallanEditor
+  // dead-end on a failed load; MeasurementBooks already retries.
+  'ChallanDetail.tsx': 'pack P10 owns this view in wave 2',
+  'ChallanEditor.tsx': 'pack P10 owns this view in wave 2',
+  'MeasurementBooks.tsx': 'pack P10 owns this view in wave 2',
+  // Deliberately silent loads, documented at the call site: the pending
+  // approvals badge and the Work-status read behind a challan screen are
+  // conveniences whose failure the destination screen reports itself.
+  'OperationsWorkspace.tsx':
+    'its two mount loads are badge conveniences whose failure the destination screen owns',
+  // The register itself is loaded and retried by WorkDetail; this view's
+  // own mount load is the vendor picker, which degrades to no create
+  // form rather than to a failure.
+  'WorkPurchaseOrders.tsx':
+    'WorkDetail owns the purchase-order load, its failure state and its retry',
+};
