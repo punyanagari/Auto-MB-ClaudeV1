@@ -46,14 +46,16 @@ function tlv(tag: number, content: Buffer): Buffer {
 const der = {
   sequence: (...items: Buffer[]) => tlv(0x30, Buffer.concat(items)),
   set: (...items: Buffer[]) => tlv(0x31, Buffer.concat(items)),
-  context: (tag: number, ...items: Buffer[]) =>
-    tlv(0xa0 | tag, Buffer.concat(items)),
+  context: (tag: number, ...items: Buffer[]) => tlv(0xa0 | tag, Buffer.concat(items)),
   /** Context tag with the constructed bit cleared, for IMPLICIT primitives. */
   contextPrimitive: (tag: number, content: Buffer) => tlv(0x80 | tag, content),
   integer(value: number | Buffer): Buffer {
     if (Buffer.isBuffer(value)) {
       const first = value[0] ?? 0;
-      return tlv(0x02, (first & 0x80) !== 0 ? Buffer.concat([Buffer.from([0]), value]) : value);
+      return tlv(
+        0x02,
+        (first & 0x80) !== 0 ? Buffer.concat([Buffer.from([0]), value]) : value,
+      );
     }
     if (value === 0) return tlv(0x02, Buffer.from([0]));
     const octets: number[] = [];
@@ -122,18 +124,14 @@ function algorithm(oid: string): Buffer {
 
 function distinguishedName(common: string, organisation: string): Buffer {
   return der.sequence(
-    der.set(
-      der.sequence(der.objectIdentifier(OID.country), der.printableString('IN')),
-    ),
+    der.set(der.sequence(der.objectIdentifier(OID.country), der.printableString('IN'))),
     der.set(
       der.sequence(
         der.objectIdentifier(OID.organisation),
         der.utf8String(organisation),
       ),
     ),
-    der.set(
-      der.sequence(der.objectIdentifier(OID.commonName), der.utf8String(common)),
-    ),
+    der.set(der.sequence(der.objectIdentifier(OID.commonName), der.utf8String(common))),
   );
 }
 
@@ -237,13 +235,15 @@ export interface TestPki {
  * root (`CCA India` stands in), a licensed CA under it, and a signer
  * certificate issued to a named railway officer.
  */
-export function createTestPki(options: {
-  readonly signerCommonName?: string;
-  readonly signerOrganisation?: string;
-  readonly notBefore?: Date;
-  readonly notAfter?: Date;
-  readonly rootCommonName?: string;
-} = {}): TestPki {
+export function createTestPki(
+  options: {
+    readonly signerCommonName?: string;
+    readonly signerOrganisation?: string;
+    readonly notBefore?: Date;
+    readonly notAfter?: Date;
+    readonly rootCommonName?: string;
+  } = {},
+): TestPki {
   const notBefore = options.notBefore ?? new Date('2024-01-01T00:00:00Z');
   const notAfter = options.notAfter ?? new Date('2034-01-01T00:00:00Z');
   const root = issueCertificate({
@@ -332,9 +332,7 @@ function buildSignedData(
       ),
       der.sequence(
         der.objectIdentifier(OID.messageDigest),
-        der.set(
-          der.octetString(createHash('sha256').update(signedContent).digest()),
-        ),
+        der.set(der.octetString(createHash('sha256').update(signedContent).digest())),
       ),
     ];
     // Signed as a SET OF, carried in the SignerInfo as [0] IMPLICIT.
@@ -448,7 +446,8 @@ export function appendSignature(base: Buffer, options: SignPdfOptions = {}): Buf
   const contentsStart = start + header.length - 1; // offset of '<'
   const contentsEnd = contentsStart + CONTENTS_HEX_RESERVATION + 2; // past '>'
 
-  let revision = header + '0'.repeat(CONTENTS_HEX_RESERVATION) + afterContents + '\nendobj\n';
+  let revision =
+    header + '0'.repeat(CONTENTS_HEX_RESERVATION) + afterContents + '\nendobj\n';
   const xrefOffset = start + revision.length;
   revision +=
     `xref\n0 1\n0000000000 65535 f \n${String(nextId)} 1\n` +
@@ -462,7 +461,8 @@ export function appendSignature(base: Buffer, options: SignPdfOptions = {}): Buf
   const placeholder = '[0 %%%%%%%%%% %%%%%%%%%% %%%%%%%%%%]';
   // The rendered range must occupy exactly the placeholder's width, or
   // every offset computed above moves.
-  const padded = rendered.slice(0, -1) + ' '.repeat(placeholder.length - rendered.length) + ']';
+  const padded =
+    rendered.slice(0, -1) + ' '.repeat(placeholder.length - rendered.length) + ']';
   revision = revision.replace(placeholder, padded);
 
   const draft = Buffer.concat([base, Buffer.from(revision, 'latin1')]);

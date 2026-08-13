@@ -61,7 +61,10 @@ export interface PdfSignatureField {
   readonly contactInfo: string | null;
   /** True when the dictionary carries a DocMDP certification reference,
    * with the `/P` permission level when it could be read. */
-  readonly certification: { readonly docMdp: boolean; readonly permissions: number | null };
+  readonly certification: {
+    readonly docMdp: boolean;
+    readonly permissions: number | null;
+  };
 }
 
 export interface PdfSignatureScan {
@@ -98,7 +101,9 @@ const BYTE_RANGE_KEYWORD = '/ByteRange';
  * the caller expects.
  */
 function readNameEntry(window: string, key: string): string | null {
+  /* eslint-disable security/detect-non-literal-regexp -- `key` is always one of this module's own '/SubFilter', '/Filter', '/Name' literals; no uploaded byte ever reaches the PATTERN, only the subject string */
   const pattern = new RegExp(`${key}\\s*/([^\\s/<>\\[\\]()]+)`);
+  /* eslint-enable security/detect-non-literal-regexp */
   const match = pattern.exec(window);
   const raw = match?.[1];
   if (raw === undefined) return null;
@@ -318,7 +323,7 @@ export function scanPdfSignatures(pdf: Buffer): PdfSignatureScan {
     const objectHeader = /(?:^|[\s>])\d+ \d+ obj\b/g;
     let objectStart = Math.max(0, offset - DICTIONARY_LOOKBEHIND);
     objectHeader.lastIndex = objectStart;
-    for (let match = objectHeader.exec(latin); match !== null; ) {
+    for (let match = objectHeader.exec(latin); match !== null;) {
       if (match.index >= offset) break;
       objectStart = match.index;
       match = objectHeader.exec(latin);
@@ -403,14 +408,24 @@ export function scanPdfSignatures(pdf: Buffer): PdfSignatureScan {
   return { fileLength: pdf.length, fields, malformed, revisionEnds };
 }
 
+/**
+ * `D:YYYYMMDDHHmmSSOHH'mm'`, with every component after the year
+ * optional — which is what the syntax allows and what producers emit.
+ *
+ * Anchored at the start and built entirely from fixed-width `\d{n}`
+ * groups, each optional at most once and none nested inside another
+ * quantifier, so matching is linear however hostile the `/M` entry is.
+ */
+/* eslint-disable security/detect-unsafe-regex -- fixed-width groups, anchored, no nested quantifier */
+const PDF_DATE =
+  /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:(Z)|([+-])(\d{2})'?(\d{2})?'?)?/;
+/* eslint-enable security/detect-unsafe-regex */
+
 /** A PDF date string (`D:YYYYMMDDHHmmSSOHH'mm'`) as an exact instant, or
  * null when it is absent or does not carry enough to place one. */
 export function parsePdfDate(value: string | null): Date | null {
   if (value === null) return null;
-  const match =
-    /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:(Z)|([+-])(\d{2})'?(\d{2})?'?)?/.exec(
-      value.trim(),
-    );
+  const match = PDF_DATE.exec(value.trim());
   if (match === null) return null;
   const [
     ,

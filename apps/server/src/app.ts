@@ -64,10 +64,7 @@ import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
-import {
-  EMPTY_TRUST_ANCHOR_STORE,
-  type TrustAnchorStore,
-} from './pdf-signature.js';
+import { EMPTY_TRUST_ANCHOR_STORE, type TrustAnchorStore } from './pdf-signature.js';
 import { recordRegisteredRoutes } from './tenant-route.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard } from './origin-guard.js';
@@ -824,14 +821,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
-    registerLoaRoutes(
-      app,
-      authInstance,
-      database,
-      storage,
-      scanner,
-      pdfTrustAnchors,
-    );
+    registerLoaRoutes(app, authInstance, database, storage, scanner, pdfTrustAnchors);
     registerContractSourceRoutes(
       app,
       authInstance,

@@ -11,7 +11,6 @@
 import {
   createHash,
   constants as cryptoConstants,
-
   verify as cryptoVerify,
   X509Certificate,
 } from 'node:crypto';
@@ -399,11 +398,14 @@ export function subjectKeyIdentifierOf(certificate: X509Certificate): string | n
     if (!isContext(element, 3)) continue;
     for (const extension of children(childAt(children(element), 0, 'extensions'))) {
       const parts = children(extension);
-      if (readObjectIdentifier(childAt(parts, 0, 'extnID')) !== OID_SUBJECT_KEY_IDENTIFIER) {
+      if (
+        readObjectIdentifier(childAt(parts, 0, 'extnID')) !== OID_SUBJECT_KEY_IDENTIFIER
+      ) {
         continue;
       }
       const value = parts[parts.length - 1];
-      if (value === undefined || !isUniversal(value, UNIVERSAL_OCTET_STRING)) return null;
+      if (value === undefined || !isUniversal(value, UNIVERSAL_OCTET_STRING))
+        return null;
       const inner = readSingleElement(Buffer.from(value.content));
       return inner.content.toString('hex');
     }
@@ -517,7 +519,11 @@ export function checkContentBinding(
  *   `checkContentBinding` is what ties that digest to this document; the
  *   two checks are only meaningful together.
  */
-function signedOctets(signedData: CmsSignedData, signer: CmsSignerInfo, detached: Buffer): Buffer {
+function signedOctets(
+  signedData: CmsSignedData,
+  signer: CmsSignerInfo,
+  detached: Buffer,
+): Buffer {
   if (signer.signedAttributesDer !== null) return signer.signedAttributesDer;
   return signedData.eContent ?? detached;
 }

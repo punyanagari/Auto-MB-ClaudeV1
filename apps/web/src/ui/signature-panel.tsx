@@ -111,19 +111,21 @@ const INTEGRITY_WORDS: Record<PdfSignatureVerdict['integrity'], StatusPresentati
   unverifiable: {
     tone: 'warning',
     headline: 'Not readable',
-    detail: 'This signature could not be read, so it was neither accepted nor rejected.',
+    detail:
+      'This signature could not be read, so it was neither accepted nor rejected.',
   },
 };
 
-const CHAIN_WORDS: Record<PdfSignatureVerdict['chain']['status'], StatusPresentation> = {
-  trusted: {
-    tone: 'success',
-    headline: 'Issuer trusted',
-    detail: '',
-  },
-  untrusted: { tone: 'destructive', headline: 'Issuer not trusted', detail: '' },
-  not_checked: { tone: 'warning', headline: 'Issuer not checked', detail: '' },
-};
+const CHAIN_WORDS: Record<PdfSignatureVerdict['chain']['status'], StatusPresentation> =
+  {
+    trusted: {
+      tone: 'success',
+      headline: 'Issuer trusted',
+      detail: '',
+    },
+    untrusted: { tone: 'destructive', headline: 'Issuer not trusted', detail: '' },
+    not_checked: { tone: 'warning', headline: 'Issuer not checked', detail: '' },
+  };
 
 /** A one-line explanation of a chain reason, in operational words. */
 function chainSentence(chain: PdfSignatureVerdict['chain']): string {
@@ -217,16 +219,19 @@ function SignatureEntry({ signature }: { readonly signature: PdfSignatureVerdict
             </>
           )}
         </Row>
-        {signature.timestamp.status === 'verified' && signature.timestamp.time !== null && (
-          <Row label="Timestamped">
-            <span className="tnum font-mono">
-              {formatTimestamp(signature.timestamp.time)}
-            </span>{' '}
-            by {signature.timestamp.authoritySubject ?? 'a trusted authority'}
-          </Row>
-        )}
+        {signature.timestamp.status === 'verified' &&
+          signature.timestamp.time !== null && (
+            <Row label="Timestamped">
+              <span className="tnum font-mono">
+                {formatTimestamp(signature.timestamp.time)}
+              </span>{' '}
+              by {signature.timestamp.authoritySubject ?? 'a trusted authority'}
+            </Row>
+          )}
         {signature.reason !== null && <Row label="Reason">{signature.reason}</Row>}
-        {signature.location !== null && <Row label="Location">{signature.location}</Row>}
+        {signature.location !== null && (
+          <Row label="Location">{signature.location}</Row>
+        )}
         <Row label="Issuer chain">{chainSentence(signature.chain)}</Row>
         <Row label="Covers">
           {signature.coverage.coversWholeDocument ? (
@@ -283,7 +288,9 @@ export function SignaturePanel({
   const presentation = STATUS_WORDS[status];
   return (
     <section
-      className={className ?? 'my-3 rounded-lg border border-border bg-muted/40 px-4 py-3'}
+      className={
+        className ?? 'my-3 rounded-lg border border-border bg-muted/40 px-4 py-3'
+      }
       aria-labelledby="signature-panel-title"
       data-testid="signature-panel"
       data-signature-status={status}
@@ -320,12 +327,13 @@ export function SignaturePanel({
 
       {verdict !== null && (
         <p className="mt-2 text-xs text-muted-foreground">
-          Checked <span className="tnum font-mono">{formatTimestamp(verdict.verifiedAt)}</span>{' '}
+          Checked{' '}
+          <span className="tnum font-mono">{formatTimestamp(verdict.verifiedAt)}</span>{' '}
           against{' '}
           {verdict.trustAnchors.configured ? (
             <>
-              <span className="tnum font-mono">{verdict.trustAnchors.count}</span> installed
-              certifying{' '}
+              <span className="tnum font-mono">{verdict.trustAnchors.count}</span>{' '}
+              installed certifying{' '}
               {verdict.trustAnchors.count === 1 ? 'authority' : 'authorities'}
             </>
           ) : (

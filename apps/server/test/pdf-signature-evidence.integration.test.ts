@@ -169,7 +169,11 @@ describe('signature verdicts are stored with the document', () => {
     expect(detail.signatureVerdict?.signatures[0]?.chain.status).toBe('trusted');
 
     const [row] = await admin<
-      { signature_status: string; signature_verdict: unknown; signature_verified_at: Date }[]
+      {
+        signature_status: string;
+        signature_verdict: unknown;
+        signature_verified_at: Date;
+      }[]
     >`
       select signature_status, signature_verdict, signature_verified_at
       from loa_documents where id = ${detail.id}
@@ -207,8 +211,13 @@ describe('signature verdicts are stored with the document', () => {
   });
 
   it('records a document appended to after signing, without refusing it', async () => {
-    const signed = appendSignature(unsignedPdf('Letter appended after signing'), { pki });
-    const tampered = Buffer.concat([signed, Buffer.from('\n% added later\n', 'latin1')]);
+    const signed = appendSignature(unsignedPdf('Letter appended after signing'), {
+      pki,
+    });
+    const tampered = Buffer.concat([
+      signed,
+      Buffer.from('\n% added later\n', 'latin1'),
+    ]);
     const response = await upload(tampered, 'appended-loa.pdf');
     expect(response.statusCode, response.body).toBe(201);
     const detail = response.json<LoaDocumentDetail>();

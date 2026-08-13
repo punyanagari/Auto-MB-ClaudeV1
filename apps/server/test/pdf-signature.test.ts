@@ -29,7 +29,10 @@ let noAnchors: TrustAnchorStore;
 
 beforeAll(async () => {
   workspace = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-sig-'));
-  pki = createTestPki({ signerCommonName: 'A K SHARMA', signerOrganisation: 'WESTERN RAILWAY' });
+  pki = createTestPki({
+    signerCommonName: 'A K SHARMA',
+    signerOrganisation: 'WESTERN RAILWAY',
+  });
   otherPki = createTestPki({ rootCommonName: 'Unrecognised Root' });
   const anchorDir = path.join(workspace, 'anchors');
   await mkdir(anchorDir, { recursive: true });
@@ -44,7 +47,10 @@ afterAll(async () => {
 
 describe('unsigned documents', () => {
   it('reports a PDF with no signature dictionary as unsigned', () => {
-    const report = verifyPdfSignatures(unsignedPdf(), { trustAnchors: anchors, now: AT });
+    const report = verifyPdfSignatures(unsignedPdf(), {
+      trustAnchors: anchors,
+      now: AT,
+    });
     expect(report.status).toBe('unsigned');
     expect(report.signatureCount).toBe(0);
     expect(report.signatures).toEqual([]);
@@ -200,8 +206,8 @@ describe('chains that cannot be trusted', () => {
     // this case and the trusted one is which anchors the operator has.
     const signed = appendSignature(unsignedPdf(), { pki: otherPki });
     expect(
-      verifyPdfSignatures(signed, { trustAnchors: anchors, now: AT }).signatures[0]?.chain
-        .status,
+      verifyPdfSignatures(signed, { trustAnchors: anchors, now: AT }).signatures[0]
+        ?.chain.status,
     ).toBe('untrusted');
 
     const trusting = { anchors: [{ certificate: null }] };
@@ -390,7 +396,9 @@ describe('the verdict shape', () => {
       now: AT,
     });
     expect(green.status).toBe('signed_and_intact');
-    expect(green.signatures.every((entry) => entry.chain.status === 'trusted')).toBe(true);
+    expect(green.signatures.every((entry) => entry.chain.status === 'trusted')).toBe(
+      true,
+    );
     expect(green.signatures.every((entry) => entry.integrity === 'intact')).toBe(true);
     expect(green.unsignedTrailingBytes).toBe(0);
   });

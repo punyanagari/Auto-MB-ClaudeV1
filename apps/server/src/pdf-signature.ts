@@ -49,8 +49,7 @@
  *   signature at all.
  */
 
-import { X509Certificate } from 'node:crypto';
-import { createHash } from 'node:crypto';
+import { createHash, type X509Certificate } from 'node:crypto';
 import { Asn1Error } from './pdf-signature/asn1.js';
 import {
   OID_ATTR_TIMESTAMP_TOKEN,
@@ -178,6 +177,7 @@ function verifyTimestamp(
 ): SignatureTimestamp {
   const attribute = findAttribute(signer.unsignedAttributes, OID_ATTR_TIMESTAMP_TOKEN);
   const token = attribute?.values[0];
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- a presence test on a parsed ASN.1 element, not a comparison against a secret; the heuristic fires on the identifier's name alone
   if (token === undefined) {
     return {
       present: false,
@@ -203,7 +203,8 @@ function verifyTimestamp(
   try {
     tokenData = parseSignedData(Buffer.from(token.bytes));
     const first = tokenData.signers[0];
-    if (first === undefined) return unverified('timestamp_token_has_no_signer', null, null);
+    if (first === undefined)
+      return unverified('timestamp_token_has_no_signer', null, null);
     tstSigner = first;
     if (tokenData.eContentType !== OID_CT_TST_INFO || tokenData.eContent === null) {
       return unverified('timestamp_token_carries_no_tstinfo', null, null);
@@ -211,7 +212,9 @@ function verifyTimestamp(
     info = parseTstInfo(tokenData.eContent);
   } catch (error) {
     return unverified(
-      error instanceof Asn1Error ? 'timestamp_token_unreadable' : 'timestamp_token_failed',
+      error instanceof Asn1Error
+        ? 'timestamp_token_unreadable'
+        : 'timestamp_token_failed',
       null,
       null,
     );
@@ -234,7 +237,13 @@ function verifyTimestamp(
   if (!verifySignerSignature(tokenData, tstSigner, authority, tokenData.eContent)) {
     return unverified('timestamp_token_signature_invalid', time, authority.subject);
   }
-  const chain = validateChain(authority, tokenData.certificates, anchors, now, info.genTime);
+  const chain = validateChain(
+    authority,
+    tokenData.certificates,
+    anchors,
+    now,
+    info.genTime,
+  );
   if (chain.status !== 'trusted') {
     return unverified(`timestamp_authority_${chain.reason}`, time, authority.subject);
   }
@@ -345,7 +354,10 @@ function verifyField(
     throw error;
   }
 
-  const certificate: X509Certificate | null = findSigningCertificate(signedData, signer);
+  const certificate: X509Certificate | null = findSigningCertificate(
+    signedData,
+    signer,
+  );
   const attributeTime = readSigningTimeAttribute(signer);
   const dictionaryTime = parsePdfDate(field.claimedSigningTime);
   const claimed = dictionaryTime ?? attributeTime;
@@ -486,7 +498,8 @@ function documentStatus(
   if (
     signatures.some(
       (signature) =>
-        signature.chain.status === 'untrusted' && !signature.chain.reachesConfiguredAnchor,
+        signature.chain.status === 'untrusted' &&
+        !signature.chain.reachesConfiguredAnchor,
     )
   ) {
     return 'signed_but_untrusted_chain';
@@ -542,17 +555,12 @@ export function verifyPdfSignatures(
       unsignedBytesAfter: scan.fileLength - outcome.signedTo,
       revisionsAfter: scan.revisionEnds.filter((end) => end > outcome.signedTo).length,
       trailingBytesCoveredByLaterSignature:
-        outcome.signedTo < scan.fileLength &&
-        furthestIntactCoverage >= scan.fileLength,
+        outcome.signedTo < scan.fileLength && furthestIntactCoverage >= scan.fileLength,
     },
   }));
 
   return {
-    status: documentStatus(
-      signatures,
-      scan.malformed.length,
-      unsignedTrailingBytes,
-    ),
+    status: documentStatus(signatures, scan.malformed.length, unsignedTrailingBytes),
     signatureCount: signatures.length + scan.malformed.length,
     signatures,
     unreadableSignatures: scan.malformed.map((entry) => ({ ...entry })),

@@ -168,9 +168,7 @@ export interface CertificateSummary {
   readonly isCertificateAuthority: boolean;
 }
 
-export function summariseCertificate(
-  certificate: X509Certificate,
-): CertificateSummary {
+export function summariseCertificate(certificate: X509Certificate): CertificateSummary {
   return {
     subject: certificate.subject,
     issuer: certificate.issuer,

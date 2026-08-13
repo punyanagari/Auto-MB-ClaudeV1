@@ -191,14 +191,103 @@ Initial severities:
 
 For every material incident: contain, preserve evidence, communicate, remediate, verify, and record prevention work.
 
-## 8. Support and data operations
+## 8. Digital-signature trust anchors
+
+Inbound railway PDFs (LOAs, tender documents, and — as the consumers are
+added — variation orders, Measurement Book copies, tax invoices, bill
+copies and agreements) have their digital signatures verified at upload
+and the verdict stored with the document (migration 0060). Verifying the
+signature MATHEMATICS needs nothing; deciding WHO signed needs trust
+anchors, and those are supplied by the operator.
+
+### Why they are not shipped in the image
+
+Indian digital signatures chain to the Controller of Certifying
+Authorities hierarchy: signer certificate -> licensed CA's sub-CA -> that
+CA's root -> a `CCA India <year>` root. Those roots are re-issued on their
+own schedule (`CCA India 2014`, `CCA India 2015 SPL`, `CCA India 2022`,
+`CCA India 2022 SPL`), and licensed CAs are added and rekeyed several
+times a year. A snapshot compiled into the application would go stale
+silently, and there is no platform trust store to delegate to: the CCA
+roots are in neither Adobe's AATL, the Microsoft Trusted Root Program, nor
+Mozilla's store (Mozilla closed the application WONTFIX). That absence is
+also the direct cause of the "Signature Not Verified" banner Adobe shows
+on perfectly good IREPS documents — the chain is complete inside the file,
+the reader simply has no anchor for it.
+
+### Layout
+
+`AUTO_MB_PDF_TRUST_ANCHORS` points at a directory:
+
+```
+/etc/auto-mb/pdf-trust/
+  cca-india-2022.pem
+  cca-india-2022-spl.pem
+  cca-india-2014.pem          # kept: 2020 documents still need it
+  intermediates/              # chain completion only, NEVER trust anchors
+    prodigisign-ca-2022.pem
+    ...
+```
+
+`*.pem`, `*.crt` and `*.cer` are read (PEM text; convert DER with
+`openssl x509 -inform der -in X.cer -out X.pem`). A single bundle file
+also works.
+
+**Only CCA roots belong at the top level.** Certificates in
+`intermediates/` complete a path when a signer embedded no chain, and can
+never end one. Installing a licensed CA as an anchor would make that one
+CA's compromise indistinguishable from a compromise of the CCA root, and
+would accept chains that never reach the root at all.
+
+### Refresh procedure
+
+Quarterly, by a human, never automatically:
+
+1. Download the roots from <https://cca.gov.in/root_certificate.html> and
+   the licensed-CA certificates from
+   <https://cca.gov.in/display_cert2022.php> over TLS.
+2. Confirm each root's SHA-256 fingerprint independently. The CCA
+   publishes no fingerprints on the page and no signed trust list; the
+   documented out-of-band channel is an automated reply from
+   `verifyroot@cca.gov.in`. Use it — a download alone is one channel.
+   The anchor in use at the time of writing is
+   `CCA India 2022`, SHA-256
+   `9A:3F:D3:17:67:98:E8:42:DD:CB:12:C2:62:F1:1C:FA:CC:A7:0A:8B:84:C6:EA:6F:DA:30:84:2A:95:A9:4C:D8`,
+   valid 2022-02-02 to 2042-02-02.
+3. Diff against what is installed. Any ADDITION to the anchor directory is
+   a two-person change with a ticket, exactly like a manual database edit.
+4. Never remove an expired root: a document signed in 2021 still needs the
+   root that was current in 2021 to have its chain read.
+5. Restart the server. Anchors are loaded once at boot, and a configured
+   but unreadable path REFUSES to start rather than silently degrading
+   every railway document to "issuer not checked".
+
+Leaving `AUTO_MB_PDF_TRUST_ANCHORS` unset is a legitimate posture and is
+not a silent one: every signature is still verified cryptographically, no
+document can reach the `signed_and_intact` state, and the review screen
+says that no certifying authorities are installed.
+
+### What is NOT checked
+
+Revocation. CRL download, live OCSP, and fetching a missing intermediate
+from a certificate's own AIA URL all need network egress this deployment
+does not assume — and AIA fetching in particular turns an
+attacker-supplied URL into a server-side request. Every verdict therefore
+records revocation as `not_checked` with its reason, and the screen says
+so on every signature. A certificate revoked after issue still reads as
+valid here. Closing that gap means either allowing egress to the CAs'
+OCSP/CRL endpoints, or receiving documents in PAdES-LT form with a `/DSS`
+dictionary carrying their own revocation material (no IREPS document seen
+so far does).
+
+## 9. Support and data operations
 
 - support impersonation is explicit, temporary, and audited;
 - customer exports are scoped and reproducible;
 - deletion/erasure requests preserve legally required immutable records while removing eligible personal data;
 - no manual database edit without a ticket, peer review, backup, and audit record.
 
-## 9. v1 cutover runbook (legacy-data import)
+## 10. v1 cutover runbook (legacy-data import)
 
 The v1 legacy product's SQLite backup is imported once per organisation
 with `scripts/import-v1.ts` (engine: `apps/server/src/import/`). The

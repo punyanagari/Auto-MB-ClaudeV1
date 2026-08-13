@@ -102,7 +102,9 @@ describe('SignaturePanel', () => {
   it('discloses a weak digest without calling the signature invalid', () => {
     render(<SignaturePanel status="signed_and_intact" verdict={report()} />);
     expect(screen.getByText('Verified')).toBeTruthy();
-    expect(screen.getByText(/no longer\s+proves the signed content is unique/)).toBeTruthy();
+    expect(
+      screen.getByText(/no longer\s+proves the signed content is unique/),
+    ).toBeTruthy();
   });
 
   it('is the only status that renders the success tone', () => {
@@ -113,9 +115,9 @@ describe('SignaturePanel', () => {
     const green = render(
       <SignaturePanel status="signed_and_intact" verdict={report()} />,
     );
-    expect(
-      green.container.querySelectorAll('.bg-success\\/12').length,
-    ).toBeGreaterThan(0);
+    expect(green.container.querySelectorAll('.bg-success\\/12').length).toBeGreaterThan(
+      0,
+    );
     green.unmount();
 
     for (const status of [
@@ -144,11 +146,18 @@ describe('SignaturePanel', () => {
     expect(screen.getByText(/nothing is known about its signatures/)).toBeTruthy();
     notChecked.unmount();
 
-    render(<SignaturePanel status="unsigned" verdict={report({ status: 'unsigned', signatures: [], signatureCount: 0 })} />);
+    render(
+      <SignaturePanel
+        status="unsigned"
+        verdict={report({ status: 'unsigned', signatures: [], signatureCount: 0 })}
+      />,
+    );
     expect(screen.getByText('No digital signature')).toBeTruthy();
     // The trap the owner's own sample set contains: a printed copy whose
     // page carries a green tick.
-    expect(screen.getByText(/that tick is part of the picture, not a signature/)).toBeTruthy();
+    expect(
+      screen.getByText(/that tick is part of the picture, not a signature/),
+    ).toBeTruthy();
   });
 
   it('explains a countersigned document rather than calling it modified', () => {

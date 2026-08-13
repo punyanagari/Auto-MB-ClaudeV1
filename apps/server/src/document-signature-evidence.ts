@@ -29,10 +29,7 @@
  */
 
 import type { PdfSignatureReport } from '@auto-mb/contracts';
-import {
-  verifyPdfSignatures,
-  type TrustAnchorStore,
-} from './pdf-signature.js';
+import { verifyPdfSignatures, type TrustAnchorStore } from './pdf-signature.js';
 
 /** The minimum of a Fastify logger this module needs, so a caller can
  * pass `request.log` without this file depending on Fastify's types. */

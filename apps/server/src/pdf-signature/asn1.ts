@@ -90,7 +90,7 @@ function readHeader(buffer: Buffer, offset: number): LengthRead & Asn1Header {
   }
   const tagClass = (identifier & 0xc0) >> 6;
   const constructed = (identifier & 0x20) !== 0;
-  let tagNumber = identifier & 0x1f;
+  const tagNumber = identifier & 0x1f;
   let cursor = offset + 1;
   if (tagNumber === 0x1f) {
     // High-tag-number form. Nothing CMS or X.509 uses needs it; refusing
@@ -274,7 +274,8 @@ export function readSmallInteger(element: Asn1Element): number {
   if (content.length > 6) throw new Asn1Error('INTEGER is larger than expected');
   const first = content[0];
   if (first === undefined) throw new Asn1Error('empty INTEGER');
-  if ((first & 0x80) !== 0) throw new Asn1Error('negative INTEGER is not expected here');
+  if ((first & 0x80) !== 0)
+    throw new Asn1Error('negative INTEGER is not expected here');
   let value = 0;
   for (const octet of content) value = value * 256 + octet;
   return value;
@@ -315,13 +316,29 @@ export function readTime(element: Asn1Element): Date {
   if (!utc && !generalized) {
     throw new Asn1Error(`expected a time type, found tag ${String(element.tagNumber)}`);
   }
+  // Both patterns are anchored at BOTH ends and built entirely from
+  // fixed-width \d{n} groups; the only quantifiers are a single optional
+  // seconds group and an optional fraction, neither nested inside another.
+  // Matching is linear in the input length, and the input is at most a few
+  // dozen ASCII characters from a certificate's own time field.
+  /* eslint-disable security/detect-unsafe-regex -- fixed-width, doubly anchored, no nested quantifier */
   const pattern = utc
     ? /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(Z|[+-]\d{4})$/
     : /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(?:\.\d+)?(Z|[+-]\d{4})$/;
+  /* eslint-enable security/detect-unsafe-regex */
   const match = pattern.exec(text);
-  if (match === null) throw new Asn1Error(`unparseable time value ${JSON.stringify(text)}`);
-  const [, rawYear = '', month = '', day = '', hour = '', minute = '', second, zone = 'Z'] =
-    match;
+  if (match === null)
+    throw new Asn1Error(`unparseable time value ${JSON.stringify(text)}`);
+  const [
+    ,
+    rawYear = '',
+    month = '',
+    day = '',
+    hour = '',
+    minute = '',
+    second,
+    zone = 'Z',
+  ] = match;
   const year = utc
     ? Number(rawYear) + (Number(rawYear) >= 50 ? 1900 : 2000)
     : Number(rawYear);
