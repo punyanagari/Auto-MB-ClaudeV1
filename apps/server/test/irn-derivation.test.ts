@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   IrnDerivationError,
-  SignedQrClaimError,
   assertIrnDerivesFrom,
   assertSignedQrAgrees,
   deriveIrn,
@@ -84,15 +83,13 @@ describe('IRN derivation', () => {
     // one who pasted another invoice's IRN.
     expect(() => {
       assertIrnDerivesFrom('not-hex', identity);
-    }).toThrow(
-      expect.objectContaining({ code: 'IRP_IRN_MALFORMED' }) as unknown as Error,
-    );
+    }).toThrow(expect.objectContaining({ code: 'IRP_IRN_MALFORMED' }));
     expect(() => {
       assertIrnDerivesFrom('ab12'.repeat(16), identity);
     }).toThrow(
       expect.objectContaining({
         code: 'IRP_IRN_DERIVATION_MISMATCH',
-      }) as unknown as Error,
+      }),
     );
   });
 
@@ -176,7 +173,7 @@ describe('signed QR claims', () => {
       }, field).toThrow(
         expect.objectContaining({
           code: 'IRP_SIGNED_QR_IDENTITY_MISMATCH',
-        }) as unknown as Error,
+        }),
       );
     }
   });
@@ -196,7 +193,7 @@ describe('signed QR claims', () => {
     }).toThrow(
       expect.objectContaining({
         code: 'IRP_SIGNED_QR_UNREADABLE',
-      }) as unknown as SignedQrClaimError,
+      }),
     );
   });
 });

@@ -628,7 +628,7 @@ describe('export completeness is catalog-driven', () => {
       organisationId,
     });
     expect(response.statusCode).toBe(200);
-    const exported = response.json() as Record<string, unknown>;
+    const exported: Record<string, unknown> = response.json();
 
     const missing = tenantTables.filter(
       (table) => exported[sectionNameOf(table)] === undefined,
