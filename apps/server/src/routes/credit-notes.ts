@@ -1,34 +1,22 @@
 import {
-  ApiErrorSchema,
   CancelCreditNoteRequestSchema,
   CancelStatutoryDocumentRequestSchema,
   CreateCreditNoteRequestSchema,
   CreditNoteDetailResponseSchema,
   CreditNoteListResponseSchema,
   UpdateRecipientItcRequestSchema,
-  type CancelCreditNoteRequest,
-  type CancelStatutoryDocumentRequest,
-  type CreateCreditNoteRequest,
   type CreditNote,
   type CreditNoteDetailResponse,
   type CreditNoteStatus,
   type IrpProviderState,
   type RecipientItcStatus,
-  type UpdateCreditNoteRequest,
-  type UpdateRecipientItcRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import { createHash } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import {
-  assertWorkAccess,
-  hasFullWorkScope,
-  requireAuthority,
-  requireWriterRole,
-} from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireAuthority } from '../authz.js';
 import {
   buildFrozenCrnPayload,
   CREDIT_NOTE_TEMPLATE_VERSION,
@@ -59,7 +47,6 @@ import {
   renderNumberTemplate,
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
 import type { TaxInvoiceIrpRenderEvidence } from '../tax-invoice-html.js';
 import {
@@ -67,9 +54,16 @@ import {
   parseTaxInvoiceIssuedSnapshot,
   TaxInvoiceSnapshotError,
 } from '../tax-invoice-snapshot.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { cancellationNote } from './challans.js';
-import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices.js';
+import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices/index.js';
+import {
+  audit,
+  IdParamsSchema,
+  upstreamErrorResponses as errorResponses,
+} from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 
 /**
  * The CGST Section 34 credit note (migration 0051): finding 5's residue.
@@ -97,28 +91,6 @@ import { financialYearLabel, requireEinvoiceDeclared } from './tax-invoices.js';
  * trigger arm. Direct (MB-less) invoices supersede and revert with no
  * MB logic at all.
  */
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
-const PDF_MAGIC = Buffer.from('%PDF-');
-const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
-const CREDIT_NOTE_RENDER_TIMEOUT_MS = 45_000;
 
 // --- Row shape ---------------------------------------------------------------
 
@@ -403,44 +375,6 @@ function assertNoteIrpCancelWindowOpen(note: CreditNoteRow): void {
   );
 }
 
-async function auditCreditNote(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  creditNoteId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'credit_notes', ${creditNoteId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
-async function auditInvoiceEvent(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  taxInvoiceId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'tax_invoices', ${taxInvoiceId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
-
 function noteRenderSourceHash(
   snapshot: ReturnType<typeof parseCreditNoteIssuedSnapshot>,
   evidence: TaxInvoiceIrpRenderEvidence,
@@ -448,173 +382,120 @@ function noteRenderSourceHash(
   return sha256Hex(stringifyStatutoryJson({ snapshot, evidence }));
 }
 
-async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
-  const declaredLength = Number(response.headers.get('content-length') ?? '0');
-  if (
-    (Number.isFinite(declaredLength) && declaredLength > MAX_RENDERED_PDF_BYTES) ||
-    declaredLength < 0
-  ) {
-    throw new Error('Gotenberg response exceeds the PDF size limit');
-  }
-  if (response.body === null) throw new Error('Gotenberg response has no body');
-  const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value === undefined) continue;
-    total += value.byteLength;
-    if (total > MAX_RENDERED_PDF_BYTES) {
-      await reader.cancel('PDF size limit exceeded');
-      throw new Error('Gotenberg response exceeds the PDF size limit');
-    }
-    chunks.push(Buffer.from(value));
-  }
-  const pdf = Buffer.concat(chunks, total);
-  if (
-    pdf.length < PDF_MAGIC.length ||
-    !pdf.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)
-  ) {
-    throw new Error('Gotenberg response is not an accepted PDF');
-  }
-  return pdf;
-}
-
 // --- Routes -----------------------------------------------------------------
 
 export function registerCreditNoteRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   gotenbergUrl: string,
   provider?: StatutoryProvider,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // The organisation-wide credit-note register. Work-scoped members see
   // notes of their assigned Works plus notes against direct invoices.
-  app.get(
-    '/api/credit-notes',
-    { schema: { response: { 200: CreditNoteListResponseSchema, ...errorResponses } } },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const fullScope = await hasFullWorkScope(tx, user.id);
-          if (fullScope) {
-            return (await tx.unsafe(
-              `select ${CN_COLUMNS} ${CN_FROM}
-               order by cn.created_at desc, cn.id`,
-            )) as unknown as CreditNoteRow[];
-          }
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/credit-notes',
+      schema: { response: { 200: CreditNoteListResponseSchema, ...errorResponses } },
+    },
+    async ({ user, tenant }) => {
+      const rows = await tenant(async (tx) => {
+        const fullScope = await hasFullWorkScope(tx, user.id);
+        if (fullScope) {
           return (await tx.unsafe(
             `select ${CN_COLUMNS} ${CN_FROM}
+               order by cn.created_at desc, cn.id`,
+          )) as unknown as CreditNoteRow[];
+        }
+        return (await tx.unsafe(
+          `select ${CN_COLUMNS} ${CN_FROM}
              where cn.work_id is null
                 or cn.work_id in (
                   select work_id from work_assignments where user_id = $1
                 )
              order by cn.created_at desc, cn.id`,
-            [user.id],
-          )) as unknown as CreditNoteRow[];
-        },
-      );
+          [user.id],
+        )) as unknown as CreditNoteRow[];
+      });
       return { creditNotes: rows.map(toCreditNote) };
     },
   );
 
-  app.get(
-    '/api/tax-invoices/:id/credit-notes',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/tax-invoices/:id/credit-notes',
       schema: {
         params: IdParamsSchema,
         response: { 200: CreditNoteListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: invoiceId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [invoice] = await tx<{ work_id: string | null }[]>`
+    async ({ request, user, tenant }) => {
+      const { id: invoiceId } = request.params;
+      const rows = await tenant(async (tx) => {
+        const [invoice] = await tx<{ work_id: string | null }[]>`
             select work_id from tax_invoices where id = ${invoiceId}
           `;
-          if (!invoice) {
-            throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
-          }
-          await assertNoteWorkAccess(tx, user.id, invoice.work_id);
-          return (await tx.unsafe(
-            `select ${CN_COLUMNS} ${CN_FROM}
+        if (!invoice) {
+          throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+        }
+        await assertNoteWorkAccess(tx, user.id, invoice.work_id);
+        return (await tx.unsafe(
+          `select ${CN_COLUMNS} ${CN_FROM}
              where cn.tax_invoice_id = $1
              order by cn.created_at desc, cn.id`,
-            [invoiceId],
-          )) as unknown as CreditNoteRow[];
-        },
-      );
+          [invoiceId],
+        )) as unknown as CreditNoteRow[];
+      });
       return { creditNotes: rows.map(toCreditNote) };
     },
   );
 
-  app.post(
-    '/api/tax-invoices/:id/credit-notes',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/tax-invoices/:id/credit-notes',
       schema: {
         params: IdParamsSchema,
         body: CreateCreditNoteRequestSchema,
         response: { 201: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: invoiceId } = request.params as { id: string };
-      const body = request.body as CreateCreditNoteRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: invoiceId } = request.params;
+      const body = request.body;
       const reason = body.reason.trim();
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const invoice = await lockInvoiceForNote(tx, invoiceId);
-          await assertNoteWorkAccess(tx, user.id, invoice.work_id);
-          // Only a SUBMITTED invoice takes a credit note: a draft is
-          // deleted, a cancelled one already left the register, and a
-          // superseded one already has its note.
-          if (invoice.status !== 'submitted') {
-            throw httpError(
-              409,
-              'TAX_INVOICE_STATUS_CONFLICT',
-              `A credit note supersedes a submitted tax invoice (current status: ${invoice.status}).`,
-            );
-          }
-          await assertNoteDateValid(tx, body.noteDate, invoice.invoice_date);
-          const [live] = await tx<{ id: string; note_number: string | null }[]>`
+      const detail = await tenant(async (tx) => {
+        const invoice = await lockInvoiceForNote(tx, invoiceId);
+        await assertNoteWorkAccess(tx, user.id, invoice.work_id);
+        // Only a SUBMITTED invoice takes a credit note: a draft is
+        // deleted, a cancelled one already left the register, and a
+        // superseded one already has its note.
+        if (invoice.status !== 'submitted') {
+          throw httpError(
+            409,
+            'TAX_INVOICE_STATUS_CONFLICT',
+            `A credit note supersedes a submitted tax invoice (current status: ${invoice.status}).`,
+          );
+        }
+        await assertNoteDateValid(tx, body.noteDate, invoice.invoice_date);
+        const [live] = await tx<{ id: string; note_number: string | null }[]>`
             select id, note_number from credit_notes
             where tax_invoice_id = ${invoiceId} and status <> 'cancelled'
           `;
-          if (live) {
-            throw draftConflictError(
-              'CREDIT_NOTE_EXISTS',
-              `This invoice already has a live credit note${live.note_number === null ? '' : ` (${live.note_number})`}; cancel or delete it before raising another.`,
-              live.id,
-            );
-          }
-          const [created] = await tx<{ id: string }[]>`
+        if (live) {
+          throw draftConflictError(
+            'CREDIT_NOTE_EXISTS',
+            `This invoice already has a live credit note${live.note_number === null ? '' : ` (${live.note_number})`}; cancel or delete it before raising another.`,
+            live.id,
+          );
+        }
+        const [created] = await tx<{ id: string }[]>`
             insert into credit_notes (
               organisation_id, tax_invoice_id, work_id, note_date, reason,
               number_prefix, created_by_user_id
@@ -626,50 +507,47 @@ export function registerCreditNoteRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'CREDIT_NOTE_EXISTS',
-                'This invoice already has a live credit note; cancel or delete it before raising another.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('credit note insert returned no row');
-          await auditCreditNote(
-            tx,
-            organisationId,
-            user.id,
-            'credit_note.created',
-            created.id,
-            {
-              taxInvoiceId: invoiceId,
-              invoiceNumber: invoice.invoice_number,
-              noteDate: body.noteDate,
-            },
-          );
-          return readDetail(tx, created.id);
-        },
-      );
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'CREDIT_NOTE_EXISTS',
+              'This invoice already has a live credit note; cancel or delete it before raising another.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('credit note insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.created',
+          'credit_notes',
+          created.id,
+          {
+            taxInvoiceId: invoiceId,
+            invoiceNumber: invoice.invoice_number,
+            noteDate: body.noteDate,
+          },
+        );
+        return readDetail(tx, created.id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.get(
-    '/api/credit-notes/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/credit-notes/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: CreditNoteDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from credit_notes where id = ${id}
         `;
@@ -680,25 +558,22 @@ export function registerCreditNoteRoutes(
     },
   );
 
-  app.put(
-    '/api/credit-notes/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/credit-notes/:id',
       schema: {
         params: IdParamsSchema,
         body: CreateCreditNoteRequestSchema,
         response: { 200: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateCreditNoteRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const reason = body.reason.trim();
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const note = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, note.work_id);
         requireStatus(note, 'draft');
@@ -711,196 +586,202 @@ export function registerCreditNoteRoutes(
               number_prefix = ${body.numberPrefix ?? null}
           where id = ${id}
         `;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.updated', id, {
-          before: { noteDate: note.note_date, reason: note.reason },
-          after: { noteDate: body.noteDate, reason },
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.updated',
+          'credit_notes',
+          id,
+          {
+            before: { noteDate: note.note_date, reason: note.reason },
+            after: { noteDate: body.noteDate, reason },
+          },
+        );
         return readDetail(tx, id);
       });
     },
   );
 
-  app.delete(
-    '/api/credit-notes/:id',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/credit-notes/:id',
       schema: {
         params: IdParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      await tenant(async (tx) => {
         const note = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, note.work_id);
         // Rule 8: a draft is not yet a document, so it deletes.
         requireStatus(note, 'draft');
         await tx`delete from credit_notes where id = ${id}`;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.deleted', id, {
-          taxInvoiceId: note.tax_invoice_id,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.deleted',
+          'credit_notes',
+          id,
+          {
+            taxInvoiceId: note.tax_invoice_id,
+          },
+        );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/issue',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/issue',
       schema: {
         params: IdParamsSchema,
         response: { 201: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Issuing assigns a legal number, copies frozen money and
-          // supersedes the invoice: issue authority, like invoice submit.
-          await requireAuthority(tx, user.id, 'issue');
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          requireStatus(note, 'draft');
-          // The invoice row lock is what the whole transition happens
-          // under: issue and supersede are one atomic act.
-          const invoice = await lockInvoiceForNote(tx, note.tax_invoice_id);
-          if (invoice.status !== 'submitted') {
-            throw httpError(
-              409,
-              'TAX_INVOICE_STATUS_CONFLICT',
-              `A credit note supersedes a submitted tax invoice (current status: ${invoice.status}).`,
-            );
-          }
-          if (
-            invoice.irp_provider_state === 'registering' ||
-            invoice.irp_provider_state === 'cancelling'
-          ) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'Resolve the in-flight provider operation on the invoice before superseding it.',
-            );
-          }
-          await assertNoteDateValid(tx, note.note_date, invoice.invoice_date);
-          if (
-            invoice.taxable_value === null ||
-            invoice.cgst_amount === null ||
-            invoice.sgst_amount === null ||
-            invoice.igst_amount === null ||
-            invoice.round_off === null ||
-            invoice.total_amount === null
-          ) {
-            throw new Error(`submitted tax invoice ${invoice.id} is missing money`);
-          }
-          const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const detail = await tenant(async (tx) => {
+        // Issuing assigns a legal number, copies frozen money and
+        // supersedes the invoice: issue authority, like invoice submit.
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        requireStatus(note, 'draft');
+        // The invoice row lock is what the whole transition happens
+        // under: issue and supersede are one atomic act.
+        const invoice = await lockInvoiceForNote(tx, note.tax_invoice_id);
+        if (invoice.status !== 'submitted') {
+          throw httpError(
+            409,
+            'TAX_INVOICE_STATUS_CONFLICT',
+            `A credit note supersedes a submitted tax invoice (current status: ${invoice.status}).`,
+          );
+        }
+        if (
+          invoice.irp_provider_state === 'registering' ||
+          invoice.irp_provider_state === 'cancelling'
+        ) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'Resolve the in-flight provider operation on the invoice before superseding it.',
+          );
+        }
+        await assertNoteDateValid(tx, note.note_date, invoice.invoice_date);
+        if (
+          invoice.taxable_value === null ||
+          invoice.cgst_amount === null ||
+          invoice.sgst_amount === null ||
+          invoice.igst_amount === null ||
+          invoice.round_off === null ||
+          invoice.total_amount === null
+        ) {
+          throw new Error(`submitted tax invoice ${invoice.id} is missing money`);
+        }
+        const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from tax_invoices where id = ${invoice.id}
           `;
-          if (!snapshotRow) throw new Error('invoice snapshot disappeared');
-          const rawInvoiceSnapshot = parseJsonbColumn(snapshotRow.issued_snapshot);
-          try {
-            // Parse-validate now, so an unrenderable historic snapshot
-            // is a named refusal at issue rather than a broken document.
-            parseTaxInvoiceIssuedSnapshot(rawInvoiceSnapshot);
-          } catch (error) {
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                'The superseded invoice’s frozen snapshot is incomplete; the credit note cannot be built from it.',
-              );
-            }
-            throw error;
+        if (!snapshotRow) throw new Error('invoice snapshot disappeared');
+        const rawInvoiceSnapshot = parseJsonbColumn(snapshotRow.issued_snapshot);
+        try {
+          // Parse-validate now, so an unrenderable historic snapshot
+          // is a named refusal at issue rather than a broken document.
+          parseTaxInvoiceIssuedSnapshot(rawInvoiceSnapshot);
+        } catch (error) {
+          if (error instanceof TaxInvoiceSnapshotError) {
+            throw httpError(
+              409,
+              error.code,
+              'The superseded invoice’s frozen snapshot is incomplete; the credit note cannot be built from it.',
+            );
           }
+          throw error;
+        }
 
-          const [organisation] = await tx<
-            {
-              invoice_number_prefix: string | null;
-              einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
-              einvoice_applicable_from: string | null;
-              irp_reporting_window_days: number | null;
-            }[]
-          >`
+        const [organisation] = await tx<
+          {
+            invoice_number_prefix: string | null;
+            einvoice_applicability: 'undeclared' | 'not_applicable' | 'applicable';
+            einvoice_applicable_from: string | null;
+            irp_reporting_window_days: number | null;
+          }[]
+        >`
             select invoice_number_prefix, einvoice_applicability,
                    einvoice_applicable_from::text as einvoice_applicable_from,
                    irp_reporting_window_days
             from organisations
             where id = app_private.current_organisation_id()
           `;
-          if (!organisation) throw new Error('bound organisation disappeared');
+        if (!organisation) throw new Error('bound organisation disappeared');
 
-          const [buyer] = await tx<{ division_code: string | null }[]>`
+        const [buyer] = await tx<{ division_code: string | null }[]>`
             select division_code from contacts
             where id = ${invoice.buyer_contact_id}
           `;
 
-          // Gapless per (organisation, financial year) under the counter
-          // row lock, exactly like the invoice's.
-          const fyLabel = financialYearLabel(note.note_date);
-          const prefix =
-            note.number_prefix ??
-            invoice.number_prefix ??
-            organisation.invoice_number_prefix;
-          const template = await loadNumberTemplate(tx, 'credit_note');
-          const [counter] = await tx<{ next_value: number }[]>`
+        // Gapless per (organisation, financial year) under the counter
+        // row lock, exactly like the invoice's.
+        const fyLabel = financialYearLabel(note.note_date);
+        const prefix =
+          note.number_prefix ??
+          invoice.number_prefix ??
+          organisation.invoice_number_prefix;
+        const template = await loadNumberTemplate(tx, 'credit_note');
+        const [counter] = await tx<{ next_value: number }[]>`
             insert into credit_note_counters (organisation_id, fy_label)
             values (${organisationId}, ${fyLabel})
             on conflict (organisation_id, fy_label)
             do update set next_value = credit_note_counters.next_value + 1
             returning next_value
           `;
-          if (!counter) throw new Error('credit note counter upsert returned no row');
-          const sequence = counter.next_value;
-          let noteNumber: string;
-          try {
-            noteNumber = renderNumberTemplate(template, {
-              prefix,
-              divisionCode: buyer?.division_code ?? null,
-              financialYear: fyLabel,
-              documentDate: note.note_date,
-              sequence,
-            });
-          } catch (cause) {
-            if (cause instanceof NumberTemplateError) {
-              throw httpError(400, 'CREDIT_NOTE_NUMBER_UNFILLABLE', cause.message);
-            }
-            throw cause;
+        if (!counter) throw new Error('credit note counter upsert returned no row');
+        const sequence = counter.next_value;
+        let noteNumber: string;
+        try {
+          noteNumber = renderNumberTemplate(template, {
+            prefix,
+            divisionCode: buyer?.division_code ?? null,
+            financialYear: fyLabel,
+            documentDate: note.note_date,
+            sequence,
+          });
+        } catch (cause) {
+          if (cause instanceof NumberTemplateError) {
+            throw httpError(400, 'CREDIT_NOTE_NUMBER_UNFILLABLE', cause.message);
           }
+          throw cause;
+        }
 
-          // THE DOCUMENT, frozen: the note's identity and reason, and the
-          // superseded invoice's issued snapshot VERBATIM — parties,
-          // line and money are the invoice's, in full.
-          const issuedSnapshot = {
-            templateVersion: CREDIT_NOTE_TEMPLATE_VERSION,
-            noteNumber,
-            noteDate: note.note_date,
-            fyLabel,
-            reason: note.reason,
-            invoice: rawInvoiceSnapshot,
-          };
+        // THE DOCUMENT, frozen: the note's identity and reason, and the
+        // superseded invoice's issued snapshot VERBATIM — parties,
+        // line and money are the invoice's, in full.
+        const issuedSnapshot = {
+          templateVersion: CREDIT_NOTE_TEMPLATE_VERSION,
+          noteNumber,
+          noteDate: note.note_date,
+          fyLabel,
+          reason: note.reason,
+          invoice: rawInvoiceSnapshot,
+        };
 
-          // Finding 20's machinery, inherited (0049): the reporting
-          // deadline is frozen at issue from the declaration then in
-          // force. The 30-day rule covers credit notes too.
-          const reportingWindowApplies =
-            organisation.einvoice_applicability === 'applicable' &&
-            organisation.einvoice_applicable_from !== null &&
-            note.note_date >= organisation.einvoice_applicable_from &&
-            organisation.irp_reporting_window_days !== null;
+        // Finding 20's machinery, inherited (0049): the reporting
+        // deadline is frozen at issue from the declaration then in
+        // force. The 30-day rule covers credit notes too.
+        const reportingWindowApplies =
+          organisation.einvoice_applicability === 'applicable' &&
+          organisation.einvoice_applicable_from !== null &&
+          note.note_date >= organisation.einvoice_applicable_from &&
+          organisation.irp_reporting_window_days !== null;
 
-          const [stamped] = await tx<{ irp_reporting_deadline: string | null }[]>`
+        const [stamped] = await tx<{ irp_reporting_deadline: string | null }[]>`
             update credit_notes
             set status = 'issued', note_number = ${noteNumber},
                 number_prefix = ${prefix},
@@ -920,26 +801,33 @@ export function registerCreditNoteRoutes(
             where id = ${id}
             returning irp_reporting_deadline::text as irp_reporting_deadline
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'CREDIT_NOTE_NUMBER_CONFLICT',
-                `Credit note number ${noteNumber} already exists in this organisation.`,
-              );
-            }
-            throw error;
-          });
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'CREDIT_NOTE_NUMBER_CONFLICT',
+              `Credit note number ${noteNumber} already exists in this organisation.`,
+            );
+          }
+          throw error;
+        });
 
-          // The supersession, in the SAME transaction under the invoice
-          // row lock: the 0051 trigger arm proves an issued credit note
-          // exists, the one-live-per-MB index stops seeing the invoice,
-          // and every issued fact and IRN byte stays frozen.
-          await tx`
+        // The supersession, in the SAME transaction under the invoice
+        // row lock: the 0051 trigger arm proves an issued credit note
+        // exists, the one-live-per-MB index stops seeing the invoice,
+        // and every issued fact and IRN byte stays frozen.
+        await tx`
             update tax_invoices set status = 'superseded'
             where id = ${invoice.id}
           `;
 
-          await auditCreditNote(tx, organisationId, user.id, 'credit_note.issued', id, {
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.issued',
+          'credit_notes',
+          id,
+          {
             noteNumber,
             fyLabel,
             sequence,
@@ -947,46 +835,44 @@ export function registerCreditNoteRoutes(
             invoiceNumber: invoice.invoice_number,
             totalAmount: invoice.total_amount,
             irpReportingDeadline: stamped?.irp_reporting_deadline ?? null,
-          });
-          await auditInvoiceEvent(
-            tx,
-            organisationId,
-            user.id,
-            'tax_invoice.superseded',
-            invoice.id,
-            {
-              invoiceNumber: invoice.invoice_number,
-              creditNoteId: id,
-              creditNoteNumber: noteNumber,
-              measurementBookId: invoice.measurement_book_id,
-            },
-          );
-          return readDetail(tx, id);
-        },
-      );
+          },
+        );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tax_invoice.superseded',
+          'tax_invoices',
+          invoice.id,
+          {
+            invoiceNumber: invoice.invoice_number,
+            creditNoteId: id,
+            creditNoteNumber: noteNumber,
+            measurementBookId: invoice.measurement_book_id,
+          },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(201).send(detail);
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelCreditNoteRequestSchema,
         response: { 200: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      authority: 'cancel',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelCreditNoteRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireAuthority(tx, user.id, 'cancel');
+      return tenant(async (tx) => {
         const creditNote = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, creditNote.work_id);
         if (creditNote.status === 'draft') {
@@ -1054,11 +940,12 @@ export function registerCreditNoteRoutes(
             }
             throw error;
           });
-          await auditInvoiceEvent(
+          await audit(
             tx,
             organisationId,
             user.id,
             'tax_invoice.supersession_reverted',
+            'tax_invoices',
             invoice.id,
             {
               invoiceNumber: invoice.invoice_number,
@@ -1067,11 +954,12 @@ export function registerCreditNoteRoutes(
             },
           );
         }
-        await auditCreditNote(
+        await audit(
           tx,
           organisationId,
           user.id,
           'credit_note.cancelled',
+          'credit_notes',
           id,
           {
             noteNumber: creditNote.note_number,
@@ -1084,24 +972,21 @@ export function registerCreditNoteRoutes(
     },
   );
 
-  app.put(
-    '/api/credit-notes/:id/recipient-itc',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/credit-notes/:id/recipient-itc',
       schema: {
         params: IdParamsSchema,
         body: UpdateRecipientItcRequestSchema,
         response: { 200: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as UpdateRecipientItcRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const note = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, note.work_id);
         requireStatus(note, 'issued');
@@ -1110,11 +995,12 @@ export function registerCreditNoteRoutes(
           set recipient_itc_status = ${body.recipientItcStatus}
           where id = ${id}
         `;
-        await auditCreditNote(
+        await audit(
           tx,
           organisationId,
           user.id,
           'credit_note.recipient_itc_recorded',
+          'credit_notes',
           id,
           {
             before: note.recipient_itc_status,
@@ -1126,66 +1012,60 @@ export function registerCreditNoteRoutes(
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/recover-provider-operation',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/recover-provider-operation',
       schema: {
         params: IdParamsSchema,
         response: { 202: CreditNoteDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (note.irp_provider_state === 'registering') {
-            await requireAuthority(tx, user.id, 'issue');
-          } else if (note.irp_provider_state === 'cancelling') {
-            await requireAuthority(tx, user.id, 'cancel');
-          } else {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              'Only an in-progress IRP provider operation can be checked for stale recovery.',
-            );
-          }
-          const recovered = await recoverStaleStatutoryOperation(tx, {
-            creditNoteId: id,
-          });
-          if (recovered.length === 0) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'The provider operation is still within its two-minute lease.',
-            );
-          }
-          await auditCreditNote(
-            tx,
-            organisationId,
-            user.id,
-            'credit_note.provider_operation_recovered',
-            id,
-            { operations: recovered },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const detail = await tenant(async (tx) => {
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (note.irp_provider_state === 'registering') {
+          await requireAuthority(tx, user.id, 'issue');
+        } else if (note.irp_provider_state === 'cancelling') {
+          await requireAuthority(tx, user.id, 'cancel');
+        } else {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            'Only an in-progress IRP provider operation can be checked for stale recovery.',
           );
-          return readDetail(tx, id);
-        },
-      );
+        }
+        const recovered = await recoverStaleStatutoryOperation(tx, {
+          creditNoteId: id,
+        });
+        if (recovered.length === 0) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'The provider operation is still within its two-minute lease.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.provider_operation_recovered',
+          'credit_notes',
+          id,
+          { operations: recovered },
+        );
+        return readDetail(tx, id);
+      });
       return reply.status(202).send(detail);
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/register-irp',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/register-irp',
       schema: {
         params: IdParamsSchema,
         response: {
@@ -1194,115 +1074,105 @@ export function registerCreditNoteRoutes(
           ...errorResponses,
         },
       },
+      authority: 'issue',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
 
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          await recoverStaleStatutoryOperation(tx, { creditNoteId: id });
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured.',
-            );
-          }
-          requireStatus(note, 'issued');
-          if (note.irp_provider_state === 'registered' || note.irn !== null) {
-            throw httpError(
-              409,
-              'IRP_ALREADY_RECORDED',
-              `This credit note already carries IRN ${note.irn ?? '(registered)'}; registration is not repeated.`,
-            );
-          }
-          if (
-            note.irp_provider_state === 'registering' ||
-            note.irp_provider_state === 'cancelling'
-          ) {
-            throw httpError(
-              409,
-              'STATUTORY_OPERATION_IN_PROGRESS',
-              'A statutory-provider operation is already in progress for this credit note.',
-            );
-          }
-          if (
-            note.irp_provider_state === 'cancelled' ||
-            note.irp_provider_state === 'cancellation_unknown'
-          ) {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              `IRP registration cannot start from ${note.irp_provider_state}.`,
-            );
-          }
-          const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
+      const prepared = await tenant(async (tx) => {
+        await recoverStaleStatutoryOperation(tx, { creditNoteId: id });
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured.',
+          );
+        }
+        requireStatus(note, 'issued');
+        if (note.irp_provider_state === 'registered' || note.irn !== null) {
+          throw httpError(
+            409,
+            'IRP_ALREADY_RECORDED',
+            `This credit note already carries IRN ${note.irn ?? '(registered)'}; registration is not repeated.`,
+          );
+        }
+        if (
+          note.irp_provider_state === 'registering' ||
+          note.irp_provider_state === 'cancelling'
+        ) {
+          throw httpError(
+            409,
+            'STATUTORY_OPERATION_IN_PROGRESS',
+            'A statutory-provider operation is already in progress for this credit note.',
+          );
+        }
+        if (
+          note.irp_provider_state === 'cancelled' ||
+          note.irp_provider_state === 'cancellation_unknown'
+        ) {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            `IRP registration cannot start from ${note.irp_provider_state}.`,
+          );
+        }
+        const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from credit_notes where id = ${id}
           `;
-          if (!snapshotRow)
-            throw new Error(`credit note ${id} disappeared while locked`);
-          let snapshot: ReturnType<typeof parseCreditNoteIssuedSnapshot>;
-          let payloadJson: string;
-          try {
-            const issued = parseJsonbColumn(snapshotRow.issued_snapshot);
-            snapshot = parseCreditNoteIssuedSnapshot(issued);
-            payloadJson = stringifyStatutoryJson(buildFrozenCrnPayload(issued));
-          } catch (error) {
-            if (error instanceof EInvoiceB2cUnsupportedError) {
-              throw httpError(409, error.code, error.message);
-            }
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                'The frozen issued credit note is incomplete for IRP submission; live master data was not substituted.',
-              );
-            }
-            throw error;
+        if (!snapshotRow) throw new Error(`credit note ${id} disappeared while locked`);
+        let snapshot: ReturnType<typeof parseCreditNoteIssuedSnapshot>;
+        let payloadJson: string;
+        try {
+          const issued = parseJsonbColumn(snapshotRow.issued_snapshot);
+          snapshot = parseCreditNoteIssuedSnapshot(issued);
+          payloadJson = stringifyStatutoryJson(buildFrozenCrnPayload(issued));
+        } catch (error) {
+          if (error instanceof EInvoiceB2cUnsupportedError) {
+            throw httpError(409, error.code, error.message);
           }
-          const identity: IrpDocumentIdentity = {
-            gstin: snapshot.invoice.supplier.gstin,
-            documentNumber: snapshot.noteNumber,
-            documentDate: snapshot.noteDate,
-            documentType: 'CRN',
-          };
-          const reconcileOnly = note.irp_provider_state === 'registration_unknown';
-          // The 0049 gates apply to the credit note identically: the
-          // declaration must exist and permit the transport, and a fresh
-          // registration past the note's own frozen deadline is refused
-          // — reconcile-by-lookup is not a new report.
-          const today = await requireEinvoiceDeclared(tx);
-          if (!reconcileOnly) assertNoteReportingWindowOpen(note, today);
-          const requestBody = reconcileOnly
-            ? stringifyStatutoryJson(identity)
-            : payloadJson;
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: reconcileOnly ? 'reconcile_crn' : 'register_crn',
-            requestSha256: sha256Hex(requestBody),
-            requestBody,
-            creditNoteId: id,
-          });
-          await tx`
+          if (error instanceof TaxInvoiceSnapshotError) {
+            throw httpError(
+              409,
+              error.code,
+              'The frozen issued credit note is incomplete for IRP submission; live master data was not substituted.',
+            );
+          }
+          throw error;
+        }
+        const identity: IrpDocumentIdentity = {
+          gstin: snapshot.invoice.supplier.gstin,
+          documentNumber: snapshot.noteNumber,
+          documentDate: snapshot.noteDate,
+          documentType: 'CRN',
+        };
+        const reconcileOnly = note.irp_provider_state === 'registration_unknown';
+        // The 0049 gates apply to the credit note identically: the
+        // declaration must exist and permit the transport, and a fresh
+        // registration past the note's own frozen deadline is refused
+        // — reconcile-by-lookup is not a new report.
+        const today = await requireEinvoiceDeclared(tx);
+        if (!reconcileOnly) assertNoteReportingWindowOpen(note, today);
+        const requestBody = reconcileOnly
+          ? stringifyStatutoryJson(identity)
+          : payloadJson;
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: reconcileOnly ? 'reconcile_crn' : 'register_crn',
+          requestSha256: sha256Hex(requestBody),
+          requestBody,
+          creditNoteId: id,
+        });
+        await tx`
             update credit_notes
             set irp_provider = 'whitebooks', irp_provider_state = 'registering'
             where id = ${id}
           `;
-          return { operationId, identity, payloadJson, reconcileOnly, provider };
-        },
-      );
+        return { operationId, identity, payloadJson, reconcileOnly, provider };
+      });
 
       let evidence: IrpRegistrationEvidence | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
@@ -1350,19 +1220,14 @@ export function registerCreditNoteRoutes(
         }
       }
 
-      const detail = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'issue');
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (note.irp_provider_state !== 'registering') {
-            throw new Error(`credit note ${id} left the registering state`);
-          }
-          if (evidence !== null) {
-            await tx`
+      const detail = await tenant(async (tx) => {
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (note.irp_provider_state !== 'registering') {
+          throw new Error(`credit note ${id} left the registering state`);
+        }
+        if (evidence !== null) {
+          await tx`
               update credit_notes
               set irn = ${evidence.irn}, ack_number = ${evidence.ackNumber},
                   ack_date = ${evidence.ackDate},
@@ -1372,33 +1237,34 @@ export function registerCreditNoteRoutes(
                   irp_provider = 'whitebooks', irp_provider_state = 'registered'
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-              responseBody: evidence.rawResponse,
-            });
-            await auditCreditNote(
-              tx,
-              organisationId,
-              user.id,
-              'credit_note.irp_registered',
-              id,
-              {
-                noteNumber: note.note_number,
-                irn: evidence.irn,
-                ackNumber: evidence.ackNumber,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-              publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
-              rawResponse: null,
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+            responseBody: evidence.rawResponse,
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'credit_note.irp_registered',
+            'credit_notes',
+            id,
+            {
+              noteNumber: note.note_number,
+              irn: evidence.irn,
+              ackNumber: evidence.ackNumber,
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+            publicCode: 'STATUTORY_PROVIDER_UNKNOWN',
+            rawResponse: null,
+          };
+          await tx`
               update credit_notes
               set irp_provider = 'whitebooks',
                   irp_provider_state = ${
@@ -1408,30 +1274,30 @@ export function registerCreditNoteRoutes(
                   }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
+          });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'credit_note.irp_registration_unresolved',
+            'credit_notes',
+            id,
+            {
+              noteNumber: note.note_number,
+              outcome: result.status,
               providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-              responseBody: result.rawResponse,
-            });
-            await auditCreditNote(
-              tx,
-              organisationId,
-              user.id,
-              'credit_note.irp_registration_unresolved',
-              id,
-              {
-                noteNumber: note.note_number,
-                outcome: result.status,
-                providerCode: result.providerCode,
-                provider: prepared.provider.name,
-                operationId: prepared.operationId,
-              },
-            );
-          }
-          return readDetail(tx, id);
-        },
-      );
+              provider: prepared.provider.name,
+              operationId: prepared.operationId,
+            },
+          );
+        }
+        return readDetail(tx, id);
+      });
 
       if (evidence !== null) return reply.status(200).send(detail);
       const result = failure ?? {
@@ -1449,9 +1315,10 @@ export function registerCreditNoteRoutes(
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/cancel-irp',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/cancel-irp',
       schema: {
         params: IdParamsSchema,
         body: CancelStatutoryDocumentRequestSchema,
@@ -1461,93 +1328,84 @@ export function registerCreditNoteRoutes(
           ...errorResponses,
         },
       },
+      authority: 'cancel',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelStatutoryDocumentRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const remark = body.remark.trim();
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
-            creditNoteId: id,
-          });
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          requireStatus(note, 'issued');
-          if (
-            note.irp_provider_state === 'cancellation_unknown' &&
-            recoveredOperations.includes('cancel_crn')
-          ) {
-            return {
-              recovered: true as const,
-              detail: await readDetail(tx, id),
-            };
-          }
-          if (provider === undefined) {
-            throw httpError(
-              409,
-              'STATUTORY_PROVIDER_NOT_CONFIGURED',
-              'Whitebooks transport is not configured.',
-            );
-          }
-          if (
-            note.irn === null ||
-            note.irp_provider !== 'whitebooks' ||
-            note.irp_provider_state !== 'registered'
-          ) {
-            throw httpError(
-              409,
-              'IRP_STATE_CONFLICT',
-              note.irp_provider_state === 'cancellation_unknown'
-                ? 'The earlier cancellation result is unknown. It cannot be sent again blindly; reconcile it with Whitebooks/NIC support.'
-                : 'Only a Whitebooks-registered IRN can be cancelled through this action.',
-            );
-          }
-          // The credit note's OWN 24-hour window, before a provider
-          // operation is opened.
-          assertNoteIrpCancelWindowOpen(note);
-          const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
+      const prepared = await tenant(async (tx) => {
+        const recoveredOperations = await recoverStaleStatutoryOperation(tx, {
+          creditNoteId: id,
+        });
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        requireStatus(note, 'issued');
+        if (
+          note.irp_provider_state === 'cancellation_unknown' &&
+          recoveredOperations.includes('cancel_crn')
+        ) {
+          return {
+            recovered: true as const,
+            detail: await readDetail(tx, id),
+          };
+        }
+        if (provider === undefined) {
+          throw httpError(
+            409,
+            'STATUTORY_PROVIDER_NOT_CONFIGURED',
+            'Whitebooks transport is not configured.',
+          );
+        }
+        if (
+          note.irn === null ||
+          note.irp_provider !== 'whitebooks' ||
+          note.irp_provider_state !== 'registered'
+        ) {
+          throw httpError(
+            409,
+            'IRP_STATE_CONFLICT',
+            note.irp_provider_state === 'cancellation_unknown'
+              ? 'The earlier cancellation result is unknown. It cannot be sent again blindly; reconcile it with Whitebooks/NIC support.'
+              : 'Only a Whitebooks-registered IRN can be cancelled through this action.',
+          );
+        }
+        // The credit note's OWN 24-hour window, before a provider
+        // operation is opened.
+        assertNoteIrpCancelWindowOpen(note);
+        const [snapshotRow] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from credit_notes where id = ${id}
           `;
-          if (!snapshotRow) throw new Error(`credit note ${id} disappeared`);
-          const gstin = parseCreditNoteIssuedSnapshot(
-            parseJsonbColumn(snapshotRow.issued_snapshot),
-          ).invoice.supplier.gstin;
-          const requestJson = stringifyStatutoryJson({
-            Irn: note.irn,
-            CnlRsn: body.reasonCode,
-            CnlRem: remark,
-          });
-          const operationId = await startStatutoryOperation(tx, {
-            organisationId,
-            userId: user.id,
-            provider,
-            operation: 'cancel_crn',
-            requestSha256: sha256Hex(requestJson),
-            requestBody: requestJson,
-            creditNoteId: id,
-          });
-          await tx`
+        if (!snapshotRow) throw new Error(`credit note ${id} disappeared`);
+        const gstin = parseCreditNoteIssuedSnapshot(
+          parseJsonbColumn(snapshotRow.issued_snapshot),
+        ).invoice.supplier.gstin;
+        const requestJson = stringifyStatutoryJson({
+          Irn: note.irn,
+          CnlRsn: body.reasonCode,
+          CnlRem: remark,
+        });
+        const operationId = await startStatutoryOperation(tx, {
+          organisationId,
+          userId: user.id,
+          provider,
+          operation: 'cancel_crn',
+          requestSha256: sha256Hex(requestJson),
+          requestBody: requestJson,
+          creditNoteId: id,
+        });
+        await tx`
             update credit_notes set irp_provider_state = 'cancelling'
             where id = ${id}
           `;
-          return {
-            recovered: false as const,
-            operationId,
-            irn: note.irn,
-            gstin,
-            provider,
-          };
-        },
-      );
+        return {
+          recovered: false as const,
+          operationId,
+          irn: note.irn,
+          gstin,
+          provider,
+        };
+      });
 
       if (prepared.recovered) {
         return reply.status(202).send(prepared.detail);
@@ -1570,22 +1428,17 @@ export function registerCreditNoteRoutes(
         failure = providerFailure(error);
       }
 
-      const outcome = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireAuthority(tx, user.id, 'cancel');
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (note.irp_provider_state !== 'cancelling') {
-            throw new Error(`credit note ${id} left the cancelling state`);
-          }
-          const windowClosed =
-            note.irp_cancel_window_closes_at === null ||
-            note.irp_cancel_window_closes_at.getTime() <= Date.now();
-          if (cancelled !== null) {
-            await tx`
+      const outcome = await tenant(async (tx) => {
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (note.irp_provider_state !== 'cancelling') {
+          throw new Error(`credit note ${id} left the cancelling state`);
+        }
+        const windowClosed =
+          note.irp_cancel_window_closes_at === null ||
+          note.irp_cancel_window_closes_at.getTime() <= Date.now();
+        if (cancelled !== null) {
+          await tx`
               update credit_notes
               set irp_provider_state = 'cancelled',
                   irp_cancelled_at = ${cancelled.cancelledAt},
@@ -1594,50 +1447,49 @@ export function registerCreditNoteRoutes(
                   irp_cancel_remark = ${remark}
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: 'succeeded',
-              responseBody: cancelled.rawResponse,
-            });
-          } else {
-            const result = failure ?? {
-              status: 'unknown' as const,
-              providerCode: null,
-              httpStatus: null,
-              rawResponse: null,
-            };
-            await tx`
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: 'succeeded',
+            responseBody: cancelled.rawResponse,
+          });
+        } else {
+          const result = failure ?? {
+            status: 'unknown' as const,
+            providerCode: null,
+            httpStatus: null,
+            rawResponse: null,
+          };
+          await tx`
               update credit_notes
               set irp_provider_state = ${
                 result.status === 'failed' ? 'registered' : 'cancellation_unknown'
               }
               where id = ${id}
             `;
-            await finishStatutoryOperation(tx, prepared.operationId, {
-              status: result.status,
-              providerCode: result.providerCode,
-              httpStatus: result.httpStatus,
-              responseBody: result.rawResponse,
-            });
-          }
-          await auditCreditNote(
-            tx,
-            organisationId,
-            user.id,
-            cancelled === null
-              ? 'credit_note.irp_cancellation_unresolved'
-              : 'credit_note.irp_cancelled',
-            id,
-            {
-              irn: prepared.irn,
-              outcome:
-                cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
-              provider: prepared.provider.name,
-              operationId: prepared.operationId,
-            },
-          );
-          return { detail: await readDetail(tx, id), windowClosed };
-        },
-      );
+          await finishStatutoryOperation(tx, prepared.operationId, {
+            status: result.status,
+            providerCode: result.providerCode,
+            httpStatus: result.httpStatus,
+            responseBody: result.rawResponse,
+          });
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          cancelled === null
+            ? 'credit_note.irp_cancellation_unresolved'
+            : 'credit_note.irp_cancelled',
+          'credit_notes',
+          id,
+          {
+            irn: prepared.irn,
+            outcome: cancelled === null ? (failure?.status ?? 'unknown') : 'succeeded',
+            provider: prepared.provider.name,
+            operationId: prepared.operationId,
+          },
+        );
+        return { detail: await readDetail(tx, id), windowClosed };
+      });
       if (cancelled !== null) return reply.status(200).send(outcome.detail);
       if (failure?.status === 'failed') {
         if (outcome.windowClosed) {
@@ -1657,110 +1509,96 @@ export function registerCreditNoteRoutes(
     },
   );
 
-  app.get(
-    '/api/credit-notes/:id/irp-payload',
-    { schema: { params: IdParamsSchema } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const payload = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [note] = await tx<
-            {
-              work_id: string | null;
-              status: CreditNoteStatus;
-              issued_snapshot: unknown;
-            }[]
-          >`
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/credit-notes/:id/irp-payload',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const payload = await tenant(async (tx) => {
+        const [note] = await tx<
+          {
+            work_id: string | null;
+            status: CreditNoteStatus;
+            issued_snapshot: unknown;
+          }[]
+        >`
             select work_id, status, issued_snapshot
             from credit_notes where id = ${id}
           `;
-          if (!note) {
-            throw httpError(404, 'CREDIT_NOTE_NOT_FOUND', 'No such credit note.');
+        if (!note) {
+          throw httpError(404, 'CREDIT_NOTE_NOT_FOUND', 'No such credit note.');
+        }
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (note.status !== 'issued') {
+          throw httpError(
+            409,
+            'CREDIT_NOTE_STATUS_CONFLICT',
+            `The CRN payload exists for an issued credit note (current status: ${note.status}).`,
+          );
+        }
+        try {
+          return buildFrozenCrnPayload(parseJsonbColumn(note.issued_snapshot));
+        } catch (error) {
+          if (error instanceof EInvoiceB2cUnsupportedError) {
+            throw httpError(409, error.code, error.message);
           }
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (note.status !== 'issued') {
+          if (error instanceof TaxInvoiceSnapshotError) {
             throw httpError(
               409,
-              'CREDIT_NOTE_STATUS_CONFLICT',
-              `The CRN payload exists for an issued credit note (current status: ${note.status}).`,
+              error.code,
+              'The frozen issued credit note is incomplete for IRP submission; it was not replaced with live master data.',
             );
           }
-          try {
-            return buildFrozenCrnPayload(parseJsonbColumn(note.issued_snapshot));
-          } catch (error) {
-            if (error instanceof EInvoiceB2cUnsupportedError) {
-              throw httpError(409, error.code, error.message);
-            }
-            if (error instanceof TaxInvoiceSnapshotError) {
-              throw httpError(
-                409,
-                error.code,
-                'The frozen issued credit note is incomplete for IRP submission; it was not replaced with live master data.',
-              );
-            }
-            throw error;
-          }
-        },
-      );
+          throw error;
+        }
+      });
       void reply.type('application/json; charset=utf-8');
       return reply.send(stringifyStatutoryJson(payload));
     },
   );
 
-  app.post(
-    '/api/credit-notes/:id/render',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/credit-notes/:id/render',
       schema: {
         params: IdParamsSchema,
         response: { 200: CreditNoteDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
 
       // Immutable render inputs in one short transaction; Gotenberg and
       // object storage run without a database lock; a second transaction
       // verifies the append-only IRP evidence did not change meanwhile.
-      const prepared = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const note = await lockCreditNote(tx, id);
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          requireStatus(note, 'issued');
-          const [source] = await tx<
-            { issued_snapshot: unknown; signed_qr: string | null }[]
-          >`
+      const prepared = await tenant(async (tx) => {
+        const note = await lockCreditNote(tx, id);
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        requireStatus(note, 'issued');
+        const [source] = await tx<
+          { issued_snapshot: unknown; signed_qr: string | null }[]
+        >`
             select issued_snapshot, signed_qr from credit_notes where id = ${id}
           `;
-          if (!source) throw new Error('credit note render source disappeared');
-          const snapshot = parseCreditNoteIssuedSnapshot(
-            parseJsonbColumn(source.issued_snapshot),
-          );
-          const evidence: TaxInvoiceIrpRenderEvidence = {
-            provider: note.irp_provider,
-            irn: note.irn,
-            ackNumber: note.ack_number,
-            ackDateText: note.ack_date_text,
-            signedQr: source.signed_qr,
-            legacyEvidenceMissing: note.irp_legacy_evidence_missing,
-          };
-          return { snapshot, evidence };
-        },
-      );
+        if (!source) throw new Error('credit note render source disappeared');
+        const snapshot = parseCreditNoteIssuedSnapshot(
+          parseJsonbColumn(source.issued_snapshot),
+        );
+        const evidence: TaxInvoiceIrpRenderEvidence = {
+          provider: note.irp_provider,
+          irn: note.irn,
+          ackNumber: note.ack_number,
+          ackDateText: note.ack_date_text,
+          signedQr: source.signed_qr,
+          legacyEvidenceMissing: note.irp_legacy_evidence_missing,
+        };
+        return { snapshot, evidence };
+      });
 
       const renderSourceHash = noteRenderSourceHash(
         prepared.snapshot,
@@ -1778,31 +1616,13 @@ export function registerCreditNoteRoutes(
         );
       }
 
-      const form = new FormData();
-      form.append('files', new Blob([html], { type: 'text/html' }), 'index.html');
-      let pdf: Buffer;
-      const abort = new AbortController();
-      const timeout = setTimeout(() => abort.abort(), CREDIT_NOTE_RENDER_TIMEOUT_MS);
-      try {
-        const response = await fetch(`${gotenbergUrl}/forms/chromium/convert/html`, {
-          method: 'POST',
-          body: form,
-          signal: abort.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Gotenberg answered ${String(response.status)}`);
-        }
-        pdf = await readBoundedPdfResponse(response);
-      } catch (error) {
-        request.log.error({ err: error }, 'credit note render failed');
-        throw httpError(
-          502,
-          'RENDER_FAILED',
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
           'The PDF service is unavailable; the issued credit note is unaffected — retry later.',
-        );
-      } finally {
-        clearTimeout(timeout);
-      }
+        logError: (error) => {
+          request.log.error({ err: error }, 'credit note render failed');
+        },
+      });
 
       const sha256 = createHash('sha256').update(pdf).digest('hex');
       const objectKey = `${organisationId}/cn/${id}-${sha256.slice(0, 16)}.pdf`;
@@ -1817,8 +1637,7 @@ export function registerCreditNoteRoutes(
         );
       }
 
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         const note = await lockCreditNote(tx, id);
         await assertNoteWorkAccess(tx, user.id, note.work_id);
         requireStatus(note, 'issued');
@@ -1854,55 +1673,57 @@ export function registerCreditNoteRoutes(
               rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
           where id = ${id}
         `;
-        await auditCreditNote(tx, organisationId, user.id, 'credit_note.rendered', id, {
-          sha256,
-          sourceSha256: renderSourceHash,
-          templateVersion: CREDIT_NOTE_PDF_TEMPLATE_VERSION,
-          irpEvidenceIncluded: currentEvidence.irn !== null,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'credit_note.rendered',
+          'credit_notes',
+          id,
+          {
+            sha256,
+            sourceSha256: renderSourceHash,
+            templateVersion: CREDIT_NOTE_PDF_TEMPLATE_VERSION,
+            irpEvidenceIncluded: currentEvidence.irn !== null,
+          },
+        );
         return readDetail(tx, id);
       });
     },
   );
 
-  app.get(
-    '/api/credit-notes/:id/pdf',
-    { schema: { params: IdParamsSchema } },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const rendered = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [note] = await tx<
-            {
-              work_id: string | null;
-              rendered_object_key: string | null;
-              rendered_sha256: string | null;
-            }[]
-          >`
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/credit-notes/:id/pdf',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const rendered = await tenant(async (tx) => {
+        const [note] = await tx<
+          {
+            work_id: string | null;
+            rendered_object_key: string | null;
+            rendered_sha256: string | null;
+          }[]
+        >`
             select work_id, rendered_object_key, rendered_sha256
             from credit_notes where id = ${id}
           `;
-          if (!note) {
-            throw httpError(404, 'CREDIT_NOTE_NOT_FOUND', 'No such credit note.');
-          }
-          await assertNoteWorkAccess(tx, user.id, note.work_id);
-          if (note.rendered_object_key === null || note.rendered_sha256 === null) {
-            throw httpError(
-              404,
-              'PDF_NOT_AVAILABLE',
-              'This credit note has not been rendered yet.',
-            );
-          }
-          return { key: note.rendered_object_key, sha256: note.rendered_sha256 };
-        },
-      );
+        if (!note) {
+          throw httpError(404, 'CREDIT_NOTE_NOT_FOUND', 'No such credit note.');
+        }
+        await assertNoteWorkAccess(tx, user.id, note.work_id);
+        if (note.rendered_object_key === null || note.rendered_sha256 === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'This credit note has not been rendered yet.',
+          );
+        }
+        return { key: note.rendered_object_key, sha256: note.rendered_sha256 };
+      });
       const bytes = await storage.get(rendered.key);
       const actualSha256 = createHash('sha256').update(bytes).digest('hex');
       if (actualSha256 !== rendered.sha256) {

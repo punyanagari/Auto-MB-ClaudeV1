@@ -1,21 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   CancelPacCertificateRequestSchema,
   PacCertificateListResponseSchema,
   PacCertificateSchema,
   RecordPacCertificateRequestSchema,
-  type CancelPacCertificateRequest,
   type PacCapExceededDetails,
   type PacCertificate,
   type PacItemSummary,
-  type RecordPacCertificateRequest,
   type WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireAuthority, requireWriterRole } from '../authz.js';
 import { cancellationNote } from './challans.js';
@@ -28,12 +22,13 @@ import {
   resolvePaymentPercentages,
   type PaymentMatrixRowData,
 } from '../payment-matrix.js';
-import { assertSourceNotBilled } from './measurement-books.js';
-import { requireUser } from '../session.js';
+import { assertSourceNotBilled } from './measurement-books/index.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Milestone 8 phase 1: PAC certificate lifecycle (legacy spec §5.5, rule
@@ -49,44 +44,8 @@ import { assertNotMalware } from '../upload-guards.js';
  * quantity-bearing certificate.
  */
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'pac_certificates', ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 interface CertificateRow {
   id: string;
@@ -301,27 +260,25 @@ async function readItemSummaries(
 }
 
 export function registerPacRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
 ): void {
-  app.get(
-    '/api/works/:id/pac-certificates',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/pac-certificates',
       schema: {
         params: IdParamsSchema,
         response: { 200: PacCertificateListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
@@ -343,21 +300,18 @@ export function registerPacRoutes(
     },
   );
 
-  app.get(
-    '/api/pac-certificates/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/pac-certificates/:id',
       schema: {
         params: IdParamsSchema,
         response: { 200: PacCertificateSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const row = await readCertificate(tx, id);
         if (!row) {
           throw httpError(404, 'PAC_CERTIFICATE_NOT_FOUND', 'No such PAC certificate.');
@@ -368,22 +322,20 @@ export function registerPacRoutes(
     },
   );
 
-  app.post(
-    '/api/works/:id/pac-certificates',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/pac-certificates',
       schema: {
         params: IdParamsSchema,
         body: RecordPacCertificateRequestSchema,
         response: { 201: PacCertificateSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as RecordPacCertificateRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
 
       const itemIds = body.items.map((item) => item.workItemId);
       if (new Set(itemIds).size !== itemIds.length) {
@@ -394,25 +346,20 @@ export function registerPacRoutes(
         );
       }
 
-      const certificate = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
+      const certificate = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
 
-          // The works row lock pairs with the one the MB finalize
-          // transaction holds, so recording and a final-MB finalize on
-          // the same Work serialise: a certificate recorded first is
-          // caught by the final sweep, and a final MB finalized first
-          // makes this recording fail the FINAL_MB_EXISTS check below
-          // (the 0027 insert guard backstops it in the database). Lock
-          // order works -> work_items matches every other writer taking
-          // both.
-          const [work] = await tx<
-            { letter_date: string; today: string; status: string }[]
-          >`
+        // The works row lock pairs with the one the MB finalize
+        // transaction holds, so recording and a final-MB finalize on
+        // the same Work serialise: a certificate recorded first is
+        // caught by the final sweep, and a final MB finalized first
+        // makes this recording fail the FINAL_MB_EXISTS check below
+        // (the 0027 insert guard backstops it in the database). Lock
+        // order works -> work_items matches every other writer taking
+        // both.
+        const [work] = await tx<
+          { letter_date: string; today: string; status: string }[]
+        >`
             select w.letter_date::text as letter_date, w.status,
                    (now() at time zone o.timezone)::date::text as today
             from works w
@@ -420,114 +367,114 @@ export function registerPacRoutes(
             where w.id = ${workId} and w.deleted_at is null
             for update of w
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
 
-          // R8: a completed Work accepts no new operational documents.
-          // The works lock above serialises this against completion, and
-          // the 0031 insert guard backstops it in the database.
-          assertWorkOperable(work.status, 'recording a PAC certificate');
+        // R8: a completed Work accepts no new operational documents.
+        // The works lock above serialises this against completion, and
+        // the 0031 insert guard backstops it in the database.
+        assertWorkOperable(work.status, 'recording a PAC certificate');
 
-          // A live final Measurement Book closes the Work's payment
-          // cycle (spec §5.9): a PAC certificate recorded after it
-          // could never be billed, so the recording is refused outright.
-          const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
+        // A live final Measurement Book closes the Work's payment
+        // cycle (spec §5.9): a PAC certificate recorded after it
+        // could never be billed, so the recording is refused outright.
+        const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
             where work_id = ${workId} and is_final and status <> 'cancelled'
           `;
-          if (finalBook) {
-            throw httpError(
-              409,
-              'FINAL_MB_EXISTS',
-              `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a PAC certificate recorded now could never be billed.`,
-            );
-          }
+        if (finalBook) {
+          throw httpError(
+            409,
+            'FINAL_MB_EXISTS',
+            `The final Measurement Book ${finalBook.mb_number ?? finalBook.id} closes this Work's payment cycle; a PAC certificate recorded now could never be billed.`,
+          );
+        }
 
-          // §5.5, friendly form (the 0022 trigger holds it against every
-          // writer): issue date not in the future in the organisation's
-          // timezone, not before the LOA letter date.
-          if (body.issueDate > work.today) {
-            throw httpError(
-              400,
-              'PAC_DATE_FUTURE',
-              `The PAC issue date cannot be in the future (today is ${work.today}).`,
-            );
-          }
-          if (body.issueDate < work.letter_date) {
-            throw httpError(
-              400,
-              'PAC_DATE_BEFORE_LOA',
-              `The PAC issue date cannot precede the LOA letter date ${work.letter_date}.`,
-            );
-          }
+        // §5.5, friendly form (the 0022 trigger holds it against every
+        // writer): issue date not in the future in the organisation's
+        // timezone, not before the LOA letter date.
+        if (body.issueDate > work.today) {
+          throw httpError(
+            400,
+            'PAC_DATE_FUTURE',
+            `The PAC issue date cannot be in the future (today is ${work.today}).`,
+          );
+        }
+        if (body.issueDate < work.letter_date) {
+          throw httpError(
+            400,
+            'PAC_DATE_BEFORE_LOA',
+            `The PAC issue date cannot precede the LOA letter date ${work.letter_date}.`,
+          );
+        }
 
-          // The issuing consignee: an active master, its designation
-          // snapshotted onto the certificate (snapshot-on-use, 0013
-          // posture — the FK stays as provenance only).
-          const [consignee] = await tx<
-            { id: string; designation: string; active: boolean }[]
-          >`
+        // The issuing consignee: an active master, its designation
+        // snapshotted onto the certificate (snapshot-on-use, 0013
+        // posture — the FK stays as provenance only).
+        const [consignee] = await tx<
+          { id: string; designation: string; active: boolean }[]
+        >`
             select id, designation, active from consignee_masters
             where id = ${body.consigneeMasterId}
           `;
-          if (!consignee) {
-            throw httpError(404, 'CONSIGNEE_MASTER_NOT_FOUND', 'No such consignee.');
-          }
-          if (!consignee.active) {
-            throw httpError(
-              409,
-              'CONSIGNEE_MASTER_RETIRED',
-              'This consignee is retired — reactivate it or pick another.',
-            );
-          }
+        if (!consignee) {
+          throw httpError(404, 'CONSIGNEE_MASTER_NOT_FOUND', 'No such consignee.');
+        }
+        if (!consignee.active) {
+          throw httpError(
+            409,
+            'CONSIGNEE_MASTER_RETIRED',
+            'This consignee is retired — reactivate it or pick another.',
+          );
+        }
 
-          // A reference names one live certificate per Work (friendly
-          // check; the partial unique index holds it against races).
-          const [duplicate] = await tx<{ id: string }[]>`
+        // A reference names one live certificate per Work (friendly
+        // check; the partial unique index holds it against races).
+        const [duplicate] = await tx<{ id: string }[]>`
             select id from pac_certificates
             where work_id = ${workId}
               and lower(reference) = lower(${body.reference})
               and status <> 'cancelled'
           `;
-          if (duplicate) {
-            throw httpError(
-              409,
-              'PAC_REFERENCE_EXISTS',
-              'A PAC certificate with this reference is already recorded for this Work.',
-            );
-          }
+        if (duplicate) {
+          throw httpError(
+            409,
+            'PAC_REFERENCE_EXISTS',
+            'A PAC certificate with this reference is already recorded for this Work.',
+          );
+        }
 
-          // The item row locks serialise every certification (and every
-          // installation recording) touching these items: the R18 sums
-          // below are read under the locks, so concurrent certifications
-          // cannot jointly breach the cap — the same discipline the
-          // installation caps use.
-          const lockedItems = await tx<{ id: string }[]>`
+        // The item row locks serialise every certification (and every
+        // installation recording) touching these items: the R18 sums
+        // below are read under the locks, so concurrent certifications
+        // cannot jointly breach the cap — the same discipline the
+        // installation caps use.
+        const lockedItems = await tx<{ id: string }[]>`
             select wi.id from work_items wi
             where wi.id = any(${itemIds}::uuid[]) and wi.work_id = ${workId}
               and wi.deleted_at is null
             order by wi.id
             for update of wi
           `;
-          if (lockedItems.length !== itemIds.length) {
-            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-          }
+        if (lockedItems.length !== itemIds.length) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
 
-          // R18, in exact SQL numeric arithmetic: per item, certified
-          // total across non-cancelled certificates plus the requested
-          // quantity may not exceed the installed total (SUM over
-          // non-cancelled installations — the authoritative aggregate
-          // from installations.ts).
-          const quantities = body.items.map((item) => item.certifiedQuantity);
-          const capRows = await tx<
-            {
-              work_item_id: string;
-              item_number: string;
-              installed: string;
-              covered: string;
-              available: string;
-              exceeded: boolean;
-            }[]
-          >`
+        // R18, in exact SQL numeric arithmetic: per item, certified
+        // total across non-cancelled certificates plus the requested
+        // quantity may not exceed the installed total (SUM over
+        // non-cancelled installations — the authoritative aggregate
+        // from installations.ts).
+        const quantities = body.items.map((item) => item.certifiedQuantity);
+        const capRows = await tx<
+          {
+            work_item_id: string;
+            item_number: string;
+            installed: string;
+            covered: string;
+            available: string;
+            exceeded: boolean;
+          }[]
+        >`
             select wi.id as work_item_id, wi.item_number,
                    installed.total::text as installed,
                    covered.total::text as covered,
@@ -552,34 +499,34 @@ export function registerPacRoutes(
             ) covered
             order by wi.item_number
           `;
-          const offending = capRows.filter((row) => row.exceeded);
-          if (offending.length > 0) {
-            const details: PacCapExceededDetails = {
-              items: offending.map((row) => ({
-                workItemId: row.work_item_id,
-                itemNumber: row.item_number,
-                installed: row.installed,
-                covered: row.covered,
-                available: row.available,
-              })),
-            };
-            // R18's requirement: the error states installed, covered and
-            // available.
-            const message = offending
-              .map(
-                (row) =>
-                  `${row.item_number}: installed ${row.installed}, already certified ${row.covered}, available ${row.available}`,
-              )
-              .join('; ');
-            throw httpError(
-              409,
-              'PAC_EXCEEDS_INSTALLED',
-              `The certified quantity exceeds what installation records support — ${message}.`,
-              details,
-            );
-          }
+        const offending = capRows.filter((row) => row.exceeded);
+        if (offending.length > 0) {
+          const details: PacCapExceededDetails = {
+            items: offending.map((row) => ({
+              workItemId: row.work_item_id,
+              itemNumber: row.item_number,
+              installed: row.installed,
+              covered: row.covered,
+              available: row.available,
+            })),
+          };
+          // R18's requirement: the error states installed, covered and
+          // available.
+          const message = offending
+            .map(
+              (row) =>
+                `${row.item_number}: installed ${row.installed}, already certified ${row.covered}, available ${row.available}`,
+            )
+            .join('; ');
+          throw httpError(
+            409,
+            'PAC_EXCEEDS_INSTALLED',
+            `The certified quantity exceeds what installation records support — ${message}.`,
+            details,
+          );
+        }
 
-          const [row] = await tx<{ id: string }[]>`
+        const [row] = await tx<{ id: string }[]>`
             insert into pac_certificates (
               organisation_id, work_id, reference, issue_date,
               consignee_master_id, consignee_designation, recorded_by_user_id
@@ -590,18 +537,18 @@ export function registerPacRoutes(
             )
             returning id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'PAC_REFERENCE_EXISTS',
-                'A PAC certificate with this reference is already recorded for this Work.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('PAC certificate insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PAC_REFERENCE_EXISTS',
+              'A PAC certificate with this reference is already recorded for this Work.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('PAC certificate insert returned no row');
 
-          await tx`
+        await tx`
             insert into pac_certificate_items (
               organisation_id, pac_certificate_id, work_id, work_item_id,
               certified_quantity
@@ -611,9 +558,16 @@ export function registerPacRoutes(
               as line(item_id, qty)
           `;
 
-          const full = await readCertificate(tx, row.id);
-          if (!full) throw new Error('PAC certificate read-back returned no row');
-          await audit(tx, organisationId, user.id, 'pac_certificate.recorded', row.id, {
+        const full = await readCertificate(tx, row.id);
+        if (!full) throw new Error('PAC certificate read-back returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'pac_certificate.recorded',
+          'pac_certificates',
+          row.id,
+          {
             workId,
             reference: body.reference,
             issueDate: body.issueDate,
@@ -623,35 +577,32 @@ export function registerPacRoutes(
               workItemId: item.workItemId,
               certifiedQuantity: item.certifiedQuantity,
             })),
-          });
-          return toCertificate(full, await loadReleasedValueContext(tx, workId));
-        },
-      );
+          },
+        );
+        return toCertificate(full, await loadReleasedValueContext(tx, workId));
+      });
       return reply.status(201).send(certificate);
     },
   );
 
-  app.post(
-    '/api/pac-certificates/:id/cancel',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/pac-certificates/:id/cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelPacCertificateRequestSchema,
         response: { 200: PacCertificateSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as CancelPacCertificateRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const note = cancellationNote(body.note);
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         // PACs stay an office document, so the writer role still gates
         // site staff out here.
-        await requireWriterRole(tx, user.id);
         // The row lock serialises cancellation against a concurrent
         // cancel; whichever wins, the loser sees the final status.
         const [existing] = await tx<
@@ -712,32 +663,37 @@ export function registerPacRoutes(
         // Cancelling releases the certified quantities: the R18 cap sums
         // only non-cancelled certificates, so the freed amounts are
         // certifiable again immediately.
-        await audit(tx, organisationId, user.id, 'pac_certificate.cancelled', id, {
-          before: { status: 'recorded' },
-          after: { status: 'cancelled' },
-          reference: existing.reference,
-          note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'pac_certificate.cancelled',
+          'pac_certificates',
+          id,
+          {
+            before: { status: 'recorded' },
+            after: { status: 'cancelled' },
+            reference: existing.reference,
+            note,
+          },
+        );
         return toCertificate(full, await loadReleasedValueContext(tx, full.work_id));
       });
     },
   );
 
-  app.post(
-    '/api/pac-certificates/:id/document',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/pac-certificates/:id/document',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         params: IdParamsSchema,
         response: { 200: PacCertificateSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -751,7 +707,7 @@ export function registerPacRoutes(
       }
       // Authorisation before the expensive scan (ops batch): an
       // unauthorised caller must not spend scanner capacity.
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
       });
       await assertNotMalware(scanner, body);
@@ -759,7 +715,7 @@ export function registerPacRoutes(
       // never overwrites earlier evidence; the hash travels with the row.
       const sha256 = createHash('sha256').update(body).digest('hex');
       const objectKey = `${organisationId}/pac/${id}-${sha256.slice(0, 16)}.pdf`;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+      return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const [existing] = await tx<{ work_id: string; status: string }[]>`
           select work_id, status from pac_certificates
@@ -788,6 +744,7 @@ export function registerPacRoutes(
           organisationId,
           user.id,
           'pac_certificate.document_uploaded',
+          'pac_certificates',
           id,
           {
             sizeBytes: body.length,
@@ -801,46 +758,34 @@ export function registerPacRoutes(
     },
   );
 
-  app.get(
-    '/api/pac-certificates/:id/document',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/pac-certificates/:id/document',
       schema: { params: IdParamsSchema },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const key = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [row] = await tx<
-            { work_id: string; document_object_key: string | null }[]
-          >`
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const key = await tenant(async (tx) => {
+        const [row] = await tx<
+          { work_id: string; document_object_key: string | null }[]
+        >`
             select work_id, document_object_key from pac_certificates
             where id = ${id}
           `;
-          if (!row) {
-            throw httpError(
-              404,
-              'PAC_CERTIFICATE_NOT_FOUND',
-              'No such PAC certificate.',
-            );
-          }
-          await assertWorkAccess(tx, user.id, row.work_id);
-          if (row.document_object_key === null) {
-            throw httpError(
-              404,
-              'PDF_NOT_AVAILABLE',
-              'No scanned document has been uploaded for this PAC certificate.',
-            );
-          }
-          return row.document_object_key;
-        },
-      );
+        if (!row) {
+          throw httpError(404, 'PAC_CERTIFICATE_NOT_FOUND', 'No such PAC certificate.');
+        }
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.document_object_key === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'No scanned document has been uploaded for this PAC certificate.',
+          );
+        }
+        return row.document_object_key;
+      });
       const bytes = await storage.get(key);
       void reply.type('application/pdf');
       void reply.header(

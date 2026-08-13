@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ApprovalListQuerySchema,
   ApprovalListResponseSchema,
   ApprovalRequestSchema,
@@ -12,26 +11,12 @@ import {
   UpdateWorkSettingsRequestSchema,
   WorkSettingsResponseSchema,
   type AmendmentDiffEntry,
-  type ApprovalListQuery,
   type ApprovalRequest,
-  type ApproveAmendmentRequest,
-  type ProposeAddItemRequest,
-  type ProposeAmendmentRequest,
-  type ProposeRemoveItemRequest,
-  type RejectAmendmentRequest,
-  type UpdateWorkSettingsRequest,
 } from '@auto-mb/contracts';
-import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import {
-  assertWorkAccess,
-  hasFullWorkScope,
-  requireAuthority,
-  requireWriterRole,
-} from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireAuthority } from '../authz.js';
 import {
   applyChallanCancelReplace,
   applyCorrectionNotice,
@@ -43,27 +28,11 @@ import {
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertWorkOperable } from '../work-status.js';
 import { isPositiveDecimal } from './challans.js';
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 interface ChangeSet {
   quantity?: string;
@@ -185,25 +154,6 @@ async function requireApprover(tx: TransactionSql, userId: string): Promise<void
       'Your membership does not carry the amendment-approval authority.',
     );
   }
-}
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityId: string,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, 'approval_requests',
-      ${entityId}, ${jsonb(tx, details)}
-    )
-  `;
 }
 
 /**
@@ -530,37 +480,44 @@ export async function applyApproval(
     proposed.kind === 'remove_item'
       ? 'amendment.approved'
       : 'correction.approved';
-  await audit(tx, organisationId, userId, approvedAction, request.id, {
-    workId: request.work_id,
-    entityId: boundEntityId,
-    kind: proposed.kind,
-    diff: parseJsonbColumn(request.diff),
-  });
+  await audit(
+    tx,
+    organisationId,
+    userId,
+    approvedAction,
+    'approval_requests',
+    request.id,
+    {
+      workId: request.work_id,
+      entityId: boundEntityId,
+      kind: proposed.kind,
+      diff: parseJsonbColumn(request.diff),
+    },
+  );
 }
 
 export function registerAmendmentRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   // --- Propose a change to an existing item (quantity/rate/description/
   // unit; quantity '0' omits the item) --------------------------------------
-  app.post(
-    '/api/works/:id/amendments',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/amendments',
       schema: {
         params: IdParamsSchema,
         body: ProposeAmendmentRequestSchema,
         response: { 201: ApprovalRequestSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeAmendmentRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
       const changed = Object.keys(body.changes);
       if (changed.length === 0) {
         throw httpError(
@@ -576,36 +533,31 @@ export function registerAmendmentRoutes(
         assertNonNegative(body.changes.rate, 'rate');
       }
 
-      const approval = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works row lock pairs with the one POST
-          // /api/works/:id/complete holds: a proposal filed here and a
-          // completion on the same Work serialise, so a pending proposal
-          // can never be stranded behind a completed Work (the 0031
-          // approval-request insert guard is the database backstop).
-          const [work] = await tx<{ status: string }[]>`
+      const approval = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock pairs with the one POST
+        // /api/works/:id/complete holds: a proposal filed here and a
+        // completion on the same Work serialise, so a pending proposal
+        // can never be stranded behind a completed Work (the 0031
+        // approval-request insert guard is the database backstop).
+        const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'proposing an amendment');
-          // Lock the item so the diff's before-values are consistent with
-          // any concurrent apply.
-          const [item] = await tx<
-            {
-              id: string;
-              item_number: string;
-              current_quantity: string;
-              current_rate: string;
-              current_description: string;
-              current_unit: string;
-            }[]
-          >`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'proposing an amendment');
+        // Lock the item so the diff's before-values are consistent with
+        // any concurrent apply.
+        const [item] = await tx<
+          {
+            id: string;
+            item_number: string;
+            current_quantity: string;
+            current_rate: string;
+            current_description: string;
+            current_unit: string;
+          }[]
+        >`
             select id, item_number,
                    coalesce(effective_quantity, awarded_quantity)::text as current_quantity,
                    coalesce(effective_unit_rate, effective_rate)::text as current_rate,
@@ -616,70 +568,70 @@ export function registerAmendmentRoutes(
               and deleted_at is null
             for update
           `;
-          if (!item) {
-            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-          }
-          await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
+        if (!item) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
 
-          // Normalise proposed decimals through SQL numeric, so the stored
-          // snapshot and diff carry the exact values apply will write.
-          const [normalised] = await tx<
-            { quantity: string | null; rate: string | null }[]
-          >`
+        // Normalise proposed decimals through SQL numeric, so the stored
+        // snapshot and diff carry the exact values apply will write.
+        const [normalised] = await tx<
+          { quantity: string | null; rate: string | null }[]
+        >`
             select ${body.changes.quantity ?? null}::numeric(18,3)::text as quantity,
                    ${body.changes.rate ?? null}::numeric(18,6)::text as rate
           `;
-          const changes: ChangeSet = {
-            ...(body.changes.quantity !== undefined && normalised?.quantity != null
-              ? { quantity: normalised.quantity }
-              : {}),
-            ...(body.changes.rate !== undefined && normalised?.rate != null
-              ? { rate: canonicalRateText(normalised.rate) }
-              : {}),
-            ...(body.changes.description !== undefined
-              ? { description: body.changes.description }
-              : {}),
-            ...(body.changes.unit !== undefined ? { unit: body.changes.unit } : {}),
-          };
-          const diff: AmendmentDiffEntry[] = [];
-          if (changes.quantity !== undefined) {
-            diff.push({
-              field: 'quantity',
-              before: item.current_quantity,
-              after: changes.quantity,
-            });
-          }
-          if (changes.rate !== undefined) {
-            diff.push({
-              field: 'rate',
-              before: canonicalRateText(item.current_rate),
-              after: changes.rate,
-            });
-          }
-          if (changes.description !== undefined) {
-            diff.push({
-              field: 'description',
-              before: item.current_description,
-              after: changes.description,
-            });
-          }
-          if (changes.unit !== undefined) {
-            diff.push({
-              field: 'unit',
-              before: item.current_unit,
-              after: changes.unit,
-            });
-          }
+        const changes: ChangeSet = {
+          ...(body.changes.quantity !== undefined && normalised?.quantity != null
+            ? { quantity: normalised.quantity }
+            : {}),
+          ...(body.changes.rate !== undefined && normalised?.rate != null
+            ? { rate: canonicalRateText(normalised.rate) }
+            : {}),
+          ...(body.changes.description !== undefined
+            ? { description: body.changes.description }
+            : {}),
+          ...(body.changes.unit !== undefined ? { unit: body.changes.unit } : {}),
+        };
+        const diff: AmendmentDiffEntry[] = [];
+        if (changes.quantity !== undefined) {
+          diff.push({
+            field: 'quantity',
+            before: item.current_quantity,
+            after: changes.quantity,
+          });
+        }
+        if (changes.rate !== undefined) {
+          diff.push({
+            field: 'rate',
+            before: canonicalRateText(item.current_rate),
+            after: changes.rate,
+          });
+        }
+        if (changes.description !== undefined) {
+          diff.push({
+            field: 'description',
+            before: item.current_description,
+            after: changes.description,
+          });
+        }
+        if (changes.unit !== undefined) {
+          diff.push({
+            field: 'unit',
+            before: item.current_unit,
+            after: changes.unit,
+          });
+        }
 
-          const proposed: ProposedSnapshot = {
-            kind: 'change_item',
-            workItemId: item.id,
-            itemNumber: item.item_number,
-            changes,
-          };
-          const [created] = await tx<
-            { id: string; entity_id: string | null; work_id: string }[]
-          >`
+        const proposed: ProposedSnapshot = {
+          kind: 'change_item',
+          workItemId: item.id,
+          itemNumber: item.item_number,
+          changes,
+        };
+        const [created] = await tx<
+          { id: string; entity_id: string | null; work_id: string }[]
+        >`
             insert into approval_requests (
               organisation_id, entity_type, entity_id, work_id, proposed,
               diff, reason, requested_by_user_id
@@ -691,60 +643,65 @@ export function registerAmendmentRoutes(
             )
             returning id, entity_id, work_id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'PENDING_EXISTS',
-                'This item already has a pending amendment; decide or withdraw it first.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PENDING_EXISTS',
+              'This item already has a pending amendment; decide or withdraw it first.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('approval insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'amendment.proposed',
+          'approval_requests',
+          created.id,
+          {
             workId,
             workItemId: item.id,
             itemNumber: item.item_number,
             diff,
             reason: body.reason,
-          });
+          },
+        );
 
-          // Direct-apply: an approval-authority holder's proposal applies
-          // immediately, auto-recording the approved request with
-          // decided_by = requester — the audit trail is identical.
-          if (await isApprover(tx, user.id)) {
-            await applyApproval(
-              tx,
-              organisationId,
-              user.id,
-              { ...created, proposed, diff },
-              null,
-            );
-          }
-          return readApproval(tx, created.id);
-        },
-      );
+        // Direct-apply: an approval-authority holder's proposal applies
+        // immediately, auto-recording the approved request with
+        // decided_by = requester — the audit trail is identical.
+        if (await isApprover(tx, user.id)) {
+          await applyApproval(
+            tx,
+            organisationId,
+            user.id,
+            { ...created, proposed, diff },
+            null,
+          );
+        }
+        return readApproval(tx, created.id);
+      });
       return reply.status(201).send(approval);
     },
   );
 
   // --- Propose ADDING a new item to a schedule ------------------------------
-  app.post(
-    '/api/works/:id/amendments/items',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/amendments/items',
       schema: {
         params: IdParamsSchema,
         body: ProposeAddItemRequestSchema,
         response: { 201: ApprovalRequestSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeAddItemRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
       assertNonNegative(body.rate, 'rate');
       if (!isPositiveDecimal(body.quantity)) {
         throw httpError(
@@ -754,72 +711,67 @@ export function registerAmendmentRoutes(
         );
       }
 
-      const approval = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works row lock pairs with the one POST
-          // /api/works/:id/complete holds: a proposal filed here and a
-          // completion on the same Work serialise, so a pending proposal
-          // can never be stranded behind a completed Work (the 0031
-          // approval-request insert guard is the database backstop).
-          const [work] = await tx<{ status: string }[]>`
+      const approval = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock pairs with the one POST
+        // /api/works/:id/complete holds: a proposal filed here and a
+        // completion on the same Work serialise, so a pending proposal
+        // can never be stranded behind a completed Work (the 0031
+        // approval-request insert guard is the database backstop).
+        const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'proposing an amendment');
-          const [schedule] = await tx<{ id: string }[]>`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'proposing an amendment');
+        const [schedule] = await tx<{ id: string }[]>`
             select id from work_schedules
             where id = ${body.scheduleId} and work_id = ${workId}
           `;
-          if (!schedule) {
-            throw httpError(404, 'SCHEDULE_NOT_FOUND', 'No such schedule.');
-          }
-          // Deliberately unfiltered by deleted_at: an OMITTED item keeps
-          // its number reserved forever (R7), so the number can never be
-          // handed to a different item later. The 0001 uniqueness
-          // constraint counts soft-deleted rows for the same reason.
-          const [duplicate] = await tx<{ id: string; deleted_at: Date | null }[]>`
+        if (!schedule) {
+          throw httpError(404, 'SCHEDULE_NOT_FOUND', 'No such schedule.');
+        }
+        // Deliberately unfiltered by deleted_at: an OMITTED item keeps
+        // its number reserved forever (R7), so the number can never be
+        // handed to a different item later. The 0001 uniqueness
+        // constraint counts soft-deleted rows for the same reason.
+        const [duplicate] = await tx<{ id: string; deleted_at: Date | null }[]>`
             select id, deleted_at from work_items
             where work_id = ${workId} and item_number = ${body.itemNumber}
           `;
-          if (duplicate) {
-            throw httpError(
-              409,
-              'DUPLICATE_ENTRY',
-              duplicate.deleted_at === null
-                ? `Item number ${body.itemNumber} already exists in this Work.`
-                : `Item number ${body.itemNumber} belonged to an omitted item and stays reserved; use a new number.`,
-            );
-          }
-          const [normalised] = await tx<{ quantity: string; rate: string }[]>`
+        if (duplicate) {
+          throw httpError(
+            409,
+            'DUPLICATE_ENTRY',
+            duplicate.deleted_at === null
+              ? `Item number ${body.itemNumber} already exists in this Work.`
+              : `Item number ${body.itemNumber} belonged to an omitted item and stays reserved; use a new number.`,
+          );
+        }
+        const [normalised] = await tx<{ quantity: string; rate: string }[]>`
             select ${body.quantity}::numeric(18,3)::text as quantity,
                    ${body.rate}::numeric(18,6)::text as rate
           `;
-          if (!normalised) throw new Error('normalisation returned no row');
-          const proposed: ProposedSnapshot = {
-            kind: 'add_item',
-            scheduleId: body.scheduleId,
-            itemNumber: body.itemNumber,
-            description: body.description,
-            unitCode: body.unitCode,
-            quantity: normalised.quantity,
-            rate: canonicalRateText(normalised.rate),
-          };
-          const diff: AmendmentDiffEntry[] = [
-            { field: 'item', before: null, after: body.itemNumber },
-            { field: 'description', before: null, after: body.description },
-            { field: 'unit', before: null, after: body.unitCode },
-            { field: 'quantity', before: null, after: normalised.quantity },
-            { field: 'rate', before: null, after: canonicalRateText(normalised.rate) },
-          ];
-          const [created] = await tx<
-            { id: string; entity_id: string | null; work_id: string }[]
-          >`
+        if (!normalised) throw new Error('normalisation returned no row');
+        const proposed: ProposedSnapshot = {
+          kind: 'add_item',
+          scheduleId: body.scheduleId,
+          itemNumber: body.itemNumber,
+          description: body.description,
+          unitCode: body.unitCode,
+          quantity: normalised.quantity,
+          rate: canonicalRateText(normalised.rate),
+        };
+        const diff: AmendmentDiffEntry[] = [
+          { field: 'item', before: null, after: body.itemNumber },
+          { field: 'description', before: null, after: body.description },
+          { field: 'unit', before: null, after: body.unitCode },
+          { field: 'quantity', before: null, after: normalised.quantity },
+          { field: 'rate', before: null, after: canonicalRateText(normalised.rate) },
+        ];
+        const [created] = await tx<
+          { id: string; entity_id: string | null; work_id: string }[]
+        >`
             insert into approval_requests (
               organisation_id, entity_type, entity_id, work_id, proposed,
               diff, reason, requested_by_user_id
@@ -831,25 +783,32 @@ export function registerAmendmentRoutes(
             )
             returning id, entity_id, work_id
           `;
-          if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+        if (!created) throw new Error('approval insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'amendment.proposed',
+          'approval_requests',
+          created.id,
+          {
             workId,
             itemNumber: body.itemNumber,
             diff,
             reason: body.reason,
-          });
-          if (await isApprover(tx, user.id)) {
-            await applyApproval(
-              tx,
-              organisationId,
-              user.id,
-              { ...created, proposed, diff },
-              null,
-            );
-          }
-          return readApproval(tx, created.id);
-        },
-      );
+          },
+        );
+        if (await isApprover(tx, user.id)) {
+          await applyApproval(
+            tx,
+            organisationId,
+            user.id,
+            { ...created, proposed, diff },
+            null,
+          );
+        }
+        return readApproval(tx, created.id);
+      });
       return reply.status(201).send(approval);
     },
   );
@@ -859,51 +818,44 @@ export function registerAmendmentRoutes(
   // omission is a soft-delete, allowed only while the item is free of
   // delivery, installation, PAC, and billing evidence, and the item
   // number stays reserved forever afterwards.
-  app.post(
-    '/api/works/:id/amendments/removals',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/amendments/removals',
       schema: {
         params: IdParamsSchema,
         body: ProposeRemoveItemRequestSchema,
         response: { 201: ApprovalRequestSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as ProposeRemoveItemRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
 
-      const approval = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          // The works row lock pairs with the one POST
-          // /api/works/:id/complete holds: a proposal filed here and a
-          // completion on the same Work serialise, so a pending proposal
-          // can never be stranded behind a completed Work (the 0031
-          // approval-request insert guard is the database backstop).
-          const [work] = await tx<{ status: string }[]>`
+      const approval = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock pairs with the one POST
+        // /api/works/:id/complete holds: a proposal filed here and a
+        // completion on the same Work serialise, so a pending proposal
+        // can never be stranded behind a completed Work (the 0031
+        // approval-request insert guard is the database backstop).
+        const [work] = await tx<{ status: string }[]>`
             select status from works where id = ${workId} and deleted_at is null
             for update
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          assertWorkOperable(work.status, 'proposing an amendment');
-          // Lock the item so the before-values recorded in the diff match
-          // whatever a concurrent apply leaves behind.
-          const [item] = await tx<
-            {
-              id: string;
-              item_number: string;
-              current_quantity: string;
-              current_description: string;
-            }[]
-          >`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'proposing an amendment');
+        // Lock the item so the before-values recorded in the diff match
+        // whatever a concurrent apply leaves behind.
+        const [item] = await tx<
+          {
+            id: string;
+            item_number: string;
+            current_quantity: string;
+            current_description: string;
+          }[]
+        >`
             select id, item_number,
                    coalesce(effective_quantity, awarded_quantity)::text
                      as current_quantity,
@@ -914,27 +866,27 @@ export function registerAmendmentRoutes(
               and deleted_at is null
             for update
           `;
-          if (!item) {
-            throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-          }
-          await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
+        if (!item) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        await assertNoPendingRequest(tx, 'work_item_amendment', item.id);
 
-          const proposed: ProposedSnapshot = {
-            kind: 'remove_item',
-            workItemId: item.id,
-            itemNumber: item.item_number,
-          };
-          // Before/after evidence for an omission: the item existed with
-          // this description and quantity, and after the amendment it does
-          // not (the number stays reserved).
-          const diff: AmendmentDiffEntry[] = [
-            { field: 'item', before: item.item_number, after: null },
-            { field: 'description', before: item.current_description, after: null },
-            { field: 'quantity', before: item.current_quantity, after: null },
-          ];
-          const [created] = await tx<
-            { id: string; entity_id: string | null; work_id: string }[]
-          >`
+        const proposed: ProposedSnapshot = {
+          kind: 'remove_item',
+          workItemId: item.id,
+          itemNumber: item.item_number,
+        };
+        // Before/after evidence for an omission: the item existed with
+        // this description and quantity, and after the amendment it does
+        // not (the number stays reserved).
+        const diff: AmendmentDiffEntry[] = [
+          { field: 'item', before: item.item_number, after: null },
+          { field: 'description', before: item.current_description, after: null },
+          { field: 'quantity', before: item.current_quantity, after: null },
+        ];
+        const [created] = await tx<
+          { id: string; entity_id: string | null; work_id: string }[]
+        >`
             insert into approval_requests (
               organisation_id, entity_type, entity_id, work_id, proposed,
               diff, reason, requested_by_user_id
@@ -946,98 +898,90 @@ export function registerAmendmentRoutes(
             )
             returning id, entity_id, work_id
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'PENDING_EXISTS',
-                'This item already has a pending amendment; decide or withdraw it first.',
-              );
-            }
-            throw error;
-          });
-          if (!created) throw new Error('approval insert returned no row');
-          await audit(tx, organisationId, user.id, 'amendment.proposed', created.id, {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'PENDING_EXISTS',
+              'This item already has a pending amendment; decide or withdraw it first.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('approval insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'amendment.proposed',
+          'approval_requests',
+          created.id,
+          {
             workId,
             workItemId: item.id,
             itemNumber: item.item_number,
             diff,
             reason: body.reason,
-          });
-          if (await isApprover(tx, user.id)) {
-            await applyApproval(
-              tx,
-              organisationId,
-              user.id,
-              { ...created, proposed, diff },
-              null,
-            );
-          }
-          return readApproval(tx, created.id);
-        },
-      );
+          },
+        );
+        if (await isApprover(tx, user.id)) {
+          await applyApproval(
+            tx,
+            organisationId,
+            user.id,
+            { ...created, proposed, diff },
+            null,
+          );
+        }
+        return readApproval(tx, created.id);
+      });
       return reply.status(201).send(approval);
     },
   );
 
   // --- Per-Work amendment history ------------------------------------------
-  app.get(
-    '/api/works/:id/amendments',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/amendments',
       schema: {
         params: IdParamsSchema,
         response: { 200: ApprovalListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          const [work] = await tx<{ id: string }[]>`
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const [work] = await tx<{ id: string }[]>`
             select id from works where id = ${workId} and deleted_at is null
           `;
-          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-          return tx<ApprovalRow[]>`
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        return tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where ar.work_id = ${workId}
             order by ar.created_at desc, ar.id
           `;
-        },
-      );
+      });
       return { approvals: rows.map(toApproval) };
     },
   );
 
   // --- Organisation-wide approvals queue -----------------------------------
-  app.get(
-    '/api/approvals',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/approvals',
       schema: {
         querystring: ApprovalListQuerySchema,
         response: { 200: ApprovalListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { status } = request.query as ApprovalListQuery;
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // 'assigned'-scoped memberships see only their Works' requests.
-          const full = await hasFullWorkScope(tx, user.id);
-          return tx<ApprovalRow[]>`
+    async ({ request, user, tenant }) => {
+      const { status } = request.query;
+      const rows = await tenant(async (tx) => {
+        // 'assigned'-scoped memberships see only their Works' requests.
+        const full = await hasFullWorkScope(tx, user.id);
+        return tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where (${status ?? null}::text is null or ar.status = ${status ?? null})
               and (${full} or exists (
@@ -1046,30 +990,26 @@ export function registerAmendmentRoutes(
               ))
             order by ar.created_at desc, ar.id
           `;
-        },
-      );
+      });
       return { approvals: rows.map(toApproval) };
     },
   );
 
   // --- Decide ---------------------------------------------------------------
-  app.post(
-    '/api/approvals/:id/approve',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/approvals/:id/approve',
       schema: {
         params: IdParamsSchema,
         body: ApproveAmendmentRequestSchema,
         response: { 200: ApprovalRequestSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as ApproveAmendmentRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         // Authority is validated HERE, at apply time, in the same
         // transaction that applies — not merely at submission.
         await requireApprover(tx, user.id);
@@ -1104,23 +1044,20 @@ export function registerAmendmentRoutes(
     },
   );
 
-  app.post(
-    '/api/approvals/:id/reject',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/approvals/:id/reject',
       schema: {
         params: IdParamsSchema,
         body: RejectAmendmentRequestSchema,
         response: { 200: ApprovalRequestSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as RejectAmendmentRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         await requireApprover(tx, user.id);
         const [row] = await tx<
           { status: string; work_id: string; entity_type: string }[]
@@ -1152,29 +1089,34 @@ export function registerAmendmentRoutes(
           row.entity_type === 'work_item_amendment'
             ? 'amendment.rejected'
             : 'correction.rejected';
-        await audit(tx, organisationId, user.id, rejectedAction, id, {
-          note: body.note,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          rejectedAction,
+          'approval_requests',
+          id,
+          {
+            note: body.note,
+          },
+        );
         return readApproval(tx, id);
       });
     },
   );
 
-  app.post(
-    '/api/approvals/:id/withdraw',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/approvals/:id/withdraw',
       schema: {
         params: IdParamsSchema,
         response: { 200: ApprovalRequestSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const [row] = await tx<
           {
             status: string;
@@ -1216,30 +1158,35 @@ export function registerAmendmentRoutes(
           row.entity_type === 'work_item_amendment'
             ? 'amendment.withdrawn'
             : 'correction.withdrawn';
-        await audit(tx, organisationId, user.id, withdrawnAction, id, {});
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          withdrawnAction,
+          'approval_requests',
+          id,
+          {},
+        );
         return readApproval(tx, id);
       });
     },
   );
 
   // --- Work settings: the allow_excess_delivery escape hatch ----------------
-  app.patch(
-    '/api/works/:id',
+  tenantRoute(
     {
+      method: 'PATCH',
+      url: '/api/works/:id',
       schema: {
         params: IdParamsSchema,
         body: UpdateWorkSettingsRequestSchema,
         response: { 200: WorkSettingsResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as UpdateWorkSettingsRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const [membership] = await tx<{ role: string }[]>`
           select role from organisation_memberships
           where user_id = ${user.id}

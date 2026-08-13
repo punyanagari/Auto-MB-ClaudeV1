@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ContractSourceContextSchema,
   ContractSourceUploadQuerySchema,
   ContractSourceUploadResponseSchema,
@@ -9,7 +8,6 @@ import {
   type ContractSourceDocument,
   type ContractSourceDocumentKind,
   type ContractSourceIdentityMatch,
-  type ContractSourceUploadQuery,
   type TenderItemSpecificationEvidence,
   type TenderPaymentMatrixEvidence,
   type TenderPeriodEvidence,
@@ -21,7 +19,6 @@ import {
   type TenderReviewPayload,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -30,22 +27,14 @@ import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { upstreamErrorResponses as errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const PDF_MAGIC = Buffer.from('%PDF-');
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
 
 const IdParamsSchema = Type.Object({ id: UuidSchema }, { additionalProperties: false });
 
@@ -330,15 +319,17 @@ async function parentLoaForWriter(
 }
 
 export function registerContractSourceRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
 ): void {
-  app.post(
-    '/api/loa-documents/:id/contract-sources',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents/:id/contract-sources',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         params: IdParamsSchema,
@@ -346,13 +337,9 @@ export function registerContractSourceRoutes(
         response: { 201: ContractSourceUploadResponseSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: parentId } = request.params as { id: string };
-      const { kind, filename } = request.query as ContractSourceUploadQuery;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: parentId } = request.params;
+      const { kind, filename } = request.query;
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         throw httpError(
@@ -367,7 +354,7 @@ export function registerContractSourceRoutes(
 
       // Authorisation and expected identity are resolved before malware scan
       // and text extraction, so a forbidden account cannot spend either.
-      const expected = await withBoundTenant(database, organisationId, user.id, (tx) =>
+      const expected = await tenant((tx) =>
         parentLoaForWriter(tx, user.id, parentId, false),
       );
       await assertNotMalware(scanner, body);
@@ -401,7 +388,7 @@ export function registerContractSourceRoutes(
         review,
       );
       if (!identity.matched) {
-        await withBoundTenant(database, organisationId, user.id, async (tx) => {
+        await tenant(async (tx) => {
           await requireWriterRole(tx, user.id);
           await tx`
             insert into audit_events (
@@ -432,26 +419,22 @@ export function registerContractSourceRoutes(
       const objectKey = `${organisationId}/contractsource/${documentId}.pdf`;
       await storage.put(objectKey, body);
 
-      const result = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const current = await parentLoaForWriter(tx, user.id, parentId, true);
-          // Prevent a time-of-check/time-of-use identity switch. LOA extraction
-          // payloads are normally immutable, but the comparison keeps this
-          // endpoint correct even if a future review-edit path is introduced.
-          if (
-            current.tenderNumber !== expected.tenderNumber ||
-            current.workDescription !== expected.workDescription
-          ) {
-            throw httpError(
-              409,
-              'LOA_IDENTITY_CHANGED',
-              'The LOA identity changed while the supporting document was processed. Review it and upload again.',
-            );
-          }
-          const [row] = await tx<ContractSourceRow[]>`
+      const result = await tenant(async (tx) => {
+        const current = await parentLoaForWriter(tx, user.id, parentId, true);
+        // Prevent a time-of-check/time-of-use identity switch. LOA extraction
+        // payloads are normally immutable, but the comparison keeps this
+        // endpoint correct even if a future review-edit path is introduced.
+        if (
+          current.tenderNumber !== expected.tenderNumber ||
+          current.workDescription !== expected.workDescription
+        ) {
+          throw httpError(
+            409,
+            'LOA_IDENTITY_CHANGED',
+            'The LOA identity changed while the supporting document was processed. Review it and upload again.',
+          );
+        }
+        const [row] = await tx<ContractSourceRow[]>`
             insert into loa_documents (
               id, organisation_id, object_key, original_filename, sha256,
               media_type, size_bytes, extraction_status, extraction_payload,
@@ -469,10 +452,10 @@ export function registerContractSourceRoutes(
                       original_filename, sha256, size_bytes, identity_match,
                       confirmed_work_id, created_at, extraction_payload
           `;
-          if (row === undefined) {
-            throw new Error('contract-source insert returned no row');
-          }
-          await tx`
+        if (row === undefined) {
+          throw new Error('contract-source insert returned no row');
+        }
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -491,56 +474,49 @@ export function registerContractSourceRoutes(
               })}
             )
           `;
-          return {
-            document: toContractSourceDocument(row),
-            context: await contextForParent(
-              tx,
-              parentId,
-              current.parent.confirmed_work_id,
-            ),
-          };
-        },
-      );
+        return {
+          document: toContractSourceDocument(row),
+          context: await contextForParent(
+            tx,
+            parentId,
+            current.parent.confirmed_work_id,
+          ),
+        };
+      });
       return reply.status(201).send(result);
     },
   );
 
-  app.get(
-    '/api/loa-documents/:id/contract-source-context',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/loa-documents/:id/contract-source-context',
       schema: {
         params: IdParamsSchema,
         response: { 200: ContractSourceContextSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         const { parent } = await parentLoaForWriter(tx, user.id, id, false);
         return contextForParent(tx, id, parent.confirmed_work_id);
       });
     },
   );
 
-  app.get(
-    '/api/works/:id/contract-source-context',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/contract-source-context',
       schema: {
         params: IdParamsSchema,
         response: { 200: ContractSourceContextSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const [parent] = await tx<{ id: string }[]>`
           select id
@@ -562,43 +538,35 @@ export function registerContractSourceRoutes(
     },
   );
 
-  app.get(
-    '/api/contract-source-documents/:id/file',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/contract-source-documents/:id/file',
       schema: {
         params: IdParamsSchema,
         response: { 200: Type.Any(), ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const row = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [document] = await tx<ContractSourceRow[]>`
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const row = await tenant(async (tx) => {
+        const [document] = await tx<ContractSourceRow[]>`
             select id, parent_loa_document_id, document_kind,
                    original_filename, sha256, size_bytes, identity_match,
                    confirmed_work_id, created_at, object_key
             from loa_documents
             where id = ${id} and document_kind <> 'loa'
           `;
-          if (document === undefined) {
-            throw httpError(404, 'CONTRACT_SOURCE_NOT_FOUND', 'No such document.');
-          }
-          if (document.confirmed_work_id === null) {
-            await requireWriterRole(tx, user.id);
-          } else {
-            await assertWorkAccess(tx, user.id, document.confirmed_work_id);
-          }
-          return document;
-        },
-      );
+        if (document === undefined) {
+          throw httpError(404, 'CONTRACT_SOURCE_NOT_FOUND', 'No such document.');
+        }
+        if (document.confirmed_work_id === null) {
+          await requireWriterRole(tx, user.id);
+        } else {
+          await assertWorkAccess(tx, user.id, document.confirmed_work_id);
+        }
+        return document;
+      });
       if (row.object_key === undefined) throw new Error('object key not selected');
       const bytes = await storage.get(row.object_key);
       void reply.header(

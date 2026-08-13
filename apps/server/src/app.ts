@@ -1,8 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
-import Fastify, { type FastifyInstance } from 'fastify';
+import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
+import Fastify from 'fastify';
 import pg from 'pg';
+import type { AppInstance } from './app-instance.js';
 import { createDatabasePool, withUserContext } from '@auto-mb/db';
 import { assertProductionSecret, createAuth, type Auth } from './auth.js';
 import { toWebHeaders, toWebRequest } from './http.js';
@@ -55,13 +57,14 @@ import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
-import { registerMeasurementBookRoutes } from './routes/measurement-books.js';
-import { registerTaxInvoiceRoutes } from './routes/tax-invoices.js';
+import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
+import { registerTaxInvoiceRoutes } from './routes/tax-invoices/index.js';
 import { registerCreditNoteRoutes } from './routes/credit-notes.js';
 import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { createFileSystemStorage } from './storage.js';
+import { recordRegisteredRoutes } from './tenant-route.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard } from './origin-guard.js';
 
@@ -224,15 +227,15 @@ function isDatabaseUnavailableError(error: unknown): boolean {
   return false;
 }
 
-export async function buildApp(
-  options: BuildAppOptions = {},
-): Promise<FastifyInstance> {
+export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstance> {
   // Explicit only: an omitted option must not overwrite the process-wide
   // default (or another instance's explicit choice) with `false`.
   if (options.mfaEnforce !== undefined) {
     configureMfaEnforcement(options.mfaEnforce);
   }
 
+  // The type provider is compile-time only (see app-instance.ts): route
+  // schemas type request.params/body/query instead of `as` casts.
   const app = Fastify({
     logger: options.logger ?? false,
     requestIdHeader: 'x-request-id',
@@ -245,7 +248,10 @@ export async function buildApp(
     ...(options.trustProxyHops !== undefined
       ? { trustProxy: options.trustProxyHops }
       : {}),
-  });
+  }).withTypeProvider<TypeBoxTypeProvider>();
+  // Captures every route registration for the route-inventory test, which
+  // proves the tenant preamble is a mechanism rather than a convention.
+  recordRegisteredRoutes(app);
 
   const database = options.databaseUrl
     ? createDatabasePool({

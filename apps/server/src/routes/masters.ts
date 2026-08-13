@@ -1,5 +1,4 @@
 import {
-  ApiErrorSchema,
   ContactListResponseSchema,
   ContactSchema,
   CreateGstRateRequestSchema,
@@ -19,29 +18,21 @@ import {
   UnitMasterSchema,
   WorkConsigneeListResponseSchema,
   type Contact,
-  type CreateGstRateRequest,
-  type EndDateGstRateRequest,
   type GstRateMaster,
-  type LinkWorkConsigneeRequest,
   type LocationMaster,
-  type SaveContactRequest,
-  type SaveLocationMasterRequest,
-  type SaveSignatoryRequest,
-  type SaveUnitMasterRequest,
   type Signatory,
   type UnitMaster,
 } from '@auto-mb/contracts';
 import { CANONICAL_UNIT_NAMES } from '@auto-mb/loa-parser';
 import { Type, type TSchema } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireOwnerRole, requireWriterRole } from '../authz.js';
+import { assertWorkAccess } from '../authz.js';
 import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
-import { requireUser } from '../session.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Contract-domain master data: the unified Contacts master (consignee,
@@ -63,48 +54,11 @@ import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js
  * owner/office. Every mutation is audited.
  */
 
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-} as const;
-
-const IdParamsSchema = Type.Object(
-  {
-    id: Type.String({
-      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    }),
-  },
-  { additionalProperties: false },
-);
-
 /** Retired masters stay out of pickers unless explicitly requested. */
 const ListQuerySchema = Type.Object(
   { includeRetired: Type.Optional(Type.Boolean()) },
   { additionalProperties: false },
 );
-
-async function audit(
-  tx: TransactionSql,
-  organisationId: string,
-  userId: string,
-  action: string,
-  entityType: string,
-  entityId: string | null,
-  details: Record<string, unknown>,
-): Promise<void> {
-  await tx`
-    insert into audit_events (
-      organisation_id, actor_user_id, action, entity_type, entity_id, details
-    )
-    values (
-      ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
-    )
-  `;
-}
 
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === '23505';
@@ -307,10 +261,11 @@ function toSignatory(row: SignatoryRow): Signatory {
 }
 
 export function registerMasterRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   /** Shared retire/reactivate wiring: both are plain active-flag updates,
    * ALWAYS allowed (referenced documents keep their own snapshots, so
    * nothing blocks a retirement), audited, answering with the updated
@@ -331,22 +286,19 @@ export function registerMasterRoutes(
     responseSchema: TSchema;
   }): void {
     for (const active of [false, true]) {
-      app.post(
-        `${options.path}/:id/${active ? 'reactivate' : 'retire'}`,
+      tenantRoute(
         {
+          method: 'POST',
+          url: `${options.path}/:id/${active ? 'reactivate' : 'retire'}`,
           schema: {
             params: IdParamsSchema,
             response: { 200: options.responseSchema, ...errorResponses },
           },
+          role: 'writer',
         },
-        async (request) => {
-          const user = await requireUser(auth, request);
-          const organisationId = requireOrganisationHeader(
-            request.headers['x-organisation-id'],
-          );
-          const { id } = request.params as { id: string };
-          return withBoundTenant(database, organisationId, user.id, async (tx) => {
-            await requireWriterRole(tx, user.id);
+        async ({ request, user, organisationId, tenant }) => {
+          const { id } = request.params;
+          return tenant(async (tx) => {
             const row = await options.update(tx, id, active);
             if (!row) {
               throw httpError(404, options.notFoundCode, options.notFoundMessage);
@@ -387,27 +339,18 @@ export function registerMasterRoutes(
     { additionalProperties: false },
   );
 
-  app.get(
-    '/api/masters/contacts',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/masters/contacts',
       schema: {
         querystring: ContactListQuerySchema,
         response: { 200: ContactListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { includeRetired = false, role } = request.query as {
-        includeRetired?: boolean;
-        role?: 'consignee' | 'vendor' | 'client';
-      };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
+    async ({ request, tenant }) => {
+      const { includeRetired = false, role } = request.query;
+      const rows = await tenant(
         async (tx) => tx<ContactRow[]>`
           select ${tx.unsafe(CONTACT_COLUMNS)}
           from contacts
@@ -422,20 +365,18 @@ export function registerMasterRoutes(
     },
   );
 
-  app.post(
-    '/api/masters/contacts',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/contacts',
       schema: {
         body: SaveContactRequestSchema,
         response: { 201: ContactSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as SaveContactRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
       // Role resolution: a create that names neither vendor nor client is
       // a consignee, exactly as every create was before the procurement
       // wave; naming a role makes a vendor/client that is NOT a consignee
@@ -463,13 +404,8 @@ export function registerMasterRoutes(
           'Locality must contain at least two non-space characters.',
         );
       }
-      const contact = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const [row] = await tx<ContactRow[]>`
+      const contact = await tenant(async (tx) => {
+        const [row] = await tx<ContactRow[]>`
             insert into contacts (
               organisation_id, designation, contact_person, address, phone,
               email, gstin, pincode, state_code, locality, division_code, is_consignee,
@@ -486,48 +422,45 @@ export function registerMasterRoutes(
             )
             returning ${tx.unsafe(CONTACT_COLUMNS)}
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'CONTACT_EXISTS',
-                'An active contact with this designation and address already exists.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('contact insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'contact.created',
-            'contacts',
-            row.id,
-            { designation: body.designation, roles },
-          );
-          return toContact(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'CONTACT_EXISTS',
+              'An active contact with this designation and address already exists.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('contact insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'contact.created',
+          'contacts',
+          row.id,
+          { designation: body.designation, roles },
+        );
+        return toContact(row);
+      });
       return reply.status(201).send(contact);
     },
   );
 
-  app.put(
-    '/api/masters/contacts/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/masters/contacts/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveContactRequestSchema,
         response: { 200: ContactSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveContactRequest;
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
       const locality = body.locality?.trim() ?? null;
@@ -538,8 +471,7 @@ export function registerMasterRoutes(
           'Locality must contain at least two non-space characters.',
         );
       }
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+      return tenant(async (tx) => {
         // The consignee role is a create-time fact an update never
         // changes, and the R16 refusal follows it: a rename must not
         // smuggle an authority designation onto a consignee-role contact,
@@ -650,28 +582,21 @@ export function registerMasterRoutes(
     if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
   }
 
-  app.get(
-    '/api/works/:id/consignees',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id/consignees',
       schema: {
         params: IdParamsSchema,
         response: { 200: WorkConsigneeListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await assertWorkAccess(tx, user.id, workId);
-          await requireWork(tx, workId);
-          return tx<ContactRow[]>`
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      const rows = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        await requireWork(tx, workId);
+        return tx<ContactRow[]>`
             select c.id, c.designation, c.contact_person, c.address, c.phone,
                    c.email, c.gstin, c.pincode, c.state_code, c.locality,
                    c.division_code,
@@ -683,110 +608,95 @@ export function registerMasterRoutes(
             where wc.work_id = ${workId}
             order by lower(c.designation), lower(coalesce(c.address, ''))
           `;
-        },
-      );
+      });
       return { consignees: rows.map(toContact) };
     },
   );
 
-  app.post(
-    '/api/works/:id/consignees',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/works/:id/consignees',
       schema: {
         params: IdParamsSchema,
         body: LinkWorkConsigneeRequestSchema,
         response: { 201: ContactSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId } = request.params as { id: string };
-      const body = request.body as LinkWorkConsigneeRequest;
-      const contact = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          await assertWorkAccess(tx, user.id, workId);
-          await requireWork(tx, workId);
-          const [row] = await tx<ContactRow[]>`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
+      const contact = await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        await requireWork(tx, workId);
+        const [row] = await tx<ContactRow[]>`
             select ${tx.unsafe(CONTACT_COLUMNS)} from contacts
             where id = ${body.contactId}
           `;
-          if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
-          if (!row.is_consignee) {
-            // Vendor/client-role contacts exist now (procurement wave) and
-            // must not join a Work's consignee list; the 0028 trigger
-            // backstops the same rule (R16) in the database.
-            throw httpError(
-              409,
-              'CONTACT_NOT_CONSIGNEE',
-              'Only consignee-role contacts can be linked to a Work (R16).',
-            );
-          }
-          if (!row.active) {
-            throw httpError(
-              409,
-              'CONTACT_RETIRED',
-              'This contact is retired — reactivate it or pick another.',
-            );
-          }
-          await tx`
+        if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+        if (!row.is_consignee) {
+          // Vendor/client-role contacts exist now (procurement wave) and
+          // must not join a Work's consignee list; the 0028 trigger
+          // backstops the same rule (R16) in the database.
+          throw httpError(
+            409,
+            'CONTACT_NOT_CONSIGNEE',
+            'Only consignee-role contacts can be linked to a Work (R16).',
+          );
+        }
+        if (!row.active) {
+          throw httpError(
+            409,
+            'CONTACT_RETIRED',
+            'This contact is retired — reactivate it or pick another.',
+          );
+        }
+        await tx`
             insert into work_consignees (
               organisation_id, work_id, contact_id, created_by_user_id
             )
             values (${organisationId}, ${workId}, ${body.contactId}, ${user.id})
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'WORK_CONSIGNEE_EXISTS',
-                'This consignee is already linked to the Work.',
-              );
-            }
-            throw error;
-          });
-          // Audited against the Work so the link shows up in the Work's
-          // timeline alongside the documents that used it.
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'work.consignee_linked',
-            'works',
-            workId,
-            { contactId: body.contactId, designation: row.designation },
-          );
-          return toContact(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'WORK_CONSIGNEE_EXISTS',
+              'This consignee is already linked to the Work.',
+            );
+          }
+          throw error;
+        });
+        // Audited against the Work so the link shows up in the Work's
+        // timeline alongside the documents that used it.
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'work.consignee_linked',
+          'works',
+          workId,
+          { contactId: body.contactId, designation: row.designation },
+        );
+        return toContact(row);
+      });
       return reply.status(201).send(contact);
     },
   );
 
-  app.delete(
-    '/api/works/:id/consignees/:contactId',
+  tenantRoute(
     {
+      method: 'DELETE',
+      url: '/api/works/:id/consignees/:contactId',
       schema: {
         params: WorkConsigneeParamsSchema,
         response: { 204: Type.Null(), ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: workId, contactId } = request.params as {
-        id: string;
-        contactId: string;
-      };
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId, contactId } = request.params;
+      await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         const removed = await tx`
           delete from work_consignees
@@ -809,32 +719,24 @@ export function registerMasterRoutes(
           { contactId },
         );
       });
-      return reply.status(204).send();
+      return reply.status(204).send(null);
     },
   );
 
   // --- Location masters -----------------------------------------------------
 
-  app.get(
-    '/api/masters/locations',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/masters/locations',
       schema: {
         querystring: ListQuerySchema,
         response: { 200: LocationMasterListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
+    async ({ request, tenant }) => {
+      const { includeRetired = false } = request.query;
+      const rows = await tenant(
         async (tx) => tx<LocationRow[]>`
           select id, name, kind, active, created_at
           from location_masters
@@ -846,77 +748,66 @@ export function registerMasterRoutes(
     },
   );
 
-  app.post(
-    '/api/masters/locations',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/locations',
       schema: {
         body: SaveLocationMasterRequestSchema,
         response: { 201: LocationMasterSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as SaveLocationMasterRequest;
-      const location = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const [row] = await tx<LocationRow[]>`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const location = await tenant(async (tx) => {
+        const [row] = await tx<LocationRow[]>`
             insert into location_masters (
               organisation_id, name, kind, created_by_user_id
             )
             values (${organisationId}, ${body.name}, ${body.kind}, ${user.id})
             returning id, name, kind, active, created_at
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'LOCATION_MASTER_EXISTS',
-                'A location with this name and kind already exists (it may be retired — reactivate it instead).',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('location master insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'location_master.created',
-            'location_masters',
-            row.id,
-            { name: body.name, kind: body.kind },
-          );
-          return toLocation(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'LOCATION_MASTER_EXISTS',
+              'A location with this name and kind already exists (it may be retired — reactivate it instead).',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('location master insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'location_master.created',
+          'location_masters',
+          row.id,
+          { name: body.name, kind: body.kind },
+        );
+        return toLocation(row);
+      });
       return reply.status(201).send(location);
     },
   );
 
-  app.put(
-    '/api/masters/locations/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/masters/locations/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveLocationMasterRequestSchema,
         response: { 200: LocationMasterSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveLocationMasterRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const [row] = await tx<LocationRow[]>`
           update location_masters
           set name = ${body.name}, kind = ${body.kind}
@@ -969,112 +860,91 @@ export function registerMasterRoutes(
 
   // --- Unit masters ---------------------------------------------------------
 
-  app.get(
-    '/api/masters/units',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/masters/units',
       schema: {
         querystring: ListQuerySchema,
         response: { 200: UnitMasterListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Defaults appear on first read, for any member: seeding is
-          // idempotent system provisioning, not user content — see
-          // ensureDefaultUnits.
-          await ensureDefaultUnits(tx, organisationId, user.id);
-          return tx<UnitRow[]>`
+    async ({ request, user, organisationId, tenant }) => {
+      const { includeRetired = false } = request.query;
+      const rows = await tenant(async (tx) => {
+        // Defaults appear on first read, for any member: seeding is
+        // idempotent system provisioning, not user content — see
+        // ensureDefaultUnits.
+        await ensureDefaultUnits(tx, organisationId, user.id);
+        return tx<UnitRow[]>`
             select id, name, active, created_at
             from unit_masters
             where active or ${includeRetired}
             order by lower(name)
           `;
-        },
-      );
+      });
       return { units: rows.map(toUnit) };
     },
   );
 
-  app.post(
-    '/api/masters/units',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/units',
       schema: {
         body: SaveUnitMasterRequestSchema,
         response: { 201: UnitMasterSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as SaveUnitMasterRequest;
-      const unit = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const [row] = await tx<UnitRow[]>`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const unit = await tenant(async (tx) => {
+        const [row] = await tx<UnitRow[]>`
             insert into unit_masters (organisation_id, name, created_by_user_id)
             values (${organisationId}, ${body.name}, ${user.id})
             returning id, name, active, created_at
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'UNIT_MASTER_EXISTS',
-                'A unit with this name already exists (it may be retired — reactivate it instead).',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('unit master insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'unit_master.created',
-            'unit_masters',
-            row.id,
-            { name: body.name },
-          );
-          return toUnit(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'UNIT_MASTER_EXISTS',
+              'A unit with this name already exists (it may be retired — reactivate it instead).',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('unit master insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'unit_master.created',
+          'unit_masters',
+          row.id,
+          { name: body.name },
+        );
+        return toUnit(row);
+      });
       return reply.status(201).send(unit);
     },
   );
 
-  app.put(
-    '/api/masters/units/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/masters/units/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveUnitMasterRequestSchema,
         response: { 200: UnitMasterSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveUnitMasterRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const [row] = await tx<UnitRow[]>`
           update unit_masters set name = ${body.name}
           where id = ${id}
@@ -1124,26 +994,18 @@ export function registerMasterRoutes(
 
   // --- Organisation signatories ---------------------------------------------
 
-  app.get(
-    '/api/masters/signatories',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/masters/signatories',
       schema: {
         querystring: ListQuerySchema,
         response: { 200: SignatoryListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { includeRetired = false } = request.query as {
-        includeRetired?: boolean;
-      };
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
+    async ({ request, tenant }) => {
+      const { includeRetired = false } = request.query;
+      const rows = await tenant(
         async (tx) => tx<SignatoryRow[]>`
           select id, name, designation, active, created_at
           from organisation_signatories
@@ -1155,77 +1017,66 @@ export function registerMasterRoutes(
     },
   );
 
-  app.post(
-    '/api/masters/signatories',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/signatories',
       schema: {
         body: SaveSignatoryRequestSchema,
         response: { 201: SignatorySchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as SaveSignatoryRequest;
-      const signatory = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          const [row] = await tx<SignatoryRow[]>`
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const signatory = await tenant(async (tx) => {
+        const [row] = await tx<SignatoryRow[]>`
             insert into organisation_signatories (
               organisation_id, name, designation, created_by_user_id
             )
             values (${organisationId}, ${body.name}, ${body.designation}, ${user.id})
             returning id, name, designation, active, created_at
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'SIGNATORY_EXISTS',
-                'A signatory with this name and designation already exists (they may be retired — reactivate them instead).',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('signatory insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'signatory.created',
-            'organisation_signatories',
-            row.id,
-            { name: body.name, designation: body.designation },
-          );
-          return toSignatory(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'SIGNATORY_EXISTS',
+              'A signatory with this name and designation already exists (they may be retired — reactivate them instead).',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('signatory insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'signatory.created',
+          'organisation_signatories',
+          row.id,
+          { name: body.name, designation: body.designation },
+        );
+        return toSignatory(row);
+      });
       return reply.status(201).send(signatory);
     },
   );
 
-  app.put(
-    '/api/masters/signatories/:id',
+  tenantRoute(
     {
+      method: 'PUT',
+      url: '/api/masters/signatories/:id',
       schema: {
         params: IdParamsSchema,
         body: SaveSignatoryRequestSchema,
         response: { 200: SignatorySchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as SaveSignatoryRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireWriterRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const [row] = await tx<SignatoryRow[]>`
           update organisation_signatories
           set name = ${body.name}, designation = ${body.designation}
@@ -1284,22 +1135,16 @@ export function registerMasterRoutes(
   // document may say, which is statutory configuration rather than
   // drafting.
 
-  app.get(
-    '/api/masters/gst-rates',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/masters/gst-rates',
       schema: {
         response: { 200: GstRateListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
+    async ({ tenant }) => {
+      const rows = await tenant(
         async (tx) => tx<GstRateRow[]>`
           select id, rate::text as rate, label,
                  effective_from::text as effective_from,
@@ -1312,20 +1157,18 @@ export function registerMasterRoutes(
     },
   );
 
-  app.post(
-    '/api/masters/gst-rates',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/gst-rates',
       schema: {
         body: CreateGstRateRequestSchema,
         response: { 201: GstRateMasterSchema, ...errorResponses },
       },
+      role: 'owner',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const body = request.body as CreateGstRateRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
       const label = body.label.trim();
       if (label.length < 2 || label.length > 100) {
         throw httpError(
@@ -1342,13 +1185,8 @@ export function registerMasterRoutes(
           `The end date ${body.effectiveTo} precedes the start date ${body.effectiveFrom}, so the window would cover nothing.`,
         );
       }
-      const created = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireOwnerRole(tx, user.id);
-          const [row] = await tx<GstRateRow[]>`
+      const created = await tenant(async (tx) => {
+        const [row] = await tx<GstRateRow[]>`
             insert into gst_rates (
               organisation_id, rate, label, effective_from, effective_to,
               created_by_user_id
@@ -1361,55 +1199,51 @@ export function registerMasterRoutes(
                       effective_from::text as effective_from,
                       effective_to::text as effective_to, created_at
           `.catch((error: unknown) => {
-            if (isUniqueViolation(error)) {
-              throw httpError(
-                409,
-                'GST_RATE_EXISTS',
-                'This rate already has a row starting on this date.',
-              );
-            }
-            throw error;
-          });
-          if (!row) throw new Error('gst rate insert returned no row');
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'gst_rate.created',
-            'gst_rates',
-            row.id,
-            {
-              rate: row.rate,
-              label,
-              effectiveFrom: row.effective_from,
-              effectiveTo: row.effective_to,
-            },
-          );
-          return toGstRate(row);
-        },
-      );
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'GST_RATE_EXISTS',
+              'This rate already has a row starting on this date.',
+            );
+          }
+          throw error;
+        });
+        if (!row) throw new Error('gst rate insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'gst_rate.created',
+          'gst_rates',
+          row.id,
+          {
+            rate: row.rate,
+            label,
+            effectiveFrom: row.effective_from,
+            effectiveTo: row.effective_to,
+          },
+        );
+        return toGstRate(row);
+      });
       return reply.status(201).send(created);
     },
   );
 
-  app.post(
-    '/api/masters/gst-rates/:id/end-date',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/masters/gst-rates/:id/end-date',
       schema: {
         params: IdParamsSchema,
         body: EndDateGstRateRequestSchema,
         response: { 200: GstRateMasterSchema, ...errorResponses },
       },
+      role: 'owner',
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const body = request.body as EndDateGstRateRequest;
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
-        await requireOwnerRole(tx, user.id);
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
         const [current] = await tx<GstRateRow[]>`
           select id, rate::text as rate, label,
                  effective_from::text as effective_from,

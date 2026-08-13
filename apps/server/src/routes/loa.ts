@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ApiErrorSchema,
   ConfirmWorkRequestSchema,
   LoaDocumentDetailSchema,
   PAYMENT_MATRIX_CATEGORIES,
@@ -15,7 +14,6 @@ import {
   type LoaDocument,
   type LoaDocumentDetail,
   type PaymentMatrixCategory,
-  type UploadLoaQuery,
   type Work,
   type WorkSchedule,
 } from '@auto-mb/contracts';
@@ -26,7 +24,6 @@ import {
   type PerformanceGuaranteeField,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
-import type { FastifyInstance } from 'fastify';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -43,9 +40,10 @@ import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.j
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertNotMalware } from '../upload-guards.js';
-import { requireUser } from '../session.js';
 import type { ObjectStorage } from '../storage.js';
-import { requireOrganisationHeader, withBoundTenant } from '../tenant-context.js';
+import { upstreamErrorResponses as errorResponses } from './shared.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /** What loa_documents.extraction_payload holds for a parsed document:
  * both extracted text views plus the parser's review payload, all verbatim.
@@ -55,15 +53,6 @@ interface ExtractionPayload {
   readonly rawSourceText: string;
   readonly review: LoaReviewPayload;
 }
-
-const errorResponses = {
-  400: ApiErrorSchema,
-  401: ApiErrorSchema,
-  403: ApiErrorSchema,
-  404: ApiErrorSchema,
-  409: ApiErrorSchema,
-  502: ApiErrorSchema,
-} as const;
 
 // Params are validated with a pattern rather than the uuid format so the
 // check does not depend on the ajv instance's format registry.
@@ -418,27 +407,25 @@ function assertInitialPaymentMatrix(
 }
 
 export function registerLoaRoutes(
-  app: FastifyInstance,
+  app: AppInstance,
   auth: Auth,
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
 ): void {
-  app.post(
-    '/api/loa-documents',
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents',
       bodyLimit: MAX_PDF_BYTES,
       schema: {
         querystring: UploadLoaQuerySchema,
         response: { 201: LoaDocumentDetailSchema, ...errorResponses },
       },
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { filename } = request.query as UploadLoaQuery;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { filename } = request.query;
 
       const body = request.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
@@ -454,7 +441,7 @@ export function registerLoaRoutes(
       }
       // Authorisation BEFORE any expensive work: an unauthorised caller
       // must not be able to spend a malware scan or a pdftotext run.
-      await withBoundTenant(database, organisationId, user.id, async (tx) => {
+      await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
       });
       await assertNotMalware(scanner, body);
@@ -500,16 +487,12 @@ export function registerLoaRoutes(
         status = 'failed';
       }
 
-      const row = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Re-checked inside the writing transaction: the role could
-          // have been revoked while the scan and extraction ran.
-          await requireWriterRole(tx, user.id);
+      const row = await tenant(async (tx) => {
+        // Re-checked inside the writing transaction: the role could
+        // have been revoked while the scan and extraction ran.
+        await requireWriterRole(tx, user.id);
 
-          const [inserted] = await tx<LoaDocumentRow[]>`
+        const [inserted] = await tx<LoaDocumentRow[]>`
             insert into loa_documents (
               id, organisation_id, object_key, original_filename, sha256,
               media_type, size_bytes, extraction_status, extraction_payload,
@@ -524,9 +507,9 @@ export function registerLoaRoutes(
                       extraction_status, confirmed_work_id, created_at,
                       extraction_payload
           `;
-          if (!inserted) throw new Error('loa_documents insert returned no row');
+        if (!inserted) throw new Error('loa_documents insert returned no row');
 
-          await tx`
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -536,48 +519,40 @@ export function registerLoaRoutes(
               ${jsonb(tx, { filename, sha256, sizeBytes: body.length, extractionStatus: status })}
             )
           `;
-          return inserted;
-        },
-      );
+        return inserted;
+      });
       return reply.status(201).send(toDocumentDetail(row));
     },
   );
 
-  app.get(
-    '/api/loa-documents',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/loa-documents',
       schema: {
         response: { 200: LoaDocumentListResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // Owner/office run the upload/review workflow and see every
-          // document. Site/viewer members see only documents already
-          // confirmed into Works within their scope — unconfirmed uploads
-          // (and their extraction payloads) are the writers' workspace
-          // (external re-audit).
-          const membership = await membershipOf(tx, user.id);
-          const writer = membership?.role === 'owner' || membership?.role === 'office';
-          if (writer) {
-            return tx<LoaDocumentRow[]>`
+    async ({ user, tenant }) => {
+      const rows = await tenant(async (tx) => {
+        // Owner/office run the upload/review workflow and see every
+        // document. Site/viewer members see only documents already
+        // confirmed into Works within their scope — unconfirmed uploads
+        // (and their extraction payloads) are the writers' workspace
+        // (external re-audit).
+        const membership = await membershipOf(tx, user.id);
+        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        if (writer) {
+          return tx<LoaDocumentRow[]>`
               select id, original_filename, sha256, size_bytes,
                      extraction_status, confirmed_work_id, created_at
               from loa_documents
               where document_kind = 'loa'
               order by created_at desc, id
             `;
-          }
-          const full = membership !== undefined && membership.work_scope !== 'assigned';
-          return tx<LoaDocumentRow[]>`
+        }
+        const full = membership !== undefined && membership.work_scope !== 'assigned';
+        return tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at
             from loa_documents
@@ -590,134 +565,118 @@ export function registerLoaRoutes(
               ))
             order by created_at desc, id
           `;
-        },
-      );
+      });
       return { documents: rows.map(toDocument) };
     },
   );
 
-  app.get(
-    '/api/loa-documents/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/loa-documents/:id',
       schema: {
         params: DocumentParamsSchema,
         response: { 200: LoaDocumentDetailSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      const row = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          const [found] = await tx<LoaDocumentRow[]>`
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      const row = await tenant(async (tx) => {
+        const [found] = await tx<LoaDocumentRow[]>`
             select id, original_filename, sha256, size_bytes,
                    extraction_status, confirmed_work_id, created_at,
                    extraction_payload
             from loa_documents
             where id = ${id} and document_kind = 'loa'
           `;
-          if (!found) {
-            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
-          }
-          // Same visibility rule as the list; the denial is 404 so a
-          // guessed identifier does not confirm the document exists.
-          const membership = await membershipOf(tx, user.id);
-          const writer = membership?.role === 'owner' || membership?.role === 'office';
-          if (!writer) {
-            let visible = false;
-            if (membership !== undefined && found.confirmed_work_id !== null) {
-              if (membership.work_scope !== 'assigned') {
-                visible = true;
-              } else {
-                const [assignment] = await tx<{ id: string }[]>`
+        if (!found) {
+          throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        // Same visibility rule as the list; the denial is 404 so a
+        // guessed identifier does not confirm the document exists.
+        const membership = await membershipOf(tx, user.id);
+        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        if (!writer) {
+          let visible = false;
+          if (membership !== undefined && found.confirmed_work_id !== null) {
+            if (membership.work_scope !== 'assigned') {
+              visible = true;
+            } else {
+              const [assignment] = await tx<{ id: string }[]>`
                   select id from work_assignments
                   where work_id = ${found.confirmed_work_id}
                     and user_id = ${user.id}
                 `;
-                visible = assignment !== undefined;
-              }
-            }
-            if (!visible) {
-              throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+              visible = assignment !== undefined;
             }
           }
-          return found;
-        },
-      );
+          if (!visible) {
+            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+          }
+        }
+        return found;
+      });
       return toDocumentDetail(row);
     },
   );
 
-  app.post(
-    '/api/loa-documents/:id/confirm',
+  tenantRoute(
     {
+      method: 'POST',
+      url: '/api/loa-documents/:id/confirm',
       schema: {
         params: DocumentParamsSchema,
         body: ConfirmWorkRequestSchema,
         response: { 201: WorkDetailResponseSchema, ...errorResponses },
       },
+      role: 'writer',
     },
-    async (request, reply) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id: documentId } = request.params as { id: string };
-      const body = request.body as ConfirmWorkRequest;
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: documentId } = request.params;
+      const body = request.body;
       assertPricingShapeCoherent(body);
       assertPbgRequirementCoherent(body);
       assertInitialPaymentMatrix(body.paymentMatrix);
 
-      const result = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          await requireWriterRole(tx, user.id);
-          // Needs the organisation's timezone, so it runs here rather
-          // than beside the two synchronous assert* calls above.
-          await assertLetterDateCoherent(tx, organisationId, body.letterDate);
+      const result = await tenant(async (tx) => {
+        // Needs the organisation's timezone, so it runs here rather
+        // than beside the two synchronous assert* calls above.
+        await assertLetterDateCoherent(tx, organisationId, body.letterDate);
 
-          const [document] = await tx<
-            { id: string; extraction_status: string; extraction_payload: unknown }[]
-          >`
+        const [document] = await tx<
+          { id: string; extraction_status: string; extraction_payload: unknown }[]
+        >`
             select id, extraction_status, extraction_payload
             from loa_documents
             where id = ${documentId} and document_kind = 'loa'
             for update
           `;
-          if (!document) {
-            throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
-          }
-          if (document.extraction_status !== 'review') {
-            throw httpError(
-              409,
-              'DOCUMENT_NOT_REVIEWABLE',
-              `Only documents in review can be confirmed (status: ${document.extraction_status}).`,
-            );
-          }
-          const parsedPayload = parseJsonbColumn(document.extraction_payload);
-          const payload =
-            parsedPayload !== null &&
-            typeof parsedPayload === 'object' &&
-            'review' in parsedPayload
-              ? (parsedPayload as unknown as ExtractionPayload)
-              : null;
+        if (!document) {
+          throw httpError(404, 'DOCUMENT_NOT_FOUND', 'No such LOA document.');
+        }
+        if (document.extraction_status !== 'review') {
+          throw httpError(
+            409,
+            'DOCUMENT_NOT_REVIEWABLE',
+            `Only documents in review can be confirmed (status: ${document.extraction_status}).`,
+          );
+        }
+        const parsedPayload = parseJsonbColumn(document.extraction_payload);
+        const payload =
+          parsedPayload !== null &&
+          typeof parsedPayload === 'object' &&
+          'review' in parsedPayload
+            ? (parsedPayload as unknown as ExtractionPayload)
+            : null;
 
-          // The reviewer-confirmed PBG requirement lands on the Work in
-          // this same atomic transaction; its provenance payload is built
-          // from the STORED extraction payload, never from the client.
-          const pbg = body.pbgRequirement;
-          const pbgSource =
-            pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
+        // The reviewer-confirmed PBG requirement lands on the Work in
+        // this same atomic transaction; its provenance payload is built
+        // from the STORED extraction payload, never from the client.
+        const pbg = body.pbgRequirement;
+        const pbgSource =
+          pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
 
-          const [work] = await tx<WorkRow[]>`
+        const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
@@ -746,20 +705,20 @@ export function registerLoaRoutes(
                       status, completed_at, completed_by_user_id,
                       completion_note, created_at
           `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'WORK_EXISTS',
-                'A Work with this work code or letter number already exists.',
-              );
-            }
-            throw error;
-          });
-          if (!work) throw new Error('works insert returned no row');
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'WORK_EXISTS',
+              'A Work with this work code or letter number already exists.',
+            );
+          }
+          throw error;
+        });
+        if (!work) throw new Error('works insert returned no row');
 
-          const schedules: WorkSchedule[] = [];
-          for (const [index, schedule] of body.schedules.entries()) {
-            const [scheduleRow] = await tx<{ id: string }[]>`
+        const schedules: WorkSchedule[] = [];
+        for (const [index, schedule] of body.schedules.entries()) {
+          const [scheduleRow] = await tx<{ id: string }[]>`
               insert into work_schedules (
                 organisation_id, work_id, schedule_code, title, position
               )
@@ -769,12 +728,12 @@ export function registerLoaRoutes(
               )
               returning id
             `;
-            if (!scheduleRow) throw new Error('work_schedules insert returned no row');
+          if (!scheduleRow) throw new Error('work_schedules insert returned no row');
 
-            const items = [];
-            for (const item of schedule.items) {
-              const evidence = sourceEvidenceFor(payload, item);
-              const [itemRow] = await tx<{ id: string }[]>`
+          const items = [];
+          for (const item of schedule.items) {
+            const evidence = sourceEvidenceFor(payload, item);
+            const [itemRow] = await tx<{ id: string }[]>`
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
                   description, unit_code, awarded_quantity, effective_rate,
@@ -788,36 +747,36 @@ export function registerLoaRoutes(
                 )
                 returning id
               `;
-              if (!itemRow) throw new Error('work_items insert returned no row');
-              items.push({
-                id: itemRow.id,
-                scheduleId: scheduleRow.id,
-                itemNumber: item.itemNumber,
-                description: item.description,
-                unitCode: item.unitCode,
-                awardedQuantity: item.awardedQuantity,
-                effectiveRate: item.effectiveRate,
-                // Serial traceability is switched on per item after
-                // confirmation, once the contractor knows which items
-                // ship serialised equipment.
-                requiresSerials: false,
-                // Milestone 8: reviewer-set at confirmation (the parser
-                // never proposes it); editable later via the payment
-                // category route.
-                paymentCategory: item.paymentCategory ?? null,
-              });
-            }
-            schedules.push({
-              id: scheduleRow.id,
-              scheduleCode: schedule.scheduleCode,
-              title: schedule.title,
-              position: index + 1,
-              items,
+            if (!itemRow) throw new Error('work_items insert returned no row');
+            items.push({
+              id: itemRow.id,
+              scheduleId: scheduleRow.id,
+              itemNumber: item.itemNumber,
+              description: item.description,
+              unitCode: item.unitCode,
+              awardedQuantity: item.awardedQuantity,
+              effectiveRate: item.effectiveRate,
+              // Serial traceability is switched on per item after
+              // confirmation, once the contractor knows which items
+              // ship serialised equipment.
+              requiresSerials: false,
+              // Milestone 8: reviewer-set at confirmation (the parser
+              // never proposes it); editable later via the payment
+              // category route.
+              paymentCategory: item.paymentCategory ?? null,
             });
           }
+          schedules.push({
+            id: scheduleRow.id,
+            scheduleCode: schedule.scheduleCode,
+            title: schedule.title,
+            position: index + 1,
+            items,
+          });
+        }
 
-          for (const matrixRow of body.paymentMatrix ?? []) {
-            await tx`
+        for (const matrixRow of body.paymentMatrix ?? []) {
+          await tx`
               insert into payment_matrices (
                 organisation_id, work_id, category, pct_supply,
                 pct_installation, pct_pac, pct_final_bill, created_by_user_id
@@ -828,9 +787,9 @@ export function registerLoaRoutes(
                 ${matrixRow.pctPac}, ${matrixRow.pctFinalBill}, ${user.id}
               )
             `;
-          }
+        }
 
-          await tx`
+        await tx`
             update loa_documents
             set confirmed_work_id = ${work.id},
                 extraction_status = case
@@ -840,7 +799,7 @@ export function registerLoaRoutes(
             where id = ${documentId} or parent_loa_document_id = ${documentId}
           `;
 
-          await tx`
+        await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
             )
@@ -882,32 +841,32 @@ export function registerLoaRoutes(
             )
           `;
 
-          // An 'assigned'-scoped confirmer must be able to see the Work
-          // they just created: grant their assignment in this same
-          // transaction, mirroring the owner-managed assignment writes
-          // (identity.ts) in column set and audit shape. Owners and
-          // 'all'-scope members see every Work and need no row.
-          const membership = await membershipOf(tx, user.id);
-          if (membership?.work_scope === 'assigned') {
-            const previousAssignments = await tx<{ work_id: string }[]>`
+        // An 'assigned'-scoped confirmer must be able to see the Work
+        // they just created: grant their assignment in this same
+        // transaction, mirroring the owner-managed assignment writes
+        // (identity.ts) in column set and audit shape. Owners and
+        // 'all'-scope members see every Work and need no row.
+        const membership = await membershipOf(tx, user.id);
+        if (membership?.work_scope === 'assigned') {
+          const previousAssignments = await tx<{ work_id: string }[]>`
               select work_id from work_assignments
               where user_id = ${user.id}
               order by created_at
             `;
-            await tx`
+          await tx`
               insert into work_assignments (
                 organisation_id, work_id, user_id, created_by_user_id
               )
               values (${organisationId}, ${work.id}, ${user.id}, ${user.id})
             `;
-            const previousWorkIds = previousAssignments.map((row) => row.work_id);
-            // Assignments are a set; both sides sort so the trail matches
-            // the owner-managed replace-set audits exactly.
-            const assignmentChanges = auditDiff(
-              { workIds: [...previousWorkIds].sort() },
-              { workIds: [...previousWorkIds, work.id].sort() },
-            );
-            await tx`
+          const previousWorkIds = previousAssignments.map((row) => row.work_id);
+          // Assignments are a set; both sides sort so the trail matches
+          // the owner-managed replace-set audits exactly.
+          const assignmentChanges = auditDiff(
+            { workIds: [...previousWorkIds].sort() },
+            { workIds: [...previousWorkIds, work.id].sort() },
+          );
+          await tx`
               insert into audit_events (
                 organisation_id, actor_user_id, action, entity_type, details
               )
@@ -921,11 +880,10 @@ export function registerLoaRoutes(
                 })}
               )
             `;
-          }
+        }
 
-          return { work: toWork(work), schedules };
-        },
-      ).catch((error: unknown) => {
+        return { work: toWork(work), schedules };
+      }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
           throw httpError(
             409,
@@ -939,24 +897,17 @@ export function registerLoaRoutes(
     },
   );
 
-  app.get(
-    '/api/works',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works',
       schema: { response: { 200: WorkListResponseSchema, ...errorResponses } },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const rows = await withBoundTenant(
-        database,
-        organisationId,
-        user.id,
-        async (tx) => {
-          // 'assigned'-scoped memberships list only their Works.
-          const full = await hasFullWorkScope(tx, user.id);
-          return tx<WorkRow[]>`
+    async ({ user, tenant }) => {
+      const rows = await tenant(async (tx) => {
+        // 'assigned'-scoped memberships list only their Works.
+        const full = await hasFullWorkScope(tx, user.id);
+        return tx<WorkRow[]>`
             select id, work_code, letter_number, letter_date::text as letter_date,
                    title, advertised_value, contract_value, pricing_shape,
                    letter_percentage, letter_percentage_direction,
@@ -973,27 +924,23 @@ export function registerLoaRoutes(
               ))
             order by created_at desc, id
           `;
-        },
-      );
+      });
       return { works: rows.map(toWork) };
     },
   );
 
-  app.get(
-    '/api/works/:id',
+  tenantRoute(
     {
+      method: 'GET',
+      url: '/api/works/:id',
       schema: {
         params: DocumentParamsSchema,
         response: { 200: WorkDetailResponseSchema, ...errorResponses },
       },
     },
-    async (request) => {
-      const user = await requireUser(auth, request);
-      const organisationId = requireOrganisationHeader(
-        request.headers['x-organisation-id'],
-      );
-      const { id } = request.params as { id: string };
-      return withBoundTenant(database, organisationId, user.id, async (tx) => {
+    async ({ request, user, tenant }) => {
+      const { id } = request.params;
+      return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, id);
         const [work] = await tx<(WorkRow & { allow_excess_delivery: boolean })[]>`
           select id, work_code, letter_number, letter_date::text as letter_date,

@@ -1,8 +1,8 @@
 import net from 'node:net';
 import { HealthResponseSchema, ReadinessResponseSchema } from '@auto-mb/contracts';
-import type { FastifyInstance } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import type { ObjectStorage } from '../storage.js';
+import type { AppInstance } from '../app-instance.js';
 
 // A wedged-but-connected dependency must surface as 503 within this
 // bound; connection timeouts cover establishment only.
@@ -113,10 +113,7 @@ async function probe(
   }
 }
 
-export function registerHealthRoutes(
-  app: FastifyInstance,
-  deps: ReadinessDeps = {},
-): void {
+export function registerHealthRoutes(app: AppInstance, deps: ReadinessDeps = {}): void {
   app.get(
     '/api/health',
     {
