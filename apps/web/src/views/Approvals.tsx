@@ -195,7 +195,7 @@ function ApprovalCard({
 }) {
   const [note, setNote] = useState('');
   const isRequester = approval.requestedByUserId === currentUserId;
-  const omissionNeedsOrder = isOmission(approval) && approval.variationOrder === null;
+  const omissionNeedsOrder = isOmission(approval) && approval.variationOrder == null;
   return (
     <article
       className="rounded-xl border border-border bg-card p-5 shadow-sm print:border-0 print:p-0 print:shadow-none"
@@ -239,7 +239,10 @@ function ApprovalCard({
           ))}
         </tbody>
       </DataTable>
-      {approval.variationOrder !== null && (
+      {/* `!= null` rather than `!== null`: a client cached from before
+          this field existed sends undefined, and a blank card is a better
+          answer than a crash. */}
+      {approval.variationOrder != null && (
         <CitedVariationOrder
           order={approval.variationOrder}
           pending={pending}
