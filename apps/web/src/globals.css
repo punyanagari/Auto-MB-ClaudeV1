@@ -109,9 +109,29 @@
   --info-foreground: light-dark(#ffffff, #0d1420);
 
   --border: light-dark(#e4e7ec, #26324a);
-  --input: light-dark(#d0d5dd, #34415c);
+  /* The edge of a control is a non-text UI component, so WCAG 1.4.11 asks
+   * for 3:1 against whatever it sits on. The old pair measured 1.48:1 on
+   * the light card and 1.69:1 on the dark one — a field the eye had to
+   * infer from its shadow. These hold 3.30:1 / 3.10:1 (light, on card and
+   * on the page ground) and 3.22:1 / 3.45:1 (dark). */
+  --input: light-dark(#848ea0, #5c6b8a);
   --ring: light-dark(#155eef, #7ca2f7);
   --radius: 0.625rem;
+
+  /* The workspace shell's header is sticky and 4.5rem tall, and the page
+   * is the scrollport it sticks to. Anything else that sticks on that
+   * scrollport offsets by this, and anything that owns a scrollport of its
+   * own reserves it, or it parks underneath the header for exactly the
+   * rows it exists to label. `--schedule-summary-h` is the height of a
+   * schedule's own summary row (`ui/schedule-section.tsx`), which stacks
+   * below the header and above the ledger heading inside it.
+   *
+   * `--sticky-inset` is what a scrollport-owning element reserves above
+   * itself. It is the header alone by default; a schedule section raises
+   * it on its panel so the ledgers inside also clear the summary row. */
+  --header-h: 4.5rem;
+  --schedule-summary-h: 2.75rem;
+  --sticky-inset: var(--header-h);
 
   /* Sticky table headings must be opaque so scrolled rows cannot read
    * through them — a raised near-surface tone in both themes. */
@@ -247,6 +267,39 @@
 
   table {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* A scroll container has to be a containing block for its own absolutely
+   * positioned descendants. Without one, an `sr-only` label inside a
+   * horizontally scrolled register resolves against the page, is laid out
+   * at the register's un-scrolled x, and widens the document — so the page
+   * scrolls sideways to reveal a 1px invisible span. Measured on the Works
+   * register at 320px: document scrollWidth 446 against a 320px viewport,
+   * all of it one such span.
+   *
+   * `:where()` keeps the specificity at zero and base sits below the
+   * utilities layer, so any element that asks for a different position
+   * still gets it. */
+  :where(.overflow-auto, .overflow-x-auto, .overflow-x-scroll) {
+    position: relative;
+  }
+
+  /* Touch. A field whose text is under 16px makes mobile Safari zoom the
+   * whole page the moment it takes focus, and it does not zoom back — the
+   * operator is left panning a 16px-wide viewport across a ledger. The
+   * body scale stays 14px on a mouse; a finger gets 16px and a checkbox
+   * big enough to hit (WCAG 2.2 §2.5.8 asks 24×24 CSS px). */
+  @media (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: 1rem;
+    }
+
+    input[type='checkbox'],
+    input[type='radio'] {
+      @apply size-6;
+    }
   }
 }
 

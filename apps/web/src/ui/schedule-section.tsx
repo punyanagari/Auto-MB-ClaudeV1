@@ -108,11 +108,13 @@ export function ScheduleAccordionControls({
   );
 }
 
-/** The height the summary row occupies, so a sticky table heading inside
- * an open section can sit directly beneath it instead of underneath it.
- * Applied to a DataTable's className; tailwind-merge resolves it against
- * the table primitive's own `[&_thead_th]:top-0`. */
-export const underScheduleHeader = '[&_thead_th]:top-11';
+/** Retained for the two screens that still pass it. The stacking it used
+ * to express — a ledger heading sitting under the schedule summary rather
+ * than behind it — is now carried by `--sticky-inset` on the section's own
+ * panel, which every DataTable inside the section reads, so this only
+ * restates the table primitive's own offset. It can go the next time
+ * `ReviewLoa` and `WorkSchedules` are edited. */
+export const underScheduleHeader = '[&_thead_th]:top-0';
 
 /** One schedule: a summary row that stays on screen, and its items. */
 export function ScheduleSection({
@@ -141,11 +143,12 @@ export function ScheduleSection({
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="my-4">
-      {/* Sticky on the page's own scrollport, opaque in both themes so
-       * the rows scrolling under it cannot be read through it. */}
+      {/* Sticky on the page's own scrollport, offset by the shell header
+       * that shares it, and opaque in both themes so the rows scrolling
+       * under it cannot be read through it. */}
       <h2
         id={headingId}
-        className="sticky top-0 z-2 my-0 rounded-lg border border-border bg-table-header text-base"
+        className="sticky top-[var(--header-h)] z-2 my-0 rounded-lg border border-border bg-table-header text-base"
       >
         <button
           type="button"
@@ -176,8 +179,24 @@ export function ScheduleSection({
       {/* Unmounted rather than hidden: a closed schedule's rows must not
        * be reachable by Tab, and on the review screen they hold the
        * editable cells the confirm request is built from — which are read
-       * from React state, never from the DOM, so nothing is lost. */}
-      {expanded && <div id={panelId}>{children}</div>}
+       * from React state, never from the DOM, so nothing is lost.
+       *
+       * The panel raises `--sticky-inset` for everything inside it: two
+       * things are already parked at the top of this screen — the shell
+       * header and the summary row above — so a ledger that owns its own
+       * scrollport has to start below both of them. */}
+      {expanded && (
+        <div
+          id={panelId}
+          style={
+            {
+              '--sticky-inset': 'calc(var(--header-h) + var(--schedule-summary-h))',
+            } as React.CSSProperties
+          }
+        >
+          {children}
+        </div>
+      )}
     </section>
   );
 }

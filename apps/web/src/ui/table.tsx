@@ -1,3 +1,4 @@
+import { Children, cloneElement, isValidElement, useId } from 'react';
 import { cn } from '../lib/cn.js';
 
 /* The corner cells clip the card themselves rather than the table carrying
@@ -17,7 +18,12 @@ const CORNERS = [
  * challan are four unlabelled numeric columns by the time you reach row 60.
  * The background is the table-header token — opaque in both themes so
  * scrolled rows cannot read through it — and border-separate keeps the
- * bottom rule on the cell where it travels with the heading. */
+ * bottom rule on the cell where it travels with the heading.
+ *
+ * `top: 0` is measured against the ledger's own scrollport (below), not
+ * the viewport. That is what stops the heading parking behind the shell
+ * header: the scrollport is capped to the space beneath the header, so the
+ * top of it is somewhere the header does not reach. */
 const HEAD = [
   '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1',
   '[&_thead_th]:bg-table-header',
@@ -39,22 +45,71 @@ const CELLS = [
   '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-muted/40',
 ].join(' ');
 
+/* The ledger's own scrollport.
+ *
+ * Two failures are closed by one box. Sideways: a ledger has as many
+ * columns as the paper it models, and on any screen narrower than a desk
+ * the widest of them do not fit; with nowhere of its own to scroll, the
+ * table grows past the card and takes the whole page's width with it, so
+ * the operator drags the shell — rail, header and all — sideways to read a
+ * quantity. Downwards: a heading that sticks to the *page* sticks at the
+ * top of the viewport, which is where the 4.5rem shell header already is,
+ * so it is hidden for exactly the rows it exists to label.
+ *
+ * The two cannot both be solved on the page's scrollport, and that is a
+ * browser fact rather than a preference: `overflow-x: auto` makes the
+ * wrapper a scroll container whatever the other axis says (`overflow-y:
+ * clip` computes to `hidden`, not to `visible`), and a heading inside a
+ * scroll container sticks to that container — which never scrolls
+ * vertically, so it never moves. Measured in Chromium: the heading of a
+ * wrapped table scrolls away with its rows.
+ *
+ * So the wrapper scrolls in both directions and is capped to the height
+ * left below the shell header. A ledger shorter than that is untouched —
+ * `max-height` only bites when it must — and one longer than it becomes an
+ * instrument that scrolls under its own pinned heading. `--sticky-inset`
+ * is the space to reserve above the box: the header alone by default, and
+ * the header plus a schedule's summary row inside a schedule section
+ * (`ui/schedule-section.tsx`), which sets the variable on its panel. */
+const SCROLLPORT = [
+  'scrollbar-thin overflow-auto',
+  'max-h-[calc(100dvh-var(--sticky-inset)-2rem)]',
+  // Paper has no scrollport; a printed ledger runs to as many pages as it
+  // needs.
+  'print:max-h-none print:overflow-visible',
+].join(' ');
+
 /** The registry table: a bordered card with a quiet uppercase heading that
  * survives the scroll, hairline row rules, and hover.
  *
- * `scroll` is for the tables whose columns cannot be made to fit — the two
- * editable grids, where every cell holds a control with a floor on its width.
- * Without it they simply grow past the card and take the page's width with
- * them. The pair is `overflow-x: auto` with `overflow-y: clip` rather than
- * the usual `auto`: `clip` does not make the wrapper a scroll container, so
- * the nearest scrollport for the heading is still the page and it goes on
- * sticking. Plain `overflow-x: auto` would coerce the other axis to `auto`,
- * and a sticky heading inside a scrollport that never scrolls never moves. */
+ * `scroll` is on by default — see SCROLLPORT above for what the wrapper
+ * buys and why it is not optional for a register. A scroll container is
+ * also a thing only a pointer can move unless it is told otherwise, so the
+ * wrapper is focusable and announced as a region named by the table's own
+ * caption: the keyboard reaches the columns a mouse can drag to.
+ * `scroll={false}` is for a table that is deliberately not its own
+ * scrollport — a short summary block inside a panel that already scrolls. */
 export function DataTable({
   className,
-  scroll = false,
+  scroll = true,
+  children,
   ...props
 }: React.ComponentProps<'table'> & { readonly scroll?: boolean }) {
+  const generatedCaptionId = useId();
+  /* Every DataTable in the product carries an `sr-only` caption naming the
+   * register. That caption is the honest name for the scroll region too,
+   * so it is borrowed rather than duplicated into a second string that
+   * would drift from it. A caption that already carries an id keeps it. */
+  let captionId: string | undefined;
+  const labelled = Children.map(children, (child) => {
+    if (!isValidElement(child) || child.type !== 'caption') return child;
+    const element = child as React.ReactElement<{ readonly id?: string }>;
+    captionId = element.props.id ?? generatedCaptionId;
+    return element.props.id === undefined
+      ? cloneElement(element, { id: generatedCaptionId })
+      : element;
+  });
+
   const table = (
     <table
       className={cn(
@@ -65,12 +120,21 @@ export function DataTable({
         className,
       )}
       {...props}
-    />
+    >
+      {labelled}
+    </table>
   );
-  return scroll ? (
-    <div className="overflow-x-auto overflow-y-clip">{table}</div>
-  ) : (
-    table
+  if (!scroll) return table;
+  return (
+    <div
+      className={SCROLLPORT}
+      tabIndex={0}
+      {...(captionId === undefined
+        ? {}
+        : { role: 'region', 'aria-labelledby': captionId })}
+    >
+      {table}
+    </div>
   );
 }
 
