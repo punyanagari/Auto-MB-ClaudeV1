@@ -308,11 +308,27 @@ export function scanPdfSignatures(pdf: Buffer): PdfSignatureScan {
       break;
     }
 
-    const windowStart = Math.max(0, offset - DICTIONARY_LOOKBEHIND);
-    const window = latin.slice(
-      windowStart,
-      Math.min(latin.length, offset + DICTIONARY_LOOKAHEAD),
-    );
+    // Bound the search to the indirect object that CONTAINS this
+    // /ByteRange, rather than to a byte distance around it. In a
+    // countersigned document the previous revision's signature dictionary
+    // sits a few kilobytes back, and a window that reached into it would
+    // read the PREVIOUS signer's /Reason and /M and print them against
+    // this signature — an attribution error, and exactly the kind of
+    // quietly-wrong output this feature exists to avoid.
+    const objectHeader = /(?:^|[\s>])\d+ \d+ obj\b/g;
+    let objectStart = Math.max(0, offset - DICTIONARY_LOOKBEHIND);
+    objectHeader.lastIndex = objectStart;
+    for (let match = objectHeader.exec(latin); match !== null; ) {
+      if (match.index >= offset) break;
+      objectStart = match.index;
+      match = objectHeader.exec(latin);
+    }
+    const endObject = latin.indexOf('endobj', offset);
+    const windowStart = objectStart;
+    const windowEnd =
+      endObject === -1
+        ? Math.min(latin.length, offset + DICTIONARY_LOOKAHEAD)
+        : Math.min(endObject, offset + DICTIONARY_LOOKAHEAD);
 
     try {
       const byteRange = readByteRange(latin, offset);
@@ -343,9 +359,19 @@ export function scanPdfSignatures(pdf: Buffer): PdfSignatureScan {
         throw new PdfSignatureStructureError('/Contents is empty');
       }
 
-      const dictionaryWindow = window.slice(
-        Math.max(0, contents.end - windowStart - 16),
-      );
+      // The dictionary's other entries, with the multi-kilobyte /Contents
+      // hex string cut out of the middle.
+      //
+      // Both orders occur: IREPS writes /SubFilter, /Reason and /M AFTER
+      // /ByteRange, while other producers write them before /Contents.
+      // Reading only one side would silently drop the signer's stated
+      // reason and claimed time for half the corpus, so both sides are
+      // searched — and the hex blob is removed first, so a byte sequence
+      // inside a signature value can never be read as a dictionary entry.
+      const dictionaryWindow =
+        latin.slice(windowStart, contents.start) +
+        ' ' +
+        latin.slice(contents.end, windowEnd);
       fields.push({
         offset,
         byteRange,
