@@ -354,6 +354,54 @@ Activated with contract administration, procurement, and tax documents:
   must never contain GSP passwords, app keys, auth tokens, decrypted session
   material, or production GST data.
 
+Activated with inbound signed-document intake:
+
+- **digital-signature verification on inbound railway PDFs** — every LOA
+  and contract-source upload is verified at the boundary and the verdict
+  is stored with the document (migration 0060), append-once, and carried
+  into the organisation export. The verifier reads the PDF ByteRange and
+  the CMS SignedData blob and delegates every cryptographic operation to
+  `node:crypto`; no third-party cryptography or ASN.1 package is on the
+  path of a verdict.
+
+  What it proves, offline and with no network egress: that the bytes now
+  present are the bytes each signature covers; that each signature
+  verifies under the public key of the certificate its CMS names; that a
+  certificate path reaches a trust anchor an operator installed
+  (docs/OPERATIONS.md §8) rather than one the document supplied; that no
+  bytes follow the last signature; and, where a timestamp token is
+  embedded, the time a TSA attested to.
+
+  What it does NOT prove, stated in the data and on the screen rather than
+  assumed: revocation (`not_checked`, reason
+  `network_egress_not_available`), and whether a legitimate-looking
+  incremental update after an earlier signature changed what the document
+  SAYS (the "shadow attack" class needs revision-by-revision rendering
+  comparison; what is checked is whether the final bytes are covered by a
+  signature at all).
+
+  The posture, matching `registered_unverified` in 0053 and the Poppler
+  guard in `loa-extract.ts`: **verification never silently passes
+  something it could not check.** `not_checked`, `unsigned`,
+  `signature_unverifiable`, `signed_chain_not_checked`,
+  `signed_chain_expired`, `signed_but_untrusted_chain`,
+  `signature_invalid`, `signed_but_modified_after_signing` and
+  `signed_and_intact` are nine distinct values, a CHECK constraint refuses
+  a verdict with no evidence behind it, and exactly one of them renders
+  green. Proven by `apps/server/test/pdf-signature.test.ts` (a synthetic
+  PKI, both SubFilter shapes, tampering, wrapping, and decoy cases),
+  `apps/server/test/pdf-signature-evidence.integration.test.ts`, and
+  `apps/web/test/views/signature-panel.test.tsx`;
+
+- **nothing is gated on a signature verdict yet.** Verification records
+  and reports; it refuses no upload. Turning a bad verdict into a refusal
+  is a policy decision the owner takes per document type, because the
+  consequence differs: refusing an unsigned tax invoice blocks billing,
+  while accepting an unsigned variation order authorises removing
+  contracted scope. The recommendation on record is that variation-order
+  APPROVAL should require `signed_and_intact`, since that is the step
+  where a signature is doing legal work.
+
 Controls that activate with their product surface (adopting the surface
 without the control is a release blocker, not an option):
 

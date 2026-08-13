@@ -9,6 +9,7 @@ import {
   type ContractSourceDocument,
   type ContractSourceDocumentKind,
   type ContractSourceIdentityMatch,
+  type PdfSignatureReport,
   type TenderItemSpecificationEvidence,
   type TenderPaymentMatrixEvidence,
   type TenderPeriodEvidence,
@@ -30,6 +31,8 @@ import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertNotMalware } from '../upload-guards.js';
+import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import type { TrustAnchorStore } from '../pdf-signature.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -65,6 +68,8 @@ interface ContractSourceRow {
   created_at: Date;
   object_key?: string;
   extraction_payload?: unknown;
+  signature_status: ContractSourceDocument['signatureStatus'];
+  signature_verdict?: unknown;
 }
 
 interface ParentLoaRow {
@@ -147,6 +152,9 @@ function toContractSourceDocument(row: ContractSourceRow): ContractSourceDocumen
     identityMatch: identityMatchOf(row.identity_match),
     confirmedWorkId: row.confirmed_work_id,
     createdAt: row.created_at.toISOString(),
+    signatureStatus: row.signature_status,
+    signatureVerdict:
+      (parseJsonbColumn(row.signature_verdict) as PdfSignatureReport | null) ?? null,
   };
 }
 
@@ -192,7 +200,7 @@ async function contextForParent(
   const rows = await tx<ContractSourceRow[]>`
     select id, parent_loa_document_id, document_kind, original_filename,
            sha256, size_bytes, identity_match, confirmed_work_id, created_at,
-           extraction_payload
+           extraction_payload, signature_status, signature_verdict
     from loa_documents
     where parent_loa_document_id = ${parentLoaDocumentId}
       and document_kind <> 'loa'
@@ -340,6 +348,7 @@ export function registerContractSourceRoutes(
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
+  pdfTrustAnchors: TrustAnchorStore,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   tenantRoute(
@@ -431,6 +440,10 @@ export function registerContractSourceRoutes(
         );
       }
 
+      // Same shared verifier and the same non-blocking posture as the LOA
+      // path: the verdict is recorded, never used to refuse.
+      const signature = verifyUploadedPdf(body, pdfTrustAnchors, request.log);
+
       const documentId = crypto.randomUUID();
       const sha256 = createHash('sha256').update(body).digest('hex');
       const objectKey = `${organisationId}/contractsource/${documentId}.pdf`;
@@ -459,18 +472,22 @@ export function registerContractSourceRoutes(
               id, organisation_id, object_key, original_filename, sha256,
               media_type, size_bytes, extraction_status, extraction_payload,
               confirmed_work_id, uploaded_by_user_id, document_kind,
-              parent_loa_document_id, match_status, identity_match
+              parent_loa_document_id, match_status, identity_match,
+              signature_status, signature_verdict, signature_verified_at
             )
             values (
               ${documentId}, ${organisationId}, ${objectKey}, ${filename},
               ${sha256}, 'application/pdf', ${body.length}, 'review',
               ${jsonb(tx, { sourceText, review })},
               ${current.parent.confirmed_work_id}, ${user.id}, ${kind},
-              ${parentId}, 'matched', ${jsonb(tx, identity)}
+              ${parentId}, 'matched', ${jsonb(tx, identity)},
+              ${signature.status}, ${jsonb(tx, signature.verdict)},
+              ${signature.verifiedAt}
             )
             returning id, parent_loa_document_id, document_kind,
                       original_filename, sha256, size_bytes, identity_match,
-                      confirmed_work_id, created_at, extraction_payload
+                      confirmed_work_id, created_at, extraction_payload,
+                      signature_status, signature_verdict
           `;
         if (row === undefined) {
           throw new Error('contract-source insert returned no row');

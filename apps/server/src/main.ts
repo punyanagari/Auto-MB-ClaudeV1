@@ -1,6 +1,7 @@
 import { assertProductionSecret, buildApp } from './app.js';
 import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
 import { assertProductionMfaEnforcement } from './mfa-policy.js';
+import { TRUST_ANCHOR_PATH_ENV, loadTrustAnchors } from './pdf-signature.js';
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? '3000');
@@ -31,7 +32,19 @@ const mfaEnforceResolved = assertProductionMfaEnforcement(
   process.env.MFA_ENFORCE === 'true',
 );
 
+// Trust anchors for verifying digital signatures on inbound railway PDFs.
+// Loaded at boot and FAIL-LOUD, on the same reasoning as the Poppler probe
+// in loa-extract.ts: a configured-but-unreadable anchor directory would
+// leave the server reporting every genuinely-signed Railway document as
+// having an unchecked chain, and a reviewer who is told "not checked"
+// about good documents stops reading the field. Unset is a legitimate
+// posture (no trust decision is made and nothing can reach the green
+// state); unset-by-accident is not something this can distinguish, so the
+// value is documented in .env.example and docs/OPERATIONS.md.
+const pdfTrustAnchors = await loadTrustAnchors(process.env[TRUST_ANCHOR_PATH_ENV]);
+
 const app = await buildApp({
+  pdfTrustAnchors,
   logger: true,
   // Finding 36: MFA refusals for privilege holders deploy dark and are
   // switched on with MFA_ENFORCE=true. Passed only when the variable is
