@@ -27,9 +27,14 @@ export function requireOrganisationHeader(
 /**
  * Runs `work` inside a tenant-scoped transaction, but only after the
  * database's membership floor confirms the binding: if the authenticated
- * user holds no active membership in the requested organisation,
- * current_organisation_id() stays NULL and the request fails with 403
- * before any tenant data is touched.
+ * user holds no active membership in the requested organisation the
+ * request fails with 403 before any tenant data is touched.
+ *
+ * Since migration 0069 that refusal arrives one step earlier —
+ * `app_private.bind_tenant` proves the membership as the transaction
+ * opens and raises SQLSTATE 28000 — so `refuseNonMember` below translates
+ * it into the same named 403 the floor check has always produced. The
+ * HTTP contract is unchanged; only the place the answer is computed moved.
  */
 export async function withBoundTenant<T>(
   sql: Sql,
@@ -37,8 +42,11 @@ export async function withBoundTenant<T>(
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  return withTenant(sql, { organisationId, userId }, (tx) =>
-    assertBoundThen(tx, organisationId, work),
+  return refuseNonMember((entered) =>
+    withTenant(sql, { organisationId, userId }, (tx) => {
+      entered();
+      return assertBoundThen(tx, organisationId, work);
+    }),
   );
 }
 
@@ -55,9 +63,45 @@ export async function withBoundTenantSnapshot<T>(
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  return withTenantSnapshot(sql, { organisationId, userId }, (tx) =>
-    assertBoundThen(tx, organisationId, work),
+  return refuseNonMember((entered) =>
+    withTenantSnapshot(sql, { organisationId, userId }, (tx) => {
+      entered();
+      return assertBoundThen(tx, organisationId, work);
+    }),
   );
+}
+
+/** The one refusal a caller who is not a member of the bound organisation
+ * ever sees, wherever it was detected. */
+function notAMemberError(): Error {
+  return httpError(
+    403,
+    'NOT_A_MEMBER',
+    'The authenticated user holds no active membership in this organisation.',
+  );
+}
+
+/**
+ * Turns `bind_tenant`'s SQLSTATE 28000 back into the named 403.
+ *
+ * Scoped deliberately narrowly: only a 28000 raised BEFORE the callback
+ * was entered can have come from the bind, so a 28000 thrown by anything
+ * the request itself runs still propagates as itself rather than being
+ * relabelled a membership problem.
+ */
+async function refuseNonMember<T>(
+  run: (entered: () => void) => Promise<T>,
+): Promise<T> {
+  let entered = false;
+  try {
+    return await run(() => {
+      entered = true;
+    });
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (!entered && code === '28000') throw notAMemberError();
+    throw error;
+  }
 }
 
 async function assertBoundThen<T>(
@@ -69,11 +113,7 @@ async function assertBoundThen<T>(
     select app_private.current_organisation_id() as organisation_id
   `;
   if (bound?.organisation_id !== organisationId) {
-    throw httpError(
-      403,
-      'NOT_A_MEMBER',
-      'The authenticated user holds no active membership in this organisation.',
-    );
+    throw notAMemberError();
   }
   // Finding 36: after the membership floor binds, the MFA wall stands in the
   // same place, so every tenant-scoped route is covered without any route
