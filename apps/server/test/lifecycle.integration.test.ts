@@ -274,10 +274,15 @@ beforeAll(async () => {
   `;
   if (!ownerUser) throw new Error('owner user missing');
   ownerUserId = ownerUser.id;
-  // Issue and cancel are explicit authorities on top of the writer role.
+  // Issue and cancel are explicit authorities on top of the writer role,
+  // and statutory reporting (migration 0061) is a third one on top of
+  // those: this walkthrough records an IRP response and generates an
+  // e-way bill, so without the grant those two steps 403 — which is
+  // exactly the proof that the new gate binds.
   await admin`
     update organisation_memberships
-    set can_issue_documents = true, can_cancel_documents = true
+    set can_issue_documents = true, can_cancel_documents = true,
+        can_manage_statutory_reporting = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 }, 120_000);
