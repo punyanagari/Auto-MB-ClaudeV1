@@ -1,5 +1,5 @@
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { withTenant, withTenantSnapshot } from '@auto-mb/db';
+import { TenantBindRefusedError, withTenant, withTenantSnapshot } from '@auto-mb/db';
 import { httpError } from './http.js';
 import {
   mfaEnforcementEnabled,
@@ -31,10 +31,11 @@ export function requireOrganisationHeader(
  * request fails with 403 before any tenant data is touched.
  *
  * Since migration 0069 that refusal arrives one step earlier —
- * `app_private.bind_tenant` proves the membership as the transaction
- * opens and raises SQLSTATE 28000 — so `refuseNonMember` below translates
- * it into the same named 403 the floor check has always produced. The
- * HTTP contract is unchanged; only the place the answer is computed moved.
+ * `app_private.bind_tenant` proves the membership as the transaction opens
+ * — so `refuseNonMember` below translates the `TenantBindRefusedError`
+ * that `@auto-mb/db` raises for it into the same named 403 the floor check
+ * has always produced. The HTTP contract is unchanged; only the place the
+ * answer is computed moved.
  */
 export async function withBoundTenant<T>(
   sql: Sql,
@@ -42,11 +43,10 @@ export async function withBoundTenant<T>(
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  return refuseNonMember((entered) =>
-    withTenant(sql, { organisationId, userId }, (tx) => {
-      entered();
-      return assertBoundThen(tx, organisationId, work);
-    }),
+  return refuseNonMember(
+    withTenant(sql, { organisationId, userId }, (tx) =>
+      assertBoundThen(tx, organisationId, work),
+    ),
   );
 }
 
@@ -63,11 +63,10 @@ export async function withBoundTenantSnapshot<T>(
   userId: string,
   work: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
-  return refuseNonMember((entered) =>
-    withTenantSnapshot(sql, { organisationId, userId }, (tx) => {
-      entered();
-      return assertBoundThen(tx, organisationId, work);
-    }),
+  return refuseNonMember(
+    withTenantSnapshot(sql, { organisationId, userId }, (tx) =>
+      assertBoundThen(tx, organisationId, work),
+    ),
   );
 }
 
@@ -82,28 +81,48 @@ function notAMemberError(): Error {
 }
 
 /**
- * Turns `bind_tenant`'s SQLSTATE 28000 back into the named 403.
+ * Turns the bind refusal into the named 403.
  *
- * Scoped deliberately narrowly: only a 28000 raised BEFORE the callback
- * was entered can have come from the bind, so a 28000 thrown by anything
- * the request itself runs still propagates as itself rather than being
- * relabelled a membership problem.
+ * The discrimination is structural, not positional: `@auto-mb/db` raises
+ * `TenantBindRefusedError` only for Auto-MB's own SQLSTATE and only for
+ * the bind statement, so nothing else can arrive here wearing it. In
+ * particular a genuine `28000` — PostgreSQL's own
+ * `invalid_authorization_specification`, which a pg_hba, LOGIN, or
+ * definer-ownership failure raises — is NOT a bind refusal and propagates
+ * as the 5xx it is. An authentication outage must look like an outage,
+ * not like every tenant losing their membership at once.
  */
-async function refuseNonMember<T>(
-  run: (entered: () => void) => Promise<T>,
-): Promise<T> {
-  let entered = false;
+async function refuseNonMember<T>(bound: Promise<T>): Promise<T> {
   try {
-    return await run(() => {
-      entered = true;
-    });
+    return await bound;
   } catch (error) {
-    const code = (error as { code?: unknown } | null)?.code;
-    if (!entered && code === '28000') throw notAMemberError();
+    if (error instanceof TenantBindRefusedError) throw notAMemberError();
     throw error;
   }
 }
 
+/**
+ * The read-back below is INTENTIONALLY REDUNDANT since 0069, and kept.
+ *
+ * `bind_tenant` already refused this exact condition a statement earlier,
+ * so the 403 branch should now be unreachable through this module. It is
+ * retained for two reasons, and the choice is flagged in the pull request
+ * for the reviewer rather than made silently.
+ *
+ * First, the repository's own recurring finding is "security is enforced
+ * twice; money once". Tenancy is the surface that gets two enforcements,
+ * and removing one to save a single cheap statement inverts that rule.
+ *
+ * Second — and this is the concrete reason, not the principle — the bind's
+ * transaction-local `set_config` calls happen INSIDE a function carrying
+ * its own `SET search_path` clause, and whether a GUC written there
+ * survives the function boundary is PostgreSQL implementation behaviour,
+ * not something the SQL standard promises. It was verified on 18.4 and on
+ * the 17 image CI runs. This read-back is the standing check that it still
+ * holds on whatever server version production is actually on: if a future
+ * release ever unwound those writes at function exit, every request would
+ * refuse loudly here instead of quietly reading an unbound database.
+ */
 async function assertBoundThen<T>(
   tx: TransactionSql,
   organisationId: string,

@@ -8,6 +8,44 @@ export interface TenantContext {
   readonly userId?: string;
 }
 
+/**
+ * Auto-MB's own SQLSTATE for "this user holds no active membership in the
+ * organisation being bound", raised by `app_private.bind_tenant` (0069).
+ *
+ * Deliberately NOT `28000`. That code is
+ * `invalid_authorization_specification`, which PostgreSQL itself raises
+ * when a connection fails pg_hba, LOGIN, or role authorisation — so a
+ * caller that treated `28000` as "not a member" would answer a
+ * cluster-wide authentication outage with tenant-shaped 403s and no 5xx
+ * at all. Class 28 carries exactly two upstream codes (28000, 28P01), so
+ * this one is ours alone and can be caught without ambiguity.
+ */
+export const TENANT_BIND_REFUSED_SQLSTATE = '28A01';
+
+/**
+ * The bind was refused by the database because the user holds no active
+ * membership in the organisation. Thrown only for
+ * `TENANT_BIND_REFUSED_SQLSTATE`, and only for the bind statement itself,
+ * so nothing a caller's own work raises can be mistaken for it.
+ *
+ * Callers that speak HTTP should map this to their existing
+ * not-a-member refusal; anything else from the same transaction is a real
+ * fault and must keep its own shape.
+ */
+export class TenantBindRefusedError extends Error {
+  readonly organisationId: string;
+  readonly userId: string;
+
+  constructor(organisationId: string, userId: string, cause: unknown) {
+    super(`no active membership binds this user to organisation ${organisationId}`, {
+      cause,
+    });
+    this.name = 'TenantBindRefusedError';
+    this.organisationId = organisationId;
+    this.userId = userId;
+  }
+}
+
 export async function withUserContext<T>(
   sql: Sql,
   userId: string,
@@ -40,12 +78,17 @@ export async function withUserContext<T>(
  * transaction's. Any variant added here must keep going through
  * `bind_tenant` rather than setting the GUCs itself.
  *
- * A binding the user does not hold now raises SQLSTATE 28000 here, before
- * any statement of `work` runs, instead of leaving the policies to deny
- * everything silently and the caller to read an empty database. That is
- * fail-fast, not the floor: the floor is still
- * `app_private.current_organisation_id()`, which every policy calls and
- * which re-proves the membership itself.
+ * A binding the user does not hold now fails here, before any statement of
+ * `work` runs, instead of leaving the policies to deny everything silently
+ * and the caller to read an empty database. That is fail-fast, not the
+ * floor: the floor is still `app_private.current_organisation_id()`, which
+ * every policy calls and which re-proves the membership itself.
+ *
+ * Only the bind statement is wrapped, and only
+ * `TENANT_BIND_REFUSED_SQLSTATE` is converted. Everything `work` raises —
+ * including a genuine `28000` from a connection-authorisation failure —
+ * travels untouched, so an infrastructure outage can never be reported as
+ * a membership decision.
  *
  * `beginOptions` is appended to BEGIN by postgres.js. It is a fixed
  * literal chosen by the exported wrapper below, never caller input.
@@ -59,9 +102,17 @@ async function withTenantAt<T>(
   if (!UUID_PATTERN.test(context.organisationId)) {
     throw new TypeError('organisationId must be a UUID');
   }
+  const userId = context.userId ?? '';
 
   const result = await sql.begin(beginOptions, async (tx) => {
-    await tx`select app_private.bind_tenant(${context.organisationId}::uuid, ${context.userId ?? ''})`;
+    try {
+      await tx`select app_private.bind_tenant(${context.organisationId}::uuid, ${userId})`;
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === TENANT_BIND_REFUSED_SQLSTATE) {
+        throw new TenantBindRefusedError(context.organisationId, userId, error);
+      }
+      throw error;
+    }
     return work(tx);
   });
   // Same UnwrapPromiseArray<T> identity as withUserContext above.

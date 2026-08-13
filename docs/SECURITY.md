@@ -24,7 +24,8 @@ Primary risks:
 - application role is not superuser, owner, or `BYPASSRLS`;
 - organisation context set transaction-locally, by
   `app_private.bind_tenant` (migration 0069), which proves the active
-  membership on the definer's authority and raises SQLSTATE `28000` when
+  binding on the definer's authority and raises Auto-MB's own SQLSTATE
+  `28A01` when
   it does not hold — so a binding the user is not entitled to fails at the
   top of the transaction instead of silently reading nothing;
 - explicit query scoping plus RLS defense in depth;

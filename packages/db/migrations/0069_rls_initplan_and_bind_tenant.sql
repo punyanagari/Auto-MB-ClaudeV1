@@ -267,8 +267,8 @@ ALTER POLICY organisations_member_select_policy ON organisations
 -- not belong to the user, the helper above simply returned NULL, every
 -- policy denied, and the request read an empty database — a silent denial
 -- discovered only by absence. This function performs the same two
--- transaction-local writes and then PROVES the membership, so the wrong
--- binding is refused at the top of the transaction with SQLSTATE 28000.
+-- transaction-local writes and then PROVES the binding, so a wrong one is
+-- refused at the top of the transaction.
 --
 -- `is_local = true` on both calls is the security property, not a detail:
 -- a session-level setting would outlive the transaction and ride the
@@ -276,17 +276,38 @@ ALTER POLICY organisations_member_select_policy ON organisations
 -- written, including an empty user id, so a missing value can never fall
 -- through to a previous transaction's.
 --
--- This is ADDITIVE. The policies do not trust it: they still call the
--- helper, which still proves membership on the definer's authority. A code
--- path that binds the GUCs without coming through here lands exactly where
--- it landed before — helper returns NULL, every policy denies. The floor
--- is the helper; this is fail-fast on top of it.
+-- The proof is `app_private.current_organisation_id()` itself — the very
+-- function every policy calls — rather than a second copy of its
+-- membership EXISTS. A copy would be two definer functions holding one
+-- rule, and the failure mode of drift is the silent-empty read this
+-- migration exists to remove: bind accepts, policies deny. Calling the
+-- floor helper keeps one source of membership truth, and it works because
+-- the two `set_config` writes above are transaction-local and therefore
+-- already visible to the nested call, and because both functions are owned
+-- by `auto_mb_definer`, which holds EXECUTE on its own function implicitly.
+--
+-- This is ADDITIVE. The policies do not trust it: they call the same
+-- helper themselves, on the definer's authority. A code path that binds
+-- the GUCs without coming through here lands exactly where it landed
+-- before — helper returns NULL, every policy denies. The floor is the
+-- helper; this is fail-fast on top of it.
 --
 -- SECURITY DEFINER for the same reason 0004's helper is: at bind time no
 -- tenant is bound yet, so the application role cannot read
 -- `organisation_memberships` through RLS to check its own membership.
 -- There is deliberately no service/bypass argument — a background job with
 -- no requesting user is P18's design question, not a hole opened here.
+--
+-- SQLSTATE 28A01 is Auto-MB's own code, and the choice is load-bearing.
+-- The obvious `28000` is `invalid_authorization_specification`, which
+-- PostgreSQL ITSELF raises when a connection fails pg_hba, LOGIN or role
+-- authorisation. A caller that mapped `28000` to "you are not a member"
+-- would answer a cluster-wide authentication outage with a fleet of
+-- tenant-shaped 403s and no 5xx at all — the outage would look like a
+-- permissions change. Class 28 defines exactly two codes upstream (28000
+-- and 28P01, `src/include/utils/errcodes.h`), so 28A01 is unused by
+-- PostgreSQL and unused anywhere in this schema; `tenant.ts` catches
+-- exactly it and nothing else.
 CREATE FUNCTION app_private.bind_tenant(
   p_organisation_id uuid,
   p_user_id text
@@ -300,15 +321,10 @@ BEGIN
   PERFORM set_config('app.organisation_id', coalesce(p_organisation_id::text, ''), true);
   PERFORM set_config('app.user_id', coalesce(p_user_id, ''), true);
 
-  IF NOT EXISTS (
-    SELECT 1 FROM organisation_memberships m
-    WHERE m.organisation_id = p_organisation_id
-      AND m.user_id = nullif(p_user_id, '')
-      AND m.status = 'active'
-  ) THEN
+  IF app_private.current_organisation_id() IS NULL THEN
     RAISE EXCEPTION
       'no active membership binds this user to organisation %', p_organisation_id
-      USING ERRCODE = '28000';
+      USING ERRCODE = '28A01';
   END IF;
 END
 $$;

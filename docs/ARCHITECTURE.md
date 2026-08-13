@@ -56,7 +56,7 @@ Tenant isolation is enforced by:
 2. PostgreSQL Row-Level Security;
 3. `FORCE ROW LEVEL SECURITY`;
 4. a non-owner, non-superuser application role without `BYPASSRLS`;
-5. transaction-local `app.organisation_id` context, written by `app_private.bind_tenant` (migration 0069), which refuses the binding with SQLSTATE `28000` when the user holds no active membership in it — a wrong binding fails at the top of the transaction rather than reading an empty database;
+5. transaction-local `app.organisation_id` context, written by `app_private.bind_tenant` (migration 0069), which refuses the binding with Auto-MB's own SQLSTATE `28A01` when the user holds no active membership in it (deliberately not `28000` — that is PostgreSQL's own connection-authorisation failure, and conflating the two would report an authentication outage as a membership decision) — a wrong binding fails at the top of the transaction rather than reading an empty database;
 6. the membership floor: `app_private.current_organisation_id()` returns the context organisation only when `app.user_id` holds an active membership in it, so every policy fails closed against a stamped-but-illegitimate organisation id. Policies call it as `organisation_id = (SELECT app_private.current_organisation_id())`, which the planner runs as an InitPlan once per statement; the membership check itself is unchanged and still happens inside the SECURITY DEFINER function, which is why the floor does not depend on point 5 (see ADR-0010);
 7. integration tests that attempt cross-tenant access through the real pool and the real HTTP endpoints.
 
