@@ -915,7 +915,8 @@ export function registerLoaRoutes(
               discard_reason = ${reason ?? null}
           where id = ${id}
           returning id, original_filename, sha256, size_bytes,
-                    extraction_status, confirmed_work_id, created_at
+                    extraction_status, confirmed_work_id, created_at,
+                    signature_status
         `;
         if (!discarded) throw new Error('loa_documents discard returned no row');
 

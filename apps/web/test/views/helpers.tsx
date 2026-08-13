@@ -381,6 +381,11 @@ export const REVIEW_DOCUMENT = {
   createdAt: '2026-08-08T00:00:00.000Z',
   extractionPayload: REVIEW_PAYLOAD,
   letterNumberMatches: [],
+  // The default fixture is a letter that predates verification, so the
+  // panel's neutral "not checked" state is what most view tests render;
+  // the signature-panel tests supply real verdicts of their own.
+  signatureStatus: 'not_checked' as const,
+  signatureVerdict: null,
 };
 
 export function membership(overrides: Partial<Membership>): Membership {
