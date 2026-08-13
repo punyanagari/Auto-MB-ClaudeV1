@@ -151,6 +151,16 @@ export function registerExportRoutes(
           `,
           ['proposed', 'diff'],
         );
+        // The railway variation orders cited for omissions (0058). The
+        // stored PDFs travel with the object store, as every uploaded
+        // document does; this is the row that proves which order
+        // authorised which omission, and its verdict.
+        const amendmentVariationOrders = parseColumns(
+          await tx<Record<string, unknown>[]>`
+            select * from amendment_variation_orders order by created_at, id
+          `,
+          ['verdict'],
+        );
         const correctionNotices = parseColumns(
           await tx<Record<string, unknown>[]>`
             select * from correction_notices order by created_at, id
@@ -496,6 +506,7 @@ export function registerExportRoutes(
           installations,
           installationSerials,
           approvalRequests,
+          amendmentVariationOrders,
           correctionNotices,
           paymentMatrices,
           pacCertificates,

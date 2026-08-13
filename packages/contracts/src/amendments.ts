@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
+  DateOnlySchema,
   DecimalStringSchema,
   RateStringSchema,
   UuidSchema,
@@ -86,6 +87,86 @@ export const ProposeRemoveItemRequestSchema = Type.Object(
 );
 export type ProposeRemoveItemRequest = Static<typeof ProposeRemoveItemRequestSchema>;
 
+// --- The variation order that authorises an omission -----------------------
+
+/** Every claim the server can make about an uploaded variation order.
+ * Mirrors VARIATION_ORDER_CLAIM_CODES in
+ * apps/server/src/variation-order-verify.ts, which is the authority. */
+export const VariationOrderClaimCodeSchema = Type.Union([
+  Type.Literal('text_layer'),
+  Type.Literal('variation_statement'),
+  Type.Literal('loa_number'),
+  Type.Literal('loa_date'),
+  Type.Literal('variation_number'),
+  Type.Literal('item_listed'),
+  Type.Literal('item_omitted'),
+  Type.Literal('item_unit'),
+  Type.Literal('item_original_quantity'),
+  Type.Literal('loa_amount'),
+]);
+export type VariationOrderClaimCode = Static<typeof VariationOrderClaimCodeSchema>;
+
+export const VariationOrderClaimSchema = Type.Object(
+  {
+    code: VariationOrderClaimCodeSchema,
+    verified: Type.Boolean(),
+    /** False for the single advisory claim; a failed REQUIRED claim
+     * refuses the approval. */
+    required: Type.Boolean(),
+    detail: Type.String(),
+    /** What the order itself says, when it said anything. */
+    found: Type.Union([Type.String(), Type.Null()]),
+    /** What the Work or the amendment asserted, where a comparison
+     * applies. */
+    expected: Type.Union([Type.String(), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type VariationOrderClaim = Static<typeof VariationOrderClaimSchema>;
+
+export const VariationOrderVerdictSchema = Type.Object(
+  {
+    verified: Type.Boolean(),
+    claims: Type.Array(VariationOrderClaimSchema),
+    failedClaims: Type.Array(VariationOrderClaimCodeSchema),
+  },
+  { additionalProperties: false },
+);
+export type VariationOrderVerdict = Static<typeof VariationOrderVerdictSchema>;
+
+/**
+ * The stored order beside an omission amendment. Every identifying value
+ * was EXTRACTED from the uploaded PDF and matched against the Work — none
+ * of it is operator input, which is the whole point of the ruling. An
+ * IREPS Variation Statement carries no letter number of its own: its
+ * identity is the agreement number plus the variation number, and its link
+ * to this Work is the LOA number it prints.
+ */
+export const VariationOrderSchema = Type.Object(
+  {
+    id: UuidSchema,
+    approvalRequestId: UuidSchema,
+    loaNumber: Type.String(),
+    loaDate: DateOnlySchema,
+    agreementNumber: Type.String(),
+    variationNumber: Type.String(),
+    originalFilename: Type.String(),
+    sha256: Type.String(),
+    sizeBytes: Type.Integer(),
+    verdict: VariationOrderVerdictSchema,
+    uploadedByUserId: Type.String(),
+    createdAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+export type VariationOrder = Static<typeof VariationOrderSchema>;
+
+export const AttachVariationOrderQuerySchema = Type.Object(
+  { filename: Type.String({ minLength: 1, maxLength: 255 }) },
+  { additionalProperties: false },
+);
+export type AttachVariationOrderQuery = Static<typeof AttachVariationOrderQuerySchema>;
+
 export const AmendmentDiffEntrySchema = Type.Object(
   {
     field: Type.String(),
@@ -118,11 +199,27 @@ export const ApprovalRequestSchema = Type.Object(
     decidedByUserId: Type.Union([Type.String(), Type.Null()]),
     decidedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     decisionNote: Type.Union([Type.String(), Type.Null()]),
+    /** The railway variation order cited for an omission, once one has
+     * been uploaded and verified. Null on every other request kind, and on
+     * an omission still waiting for its order — which is a lawful state to
+     * file in, but never one to approve from. */
+    variationOrder: Type.Union([VariationOrderSchema, Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
   },
   { additionalProperties: false },
 );
 export type ApprovalRequest = Static<typeof ApprovalRequestSchema>;
+
+export const AttachVariationOrderResponseSchema = Type.Object(
+  {
+    approval: ApprovalRequestSchema,
+    verdict: VariationOrderVerdictSchema,
+  },
+  { additionalProperties: false },
+);
+export type AttachVariationOrderResponse = Static<
+  typeof AttachVariationOrderResponseSchema
+>;
 
 export const ApprovalListResponseSchema = Type.Object(
   { approvals: Type.Array(ApprovalRequestSchema) },

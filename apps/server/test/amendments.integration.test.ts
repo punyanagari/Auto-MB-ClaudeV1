@@ -126,6 +126,115 @@ async function issueChallan(
   return { challanId, issued };
 }
 
+/**
+ * A structurally valid single-page PDF whose text layer is exactly `lines`,
+ * set in Courier on a wide page so Poppler's `-layout` view reproduces the
+ * column positions the real IREPS orders have. Proven against the real
+ * corpus in variation-order-verify.test.ts; this builder exists so the
+ * HTTP path can be exercised end to end without committing a customer's
+ * signed PDF.
+ */
+function buildVariationOrderPdf(lines: readonly string[]): Buffer {
+  const escape = (line: string) =>
+    line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+  const commands = lines
+    .map((line, index) =>
+      index === 0
+        ? `BT /F1 8 Tf 20 760 Td (${escape(line)}) Tj`
+        : `0 -11 Td (${escape(line)}) Tj`,
+    )
+    .join('\n');
+  const content = `${commands}\nET`;
+  const objects: Record<number, string> = {
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1584 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    4: `<< /Length ${String(Buffer.byteLength(content, 'latin1'))} >>\nstream\n${content}\nendstream`,
+    5: '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+  };
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (let index = 1; index <= 5; index += 1) {
+    offsets[index] = Buffer.byteLength(pdf, 'latin1');
+    pdf += `${String(index)} 0 obj\n${objects[index] ?? ''}\nendobj\n`;
+  }
+  const xrefStart = Buffer.byteLength(pdf, 'latin1');
+  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  for (let index = 1; index <= 5; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${String(xrefStart)}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+interface VariationOrderShape {
+  readonly loaNumber?: string;
+  readonly loaDate?: string;
+  readonly variationNumber?: string;
+  readonly schedule?: string;
+  readonly itemNumber?: string;
+  readonly unit?: string;
+  readonly originalQuantity?: string;
+  readonly proposedQuantity?: string;
+  readonly percentageVariation?: string;
+}
+
+/** An IREPS Variation Statement carrying one item row, in the layout the
+ * real orders use. Defaults describe the fixture Work's item A/20 being
+ * omitted; every field is overridable so a test can vary exactly one. */
+function variationOrderPdf(shape: VariationOrderShape = {}): Buffer {
+  const {
+    loaNumber = `amd-letter-${runId}`,
+    loaDate = '01/06/2025',
+    variationNumber = '2',
+    schedule = 'A',
+    itemNumber = '20',
+    unit = 'Nos',
+    originalQuantity = '4.0',
+    proposedQuantity = '0.0',
+    percentageVariation = '-100.0',
+  } = shape;
+  const pad = (value: string, width: number) => value.padEnd(width);
+  return buildVariationOrderPdf([
+    '                                   Variation Statement',
+    '',
+    'Agreement Details:',
+    'Railway Name:              Northeast Frontier Railway     Unit Name:            Lumding        Department Name:      S&T',
+    'Tender Number:                                            Tender Type:          Open           Tender Opened On:     27/04/2025',
+    `Tender Validity (Up To):   28/04/2025                     Nature of Contract:   Works          LOA Number:           ${loaNumber}`,
+    `LOA Date:                  ${pad(loaDate, 21)}                     LOA  Amount   (Rs.):  900            PG Amount (Rs.):      45.0`,
+    `Agreement No:              NFR/LMG/S&T/2025/0007          Agreement Date:       01/07/2025     Variation Number:     ${variationNumber}`,
+    'Name of Work Under         Amendment fixture work',
+    'Proposed LOA:',
+    '',
+    'Schedules Details:',
+    ' A                          1000.00                        0                     100.00         -90.0                 -90.0',
+    '',
+    'Variation Details:',
+    'Previous     Schedule     Schedule   Item No.   Item Type   Unit   Qty. as per   Base Rate   Last variation   Agreement   Amount   Proposed   Amount   Amount   %age',
+    `             NS           ${pad(schedule, 10)} ${pad(itemNumber, 10)} Individual  ${pad(unit, 6)} ${pad(originalQuantity, 13)} 25.0        ${pad(originalQuantity, 16)} 25.0        100.0    ${pad(proposedQuantity, 10)} 0.0      0.0      ${percentageVariation}`,
+    'Description: Spare fuse carriers',
+    'Remarks: Not required at site.',
+  ]);
+}
+
+/** Cites a variation order against a pending omission over HTTP, exactly
+ * as the browser does: an application/pdf body and nothing else. */
+async function citeVariationOrder(
+  jar: CookieJar,
+  approvalId: string,
+  pdf: Buffer,
+  filename = 'variation-2.pdf',
+) {
+  return authed(jar, {
+    method: 'POST',
+    url: `/api/approvals/${approvalId}/variation-order?filename=${encodeURIComponent(filename)}`,
+    organisationId,
+    headers: { 'content-type': 'application/pdf' },
+    payload: pdf,
+  });
+}
+
 beforeAll(async () => {
   admin = createDatabasePool({
     url: adminUrl,
@@ -280,6 +389,7 @@ afterAll(async () => {
           'delivery_challan_items',
           'delivery_challan_counters',
           'delivery_challans',
+          'amendment_variation_orders',
           'approval_requests',
           'work_items',
           'work_schedules',
@@ -1508,6 +1618,48 @@ describe('R7 item omission: soft-delete, evidence-gated, number reserved', () =>
       details: { existingRecordId: request.id },
     });
 
+    // FILING is allowed with no variation order at all — that is the state
+    // the ruling permits. APPROVING is not, and the refusal is named.
+    expect(request.variationOrder).toBeNull();
+    const unauthorised = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${request.id}/approve`,
+      organisationId,
+      payload: { note: 'Approving with no paperwork.' },
+    });
+    expect(unauthorised.statusCode, unauthorised.body).toBe(409);
+    expect(unauthorised.json()).toMatchObject({
+      code: 'OMISSION_VARIATION_REFERENCE_REQUIRED',
+    });
+    expect(unauthorised.json<{ message: string }>().message).toContain(
+      'variation order',
+    );
+    // The failed approval rolled back whole: still pending, item still live.
+    const [stillLive] = await admin<{ deleted_at: Date | null }[]>`
+      select deleted_at from work_items where id = ${spareItemId}
+    `;
+    expect(stillLive?.deleted_at).toBeNull();
+
+    // Citing the order: the operator sends only the PDF. Every fact the
+    // record carries is read out of it and checked against this Work.
+    const cited = await citeVariationOrder(clerk, request.id, variationOrderPdf());
+    expect(cited.statusCode, cited.body).toBe(201);
+    const citedBody = cited.json<{
+      approval: ApprovalRequest;
+      verdict: { verified: boolean; failedClaims: string[] };
+    }>();
+    expect(citedBody.verdict.verified).toBe(true);
+    expect(citedBody.verdict.failedClaims).toEqual([]);
+    const order = citedBody.approval.variationOrder;
+    expect(order).not.toBeNull();
+    expect(order?.loaNumber).toBe(`amd-letter-${runId}`);
+    expect(order?.loaDate).toBe('2025-06-01');
+    expect(order?.agreementNumber).toBe('NFR/LMG/S&T/2025/0007');
+    expect(order?.variationNumber).toBe('2');
+    expect(
+      order?.verdict.claims.find((claim) => claim.code === 'item_omitted'),
+    ).toMatchObject({ verified: true, found: '0.0' });
+
     const approved = await authed(owner, {
       method: 'POST',
       url: `/api/approvals/${request.id}/approve`,
@@ -1752,6 +1904,389 @@ describe('R7 item omission: soft-delete, evidence-gated, number reserved', () =>
       const details = event.details as { diff?: unknown };
       expect(details.diff).toEqual(request.diff);
     }
+  });
+});
+
+/**
+ * The owner ruling of 2026-08-13: an omission is a contractual variation,
+ * and it cannot be approved without the railway order that authorises it —
+ * verified against the document, not merely typed.
+ */
+describe('an omission cites a verified railway variation order', () => {
+  let itemId: string;
+  let approvalId: string;
+
+  /** The fixture order for this block's item, A/40. */
+  const orderFor = (shape: VariationOrderShape = {}) =>
+    variationOrderPdf({ itemNumber: '40', ...shape });
+
+  async function fileOmission(itemNumber: string, quantity: string, unit: string) {
+    const id = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${id}, ${organisationId}, ${workId}, ${scheduleId}, ${itemNumber},
+        ${`Variation fixture ${itemNumber}`}, ${unit}, ${quantity}, 25.00
+      )
+    `;
+    const proposed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments/removals`,
+      organisationId,
+      payload: { workItemId: id, reason: `Variation drops ${itemNumber}.` },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(201);
+    return { itemId: id, approvalId: proposed.json<ApprovalRequest>().id };
+  }
+
+  beforeAll(async () => {
+    const filed = await fileOmission('A/40', '4.000', 'Nos');
+    itemId = filed.itemId;
+    approvalId = filed.approvalId;
+  });
+
+  it('never applies an omission on filing, even for an approval-authority holder', async () => {
+    // A change or an addition direct-applies for an approver. An omission
+    // must not, or filing before the paperwork arrives would be refused.
+    const filed = await fileOmission('A/41', '2.000', 'Nos');
+    const owned = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments/removals`,
+      organisationId,
+      payload: { workItemId: filed.itemId, reason: 'Owner files an omission.' },
+    });
+    // The first filing already holds the one pending slot for that item.
+    expect(owned.statusCode).toBe(409);
+    const [pending] = await admin<{ status: string }[]>`
+      select status from approval_requests where id = ${filed.approvalId}
+    `;
+    expect(pending?.status).toBe('pending');
+    const [live] = await admin<{ deleted_at: Date | null }[]>`
+      select deleted_at from work_items where id = ${filed.itemId}
+    `;
+    expect(live?.deleted_at).toBeNull();
+  });
+
+  it('refuses a document with no text layer, naming the claim', async () => {
+    // Two of the five real sample orders are photographs of paper. Poppler
+    // yields nothing for them, and nothing is what this refuses.
+    const blank = buildVariationOrderPdf(['']);
+    const response = await citeVariationOrder(clerk, approvalId, blank, 'scan.pdf');
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'OMISSION_VARIATION_ORDER_UNVERIFIED',
+    });
+    // A document that cannot be read fails FIRST on the text layer, and
+    // every later claim is reported unverified rather than silently
+    // dropped — there is nothing here to approve past.
+    const failed = response.json<{ details: { failedClaims: string[] } }>().details
+      .failedClaims;
+    expect(failed[0]).toBe('text_layer');
+    expect(failed).toContain('item_omitted');
+    expect(response.json<{ message: string }>().message).toContain('text layer');
+  });
+
+  it('refuses a PDF that is not a variation order at all', async () => {
+    const response = await citeVariationOrder(
+      clerk,
+      approvalId,
+      buildVariationOrderPdf(
+        Array.from(
+          { length: 12 },
+          () => 'Letter of Acceptance and general conditions.',
+        ),
+      ),
+    );
+    expect(response.statusCode).toBe(409);
+    expect(
+      response.json<{ details: { failedClaims: string[] } }>().details.failedClaims,
+    ).toContain('variation_statement');
+  });
+
+  it('refuses an order raised against a different contract', async () => {
+    const response = await citeVariationOrder(
+      clerk,
+      approvalId,
+      orderFor({ loaNumber: 'some-other-letter' }),
+    );
+    expect(response.statusCode).toBe(409);
+    expect(
+      response.json<{ details: { failedClaims: string[] } }>().details.failedClaims,
+    ).toContain('loa_number');
+  });
+
+  it('refuses an order that does not propose zero for the item', async () => {
+    const response = await citeVariationOrder(
+      clerk,
+      approvalId,
+      orderFor({ proposedQuantity: '2.0', percentageVariation: '-50.0' }),
+    );
+    expect(response.statusCode).toBe(409);
+    const failed = response.json<{ details: { failedClaims: string[] } }>().details
+      .failedClaims;
+    expect(failed).toContain('item_omitted');
+    expect(failed).not.toContain('item_listed');
+  });
+
+  it('refuses an order describing a different unit or original quantity', async () => {
+    const wrongUnit = await citeVariationOrder(
+      clerk,
+      approvalId,
+      orderFor({ unit: 'Metre' }),
+    );
+    expect(
+      wrongUnit.json<{ details: { failedClaims: string[] } }>().details.failedClaims,
+    ).toContain('item_unit');
+    const wrongQuantity = await citeVariationOrder(
+      clerk,
+      approvalId,
+      orderFor({ originalQuantity: '9.0' }),
+    );
+    expect(
+      wrongQuantity.json<{ details: { failedClaims: string[] } }>().details
+        .failedClaims,
+    ).toContain('item_original_quantity');
+  });
+
+  it('refuses an order naming a different item', async () => {
+    const response = await citeVariationOrder(
+      clerk,
+      approvalId,
+      orderFor({ itemNumber: '99' }),
+    );
+    expect(
+      response.json<{ details: { failedClaims: string[] } }>().details.failedClaims,
+    ).toContain('item_listed');
+  });
+
+  it('stores nothing at all when the document does not support the omission', async () => {
+    const [stored] = await admin<{ count: string }[]>`
+      select count(*)::text as count from amendment_variation_orders
+      where approval_request_id = ${approvalId}
+    `;
+    expect(stored?.count).toBe('0');
+    // But every refusal is on the record.
+    const [rejections] = await admin<{ count: string }[]>`
+      select count(*)::text as count from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${approvalId}
+        and action = 'amendment.variation_order_rejected'
+    `;
+    expect(Number(rejections?.count)).toBeGreaterThan(0);
+  });
+
+  it('refuses a body that is not a PDF, and a request that is not an omission', async () => {
+    const notPdf = await citeVariationOrder(
+      clerk,
+      approvalId,
+      Buffer.from('not a pdf at all'),
+    );
+    expect(notPdf.statusCode).toBe(400);
+    expect(notPdf.json()).toMatchObject({ code: 'NOT_A_PDF' });
+
+    const changeTargetId = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${changeTargetId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/43',
+        'Change-amendment probe', 'Nos', 3.000, 5.00
+      )
+    `;
+    const change = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments`,
+      organisationId,
+      payload: {
+        workItemId: changeTargetId,
+        reason: 'A change, not an omission.',
+        changes: { quantity: '4' },
+      },
+    });
+    expect(change.statusCode, change.body).toBe(201);
+    const wrongKind = await citeVariationOrder(
+      clerk,
+      change.json<ApprovalRequest>().id,
+      orderFor(),
+    );
+    expect(wrongKind.statusCode).toBe(409);
+    expect(wrongKind.json()).toMatchObject({ code: 'VARIATION_ORDER_NOT_APPLICABLE' });
+  });
+
+  it('denies the citation surface to a read-only member and across the tenant boundary', async () => {
+    const readOnly = await citeVariationOrder(viewer, approvalId, orderFor());
+    expect(readOnly.statusCode).toBe(403);
+
+    const crossTenant = await authed(outsider, {
+      method: 'POST',
+      url: `/api/approvals/${approvalId}/variation-order?filename=steal.pdf`,
+      organisationId: organisationBId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: orderFor(),
+    });
+    expect(crossTenant.statusCode).toBe(404);
+  });
+
+  it('approves once a valid order is cited, and the order lands in the audit trail', async () => {
+    const cited = await citeVariationOrder(clerk, approvalId, orderFor());
+    expect(cited.statusCode, cited.body).toBe(201);
+
+    const approved = await authed(owner, {
+      method: 'POST',
+      url: `/api/approvals/${approvalId}/approve`,
+      organisationId,
+      payload: { note: 'Variation 2 on file and verified.' },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(approved.json<ApprovalRequest>().status).toBe('approved');
+
+    const [omitted] = await admin<{ deleted_at: Date | null }[]>`
+      select deleted_at from work_items where id = ${itemId}
+    `;
+    expect(omitted?.deleted_at).not.toBeNull();
+
+    // The decision's own audit row answers "on whose authority", with the
+    // hash of the exact bytes that authorised it.
+    const [decision] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${approvalId}
+        and action = 'amendment.approved'
+    `;
+    const details = decision?.details as {
+      variationOrder?: {
+        loaNumber: string;
+        loaDate: string;
+        agreementNumber: string;
+        variationNumber: string;
+        sha256: string;
+      };
+    };
+    expect(details.variationOrder).toMatchObject({
+      loaNumber: `amd-letter-${runId}`,
+      loaDate: '2025-06-01',
+      agreementNumber: 'NFR/LMG/S&T/2025/0007',
+      variationNumber: '2',
+    });
+    expect(details.variationOrder?.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    // And the citation itself was audited when it happened.
+    const [citation] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${approvalId}
+        and action = 'amendment.variation_order_cited'
+    `;
+    expect((citation?.details as { itemNumber?: string }).itemNumber).toBe('A/40');
+  });
+
+  it('serves the cited order back to a member of the Work, and to nobody else', async () => {
+    const served = await authed(viewer, {
+      method: 'GET',
+      url: `/api/approvals/${approvalId}/variation-order/file`,
+      organisationId,
+    });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers['content-type']).toContain('application/pdf');
+    expect(served.rawPayload.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
+    const crossTenant = await authed(outsider, {
+      method: 'GET',
+      url: `/api/approvals/${approvalId}/variation-order/file`,
+      organisationId: organisationBId,
+    });
+    expect(crossTenant.statusCode).toBe(404);
+  });
+
+  it('holds the rule at the DATABASE against a direct-SQL writer', async () => {
+    const bareItemId = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${bareItemId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/42',
+        'Direct-SQL omission probe', 'Nos', 1.000, 5.00
+      )
+    `;
+    const proposed = await authed(clerk, {
+      method: 'POST',
+      url: `/api/works/${workId}/amendments/removals`,
+      organisationId,
+      payload: { workItemId: bareItemId, reason: 'Probe the database guard.' },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(201);
+    const bareApprovalId = proposed.json<ApprovalRequest>().id;
+
+    // 1. The request cannot reach 'approved' without a verified order,
+    //    however it is written.
+    await expect(
+      admin`
+        update approval_requests set status = 'approved',
+          decided_by_user_id = ${ownerUserId}, decided_at = now()
+        where id = ${bareApprovalId}
+      `,
+    ).rejects.toThrow(/verified railway variation order/i);
+
+    // 2. And the item cannot be soft-deleted without one either — the
+    //    guard 0030 already holds for evidence now holds for authority.
+    await expect(
+      admin`update work_items set deleted_at = now() where id = ${bareItemId}`,
+    ).rejects.toThrow(/verified railway variation order/i);
+
+    const [live] = await admin<{ deleted_at: Date | null }[]>`
+      select deleted_at from work_items where id = ${bareItemId}
+    `;
+    expect(live?.deleted_at).toBeNull();
+  });
+
+  it('keeps a cited order immutable and undeletable at the database', async () => {
+    const [stored] = await admin<{ id: string }[]>`
+      select id from amendment_variation_orders
+      where approval_request_id = ${approvalId}
+    `;
+    expect(stored).toBeDefined();
+    await expect(
+      admin`
+        update amendment_variation_orders set loa_number = 'rewritten'
+        where id = ${stored?.id ?? null}
+      `,
+    ).rejects.toThrow(/immutable evidence/i);
+    await expect(
+      admin`delete from amendment_variation_orders where id = ${stored?.id ?? null}`,
+    ).rejects.toThrow(/immutable evidence/i);
+
+    // The application role is not granted UPDATE or DELETE at all, so the
+    // trigger is the floor under a privilege matrix, not the only wall.
+    const grants = await admin<{ privilege_type: string }[]>`
+      select privilege_type from information_schema.role_table_grants
+      where grantee = 'auto_mb_app' and table_name = 'amendment_variation_orders'
+    `;
+    expect(grants.map((grant) => grant.privilege_type).sort()).toEqual([
+      'INSERT',
+      'SELECT',
+    ]);
+  });
+
+  it('refuses an unverified order at the database, so only verified ones exist', async () => {
+    await expect(
+      admin`
+        insert into amendment_variation_orders (
+          organisation_id, approval_request_id, work_id, loa_number, loa_date,
+          agreement_number, variation_number, object_key, original_filename,
+          sha256, media_type, size_bytes, verdict, verified,
+          uploaded_by_user_id
+        )
+        values (
+          ${organisationId}, ${approvalId}, ${workId}, 'x', '2025-06-01', 'y',
+          '1', 'k', 'f.pdf', ${'0'.repeat(64)}, 'application/pdf', 1,
+          '{}'::jsonb, false, ${ownerUserId}
+        )
+      `,
+    ).rejects.toThrow(/verified/i);
   });
 });
 

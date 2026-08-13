@@ -201,6 +201,42 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
+15. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
+
+### 5.1 Verifying a variation order
+
+The operator uploads the order and types nothing. The server extracts its
+text through the same Poppler-only path the LOA uses and checks a set of
+named claims; the omission is authorised only when every required claim is
+verified, and a claim that cannot be checked counts as failed.
+
+Required claims:
+
+- the PDF carries a readable text layer (a scan or photograph does not);
+- the document is a railway Variation Statement;
+- the LOA number it prints matches the Work's LOA letter number, and the LOA date matches the Work's letter date;
+- it states a variation number;
+- the omitted item appears in its Variation Details table, its proposed quantity there is zero — which is how these orders express an omission, there being no "delete" instruction — and the unit and original agreement quantity it states match what the Work holds.
+
+Advisory, recorded and shown to the approver but not gating: the printed
+LOA amount against the Work's contract value. IREPS renders that figure in
+seven-significant-figure scientific notation on some orders, and it moves
+legitimately with each sanctioned variation.
+
+The variation number is recorded and displayed but NOT required to be
+sequential: a Work adopted mid-contract never saw the earlier variations,
+and enforcing an order would refuse lawful paperwork.
+
+Refusals are named, at the route and again in the database: an approval
+without a verified order is refused, and so is any direct-SQL attempt to
+mark such a request approved or to soft-delete the item. A stored order is
+immutable evidence — never edited, never deleted.
+
+The same reasoning applies to quantity and rate amendments, which are also
+variation orders and which the same document also authorises (it states a
+proposed quantity for every item, not only the omitted ones). The owner
+scoped this ruling to omissions; extending it is a change of expectation,
+not of machinery.
 
 ## 6. Data conventions
 
@@ -230,8 +266,9 @@ A design partner can:
 
 The current product also includes:
 
-- completion extensions, approval-gated baseline amendments, item omission,
-  correction notices, Work completion/reopen, and per-Work activity history;
+- completion extensions, approval-gated baseline amendments, item omission
+  gated on a verified railway variation order, correction notices, Work
+  completion/reopen, and per-Work activity history;
 - Issue Challans, receipts, serial traceability, quantity installations,
   warranty certificates, instruments, and PAC certificates;
 - record, on-account, and final Measurement Books with category payment

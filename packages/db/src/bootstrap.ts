@@ -71,6 +71,10 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   issue_challan_counters: 'SELECT, INSERT, UPDATE',
   // Amendment approvals are a decision ledger: no DELETE (0012).
   approval_requests: 'SELECT, INSERT, UPDATE',
+  // A cited variation order is the evidence an omission was authorised:
+  // written once at upload and never rewritten, so no UPDATE and no
+  // DELETE either (0058).
+  amendment_variation_orders: 'SELECT, INSERT',
   // Installation records cancel with a note, never delete; attachments
   // release, never delete (0017).
   installations: 'SELECT, INSERT, UPDATE',
