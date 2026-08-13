@@ -36,3 +36,7 @@ fixtures-raw/
 
 # Agent worktrees are session-local working copies, never content.
 .claude/worktrees/
+
+# Generated knowledge-graph artefacts: session-local, never content.
+# (It is already in .prettierignore because format:check once failed on it.)
+graphify-out/
