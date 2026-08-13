@@ -83,7 +83,10 @@ export default tseslint.config(
     files: [
       '**/*.config.{js,ts,mjs}',
       'eslint.config.js',
-      'scripts/**/*.mjs',
+      // Both the repository-wide scripts and a package's own build-output
+      // checks (apps/web/scripts/check-bundle-size.mjs): none of them are
+      // in any package tsconfig, because none of them are shipped code.
+      '**/scripts/**/*.mjs',
       'scripts/**/*.ts',
     ],
     ignores: ['apps/web/vite.config.ts'],

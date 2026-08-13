@@ -46,8 +46,11 @@ describe('Settings', () => {
       />,
     );
 
-    await screen.findByRole('heading', { name: 'Settings' });
-    fireEvent.change(screen.getByLabelText('Address'), {
+    // Awaited on a LOADED control, never on the heading: Settings renders
+    // its <h1> during the profile fetch too, so waiting for the heading
+    // resolves against the loading state and the next line then races the
+    // fetch. That race is why this file failed once in CI under load.
+    fireEvent.change(await screen.findByLabelText('Address'), {
       target: { value: 'Plot 4, MIDC, Nashik' },
     });
     fireEvent.change(screen.getByLabelText('GSTIN'), {
@@ -100,8 +103,7 @@ describe('Settings', () => {
       />,
     );
 
-    await screen.findByRole('heading', { name: 'Settings' });
-    const stateCode = screen.getByLabelText('GST state code');
+    const stateCode = await screen.findByLabelText('GST state code');
     fireEvent.change(stateCode, { target: { value: '29' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));
 
@@ -127,8 +129,7 @@ describe('Settings', () => {
       />,
     );
 
-    await screen.findByRole('heading', { name: 'Settings' });
-    expect(screen.getByText('Plot 4, MIDC, Nashik')).toBeTruthy();
+    expect(await screen.findByText('Plot 4, MIDC, Nashik')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save company details' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Upload logo' })).toBeNull();
   });
@@ -150,8 +151,7 @@ describe('Settings', () => {
       />,
     );
 
-    await screen.findByRole('heading', { name: 'Settings' });
-    fireEvent.change(screen.getByLabelText('Warranty agreement template'), {
+    fireEvent.change(await screen.findByLabelText('Warranty agreement template'), {
       target: { value: 'Goods carry a 24-month warranty.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save company details' }));

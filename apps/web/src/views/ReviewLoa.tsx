@@ -1204,12 +1204,23 @@ export function ReviewLoa({
               }}
               required
               pattern="[A-Z0-9][A-Z0-9_/-]{0,19}"
+              // The pattern's own 20-character bound, said by the control
+              // instead of only by the refusal after submit. Typing is
+              // stopped at the limit; the pattern still decides the rest.
+              maxLength={20}
               autoComplete="off"
               aria-invalid={fieldErrors['work-code'] !== undefined}
               aria-describedby={
-                fieldErrors['work-code'] !== undefined ? 'work-code-error' : undefined
+                fieldErrors['work-code'] === undefined
+                  ? 'work-code-hint'
+                  : 'work-code-hint work-code-error'
               }
             />
+            <Hint id="work-code-hint">
+              Up to 20 characters: letters, digits, and / _ - only, upper-cased as you
+              type. It prints on every document for this Work and numbers its challan
+              series, so pick the reference your own filing already uses.
+            </Hint>
             {fieldErrors['work-code'] !== undefined && (
               <FieldError id="work-code-error">{fieldErrors['work-code']}</FieldError>
             )}

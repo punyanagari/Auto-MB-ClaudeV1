@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   Challan,
   Contact,
@@ -8,6 +8,7 @@ import type {
   MeasurementBook,
   MeasurementBookDetailResponse,
   MeasurementBookKind,
+  MeasurementBookLine,
   PacCertificate,
 } from '@auto-mb/contracts';
 import {
@@ -72,6 +73,30 @@ const KIND_LABELS: Record<MeasurementBookKind, string> = {
   record: 'record',
   final: 'final',
 };
+
+/** One preview/snapshot line. Memoised because an MB carries a line per
+ * priced Work item — 129 on the flagship corpus Work — and this panel
+ * re-renders on every pending flag, notice and confirmation step around
+ * it. The line objects come straight off the loaded detail, so their
+ * identity only changes when the MB is reloaded. */
+const MeasurementLineRow = memo(function MeasurementLineRow({
+  line,
+}: {
+  readonly line: MeasurementBookLine;
+}) {
+  return (
+    <tr>
+      <th scope="row">{line.itemNumber}</th>
+      <td className={wrapCell}>{line.description}</td>
+      <td>{line.unitCode}</td>
+      <td className={numericCell}>{line.deltaSupplied}</td>
+      <td className={numericCell}>{line.deltaInstalled}</td>
+      <td className={numericCell}>{line.deltaPac}</td>
+      <td className={numericCell}>{formatInr(line.lineTotal)}</td>
+      <td className={wrapCell}>{line.remark}</td>
+    </tr>
+  );
+});
 
 /**
  * The stage-wise Measurement Book workspace (Milestone 8; ADR-0006,
@@ -259,6 +284,19 @@ export function MeasurementBooks({
     [api, canModify, loadCandidates, organisationId],
   );
 
+  /* Two lookups the register used to do by linear scan, one per row:
+   * `books.find(...)` for the MB a merged record was absorbed into, and a
+   * fresh consignee Map built on every render. Both are hoisted above the
+   * early returns below so the hook order is the same on every path. */
+  const booksById = useMemo(
+    () => new Map((books ?? []).map((candidate) => [candidate.id, candidate])),
+    [books],
+  );
+  const consigneeNameById = useMemo(
+    () => new Map(consignees.map((consignee) => [consignee.id, consignee.designation])),
+    [consignees],
+  );
+
   if (loadError !== null) {
     return (
       <>
@@ -300,15 +338,12 @@ export function MeasurementBooks({
   /** A finalized MB always carries its number; the fallback exists only
    * because the shared contract type keeps it nullable for drafts. */
   const mbNumberLabel = book?.mbNumber ?? 'this Measurement Book';
-  const consigneeNameById = new Map(
-    consignees.map((consignee) => [consignee.id, consignee.designation]),
-  );
   const consigneeLabel = (contactId: string | null): string =>
     contactId === null ? 'consignee' : (consigneeNameById.get(contactId) ?? contactId);
   /** How a merged record names its absorber: by number once finalized,
    * as "draft" while it is still one. */
   const absorberLabel = (absorberId: string): string =>
-    books.find((candidate) => candidate.id === absorberId)?.mbNumber ?? 'draft';
+    booksById.get(absorberId)?.mbNumber ?? 'draft';
   const recordDrafts = books.filter(
     (candidate) => candidate.kind === 'record' && candidate.status === 'draft',
   );
@@ -868,16 +903,7 @@ export function MeasurementBooks({
               </thead>
               <tbody>
                 {detail.lines.map((line) => (
-                  <tr key={line.workItemId}>
-                    <th scope="row">{line.itemNumber}</th>
-                    <td className={wrapCell}>{line.description}</td>
-                    <td>{line.unitCode}</td>
-                    <td className={numericCell}>{line.deltaSupplied}</td>
-                    <td className={numericCell}>{line.deltaInstalled}</td>
-                    <td className={numericCell}>{line.deltaPac}</td>
-                    <td className={numericCell}>{formatInr(line.lineTotal)}</td>
-                    <td className={wrapCell}>{line.remark}</td>
-                  </tr>
+                  <MeasurementLineRow key={line.workItemId} line={line} />
                 ))}
               </tbody>
               {/* The total belongs in the foot so it is announced as the

@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import type {
   Contact,
   PurchaseOrderDetailResponse,
   SaveChallanRequest,
   WorkBalanceResponse,
+  WorkBalanceItem,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
@@ -155,6 +157,136 @@ function comparableContent(state: EditorState): string {
   });
 }
 
+interface ItemRowProps {
+  readonly item: WorkBalanceItem;
+  /** This row's entered quantity, and only this row's: the whole
+   * `quantities` record must not reach a row, or every row's props change
+   * on every keystroke. */
+  readonly quantity: string;
+  readonly poLineId: string;
+  readonly poChoices: readonly PoLineChoice[] | undefined;
+  readonly offersPoLines: boolean;
+  readonly over: boolean;
+  readonly error: string | undefined;
+  readonly allowExcessDelivery: boolean;
+  readonly registerField: (field: string, node: HTMLElement | null) => void;
+  readonly onQuantityChange: (workItemId: string, value: string) => void;
+  readonly onQuantityBlur: (
+    workItemId: string,
+    remainingQuantity: string,
+    entered: string,
+  ) => void;
+  readonly onPoLineChange: (workItemId: string, value: string) => void;
+}
+
+/**
+ * One item row of the challan editor.
+ *
+ * Memoised because this table is the editor: a Work with 129 schedule
+ * items puts 129 controlled inputs on screen, and typing one digit used
+ * to re-render all of them — the state update cloned the entire
+ * `quantities` record and the rows were inline in the parent, so React
+ * re-ran every cell for a change confined to one. With the row split out
+ * and given only its own strings, a keystroke re-renders the parent and
+ * the one row that changed.
+ *
+ * Every callback prop must be referentially stable for that to hold; the
+ * parent builds them with `useCallback` over functional state updates.
+ */
+const ItemRow = memo(function ItemRow({
+  item,
+  quantity,
+  poLineId,
+  poChoices,
+  offersPoLines,
+  over,
+  error,
+  allowExcessDelivery,
+  registerField,
+  onQuantityChange,
+  onQuantityBlur,
+  onPoLineChange,
+}: ItemRowProps) {
+  const quantityField = `challan-quantity-${item.workItemId}`;
+  return (
+    <tr>
+      <th scope="row">{item.itemNumber}</th>
+      <td className={wrapCell}>{item.description}</td>
+      <td>{item.unitCode}</td>
+      <td className={numericCell}>
+        {item.effectiveQuantity !== null &&
+        item.effectiveQuantity !== undefined &&
+        item.effectiveQuantity !== item.awardedQuantity ? (
+          // An approved amendment moved the ceiling: show both.
+          <>
+            <s className="text-muted-foreground">{item.awardedQuantity}</s> →{' '}
+            {item.effectiveQuantity}
+          </>
+        ) : (
+          item.awardedQuantity
+        )}
+      </td>
+      <td className={numericCell}>{item.deliveredQuantity}</td>
+      <td className={numericCell}>{item.remainingQuantity}</td>
+      <td>
+        <input
+          aria-label={`Quantity of ${item.itemNumber} on this challan`}
+          inputMode="decimal"
+          ref={(node) => {
+            registerField(quantityField, node);
+          }}
+          value={quantity}
+          onChange={(event) => {
+            onQuantityChange(item.workItemId, event.target.value);
+          }}
+          onBlur={() => {
+            // Guidance only, and only where an excess would actually be
+            // refused: the draft stays saveable, and the server does the
+            // authoritative comparison when the challan is issued.
+            if (allowExcessDelivery) return;
+            onQuantityBlur(item.workItemId, item.remainingQuantity, quantity);
+          }}
+          aria-invalid={error !== undefined}
+          aria-describedby={describedBy(
+            error !== undefined ? `${quantityField}-error` : undefined,
+            over ? `${quantityField}-over` : undefined,
+          )}
+        />
+        {error !== undefined && (
+          <FieldError id={`${quantityField}-error`}>{error}</FieldError>
+        )}
+        {over && (
+          <StatusChip status="review" id={`${quantityField}-over`}>
+            over the {item.remainingQuantity} remaining
+          </StatusChip>
+        )}
+      </td>
+      {offersPoLines && (
+        <td>
+          {poChoices !== undefined && poChoices.length > 0 ? (
+            <select
+              aria-label={`Purchase order line for ${item.itemNumber}`}
+              value={poLineId}
+              onChange={(event) => {
+                onPoLineChange(item.workItemId, event.target.value);
+              }}
+            >
+              <option value="">No purchase order</option>
+              {poChoices.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.poNumber} · {choice.pendingQuantity} pending
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+      )}
+    </tr>
+  );
+});
+
 export function ChallanEditor({
   api,
   organisationId,
@@ -188,10 +320,22 @@ export function ChallanEditor({
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const cancelRef = useRef<HTMLButtonElement>(null);
   const discardRef = useRef<HTMLButtonElement>(null);
+  /* comparableContent sorts and stringifies every entered quantity, so on
+   * a 129-item Work it is the most expensive thing a keystroke does — and
+   * it ran twice per render, once for each side. Memoised per side: the
+   * loaded side recomputes only when the draft reloads. */
+  const currentContent = useMemo(
+    () => (state === null ? null : comparableContent(state)),
+    [state],
+  );
+  const loadedContent = useMemo(
+    () => (loadedState === null ? null : comparableContent(loadedState)),
+    [loadedState],
+  );
   const edited =
-    state !== null &&
-    loadedState !== null &&
-    comparableContent(state) !== comparableContent(loadedState);
+    currentContent !== null &&
+    loadedContent !== null &&
+    currentContent !== loadedContent;
 
   useEffect(() => {
     let cancelled = false;
@@ -318,13 +462,16 @@ export function ChallanEditor({
     [onDirtyChange],
   );
 
-  function registerField(field: string, node: HTMLElement | null) {
+  /* Stable for the life of the editor: it only ever writes to a ref, and
+   * a new identity on every render would re-run each row's `ref` callback
+   * and defeat the memoisation below. */
+  const registerField = useCallback((field: string, node: HTMLElement | null) => {
     if (node === null) {
       fieldRefs.current.delete(field);
       return;
     }
     fieldRefs.current.set(field, node);
-  }
+  }, []);
 
   /** Moves focus onto the control that has to change. The form-level
    * role="alert" announces what went wrong; it says nothing about where a
@@ -333,22 +480,58 @@ export function ChallanEditor({
     fieldRefs.current.get(field)?.focus();
   }
 
-  /** Re-checks one row against its remaining balance. Called on blur only:
-   * flagging a half-typed "1" as over a remaining "12" while the operator is
-   * still reaching for the second digit is noise, not help. */
-  function checkRemaining(workItemId: string, remainingQuantity: string) {
-    if (state === null) return;
-    const entered = quantityThousandths(state.quantities[workItemId] ?? '');
-    const remaining = quantityThousandths(remainingQuantity);
-    const over = entered !== null && remaining !== null && entered > remaining;
+  /* The three row handlers, stable across renders so a memoised row only
+   * re-renders when its own value changes. Each takes the work item id it
+   * acts on and updates from the previous state rather than closing over
+   * the current one. */
+  const changeQuantity = useCallback((workItemId: string, value: string) => {
+    // A stale over-delivery flag must not survive the edit that may be
+    // clearing it; the next blur decides again.
     setOverRemaining((previous) => {
-      if (previous.has(workItemId) === over) return previous;
+      if (!previous.has(workItemId)) return previous;
       const next = new Set(previous);
-      if (over) next.add(workItemId);
-      else next.delete(workItemId);
+      next.delete(workItemId);
       return next;
     });
-  }
+    setState((previous) =>
+      previous === null
+        ? previous
+        : {
+            ...previous,
+            quantities: { ...previous.quantities, [workItemId]: value },
+          },
+    );
+  }, []);
+
+  const changePoLine = useCallback((workItemId: string, value: string) => {
+    setState((previous) =>
+      previous === null
+        ? previous
+        : { ...previous, poLines: { ...previous.poLines, [workItemId]: value } },
+    );
+  }, []);
+
+  /** Re-checks one row against its remaining balance. Called on blur only:
+   * flagging a half-typed "1" as over a remaining "12" while the operator is
+   * still reaching for the second digit is noise, not help. The entered
+   * value arrives from the row rather than being read back out of the
+   * editor's state, which is what keeps this callback stable. */
+  const checkRemaining = useCallback(
+    (workItemId: string, remainingQuantity: string, entered: string) => {
+      const enteredValue = quantityThousandths(entered);
+      const remaining = quantityThousandths(remainingQuantity);
+      const over =
+        enteredValue !== null && remaining !== null && enteredValue > remaining;
+      setOverRemaining((previous) => {
+        if (previous.has(workItemId) === over) return previous;
+        const next = new Set(previous);
+        if (over) next.add(workItemId);
+        else next.delete(workItemId);
+        return next;
+      });
+    },
+    [],
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -728,113 +911,23 @@ export function ChallanEditor({
             </tr>
           </thead>
           <tbody>
-            {balance.items.map((item) => {
-              const quantityField = `challan-quantity-${item.workItemId}`;
-              const over = overRemaining.has(item.workItemId);
-              return (
-                <tr key={item.workItemId}>
-                  <th scope="row">{item.itemNumber}</th>
-                  <td className={wrapCell}>{item.description}</td>
-                  <td>{item.unitCode}</td>
-                  <td className={numericCell}>
-                    {item.effectiveQuantity !== null &&
-                    item.effectiveQuantity !== undefined &&
-                    item.effectiveQuantity !== item.awardedQuantity ? (
-                      // An approved amendment moved the ceiling: show both.
-                      <>
-                        <s className="text-muted-foreground">{item.awardedQuantity}</s>{' '}
-                        → {item.effectiveQuantity}
-                      </>
-                    ) : (
-                      item.awardedQuantity
-                    )}
-                  </td>
-                  <td className={numericCell}>{item.deliveredQuantity}</td>
-                  <td className={numericCell}>{item.remainingQuantity}</td>
-                  <td>
-                    <input
-                      aria-label={`Quantity of ${item.itemNumber} on this challan`}
-                      inputMode="decimal"
-                      ref={(node) => {
-                        registerField(quantityField, node);
-                      }}
-                      value={state.quantities[item.workItemId] ?? ''}
-                      onChange={(event) => {
-                        // A stale over-delivery flag must not survive the
-                        // edit that may be clearing it; the next blur decides
-                        // again.
-                        setOverRemaining((previous) => {
-                          if (!previous.has(item.workItemId)) return previous;
-                          const next = new Set(previous);
-                          next.delete(item.workItemId);
-                          return next;
-                        });
-                        setState({
-                          ...state,
-                          quantities: {
-                            ...state.quantities,
-                            [item.workItemId]: event.target.value,
-                          },
-                        });
-                      }}
-                      onBlur={() => {
-                        // Guidance only, and only where an excess would
-                        // actually be refused: the draft stays saveable, and
-                        // the server does the authoritative comparison when
-                        // the challan is issued.
-                        if (balance.allowExcessDelivery) return;
-                        checkRemaining(item.workItemId, item.remainingQuantity);
-                      }}
-                      aria-invalid={fieldErrors[quantityField] !== undefined}
-                      aria-describedby={describedBy(
-                        fieldErrors[quantityField] !== undefined
-                          ? `${quantityField}-error`
-                          : undefined,
-                        over ? `${quantityField}-over` : undefined,
-                      )}
-                    />
-                    {fieldErrors[quantityField] !== undefined && (
-                      <FieldError id={`${quantityField}-error`}>
-                        {fieldErrors[quantityField]}
-                      </FieldError>
-                    )}
-                    {over && (
-                      <StatusChip status="review" id={`${quantityField}-over`}>
-                        over the {item.remainingQuantity} remaining
-                      </StatusChip>
-                    )}
-                  </td>
-                  {offersPoLines && (
-                    <td>
-                      {(poLineChoices.get(item.workItemId) ?? []).length > 0 ? (
-                        <select
-                          aria-label={`Purchase order line for ${item.itemNumber}`}
-                          value={state.poLines[item.workItemId] ?? ''}
-                          onChange={(event) => {
-                            setState({
-                              ...state,
-                              poLines: {
-                                ...state.poLines,
-                                [item.workItemId]: event.target.value,
-                              },
-                            });
-                          }}
-                        >
-                          <option value="">No purchase order</option>
-                          {(poLineChoices.get(item.workItemId) ?? []).map((choice) => (
-                            <option key={choice.id} value={choice.id}>
-                              {choice.poNumber} · {choice.pendingQuantity} pending
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
+            {balance.items.map((item) => (
+              <ItemRow
+                key={item.workItemId}
+                item={item}
+                quantity={state.quantities[item.workItemId] ?? ''}
+                poLineId={state.poLines[item.workItemId] ?? ''}
+                poChoices={poLineChoices.get(item.workItemId)}
+                offersPoLines={offersPoLines}
+                over={overRemaining.has(item.workItemId)}
+                error={fieldErrors[`challan-quantity-${item.workItemId}`]}
+                allowExcessDelivery={balance.allowExcessDelivery}
+                registerField={registerField}
+                onQuantityChange={changeQuantity}
+                onQuantityBlur={checkRemaining}
+                onPoLineChange={changePoLine}
+              />
+            ))}
           </tbody>
         </DataTable>
 

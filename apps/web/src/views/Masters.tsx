@@ -19,6 +19,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip as Chip } from '../ui/chip.js';
+import { DateField } from '../ui/date-field.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -111,6 +112,41 @@ function RetiredFilter({
       />{' '}
       Show retired
     </label>
+  );
+}
+
+/**
+ * An empty master list, said in terms of what it is FOR.
+ *
+ * "No contacts yet." is true and useless: it names the absence, not what
+ * the absence costs or what to do about it. Each tab passes the sentence
+ * that says which document stalls without this list, and — when the
+ * operator may write — points at the create form that this same emptiness
+ * has already opened below (`MasterForm startOpen`). A read-only member is
+ * told who fills it instead of being sent to a form they cannot submit.
+ */
+function EmptyMaster({
+  purpose,
+  action,
+  canModify,
+  readOnlyNote,
+}: {
+  /** One operational sentence: what this list is used by. */
+  readonly purpose: string;
+  /** The label on the create form below, so the eye has somewhere to go. */
+  readonly action: string;
+  readonly canModify: boolean;
+  /** Who may fill it, when the reader may not. Overridden where the
+   * permission is narrower than owner-or-office. */
+  readonly readOnlyNote?: string;
+}) {
+  return (
+    <p className="my-3 text-[13px] text-muted-foreground">
+      {purpose}{' '}
+      {canModify
+        ? `The "${action}" form below is open and ready.`
+        : (readOnlyNote ?? 'An owner or office member adds the first entry.')}
+    </p>
   );
 }
 
@@ -256,7 +292,11 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
           Loading contacts…
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No contacts yet.</p>
+        <EmptyMaster
+          purpose="No contacts yet. A delivery challan needs a consignee, a purchase order needs a vendor, and a tax invoice needs a client — all of them are records in this one list."
+          action="New contact"
+          canModify={canModify}
+        />
       ) : (
         <DataTable>
           <caption className="sr-only">
@@ -592,7 +632,11 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
           Loading locations…
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No locations yet.</p>
+        <EmptyMaster
+          purpose="No locations yet. Recording a delivery or an installation asks where it happened, and this list is what that question offers."
+          action="New location"
+          canModify={canModify}
+        />
       ) : (
         <DataTable>
           <caption className="sr-only">Location masters</caption>
@@ -762,7 +806,11 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
           Loading units…
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No units yet.</p>
+        <EmptyMaster
+          purpose="No units yet. The standard set (Nos, Metre, RKM and the rest) is created the first time a confirmed LOA uses one, so this list normally fills itself — add one here only when a letter prints a unit the standard set has no name for."
+          action="New unit"
+          canModify={canModify}
+        />
       ) : (
         <DataTable>
           <caption className="sr-only">Unit masters</caption>
@@ -916,7 +964,11 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
           Loading signatories…
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No signatories yet.</p>
+        <EmptyMaster
+          purpose="No signatories yet. Every generated document prints a name and designation under the signature block, and it is chosen from this list."
+          action="New signatory"
+          canModify={canModify}
+        />
       ) : (
         <DataTable>
           <caption className="sr-only">Organisation signatories</caption>
@@ -1089,7 +1141,12 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
           Loading GST rates…
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No GST rates yet.</p>
+        <EmptyMaster
+          purpose="No notified rates recorded yet. An invoice or quotation refuses any rate this list does not cover on the document date, so the rates in force for the periods you bill have to be here first."
+          action="New notified rate"
+          canModify={isOwner}
+          readOnlyNote="Only an owner records a notified rate — the master decides what a legal document may say."
+        />
       ) : (
         <DataTable>
           <caption className="sr-only">Notified GST rates and their windows</caption>
@@ -1136,16 +1193,13 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
 
       {isOwner && ending !== null && (
         <form onSubmit={(event) => void endDate(event)}>
-          <Field>
-            <label htmlFor="gst-rate-ending">
-              Last date {ending.rate}% is in force
-            </label>
-            <input id="gst-rate-ending" name="endingEffectiveTo" type="date" required />
-            <Hint>
-              Invoices dated on or before this date keep accepting {ending.rate}%; later
-              ones refuse it.
-            </Hint>
-          </Field>
+          <DateField
+            id="gst-rate-ending"
+            name="endingEffectiveTo"
+            required
+            label={`Last date ${ending.rate}% is in force`}
+            hint={`Invoices dated on or before it keep accepting ${ending.rate}%; later ones refuse it.`}
+          />
           <Actions>
             <Button type="submit" disabled={pending}>
               End-date {ending.rate}%
@@ -1193,15 +1247,18 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
               </Field>
             </FieldRow>
             <FieldRow>
-              <Field>
-                <label htmlFor="gst-rate-from">In force from</label>
-                <input id="gst-rate-from" name="effectiveFrom" type="date" required />
-              </Field>
-              <Field>
-                <label htmlFor="gst-rate-to">In force until (optional)</label>
-                <input id="gst-rate-to" name="effectiveTo" type="date" />
-                <Hint>Leave empty while the notification has no announced end.</Hint>
-              </Field>
+              <DateField
+                id="gst-rate-from"
+                name="effectiveFrom"
+                required
+                label="In force from"
+              />
+              <DateField
+                id="gst-rate-to"
+                name="effectiveTo"
+                label="In force until (optional)"
+                hint="Leave empty while the notification has no announced end."
+              />
             </FieldRow>
             <Actions>
               <Button type="submit" disabled={pending}>

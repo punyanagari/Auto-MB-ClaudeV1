@@ -115,8 +115,24 @@ COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 # against, and the one the compiled bootstrap applies.
 COPY --from=build /app/packages/db/migrations ./apps/server/migrations
 
+# CCA India root certificates, so a stock deployment can decide WHO signed
+# an inbound railway PDF instead of showing every reviewer "no certifying
+# authorities are installed" — a warning nobody on a fresh install could
+# act on (reconciled review, onboarding). The bundle and the provenance of
+# every certificate in it are deploy/trust-anchors/README.md;
+# scripts/check-config.mjs pins each one by SHA-256, and asserts that this
+# COPY and the ENV below both still exist.
+#
+# This is a DEFAULT, not the end of the story: roots are re-issued on their
+# own schedule and the quarterly human refresh in docs/OPERATIONS.md §8
+# still owns the trust decision. An operator who refreshes without
+# rebuilding mounts a directory over this path and the env var follows it
+# (deploy/docker-compose.prod.yml).
+COPY deploy/trust-anchors /etc/auto-mb/pdf-trust
+
 ENV NODE_ENV=production
 ENV AUTO_MB_MIGRATIONS_DIR=/app/apps/server/migrations
+ENV AUTO_MB_PDF_TRUST_ANCHORS=/etc/auto-mb/pdf-trust
 
 # The object-store volume mounts at /data/objects; it must be writable
 # by the unprivileged runtime user. A fresh named volume copies this

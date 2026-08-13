@@ -145,6 +145,15 @@ services:
       # trusted hop gives the rate limiter true per-client addressing.
       TRUST_PROXY_HOPS: '1'
       OBJECT_STORAGE_DIR: /data/objects
+      # PDF signature trust anchors. The image ships the CCA India roots at
+      # this path (deploy/Dockerfile.server, deploy/trust-anchors/), so the
+      # default needs nothing set. Named here anyway because the quarterly
+      # refresh (docs/OPERATIONS.md §8) should not require an image rebuild:
+      # mount a host directory over /etc/auto-mb/pdf-trust, or set this to
+      # another mounted path, and the server picks it up on restart. A
+      # configured-but-unreadable path refuses to boot rather than
+      # degrading every railway document to "issuer not checked".
+      AUTO_MB_PDF_TRUST_ANCHORS: ${AUTO_MB_PDF_TRUST_ANCHORS:-/etc/auto-mb/pdf-trust}
       GOTENBERG_URL: http://gotenberg:3000
       CLAMAV_HOST: clamav
       CLAMAV_PORT: '3310'
