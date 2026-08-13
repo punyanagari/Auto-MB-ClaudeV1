@@ -67,8 +67,8 @@ let ownerUserId: string;
 let signerPkis: TestPki[];
 /** A hierarchy whose root is deliberately NOT installed. */
 let unknownPki: TestPki;
-/** A hierarchy whose certificates are all long expired. */
-let expiredPki: TestPki;
+/** Hierarchies whose certificates are all long expired. */
+let expiredPkis: TestPki[];
 
 const organisationIds: string[] = [];
 
@@ -262,44 +262,72 @@ beforeAll(async () => {
 
   // Three roots installed, one not, and one expired-but-installed — the
   // three trust outcomes the gate has to tell apart.
+  // Three hierarchies whose SIGNER CERTIFICATES are genuinely distinct —
+  // different licensed CA, different serial. Three copies of one
+  // certificate would be indistinguishable to the distinct-signer rule,
+  // and a fixture that could not tell them apart would prove nothing about
+  // a check whose whole job is telling them apart.
   signerPkis = [
     createTestPki({
       rootCommonName: 'CCA India 2022',
+      caCommonName: 'XtraTrust Sub CA 2022',
       signerCommonName: 'CONTRACTOR SIGNATORY',
+      serialBase: 100,
     }),
     createTestPki({
       rootCommonName: 'CCA India 2015',
+      caCommonName: 'Capricorn Sub CA for Organisation DSC 2022',
       signerCommonName: 'RAILWAY ENGINEER REP',
+      serialBase: 200,
     }),
     createTestPki({
       rootCommonName: 'CCA India 2014',
+      caCommonName: 'SafeScrypt sub-CA for Class 3 Organization 2022',
       signerCommonName: 'RAILWAY SR DSTE',
+      serialBase: 300,
     }),
   ];
-  unknownPki = createTestPki({ rootCommonName: 'Some Other Root' });
-  expiredPki = createTestPki({
-    rootCommonName: 'CCA India 2011',
-    signerCommonName: 'RAILWAY SR DSTE',
-    notBefore: new Date('2012-01-01T00:00:00Z'),
-    notAfter: new Date('2015-01-01T00:00:00Z'),
-  });
+  unknownPki = createTestPki({ rootCommonName: 'Some Other Root', serialBase: 400 });
+  // Three distinct hierarchies again, all long expired, all with their
+  // roots installed: the expiry ruling has to be provable independently of
+  // the distinct-signer one.
+  expiredPkis = [1, 2, 3].map((index) =>
+    createTestPki({
+      rootCommonName: `CCA India 201${String(index)}`,
+      caCommonName: `Expired Licensed CA ${String(index)}`,
+      signerCommonName: `EXPIRED SIGNATORY ${String(index)}`,
+      serialBase: 500 + index * 10,
+      notBefore: new Date('2012-01-01T00:00:00Z'),
+      notAfter: new Date('2015-01-01T00:00:00Z'),
+    }),
+  );
 
   const anchorDir = path.join(workspace, 'anchors');
   await mkdir(anchorDir, { recursive: true });
   for (const [index, pki] of signerPkis.entries()) {
     await writeFile(path.join(anchorDir, `root-${String(index)}.pem`), pki.root.pem);
   }
-  // The expired hierarchy's root IS installed: the point of the expiry
-  // ruling is that a genuine chain to a known anchor stays acceptable
-  // once its certificates age out, and that only works if the anchor is
-  // the one being aged out with them.
-  await writeFile(path.join(anchorDir, 'root-expired.pem'), expiredPki.root.pem);
+  // The expired hierarchies' roots ARE installed: the point of the expiry
+  // ruling is that a genuine chain to a known anchor stays acceptable once
+  // its certificates age out, and that only works if the anchor is the one
+  // being aged out with them.
+  for (const [index, pki] of expiredPkis.entries()) {
+    await writeFile(
+      path.join(anchorDir, `root-expired-${String(index)}.pem`),
+      pki.root.pem,
+    );
+  }
 
   app = await buildApp({
     databaseUrl: appUrl,
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+    // The shipped upload throttle is 30 per ten minutes, and this suite
+    // records more bills than that on purpose. The throttle has its own
+    // tests (`upload-inventory`), and a suite that quietly stayed under
+    // the limit would be shaping its coverage around an unrelated rule.
+    rateLimits: { upload: { windowMs: 10 * 60_000, max: 500 } },
     pdfTrustAnchors: await loadTrustAnchors(anchorDir),
   });
   await app.ready();
@@ -531,11 +559,13 @@ describe('the verdict gate on closing a measurement', () => {
   });
 
   it('IGNORES certificate expiry, which is the ruling that needed proving', async () => {
-    // Every certificate in this chain expired in 2015 and the bill is
-    // signed today, so the verifier reaches the installed anchor and
-    // finds the path outside its validity window: `signed_chain_expired`.
+    // Every certificate in these chains expired in 2015 and the bill is
+    // signed today, so the verifier reaches the installed anchors and
+    // finds the paths outside their validity windows: `signed_chain_expired`.
+    // Three distinct expired hierarchies, so this proves the EXPIRY rule
+    // and not, accidentally, the distinct-signer one.
     const bookId = await bookWith('RBC2', (letterNumber) =>
-      signedBill({ letterNumber, pkis: [expiredPki], signatures: 3 }),
+      signedBill({ letterNumber, pkis: expiredPkis, signatures: 3 }),
     );
     const [row] = await admin<{ signature_status: string }[]>`
       select signature_status from received_railway_bills
@@ -591,6 +621,30 @@ describe('the verdict gate on closing a measurement', () => {
     const response = await close(bookId);
     expect(response.statusCode, response.body).toBe(409);
     expect(response.json<{ code: string }>().code).toBe('MB_RAILWAY_BILL_UNVERIFIED');
+  });
+
+  it('refuses three signatures made by ONE certificate', async () => {
+    // The cardinality rule alone cannot tell three signers from one signer
+    // signing three times, and one signer three times is what a forged
+    // approval chain looks like. PROPOSED STRENGTHENING of the 2026-08-13
+    // ruling -- see the note in railway-bill-verdict.ts.
+    const oneCertificate = signerPkis[0];
+    if (oneCertificate === undefined) throw new Error('no signing hierarchy');
+    const bookId = await bookWith('RBCS', (letterNumber) =>
+      signedBill({ letterNumber, pkis: [oneCertificate], signatures: 3 }),
+    );
+    // The document verdict is perfectly green. That is the point.
+    const [row] = await admin<{ signature_status: string }[]>`
+      select signature_status from received_railway_bills
+      where measurement_book_id = ${bookId}
+    `;
+    expect(row?.signature_status).toBe('signed_and_intact');
+
+    const response = await close(bookId);
+    expect(response.statusCode, response.body).toBe(409);
+    const body = response.json<{ code: string; details?: { refusal: string } }>();
+    expect(body.code).toBe('MB_RAILWAY_BILL_UNVERIFIED');
+    expect(body.details?.refusal).toBe('signature_signers');
   });
 
   it('refuses to close a measurement with no railway bill at all', async () => {
@@ -695,6 +749,316 @@ describe('the verdict gate on closing a measurement', () => {
         where id = ${bill?.id ?? ''}
       `,
     ).rejects.toThrow(/append-once/);
+  });
+});
+
+describe('closing and discarding cannot both win', () => {
+  /*
+   * The write skew this closes.
+   *
+   * Close locked the book; discard locked the bill. Under READ COMMITTED
+   * neither sees the other's uncommitted write, so both could commit: the
+   * measurement ended up permanently closed (closure is append-once)
+   * against a bill that had been discarded, the partial one-live-bill
+   * index -- WHERE discarded_at IS NULL -- then had a free slot, and the
+   * payment gate, which reads only closed_at, went on saying yes.
+   *
+   * Both paths now take both locks, book first.
+   */
+  it('serialises a concurrent close and discard, in either arrival order', async () => {
+    for (const closeFirst of [true, false]) {
+      const { bookId, letterNumber } = await seedFinalizedBook({
+        organisationId,
+        userId: ownerUserId,
+        label: closeFirst ? 'RBX1' : 'RBX2',
+        sequence: 1,
+      });
+      const created = await upload(bookId, signedBill({ letterNumber }));
+      expect(created.statusCode, created.body).toBe(201);
+      const bill = created.json<ReceivedRailwayBill>();
+
+      const discard = () =>
+        authed({
+          method: 'POST',
+          url: `/api/received-railway-bills/${bill.id}/discard`,
+          organisationId,
+          headers: { origin: 'http://127.0.0.1:3000' },
+          payload: { reason: 'raced against the closure' },
+        });
+
+      // Issued together, so the two transactions genuinely overlap.
+      const pair = closeFirst
+        ? await Promise.all([close(bookId), discard()])
+        : await Promise.all([discard(), close(bookId)]);
+      const codes = pair.map((response) => response.statusCode);
+
+      // Exactly one may succeed.
+      expect(
+        codes.filter((code) => code === 200).length,
+        `${pair[0]?.body ?? ''} / ${pair[1]?.body ?? ''}`,
+      ).toBe(1);
+
+      const [after] = await admin<
+        { closed_at: Date | null; discarded_at: Date | null }[]
+      >`
+        select m.closed_at, b.discarded_at
+        from measurement_books m
+        join received_railway_bills b on b.id = ${bill.id}
+        where m.id = ${bookId}
+      `;
+      // The forbidden state: closed against a discarded bill.
+      expect(
+        after?.closed_at !== null && after?.discarded_at !== null,
+        'a closed measurement is resting on a discarded bill',
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a second bill against a closed measurement', async () => {
+    // The same hazard deterministically: even with a bill discarded the
+    // partial index would admit another, so the upload route reads
+    // closed_at itself.
+    const { bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBX3',
+      sequence: 1,
+    });
+    expect((await upload(bookId, signedBill({ letterNumber }))).statusCode).toBe(201);
+    expect((await close(bookId)).statusCode).toBe(200);
+
+    const second = await upload(
+      bookId,
+      signedBill({ letterNumber, billNumber: 'CR/BBY/S&T/2026/0009/B9' }),
+    );
+    expect(second.statusCode, second.body).toBe(409);
+    expect(second.json<{ code: string }>().code).toBe('MB_ALREADY_CLOSED');
+  });
+
+  it('refuses to discard any bill of a closed measurement', async () => {
+    const { bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBX4',
+      sequence: 1,
+    });
+    const created = await upload(bookId, signedBill({ letterNumber }));
+    const bill = created.json<ReceivedRailwayBill>();
+    expect((await close(bookId)).statusCode).toBe(200);
+
+    const discarded = await authed({
+      method: 'POST',
+      url: `/api/received-railway-bills/${bill.id}/discard`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { reason: 'after the closure' },
+    });
+    expect(discarded.statusCode, discarded.body).toBe(409);
+    expect(discarded.json<{ code: string }>().code).toBe('MB_ALREADY_CLOSED');
+  });
+
+  it('refuses to cancel a closed Measurement Book, in words', async () => {
+    const { bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBX5',
+      sequence: 1,
+    });
+    expect((await upload(bookId, signedBill({ letterNumber }))).statusCode).toBe(201);
+    expect((await close(bookId)).statusCode).toBe(200);
+
+    const cancelled = await authed({
+      method: 'POST',
+      url: `/api/measurement-books/${bookId}/cancel`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { note: 'withdrawing the measurement' },
+    });
+    // A route refusal, not the database trigger surfacing as a 500.
+    expect(cancelled.statusCode, cancelled.body).toBe(409);
+    expect(cancelled.json<{ code: string }>().code).toBe('MB_ALREADY_CLOSED');
+    // ...and the database refuses it too, for a writer that never asked.
+    await expect(
+      admin`
+        update measurement_books set status = 'cancelled',
+            cancellation_note = 'raw', cancelled_by_user_id = 'x',
+            cancelled_at = now()
+        where id = ${bookId}
+      `,
+    ).rejects.toThrow(/closed by a railway bill cannot be cancelled/);
+  });
+
+  it('cannot be given the same measurement twice, by construction', async () => {
+    // Worth stating as a test because the first draft of this route
+    // carried a defensive scan for it. It is unreachable: a Work's
+    // finalized Measurement Books are unique per measurement sequence, and
+    // a bill is tied to its Work by the letter number it prints, so there
+    // is no second book on this Work for the same measurement to reach.
+    // The refusal below is the sequence check doing that work.
+    const { workId, bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBX6',
+      sequence: 1,
+    });
+    expect((await upload(bookId, signedBill({ letterNumber }))).statusCode).toBe(201);
+
+    // A second finalized book on the same Work cannot take sequence 1...
+    const clash = randomUUID();
+    await admin`
+      insert into measurement_books (
+        id, organisation_id, work_id, status, mb_date, created_by_user_id, kind
+      )
+      values (
+        ${clash}, ${organisationId}, ${workId}, 'draft', '2026-05-09',
+        ${ownerUserId}, 'on_account'
+      )
+    `;
+    await expect(
+      admin`
+        update measurement_books
+        set status = 'finalized', mb_number = 'RBX6-MB-09', sequence_number = 1,
+            total_amount = '1.00', remark_template_version = 'mb-remark-v1',
+            finalized_at = now(), finalized_by_user_id = ${ownerUserId}
+        where id = ${clash}
+      `,
+    ).rejects.toThrow(/measurement_books_sequence_per_work/);
+    await admin`delete from measurement_books where id = ${clash}`;
+
+    // ...and a bill naming measurement 1 is refused by any other book.
+    const second = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBX7',
+      sequence: 2,
+    });
+    const response = await upload(
+      second.bookId,
+      signedBill({
+        letterNumber: second.letterNumber,
+        billNumber: 'CR/BBY/S&T/2026/0009/B8',
+        measurementTail: '16/OAM/FL2/01',
+      }),
+    );
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe(
+      'RAILWAY_BILL_MEASUREMENT_UNMATCHED',
+    );
+  });
+});
+
+describe('the database refuses what the route would have', () => {
+  it('will not close a book against a bill that is not its own', async () => {
+    const first = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBD1',
+      sequence: 1,
+    });
+    const other = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBD2',
+      sequence: 1,
+    });
+    const created = await upload(
+      first.bookId,
+      signedBill({ letterNumber: first.letterNumber }),
+    );
+    const bill = created.json<ReceivedRailwayBill>();
+
+    await expect(
+      admin`
+        update measurement_books
+        set closed_at = now(), closed_by_user_id = 'raw',
+            closed_by_received_bill_id = ${bill.id}
+        where id = ${other.bookId}
+      `,
+    ).rejects.toThrow(/settles a different measurement/);
+  });
+
+  it('will not close a book against an unverified or discarded bill', async () => {
+    const { bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBD3',
+      sequence: 1,
+    });
+    // One signature only. Note what the DOCUMENT verdict says about it:
+    // `signed_and_intact`, because that one signature is perfectly good.
+    // The trigger refuses it on the count instead, which is why both arms
+    // exist rather than one.
+    const weak = await upload(bookId, signedBill({ letterNumber, signatures: 1 }));
+    const weakBill = weak.json<ReceivedRailwayBill>();
+    await expect(
+      admin`
+        update measurement_books
+        set closed_at = now(), closed_by_user_id = 'raw',
+            closed_by_received_bill_id = ${weakBill.id}
+        where id = ${bookId}
+      `,
+    ).rejects.toThrow(/fewer than the three signatures/);
+
+    // The status arm: an unsigned bill, refused on its verdict.
+    await admin`
+      update received_railway_bills set discarded_at = now(),
+          discarded_by_user_id = 'raw'
+      where id = ${weakBill.id}
+    `;
+    const unsigned = await upload(bookId, signedBill({ letterNumber, signatures: 0 }));
+    const unsignedBill = unsigned.json<ReceivedRailwayBill>();
+    await expect(
+      admin`
+        update measurement_books
+        set closed_at = now(), closed_by_user_id = 'raw',
+            closed_by_received_bill_id = ${unsignedBill.id}
+        where id = ${bookId}
+      `,
+    ).rejects.toThrow(/signature verdict/);
+    await admin`
+      update received_railway_bills set discarded_at = now(),
+          discarded_by_user_id = 'raw'
+      where id = ${unsignedBill.id}
+    `;
+
+    const good = await upload(bookId, signedBill({ letterNumber }));
+    const goodBill = good.json<ReceivedRailwayBill>();
+    await admin`
+      update received_railway_bills set discarded_at = now(),
+          discarded_by_user_id = 'raw'
+      where id = ${goodBill.id}
+    `;
+    await expect(
+      admin`
+        update measurement_books
+        set closed_at = now(), closed_by_user_id = 'raw',
+            closed_by_received_bill_id = ${goodBill.id}
+        where id = ${bookId}
+      `,
+    ).rejects.toThrow(/discarded and cannot close/);
+  });
+
+  it('will not let a bill be BORN paid against an open measurement', async () => {
+    // The 0006 CHECK admits status='paid' on a fresh row, so an
+    // UPDATE-only guard would have watched the door with the window open.
+    const { bookId, workId } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBD4',
+      sequence: 1,
+    });
+    await expect(
+      admin`
+        insert into bills (
+          organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+          prepared_by_user_id, mb_id, status
+        )
+        values (
+          ${organisationId}, ${workId}, 91, '[]'::jsonb, '1.00',
+          ${ownerUserId}, ${bookId}, 'paid'
+        )
+      `,
+    ).rejects.toThrow(/Measurement Book is not closed/);
   });
 });
 

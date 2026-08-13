@@ -48,6 +48,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Open the Work from the Works register; a link can outlive the Work it named, and an id from another organisation never resolves here.',
   WORK_ITEM_NOT_FOUND:
     'Reload the Work and pick the item from its current schedule — an approved amendment can omit or renumber an item.',
+  RAILWAY_BILL_NOT_FOUND:
+    "Open the railway bill from the Measurement Book's Railway bill panel; a discarded bill keeps its record but a deleted link resolves to nothing.",
   CHALLAN_NOT_FOUND:
     'Open the challan from the Delivery Challans register; a draft deleted elsewhere leaves its link behind.',
   MEASUREMENT_BOOK_NOT_FOUND:

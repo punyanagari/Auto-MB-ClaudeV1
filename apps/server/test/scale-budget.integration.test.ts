@@ -94,6 +94,35 @@ function planNodes(node: PlanNode): PlanNode[] {
   return [node, ...(node.Plans ?? []).flatMap(planNodes)];
 }
 
+/**
+ * The tables the measured statements read.
+ *
+ * Re-analyzed immediately before each measurement, for the reason
+ * `query-aggregates.integration.test.ts` states at length: this suite
+ * shares its database with every other integration file, vitest runs them
+ * in parallel, and a plan chosen from `beforeAll`'s statistics is a plan
+ * chosen for tables that have since moved. Scoped rather than
+ * database-wide, because a whole-database pass on a database several
+ * workers are writing to is lock churn nobody asked for.
+ */
+const FIXTURE_TABLES = [
+  'works',
+  'work_items',
+  'work_schedules',
+  'delivery_challans',
+  'delivery_challan_items',
+  'installations',
+  'pac_certificates',
+  'measurement_books',
+  'measurement_book_lines',
+  'mb_sources',
+  'bills',
+] as const;
+
+async function analyzeFixtureTables(): Promise<void> {
+  await admin.unsafe(`analyze ${FIXTURE_TABLES.join(', ')}`);
+}
+
 async function explain(
   tx: TransactionSql,
   sql: string,
@@ -254,6 +283,7 @@ describe('read budgets hold their shape at scale', () => {
   });
 
   it('keeps the Measurement Book aggregates at one execution and inside the buffer ceiling', async () => {
+    await analyzeFixtureTables();
     const nodes = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },
@@ -264,6 +294,7 @@ describe('read budgets hold their shape at scale', () => {
   });
 
   it('keeps the dashboard aggregates at one execution across every Work', async () => {
+    await analyzeFixtureTables();
     const nodes = await withTenant(
       appPool,
       { organisationId: fixture.organisationId, userId: fixture.userId },

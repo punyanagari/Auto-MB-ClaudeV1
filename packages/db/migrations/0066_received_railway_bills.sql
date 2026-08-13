@@ -22,9 +22,23 @@ SET LOCAL statement_timeout = '5min';
 --      is closed. Recording money as received is the act that must not
 --      rest on an unverified document.
 --
--- Both gates are enforced twice, in the route and here. Recurring finding
+-- Both gates are enforced in the route AND here, because recurring finding
 -- 2 of the improvement programme is that this repository enforces security
--- twice and money once; this migration declines to add another instance.
+-- twice and money once.
+--
+-- The second layer is not a copy of the first, and it is worth being exact
+-- about the split rather than saying "twice" and leaving a reader to
+-- assume. The database enforces the STRUCTURAL half — that the closing
+-- bill exists, is this organisation's, settles THIS book, is not
+-- discarded, carries a settleable stored verdict and at least three
+-- signatures; and that a bill cannot become `paid`, on insert or update,
+-- while its book is open. The per-signature RULING — integrity, reaching a
+-- configured anchor, three DISTINCT signing certificates, the last
+-- signature covering the file — lives once, in
+-- `apps/server/src/railway-bill-verdict.ts`, because it is the owner's
+-- judgement rather than a fact about the schema and is expected to be
+-- revisited. `docs/PRODUCT.md` §5.4 states the same split in the same
+-- terms.
 --
 -- WHY A NEW TABLE RATHER THAN A loa_documents DOCUMENT KIND. The pack row
 -- proposed reusing `loa_documents`, and the machinery IS reused — the same
@@ -402,7 +416,75 @@ BEGIN
   -- NEW in 0066. Cancelling a closed book would strand a settled railway
   -- bill against a withdrawn measurement.
   IF OLD.closed_at IS NOT NULL AND NEW.status = 'cancelled' THEN
-    RAISE EXCEPTION 'a Measurement Book closed by a railway bill cannot be cancelled';
+    RAISE EXCEPTION
+      'a Measurement Book closed by a railway bill cannot be cancelled'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- NEW in 0066. What the closing bill has to BE.
+  --
+  -- The shape CHECK on this table only says the three columns move
+  -- together and that the book is finalized. That is not the claim the
+  -- header and `docs/PRODUCT.md` §5.4 make, which is that closure is
+  -- enforced twice. So the structural half of the gate is enforced here,
+  -- against the bill row itself, and a writer that never went through the
+  -- route gets the same answer:
+  --
+  --   * the bill exists and belongs to THIS organisation and THIS book;
+  --   * it is not discarded;
+  --   * its stored document verdict is one of the two settleable ones;
+  --   * it carries at least the three signatures an accepted bill has.
+  --
+  -- What is deliberately NOT duplicated here: the per-signature predicate
+  -- — integrity, reaching a configured anchor, distinct signing
+  -- certificates, and the last signature covering the file. That is the
+  -- OWNER'S RULING rather than a structural fact, it is expected to be
+  -- revisited (the distinct-signer clause is itself a proposed
+  -- strengthening awaiting ratification), and a ruling that lives in two
+  -- languages drifts between them. It lives once, in
+  -- `apps/server/src/railway-bill-verdict.ts`. The split is stated in
+  -- exactly these words in §5.4, so the two-layer claim is true of what
+  -- each layer actually does.
+  IF OLD.closed_at IS NULL AND NEW.closed_at IS NOT NULL THEN
+    DECLARE
+      bill received_railway_bills%ROWTYPE;
+    BEGIN
+      SELECT * INTO bill FROM received_railway_bills
+      WHERE id = NEW.closed_by_received_bill_id
+        AND organisation_id = NEW.organisation_id;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION
+          'Measurement Book % cannot close: no railway bill % in this organisation',
+          NEW.id, NEW.closed_by_received_bill_id
+          USING ERRCODE = 'check_violation';
+      END IF;
+      IF bill.measurement_book_id <> NEW.id THEN
+        RAISE EXCEPTION
+          'railway bill % settles a different measurement and cannot close Measurement Book %',
+          bill.id, NEW.id
+          USING ERRCODE = 'check_violation';
+      END IF;
+      IF bill.discarded_at IS NOT NULL THEN
+        RAISE EXCEPTION
+          'railway bill % is discarded and cannot close a Measurement Book', bill.id
+          USING ERRCODE = 'check_violation';
+      END IF;
+      IF bill.signature_status NOT IN ('signed_and_intact', 'signed_chain_expired') THEN
+        RAISE EXCEPTION
+          'railway bill % has signature verdict % and cannot close a Measurement Book',
+          bill.id, bill.signature_status
+          USING ERRCODE = 'check_violation';
+      END IF;
+      IF coalesce(
+           jsonb_array_length(bill.signature_verdict -> 'signatures'), 0
+         ) < 3 THEN
+        RAISE EXCEPTION
+          'railway bill % carries fewer than the three signatures an accepted On-Account Bill has',
+          bill.id
+          USING ERRCODE = 'check_violation';
+      END IF;
+    END;
   END IF;
 
   IF OLD.status = 'finalized' THEN
@@ -488,6 +570,11 @@ $$;
 -- is better that such a row needs an explicit migration than that the rule
 -- has a hole nobody is watching.
 -- ---------------------------------------------------------------------
+-- INSERT as well as UPDATE. The 0006 status CHECK admits
+-- `status IN ('prepared','submitted','paid')` on a fresh row, so a bill
+-- can be BORN paid, and an UPDATE-only guard would watch the door while
+-- the window stood open. `TG_OP` is what makes the OLD reference safe:
+-- there is no OLD row on an insert, and reading one raises.
 CREATE FUNCTION app_private.guard_bill_paid_needs_closed_book()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -495,7 +582,12 @@ AS $$
 DECLARE
   book_closed_at timestamptz;
 BEGIN
-  IF NEW.status <> 'paid' OR OLD.status = 'paid' THEN
+  IF NEW.status <> 'paid' THEN
+    RETURN NEW;
+  END IF;
+  -- An already-paid row being updated for some other reason is not the
+  -- transition this guards; only the move INTO paid is.
+  IF TG_OP = 'UPDATE' AND OLD.status = 'paid' THEN
     RETURN NEW;
   END IF;
 
@@ -506,7 +598,8 @@ BEGIN
   IF book_closed_at IS NULL THEN
     RAISE EXCEPTION
       'bill % cannot be marked paid: its Measurement Book is not closed by a verified railway bill',
-      NEW.id;
+      NEW.id
+      USING ERRCODE = 'check_violation';
   END IF;
 
   RETURN NEW;
@@ -514,5 +607,5 @@ END
 $$;
 
 CREATE TRIGGER bills_paid_needs_closed_book_guard
-BEFORE UPDATE ON bills
+BEFORE INSERT OR UPDATE ON bills
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_bill_paid_needs_closed_book();

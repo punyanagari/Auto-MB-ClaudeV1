@@ -49,9 +49,29 @@ export function parseDdMmYyyy(raw: string): string | null {
     return null;
   }
   const [, day, month, year] = m;
+  let iso: string;
   try {
-    return toIsoDate(day ?? '', month ?? '', year ?? '');
+    iso = toIsoDate(day ?? '', month ?? '', year ?? '');
   } catch {
     return null;
   }
+  return isRealCalendarDate(iso) ? iso : null;
+}
+
+/**
+ * Whether `YYYY-MM-DD` names a day the calendar actually has.
+ *
+ * `new Date('2026-02-31')` does not fail; it rolls forward to 3 March and
+ * hands back a date nobody printed. So the round trip is compared: a value
+ * that survives being formatted back is a real date, and 31/02 is not.
+ *
+ * Shared rather than re-derived. Three call sites read DD/MM/YYYY off a
+ * railway document — the letter (`parseDdMmYyyy` itself), the variation
+ * order (`apps/server/src/variation-order-verify.ts`) and the received
+ * On-Account Bill (`apps/server/src/railway-bill-parse.ts`) — and two of
+ * them had grown their own copy of this check while the third had none.
+ */
+export function isRealCalendarDate(iso: string): boolean {
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(iso);
 }

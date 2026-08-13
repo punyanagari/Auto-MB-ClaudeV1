@@ -59,7 +59,21 @@ function signature(overrides: Partial<PdfSignatureVerdict> = {}): PdfSignatureVe
       reason: 'reached configured anchor',
       reachesConfiguredAnchor: true,
       anchorSubject: 'CN=CCA India 2022',
-      path: [],
+      // path[0] is the SIGNING certificate, and its issuer + serial is
+      // the identity the distinct-signer rule compares on. The default
+      // here is signature 1's; `signature({ index })` re-derives it so
+      // three synthetic signatures are three certificates unless a test
+      // deliberately makes them one.
+      path: [
+        {
+          subject: 'CN=RAILWAY SR DSTE',
+          issuer: 'CN=SafeScrypt sub-CA for Class 3 Organization 2022',
+          serialNumber: '01',
+          validFrom: '2024-01-01T00:00:00Z',
+          validTo: '2034-01-01T00:00:00Z',
+          isCertificateAuthority: false,
+        },
+      ],
       validAtVerificationTime: true,
       validAtClaimedSigningTime: true,
     },
@@ -77,6 +91,27 @@ function signature(overrides: Partial<PdfSignatureVerdict> = {}): PdfSignatureVe
     },
     certification: { docMdp: false, permissions: null },
     ...overrides,
+  };
+}
+
+/** One signature per index, each from its own certificate. */
+function distinctSignature(index: number): PdfSignatureVerdict {
+  const base = signature({ index });
+  return {
+    ...base,
+    chain: {
+      ...base.chain,
+      path: [
+        {
+          subject: `CN=SIGNATORY ${String(index)}`,
+          issuer: `CN=Licensed CA ${String(index)}`,
+          serialNumber: `0${String(index)}`,
+          validFrom: '2024-01-01T00:00:00Z',
+          validTo: '2034-01-01T00:00:00Z',
+          isCertificateAuthority: false,
+        },
+      ],
+    },
   };
 }
 
@@ -100,8 +135,8 @@ function report(
 /** Three signatures in the shape a countersigned bill actually has. */
 function threeSignatures(): PdfSignatureVerdict[] {
   return [
-    signature({
-      index: 1,
+    {
+      ...distinctSignature(1),
       coverage: {
         coversWholeDocument: false,
         signedByteCount: 60,
@@ -109,9 +144,9 @@ function threeSignatures(): PdfSignatureVerdict[] {
         revisionsAfter: 2,
         trailingBytesCoveredByLaterSignature: true,
       },
-    }),
-    signature({
-      index: 2,
+    },
+    {
+      ...distinctSignature(2),
       coverage: {
         coversWholeDocument: false,
         signedByteCount: 80,
@@ -119,8 +154,8 @@ function threeSignatures(): PdfSignatureVerdict[] {
         revisionsAfter: 1,
         trailingBytesCoveredByLaterSignature: true,
       },
-    }),
-    signature({ index: 3 }),
+    },
+    distinctSignature(3),
   ];
 }
 
@@ -195,16 +230,17 @@ describe('whether a railway bill may settle money', () => {
 
   it('refuses one signature whose chain reaches no anchor, among three', () => {
     const mixed = threeSignatures();
-    mixed[1] = signature({
-      index: 2,
+    const second = distinctSignature(2);
+    mixed[1] = {
+      ...second,
       chain: {
-        ...signature().chain,
+        ...second.chain,
         status: 'untrusted',
         reason: 'unknown issuer',
         reachesConfiguredAnchor: false,
         anchorSubject: null,
       },
-    });
+    };
     expect(
       assessRailwayBillVerdict('signed_and_intact', report(mixed, 'signed_and_intact'))
         .refusal,
@@ -213,11 +249,105 @@ describe('whether a railway bill may settle money', () => {
 
   it('refuses one signature whose bytes moved, among three', () => {
     const mixed = threeSignatures();
-    mixed[0] = signature({ index: 1, integrity: 'digest_mismatch' });
+    mixed[0] = { ...distinctSignature(1), integrity: 'digest_mismatch' };
     expect(
       assessRailwayBillVerdict('signed_and_intact', report(mixed, 'signed_and_intact'))
         .refusal,
     ).toBe('signature_integrity');
+  });
+
+  it('refuses three signatures made by ONE certificate', () => {
+    // PROPOSED STRENGTHENING of the 2026-08-13 ruling. Every clause of the
+    // ruling as written holds here — three intact signatures, three chains
+    // to a configured anchor, no expiry complaint — and it is still one
+    // person signing their own approval three times.
+    const one = distinctSignature(1);
+    const same = [
+      { ...one, index: 1 },
+      { ...one, index: 2 },
+      {
+        ...one,
+        index: 3,
+        coverage: { ...one.coverage, coversWholeDocument: true },
+      },
+    ];
+    const assessment = assessRailwayBillVerdict(
+      'signed_and_intact',
+      report(same, 'signed_and_intact'),
+    );
+    expect(assessment.acceptable).toBe(false);
+    expect(assessment.refusal).toBe('signature_signers');
+    expect(assessment.detail).toContain('1 certificate');
+  });
+
+  it('compares certificates, not printed names', () => {
+    // Three different names on one certificate is the same fraud with a
+    // cosmetic difference, so the names must not rescue it...
+    const one = distinctSignature(1);
+    const renamed = [1, 2, 3].map((index) => ({
+      ...one,
+      index,
+      signer: { ...one.signer, commonName: `SIGNATORY ${String(index)}` },
+      coverage: { ...one.coverage, coversWholeDocument: index === 3 },
+    }));
+    expect(
+      assessRailwayBillVerdict(
+        'signed_and_intact',
+        report(renamed, 'signed_and_intact'),
+      ).refusal,
+    ).toBe('signature_signers');
+
+    // ...and three certificates sharing one printed name must not be
+    // refused by it, which is what comparing names would have done.
+    const shared = [1, 2, 3].map((index) => {
+      const entry = distinctSignature(index);
+      return {
+        ...entry,
+        signer: { ...entry.signer, commonName: 'FOR CENTRAL RAILWAY' },
+        coverage: { ...entry.coverage, coversWholeDocument: index === 3 },
+      };
+    });
+    expect(
+      assessRailwayBillVerdict('signed_and_intact', report(shared, 'signed_and_intact'))
+        .acceptable,
+    ).toBe(true);
+  });
+
+  it('refuses a signature whose certificate it cannot identify', () => {
+    // "I cannot tell these apart" must not read as "these are different".
+    const unidentified = threeSignatures().map((entry, position) => ({
+      ...entry,
+      chain: { ...entry.chain, path: [] },
+      signer: {
+        ...entry.signer,
+        issuerCommonName: null,
+        certificateSerialNumber: position === 0 ? null : String(position),
+      },
+    }));
+    expect(
+      assessRailwayBillVerdict(
+        'signed_and_intact',
+        report(unidentified, 'signed_and_intact'),
+      ).refusal,
+    ).toBe('signature_signers');
+  });
+
+  it('falls back to the signer summary when no chain path was built', () => {
+    const summarised = threeSignatures().map((entry, position) => ({
+      ...entry,
+      chain: { ...entry.chain, path: [] },
+      signer: {
+        ...entry.signer,
+        issuerCommonName: `Licensed CA ${String(position)}`,
+        certificateSerialNumber: `0${String(position)}`,
+      },
+    }));
+    expect(
+      assessRailwayBillVerdict(
+        'signed_and_intact',
+        report(summarised, 'signed_and_intact'),
+      ).acceptable,
+    ).toBe(true);
   });
 
   it('requires the LAST signature to cover the file, and only the last', async () => {
@@ -254,8 +384,8 @@ describe('whether a railway bill may settle money', () => {
 
     // Bytes after the LAST signature are a different matter.
     const appended = threeSignatures();
-    appended[2] = signature({
-      index: 3,
+    appended[2] = {
+      ...distinctSignature(3),
       coverage: {
         coversWholeDocument: false,
         signedByteCount: 90,
@@ -263,7 +393,7 @@ describe('whether a railway bill may settle money', () => {
         revisionsAfter: 1,
         trailingBytesCoveredByLaterSignature: false,
       },
-    });
+    };
     expect(
       assessRailwayBillVerdict(
         'signed_and_intact',

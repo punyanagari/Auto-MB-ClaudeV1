@@ -676,7 +676,10 @@ async function seedTenantGraph(
 
     // The railway's own On-Account Bill against that finalized book
     // (0066). Present in both organisations so the cross-tenant reads
-    // below have something of each other's to fail to see.
+    // below have something of each other's to fail to see. Left at the
+    // default `not_checked` verdict: nothing here closes a measurement
+    // against it, and a fabricated verdict would be a claim this suite
+    // has no business making.
     await tx`
       insert into received_railway_bills (
         organisation_id, work_id, measurement_book_id, object_key,

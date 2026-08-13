@@ -3,13 +3,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  canonicalMeasurementNumber,
   parseMeasurementNumber,
   parseReceivedRailwayBill,
   RailwayBillParseError,
-  sameMeasurement,
   toMoneyString,
 } from '../src/railway-bill-parse.js';
+import {
+  canonicalMeasurementNumber,
+  sameMeasurement,
+} from './helpers/measurement-number.js';
 
 /**
  * The railway-bill reader, held to the real documents.
@@ -154,7 +156,7 @@ describe('reading a received railway bill', () => {
       '         GST                         Yes',
       'Bill Amount (Rs.) (Including Tax (GST))                          1.0',
     ].join('\n');
-    expect(() => parseReceivedRailwayBill(text)).toThrow(/not a real date/);
+    expect(() => parseReceivedRailwayBill(text)).toThrow(/is not a real/);
   });
 });
 

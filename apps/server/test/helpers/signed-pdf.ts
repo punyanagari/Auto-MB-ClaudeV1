@@ -242,22 +242,40 @@ export function createTestPki(
     readonly notBefore?: Date;
     readonly notAfter?: Date;
     readonly rootCommonName?: string;
+    /** The licensed CA between the root and the signer. Real bills are
+     * signed under several of them — XtraTrust, Capricorn and SafeScrypt
+     * all appear on one bill in the settlement corpus — so a test that
+     * needs distinct signers needs distinct issuers to name them by. */
+    readonly caCommonName?: string;
+    /**
+     * Base for the three serial numbers this hierarchy issues (base,
+     * base+1, base+2).
+     *
+     * A certificate's identity is its ISSUER plus its SERIAL (RFC 5280),
+     * and consumers compare on exactly that. Two hierarchies built with
+     * the default base therefore mint signer certificates that are
+     * indistinguishable to such a consumer even though the key material
+     * differs — which silently defeats any test of a distinct-signer
+     * rule. Pass a different base per hierarchy when that matters.
+     */
+    readonly serialBase?: number;
   } = {},
 ): TestPki {
   const notBefore = options.notBefore ?? new Date('2024-01-01T00:00:00Z');
   const notAfter = options.notAfter ?? new Date('2034-01-01T00:00:00Z');
+  const serialBase = options.serialBase ?? 1;
   const root = issueCertificate({
     commonName: options.rootCommonName ?? 'Test Root of India',
     organisation: 'Test PKI',
-    serial: 1,
+    serial: serialBase,
     isCertificateAuthority: true,
     notBefore,
     notAfter,
   });
   const intermediate = issueCertificate({
-    commonName: 'Test Licensed CA 2024',
+    commonName: options.caCommonName ?? 'Test Licensed CA 2024',
     organisation: 'Test Certifying Authority',
-    serial: 2,
+    serial: serialBase + 1,
     isCertificateAuthority: true,
     notBefore,
     notAfter,
@@ -266,7 +284,7 @@ export function createTestPki(
   const signer = issueCertificate({
     commonName: options.signerCommonName ?? 'TEST SIGNER',
     organisation: options.signerOrganisation ?? 'TEST RAILWAY',
-    serial: 3,
+    serial: serialBase + 2,
     isCertificateAuthority: false,
     notBefore,
     notAfter,

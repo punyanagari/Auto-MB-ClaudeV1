@@ -84,6 +84,7 @@ export type RailwayBillVerdictRefusal =
   | 'signature_count'
   | 'signature_integrity'
   | 'signature_chain'
+  | 'signature_signers'
   | 'signature_coverage';
 
 export interface RailwayBillVerdictAssessment {
@@ -137,6 +138,100 @@ function signatureFault(
 }
 
 /**
+ * Which CERTIFICATE signed this signature, as a value two signatures can
+ * be compared on.
+ *
+ * RFC 5280's own answer: a certificate is identified by its issuer's
+ * distinguished name together with the serial number that issuer assigned
+ * it. Deliberately NOT the printed common name — `signer.commonName` is
+ * the subject text, and a subject is a string any issuer may put in any
+ * certificate, so comparing names would let three certificates naming
+ * three different people count as three signers when one person holds all
+ * three, and would equally let one certificate look like three if the
+ * name were rendered differently.
+ *
+ * `chain.path[0]` is the signing certificate itself
+ * (`pdf-signature/trust-anchors.ts` walks upward from the leaf), so it
+ * carries the full issuer DN. The signer summary is the fallback for a
+ * verdict recorded before a chain could be built; when neither yields
+ * both halves the certificate is not identifiable and the caller refuses,
+ * because "I cannot tell these apart" must not read as "these are
+ * different".
+ */
+function certificateIdentity(signature: PdfSignatureVerdict): string | null {
+  const leaf = signature.chain.path[0];
+  if (leaf !== undefined && leaf.issuer !== '' && leaf.serialNumber !== '') {
+    return `${leaf.issuer}::${leaf.serialNumber}`;
+  }
+  const { issuerCommonName, certificateSerialNumber } = signature.signer;
+  if (
+    issuerCommonName === null ||
+    issuerCommonName === '' ||
+    certificateSerialNumber === null ||
+    certificateSerialNumber === ''
+  ) {
+    return null;
+  }
+  return `${issuerCommonName}::${certificateSerialNumber}`;
+}
+
+/**
+ * The three signatures must come from three different CERTIFICATES.
+ *
+ * ## This is a PROPOSED STRENGTHENING of the 2026-08-13 ruling
+ *
+ * The ruling as written — "intact, chains to CCA India, expiry ignored" —
+ * is satisfied by one certificate signing the same bill three times.
+ * Every clause holds: three intact signatures, three chains to a
+ * configured anchor, no expiry complaint. And any DSC that chains to an
+ * installed anchor qualifies, which includes the agency's own staff
+ * certificates, because a trust anchor says who issued a certificate and
+ * nothing whatever about who the holder is.
+ *
+ * That shape is fraud-shaped. The three signatures on an On-Account Bill
+ * are the point of the document: the contractor claims the measurement,
+ * the engineer's representative accepts it, and the Sr. DSTE authorises
+ * payment against it. Three impressions of one key is one person doing
+ * all three, and cardinality alone cannot tell that from the real thing.
+ *
+ * So this function is deliberately separable: one named check, its own
+ * refusal code, its own tests. If the owner ratifies the stricter reading
+ * it stays; if the owner knows a legitimate case for one signer thrice —
+ * a delegated departmental certificate, a re-signing workflow — deleting
+ * this function and its call site reverts to the ruling exactly as
+ * written, and `docs/PRODUCT.md` §5.4 must be corrected in the same
+ * change to describe whichever rule ships.
+ *
+ * Note what it does NOT do: it does not check WHO signed, or in what
+ * order, or that one of them is a railway officer. Those are claims about
+ * identity that the trust anchor cannot support and this product has no
+ * register to check against. Distinctness is the strongest statement the
+ * evidence actually carries.
+ */
+function distinctSignerFault(
+  signatures: readonly PdfSignatureVerdict[],
+): RailwayBillVerdictAssessment | null {
+  const identities = new Set<string>();
+  for (const signature of signatures) {
+    const identity = certificateIdentity(signature);
+    if (identity === null) {
+      return refuse(
+        'signature_signers',
+        `Signature ${String(signature.index)} does not name the certificate that made it, so it cannot be told apart from the others.`,
+      );
+    }
+    identities.add(identity);
+  }
+  if (identities.size < RAILWAY_BILL_SIGNATURE_COUNT) {
+    return refuse(
+      'signature_signers',
+      `The bill's ${String(signatures.length)} signatures were made by ${String(identities.size)} certificate(s); an accepted On-Account Bill is signed by three different holders.`,
+    );
+  }
+  return null;
+}
+
+/**
  * Assesses a stored verdict against the settlement rules.
  *
  * Takes the stored status alongside the report because the two are
@@ -168,6 +263,9 @@ export function assessRailwayBillVerdict(
     const fault = signatureFault(signature);
     if (fault !== null) return fault;
   }
+
+  const distinctFault = distinctSignerFault(report.signatures);
+  if (distinctFault !== null) return distinctFault;
 
   /*
    * Coverage, checked once at the end and only on the LAST signature.

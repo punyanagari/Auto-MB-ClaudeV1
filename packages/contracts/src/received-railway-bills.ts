@@ -30,7 +30,7 @@ export type ReceivedRailwayBillUploadQuery = Static<
 /**
  * Why a received bill's signatures do not permit settlement.
  *
- * Distinct values rather than one boolean, because the six say different
+ * Distinct values rather than one boolean, because they say different
  * things to an operator: a missing verdict is re-uploadable, an untrusted
  * chain is a trust-anchor question for whoever runs the server, and a
  * document modified after signing is a conversation with the railway.
@@ -41,6 +41,7 @@ export const RAILWAY_BILL_VERDICT_REFUSALS = [
   'signature_count',
   'signature_integrity',
   'signature_chain',
+  'signature_signers',
   'signature_coverage',
 ] as const;
 export const RailwayBillVerdictRefusalSchema = Type.Union(

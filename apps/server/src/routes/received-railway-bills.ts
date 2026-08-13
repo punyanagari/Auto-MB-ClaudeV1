@@ -131,14 +131,29 @@ export function toReceivedRailwayBill(
 export async function liveRailwayBillForBook(
   tx: TransactionSql,
   measurementBookId: string,
+  options: { readonly lock?: boolean } = {},
 ): Promise<ReceivedRailwayBill | null> {
-  const [row] = await tx<ReceivedRailwayBillRow[]>`
-    select ${tx.unsafe(BILL_COLUMNS)}
-    from received_railway_bills b
-    join measurement_books m on m.id = b.measurement_book_id
-    where b.measurement_book_id = ${measurementBookId}
-      and b.discarded_at is null
-  `;
+  // `for update of b` locks the bill row and NOT the joined book, which
+  // is what the callers want: the book is already locked by the time they
+  // get here, and locking it again through a join would say something
+  // different about lock order.
+  const rows = options.lock
+    ? await tx<ReceivedRailwayBillRow[]>`
+        select ${tx.unsafe(BILL_COLUMNS)}
+        from received_railway_bills b
+        join measurement_books m on m.id = b.measurement_book_id
+        where b.measurement_book_id = ${measurementBookId}
+          and b.discarded_at is null
+        for update of b
+      `
+    : await tx<ReceivedRailwayBillRow[]>`
+        select ${tx.unsafe(BILL_COLUMNS)}
+        from received_railway_bills b
+        join measurement_books m on m.id = b.measurement_book_id
+        where b.measurement_book_id = ${measurementBookId}
+          and b.discarded_at is null
+      `;
+  const [row] = rows;
   return row === undefined ? null : toReceivedRailwayBill(row);
 }
 
@@ -206,6 +221,18 @@ export function registerReceivedRailwayBillRoutes(
             'MB_NOT_FINALIZED',
             'A railway bill settles a finalized Measurement Book; this one is ' +
               `${book.status}.`,
+          );
+        }
+        // A closed measurement takes no further bills. Without this the
+        // one-live-bill index does not stop a second one — it is partial
+        // on `discarded_at IS NULL`, so discarding the bill that closed
+        // the book would free the slot, and the closure would end up
+        // resting on a retired document while a new one sat beside it.
+        if (book.closed_at !== null) {
+          throw httpError(
+            409,
+            'MB_ALREADY_CLOSED',
+            'This measurement is already closed; it takes no further railway bills.',
           );
         }
         return book;
@@ -280,8 +307,14 @@ export function registerReceivedRailwayBillRoutes(
       const result = await tenant(async (tx) => {
         // Re-read under the row lock: the book could have been cancelled
         // while the scan, extraction and verification ran.
-        const [book] = await tx<{ status: string; sequence_number: number | null }[]>`
-          select status, sequence_number from measurement_books
+        const [book] = await tx<
+          {
+            status: string;
+            sequence_number: number | null;
+            closed_at: Date | null;
+          }[]
+        >`
+          select status, sequence_number, closed_at from measurement_books
           where id = ${measurementBookId} for update
         `;
         if (book === undefined || book.status !== 'finalized') {
@@ -289,6 +322,13 @@ export function registerReceivedRailwayBillRoutes(
             409,
             'MB_NOT_FINALIZED',
             'The Measurement Book stopped being finalized while the bill was read.',
+          );
+        }
+        if (book.closed_at !== null) {
+          throw httpError(
+            409,
+            'MB_ALREADY_CLOSED',
+            'This measurement was closed while the bill was being read.',
           );
         }
         const existing = await liveRailwayBillForBook(tx, measurementBookId);
@@ -394,6 +434,26 @@ export function registerReceivedRailwayBillRoutes(
       const { id } = request.params;
       const { reason } = request.body;
       return tenant(async (tx) => {
+        // Read once WITHOUT a lock, only to learn which book this bill
+        // belongs to. The locks are then taken book-first, in the same
+        // order the closure route takes them, so the two cannot interleave
+        // and cannot deadlock.
+        const [located] = await tx<{ measurement_book_id: string }[]>`
+          select measurement_book_id from received_railway_bills where id = ${id}
+        `;
+        if (located === undefined) {
+          throw httpError(404, 'RAILWAY_BILL_NOT_FOUND', 'No such railway bill.');
+        }
+        const [book] = await tx<
+          {
+            id: string;
+            closed_at: Date | null;
+            closed_by_received_bill_id: string | null;
+          }[]
+        >`
+          select id, closed_at, closed_by_received_bill_id from measurement_books
+          where id = ${located.measurement_book_id} for update
+        `;
         const [current] = await tx<
           { work_id: string; discarded_at: Date | null; bill_number: string }[]
         >`
@@ -415,15 +475,17 @@ export function registerReceivedRailwayBillRoutes(
         // closure is append-once in the database (migration 0066) and
         // discarding the evidence behind it would leave a closed
         // measurement with nothing supporting it.
-        const [closed] = await tx<{ id: string }[]>`
-          select id from measurement_books
-          where closed_by_received_bill_id = ${id}
-        `;
-        if (closed !== undefined) {
+        //
+        // Re-read UNDER the book lock above, so a closure that committed
+        // between this request arriving and this line is visible. Read
+        // without that lock, this check is the losing half of a write skew.
+        if (book !== undefined && book.closed_at !== null) {
           throw httpError(
             409,
             'MB_ALREADY_CLOSED',
-            'This bill closed its Measurement Book and cannot be discarded.',
+            book.closed_by_received_bill_id === id
+              ? 'This bill closed its Measurement Book and cannot be discarded.'
+              : 'This measurement is already closed, so its bills are fixed.',
           );
         }
         const [row] = await tx<ReceivedRailwayBillRow[]>`

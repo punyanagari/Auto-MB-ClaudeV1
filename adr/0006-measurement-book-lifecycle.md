@@ -108,6 +108,13 @@ it a second, orthogonal axis on `measurement_books`:
   a bill also cannot become `paid` until its book is closed — the payment
   ledger now depends on the railway's signature, not only on the agency's
   own record.
+- Closure and the discard of a received bill are two writers over the same
+  pair of rows, and they disagree. Both take the book's row lock first and
+  the bill's second: without that ordering they read each other's
+  pre-state under READ COMMITTED and both commit, leaving a permanently
+  closed measurement resting on a discarded bill. A closed book also takes
+  no further bills, because the one-live-bill index is partial on
+  `discarded_at IS NULL` and would otherwise hand out the freed slot.
 
 Note the word "closed" was already taken twice in this area — migration
 0035 uses it for "a live tax invoice bills this book", and `kind = 'final'`

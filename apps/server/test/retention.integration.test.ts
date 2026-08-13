@@ -570,7 +570,8 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       original_filename, sha256, media_type, size_bytes, bill_number,
       bill_date, bill_amount, rate_inclusive_of_gst, measurement_number,
       measurement_sequence, letter_number, extraction_payload,
-      uploaded_by_user_id
+      uploaded_by_user_id, signature_status, signature_verdict,
+      signature_verified_at
     )
     values (
       ${organisationId}, ${book?.work_id ?? ''}, ${measurementBookId},
@@ -578,7 +579,15 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       'bill.pdf', ${'c'.repeat(64)}, 'application/pdf', 1024,
       'RETENTION/B1', '2026-02-10', '10.00', true,
       'RETENTION/CSTM/1/OAM/FL2/01', 1, 'RETENTION-LOA',
-      '{"billNumber": "RETENTION/B1"}'::jsonb, 'retention-fixture'
+      '{"billNumber": "RETENTION/B1"}'::jsonb, 'retention-fixture',
+      -- The 0066 closure guard reads the verdict, so the stand-in bill
+      -- carries one: settleable status and the three signatures an
+      -- accepted On-Account Bill has. The per-signature rule is the
+      -- server's and is proved in the railway-bill suites; what the
+      -- database asks for is this shape.
+      'signed_and_intact',
+      '{"signatures": [{"index": 1}, {"index": 2}, {"index": 3}]}'::jsonb,
+      now()
     )
     returning id
   `;

@@ -219,7 +219,7 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
-16. **Settlement rests on the railway's own signed bill:** a finalized Measurement Book is closed, and the bill prepared from it recorded as paid, only against an On-Account Bill received from the railway whose three signatures are intact and chain to an installed trust anchor. See §5.4.
+16. **Settlement rests on the railway's own signed bill:** a finalized Measurement Book is closed, and the bill prepared from it recorded as paid, only against an On-Account Bill received from the railway whose three signatures are intact, chain to an installed trust anchor, and are made by three different certificates. See §5.4, including the note that the distinct-certificate clause is a proposed strengthening awaiting owner ratification.
 17. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
 ### 5.1 Verifying a variation order
@@ -391,17 +391,42 @@ trusted timestamp, and treating expiry as fatal would eventually refuse every
 bill the agency holds, for no change in any document. What expiry cannot excuse
 is a modified document or an unknown issuer.
 
+**The three signatures must come from three different certificates.** This is
+a _proposed strengthening_ of the ruling above, awaiting the owner's
+ratification. The ruling as written is satisfied by one certificate signing the
+same bill three times — three intact signatures, three chains to a configured
+anchor, no expiry complaint — and any DSC reaching an installed anchor
+qualifies, including the agency's own, because a trust anchor says who issued a
+certificate and nothing about who holds it. That shape is fraud-shaped: the
+three signatures are the point of the document, since the contractor claims the
+measurement, the engineer's representative accepts it, and the Sr. DSTE
+authorises payment against it. Certificates are compared by issuer and serial
+(RFC 5280's own identity for a certificate), never by printed name. If the
+owner ratifies a different rule, this paragraph and the one named check that
+implements it change together.
+
 A bill is always **recorded**, whatever its verdict says: refusing to file a
 document because its verdict is inconvenient loses the very record that proves
 it. Two later acts are gated instead:
 
 1. **Closing the measurement.** A finalized Measurement Book closes only
    against a recorded bill whose verdict passes. Closure is append-once, and a
-   closed book can no longer be cancelled.
+   closed book can no longer be cancelled or take further bills.
 2. **Recording payment.** A prepared bill moves to `paid` only once its
-   Measurement Book is closed.
+   Measurement Book is closed — on insert as well as on update, because a bill
+   row may legitimately be created in any of its three states.
 
-Both are enforced in the route **and** by a database trigger.
+**Both are enforced in the route and in the database, and the two layers do
+different halves.** The database enforces the _structural_ facts: the closing
+bill exists, belongs to this organisation and to this Measurement Book, is not
+discarded, carries a settleable stored verdict, and holds at least three
+signatures; and no bill becomes `paid` while its book is open. The
+_per-signature_ rule — integrity, reaching a configured anchor, three distinct
+certificates, the last signature covering the file — lives in one place in the
+server, because it is the owner's judgement rather than a fact about the schema
+and is expected to be revisited. Stating the split this way is deliberate: "it
+is enforced twice" would suggest two copies of one rule, and two copies of a
+subtle rule drift apart.
 
 Note that "closed" here is a railway fact and is deliberately separate from the
 older sense in which a submitted tax invoice closes the Measurement Book it

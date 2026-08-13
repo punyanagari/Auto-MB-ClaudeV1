@@ -1,3 +1,5 @@
+import { parseDdMmYyyy } from '@auto-mb/loa-parser';
+
 /**
  * Reading an IWRCMS On-Account Bill — the one chain document the agency
  * does not author.
@@ -34,11 +36,21 @@
  * different measurement — `L2` is the live ledger, `FL2` the finalised
  * one, and the bill is by definition raised against the finalised copy.
  *
- * This is trap 1 in the corpus, and it is the expensive one: matching
- * these documents on the raw string silently fails to link EVERY pair,
- * and a link that never happens produces no error anywhere. So the
- * ledger token is stripped in the canonical form and the parts are kept
- * separately for display.
+ * This is trap 1 in the corpus, and it is why the number is taken APART
+ * rather than compared. What production links on is the `sequence` below,
+ * against the Measurement Book's own `sequence_number`, having first
+ * checked that the bill names this Work's letter. The raw string is never
+ * compared to anything, so the differing ledger token cannot break the
+ * link — which is the trap handled by construction rather than by a
+ * normalisation step.
+ *
+ * The canonical form that folds `FL2` and `L2` into one string is a
+ * comparison between two RAILWAY documents, and this product holds only
+ * one of them: the bill. It therefore lives in
+ * `apps/server/test/helpers/measurement-number.ts`, where the corpus
+ * guard uses it to hold the manifest's own book-to-bill pairing to
+ * account. It is deliberately not carried here as production code with no
+ * production caller.
  */
 export interface MeasurementNumberParts {
   /** The full string exactly as the document printed it. */
@@ -107,28 +119,6 @@ export function parseMeasurementNumber(value: string): MeasurementNumberParts | 
     ledger,
     sequence: parsed,
   };
-}
-
-/**
- * The form in which two measurement numbers may be compared: the ledger
- * token normalised so a book's `L2` and its bill's `FL2` are one string.
- *
- * This is the whole of the "L2 -> FL2 normalisation". It is deliberately
- * a normalisation of BOTH spellings to one, not a rewrite of `L2` into
- * `FL2`: the direction does not matter, and stating it as "drop the
- * finalisation marker" leaves the rule true if a third spelling appears.
- */
-export function canonicalMeasurementNumber(parts: MeasurementNumberParts): string {
-  const ledger = parts.ledger.startsWith('F') ? parts.ledger.slice(1) : parts.ledger;
-  return `${parts.contractNumber}/${parts.stationCode}/${parts.cmbSuffix}/OAM/${ledger}/${String(parts.sequence)}`;
-}
-
-/** True when a book and a bill name the same measurement. */
-export function sameMeasurement(
-  a: MeasurementNumberParts,
-  b: MeasurementNumberParts,
-): boolean {
-  return canonicalMeasurementNumber(a) === canonicalMeasurementNumber(b);
 }
 
 /** One `-layout` cell: the text and the column it starts at. */
@@ -285,19 +275,16 @@ function nearlyEqual(a: number, b: number): boolean {
  * a timezone).
  */
 function toIsoDate(printed: string, field: string): string {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(printed.trim());
-  if (match === null) {
+  // The shared reader, which rejects 31/02 and friends — `new Date` rolls
+  // those forward silently and hands back a day nobody printed. Three
+  // modules read DD/MM/YYYY off a railway document and this is now the one
+  // that knows how.
+  const iso = parseDdMmYyyy(printed);
+  if (iso === null) {
     throw new RailwayBillParseError(
       field,
-      `${field} does not read as a DD/MM/YYYY date: ${printed}`,
+      `${field} is not a real DD/MM/YYYY date: ${printed}`,
     );
-  }
-  const [, day, month, year] = match;
-  const iso = `${String(year)}-${String(month)}-${String(day)}`;
-  // Reject 31/02 and friends: Date normalises them silently.
-  const parsed = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(iso)) {
-    throw new RailwayBillParseError(field, `${field} is not a real date: ${printed}`);
   }
   return iso;
 }
@@ -424,7 +411,19 @@ function readBillAmount(lines: readonly string[]): string {
     if (label === undefined || !label.text.startsWith('Bill Amount (Rs.)')) continue;
     const figure = cells.at(-1);
     if (figure === undefined || figure === label) continue;
-    return toMoneyString(figure.text, 'billAmount');
+    const amount = toMoneyString(figure.text, 'billAmount');
+    // A nil bill settles nothing, and the column refuses it
+    // (`bill_amount > 0`). Refused HERE so the operator gets the
+    // extraction refusal naming the field rather than a 500 from a
+    // constraint — and refused before the bytes are written, rather than
+    // after they are in storage with no row pointing at them.
+    if (Number(amount) <= 0) {
+      throw new RailwayBillParseError(
+        'billAmount',
+        `The bill's amount is ${amount}; a bill that settles nothing cannot be recorded.`,
+      );
+    }
+    return amount;
   }
   throw new RailwayBillParseError(
     'billAmount',

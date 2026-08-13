@@ -78,7 +78,20 @@ export function registerMeasurementBookCloseRoute(
           );
         }
 
-        const bill = await liveRailwayBillForBook(tx, id);
+        // Locked, not merely read. Closing and discarding are the two
+        // writers that disagree about this pair of rows, and under READ
+        // COMMITTED neither can see the other's uncommitted write: close
+        // would read a live bill while discard was retiring it, discard
+        // would read an unclosed book while close was closing it, and both
+        // would commit — leaving a permanently closed measurement resting
+        // on a discarded bill, with the one-live-bill index (partial on
+        // `discarded_at IS NULL`) then happily admitting a second bill
+        // against it.
+        //
+        // Both paths therefore take the same two locks in the same order,
+        // book first and bill second, which is also what keeps them from
+        // deadlocking against each other.
+        const bill = await liveRailwayBillForBook(tx, id, { lock: true });
         if (bill === null) {
           const details: MeasurementBookClosureRefusalDetails = {
             measurementBookId: id,
