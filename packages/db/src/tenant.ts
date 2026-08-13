@@ -27,14 +27,25 @@ export async function withUserContext<T>(
 }
 
 /**
- * The tenant binding, in one place for both isolation levels. The two
- * `set_config` calls are the security primitive every RLS policy reads,
- * and their third argument — `is_local = true` — is what keeps them
- * scoped to THIS transaction: a session-level setting would outlive the
- * work and leak the binding onto the next borrower of the pooled
- * connection. Any variant added here must keep that argument true and set
- * both keys, including the empty-string user id, so a missing value can
- * never fall through to a previous transaction's.
+ * The tenant binding, in one place for both isolation levels.
+ *
+ * `app_private.bind_tenant` (migration 0069) writes the two GUCs every RLS
+ * policy reads and then proves, on the definer's authority, that the user
+ * holds an ACTIVE membership in the organisation being bound. Both writes
+ * are `set_config(..., is_local = true)` inside that function, which is
+ * what keeps them scoped to THIS transaction: a session-level setting
+ * would outlive the work and leak the binding onto the next borrower of
+ * the pooled connection. Both keys are always written, including an empty
+ * user id, so a missing value can never fall through to a previous
+ * transaction's. Any variant added here must keep going through
+ * `bind_tenant` rather than setting the GUCs itself.
+ *
+ * A binding the user does not hold now raises SQLSTATE 28000 here, before
+ * any statement of `work` runs, instead of leaving the policies to deny
+ * everything silently and the caller to read an empty database. That is
+ * fail-fast, not the floor: the floor is still
+ * `app_private.current_organisation_id()`, which every policy calls and
+ * which re-proves the membership itself.
  *
  * `beginOptions` is appended to BEGIN by postgres.js. It is a fixed
  * literal chosen by the exported wrapper below, never caller input.
@@ -50,8 +61,7 @@ async function withTenantAt<T>(
   }
 
   const result = await sql.begin(beginOptions, async (tx) => {
-    await tx`select set_config('app.organisation_id', ${context.organisationId}, true)`;
-    await tx`select set_config('app.user_id', ${context.userId ?? ''}, true)`;
+    await tx`select app_private.bind_tenant(${context.organisationId}::uuid, ${context.userId ?? ''})`;
     return work(tx);
   });
   // Same UnwrapPromiseArray<T> identity as withUserContext above.
