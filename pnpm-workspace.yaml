@@ -62,3 +62,13 @@ allowBuilds:
 # 6.1.1, updating that test with it.
 overrides:
   '@fastify/static': '10.1.2'
+  # GHSA-2v37-7h3g-55p8: nanoid <3.3.18 custom generators can loop
+  # indefinitely when size is zero. Every path is transitive (vite/postcss
+  # pull ^3.3.x, so the lockfile alone pinned 3.3.17); the caret keeps the
+  # override inside major 3 — nothing in the tree uses nanoid 4+, and
+  # postcss requires 3.x CommonJS. nanoid predates the 2026-08-07 cooldown
+  # tightening and sits in minimumReleaseAgeExclude above, which is what
+  # lets this security upgrade resolve inside the seven-day window; drop
+  # this override once vite/postcss lockfile updates land 3.3.18+ on their
+  # own.
+  nanoid: '^3.3.18'
