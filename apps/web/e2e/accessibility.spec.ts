@@ -1,243 +1,14 @@
-import { AxeBuilder } from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
-
-const ORG = {
-  id: '11111111-1111-4111-8111-111111111111',
-  name: 'Sharma Constructions',
-  slug: 'sharma',
-};
-
-const SECOND_ORG = {
-  id: '11111111-1111-4111-8111-222222222222',
-  name: 'Patil Engineering',
-  slug: 'patil',
-};
-
-const ME = {
-  user: { id: 'user-a', email: 'owner@example.test' },
-  memberships: [
-    {
-      organisationId: ORG.id,
-      userId: 'user-a',
-      role: 'owner',
-      workScope: 'all',
-      canIssueDocuments: true,
-      canCancelDocuments: true,
-      status: 'active',
-    },
-  ],
-};
-
-const PICKER_ME = {
-  ...ME,
-  memberships: [
-    ...ME.memberships,
-    {
-      ...ME.memberships[0]!,
-      organisationId: SECOND_ORG.id,
-      role: 'member',
-    },
-  ],
-};
-
-const DOC_ID = '22222222-2222-4222-8222-222222222222';
-
-const REVIEW_DOCUMENT = {
-  id: DOC_ID,
-  originalFilename: 'loa-letter.pdf',
-  sha256: 'a'.repeat(64),
-  sizeBytes: 1234,
-  extractionStatus: 'review',
-  confirmedWorkId: null,
-  createdAt: '2026-08-08T00:00:00.000Z',
-  extractionPayload: {
-    sourceText: 'RAW LETTER TEXT',
-    review: {
-      header: {
-        letterNumber: {
-          value: 'L-42/2025',
-          raw: 'Letter No: L-42/2025',
-          needsReview: false,
-        },
-        letterDate: {
-          value: '2025-06-01',
-          raw: 'Dated: 01/06/2025',
-          needsReview: false,
-        },
-        workDescription: {
-          value: 'Supply and installation of switchboards',
-          raw: 'Name of work: Supply and installation of switchboards',
-          needsReview: false,
-        },
-      },
-      pricingShape: {
-        advertised_value: 1000,
-        contract_value: 900,
-        pricing_shape: 'letter_percentage',
-        letter_percentage: 10,
-        letter_percentage_direction: 'below',
-        needsReview: false,
-      },
-      items: [
-        {
-          schedule: { id: 'A' },
-          itemSno: '1',
-          itemCode: 'S01',
-          description: 'Main switchboard, floor mounted',
-          qty: '2.000',
-          qtyUnit: 'Numbers',
-          unitRate: '450.00',
-          bidAmount: '900.00',
-          needsReview: true,
-          raw: { anchorLine: '1  S01  Main switchboard ...' },
-        },
-      ],
-      flags: [
-        {
-          code: 'unresolved_units',
-          scope: 'item',
-          targetId: 'A#1',
-          message: 'The printed unit could not be resolved.',
-          rawBlock: 'Route Kilo Meter (RKM)',
-        },
-      ],
-      needsReview: { total: 1, anyLetterLevel: false },
-    },
-  },
-};
-
-async function expectNoSeriousViolations(page: Page, context: string) {
-  const results = await new AxeBuilder({ page }).analyze();
-  const serious = results.violations.filter(
-    (violation) => violation.impact === 'serious' || violation.impact === 'critical',
-  );
-  expect(
-    serious,
-    `${context}: ${serious.map((violation) => violation.id).join(', ')}`,
-  ).toEqual([]);
-}
-
-function json(body: unknown, status = 200) {
-  return {
-    status,
-    contentType: 'application/json',
-    body: JSON.stringify(body),
-  };
-}
-
-const DASHBOARD = {
-  totals: {
-    works: 1,
-    contractValue: '4520000.00',
-    deliveredValue: '1450000.00',
-    billedValue: '300.00',
-    openDrafts: 1,
-    loaAwaitingReview: 1,
-  },
-  alerts: [
-    {
-      kind: 'instrument_expiring',
-      severity: 'warning',
-      message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
-      workId: '33333333-3333-4333-8333-333333333333',
-      workCode: 'PL270-CRB',
-      dueInDays: 38,
-    },
-    {
-      kind: 'loa_review_pending',
-      severity: 'notice',
-      message: '1 LOA letter is waiting for review and confirmation.',
-      workId: null,
-      workCode: null,
-      dueInDays: null,
-    },
-  ],
-  works: [
-    {
-      workId: '33333333-3333-4333-8333-333333333333',
-      workCode: 'PL270-CRB',
-      title: 'Signalling gear, CR Bhusawal',
-      status: 'active',
-      contractValue: '4520000.00',
-      deliveredValue: '1450000.00',
-      billedValue: '300.00',
-      issuedChallans: 3,
-    },
-  ],
-};
-
-const PROFILE = {
-  id: ORG.id,
-  name: ORG.name,
-  slug: ORG.slug,
-  address: 'Plot 4, MIDC, Nashik 422010',
-  gstin: '27ABCDE1234F1Z5',
-  contactPhone: '+91 98220 00000',
-  contactEmail: 'office@sharma.example',
-  hasLogo: false,
-};
-
-async function mockWorkspace(
-  page: Page,
-  me = ME,
-  organisations: readonly (typeof ORG)[] = [ORG],
-) {
-  await page.route('**/api/me', (route) => route.fulfill(json(me)));
-  await page.route('**/api/organisations', (route) =>
-    route.fulfill(json({ organisations })),
-  );
-  await page.route('**/api/organisations/current/members', (route) =>
-    route.fulfill(
-      json({
-        members: me.memberships.filter(
-          (membership) => membership.organisationId === ORG.id,
-        ),
-      }),
-    ),
-  );
-  await page.route('**/api/organisations/current/members/*/assignments', (route) =>
-    route.fulfill(json({ userId: ME.user.id, workIds: [] })),
-  );
-  await page.route('**/api/approvals*', (route) =>
-    route.fulfill(json({ approvals: [] })),
-  );
-  await page.route('**/api/masters/contacts*', (route) =>
-    route.fulfill(json({ contacts: [] })),
-  );
-  await page.route('**/api/masters/locations*', (route) =>
-    route.fulfill(json({ locations: [] })),
-  );
-  await page.route('**/api/organisation/number-series', (route) =>
-    route.fulfill(json({ series: [] })),
-  );
-  await page.route('**/api/dashboard', (route) => route.fulfill(json(DASHBOARD)));
-  await page.route('**/api/organisation/profile', (route) =>
-    route.fulfill(json(PROFILE)),
-  );
-  await page.route('**/api/organisation/logo', (route) =>
-    route.fulfill(json({ code: 'NO_LOGO', message: 'No logo.', requestId: 'r' }, 404)),
-  );
-  await page.route('**/api/works', (route) => route.fulfill(json({ works: [] })));
-  await page.route('**/api/loa-documents', (route) =>
-    route.fulfill(
-      json({ documents: [{ ...REVIEW_DOCUMENT, extractionPayload: undefined }] }),
-    ),
-  );
-  await page.route(`**/api/loa-documents/${DOC_ID}`, (route) =>
-    route.fulfill(json(REVIEW_DOCUMENT)),
-  );
-  await page.route(`**/api/loa-documents/${DOC_ID}/contract-source-context`, (route) =>
-    route.fulfill(
-      json({
-        documents: [],
-        paymentMatrix: [],
-        periods: [],
-        releaseClauses: [],
-        itemSpecifications: [],
-      }),
-    ),
-  );
-}
+import { expect, test } from '@playwright/test';
+import {
+  DASHBOARD,
+  ME,
+  ORG,
+  PICKER_ME,
+  SECOND_ORG,
+  expectNoAxeViolations,
+  json,
+  mockWorkspace,
+} from './fixtures.js';
 
 test('sign-in screen is keyboard-labelled and passes the axe scan', async ({
   page,
@@ -252,19 +23,19 @@ test('sign-in screen is keyboard-labelled and passes the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByLabel('Email')).toBeVisible();
   await expect(page.getByLabel('Password')).toBeVisible();
-  await expectNoSeriousViolations(page, 'sign-in');
+  await expectNoAxeViolations(page, 'sign-in');
 });
 
 test('organisation picker and members workspace pass the axe scan', async ({
   page,
 }) => {
-  await mockWorkspace(page, PICKER_ME, [ORG, SECOND_ORG]);
+  await mockWorkspace(page, { me: PICKER_ME, organisations: [ORG, SECOND_ORG] });
 
   await page.goto('/');
   await expect(
     page.getByRole('heading', { name: 'Select an organisation' }),
   ).toBeVisible();
-  await expectNoSeriousViolations(page, 'organisation picker');
+  await expectNoAxeViolations(page, 'organisation picker');
 
   await page
     .getByRole('article')
@@ -273,7 +44,7 @@ test('organisation picker and members workspace pass the axe scan', async ({
     .click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeVisible();
-  await expectNoSeriousViolations(page, 'dashboard');
+  await expectNoAxeViolations(page, 'dashboard');
 
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
@@ -282,7 +53,7 @@ test('organisation picker and members workspace pass the axe scan', async ({
   const rail = page.getByRole('navigation', { name: 'Modules' });
   await expect(rail.getByRole('button', { name: 'All Works' })).toBeVisible();
   await expect(rail.getByRole('button', { name: 'Contacts' })).toHaveCount(0);
-  await expectNoSeriousViolations(page, 'works list');
+  await expectNoAxeViolations(page, 'works list');
 
   // A Masters category opens from the rail, without a stop on Contacts first.
   await page.getByRole('button', { name: 'Masters' }).click();
@@ -292,17 +63,17 @@ test('organisation picker and members workspace pass the axe scan', async ({
     'true',
   );
   await expect(rail.getByRole('button', { name: 'All Works' })).toHaveCount(0);
-  await expectNoSeriousViolations(page, 'masters locations from the rail');
+  await expectNoAxeViolations(page, 'masters locations from the rail');
 
   await page.getByRole('button', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();
-  await expectNoSeriousViolations(page, 'members workspace');
+  await expectNoAxeViolations(page, 'members workspace');
 
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByLabel('Company name')).toHaveValue('Sharma Constructions');
-  await expectNoSeriousViolations(page, 'settings');
+  await expectNoAxeViolations(page, 'settings');
 });
 
 test('LOA upload and review screens pass the axe scan', async ({ page }) => {
@@ -317,16 +88,22 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Upload contract documents' }),
   ).toBeVisible();
-  await expectNoSeriousViolations(page, 'upload');
+  await expectNoAxeViolations(page, 'upload');
 
   await page.getByRole('button', { name: 'Cancel' }).click();
-  await page.getByRole('button', { name: 'Review' }).click();
+  // The register's row actions are real anchors carrying the workspace
+  // hash, so a middle-click opens the record in its own tab. They answer
+  // to the link role; the spec asked for buttons and had been failing
+  // since hash routing landed.
+  await page.getByRole('link', { name: 'Review' }).click();
   await expect(
     page.getByRole('heading', { name: /Review loa-letter\.pdf/ }),
   ).toBeVisible();
-  await expect(page.getByLabel('Letter number')).toHaveValue('L-42/2025');
+  // A letter number the parser located is the letter's own value, so the
+  // screen states it rather than offering a control to edit it.
+  await expect(page.getByTestId('fact-letter-number')).toHaveText('L-42/2025');
   await expect(page.getByText('The printed unit could not be resolved.')).toBeVisible();
-  await expectNoSeriousViolations(page, 'review');
+  await expectNoAxeViolations(page, 'review');
 });
 
 test('work detail and challan editor pass the axe scan', async ({ page }) => {
@@ -763,7 +540,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Works', exact: true }).click();
-  await page.getByRole('button', { name: 'DCW-1' }).click();
+  await page.getByRole('link', { name: 'DCW-1' }).click();
   await expect(
     page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
   ).toBeVisible();
@@ -781,7 +558,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Completion status' })).toBeVisible();
   await expect(page.getByLabel('Why this Work is being completed')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Complete Work' })).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail — overview');
+  await expectNoAxeViolations(page, 'work detail — overview');
 
   await openTab('Schedules');
   await expect(page.getByRole('heading', { name: 'Payment matrix' })).toBeVisible();
@@ -789,7 +566,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     '80.00',
   );
   await expect(page.getByLabel('Payment category for A/1')).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail — schedules');
+  await expectNoAxeViolations(page, 'work detail — schedules');
 
   await openTab('Deliveries');
   await expect(
@@ -797,7 +574,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'New installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail — deliveries');
+  await expectNoAxeViolations(page, 'work detail — deliveries');
 
   await openTab('Measurement');
   await expect(
@@ -806,21 +583,21 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Measurement Books' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
   await expect(page.getByText('FINAL BILL', { exact: true })).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail — measurement');
+  await expectNoAxeViolations(page, 'work detail — measurement');
 
   await openTab('Bills');
   await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail — bills');
+  await expectNoAxeViolations(page, 'work detail — bills');
 
   await openTab('Instruments');
   await expect(
     page.getByRole('heading', { name: 'Contract instruments' }),
   ).toBeVisible();
-  await expectNoSeriousViolations(page, 'work detail');
+  await expectNoAxeViolations(page, 'work detail');
 
   // The challan list lives under Deliveries.
   await openTab('Deliveries');
-  await page.getByRole('button', { name: 'DC/1' }).click();
+  await page.getByRole('link', { name: 'DC/1' }).click();
   await expect(
     page.getByRole('heading', { name: 'Delivery Challan DC/1' }),
   ).toBeVisible();
@@ -841,7 +618,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     .getByRole('button', { name: 'Request correction notice…', expanded: false })
     .click();
   await expect(page.getByLabel('Correction statement')).toBeVisible();
-  await expectNoSeriousViolations(page, 'challan detail with evidence');
+  await expectNoAxeViolations(page, 'challan detail with evidence');
 
   await page.getByRole('button', { name: 'Back to Work' }).click();
   // The active tab survives the trip into a challan and back: the operator
@@ -854,7 +631,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     page.getByRole('heading', { name: 'New Delivery Challan' }),
   ).toBeVisible();
   await expect(page.getByLabel('Quantity of A/1 on this challan')).toBeVisible();
-  await expectNoSeriousViolations(page, 'challan editor');
+  await expectNoAxeViolations(page, 'challan editor');
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({

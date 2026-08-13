@@ -26,6 +26,32 @@ export default defineConfig({
         }
       : {}),
   },
+  // Three widths, because the two failures the responsive suite guards —
+  // a page that scrolls sideways and a sticky heading behind the app
+  // header — are both invisible at the desk width the suite used to run
+  // at alone. 320 is the narrowest viewport the product claims to
+  // support (globals.css pins `body { min-width: 320px }`); 768 is the
+  // tablet width at which the navigation rail is still collapsed.
+  //
+  // The accessibility suite drives the desktop navigation rail, which is
+  // hidden below 1024px, so it runs at the desk width only; the
+  // responsive suite navigates by hash and runs at all three.
+  projects: [
+    {
+      name: 'desktop-1280',
+      use: { viewport: { width: 1280, height: 800 } },
+    },
+    {
+      name: 'tablet-768',
+      use: { viewport: { width: 768, height: 1024 } },
+      testMatch: /responsive\.spec\.ts/,
+    },
+    {
+      name: 'mobile-320',
+      use: { viewport: { width: 320, height: 640 } },
+      testMatch: /responsive\.spec\.ts/,
+    },
+  ],
   // The bundle is built by a separate `pnpm build` step (CI does this
   // explicitly) so the webServer only serves; its output is piped so a
   // startup failure is visible instead of a silent timeout. The host is
