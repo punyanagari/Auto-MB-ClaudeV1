@@ -1,0 +1,1203 @@
+CMB No. 00341490147964/CSTM/1139316                                                             For Normal Bill
+
+          On Account Measurement No. 00341490147964/CSTM/1139316/OAM/L2/03
+
+        UWID:010253243038               State:MAHARASHTRA                            Exp. Type:Capital (Works)
+
+
+
+  1. Division/Construction Unit :               SRDSTECO/BB
+
+                                                Supply, installation, testing and commissioning of additional train
+                                                information display boards and other telecom assets at CSMT,
+  2. Name Of Work :                             Dadar,Thane, Kalyan, Panvel and Roha stations in Mumbai
+                                                division.
+
+  3. Situation of work :                        Kalyan
+
+
+  4. Agency By which work executed :            ParElectronics
+
+
+  5. Reference to agreement of work order :     CR/BBY/S&T/2026/0009                            Dated : 30/04/2026
+
+
+  6. Date of commencement :                     01/01/2026
+
+
+  7. Date of Completion :                       In Progress
+
+
+  8. Date of Measurement :                      29/07/2026
+
+
+
+ Certificate:
+ 1. Certified that the work has been satisfactorily done by the Contractor.
+ 2. The other terms and conditions are same as per original tender conditions.
+ 3. No banned items taken in to account except item already existing in the agreement and no undue benefits given
+ to the Agency.
+ 4. Contractor has engaged Engineering Post Graduate/Graduate/Diploma on this work as per terms of CA.
+ 5. No Railway Labour, Plant/Machinery/Equipment loaned to the Contractor.
+ 6. Material used for the work conformed IS specification.
+
+
+
+
+I have certified all testchecked items are as per approved specification and quantity measured
+in conformity with engineering code and CE circulars.
+                                                Signature Not Verified
+                                                     Digitally signed by RAILWAY
+                                                     ENGINEER REP
+                                                     Date: 2026.07.31 13:31:22 IST                         Page 1 of 18
+                                                     Reason: CMB Signed by
+                                                     Engineer's Rep.
+           On Account Measurement No. 00341490147964/CSTM/1139316/OAM/L2/03
+
+                                                                                                                  Test
+   Particulars         Unit       Numbers       Coeff.         L             B             H        Contents     Check
+                                                                                                                 by ER
+SCHEDULE A
+Group : Not Applicable
+Item No. : 01      Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display
+Board (TADDB) as per RDSO specification No. RDSO/SPN/TC/ 108/ 2019, Ver.- 1.0 or later. Inspection ....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 01)                       = 2.8
+Supply of True
+colour
+MLDB(Outdoor
+Video display(OVD)
+6 Line for Train
+Arrival departure
+Display
+Board(TADDB) as Number         1.0 x 1.0 x 1.0  1.0                     0.0                         = 0.0        No
+                        s
+per
+RDSOspecification
+No.RDSO/SPN/TC/
+108/ 2019,Ver.- 1.0
+or later.
+Inspectionby
+RDSO.
+                                                                                        Total         2.8
+Reason for Reduction : Prepaid 70% for 04 Nos Now to Pay Nil                      Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 03        Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size
+Pixel Resolution (WxH) 432x256 (12-line Single face) as per RDSO specification No. RDSO/SPN/TC/ 108/ 2....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 03)                        = 1.28
+Supply Installation
+Testingand
+Commissioning of
+Truecolor Outdoor
+Video Display(OVD)
+of size
+PixelResolution       Number 1.0 x 1.0 x 1.0         1.0                     0.0                     = 0.0         No
+(WxH) 432x256(12-         s
+line Single face) as
+perRDSO
+specification
+No.RDSO/SPN/TC/
+108/ 2019,Ver.- 1.0
+o
+                                                                                            Total      1.28
+Reason for Reduction : Prepaid 64% for 02 Nos Now to Pay Nil                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 04       Supply of True color Indoor Video Display (IVD) of Pixel Resolution (WxH) 432x128 (6-line single
+face) as per RDSO specification No.: RDSO /SPN / TC / 108 / 2019 Ver 1.0.or latest if any. Inspection....
+Supply of True color
+IndoorVideo Display
+(IVD) of
+PixelResolution
+(WxH) 432x128(6-
+line single face) as Number
+perRDSO                         1.0 x 1.0 x 1.0     0.7                      10.0                    = 7.0          Yes
+                         s
+specification
+No.:RDSO /SPN /
+TC / 108 /2019 Ver
+1.0.or latest if
+any.Inspection by
+RDSO.
+                                                                                            Total         7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 10 Nos                          Now to pay      100.0%
+
+                                                                                                            Page 2 of 18
+Group : Not Applicable
+Item No. : 06        Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 Ver.- 1.0 or latest. Inspection by....
+            Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 06)                           = 6.4
+Supply, Installation,
+Testingand
+Commissioning of
+Singleline Double
+face
+trainArrival/Departur Number
+e displayboard as                 1.0 x 1.0 x 1.0     0.64                    5.0                       = 3.2         Yes
+                          s
+per
+RDSOSpecification
+No.RDSO/SPN/TC/
+108/2019Ver.- 1.0
+or latest.Inspection
+by RDSO.
+                                                                                             Total         9.6
+Reason for Reduction : Prepaid 64% for 10 Nos Now to Pay 64% for 05 Nos                Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 07       Supply of at a glance display board (Double Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 07)                        = 9.5
+Supply of at a
+glancedisplay board
+(Double Face)with
+coach guidance
+displayas per        Number 1.0 x 1.0 x 1.0
+RDSO                                                0.7                      5.0                     = 3.5               Yes
+                         s
+SpecificationNo.
+RDSO/SPN/TC/108
+/2019ver,-1.0 or
+latest.Inspection by
+RDSO.
+                                                                                          Total         13
+Reason for Reduction : Prepaid 70% for 13 Nos and 20% for 02 Nos Now to              Now to pay      100.0%
+Pay 70% for 05 Nos
+
+
+Group : Not Applicable
+Item No. : 08       Supply of at a glance display board (Single Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 08)                         = 6.3
+Supply of at a
+glancedisplay board
+(Single Face)with
+coach guidance
+displayas per        Number 1.0 x 1.0 x 1.0
+RDSO                                                0.7                      3.0                      = 2.1              Yes
+                         s
+SpecificationNo.
+RDSO/SPN/TC/108
+/2019ver,-1.0 or
+latest.Inspection by
+RDSO.
+                                                                                           Total        8.4
+Reason for Reduction : Prepaid 70% for 09 Nos Now to Pay 70% for 03 Nos               Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 13        Installation, testing, and commissioning of various types of indicators as per site condition and
+instructions of site supervisor. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 13)                               =2
+
+
+
+
+                                                                                                                 Page 3 of 18
+Installation, testing,
+andcommissioning
+of varioustypes of
+indicators as persite Number
+condition                      1.0 x 1.0 x 1.0   1.0                      0.0                     = 0.0          No
+                        s
+andinstructions of
+sitesupervisor.
+Inspection
+byconsignee.
+                                                                                       Total         2
+Reason for Reduction : Prepaid 100% for 02 Nos Now to Pay Nil                     Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 14       Supply, Installation, Testing and Commissioning of Double sided Digital Clock with GPS
+synchronization suitable for Railway station platforms conforming to the RDSO specification No. RDSO/SPN/TC@47&....
+Supply, Installation,
+Testingand
+Commissioning of
+Doublesided Digital
+Clock with
+GPSsynchronizatio
+n suitable
+forRailway station    Number 1.0 x 1.0 x 1.0         0.64                   30.0                       = 19.2 Yes
+platforms                s
+conforming to the
+RDSOspecification
+No.RDSO/SPN/TC
+@47>47@
+2008Revision 4.1 or
+later.Inspection by
+RDSO
+                                                                                            Total        19.2
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 30 Nos                         Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 15        Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 15)                      = 2415
+Supply of FRP
+perforatedcable tray
+of size 150 mm x50
+mm x 4 mm with
+allaccessories, as
+pertechnical           Metre     1.0 x 1.0 x 1.0      1.0                      0.0                 = 0.0         No
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                          Total      2415
+Reason for Reduction : Prepaid 70% for 3450 Mtr Now to Pay Nil                       Now to pay    100.0%
+
+
+Group : Not Applicable
+Item No. : 16        Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 16)                     = 1260
+Supply of FRP
+perforatedcable tray
+of size 300 mm x50
+mm x 4 mm with
+allaccessories, as
+pertechnical           Metre     1.0 x 1.0 x 1.0      1.0                      0.0                 = 0.0         No
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                          Total     1260
+Reason for Reduction : Prepaid 70% for 1800 Mtr Now to Pay Nil                       Now to pay    100.0%
+                                                                                                          Page 4 of 18
+Group : Not Applicable
+Item No. : 18        Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch
+with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports as per technical specifications in chapter III of tender....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 18)                         = 7.04
+Supply, installation,
+testingand
+commissioning of
+28Port Managed
+Non PoE Layer2
+Access Switch with
+24 x1GSFP Ports       Number 1.0 x 1.0 x 1.0           1.0                     0.0                    = 0.0      No
+and 4 x 10GSFP+           s
+Ports as per
+technicalspecificatio
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee.
+                                                                                            Total        7.04
+Reason for Reduction : Prepaid 64% for 11 Nos Now to Pay Nil                          Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 19       Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with
+switchs supplied above. Inspection by consignee.
+            Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 19)                      = 92.4
+Supply of SFP
+1Gtransreceiver
+SFP Smallform-
+factor
+pluggabletransceive Number 1.0 x 1.0 x 1.0         1.0                     0.0                      = 0.0          No
+r suitable to            s
+workwith switchs
+supplied
+above.Inspection by
+consignee.
+                                                                                         Total        92.4
+Reason for Reduction : Prepaid 70% for 132 Nos Now to Pay Nil                       Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 20      Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 20)                       = 30.8
+Supply of SFP's
+10Gbpssuitable to
+work withswitchs     Number 1.0 x 1.0 x 1.0      1.0                       0.0                      = 0.0        No
+supplied                s
+above.Inspection by
+consignee.
+                                                                                          Total       30.8
+Reason for Reduction : Prepaid 70% for 44 Nos Now to Pay Nil                       Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 21      Supply of layer 2 manageable switch 24 port and 4 SFP ports with1G network module, 1000 Mbps
+single mode rugged SFP= 4 Nos. &amp; other accessories, software. as per RDSO specification no. RDSO/SPN....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 21)                   = 18.9
+
+
+
+
+                                                                                                           Page 5 of 18
+Supply of layer
+2manageable
+switch 24 portand 4
+SFP ports
+with1Gnetwork
+module, 1000
+Mbpssingle mode
+rugged SFP= 4Nos.
+& other
+accessories,
+software. as per
+RDSOspecification Number        1.0 x 1.0 x 1.0     1.0                      0.0                       = 0.0          No
+no.RDSO/SPN/ TC/    s
+83/2014 Rev.1.0
+Make & model
+CISCO
+WS2960X24 TS-L
+orbetter/similar
+make asJuniper,
+CISCO.
+Aruba,Extreme and
+Allied
+Telesis.Inspection
+by RITES.
+                                                                                           Total        18.9
+Reason for Reduction : Prepaid 70% for 27 Nos Now to Pay Nil                          Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 25        Three-core x 1.5 sq. mm multi strand flexible PVC insulated power cables conform to specification no.
+IS: 694:1990 reaffirmed 1995 or latest. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 25)                         = 630
+Three-core x 1.5 sq.
+mmmulti strand
+flexible
+PVCinsulated
+power
+cablesconform to        Metre    1.0 x 1.0 x 1.0     1.0                      0.0                     = 0.0          No
+specification no.IS:
+694:1990
+reaffirmed1995 or
+latest. Inspectionby
+consignee.
+                                                                                            Total       630
+Reason for Reduction : Prepaid 70% for 900 Mtr Now to Pay Nil                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 27      Supply of STP (Shielded Twisted Pair) CAT-6 Cable shall be compliant with latest EIA/TIA-568-B.2-1
+standard for CAT 6 cable. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 27)                      = 2348.5
+Supply of STP
+(ShieldedTwisted
+Pair) CAT-6
+Cableshall be
+compliant withlatest Metre     1.0 x 1.0 x 1.0     1.0                    0.0                       = 0.0        No
+EIA/TIA-568-B.2-
+1standard for CAT
+6 cable.Inspection
+by consignee.
+                                                                                         Total       2348.5
+Reason for Reduction : Prepaid 70% for 3355 Mtr Now to Pay Nil                    Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 28      Supply of 6 core armored optical single mode fiber cables as per technical specifications in chapter III
+of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 28)                         = 700
+
+
+
+
+                                                                                                               Page 6 of 18
+Supply of 6 core
+armoredoptical
+single mode
+fibercables as per
+technicalspecificatio   Metre   1.0 x 1.0 x 1.0     1.0                       0.0                       = 0.0          No
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee.
+                                                                                            Total         700
+Reason for Reduction : Prepaid 70% for 1000 Mtr Now to Pay Nil                         Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 29      Supply of 12 Port LIU Rack mountable, suitable for Single mode fiber along with supply of all
+accessories like LC adapter plates, LC connectors, LC pig tails and blank plates etc. LIU should be prov....
+Supply of 12 Port
+LIU
+Rackmountable,
+suitable forSingle
+mode fiber along
+withsupply of all
+accessories likeLC
+adapter plates,      Number 1.0 x 1.0 x 1.0        0.7                      123.0                     = 86.1           Yes
+LCconnectors, LC        s
+pig tails andblank
+plates etc. LIU
+shouldbe provided
+for terminatingthe
+optic fiber
+cables.Inspection
+by consignee.
+                                                                                            Total       86.1
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 123 Nos                          Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 31       Supply and installation of LIU, (Rack mountable, 24 port), along with supply of all accessories suitable
+for Single mode fiber, as per technical specifications in chapter III of tender document. Ins....
+Supply and
+installation ofLIU,
+(Rack mountable,
+24port), along with
+supply ofall
+accessories
+suitable forSingle      Pair     1.0 x 1.0 x 1.0     0.64                        12.0                    = 7.68       Yes
+mode fiber, as
+pertechnical
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                                Total      7.68
+Reason for Reduction : Prepaid Nil Now to Pay 64% for 12 Pair                           Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 32      Supply of LC to LC Duplex OFC Patch Cord SM 5 meter length. Inspection by consignee.
+Supply of LC to LC
+DuplexOFC Patch
+Cord SM 5            Number 1.0 x 1.0 x 1.0      0.7                  310.0                      = 217.0               Yes
+meterlength.            s
+Inspection
+byconsignee.
+                                                                                       Total       217
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 310 Nos                    Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 33      Supply of SC - SC / SC to LC Duplex OFC Patch Cord SM 3 meter length. Inspection by consignee.
+
+                                                                                                                Page 7 of 18
+Supply of SC - SC /
+SC toLC Duplex
+OFC Patch CordSM Number         1.0 x 1.0 x 1.0    0.7                     335.0                      = 234.5       Yes
+3 meter              s
+length.Inspection by
+consignee.
+                                                                                          Total        234.5
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 335 Nos                        Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 34      Supply of OFC Patch Cord (LC-LC) Duplex 1 meter length. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 34)                      = 21
+Supply of OFC
+Patch Cord(LC-LC)
+Duplex 1             Number 1.0 x 1.0 x 1.0     0.7                    315.0                     = 220.5            Yes
+meterlength.            s
+Inspection
+byconsignee.
+                                                                                        Total     241.5
+Reason for Reduction : Prepaid 70% for 30 Nos Now to Pay 70% for 315 Nos         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 37       Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical
+specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 37)                        = 8610
+Supply of PVC pipe
+ofstandard IS-9537
+(Part 3) of1 inch
+diameter of
+whitecolour, as per
+technicalspecificatio Metre        1.0 x 1.0 x 1.0   1.0                    0.0                      = 0.0          No
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee.
+                                                                                           Total       8610
+Reason for Reduction : Prepaid 70% for 12300 Nos Now to Pay Nil                     Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 43      MCB Box 12 way (Single Pole MCBs as outgoing and Double pole MCB as incoming), IP-43, as per
+BIS Specification:13032. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 43)                 = 3.5
+MCB Box 12 way
+(Single PoleMCBs
+as outgoing
+andDouble pole
+MCB asincoming), Number        1.0 x 1.0 x 1.0    1.0                 0.0                    = 0.0          No
+                        s
+IP-43, as per
+BISSpecification:13
+032.Inspection by
+consignee.
+                                                                                    Total       3.5
+Reason for Reduction : Prepaid 70% for 5 Nos Now to Pay Nil                    Now to pay    100.0%
+
+
+SCHEDULE C
+Group : Not Applicable
+Item No. : 01      Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display
+Board (TADDB) No. RDSO/SPN/TC/ 108/ 2019, Ver.-1.0. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 01)                       = 1.4
+
+
+
+
+                                                                                                             Page 8 of 18
+Supply of True
+colour
+MLDB(Outdoor
+Video display(OVD)
+6 Line for Train
+Arrivaldeparture   Number       1.0 x 1.0 x 1.0    0.7                       1.0                      = 0.7          Yes
+Display              s
+Board(TADDB) No.
+RDSO/SPN/TC/108
+/ 2019, Ver.-
+1.0.Inspection by
+RDSO.
+                                                                                          Total         2.1
+Reason for Reduction : Prepaid 70% for 02 Nos Now to Pay 70% for 01 Nos              Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 03        Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size
+Pixel Resolution (WxH) 432x256 (12-line Single face) as per RDSO specification No.: RDSO / SPN / TC / ....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 03)                         = 0.9
+Supply Installation
+Testingand
+Commissioning of
+Truecolor Outdoor
+Video Display(OVD)
+of size
+PixelResolution
+(WxH) 432x256(12- Number 1.0 x 1.0 x 1.0             1.0                     0.0                     = 0.0         No
+line Single face) as      s
+perRDSO
+specification
+No.:RDSO / SPN /
+TC / 108 /2019 Ver
+1.0.or
+latest.Inspection by
+RDSO.
+                                                                                            Total       0.9
+Reason for Reduction : Prepaid 90% for 01 Nos Now to Pay Nil                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 04        Supply of True color Indoor Video Display (IVD) of Pixel Resolution (WxH) 432x128 (6-line single
+face) as per RDSO specification No.: RDSO /SPN / TC / 108 / 2019 Ver 1.0.or latest if any. Inspection....
+Supply of True color
+Indoor Video
+Display (IVD) of
+Pixel Resolution      Number 1.0 x 1.0 x 1.0         0.7                       1.0                   = 0.7           Yes
+(WxH) 432x128 (6-         s
+line single face) as
+per RDSO
+specificat...
+                                                                                             Total        0.7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 01 Nos                           Now to pay     100.0%
+
+
+Group : Not Applicable
+Item No. : 06       Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 06)                           = 1.28
+Supply, Installation,
+Testingand
+Commissioning of
+Singleline Double
+face
+trainArrival/Departur Number
+e displayboard as                1.0 x 1.0 x 1.0     0.64                    2.0                       = 1.28        Yes
+                         s
+per
+RDSOSpecification
+No.RDSO/SPN/TC/
+108/2019 orlatest.
+Inspection by
+RDSO.
+                                                                                            Total         2.56
+                                                                                                              Page 9 of 18
+Reason for Reduction : Prepaid 64% for 02 Nos Now to Pay 64% for 02 Nos                  Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 07      Supply of at a glance display board (Double Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 07)                       = 7.8
+Supply of at a
+glancedisplay board
+(Double Face)with
+coach guidance
+displayas per        Number 1.0 x 1.0 x 1.0
+RDSO                                               0.7                      3.0                     = 2.1                 Yes
+                        s
+SpecificationNo.
+RDSO/SPN/TC/108
+/2019or latest.
+Inspection
+byRDSO.
+                                                                                         Total        9.9
+Reason for Reduction : Prepaid 70% for 10 Nos and 20% for 04 Nos Now to             Now to pay      100.0%
+Pay 70% for 03 Nos
+
+
+Group : Not Applicable
+Item No. : 08      Supply of at a glance display board (Single Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 08)                        = 4.2
+Supply of at a
+glancedisplay board
+(Single Face)with
+coach guidance
+displayas per        Number 1.0 x 1.0 x 1.0
+RDSO                                               0.7                      1.0                      = 0.7                Yes
+                        s
+SpecificationNo.
+RDSO/SPN/TC/108
+/2019or latest.
+Inspection
+byRDSO.
+                                                                                          Total        4.9
+Reason for Reduction : Prepaid 70% for 06 Nos Now to Pay 70% for 01 Nos              Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 13         Installation, testing, and commissioning of various types of indicators as per site condition and
+instructions of site supervisor. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 13)                                =4
+Installation, testing,
+andcommissioning
+of varioustypes of
+indicators as persite Number
+condition                            1.0 x 1.0 x 1.0   1.0                       0.0                        = 0.0         No
+                            s
+andinstructions of
+site supervisor.
+Inspection
+byconsignee.
+                                                                                                 Total         4
+Reason for Reduction : Prepaid 100% for 04 Nos Now to Pay Nil                              Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 14      Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch
+with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports as per technical specifications in chapter III of tender....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 14)                         = 2.56
+
+
+
+
+                                                                                                                 Page 10 of 18
+Supply, installation,
+testingand
+commissioning of
+28Port Managed
+Non PoE Layer2
+Access Switch with
+24 x1GSFP Ports       Number   1.0 x 1.0 x 1.0    1.0                      0.0                      = 0.0           No
+and 4 x 10GSFP+         s
+Ports as per
+technicalspecificatio
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee.
+                                                                                         Total       2.56
+Reason for Reduction : Prepaid 64% for 04 Nos Now to Pay Nil                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 15       Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with
+switchs supplied above. Inspection by consignee.
+            Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 15)                       = 28
+Supply of SFP
+1Gtransreceiver
+SFP Smallform-
+factor
+pluggabletransceive Number 1.0 x 1.0 x 1.0         1.0                     0.0                      = 0.0          No
+r suitable to            s
+workwith switchs
+supplied
+above.Inspection by
+consignee.
+                                                                                         Total         28
+Reason for Reduction : Prepaid 70% for 40 Nos Now to Pay Nil                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 16      Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 16)                        =7
+Supply of SFP's
+10Gbpssuitable to
+work withswitchs     Number 1.0 x 1.0 x 1.0      1.0                       0.0                      = 0.0        No
+supplied                s
+above.Inspection by
+consignee.
+                                                                                          Total        7
+Reason for Reduction : Prepaid 70% for 10 Nos Now to Pay Nil                       Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 17      Supply of layer 2 manageable switch 24 port and 4 SFP ports with1G network module, 1000 Mbps
+single mode rugged SFP= 4 Nos. &amp; other accessories, software. as per RDSO specification no. RDSO/SPN....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 17)                    = 9.8
+
+
+
+
+                                                                                                            Page 11 of 18
+Supply of layer
+2manageable
+switch 24 portand 4
+SFP ports
+with1Gnetwork
+module, 1000
+Mbpssingle mode
+rugged SFP= 4Nos.
+& other
+accessories,softwar
+e. as per
+RDSOspecification Number        1.0 x 1.0 x 1.0    1.0                       0.0                      = 0.0           No
+no.RDSO/SPN/TC/     s
+83/2014 Rev.1.0
+Make & model
+CISCO
+WS2960X24 TS-L
+orbetter/similar
+make asJuniper,
+CISCO.
+Aruba,Extreme and
+Allied
+Telesis.Inspection
+by consignee.
+                                                                                           Total        9.8
+Reason for Reduction : Prepaid 70% for 14 Nos Now to Pay Nil                          Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 21        Three-core x 1.5 sq. mm multi strand flexible PVC insulated power cables conform to specification no.
+IS: 694:1990 reaffirmed 1995 or latest. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 21)                         = 420
+Three-core x 1.5 sq.
+mmmulti strand
+flexible
+PVCinsulated
+power
+cablesconform to        Metre    1.0 x 1.0 x 1.0     1.0                      0.0                     = 0.0          No
+specification no.IS:
+694:1990 reaffirmed
+1995 or latest.
+Inspectionby
+consignee.
+                                                                                            Total       420
+Reason for Reduction : Prepaid 70% for 600 Mtr Now to Pay Nil                         Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 23      Supply of STP (Shielded Twisted Pair) CAT-6 Cable shall be compliant with latest EIA/TIA-568-B.2-1
+standard for CAT 6 cable. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 23)                      = 5764.5
+Supply of STP
+(ShieldedTwisted
+Pair) CAT-6
+Cableshall be
+compliant withlatest Metre     1.0 x 1.0 x 1.0     1.0                    0.0                       = 0.0        No
+EIA/TIA-568-B.2-
+1standard for CAT
+6 cable.Inspection
+by consignee.
+                                                                                         Total       5764.5
+Reason for Reduction : Prepaid 70% for 8235 Mtr Now to Pay Nil                    Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 25      Supply of 12 Port LIU Rack mountable, suitable for Single mode fiber along with supply of all
+accessories like LC adapter plates, LC connectors, LC pig tails and blank plates etc. LIU should be prov....
+
+
+
+
+                                                                                                              Page 12 of 18
+Supply of 12 Port
+LIU
+Rackmountable,
+suitable forSingle
+mode fiber along
+withsupply of all
+accessories likeLC
+adapter plates,      Number     1.0 x 1.0 x 1.0     0.7                       36.0                      = 25.2        Yes
+LCconnectors, LC       s
+pig tails andblank
+plates etc. LIU
+shouldbe provided
+for terminatingthe
+optic fiber
+cables.Inspection
+by consignee.
+                                                                                            Total        25.2
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 36 Nos                           Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 27       Supply and installation of LIU, (Rack mountable, 24 port), along with supply of all accessories suitable
+for Single mode fiber, as per technical specifications in chapter III of tender document. Ins....
+Supply and
+installation ofLIU,
+(Rack mountable,
+24port), along with
+supply ofall
+accessories
+suitable forSingle      Pair     1.0 x 1.0 x 1.0     0.64                        4.0                     = 2.56       Yes
+mode fiber, as
+pertechnical
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                                Total      2.56
+Reason for Reduction : Prepaid Nil Now to Pay 64 % for 4 Pair                           Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 28      Supply of LC to LC Duplex OFC Patch Cord SM 5 meter length. Inspection by consignee.
+Supply of LC to LC
+DuplexOFC Patch
+Cord SM 5            Number 1.0 x 1.0 x 1.0      0.7                  120.0                      = 84.0               Yes
+meterlength.            s
+Inspection
+byconsignee
+                                                                                       Total        84
+Reason for Reduction : Prepaid Nil Now to Pay 70 % for 120 Nos                   Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 29      Supply of SC - SC / SC to LC Duplex OFC Patch Cord SM 3 meter length. Inspection by consignee.
+Supply of SC - SC /
+SC toLC Duplex
+OFC Patch CordSM Number 1.0 x 1.0 x 1.0          0.7                   80.0                     = 56.0       Yes
+3 meter                 s
+length.Inspection by
+consignee.
+                                                                                     Total         56
+Reason for Reduction : Prepaid Nil Now to Pay 70 % for 80 Nos                  Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 30      Supply of OFC Patch Cord (LC-LC) Duplex 1 meter length. Inspection by consignee.
+
+
+
+
+                                                                                                              Page 13 of 18
+Supply of OFC
+Patch Cord(LC-LC)
+Duplex 1          Number        1.0 x 1.0 x 1.0    0.7                      100.0                     = 70.0         Yes
+meterlength.        s
+Inspection
+byconsignee.
+                                                                                           Total         70
+Reason for Reduction : Prepaid Nil Now to Pay 70 % for 100 Nos                        Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 33       Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical
+specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 33)                        = 3150
+Supply of PVC pipe
+ofstandard IS-9537
+(Part 3) of1 inch
+diameter of
+whitecolour, as per
+technicalspecificatio Metre        1.0 x 1.0 x 1.0   1.0                    0.0                      = 0.0          No
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee.
+                                                                                           Total       3150
+Reason for Reduction : Prepaid 70% for 4500 Mtr Now to Pay Nil                      Now to pay       100.0%
+
+
+SCHEDULE E
+Group : Not Applicable
+Item No. : 01       Supply of Central Data Controller (CDC) with all accessories including supply and installation of
+necessary softwares, as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDS....
+            Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 01)                         = 0.7
+Supply of Central
+DataController
+(CDC) with
+allaccessories
+including supplyand
+installation of
+necessarysoftwares      Set     1.0 x 1.0 x 1.0     1.0                      0.0                       = 0.0          No
+, as per
+RDSOSpecification
+No.
+RDSO/SPN/TC/108
+/2019 orlatest.
+Inspection by
+RDSO.
+                                                                                             Total       0.7
+Reason for Reduction : Prepaid 70% for 01 Set Now to Pay Nil                          Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 03       Supply of Central Data Switch (CDS) as per RDSO Specification No. RDSO/SPN/TC/108/2019 or
+latest. Inspection by RDSO.
+Supply of Central
+DataSwitch (CDS)
+as per
+RDSOSpecification Number 1.0 x 1.0 x 1.0           0.7                  1.0                    = 0.7       Yes
+No.RDSO/SPN/TC/          s
+108/2019 orlatest.
+Inspection by
+RDSO.
+                                                                                        Total    0.7
+Reason for Reduction : Prepaid Nil Now to Pay 70% for 01 Nos                      Now to pay   100.0%
+
+
+Group : Not Applicable
+Item No. : 07      Supply, Installation, Testing and Commissioning of Double Faced Coach Guidance Display Boards as
+per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 07)                   = 33.28
+                                                                                                             Page 14 of 18
+Supply, Installation,
+Testingand
+Commissioning of
+DoubleFaced
+Coach
+GuidanceDisplay       Number    1.0 x 1.0 x 1.0    0.64                     52.0                      = 33.28       Yes
+Boards as per           s
+RDSOSpecification
+No.RDSO/SPN/TC/
+108/2019 orlatest.
+Inspection by
+RDSO.
+                                                                                          Total        66.56
+Reason for Reduction : Prepaid 64% for 52 Nos Now to Pay 64% for 52 Nos              Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 08       Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure
+display board as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 08)                           = 0.64
+Supply, Installation,
+Testing and
+Commissioning of
+Singleline Double
+face
+trainArrival/Departur Number
+e displayboard as                1.0 x 1.0 x 1.0     0.64                    1.0                       = 0.64        Yes
+                         s
+per
+RDSOSpecification
+No.RDSO/SPN/TC/
+108/2019 orlatest.
+Inspection by
+RDSO.
+                                                                                            Total         1.28
+Reason for Reduction : Prepaid 64% for 01 Nos Now to Pay 64% for 01 Nos               Now to pay        100.0%
+
+
+Group : Not Applicable
+Item No. : 09      Supply of at a glance display board (Single Face) with coach guidance display as per RDSO
+Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 09)                        = 0.7
+Supply of at a
+glance display
+board (Single
+Face)with coach
+guidance displayas Number
+per RDSO                        1.0 x 1.0 x 1.0    0.7                      1.0                      = 0.7          Yes
+                        s
+SpecificationNo.
+RDSO/SPN/TC/108
+/2019or latest.
+Inspection
+byRDSO.
+                                                                                          Total        1.4
+Reason for Reduction : Prepaid 70% for 01 Nos Now to Pay 70% for 01 Nos              Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 14       Supply, Installation, Testing and Commissioning of Column speaker similar to Model ASC-20T of
+Ahuja. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 14)                       = 38.4
+Supply, Installation,
+Testingand
+Commissioning
+ofColumn speaker Number 1.0 x 1.0 x 1.0              1.0                    0.0                     = 0.0         No
+similar toModel          s
+ASC-20T of
+Ahuja.Inspection by
+consignee.
+                                                                                          Total       38.4
+Reason for Reduction : Prepaid 64% for 60 nos Now to Pay Nil                       Now to pay       100.0%
+
+                                                                                                            Page 15 of 18
+Group : Not Applicable
+Item No. : 15       Supply of PA horn Speakers as per technical specifications in chapter III of tender document.
+Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 15)                           = 10.5
+Supply of PA horn
+Speakersas per
+technicalspecificatio Number
+ns in chapter IIIof             1.0 x 1.0 x 1.0   1.0                        0.0                        = 0.0       No
+                         s
+tender
+document.Inspectio
+n by consignee.
+                                                                                              Total       10.5
+Reason for Reduction : Prepaid 70% for 15 Nos Now to Pay Nil                         Now to pay         100.0%
+
+
+Group : Not Applicable
+Item No. : 17      Supply of High power two zone Amplifier capable of delivering 200 watts output power from each
+zone; total 400 watts with 6 mics &amp; 2 AUX inputs, of Ahuja or Philips or Yamaha or Bosch make. In....
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 17)                       = 4.2
+Supply of High
+power twozone
+Amplifier capable
+ofdelivering 200
+watts outputpower
+from each zone;
+total400 watts with Number 1.0 x 1.0 x 1.0        1.0                        0.0                    = 0.0        No
+6 mics & 2AUX             s
+inputs, of Ahuja
+orPhilips or
+Yamaha or
+Boschmake.
+Inspection
+byconsignee.
+                                                                                          Total       4.2
+Reason for Reduction : Prepaid 70% for 06 nos Now to Pay Nil                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 18       Supply of Goose Neck microphone simillar to Ahuja make model No. AGN500 with Stand. Inspection
+by consignee.
+            Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 18)                   = 2.1
+Supply of Goose
+Neckmicrophone
+simillar to
+Ahujamake model Number          1.0 x 1.0 x 1.0  1.0                      0.0                   = 0.0         No
+                         s
+No. AGN500with
+Stand. Inspection
+byconsignee.
+                                                                                       Total       2.1
+Reason for Reduction : Prepaid 70% for 03 nos Now to Pay Nil                      Now to pay    100.0%
+
+
+Group : Not Applicable
+Item No. : 20        Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 20)                      = 630
+Supply of FRP
+perforatedcable tray
+of size 150 mm x50
+mm x 4 mm with
+allaccessories, as
+pertechnical           Metre     1.0 x 1.0 x 1.0      1.0                      0.0                 = 0.0         No
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                          Total      630
+Reason for Reduction : Prepaid 70% for 900 mtr Now to Pay Nil                        Now to pay    100.0%
+
+                                                                                                            Page 16 of 18
+Group : Not Applicable
+Item No. : 21        Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per
+technical specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 21)                      = 210
+Supply of FRP
+perforatedcable tray
+of size 300 mm x50
+mm x 4 mm with
+allaccessories, as
+pertechnical           Metre     1.0 x 1.0 x 1.0      1.0                      0.0                 = 0.0         No
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                                          Total      210
+Reason for Reduction : Prepaid 70% for 300 MtrNow to Pay Nil                         Now to pay    100.0%
+
+
+Group : Not Applicable
+Item No. : 28       Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical
+specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 28)                        = 1470
+Supply of PVC pipe
+ofstandard IS-9537
+(Part 3) of1 inch
+diameter of
+whitecolour, as per
+technicalspecificatio Metre        1.0 x 1.0 x 1.0   1.0                    0.0                      = 0.0          No
+ns in chapter IIIof
+tender
+document.Inspectio
+n by consignee
+                                                                                           Total       1470
+Reason for Reduction : Prepaid 70% for 2100 Mtr Now to Pay Nil                      Now to pay       100.0%
+
+
+Group : Not Applicable
+Item No. : 31        Supply of power cable Three-core (PVC insulated flexible 3 core x 2.5 sq. mm multi strand ) should
+conform to specification no. IS: 694:1990 reaffirmed 1995 or latest. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 31)                         = 2100
+Supply of power
+cableThree-core
+(PVC
+insulatedflexible 3
+core x 2.5 sq.
+mmmulti strand )       Metre     1.0 x 1.0 x 1.0    1.0                       0.0                     = 0.0          No
+shouldconform to
+specification no.IS:
+694:1990
+reaffirmed1995 or
+latest. Inspectionby
+consignee.
+                                                                                             Total      2100
+Reason for Reduction : Prepaid 70% for 3000 Mtr Now to Pay Nil                        Now to pay      100.0%
+
+
+Group : Not Applicable
+Item No. : 34      Supply of 2 Core PVC insulated shielded wire PA cable 24 strand copper conductor of 0.20mm
+(24/0.20 mm) as per technical specifications in chapter III of tender document. Inspection by consignee.
+           Qty B/F MB no.00341490147964/CSTM/1139316/OAM/FL2/02 (Item no : 34)                         = 2100
+
+
+
+
+                                                                                                            Page 17 of 18
+Supply of 2 Core
+PVCinsulated
+shielded wire
+PAcable 24 strand
+copperconductor of
+0.20mm(24/0.20
+mm) as               Metre    1.0 x 1.0 x 1.0    1.0             0.0                = 0.0           No
+pertechnical
+specifications
+inchapter III of
+tenderdocument.
+Inspection
+byconsignee.
+                                                                            Total    2100
+Reason for Reduction : Prepaid 70% for 3000 Mtr Now to Pay Nil         Now to pay   100.0%
+
+
+
+
+                                                                                            Page 18 of 18
+

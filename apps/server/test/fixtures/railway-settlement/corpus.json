@@ -1,0 +1,307 @@
+{
+  "description": "The PL-270 settlement corpus: one Work's three Measurement Books, the three IWRCMS railway bills raised from them, and the three tax invoices raised against those bills. Recorded so the MB -> bill -> invoice closure chain has a regression bar drawn from real documents rather than from assumptions.",
+  "provenance": {
+    "work": "PL-270, Central Railway Mumbai Division (S&T), supply and installation of train information display boards",
+    "agreement_number": "CR/BBY/S&T/2026/0009",
+    "loa_number": "00341490147964",
+    "unique_work_id_irpsm": "01.02.53.24.3.038",
+    "captured": "2026-08-13",
+    "extractor": "poppler pdftotext 26.02.0, -layout",
+    "chain_head": {
+      "note": "The Letter of Acceptance that starts this Work is ALREADY in the repository as an LOA parser fixture. It is not duplicated here; the settlement corpus continues the same document's life. The owner's copy of the LOA was checked against it and is byte-identical once CRLF is normalised.",
+      "fixture": "packages/loa-parser/fixtures/PL270-CRB.txt",
+      "fixture_id": "PL270-CRB",
+      "fixture_sha256": "0442186671d213934664c7c3071d8b24328910906923372c7ef0eb9891c1dae2",
+      "source_pdf_sha256": "26bf836eb37804813979a3f5f94c2ecae6e99dcafe86d893b03886ae876a436a",
+      "signature_status": "unsigned",
+      "signature_note": "The LOA carries no digital signature at all. It is a browser print of the IREPS page -- the extracted text still holds the print header 'ireps.gov.in/epsn/works/tds/publishLOAWorksLetter.do' and a timestamp. LOAs are deliberately NOT in the gated set, which is consistent with this: the document operators actually hold is a print, not a signed original.",
+      "advertised_value": 195574112.38,
+      "net_bid_value": 169228497.35,
+      "pricing_shape": "B",
+      "schedule_count": 5,
+      "item_count": 129
+    }
+  },
+  "redaction": "person-names-pseudonymised",
+  "redaction_note": "The three human signatories are third parties (two Central Railway officers and one contractor signatory). Their names are replaced in the extracted text with role pseudonyms -- CONTRACTOR SIGNATORY, RAILWAY ENGINEER REP, RAILWAY SR DSTE -- because nothing under test depends on them. This is stricter than the LOA corpus, which records 'verbatim-names-retained'. Everything structural is verbatim: identifiers, dates, quantities, amounts, GSTINs, IRNs and the signature reason strings. The source PDFs are NOT in this repository and must not be; certificate material stays out of git entirely.",
+  "trap_notes": [
+    "The measurement number links MB to bill by SEQUENCE, not by string equality: an MB carries its own 'On Account Measurement No. .../OAM/L2/NN' while the bill that consumes it references '.../OAM/FL2/NN'. The L2 -> FL2 prefix change is not an error. Matching these documents on the raw measurement string will silently fail to link every pair.",
+    "An MB also back-references the PREVIOUS bill's FL2 number (MB-2 carries FL2/01, MB-3 carries FL2/02). Do not assume the only FL2 token in an MB is its own bill.",
+    "The measurement number WRAPS across lines in -layout output of the bills ('.../CSTM/11393' then '16/OAM/FL2/01' on the next line). Any extractor must rejoin it before matching, the same hazard the LOA parser contract records for wrapped units.",
+    "Bill amounts are GST-INCLUSIVE ('Rate is inclusive of GST: Yes'). The invoice taxable value is the bill total divided by 1.18; the bill total equals the invoice GRAND total, never its taxable value.",
+    "The bill total is whole rupees while the invoice carries paise, and they do not always agree exactly: BILL-3 states 17327888 against an invoice total of 17327888.01. A closure check that requires exact equality will refuse a legitimate settlement. Compare at rupee granularity, or allow at least one paisa.",
+    "The invoice may be dated BEFORE its bill (INV-1 is 09/05/2026 against a bill dated 11/05/2026) and its IRN may be registered before the bill is fully signed. Do not enforce invoice_date >= bill_date."
+  ],
+  "open_question_executed_value": {
+    "question": "Are the LOA's Total Value and Net Bid Value GST-inclusive, as the bills' rates explicitly are?",
+    "why_it_matters": "Executed value drives work completion, and a work may be marked completed only at 100% executed value. Rolling GST-inclusive bill totals up against a GST-exclusive LOA value would overstate execution by roughly 18%; the reverse understates it.",
+    "evidence": "The bill states 'Rate is inclusive of GST: Yes' and its Agreement Rate column derives from the LOA schedule. The LOA letter itself says nothing about GST -- searching PL270-CRB.txt for 'inclusive of GST', 'GST extra' and similar returns nothing.",
+    "arithmetic_both_ways": {
+      "loa_net_bid_value": 169228497.35,
+      "sum_of_bill_totals_gst_inclusive": 49901057,
+      "executed_percent_if_loa_is_gst_inclusive": 29.49,
+      "sum_of_invoice_taxable_values": 42289031.35,
+      "executed_percent_if_compared_on_taxable": 24.99
+    },
+    "status": "UNRESOLVED - needs an owner ruling before executed value is computed from railway bills"
+  },
+  "documents": [
+    {
+      "id": "MB-1",
+      "kind": "measurement_book",
+      "source_pdf_sha256": "65d803147a05f162bd0edbab723e0abe361fc756f729c325b5c918af7b52a2e3",
+      "fixture_file": "MB-1.raw.txt",
+      "fixture_sha256": "f72b4a1dc40e2a2c3028bea93f159bc109f3b66a4bdb89a66b134a70a4ccb7d7",
+      "cmb_number": "00341490147964/CSTM/1139316",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/L2/01",
+      "measurement_from": "2026-05-08",
+      "measurement_to": "2026-05-09",
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 1,
+        "signatures": [
+          {
+            "index": 1,
+            "role": "RAILWAY ENGINEER REP",
+            "reason": "CMB Signed by Engineer's Rep.",
+            "issuer_common_name": "XtraTrust Sub CA 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": true,
+            "claimed_signing_time": "2026-05-11T12:21:30.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "MB-2",
+      "kind": "measurement_book",
+      "source_pdf_sha256": "7f9429042f2072a4dbe2728979c99ec37400644b80a836e5f798252372876b4d",
+      "fixture_file": "MB-2.raw.txt",
+      "fixture_sha256": "21b8a4b88921abe2f4d62fbdfc2d608b5aec155b8619d71966aee504b169063a",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/L2/02",
+      "back_references_bill_measurement": "00341490147964/CSTM/1139316/OAM/FL2/01",
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 1,
+        "signatures": [
+          {
+            "index": 1,
+            "role": "RAILWAY ENGINEER REP",
+            "reason": "CMB Signed by Engineer's Rep.",
+            "issuer_common_name": "XtraTrust Sub CA 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": true,
+            "claimed_signing_time": "2026-06-30T13:34:48.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "MB-3",
+      "kind": "measurement_book",
+      "source_pdf_sha256": "3cb4923fc8ff371443ce1e054b2742f95c9b830eb3e1e7e3520cb8fad82f4f19",
+      "fixture_file": "MB-3.raw.txt",
+      "fixture_sha256": "22a7c5bca6802f6702dcbe08c32c49fccf9de22cde1727c5d1f61c7398c12f25",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/L2/03",
+      "back_references_bill_measurement": "00341490147964/CSTM/1139316/OAM/FL2/02",
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 1,
+        "signatures": [
+          {
+            "index": 1,
+            "role": "RAILWAY ENGINEER REP",
+            "reason": "CMB Signed by Engineer's Rep.",
+            "issuer_common_name": "XtraTrust Sub CA 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": true,
+            "claimed_signing_time": "2026-07-31T08:01:22.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "BILL-1",
+      "kind": "railway_bill",
+      "source_pdf_sha256": "1df21011dbd5cd14b2db1851667a945f60aee69e9926ea99d1787978fb81265b",
+      "fixture_file": "BILL-1.raw.txt",
+      "fixture_sha256": "eb9ef796eca18f6201a9b08fd35ae6b8831edc9f406e5f695d33f51a4d1930cb",
+      "bill_number": "CR/BBY/S&T/2026/0009/B1",
+      "bill_date": "2026-05-11",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/FL2/01",
+      "settles_measurement_book": "MB-1",
+      "rate_inclusive_of_gst": true,
+      "bill_amount_including_gst": 24516112,
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 3,
+        "signatures": [
+          {
+            "index": 1,
+            "role": "CONTRACTOR SIGNATORY",
+            "reason": "Bill Signing by Contractor",
+            "issuer_common_name": "Capricorn Sub CA for Organisation DSC 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": false,
+            "trailing_bytes_covered_by_later_signature": true,
+            "claimed_signing_time": "2026-05-11T13:54:02.000Z"
+          },
+          {
+            "index": 2,
+            "role": "RAILWAY ENGINEER REP",
+            "reason": "Bill  Signing by ASTE/Tele/BY",
+            "issuer_common_name": "XtraTrust Sub CA 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": false,
+            "trailing_bytes_covered_by_later_signature": true,
+            "claimed_signing_time": "2026-05-11T13:55:53.000Z"
+          },
+          {
+            "index": 3,
+            "role": "RAILWAY SR DSTE",
+            "reason": "Bill Signing by SRDSTECO/BB",
+            "issuer_common_name": "SafeScrypt sub-CA for Class 3 Organization 2022",
+            "sub_filter": "adbe.pkcs7.sha1",
+            "digest_algorithm": "sha1",
+            "weak_digest": true,
+            "signing_certificate_binding": "absent",
+            "timestamp": "absent",
+            "integrity": "intact",
+            "covers_whole_document": true,
+            "claimed_signing_time": "2026-05-14T08:23:36.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "BILL-2",
+      "kind": "railway_bill",
+      "source_pdf_sha256": "96d8d950adf1a2ae28ff30993e7c111fca139f40e3e92885f784b880e7bae86e",
+      "fixture_file": "BILL-2.raw.txt",
+      "fixture_sha256": "213710999eb4e301627d9680eebbcc10e69b3f89323e4ce9c435d6db34d44ca4",
+      "bill_number": "CR/BBY/S&T/2026/0009/B2",
+      "bill_date": "2026-06-30",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/FL2/02",
+      "settles_measurement_book": "MB-2",
+      "rate_inclusive_of_gst": true,
+      "bill_amount_including_gst": 8057057,
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 3,
+        "signature_roles": [
+          "CONTRACTOR SIGNATORY",
+          "RAILWAY ENGINEER REP",
+          "RAILWAY SR DSTE"
+        ],
+        "all_intact": true,
+        "claimed_signing_times": [
+          "2026-06-30T14:09:06.000Z",
+          "2026-07-13T07:08:43.000Z",
+          "2026-07-15T06:32:22.000Z"
+        ]
+      }
+    },
+    {
+      "id": "BILL-3",
+      "kind": "railway_bill",
+      "source_pdf_sha256": "d85974fc5e3b6c319905127496695aade488c514be59187fb00627e3e15c4e37",
+      "fixture_file": "BILL-3.raw.txt",
+      "fixture_sha256": "402ac585c3959535d10724a77a6a7772992abfa06744ee9481584dd1637274cf",
+      "bill_number": "CR/BBY/S&T/2026/0009/B3",
+      "bill_date": "2026-07-31",
+      "measurement_number": "00341490147964/CSTM/1139316/OAM/FL2/03",
+      "settles_measurement_book": "MB-3",
+      "rate_inclusive_of_gst": true,
+      "bill_amount_including_gst": 17327888,
+      "signature_expectation": {
+        "status": "signed_chain_not_checked",
+        "signature_count": 3,
+        "signature_roles": [
+          "CONTRACTOR SIGNATORY",
+          "RAILWAY ENGINEER REP",
+          "RAILWAY SR DSTE"
+        ],
+        "all_intact": true,
+        "claimed_signing_times": [
+          "2026-07-31T11:19:09.000Z",
+          "2026-08-03T09:54:07.000Z",
+          "2026-08-05T10:21:06.000Z"
+        ]
+      }
+    },
+    {
+      "id": "INV-1",
+      "kind": "tax_invoice",
+      "source_pdf_sha256": "569f683b2acdacbc54f9fed7843049b3d3f64b8d8a8960902f01899eb91dd6d0",
+      "fixture_file": "INV-1.raw.txt",
+      "fixture_sha256": "00020c3db9d472188d1b330d142260b480c5a22f7a3bccb69e32571939be3464",
+      "invoice_number": "PE-26-27-05-01",
+      "invoice_date": "2026-05-09",
+      "settles_bill": "BILL-1",
+      "sac": "998734",
+      "place_of_supply": "Maharashtra (27)",
+      "tax_shape": "intra_state_cgst_sgst_9_9",
+      "taxable_value": 20776366.1,
+      "total_including_tax": 24516112.0,
+      "irn": "c4b60f0eef06f8af58d54dce9122355656df277bd8e6d45ee9d6f846f2e8b296",
+      "acknowledgement_number": "122632561038384",
+      "acknowledged_at": "2026-05-11T18:47:00",
+      "signature_expectation": { "status": "unsigned", "signature_count": 0 }
+    },
+    {
+      "id": "INV-2",
+      "kind": "tax_invoice",
+      "source_pdf_sha256": "f16b82fcb0f250f0e1b5d770cad2209351b3b5109f4caba194f11d73d03a5351",
+      "fixture_file": "INV-2.raw.txt",
+      "fixture_sha256": "dd9233959d4821ff386a7dd8df7e6d13f9941eaa3c684f607004a2348dee6344",
+      "invoice_number": "PE-26-27-06-02",
+      "invoice_date": "2026-06-30",
+      "settles_bill": "BILL-2",
+      "taxable_value": 6828014.4,
+      "total_including_tax": 8057057.0,
+      "irn": "7c2badfe15c718b6c61ee520527042d2a8fb5d5b4157d44eadb79610324f3b89",
+      "acknowledgement_number": "122633366650937",
+      "signature_expectation": { "status": "unsigned", "signature_count": 0 }
+    },
+    {
+      "id": "INV-3",
+      "kind": "tax_invoice",
+      "source_pdf_sha256": "029619f21f6a0ca12f75cdb7f2ff2b417f4e21af37d53a7254003868faa7c8ad",
+      "fixture_file": "INV-3.raw.txt",
+      "fixture_sha256": "9b6a2bfef8ea1b714288e36ee8497bbef5b760395d3947e92b8061fda6231a71",
+      "invoice_number": "PE-26-27-07-02",
+      "invoice_date": "2026-07-31",
+      "settles_bill": "BILL-3",
+      "taxable_value": 14684650.85,
+      "total_including_tax": 17327888.01,
+      "irn": "5ebf3d2212baf0037d8e5d4cc565672a998a6fbce37f4ea2f04b44e0537aa7fc",
+      "acknowledgement_number": "122633872852221",
+      "signature_expectation": { "status": "unsigned", "signature_count": 0 }
+    }
+  ]
+}

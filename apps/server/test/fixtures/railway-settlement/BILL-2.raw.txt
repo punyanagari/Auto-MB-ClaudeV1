@@ -1,0 +1,737 @@
+                                                                             Bill No.CR/BBY/S&T/2026/0009/B2
+
+         On-Account Bill Basic Details:
+         Agreement No.               CR/BBY/S&T/2026/0009                 Agreement Date               30/04/2026              Bill Date                          30/06/2026
+         Department                  S&T                                  Unit                         Mumbai                  Date of Completion (DoC)           01/01/2027
+                                     Supply, installation, testing and commissioning of additional train information display
+         Name Of Work                boards and other telecom assets at CSMT, Dadar,Thane, Kalyan, Panvel and Roha             Joint Venture Name                 ParElectronics
+                                     stations in Mumbai division.
+         LOA No.                     00341490147964                       LOA Date                     01/01/2026              Is Provisional Bill ?              No
+         Is it a Composite                                                  Is Measurement to be done
+         Contract ?                  No                                     by Contractor ?              Yes                   LOA MB Type                        Contractor's MB
+                                     00341490147964/CSTM/11393
+         Measurement No.                                                    Measurement Date From        25/06/2026            Measurement Date To                30/06/2026
+                                     16/OAM/FL2/02
+         Bill Preparation                                                                                                      Date of Commencement of
+         Department                  S&T                                    Tender Accepting Authority   ADRMSub               Work                               01/01/2026
+         Rate is inclusive of
+         GST                         Yes
+
+
+
+
+Signature Not Verified                                 Signature Not Verified                                                                   Signature Not Verified
+Digitally signed by CONTRACTOR                            Digitally signed by RAILWAY                                                                Digitally signed by RAILWAY
+SIGNATORY                                        ENGINEER REP                                                                           SR DSTE
+Date: 2026.06.30 19:39:06 IST                          Date: 2026.07.13 12:38:43 IST                                                            Date: 2026.07.15 12:02:22 IST
+Reason: Bill Signing by Contractor                     Reason: Bill Signing by                                                                  Reason: Bill Signing by
+                                                       ASTE/Tele/BY                                                                             SRDSTECO/BB
+
+                                                                                                                                                                                Page 1 of 15
+Item wise Bill Details:
+                                                                     Account of work Executed
+                                                                                                   Payment on the basis of Actual
+                                                                                  Qty.                                        Amount
+                                                                        Qty.
+       Item                                          Origin   Curre               execut                                      Since last
+                Unit/D                                                  execut             Qty
+Sr.    No.                Base        Agreement      al       nt                  ed              Amount up    Amount         Bill         Total Up to
+                escrip                                                  ed up              Upto                                                          Remarks
+No.    (Item              Rate(Rs.)   Rate(Rs.)      Agmt     Agmt                since           to last      Since last     including    Date
+                tion                                                    to last            Date
+       Type)                                         Qty      Qty                 last            Bill(Rs.)    Bill(Rs.)      special      Amount(Rs.)
+                                                                        Bill      Bill                                        condition(Rs
+                                                                                                                              .)
+                                 Schedule A-Passenger amenities and other telecom assets at CSMT, Dadar and Thane stations
+                                                                                                                                                   Prepaid 70% for
+                Num      2490000.                                                                  4478639. 1492879.        1492879.      5971518.   03 Nos Now to
+                                        2132685.0     6.0      6.0      2.1       0.7      2.8
+                bers           0                                                                   0               5               0             0  Pay 70% for 01
+01     01 (I)                                                                                                                                                    Nos
+                Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display Board (TADDB) as per RDSO specification No.
+                RDSO/SPN/TC/ 108/ 2019, Ver.- 1.0 or later. Inspection by RDSO.
+                Num 103750.0             88861.875       6.0      6.0    0.0     0.0     0.0     0.0                0.0         0.0         0.0
+                bers
+02     02 (I)   Installation testing and Commissioning of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arival departure Display Board (TADDB)
+                as per RDSO specification No. RDSO/SPN/TC/ 108/ 2019, Ver.- 1.0 or later. This includes supply of all required material for OVD Outdoor Installation.
+                Inspection by consignee.
+                                                                                                                                                   Prepaid 64% for
+                Num 3924450.                                                                     2151227.    2151226.     2151226.     4302453.      01 Nos Now to
+                                      3361291.425        3.0      3.0    0.64   0.64    1.28
+                bers              0                                                              0                   51           0           0     Pay 64% for 01
+03     03 (I)                                                                                                                                                    Nos
+                Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size Pixel Resolution (WxH) 432x256 (12-line Single
+                face) as per RDSO specification No. RDSO/SPN/TC/ 108/ 2019, Ver.- 1.0 or later. Inspection by RDSO.
+                Num 1460385.          1250819.752       18.0    18.0     0.0     0.0     0.0     0.0                0.0         0.0         0.0
+                bers              0               5
+04     04 (I)
+                Supply of True color Indoor Video Display (IVD) of Pixel Resolution (WxH) 432x128 (6-line single face) as per RDSO specification No.: RDSO /SPN /
+                TC / 108 / 2019 Ver 1.0.or latest if any. Inspection by RDSO.
+                Num       84660.0         72511.29      18.0    18.0     0.0     0.0     0.0     0.0                0.0         0.0         0.0
+                bers
+05     05 (I)
+                Installation, Testing and Commissioning of True color Indoor VideoDisplay (IVD) of size Pixel Resolution (WxH) 432x128 (6-line single face) with
+                required Mechnical Structure and as per site condition and as per RDSO Spec RDSO / SPN /TC /108/2019 Ver. 1.0 or latest. Inspection by consignee.
+                Num 341813.7          292763.4340                                                1873686.
+                                                        18.0    18.0     6.4     0.0     6.4                        0.0         0.0 1873686.
+                bers                              5                                              0                                            0
+06     06 (I)
+                Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure display board as per RDSO Specification No.
+                RDSO/SPN/TC/108/2019 Ver.- 1.0 or latest. Inspection by RDSO.
+                                                                                                                                                   Prepaid 70% for
+                Num 358750.0                                                                     2796151.    122907.7                  2919059.      13 Nos Now to
+                                       307269.375       18.0    18.0     9.1     0.4     9.5
+                bers                                                                             0                    5 122908.0              0     Pay 20% for 02
+07     07 (I)                                                                                                                                                    Nos
+                Supply of at a glance display board (Double Face) with coach guidance display as per RDSO Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or
+
+                                                                                                                                                            Page 2 of 15
+              latest. Inspection by RDSO.
+              Num 225856.0                                                                    1218708.
+                                     193445.664     12.0    12.0      6.3     0.0     6.3                       0.0        0.0 1218708.
+              bers                                                                            0                                           0
+08   08 (I)
+              Supply of at a glance display board (Single Face) with coach guidance display as per RDSO Specification No. RDSO/SPN/TC/108/2019 ver,-1.0 or
+              latest. Inspection by RDSO.
+              Num 173500.0            148602.75     18.0    18.0      0.0     0.0     0.0     0.0               0.0        0.0         0.0
+              bers
+09   09 (I)
+              Supply of Mono Colour AVD Display (Single Face) pixel resolution (W X H) 288 X 160, 5 mm pitch and as per technical specifications in chapter III of
+              tender document. Inspection by RITES.
+              Num 347000.0             297205.5      4.0     4.0      0.0     0.0     0.0     0.0               0.0        0.0         0.0
+              bers
+10   10 (I)
+              Supply of Mono Colour AVD Display (Douoble Face) pixel resolution (W X H) 288 X 160, 5 mm pitch and as per technical specifications in chapter III
+              of tender document. Inspection by RITES.
+              Num 425000.0             364012.5     24.0    24.0      0.0     0.0     0.0     0.0               0.0        0.0         0.0
+              bers
+11   11 (I)   "Supply of Single Face True Colour AVD size Pixel resolution (W x H) 288 x 160 with Pixel pitch 5mm, as per Technical Specifications in chapter III of
+              tender document. Inspection by RITES.
+              "
+              Num 775000.0             663787.5      3.0     3.0      0.0     0.0     0.0     0.0               0.0        0.0         0.0
+              bers
+12   12 (I)
+              Supply of Double Face True Colour AVD size Pixel resolution (W x H) 288 x 160 with Pixel pitch 5mm, as per Technical Specifications in chapter III of
+              tender document. Inspection by RITES.
+                                                                                                                                                 Prepaid Nil Now
+              Num        1137.8        974.5257     85.0    85.0      0.0     2.0     2.0     0.0          1949.05      1949.0      1949.0       to Pay 100% for
+13   13 (I)   bers                                                                                                                                        02 Nos
+              Installation, testing, and commissioning of various types of indicators as per site condition and instructions of site supervisor. Inspection by consignee.
+              Num 35561.42           30458.35623 105.0 105.0           0.0       0.0      0.0     0.0                0.0           0.0          0.0
+              bers
+14   14 (I)
+              Supply, Installation, Testing and Commissioning of Double sided Digital Clock with GPS synchronization suitable for Railway station platforms
+              conforming to the RDSO specification No. RDSO/SPN/TC@47&gt;47@2008 Revision 4.1 or later. Inspection by RDSO
+                                      723.973755 3450.        3450.    2415.     0.0 2415.        1748397.
+              Metre      845.27                                                                                      0.0           0.0 1748397.
+                                                         0        0    0                    0     0                                               0
+15   15 (I)
+              Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per technical specifications in chapter III of tender
+              document. Inspection by consignee.
+                                       897.47496 1800.        1800.    1260.     0.0 1260.        1130818.
+              Metre 1047.84                                                                                          0.0           0.0 1130818.
+                                                         0        0    0                    0     0                                               0
+16   16 (I)
+              Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per technical specifications in chapter III of tender
+              document. Inspection by consignee.
+                                       49.360095 5250.        5250.
+              Metre       57.63                                        0.0       0.0      0.0     0.0                0.0           0.0          0.0
+                                                         0        0
+17   17 (I)   Laying and fixing of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm /300 mm x 50 mm x 4 mm Thick on bridges/ Under Platforms as per
+              instructions of Railway Engineer Site In-charge. This includes supply of all type of hardware required to complete the Job and cementing masonry
+              work to restore to normal condition of the wall, Roof etc. The work to be executed as per guidelines in tender document, as per site condition and
+              instructions of site supervisor. Inspection by consignee.
+
+                                                                                                                                                          Page 3 of 15
+              Num 40525.21           34709.84236     11.0       11.0     7.04    0.0    7.04     244357.0      0.0         0.0 244357.0
+              bers                               5
+18   18 (I)
+              Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports
+              as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num       775.17        663.933105 132.0 132.0             92.4    0.0    92.4     61347.0       0.0         0.0     61347.0
+19   19 (I)   bers
+              Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with switchs supplied above. Inspection by consignee.
+              Num      3406.25       2917.453125     44.0       44.0     30.8    0.0    30.8     89858.0       0.0         0.0     89858.0
+20   20 (I)   bers
+              Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+                                                                                                          490345.1 490345.0 490345.0 toPrepaid          Nil Now
+              Num 30290.94           25944.19011     27.0       27.0     0.0   18.9     18.9     0.0                                             Pay  70% for 27
+              bers                                                                                               9                                          Nos
+21   21 (I)
+              Supply of layer 2 manageable switch 24 port and 4 SFP ports with1G network module, 1000 Mbps single mode rugged SFP= 4 Nos. &amp; other
+              accessories, software. as per RDSO specification no. RDSO/SPN/TC/83/2014 Rev. 1.0 Make &amp; model CISCO WS 2960X24 TS-L or
+              better/similar make as Juniper, CISCO. Aruba, Extreme and Allied Telesis. Inspection by RITES.
+              Num      4187.08       3586.23402       27.0     27.0     0.0       0.0      0.0    0.0             0.0          0.0           0.0
+              bers
+22   22 (I)
+              Supply &amp; Installation of 9U size Rack wall mountable/Pole mountable as per technical specification in Chapter III of Tender Document and
+              aesthetic dress up as per the instruction of site Engineer of Railways. Inspection by consignee.
+              Num        2763.9      2367.28035       18.0     18.0     0.0       0.0      0.0    0.0             0.0          0.0           0.0
+              bers
+23   23 (I)   Supply of wall mount/pole mount outdoor type Rack (Backside of the rack should be completely covered by GI Sheet), 6U x 500 x 400D, front glass
+              door with lock 2 pairs of 19" mounting rails: standard accessories: 1U cable manager, cable entry should be from the bottom of the rack, 4 way 5 Amp
+              power distribution units, and mounting hardware etc. Inspection by consignee.
+              Num         307.1       263.03115       18.0     18.0     0.0       0.0      0.0    0.0             0.0          0.0           0.0
+              bers
+24   24 (I)
+              Fixing of 6 U Wall Mount /pole mount outdoor type Rack as per instruction of site supervisor. This includes all additional hardware required as per site
+              condition for fixing/ Mounting rack (other that supplied with rack), Inspection by consignee.
+                                                                                                                                                    Prepaid Nil Now
+              Metre       26.17       22.414605 900.0 900.0             0.0    630.0 630.0        0.0        14121.2     14121.0        14121.0      to Pay 70% for
+25   25 (I)                                                                                                                                                  900 Mtr
+              Three-core x 1.5 sq. mm multi strand flexible PVC insulated power cables conform to specification no. IS: 694:1990 reaffirmed 1995 or latest.
+              Inspection by consignee.
+              Num      26904.0        23043.276       76.0     76.0     0.0       0.0      0.0    0.0             0.0          0.0           0.0
+              bers
+26   26 (I)
+              Supply of Cat 6 Armoured cable 23AWG Copper Cable (305 mtrs in One Bundle For quantity 'Nos' is used for number of bundles) Compatible for
+              OUTDOOR. network connections. Inspection by consignee.
+                                                                                                                                                    Prepaid Nil Now
+                                                     2592     2592             2348. 2348.
+              Metre       13.69       11.725485                         0.0                       0.0        27537.3     27537.0        27537.0      to Pay 70% for
+                                                       5.0      5.0                  5       5
+27   27 (I)                                                                                                                                                 3355 Mtr
+              Supply of STP (Shielded Twisted Pair) CAT-6 Cable shall be compliant with latest EIA/TIA-568-B.2-1 standard for CAT 6 cable. Inspection by
+              consignee.
+                                                 1000    1000
+28   28 (I)   Metre      13.06       11.18589                     700.0     0.0 700.0        7830.0           0.0          0.0     7830.0
+                                                    0.0    0.0
+                                                                                                                                                       Page 4 of 15
+              Supply of 6 core armored optical single mode fiber cables as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num       2758.72      2362.84368 123.0 123.0             0.0       0.0      0.0     0.0                0.0           0.0         0.0
+              bers
+29   29 (I)
+              Supply of 12 Port LIU Rack mountable, suitable for Single mode fiber along with supply of all accessories like LC adapter plates, LC connectors, LC
+              pig tails and blank plates etc. LIU should be provided for terminating the optic fiber cables. Inspection by consignee.
+              Num        663.97      568.690305 123.0 123.0             0.0       0.0      0.0     0.0                0.0           0.0         0.0
+30   30 (I)   bers
+              Installation of 6/12 Port LIU with all accessoriesas per site condition and instructions of site supervisor. Inspection by consignee.
+              Pair      5763.28      4936.24932        12.0    12.0     0.0       0.0      0.0     0.0                0.0           0.0         0.0
+31   31 (I)   Supply and installation of LIU, (Rack mountable, 24 port), along with supply of all accessories suitable for Single mode fiber, as per technical
+              specifications in chapter III of tender document. Inspection by consignee.
+              Num       1044.14        894.30591 310.0 310.0            0.0       0.0      0.0     0.0                0.0           0.0         0.0
+32   32 (I)   bers
+              Supply of LC to LC Duplex OFC Patch Cord SM 5 meter length. Inspection by consignee.
+              Num        512.69      439.118985 335.0 335.0             0.0       0.0      0.0     0.0                0.0           0.0         0.0
+33   33 (I)   bers
+              Supply of SC - SC / SC to LC Duplex OFC Patch Cord SM 3 meter length. Inspection by consignee.
+                                                                                                                                                      Prepaid Nil Now
+              Num        277.71      237.858615 345.0 345.0             0.0     21.0     21.0      0.0           4995.03       4995.0       4995.0 to Pay 70% for 30
+34   34 (I)   bers                                                                                                                                                Nos
+              Supply of OFC Patch Cord (LC-LC) Duplex 1 meter length. Inspection by consignee.
+              Num                   84.168255 1200.     1200.
+                         98.27                                     0.0      0.0     0.0    0.0               0.0         0.0         0.0
+35   35 (I)   bers                                   0       0
+              Supply of RJ45 UTP CAT-6 patch cords Make D Link/Digil sol/ Molex/Tee-Cee or similar.(01 meter each). Inspection by consignee.
+              Metre      16.96       14.52624 300.0 300.0          0.0      0.0     0.0    0.0               0.0         0.0         0.0
+36   36 (I)
+              Supply of Flexible PVC Conduit Pipe 32 mm dia. of standard reputed make. Inspection by consignee.
+                                                                                                                                                        Prepaid Nil Now
+                                                    1350     1350             8610.    8610.
+              Metre       6.14          5.25891                        0.0                       0.0         45279.22       45279.0      45279.0         to Pay 70% for
+                                                      0.0     0.0                 0        0
+37   37 (I)                                                                                                                                                    12300 Mtr
+              Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+                                                      1380     1380
+              Metre         4.14        3.54591                         0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+                                                        0.0       0.0
+38   38 (I)   Laying and fixing of PVC casing &amp; capping or conduit pipe/steel pipe on wall / cable tray etc. using suitable fastener. This includes breaking of
+              wall for cabling &amp; repairing it to original. . The work to be carried out as per instructions of site supervisors and guidelines in Chapter-IV of the
+              Tender Document. Inspection by consignee.
+                                                      3682     3682
+              Metre         4.55       3.897075                         0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+                                                        5.0       5.0
+39   39 (I)
+              Laying of various telecom / data/ power cables through PVC pipe, PVC casing. The work to be carried out as per instructions of site supervisors and
+              guidelines in Chapter-IV of the Tender Document. Inspection by consignee.
+              Num           3.51       3.006315 750.0 750.0             0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+40   40 (I)   bers
+              Supply of RJ45 connector (shielded modular plug) for STP cable. Inspection by consignee.
+                                                                                                                                                          Page 5 of 15
+                 Num        290.0          248.385 165.0 165.0      0.0       0.0     0.0     0.0              0.0        0.0          0.0
+41      41 (I)   bers
+                 Supply of MCB 10 amp PVC Plastic 10A MCB SP B Curve (White) similar to Havells DHMGBSPF010, Inspection by consignee.
+                 Num        162.8         139.4382     33.0    33.0 0.0       0.0     0.0     0.0              0.0        0.0          0.0
+                 bers
+42      42 (I)
+                 Supply of MCB 32 A, 2 pole with 1PP, 240 VOLT, as per Indian Standard specification IS/IEC 60898-1:2002 with Rated Voltage (Volt) is 240 VOLT
+                 and with ISI marking. Inspection by consignee.
+                                                                                                                                               Prepaid Nil Now
+                 Num       1110.0          950.715     33.0    33.0 0.0       3.5     3.5     0.0           3327.5     3328.0      3328.0 to Pay 70% for 05
+                 bers
+43      43 (I)                                                                                                                                              Nos
+                 MCB Box 12 way (Single Pole MCBs as outgoing and Double pole MCB as incoming), IP-43, as per BIS Specification:13032. Inspection by
+                 consignee.
+                 Num 39766.81         34060.27276          5.0     5.0    0.0      0.0      0.0      0.0              0.0           0.0        0.0
+44      44 (I)   bers                               5
+                 Supply of Maintenance Tool kit as per technical specifications in chapter III of tender document. Inspection by consignee.
+                 Num      65130.0        55783.845         5.0     5.0    0.0      0.0      0.0      0.0              0.0           0.0        0.0
+                 bers
+45      45 (I)
+                 Supply of Digital console for monitoring network connectivity as per technical specifications in chapter III of tender document. Inspection by
+                 consignee.
+                 Num 134990.0          115618.935          2.0     2.0    0.0      0.0      0.0      0.0              0.0           0.0        0.0
+46      46 (I)   bers
+                 8-person Wireless Headset Intercom, as per technical specifications in chapter III of tender document. Inspection by consignee.
+                 Num       7400.0            6338.1      62.0     62.0    0.0      0.0      0.0      0.0              0.0           0.0        0.0
+                 bers
+47      47 (I)
+                 Supply and installation of Digital Office Clock with GPS as per RDSO Specification No. RDSO/SPN/TC@47&gt;45@2008 Rev.3 or Later in Orange
+                 colour. Inspection by consignee.
+     Total (Schedule A-Passenger amenities and other telecom assets at CSMT, Dadar and Thane stations)   15801018    4354568.25   4354567.0    20155585
+                                                              Schedule B-AMC for complete SCH A systems.
+                       3623698.    3330179.233
+                 Year                                  5.0      5.0    0.0      0.0               0.0    0.0               0.0         0.0         0.0
+01      01 (I)               84               96
+                 AMC for SCH A items for the period of 5 year for complete system
+                                                  Total (Schedule B-AMC for complete SCH A systems.)           0.0          0.0         0.0         0.0
+                                     Schedule C-Passenger amenities and other telecom assets at Kalyan and Panvel station,
+                                                                                                                                                    Prepaid 70% for
+                 Num     2490000.                                                                        1492880. 1492879.        1492879.    2985759.
+                                                                                                                                                     01 Nos Now to
+                                           2132685.0        4.0       4.0     0.7        0.7      1.4
+                 bers          0                                                                         0               5               0           0
+                                                                                                                                                    Pay 70% for 01
+01      01 (I)                                                                                                                                                 Nos
+                 Supply of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arrival departure Display Board (TADDB) No. RDSO/SPN/TC/ 108/ 2019,
+                 Ver.-1.0. Inspection by RDSO.
+                 Num 103750.0             88861.875     4.0      4.0    0.0    0.0      0.0    0.0                0.0          0.0          0.0
+                 bers
+02      02 (I)
+                 Installation testing and Commissioning of True colour MLDB (Outdoor Video display (OVD) 6 Line for Train Arival departure Display Board (TADDB)
+                 No. RDSO/SPN/TC/ 108/ 2019, Ver.-1.0. This includes supply of all required material for OVD Outdoor Installation. Inspection by consignee.
+
+                                                                                                                                                          Page 6 of 15
+                                                                                                                                                 Prepaid 64% for
+              Num    3924450.                                                                 2151227. 873935.7                    3025162.        01 Nos Now to
+                                    3361291.425        3.0      3.0    0.64   0.26     0.9                              873935.0
+              bers         0                                                                  0               7                           0       Pay 26% for 01
+03   03 (I)                                                                                                                                                    Nos
+              Supply Installation Testing and Commissioning of True color Outdoor Video Display (OVD) of size Pixel Resolution (WxH) 432x256 (12-line Single
+              face) as per RDSO specification No.: RDSO / SPN / TC / 108 / 2019 Ver 1.0.or latest. Inspection by RDSO.
+              Num 1460385.          1250819.752        5.0      5.0    0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers             0                5
+04   04 (I)
+              Supply of True color Indoor Video Display (IVD) of Pixel Resolution (WxH) 432x128 (6-line single face) as per RDSO specification No.: RDSO /SPN /
+              TC / 108 / 2019 Ver 1.0.or latest if any. Inspection by RDSO.
+              Num       84660.0         72511.29       8.0      8.0    0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+05   05 (I)
+              Installation, Testing and Commissioning of True color Indoor VideoDisplay (IVD) of size Pixel Resolution (WxH) 432x128 (6-line single face) with
+              required Mechnical Structure and as per site condition and as per RDSO Spec RDSO / SPN /TC /108/2019 Ver. 1.0 or latest. Inspection by consignee.
+              Num 341813.6          292763.3912        8.0      8.0    1.28    0.0    1.28     374737.0           0.0         0.0 374737.0
+              bers             5              25
+06   06 (I)
+              Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure display board as per RDSO Specification No.
+              RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+                                                                                                                                                 Prepaid 70% for
+              Num 358750.0                                                                     2150886.                              2396701.      10 Nos Now to
+                                     307269.375       14.0    14.0     7.0     0.8     7.8                 245815.5 245815.0
+              bers                                                                             0                                            0     Pay 20% for 04
+07   07 (I)                                                                                                                                                    Nos
+              Supply of at a glance display board (Double Face) with coach guidance display as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest.
+              Inspection by RDSO.
+                                                                                                                                                 Prepaid 70% for
+              Num 225855.9          193445.6383                                                            406235.8                                03 Nos Now to
+                                                       7.0      7.0    2.1     2.1     4.2     406236.0
+              bers             7              05                                                                    4 406236.0 812472.0           Pay 70% for 03
+08   08 (I)                                                                                                                                                    Nos
+              Supply of at a glance display board (Single Face) with coach guidance display as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest.
+              Inspection by RDSO.
+              Num 173500.0            148602.75       14.0    14.0     0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+09   09 (I)
+              Supply of Mono Colour AVD Display (Single Face) pixel resolution (W X H) 288 X 160, 5 mm pitch and as per technical specifications in chapter III of
+              tender document. Inspection by RITES.
+              Num 347000.0              297205.5       4.0      4.0    0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+10   10 (I)
+              Supply of Mono Colour AVD Display (Douoble Face) pixel resolution (W X H) 288 X 160, 5 mm pitch and as per technical specifications in chapter III
+              of tender document. Inspection by RITES.
+              Num 425000.0              364012.5      12.0    12.0     0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+11   11 (I)   "Supply of Single Face True Colour AVD size Pixel resolution (W x H) 288 x 160 with Pixel pitch 5mm, as per Technical Specifications in chapter III of
+              tender document. Inspection by RITES.
+              "
+              Num 775000.0
+12   12 (I)                             663787.5       4.0      4.0    0.0     0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+
+                                                                                                                                                     Page 7 of 15
+              Supply of Double Face True Colour AVD size Pixel resolution (W x H) 288 x 160 with Pixel pitch 5mm, as per Technical Specifications in chapter III of
+              tender document. Inspection by RITES..
+                                                                                                                                                Prepaid Nil Now
+              Num       1137.8       974.5257    55.0    55.0     0.0       4.0     4.0     0.0            3898.1      3898.0      3898.0     to Pay 100% for 4
+13   13 (I)   bers                                                                                                                                          Nos
+              Installation, testing, and commissioning of various types of indicators as per site condition and instructions of site supervisor. Inspection by consignee.
+              Num 40525.21           34709.84236       4.0        4.0    2.56     0.0    2.56     88857.0            0.0           0.0    88857.0
+              bers                               5
+14   14 (I)
+              Supply, installation, testing and commissioning of 28 Port Managed Non PoE Layer 2 Access Switch with 24 x 1GSFP Ports and 4 x 10G SFP+ Ports
+              as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num        775.17       663.933105      40.0      40.0     28.0     0.0    28.0     18590.0            0.0           0.0    18590.0
+15   15 (I)   bers
+              Supply of SFP 1G transreceiver SFP Small form-factor pluggable transceiver suitable to work with switchs supplied above. Inspection by consignee.
+              Num       3406.25      2917.453125      10.0      10.0     7.0      0.0      7.0    20422.0            0.0           0.0    20422.0
+16   16 (I)   bers
+              Supply of SFP's 10Gbps suitable to work with switchs supplied above. Inspection by consignee.
+              Num 30290.94           25944.19011      14.0      14.0     9.8      0.0      9.8    254253.0           0.0           0.0 254253.0
+              bers
+17   17 (I)   Supply of layer 2 manageable switch 24 port and 4 SFP ports with1G network module, 1000 Mbps single mode rugged SFP= 4 Nos. &amp; other
+              accessories, software. as per RDSO specification no. RDSO/SPN/TC/83/2014 Rev. 1.0 Make &amp; model CISCO WS 2960X24 TS-L or
+              better/similar make as Juniper, CISCO. Aruba, Extreme and Allied Telesis. Inspection by consignee.
+              Num       4187.08       3586.23402       9.0        9.0    0.0      0.0      0.0    0.0                0.0           0.0          0.0
+              bers
+18   18 (I)
+              Supply &amp; Installation of 9U size Rack wall mountable/Pole mountable as per technical specification in Chapter III of Tender Document and
+              aesthetic dress up as per the instruction of site Engineer of Railways. Inspection by consignee.
+              Num        2763.9       2367.28035       9.0        9.0    0.0      0.0      0.0    0.0                0.0           0.0          0.0
+              bers
+19   19 (I)   Supply of wall mount/pole mount outdoor type Rack (Backside of the rack should be completely covered by GI Sheet), 6U x 500 x 400D, front glass
+              door with lock 2 pairs of 19" mounting rails: standard accessories: 1U cable manager, cable entry should be from the bottom of the rack, 4 way 5 Amp
+              power distribution units, and mounting hardware etc. Inspection by consignee.
+              Num         307.1        263.03115       8.0        8.0    0.0      0.0      0.0    0.0                0.0           0.0          0.0
+              bers
+20   20 (I)
+              Fixing of 6 U Wall Mount /pole mount outdoor type Rack as per instruction of site supervisor. This includes all additional hardware required as per site
+              condition for fixing/ Mounting rack (other that supplied with rack), Inspection by consignee.
+                                                                                                                                                        Prepaid Nil Now
+              Metre       26.17        22.414605 600.0 600.0             0.0   420.0 420.0        0.0          9414.13        9414.0        9414.0        to Pay 70% for
+21   21 (I)                                                                                                                                                      600 Mtr
+              Three-core x 1.5 sq. mm multi strand flexible PVC insulated power cables conform to specification no. IS: 694:1990 reaffirmed 1995 or latest.
+              Inspection by consignee.
+                                         16.56471 6100.       6100.
+              Metre       19.34                                          0.0      0.0      0.0    0.0                0.0           0.0          0.0
+                                                         0          0
+22   22 (I)
+              Supply of UTP Cat-6 cable with identifications marking on cable at regular intervals, as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+23   23 (I)   Metre       13.69        11.725485     1067      1067      0.0   5764. 5764.        0.0         67591.56       67592.0      67592.0       Prepaid Nil Now
+                                                                                                                                                          Page 8 of 15
+                                                                                                                                                       to Pay 70% for
+                                                      5.0      5.0                5        5                                                                 8235 Mtr
+              Supply of STP (Shielded Twisted Pair) CAT-6 Cable shall be compliant with latest EIA/TIA-568-B.2-1 standard for CAT 6 cable. Inspection by
+              consignee.
+                                        11.18589 2000.        2000.
+              Metre       13.06                                         0.0       0.0      0.0     0.0                0.0           0.0         0.0
+24   24 (I)                                               0       0
+              Supply of 6 core armored optical single mode fiber cables as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num       2758.72      2362.84368        36.0    36.0     0.0       0.0      0.0     0.0                0.0           0.0         0.0
+              bers
+25   25 (I)
+              Supply of 12 Port LIU Rack mountable, suitable for Single mode fiber along with supply of all accessories like LC adapter plates, LC connectors, LC
+              pig tails and blank plates etc. LIU should be provided for terminating the optic fiber cables. Inspection by consignee.
+              Num        663.97      568.690305        36.0    36.0     0.0       0.0      0.0     0.0                0.0           0.0         0.0
+26   26 (I)   bers
+              Installation of 6/12 Port LIU with all accessoriesas per site condition and instructions of site supervisor. Inspection by consignee.
+              Pair      5763.28      4936.24932         4.0     4.0     0.0       0.0      0.0     0.0                0.0           0.0         0.0
+27   27 (I)   Supply and installation of LIU, (Rack mountable, 24 port), along with supply of all accessories suitable for Single mode fiber, as per technical
+              specifications in chapter III of tender document. Inspection by consignee.
+              Num       1044.14        894.30591 120.0 120.0            0.0       0.0      0.0     0.0                0.0           0.0         0.0
+28   28 (I)   bers
+              Supply of LC to LC Duplex OFC Patch Cord SM 5 meter length. Inspection by consignee.
+              Num        512.69      439.118985        80.0    80.0     0.0       0.0      0.0     0.0                0.0           0.0         0.0
+29   29 (I)   bers
+              Supply of SC - SC / SC to LC Duplex OFC Patch Cord SM 3 meter length. Inspection by consignee.
+              Num        277.71      237.858615 100.0 100.0             0.0       0.0      0.0     0.0                0.0           0.0         0.0
+30   30 (I)   bers
+              Supply of OFC Patch Cord (LC-LC) Duplex 1 meter length. Inspection by consignee.
+              Num         98.27        84.168255 800.0 800.0            0.0       0.0      0.0     0.0                0.0           0.0         0.0
+31   31 (I)   bers
+              Supply of RJ45 UTP CAT-6 patch cords Make D Link/Digil sol/ Molex/Tee-Cee or similar.(01 meter each). Inspection by consignee.
+              Metre       16.96         14.52624 300.0 300.0            0.0       0.0      0.0     0.0                0.0           0.0         0.0
+32   32 (I)
+              Supply of Flexible PVC Conduit Pipe 32 mm dia. of standard reputed make. Inspection by consignee.
+                                                                                                                                                      Prepaid Nil Now
+                                          5.25891 4500.       4500.            3150. 3150.
+              Metre         6.14                                        0.0                        0.0          16565.57      16566.0      16566.0     to Pay 70% for
+                                                          0       0                 0        0
+33   33 (I)                                                                                                                                                  4500 Mtr
+              Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+                                        3.54591 4800.          4800.
+              Metre         4.14                                        0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+                                                          0         0
+34   34 (I)   Laying and fixing of PVC casing &amp; capping or conduit pipe/steel pipe on wall / cable tray etc. using suitable fastener. This includes breaking of
+              wall for cabling &amp; repairing it to original. . The work to be carried out as per instructions of site supervisors and guidelines in Chapter-IV of the
+              Tender Document. Inspection by consignee.
+                                                      1327      1327
+35   35 (I)   Metre         4.55       3.897075                         0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+                                                        5.0       5.0
+                                                                                                                                                         Page 9 of 15
+              Laying of various telecom / data/ power cables through PVC pipe, PVC casing. The work to be carried out as per instructions of site supervisors and
+              guidelines in Chapter-IV of the Tender Document. Inspection by consignee.
+              Num          3.51        3.006315 800.0 800.0            0.0      0.0      0.0      0.0              0.0         0.0        0.0
+36   36 (I)   bers
+              Supply of RJ45 connector (shielded modular plug) for STP cable. Inspection by consignee.
+              Num         290.0          248.385       70.0  70.0      0.0      0.0      0.0      0.0              0.0         0.0        0.0
+37   37 (I)   bers
+              Supply of MCB 10 amp PVC Plastic 10A MCB SP B Curve (White) similar to Havells DHMGBSPF010, Inspection by consignee.
+              Num         162.8        139.4382        14.0  14.0      0.0      0.0      0.0      0.0              0.0         0.0        0.0
+              bers
+38   38 (I)
+              Supply of MCB 32 A, 2 pole with 1PP, 240 VOLT, as per Indian Standard specification IS/IEC 60898-1:2002 with Rated Voltage (Volt) is 240 VOLT
+              and with ISI marking. Inspection by consignee.
+              Num        1110.0          950.715       14.0  14.0      0.0      0.0      0.0      0.0              0.0         0.0        0.0
+              bers
+39   39 (I)
+              MCB Box 12 way (Single Pole MCBs as outgoing and Double pole MCB as incoming), IP-43, as per BIS Specification:13032. Inspection by
+              consignee.
+              Num 39766.81          34060.27276         2.0    2.0     0.0      0.0      0.0      0.0              0.0         0.0        0.0
+40   40 (I)   bers                                5
+              Supply of Maintenance Tool kit as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num 109100.9          93444.96367         4.0    4.0     0.0      0.0      0.0      0.0              0.0         0.0        0.0
+              bers             5                  5
+41   41 (I)
+              Supply, Installation, Testing and commissioning of On-Line UPS of 3 KVA capacity with isolation transformer suitable for single phase as per technical
+              specifications in chapter III of tender document. Inspection by consignee.
+       Total (Schedule C-Passenger amenities and other telecom assets at Kalyan and Panvel station,)   6958088.0   3116335.97   3116335.0    10074423
+                                                     Schedule D-AMC for complete SCH C systems.
+                    1877965.    1725850.239
+              Year                                  5.0      5.0    0.0      0.0 0.0  0.0                                0.0         0.0         0.0
+01   01 (I)               44               36
+              AMC for SCH C items for the period of 5 year for complete system
+                                               Total (Schedule D-AMC for complete SCH C systems.)            0.0          0.0         0.0         0.0
+                                         Schedule E-Passenger amenities and other telecom assets at Roha stations,
+                                                                                                                                                  Prepaid Nil Now
+                      252357.8      216144.5156                                                                    151301.1
+              Set                                        1.0       1.0      0.0       0.7       0.7    0.0                      151301.0    151301.0
+                                                                                                                                                to Pay 70% for 01
+                             7               55                                                                           6
+01   01 (I)                                                                                                                                                   Nos
+              Supply of Central Data Controller (CDC) with all accessories including supply and installation of necessary softwares, as per RDSO Specification No.
+              RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+              Num       9176.65   7859.800725       1.0       1.0    0.0       0.0     0.0    0.0                 0.0          0.0         0.0
+              bers
+02   02 (I)
+              Installation &amp; Commissioning Of Central Data Controller (CDC) as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by
+              consignee.
+              Num 29579.87        25335.15865       1.0       1.0    0.0       0.0     0.0    0.0                 0.0          0.0         0.0
+03   03 (I)   bers                            5
+              Supply of Central Data Switch (CDS) as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+04   04 (I)   Num       3823.54    3274.86201       1.0       1.0    0.0       0.0     0.0    0.0                 0.0          0.0         0.0
+                                                                                                                                                        Page 10 of 15
+              bers
+              Installation testing &amp; commissioning of CDS and PDC with other interface equipment The work is to be carried out as per RDSO guidelines and
+              instruction of site supervisor. Inspection by consignee.
+              Num 32922.41          28198.04416        10.0    10.0    0.0     0.0      0.0     0.0               0.0           0.0          0.0
+              bers                               5
+05   05 (I)
+              Supply of IP switches L-2, equipped with 24 Numbers of 10/100/1000 Base-T PoE ports, 2 Numbers 10GBase-T ports and 2 Nos. 10G SFP+ ports as
+              per RDSO specification No. RDSO/ SPN / TC/83/2020 Rev. 2.0 or latest. Inspection by consignee.
+              Num       52260.0         44760.69        5.0     5.0    0.0     0.0      0.0     0.0               0.0           0.0          0.0
+              bers
+06   06 (I)
+              Supply, Installation of Large Format High resolution Video Display Unit 40" or higher as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+              Num 32453.47          27796.39705 104.0 104.0            33.28   0.0 33.28        925064.0          0.0           0.0 925064.0
+              bers                               5
+07   07 (I)
+              Supply, Installation, Testing and Commissioning of Double Faced Coach Guidance Display Boards as per RDSO Specification No.
+              RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+              Num 341813.6          292763.3912         4.0     4.0    0.64    0.0     0.64     187369.0          0.0           0.0 187369.0
+              bers              5               25
+08   08 (I)
+              Supply, Installation, Testing and Commissioning of Single line Double face train Arrival/Departure display board as per RDSO Specification No.
+              RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+                                                                                                            135411.9 135412.0 135412.0 toPrepaid               Nil Now
+              Num 225855.9          193445.6383         2.0     2.0    0.0     0.7      0.7     0.0                                                     Pay 70% for 01
+              bers              7               05                                                                  5
+09   09 (I)                                                                                                                                                        Nos
+              Supply of at a glance display board (Single Face) with coach guidance display as per RDSO Specification No. RDSO/SPN/TC/108/2019 or latest.
+              Inspection by RDSO.
+              Num       1537.57      1316.928705       2.0     2.0     0.0       0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+10   10 (I)
+              Installation, testing, and commissioning of various types of indicators. The work is to be carried out as per RDSO guidelines and instruction of site
+              supervisor. Inspection by consignee.
+              Num 1204662.           1031793.003       1.0     1.0     0.0       0.0     0.0     0.0                0.0         0.0         0.0
+11   11 (I)   bers              0
+              Supply of display board (five line Single Face) as per RDSO spec. no. RDSO Spec. RDSO/SPN/TC/108/2019 or latest. Inspection by RDSO.
+              Num       33735.0       28894.0275       1.0     1.0     0.0       0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+12   12 (I)
+              Installation and commissioning of 5 line Single face arrival departure board. The work is to be carried out as per RDSO guidelines and instruction of
+              site supervisor. Inspection by consignee.
+              Num 35561.42           30458.35623       3.0     3.0     0.0       0.0     0.0     0.0                0.0         0.0         0.0
+              bers
+13   13 (I)   Supply, Installation, Testing and Commissioning of Double sided Digital Clock with GPS synchronization suitable for Railway station platforms
+              conforming to the RDSO specification No. RDSO /SPN /TC @47&gt;47@2008 Rev. 3 or later and as per Technical Specification in chapter II of
+              Tender Document. Inspection by Consingee.
+                                                                                                                                                     Prepaid Nil Now
+              Num       1474.61      1263.003465     60.0     60.0     0.0      38.4    38.4     0.0          48499.33      48499.0    48499.0     to Pay64% for 60
+14   14 (I)   bers                                                                                                                                                Nos
+              Supply, Installation, Testing and Commissioning of Column speaker similar to Model ASC-20T of Ahuja. Inspection by consignee.
+                                                                                                                                                      Page 11 of 15
+                                                                                                                                                  Prepaid Nil Now
+              Num     1387.16      1188.10254      15.0     15.0     0.0     10.5    10.5     0.0         12475.08      12475.0      12475.0    to Pay 70% for 15
+15   15 (I)   bers                                                                                                                                            Nos
+              Supply of PA horn Speakers as per technical specifications in chapter III of tender document. Inspection by consignee.
+              Num         185.0         158.4525      75.0     75.0      0.0      0.0      0.0  0.0              0.0         0.0         0.0
+              bers
+16   16 (I)
+              Fixing of Coloumn &amp; Horn type in covered area with all types of suitable hardware requiredwith proper size clamps and fixtures etc. The work is
+              to be carried out as per instruction of site supervisor. Inspection by consignee.
+                                                                                                                                                 Prepaid Nil Now
+              Num 20684.16         17715.98304          6.0     6.0      0.0      4.2      4.2  0.0       74407.13       74407.0     74407.0   to Pay 70% for 06
+              bers
+17   17 (I)                                                                                                                                                  Nos
+              Supply of High power two zone Amplifier capable of delivering 200 watts output power from each zone; total 400 watts with 6 mics &amp; 2 AUX
+              inputs, of Ahuja or Philips or Yamaha or Bosch make. Inspection by consignee.
+                                                                                                                                                Prepaid Nil Now
+              Num      1835.33     1571.960145       3.0    3.0     0.0      2.1     2.1     0.0         3301.12       3301.0       3301.0 to Pay 70% for 03
+18   18 (I)   bers                                                                                                                                          Nos
+              Supply of Goose Neck microphone simillar to Ahuja make model No. AGN500 with Stand. Inspection by consignee.
+              Num       98000.0          83937.0        2.0     2.0    0.0      0.0      0.0     0.0              0.0          0.0         0.0
+              bers
+19   19 (I)   SAP unit for Centralized announcement equipment at way station announcer panel , time delay, patching, monitoring, selective between inputs, local
+              bypass circuit for emegency announcement, decentralized ringing circuit &amp; decoding circuit for two control telephone with DC power supply to
+              station announcement panel compatible with existing CA system inMumbai Division. Inspection by consignee. .
+              Metre      845.27       723.973755 900.0 900.0           630.0    0.0 630.0        456103.0         0.0          0.0 456103.0
+20   20 (I)   Supply of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm with all accessories, as per technical specifications in chapter III of tender
+              document. Inspection by consignee.
+              Metre 1047.84            897.47496 300.0 300.0           210.0    0.0 210.0        188470.0         0.0          0.0 188470.0
+21   21 (I)   Supply of FRP perforated cable tray of size 300 mm x 50 mm x 4 mm with all accessories, as per technical specifications in chapter III of tender
+              document. Inspection by consignee.
+                                       49.360095 1200.        1200.
+              Metre       57.63                                        0.0      0.0      0.0     0.0              0.0          0.0         0.0
+                                                          0       0
+22   22 (I)   Laying and fixing of FRP perforated cable tray of size 150 mm x 50 mm x 4 mm /300 mm x 50 mm x 4 mm Thick on bridges/ Under Platforms as per
+              instructions of Railway Engineer Site In-charge. This includes supply of all type of hardware required to complete the Job and cementing masonry
+              work to restore to normal condition of the wall, Roof etc. The work to be executed as per guidelines in tender document, as per site condition and
+              instructions of site supervisor. Inspection by consignee.
+              Num 279831.7           239675.9110        2.0     2.0    0.0      0.0      0.0     0.0              0.0          0.0         0.0
+              bers             7                 05
+23   23 (I)
+              Supply, Installation, Testing and commissioning of On-Line UPS of 5 KVA capacity with isolation transformer suitable for single phase as per technical
+              specifications in chapter III of tender document. Inspection by RITES.
+              Num 64811.98           55511.46087        1.0     1.0    0.0      0.0      0.0     0.0              0.0          0.0         0.0
+              bers
+24   24 (I)
+              Supply of On-Line UPS suitable for Single Phase AC Input,Single Phase AC Output , Rating of UPS: 2.0 KVA,Indicative Back-up time: 60 Minutes.
+              Inspection by consignee.
+              Num 120015.0           102792.8475        2.0     2.0    0.0      0.0      0.0     0.0              0.0          0.0         0.0
+25   25 (I)   bers
+
+                                                                                                                                                    Page 12 of 15
+              Digital Portable console for network testing and monitoring, as per Technical Specification in Chapter-III of the Tender Document. Inspection by
+              Consignee.
+                                   10685.08588
+              Job     12475.29                        1.0      1.0    0.0        0.0      0.0    0.0                 0.0         0.0          0.0
+                                                5
+26   26 (I)
+              Painting of porta hut (68 sqmtr approx.) along with painting of other item such as earthing electrodes, cable runway etc. Contractor will arrange paint
+              and all required material with his own cost. The work to be carried out as per instructions of site surpervisors and guidelines. Inspection by consignee.
+                                       11.18589 3000.       3000.
+              Metre       13.06                                       0.0        0.0      0.0    0.0                 0.0         0.0          0.0
+27   27 (I)                                              0       0
+              Supply of 6 core armored optical single mode fiber cables as per technical specifications in chapter III of tender document. Inspection by consignee.
+                                                                                                                                                       Prepaid Nil Now
+                                         5.25891 6000.      6000.             1470. 1470.
+              Metre        6.14                                       0.0                        0.0             7730.6       7731.0       7731.0       to Pay 70% for
+                                                         0       0                 0        0
+28   28 (I)                                                                                                                                                   2100 Mtr
+              Supply of PVC pipe of standard IS-9537 (Part 3) of 1 inch diameter of white colour, as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+              Metre       16.96        14.52624 500.0 500.0             0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+29   29 (I)
+              Supply of Flexible PVC Conduit Pipe 32 mm dia. of standard reputed make. Inspection by consignee.
+                                        3.54591 6500.          6500.
+              Metre         4.14                                        0.0       0.0      0.0     0.0                 0.0          0.0         0.0
+                                                          0        0
+30   30 (I)   Laying and fixing of PVC casing &amp; capping or conduit pipe/steel pipe on wall / cable tray etc. using suitable fastener. This includes breaking of
+              wall for cabling &amp; repairing it to original. . The work to be carried out as per instructions of site supervisors and guidelines in Chapter-IV of the
+              Tender Document. Inspection by consignee.
+                                                                                                                                                        Prepaid Nil Now
+                                     47.578575 3000.           3000.           2100. 2100.
+              Metre       55.55                                         0.0                        0.0         99915.01       99915.0      99915.0       to Pay 70% for
+                                                          0        0                0        0
+31   31 (I)                                                                                                                                                     3000 Mtr
+              Supply of power cable Three-core (PVC insulated flexible 3 core x 2.5 sq. mm multi strand ) should conform to specification no. IS: 694:1990
+              reaffirmed 1995 or latest. Inspection by consignee.
+                                       16.20498 6100.       6100.
+              Metre      18.92                                       0.0      0.0      0.0      0.0                0.0           0.0          0.0
+                                                        0       0
+32   32 (I)
+              Supply of STP (Shielded Twisted Pair) CAT-6 Cable shall be compliant with latest EIA/TIA-568-B.2-1 standard for CAT 6 cable or as specified by
+              purchaser. Inspection by Consignee.
+                                       19.44255 3050.       3050.
+              Metre       22.7                                       0.0      0.0      0.0      0.0                0.0           0.0          0.0
+                                                        0       0
+33   33 (I)
+              Supply of UTP Cat-6 cable with identifications marking on cable at regular interval, as per technical specifications in chapter III of tender document.
+              Inspection by consignee.
+                                                                                                                                                        Prepaid Nil Now
+                                     25.292445 3000.        3000.           2100. 2100.
+              Metre      29.53                                       0.0                        0.0          53114.13      53114.0       53114.0         to Pay 70% for
+                                                        0       0                0        0
+34   34 (I)                                                                                                                                                    3000 Mtr
+              Supply of 2 Core PVC insulated shielded wire PA cable 24 strand copper conductor of 0.20mm (24/0.20 mm) as per technical specifications in chapter
+              III of tender document. Inspection by consignee.
+                                                    1515    1515
+              Metre         6.19       5.301735                      0.0      0.0       0.0    0.0               0.0           0.0          0.0
+35   35 (I)                                           0.0     0.0
+              Laying of signalling/ Power/ Telecom cable of various cores/sizes in trenches/Pipes etc. as per instruction of Rly engineer at site and guidelines
+              Num 11251.07
+36   36 (I)                         9636.541455      13.0    13.0    0.0      0.0       0.0    0.0               0.0           0.0          0.0
+              bers
+                                                                                                                                                         Page 13 of 15
+                     Supply of IP65 compliant 9U, 19 inch rack as per technical specification in Chapter III of Tender Document and aesthetic dress up as per the
+                     instruction of site Engineer of Railways. Inspection by consignee.
+                     Num        1136.0          972.984     13.0     13.0     0.0      0.0       0.0     0.0               0.0          0.0         0.0
+  37       37 (I)    bers
+                     Fixing of 9U Rack, installation and aesthetic dress up as per the instruction of site Engineer of Railway. Inspection by consignee.
+                     Num       63495.0      54383.4675       2.0      2.0     0.0      0.0       0.0     0.0               0.0          0.0         0.0
+  38       38 (I)    bers
+                     Supply of Outdoor Access Point similar to Ruckus Outdoor Access Point Zone Flex T300. Inspection by consignee.
+                     Num       2226.89     1907.331285      20.0     20.0     0.0      0.0       0.0     0.0               0.0          0.0         0.0
+  39       39 (I)    bers
+                     Wireless router similar to TP-Link Archer AC1200 Archer C6 with Dual-Band Wi-Fi. Inspection by consignee.
+                          Total (Schedule E-Passenger amenities and other telecom assets at Roha stations,)     1757006.0   586155.51   586155.0   2343161.0
+
+
+ Schedule Summary:
+                                                              Cost Breakup(Rs.)
+        Schedule                                             Amt including Special
+                                  Amt Upto last Bill                                      Total upto date Amt
+                                                                   Condition
+Schedule A-Passenger
+amenities and other
+telecom assets at                           15801018                    4354567.0                    20155585
+CSMT, Dadar and
+Thane stations
+Schedule B-AMC for
+complete SCH A                                         0.0                      0.0                           0.0
+systems.
+Schedule C-Passenger
+amenities and other
+telecom assets at                           6958088.0                   3116335.0                    10074423
+Kalyan and Panvel
+station,
+Schedule D-AMC for
+complete SCH C                                         0.0                      0.0                           0.0
+systems.
+Schedule E-Passenger
+amenities and other                         1757006.0                    586155.0                    2343161.0
+telecom assets at Roha
+stations,
+Total Amount(Rs.)                           24516112                    8057057.0                    32573169
+Rebate(0.0%)                                                                  0.0
+Bill Amount (Rs.) (Including Tax (GST))                                 8057057.0
+Previous Bill details Total
+Amt Summary(Rs.) Bill
+No.CR/BBY/S&T/2026/0009/                               0.0               24516112                    24516112
+B1
+
+
+                                                                                                                                                               Page 14 of 15
+ Unique Work Id(s) Details:
+Work Type                                 Work in IRPSM
+Unique Work Id                01.02.53.24.3.038
+
+
+
+
+                                                          Page 15 of 15
+
