@@ -92,6 +92,8 @@ const TENANT_TABLES = [
   'document_number_series',
   // The GST rate master (0048).
   'gst_rates',
+  // Standalone Delivery Challan numbering, per financial year (0056).
+  'standalone_challan_counters',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -171,6 +173,9 @@ const DELETE_REVOKED_TABLES = [
   'tax_invoice_counters',
   // Credit note numbering is the same rule-46A serial (0051).
   'credit_note_counters',
+  // Standalone challan numbering: a released number is never reused, so
+  // the counter row never deletes (0056).
+  'standalone_challan_counters',
   // The GST rate master retires rows by end-dating; no DELETE (0048).
   'gst_rates',
 ] as const satisfies readonly TenantTable[];
@@ -888,6 +893,10 @@ async function seedTenantGraph(
     `;
     await tx`
       insert into credit_note_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 1)
+    `;
+    await tx`
+      insert into standalone_challan_counters (organisation_id, fy_label, next_value)
       values (${organisationId}, '2026-27', 1)
     `;
     await tx`

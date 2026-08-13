@@ -3,21 +3,25 @@ import {
   CancelChallanRequestSchema,
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
+  DeliveryChallanRegisterResponseSchema,
   SaveChallanRequestSchema,
+  SaveStandaloneChallanRequestSchema,
   WorkBalanceResponseSchema,
   type Challan,
   type ChallanDetailResponse,
   type ChallanItem,
+  type ChallanItemInput,
+  type ChallanKind,
   type ChallanOverReceiptWarning,
   type Consignee,
-  type SaveChallanRequest,
+  type DeliveryChallanMovement,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
 import {
   CHALLAN_TEMPLATE_VERSION,
   WARRANTY_TEMPLATE_VERSION,
@@ -38,6 +42,7 @@ import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertNotMalware } from '../upload-guards.js';
 import type { ObjectStorage } from '../storage.js';
 import { assertWorkOperable } from '../work-status.js';
+import { financialYearLabel } from '../financial-year.js';
 import {
   audit,
   IdParamsSchema,
@@ -59,7 +64,10 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 interface ChallanRow {
   id: string;
-  work_id: string;
+  work_id: string | null;
+  challan_kind: ChallanKind;
+  consignee_contact_id: string | null;
+  fy_label: string | null;
   status: Challan['status'];
   challan_date: string;
   challan_number: string | null;
@@ -78,7 +86,8 @@ interface ChallanRow {
 }
 
 const CHALLAN_COLUMNS = `
-  id, work_id, status, challan_date::text as challan_date, challan_number,
+  id, work_id, challan_kind, consignee_contact_id, fy_label,
+  status, challan_date::text as challan_date, challan_number,
   sequence_number, prefix, consignee_snapshot, template_version,
   warranty_template_version, warranty_text_sha256,
   rendered_object_key, signed_copy_object_key, cancellation_note,
@@ -89,6 +98,9 @@ function toChallan(row: ChallanRow): Challan {
   return {
     id: row.id,
     workId: row.work_id,
+    kind: row.challan_kind,
+    consigneeContactId: row.consignee_contact_id,
+    fyLabel: row.fy_label,
     status: row.status,
     challanDate: row.challan_date,
     challanNumber: row.challan_number,
@@ -109,7 +121,7 @@ function toChallan(row: ChallanRow): Challan {
 
 interface ChallanItemRow {
   id: string;
-  work_item_id: string;
+  work_item_id: string | null;
   description_snapshot: string;
   unit_snapshot: string;
   quantity: string;
@@ -263,6 +275,83 @@ export async function assertChallanDate(
   }
 }
 
+/** A standalone challan's date, which has no LOA letter to sit after.
+ * "Today" is still the organisation's own timezone (default Asia/Kolkata),
+ * not the server clock — an evening entry in India must not be rejected
+ * as tomorrow's date. */
+async function assertStandaloneChallanDate(
+  tx: TransactionSql,
+  challanDate: string,
+): Promise<void> {
+  const [bounds] = await tx<{ today: string }[]>`
+    select (now() at time zone o.timezone)::date::text as today
+    from organisations o
+    where o.id = app_private.current_organisation_id()
+  `;
+  if (!bounds) throw new Error('organisation missing inside a bound tenant');
+  // ISO dates compare correctly as strings.
+  if (challanDate > bounds.today) {
+    throw httpError(
+      400,
+      'CHALLAN_DATE_INVALID',
+      `The challan date cannot be in the future (today is ${bounds.today}).`,
+    );
+  }
+}
+
+/**
+ * Who may reach a challan that belongs to no Work.
+ *
+ * Work-scope is the product's reach mechanism, and it binds through a
+ * Work: an 'assigned'-scoped membership is allowed exactly the Works it
+ * is assigned to. A standalone challan has NO Work, so there is nothing
+ * for that mechanism to bind to and no assignment that could ever grant
+ * it — which means the honest answer is that a scoped membership does not
+ * reach standalone challans at all. Full-scope memberships (work_scope
+ * <> 'assigned') do; writing and issuing still need the writer role and
+ * the issue/cancel authorities on top, exactly as a work challan does.
+ *
+ * The refusal is 404, not 403, matching assertWorkAccess: a guessed id
+ * must not confirm the document exists.
+ */
+export async function assertStandaloneChallanAccess(
+  tx: TransactionSql,
+  userId: string,
+): Promise<void> {
+  if (await hasFullWorkScope(tx, userId)) return;
+  throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+}
+
+/** The reach check for a challan of either kind. */
+async function assertChallanAccess(
+  tx: TransactionSql,
+  userId: string,
+  challan: { work_id: string | null },
+): Promise<void> {
+  if (challan.work_id === null) {
+    await assertStandaloneChallanAccess(tx, userId);
+    return;
+  }
+  await assertWorkAccess(tx, userId, challan.work_id);
+}
+
+/** The Work a challan belongs to, refusing a standalone one by name.
+ *
+ * Every flow that reads back a challan through a WORK — receipts,
+ * corrections, Measurement Book sourcing — needs the Work id and would
+ * otherwise be handed a NULL that silently widens or narrows its query.
+ * Exported so those callers say the rule instead of discovering it. */
+export function requireWorkBoundChallan(challan: { work_id: string | null }): string {
+  if (challan.work_id === null) {
+    throw httpError(
+      400,
+      'CHALLAN_NOT_WORK_BOUND',
+      'This is a standalone Delivery Challan; it belongs to no Work, so this operation does not apply to it.',
+    );
+  }
+  return challan.work_id;
+}
+
 /** True when a DecimalString denotes a value greater than zero, decided
  * on the digits themselves — never binary floating-point arithmetic
  * (engineering rule 5). The schema pattern guarantees the shape, so a
@@ -308,6 +397,59 @@ export function normaliseConsignee(consignee: Consignee): Consignee {
     );
   }
   return { name, address, ...(phone.length > 0 ? { phone } : {}) };
+}
+
+/** The consignee block for a STANDALONE challan, taken from the contacts
+ * master and snapshotted onto the document.
+ *
+ * Rule 7: master-data edits never rewrite history, so the contact is read
+ * ONCE — here, while the draft is saved — and frozen into
+ * consignee_snapshot exactly like the free-text block a work challan
+ * carries. The contact id stays on the row so the register can group by
+ * party and the one-open-draft rule has something to count, but nothing
+ * downstream re-reads the contact.
+ *
+ * A retired contact is refused: this document is printed and handed over,
+ * and a retired party is one the operator has already said they no longer
+ * deal with. An address is required for the same reason the free-text
+ * block requires one — it is the delivery address on the paper. */
+async function loadStandaloneConsignee(
+  tx: TransactionSql,
+  contactId: string,
+): Promise<Consignee> {
+  const [contact] = await tx<
+    {
+      designation: string;
+      address: string | null;
+      phone: string | null;
+      active: boolean;
+    }[]
+  >`
+    select designation, address, phone, active from contacts where id = ${contactId}
+  `;
+  if (!contact) {
+    throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+  }
+  if (!contact.active) {
+    throw httpError(
+      409,
+      'CONTACT_RETIRED',
+      'That consignee has been retired; reactivate it or pick another.',
+    );
+  }
+  if (contact.address === null || contact.address.trim().length < 3) {
+    throw httpError(
+      400,
+      'CONSIGNEE_INVALID',
+      'That consignee has no address on record — this challan is printed and handed to the consignee, so add the address to the contact first.',
+    );
+  }
+  const phone = contact.phone?.trim() ?? '';
+  return {
+    name: contact.designation.trim(),
+    address: contact.address.trim(),
+    ...(phone.length > 0 ? { phone } : {}),
+  };
 }
 
 /** A cancellation note as the DATABASE judges it. Every cancellation
@@ -498,16 +640,109 @@ function requireStatus(row: ChallanRow, status: Challan['status']): void {
   }
 }
 
+/** One line, resolved to the shape it actually is.
+ *
+ * A `work_item` line takes description/unit/rate from the live schedule
+ * item and is the only shape the quantity ledger sees. A `manual` line
+ * carries its own printed text and is inert — non-LOA installation
+ * material on a work challan, or the whole of a standalone challan. */
+type ResolvedLine =
+  | {
+      readonly shape: 'work_item';
+      readonly workItemId: string;
+      readonly quantity: string;
+      readonly purchaseOrderLineId: string | null;
+    }
+  | {
+      readonly shape: 'manual';
+      readonly quantity: string;
+      readonly description: string;
+      readonly unit: string;
+      readonly rate: string;
+    };
+
+/**
+ * Decides which shape a request line is, and refuses every mixture BY
+ * NAME. The schema admits both shapes in one object precisely so these
+ * answers can be specific: a caller who sends a purchase-order link on a
+ * manual line has made a domain mistake — a receipt is received against
+ * an ordered LOA item — and deserves to be told that, not "body/items/0
+ * does not match any allowed shape".
+ *
+ * `label` names the offending line the way the caller counts lines.
+ */
+function resolveLine(item: ChallanItemInput, label: string): ResolvedLine {
+  const manualFields = [item.description, item.unit, item.rate];
+  const manualCount = manualFields.filter((value) => value !== undefined).length;
+
+  if (item.workItemId !== undefined) {
+    if (manualCount > 0) {
+      throw httpError(
+        400,
+        'LINE_SHAPE_INVALID',
+        `${label}: a Work item line takes its description, unit and rate from the schedule item — send them only on a manual line.`,
+      );
+    }
+    return {
+      shape: 'work_item',
+      workItemId: item.workItemId,
+      quantity: item.quantity,
+      purchaseOrderLineId: item.purchaseOrderLineId ?? null,
+    };
+  }
+
+  if (item.purchaseOrderLineId !== undefined) {
+    // R: a purchase-order receipt is received against an ORDERED item of
+    // the Work. A manual line names no such item, so the link has nothing
+    // to fulfil and the purchase-order balance would be moved by a line
+    // the ledger cannot see.
+    throw httpError(
+      400,
+      'PO_LINE_REQUIRES_WORK_ITEM_LINE',
+      `${label}: a purchase-order receipt is recorded against a Work item line; a manual line has no ordered item to receive against.`,
+    );
+  }
+
+  if (manualCount < manualFields.length) {
+    throw httpError(
+      400,
+      'MANUAL_LINE_INCOMPLETE',
+      `${label}: a manual line needs a description, a unit and a rate — this document is printed and handed to the consignee.`,
+    );
+  }
+
+  const description = (item.description ?? '').trim();
+  const unit = (item.unit ?? '').trim();
+  if (description.length === 0 || unit.length === 0) {
+    throw httpError(
+      400,
+      'MANUAL_LINE_INCOMPLETE',
+      `${label}: the description and unit of a manual line cannot be blank.`,
+    );
+  }
+  return {
+    shape: 'manual',
+    quantity: item.quantity,
+    description,
+    unit,
+    rate: item.rate ?? '',
+  };
+}
+
 /** Replaces the challan's lines from the request, snapshotting
  * description/unit/rate from the live work items and computing the line
  * amount in exact SQL numeric arithmetic. (Exported for the correction
- * flow, which writes replacement drafts through the same path.) */
+ * flow, which writes replacement drafts through the same path.)
+ *
+ * `workId` is null for a standalone challan, where every line must be
+ * manual — the migration 0056 trigger holds that against direct SQL and
+ * this refuses it by name for API callers. */
 export async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   challanId: string,
-  workId: string,
-  body: SaveChallanRequest,
+  workId: string | null,
+  body: { items: readonly ChallanItemInput[] },
 ): Promise<void> {
   // Draft-time serials hang off the line rows being replaced (serial
   // lineage FK); they are draft-stage records — deletable by rule — and
@@ -542,11 +777,58 @@ export async function writeLines(
         `Line ${lineNumber}: the delivered quantity ${item.quantity} is too large to record — check for a mistyped digit.`,
       );
     }
-    if (item.purchaseOrderLineId !== undefined) {
+    const line = resolveLine(item, `Line ${lineNumber}`);
+
+    if (line.shape === 'manual') {
+      // The rate is operator text on a manual line, so it answers to the
+      // same digit rules the quantity does; a negative one would reach
+      // the `rate_snapshot >= 0` CHECK as a statusless 23514.
+      if (line.rate.startsWith('-')) {
+        throw httpError(
+          400,
+          'RATE_INVALID',
+          `Line ${lineNumber}: the rate cannot be negative (received ${line.rate}).`,
+        );
+      }
+      if (integerDigitCount(line.rate) > 15) {
+        throw httpError(
+          400,
+          'RATE_INVALID',
+          `Line ${lineNumber}: the rate ${line.rate} is too large to record — check for a mistyped digit.`,
+        );
+      }
+      await tx`
+        insert into delivery_challan_items (
+          organisation_id, delivery_challan_id, work_id, work_item_id,
+          description_snapshot, unit_snapshot, quantity, rate_snapshot,
+          line_amount, position, purchase_order_line_id
+        )
+        values (
+          ${organisationId}, ${challanId}, ${workId}, null,
+          ${line.description}, ${line.unit}, ${line.quantity}, ${line.rate},
+          (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,2))::numeric(18,2),
+          ${index + 1}, null
+        )
+      `;
+      continue;
+    }
+
+    if (workId === null) {
+      // Backstopped by the 0056 trigger; named here so the operator is
+      // told what is wrong rather than reading 'The request could not be
+      // completed.'
+      throw httpError(
+        400,
+        'STANDALONE_LINE_MUST_BE_MANUAL',
+        `Line ${lineNumber}: a standalone Delivery Challan belongs to no Work, so its lines cannot name Work items.`,
+      );
+    }
+
+    if (line.purchaseOrderLineId !== null) {
       await assertPurchaseOrderLineReceivable(
         tx,
         workId,
-        item.purchaseOrderLineId,
+        line.purchaseOrderLineId,
         `Line ${lineNumber}`,
       );
     }
@@ -558,13 +840,13 @@ export async function writeLines(
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
              coalesce(wi.effective_description, wi.description),
-             coalesce(wi.effective_unit, wi.unit_code), ${item.quantity},
+             coalesce(wi.effective_unit, wi.unit_code), ${line.quantity},
              coalesce(wi.effective_unit_rate, wi.effective_rate),
-             (${item.quantity}::numeric(18,3)
+             (${line.quantity}::numeric(18,3)
                * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
-             ${index + 1}, ${item.purchaseOrderLineId ?? null}
+             ${index + 1}, ${line.purchaseOrderLineId}
       from work_items wi
-      where wi.id = ${item.workItemId} and wi.work_id = ${workId}
+      where wi.id = ${line.workItemId} and wi.work_id = ${workId}
         and wi.deleted_at is null
       returning id
     `.catch((error: unknown) => {
@@ -594,12 +876,28 @@ async function readLineInputs(
   tx: TransactionSql,
   challanId: string,
 ): Promise<
-  { workItemId: string; quantity: string; purchaseOrderLineId: string | null }[]
+  {
+    workItemId: string | null;
+    quantity: string;
+    purchaseOrderLineId: string | null;
+    description: string | null;
+    unit: string | null;
+    rate: string | null;
+  }[]
 > {
   const rows = await tx<
-    { work_item_id: string; quantity: string; purchase_order_line_id: string | null }[]
+    {
+      work_item_id: string | null;
+      quantity: string;
+      purchase_order_line_id: string | null;
+      description_snapshot: string;
+      unit_snapshot: string;
+      rate_snapshot: string;
+    }[]
   >`
-    select work_item_id, quantity::text as quantity, purchase_order_line_id
+    select work_item_id, quantity::text as quantity, purchase_order_line_id,
+           description_snapshot, unit_snapshot,
+           rate_snapshot::text as rate_snapshot
     from delivery_challan_items
     where delivery_challan_id = ${challanId}
     order by position
@@ -608,7 +906,191 @@ async function readLineInputs(
     workItemId: row.work_item_id,
     quantity: row.quantity,
     purchaseOrderLineId: row.purchase_order_line_id,
+    // A work item line's printed text belongs to the schedule item, so
+    // diffing it would report an amendment as a challan edit; a manual
+    // line's IS the edit, and the trail has to carry it.
+    description: row.work_item_id === null ? row.description_snapshot : null,
+    unit: row.work_item_id === null ? row.unit_snapshot : null,
+    rate: row.work_item_id === null ? canonicalRateText(row.rate_snapshot) : null,
   }));
+}
+
+/**
+ * The half of issuing that is identical for every Delivery Challan,
+ * whatever it moves: freeze the immutable snapshot, stamp the number, and
+ * write the trail.
+ *
+ * `work` is the Work block for a work challan and undefined for a
+ * standalone one — a standalone challan belongs to no contract, and
+ * printing a Work block on it would be a claim about a contract that does
+ * not exist. Everything the two kinds share (the warranty certificate,
+ * the line snapshots, the total, the number-conflict refusal) is here
+ * exactly once, so the two paths cannot drift apart.
+ */
+async function finaliseChallanIssue(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  challanId: string,
+  challan: ChallanRow,
+  minted: {
+    readonly challanNumber: string;
+    readonly sequence: number;
+    readonly fyLabel: string | null;
+    readonly work?: ChallanSnapshot['work'];
+  },
+): Promise<void> {
+  const [organisation] = await tx<
+    { name: string; warranty_template_text: string | null }[]
+  >`
+    select name, warranty_template_text from organisations
+    where id = app_private.current_organisation_id()
+  `;
+  // A manual line has no work item, so its item number is the empty
+  // string and the document prints an em dash in that column.
+  const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
+    select dci.id, dci.work_item_id, dci.description_snapshot,
+           dci.unit_snapshot, dci.quantity::text as quantity,
+           dci.rate_snapshot::text as rate_snapshot,
+           dci.line_amount::text as line_amount, dci.position,
+           dci.purchase_order_line_id,
+           coalesce(wi.item_number, '') as item_number
+    from delivery_challan_items dci
+    left join work_items wi on wi.id = dci.work_item_id
+    where dci.delivery_challan_id = ${challanId}
+    order by dci.position
+  `;
+  const [total] = await tx<{ amount: string }[]>`
+    select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
+    from delivery_challan_items where delivery_challan_id = ${challanId}
+  `;
+
+  // Legacy §11: the warranty/guarantee certificate page is optional —
+  // it exists exactly when the organisation has template text at issue
+  // time. The FULL text is frozen into the immutable snapshot (with the
+  // certificate template version and the SHA-256 of the exact text), so
+  // later profile edits never change an issued certificate.
+  const warrantyText = organisation?.warranty_template_text ?? null;
+  const warranty =
+    warrantyText !== null
+      ? {
+          templateVersion: WARRANTY_TEMPLATE_VERSION,
+          textSha256: createHash('sha256').update(warrantyText, 'utf8').digest('hex'),
+          text: warrantyText,
+        }
+      : undefined;
+
+  const issuedAt = new Date().toISOString();
+  const snapshot: ChallanSnapshot = {
+    templateVersion: CHALLAN_TEMPLATE_VERSION,
+    organisationName: organisation?.name ?? '',
+    challanNumber: minted.challanNumber,
+    challanDate: challan.challan_date,
+    issuedAt,
+    ...(minted.work !== undefined ? { work: minted.work } : {}),
+    consignee: parseJsonbColumn(challan.consignee_snapshot) as Consignee,
+    items: lines.map((line) => ({
+      position: line.position,
+      itemNumber: line.item_number,
+      description: line.description_snapshot,
+      unit: line.unit_snapshot,
+      quantity: line.quantity,
+      rate: canonicalRateText(line.rate_snapshot),
+      lineAmount: line.line_amount,
+    })),
+    totalAmount: total?.amount ?? '0.00',
+    ...(warranty !== undefined ? { warranty } : {}),
+  };
+
+  await tx`
+    update delivery_challans
+    set status = 'issued', challan_number = ${minted.challanNumber},
+        sequence_number = ${minted.sequence}, fy_label = ${minted.fyLabel},
+        issued_snapshot = ${jsonb(tx, snapshot)},
+        issued_by_user_id = ${userId}, issued_at = ${issuedAt},
+        template_version = ${CHALLAN_TEMPLATE_VERSION},
+        warranty_template_version = ${warranty?.templateVersion ?? null},
+        warranty_text_sha256 = ${warranty?.textSha256 ?? null}
+    where id = ${challanId}
+  `.catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === '23505') {
+      throw httpError(
+        409,
+        'NUMBER_CONFLICT',
+        `Challan number ${minted.challanNumber} already exists in this organisation; use a distinct prefix for this challan.`,
+      );
+    }
+    throw error;
+  });
+
+  await audit(
+    tx,
+    organisationId,
+    userId,
+    'challan.issued',
+    'delivery_challans',
+    challanId,
+    {
+      challanNumber: minted.challanNumber,
+      sequence: minted.sequence,
+      kind: challan.challan_kind,
+      totalAmount: snapshot.totalAmount,
+    },
+  );
+}
+
+/**
+ * Issuing a STANDALONE Delivery Challan: goods leaving the factory for a
+ * private customer, a vendor, or a job worker.
+ *
+ * Nothing the work path does applies. There is no sanctioned quantity, so
+ * no delivery ceiling; no Work, so no completion state and no final
+ * Measurement Book to close a payment cycle; no schedule item, so no
+ * requires_serials rule and no amendment that could make the draft stale.
+ * The document is the movement and nothing else.
+ *
+ * The number is minted from a gap-free counter per (organisation,
+ * financial year) — the counter row lock orders concurrent issues and a
+ * rolled-back issue rolls the counter back with it, exactly as the
+ * per-Work counter does for a work challan.
+ */
+async function issueStandaloneChallan(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  challanId: string,
+  challan: ChallanRow,
+): Promise<void> {
+  const fyLabel = financialYearLabel(challan.challan_date);
+  const [counter] = await tx<{ next_value: number }[]>`
+    insert into standalone_challan_counters (organisation_id, fy_label)
+    values (${organisationId}, ${fyLabel})
+    on conflict (organisation_id, fy_label)
+    do update set next_value = standalone_challan_counters.next_value + 1
+    returning next_value
+  `;
+  if (!counter) throw new Error('counter upsert returned no row');
+  const template = await loadNumberTemplate(tx, 'standalone_challan');
+  let challanNumber: string;
+  try {
+    challanNumber = renderNumberTemplate(template, {
+      prefix: challan.prefix,
+      work: null,
+      financialYear: fyLabel,
+      documentDate: challan.challan_date,
+      sequence: counter.next_value,
+    });
+  } catch (cause) {
+    if (cause instanceof NumberTemplateError) {
+      throw httpError(400, 'CHALLAN_NUMBER_UNFILLABLE', cause.message);
+    }
+    throw cause;
+  }
+  await finaliseChallanIssue(tx, organisationId, userId, challanId, challan, {
+    challanNumber,
+    sequence: counter.next_value,
+    fyLabel,
+  });
 }
 
 export function registerChallanRoutes(
@@ -819,6 +1301,275 @@ export function registerChallanRoutes(
     },
   );
 
+  // ------------------------------------------------------------------
+  // The Delivery Challan MODULE: one register across all three
+  // movements, and the standalone create/edit flow.
+  //
+  // A work challan still lives on its Work's Deliveries tab and is still
+  // created there — /api/works/:id/challans above is untouched. What is
+  // new is that the movement document has a home of its own, because two
+  // of its three cases have no Work to live under.
+  // ------------------------------------------------------------------
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/delivery-challans',
+      schema: {
+        response: { 200: DeliveryChallanRegisterResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ user, tenant }) => {
+      return tenant(async (tx) => {
+        // An 'assigned'-scoped membership sees its assigned Works'
+        // challans and NOTHING standalone: work-scope binds through a
+        // Work, and a standalone challan has none, so no assignment
+        // could ever reach it. Decided in SQL rather than by filtering
+        // in the handler, so the rows never leave the database.
+        const full = await hasFullWorkScope(tx, user.id);
+        const rows = await tx<
+          {
+            id: string;
+            challan_kind: ChallanKind;
+            status: Challan['status'];
+            challan_date: string;
+            challan_number: string | null;
+            prefix: string;
+            work_id: string | null;
+            work_code: string | null;
+            consignee_snapshot: unknown;
+            contact_designation: string | null;
+            line_count: string;
+            manual_line_count: string;
+            total_amount: string;
+            created_at: Date;
+            issued_at: Date | null;
+          }[]
+        >`
+          select dc.id, dc.challan_kind, dc.status,
+                 dc.challan_date::text as challan_date, dc.challan_number,
+                 dc.prefix, dc.work_id, w.work_code,
+                 dc.consignee_snapshot, c.designation as contact_designation,
+                 lines.line_count::text as line_count,
+                 lines.manual_line_count::text as manual_line_count,
+                 lines.total_amount::numeric(18,2)::text as total_amount,
+                 dc.created_at, dc.issued_at
+          from delivery_challans dc
+          left join works w on w.id = dc.work_id
+          left join contacts c on c.id = dc.consignee_contact_id
+          cross join lateral (
+            select count(*) as line_count,
+                   count(*) filter (where i.work_item_id is null)
+                     as manual_line_count,
+                   coalesce(sum(i.line_amount), 0) as total_amount
+            from delivery_challan_items i
+            where i.delivery_challan_id = dc.id
+          ) lines
+          where ${full} or exists (
+            select 1 from work_assignments wa
+            where wa.work_id = dc.work_id and wa.user_id = ${user.id}
+          )
+          order by dc.challan_date desc, dc.created_at desc, dc.id
+        `;
+        return {
+          challans: rows.map((row) => {
+            const manualLineCount = Number(row.manual_line_count);
+            const movement: DeliveryChallanMovement =
+              row.challan_kind === 'standalone'
+                ? 'standalone'
+                : manualLineCount > 0
+                  ? 'work_material'
+                  : 'loa_supply';
+            const snapshot = parseJsonbColumn(row.consignee_snapshot) as
+              Partial<Consignee> | undefined;
+            return {
+              id: row.id,
+              kind: row.challan_kind,
+              movement,
+              status: row.status,
+              challanDate: row.challan_date,
+              challanNumber: row.challan_number,
+              prefix: row.prefix,
+              workId: row.work_id,
+              workCode: row.work_code,
+              consigneeName: snapshot?.name ?? row.contact_designation ?? '',
+              lineCount: Number(row.line_count),
+              manualLineCount,
+              totalAmount: row.total_amount,
+              createdAt: row.created_at.toISOString(),
+              issuedAt: row.issued_at?.toISOString() ?? null,
+            };
+          }),
+        };
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      schema: {
+        body: SaveStandaloneChallanRequestSchema,
+        response: { 201: ChallanDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const detail = await tenant(async (tx) => {
+        await assertStandaloneChallanAccess(tx, user.id);
+        await assertStandaloneChallanDate(tx, body.challanDate);
+        const consignee = await loadStandaloneConsignee(tx, body.consigneeContactId);
+
+        // One open draft per consignee (the partial unique index of 0056
+        // is the arbiter): the 409 names the existing draft so the client
+        // can open it instead of parsing the message. The per-Work rule
+        // is untouched — its index self-excludes these rows.
+        const [existingDraft] = await tx<{ id: string }[]>`
+          select id from delivery_challans
+          where challan_kind = 'standalone' and status = 'draft'
+            and consignee_contact_id = ${body.consigneeContactId}
+        `;
+        if (existingDraft) {
+          throw draftConflictError(
+            'DRAFT_EXISTS',
+            'This consignee already has a draft standalone challan; issue or delete it first.',
+            existingDraft.id,
+          );
+        }
+
+        const [created] = await tx<{ id: string }[]>`
+          insert into delivery_challans (
+            organisation_id, work_id, challan_kind, consignee_contact_id,
+            challan_date, prefix, consignee_snapshot, created_by_user_id
+          )
+          values (
+            ${organisationId}, null, 'standalone', ${body.consigneeContactId},
+            ${body.challanDate}, ${body.prefix},
+            ${jsonb(tx, consignee)}, ${user.id}
+          )
+          returning id
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'DRAFT_EXISTS',
+              'This consignee already has a draft standalone challan; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('challan insert returned no row');
+
+        await writeLines(tx, organisationId, created.id, null, body);
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.created',
+          'delivery_challans',
+          created.id,
+          {
+            kind: 'standalone',
+            consigneeContactId: body.consigneeContactId,
+            itemCount: body.items.length,
+          },
+        );
+        return readDetail(tx, created.id);
+      }).catch(async (error: unknown) => {
+        // The unique-index race path could not name the winning draft
+        // inside its aborted transaction; do it from a fresh read.
+        throw await nameDraftConflict(error, 'DRAFT_EXISTS', () =>
+          tenant(async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from delivery_challans
+              where challan_kind = 'standalone' and status = 'draft'
+                and consignee_contact_id = ${body.consigneeContactId}
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'PUT',
+      url: '/api/delivery-challans/:id',
+      schema: {
+        params: IdParamsSchema,
+        body: SaveStandaloneChallanRequestSchema,
+        response: { 200: ChallanDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
+        const challan = await lockChallan(tx, id);
+        if (challan.challan_kind !== 'standalone') {
+          // A work challan's consignee is free text and its lines answer
+          // to the Work; it is edited through PUT /api/challans/:id.
+          throw httpError(
+            400,
+            'CHALLAN_NOT_STANDALONE',
+            'This challan belongs to a Work; edit it through its Work.',
+          );
+        }
+        await assertStandaloneChallanAccess(tx, user.id);
+        requireStatus(challan, 'draft');
+        await assertStandaloneChallanDate(tx, body.challanDate);
+        const consignee = await loadStandaloneConsignee(tx, body.consigneeContactId);
+        const linesBefore = await readLineInputs(tx, id);
+        await tx`
+          update delivery_challans
+          set challan_date = ${body.challanDate}, prefix = ${body.prefix},
+              consignee_contact_id = ${body.consigneeContactId},
+              consignee_snapshot = ${jsonb(tx, consignee)}
+          where id = ${id}
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'DRAFT_EXISTS',
+              'That consignee already has a draft standalone challan; issue or delete it first.',
+            );
+          }
+          throw error;
+        });
+        await writeLines(tx, organisationId, id, null, body);
+        const changes = auditDiff(
+          {
+            challanDate: challan.challan_date,
+            prefix: challan.prefix,
+            consigneeContactId: challan.consignee_contact_id,
+            items: linesBefore,
+          },
+          {
+            challanDate: body.challanDate,
+            prefix: body.prefix,
+            consigneeContactId: body.consigneeContactId,
+            items: await readLineInputs(tx, id),
+          },
+        );
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'challan.updated',
+          'delivery_challans',
+          id,
+          { before: changes.before, after: changes.after },
+        );
+        return readDetail(tx, id);
+      });
+    },
+  );
+
   tenantRoute(
     {
       method: 'GET',
@@ -831,13 +1582,13 @@ export function registerChallanRoutes(
     async ({ request, user, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx) => {
-        const [ref] = await tx<{ work_id: string }[]>`
+        const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from delivery_challans where id = ${id}
         `;
         if (!ref) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, ref.work_id);
+        await assertChallanAccess(tx, user.id, ref);
         return readDetail(tx, id);
       });
     },
@@ -860,9 +1611,14 @@ export function registerChallanRoutes(
       const consignee = normaliseConsignee(body.consignee);
       return tenant(async (tx) => {
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'draft');
-        await assertChallanDate(tx, challan.work_id, body.challanDate);
+        // A standalone draft has a contacts-master consignee rather than
+        // this free-text one, so it is edited through its own route
+        // (PUT /api/delivery-challans/:id) instead of being half-updated
+        // here.
+        const workId = requireWorkBoundChallan(challan);
+        await assertChallanDate(tx, workId, body.challanDate);
         const linesBefore = await readLineInputs(tx, id);
         await tx`
           update delivery_challans
@@ -870,7 +1626,7 @@ export function registerChallanRoutes(
               consignee_snapshot = ${jsonb(tx, consignee)}
           where id = ${id}
         `;
-        await writeLines(tx, organisationId, id, challan.work_id, body);
+        await writeLines(tx, organisationId, id, workId, body);
         // Milestone 6: the trail records what each changed field was and
         // became. Lines round-trip through the database on both sides so
         // quantities compare in the same normalised numeric text.
@@ -919,7 +1675,7 @@ export function registerChallanRoutes(
       const { id } = request.params;
       await tenant(async (tx) => {
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'draft');
         // A deleted draft takes its draft-stage serials with it (they
         // reference the lines and would otherwise orphan the delete).
@@ -960,7 +1716,7 @@ export function registerChallanRoutes(
         // the status re-check below cannot deadlock against a close.
         const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'draft');
         await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
         // writeLines validates the receipt link when the draft is saved,
@@ -978,6 +1734,17 @@ export function registerChallanRoutes(
             `Purchase order ${unavailableOrder.po_number ?? unavailableOrder.id} is no longer issued (current status: ${unavailableOrder.status}); deliveries are received against an ISSUED purchase order.`,
           );
         }
+
+        // A standalone challan has no Work, so every gate below — the
+        // works lock, the completion state, the final Measurement Book,
+        // the delivery ceiling, requires_serials, the amendment
+        // staleness check — has nothing to act on. It takes its own
+        // path and returns.
+        if (challan.work_id === null) {
+          await issueStandaloneChallan(tx, organisationId, user.id, id, challan);
+          return readDetail(tx, id);
+        }
+        const workId = challan.work_id;
 
         // The works row lock pairs with the one the MB finalize
         // transaction holds: an issue and a final-MB finalize on the
@@ -999,7 +1766,7 @@ export function registerChallanRoutes(
         >`
             select allow_excess_delivery, work_code, title, letter_number,
                    letter_date::text as letter_date, status
-            from works where id = ${challan.work_id}
+            from works where id = ${workId}
             for update
           `;
         if (!work) throw new Error('challan without a Work');
@@ -1014,7 +1781,7 @@ export function registerChallanRoutes(
         // billed, so the issue is refused outright.
         const [finalBook] = await tx<{ id: string; mb_number: string | null }[]>`
             select id, mb_number from measurement_books
-            where work_id = ${challan.work_id} and is_final
+            where work_id = ${workId} and is_final
               and status <> 'cancelled'
           `;
         if (finalBook) {
@@ -1032,11 +1799,20 @@ export function registerChallanRoutes(
         // competing issues of this work's single draft, and the item row
         // locks below serialise against amendment apply (Milestone 6),
         // which takes the same locks before lowering a ceiling.
+        //
+        // Every read of the lines from here down says `work_item_id is
+        // not null` outright. Manual (non-LOA) lines carry installation
+        // material that is on no schedule, so they have no sanctioned
+        // quantity to breach, no serial guarantee to satisfy, and no
+        // amendment that could make them stale — and the join to
+        // work_items would drop them anyway. The invariant this module
+        // rests on is not left to a join predicate.
         await tx`
             select wi.id from work_items wi
             where wi.id in (
               select dci.work_item_id from delivery_challan_items dci
               where dci.delivery_challan_id = ${id}
+                and dci.work_item_id is not null
             )
             for update
           `;
@@ -1046,11 +1822,13 @@ export function registerChallanRoutes(
               from delivery_challan_items dci
               join work_items wi on wi.id = dci.work_item_id
               where dci.delivery_challan_id = ${id}
+                and dci.work_item_id is not null
                 and dci.quantity + coalesce((
                   select sum(q.quantity)
                   from delivery_challan_items q
                   join delivery_challans dc on dc.id = q.delivery_challan_id
                   where q.work_item_id = dci.work_item_id
+                    and q.work_item_id is not null
                     and dc.status = 'issued'
                 ), 0) > coalesce(wi.effective_quantity, wi.awarded_quantity)
               order by wi.item_number
@@ -1082,6 +1860,7 @@ export function registerChallanRoutes(
             where wi.id in (
               select work_item_id from delivery_challan_items
               where delivery_challan_id = ${id}
+                and work_item_id is not null
             )
             order by wi.id
             for update of wi
@@ -1117,6 +1896,7 @@ export function registerChallanRoutes(
             from delivery_challan_items dci
             join work_items wi on wi.id = dci.work_item_id
             where dci.delivery_challan_id = ${id}
+              and dci.work_item_id is not null
               and (
                 dci.description_snapshot
                   is distinct from coalesce(wi.effective_description, wi.description)
@@ -1182,7 +1962,7 @@ export function registerChallanRoutes(
         // back with it, so numbers are gapless per Work.
         const [counter] = await tx<{ next_value: number }[]>`
             insert into delivery_challan_counters (organisation_id, work_id)
-            values (${organisationId}, ${challan.work_id})
+            values (${organisationId}, ${workId})
             on conflict (organisation_id, work_id)
             do update set next_value = delivery_challan_counters.next_value + 1,
                           updated_at = now()
@@ -1196,7 +1976,7 @@ export function registerChallanRoutes(
         // than assumed: an organisation whose series is {WORK}-DC-{SEQ}
         // needs it, and the default never asks for it.
         const [numberWork] = await tx<{ work_code: string }[]>`
-            select work_code from works where id = ${challan.work_id}
+            select work_code from works where id = ${workId}
           `;
         const template = await loadNumberTemplate(tx, 'delivery_challan');
         let challanNumber: string;
@@ -1214,107 +1994,17 @@ export function registerChallanRoutes(
           throw cause;
         }
 
-        const [organisation] = await tx<
-          { name: string; warranty_template_text: string | null }[]
-        >`
-            select name, warranty_template_text from organisations
-            where id = app_private.current_organisation_id()
-          `;
-        const lines = await tx<(ChallanItemRow & { item_number: string })[]>`
-            select dci.id, dci.work_item_id, dci.description_snapshot,
-                   dci.unit_snapshot, dci.quantity::text as quantity,
-                   dci.rate_snapshot::text as rate_snapshot,
-                   dci.line_amount::text as line_amount, dci.position,
-                   wi.item_number
-            from delivery_challan_items dci
-            join work_items wi on wi.id = dci.work_item_id
-            where dci.delivery_challan_id = ${id}
-            order by dci.position
-          `;
-        const [total] = await tx<{ amount: string }[]>`
-            select coalesce(sum(line_amount), 0)::numeric(18,2)::text as amount
-            from delivery_challan_items where delivery_challan_id = ${id}
-          `;
-
-        // Legacy §11: the warranty/guarantee certificate page is
-        // optional — it exists exactly when the organisation has
-        // template text at issue time. The FULL text is frozen into
-        // the immutable snapshot (with the certificate template
-        // version and the SHA-256 of the exact text), so later
-        // profile edits never change an issued certificate.
-        const warrantyText = organisation?.warranty_template_text ?? null;
-        const warranty =
-          warrantyText !== null
-            ? {
-                templateVersion: WARRANTY_TEMPLATE_VERSION,
-                textSha256: createHash('sha256')
-                  .update(warrantyText, 'utf8')
-                  .digest('hex'),
-                text: warrantyText,
-              }
-            : undefined;
-
-        const issuedAt = new Date().toISOString();
-        const snapshot: ChallanSnapshot = {
-          templateVersion: CHALLAN_TEMPLATE_VERSION,
-          organisationName: organisation?.name ?? '',
+        await finaliseChallanIssue(tx, organisationId, user.id, id, challan, {
           challanNumber,
-          challanDate: challan.challan_date,
-          issuedAt,
+          sequence,
+          fyLabel: null,
           work: {
             workCode: work.work_code,
             title: work.title,
             letterNumber: work.letter_number,
             letterDate: work.letter_date,
           },
-          consignee: parseJsonbColumn(challan.consignee_snapshot) as Consignee,
-          items: lines.map((line) => ({
-            position: line.position,
-            itemNumber: line.item_number,
-            description: line.description_snapshot,
-            unit: line.unit_snapshot,
-            quantity: line.quantity,
-            rate: canonicalRateText(line.rate_snapshot),
-            lineAmount: line.line_amount,
-          })),
-          totalAmount: total?.amount ?? '0.00',
-          ...(warranty !== undefined ? { warranty } : {}),
-        };
-
-        await tx`
-            update delivery_challans
-            set status = 'issued', challan_number = ${challanNumber},
-                sequence_number = ${sequence},
-                issued_snapshot = ${jsonb(tx, snapshot)},
-                issued_by_user_id = ${user.id}, issued_at = ${issuedAt},
-                template_version = ${CHALLAN_TEMPLATE_VERSION},
-                warranty_template_version = ${warranty?.templateVersion ?? null},
-                warranty_text_sha256 = ${warranty?.textSha256 ?? null}
-            where id = ${id}
-          `.catch((error: unknown) => {
-          if (error instanceof Error && 'code' in error && error.code === '23505') {
-            throw httpError(
-              409,
-              'NUMBER_CONFLICT',
-              `Challan number ${challanNumber} already exists in this organisation; use a distinct prefix for this Work.`,
-            );
-          }
-          throw error;
         });
-
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'challan.issued',
-          'delivery_challans',
-          id,
-          {
-            challanNumber,
-            sequence,
-            totalAmount: snapshot.totalAmount,
-          },
-        );
         return readDetail(tx, id);
       });
       return reply.status(201).send(detail);
@@ -1337,13 +2027,13 @@ export function registerChallanRoutes(
       const body = request.body;
       const note = cancellationNote(body.note);
       return tenant(async (tx) => {
-        const [challanRef] = await tx<{ work_id: string }[]>`
+        const [challanRef] = await tx<{ work_id: string | null }[]>`
           select work_id from delivery_challans where id = ${id}
         `;
         if (!challanRef) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, challanRef.work_id);
+        await assertChallanAccess(tx, user.id, challanRef);
         // Closing a PO locks purchase_orders -> linked delivery_challans.
         // Take the identical order here before locking this challan, so a
         // receipt release can reopen every affected PO without a deadlock.
@@ -1351,7 +2041,7 @@ export function registerChallanRoutes(
         // an exceptional concurrent raw-SQL link change and fails to retry.
         const linkedOrders = await lockLinkedPurchaseOrdersForChallan(tx, id);
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'issued');
         await assertLinkedPurchaseOrderLocksCurrent(tx, id, linkedOrders);
         // R8: cancelling this challan would drop the delivered quantity
@@ -1360,13 +2050,19 @@ export function registerChallanRoutes(
         // creation paths' — document row first, then works — so cancel
         // and completion serialise instead of deadlocking, and the 0032
         // challan-update guard backstops the refusal in the database.
-        const [work] = await tx<{ status: string }[]>`
-          select status from works
-          where id = ${challan.work_id} and deleted_at is null
-          for update
-        `;
-        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        assertWorkOperable(work.status, 'cancelling a delivery challan');
+        //
+        // A standalone challan delivered nothing against a sanctioned
+        // quantity, so no completion predicate was ever measured against
+        // it and there is no Work to lock.
+        if (challan.work_id !== null) {
+          const [work] = await tx<{ status: string }[]>`
+            select status from works
+            where id = ${challan.work_id} and deleted_at is null
+            for update
+          `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          assertWorkOperable(work.status, 'cancelling a delivery challan');
+        }
         // Received goods cannot be un-delivered: once a receipt, serial,
         // or Measurement Book entry references this challan, cancellation
         // is forbidden (policy 2026-08-08; the DB trigger backs this up).
@@ -1451,7 +2147,7 @@ export function registerChallanRoutes(
       const { snapshot, branding } = await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'issued');
         const [row] = await tx<{ issued_snapshot: unknown }[]>`
             select issued_snapshot from delivery_challans where id = ${id}
@@ -1573,7 +2269,7 @@ export function registerChallanRoutes(
       return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const challan = await lockChallan(tx, id);
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        await assertChallanAccess(tx, user.id, challan);
         requireStatus(challan, 'issued');
         await storage.put(objectKey, body);
         await tx`
@@ -1619,7 +2315,7 @@ export function registerChallanRoutes(
         if (!row) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertChallanAccess(tx, user.id, row);
         const found =
           kind === 'rendered' ? row.rendered_object_key : row.signed_copy_object_key;
         if (found === null) {

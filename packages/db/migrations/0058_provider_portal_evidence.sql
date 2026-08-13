@@ -1,4 +1,4 @@
--- Migration 0056: record WHICH portal answered a statutory provider
+-- Migration 0058: record WHICH portal answered a statutory provider
 -- operation (finding 2 residue, docs/AUDIT-DISPOSITION-2026-08-10.md).
 --
 -- The operation ledger already retained WHAT was sent and WHAT came back
@@ -34,7 +34,7 @@ ALTER TABLE statutory_provider_operations
     );
 
 COMMENT ON COLUMN statutory_provider_operations.provider_portal IS
-  'Which portal answered: the NIC IRP the adapter routed to and the provider host it routed through. NULL on rows that predate migration 0056; never backfilled, because the portal then in force is not recoverable.';
+  'Which portal answered: the NIC IRP the adapter routed to and the provider host it routed through. NULL on rows that predate migration 0058; never backfilled, because the portal then in force is not recoverable.';
 
 -- ---------------------------------------------------------------------------
 -- The append-once guard, recreated verbatim from 0053's text with one

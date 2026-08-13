@@ -3714,7 +3714,7 @@ describe('finding 2: IRP evidence is verified locally, and the portal is recorde
     expect(operation?.provider_portal).toBe(STUB_PORTAL);
 
     // The completed row is frozen outright, so the portal cannot be
-    // rewritten afterwards to name a different one (migration 0056 also
+    // rewritten afterwards to name a different one (migration 0058 also
     // pins it into the pending-row identity ROW).
     const guarded = await admin`
       update statutory_provider_operations

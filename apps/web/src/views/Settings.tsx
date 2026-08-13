@@ -21,6 +21,7 @@ const SERIES_LABELS: Record<NumberedDocumentType, string> = {
   tax_invoice: 'Tax Invoice',
   budgetary_quotation: 'Budgetary Quotation',
   credit_note: 'Credit Note',
+  standalone_challan: 'Standalone Delivery Challan',
 };
 
 interface SettingsProps {

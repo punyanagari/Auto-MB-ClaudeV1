@@ -25,6 +25,7 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
+import { requireWorkBoundChallan } from './challans.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -146,7 +147,7 @@ export function registerRetentionRoutes(
         // The row lock serialises receipt recording against concurrent
         // cancellation: whichever transaction wins, the other sees the
         // final status.
-        const [challan] = await tx<{ status: string; work_id: string }[]>`
+        const [challan] = await tx<{ status: string; work_id: string | null }[]>`
             select status, work_id from delivery_challans
             where id = ${challanId}
             for update
@@ -154,7 +155,11 @@ export function registerRetentionRoutes(
         if (!challan) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, challan.work_id);
+        // A receipt is site evidence against a Work's delivery; a
+        // standalone challan (0056) has no Work and its receipt row
+        // could not satisfy challan_receipts.work_id anyway.
+        const workId = requireWorkBoundChallan(challan);
+        await assertWorkAccess(tx, user.id, workId);
         if (challan.status !== 'issued') {
           throw httpError(
             409,
@@ -176,7 +181,7 @@ export function registerRetentionRoutes(
               received_by, remarks, recorded_by_user_id
             )
             values (
-              ${organisationId}, ${challanId}, ${challan.work_id},
+              ${organisationId}, ${challanId}, ${workId},
               ${body.receivedOn}, ${body.receivedBy}, ${body.remarks ?? null},
               ${user.id}
             )
@@ -230,13 +235,13 @@ export function registerRetentionRoutes(
     async ({ request, user, tenant }) => {
       const { id: challanId } = request.params;
       return tenant(async (tx) => {
-        const [ref] = await tx<{ work_id: string }[]>`
+        const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from delivery_challans where id = ${challanId}
         `;
         if (!ref) {
           throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
         }
-        await assertWorkAccess(tx, user.id, ref.work_id);
+        await assertWorkAccess(tx, user.id, requireWorkBoundChallan(ref));
         const [row] = await tx<
           {
             id: string;
@@ -283,9 +288,16 @@ export function registerRetentionRoutes(
       const serials = await tenant(async (tx) => {
         // Lock the line so the quantity cap cannot race.
         const [line] = await tx<
-          { id: string; work_id: string; quantity: string; challan_status: string }[]
+          {
+            id: string;
+            work_id: string | null;
+            work_item_id: string | null;
+            quantity: string;
+            challan_status: string;
+          }[]
         >`
-            select dci.id, dci.work_id, dci.quantity::text as quantity, dc.status as challan_status
+            select dci.id, dci.work_id, dci.work_item_id,
+                   dci.quantity::text as quantity, dc.status as challan_status
             from delivery_challan_items dci
             join delivery_challans dc on dc.id = dci.delivery_challan_id
             where dci.id = ${body.challanItemId}
@@ -295,6 +307,20 @@ export function registerRetentionRoutes(
         if (!line) {
           throw httpError(404, 'CHALLAN_ITEM_NOT_FOUND', 'No such challan line.');
         }
+        // R6 traceability is a Work-ITEM guarantee: a serial identifies a
+        // physical unit of a sanctioned item, and installation reads it
+        // back through work_item_id. A manual (non-LOA) line names no
+        // such item, and a standalone challan has no Work at all — both
+        // are refused by name here, and the 0056 trigger holds the same
+        // rule against direct SQL.
+        if (line.work_item_id === null || line.work_id === null) {
+          throw httpError(
+            400,
+            'SERIALS_REQUIRE_WORK_ITEM_LINE',
+            'Serials are recorded against a Work item line; this line carries material that is not on the Work’s schedule.',
+          );
+        }
+        const lineWorkId = line.work_id;
         // Serials are recorded post-issue (the historical evidence
         // flow) or on the draft (required before issue for items with
         // requires_serials). Cancelled challans take no new evidence.
@@ -305,7 +331,7 @@ export function registerRetentionRoutes(
             'Serials are recorded against draft or issued challans.',
           );
         }
-        await assertWorkAccess(tx, user.id, line.work_id);
+        await assertWorkAccess(tx, user.id, lineWorkId);
         const [existing] = await tx<{ count: string }[]>`
             select count(*)::text as count from challan_item_serials
             where delivery_challan_item_id = ${body.challanItemId}
@@ -325,7 +351,7 @@ export function registerRetentionRoutes(
                 delivery_challan_item_id, serial_number
               )
               values (
-                ${organisationId}, ${line.work_id}, ${challanId},
+                ${organisationId}, ${lineWorkId}, ${challanId},
                 ${body.challanItemId}, ${serialNumber}
               )
             `.catch((error: unknown) => {
@@ -351,7 +377,7 @@ export function registerRetentionRoutes(
             count: body.serialNumbers.length,
           },
         );
-        return listSerials(tx, line.work_id);
+        return listSerials(tx, lineWorkId);
       });
       return reply.status(201).send({ serials });
     },

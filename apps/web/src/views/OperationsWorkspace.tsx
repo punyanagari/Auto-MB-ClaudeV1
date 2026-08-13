@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Database,
   FileText,
+  Truck,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -33,6 +34,7 @@ import { Button } from '../ui/button.js';
 import { Approvals } from './Approvals.js';
 import { ChallanDetail } from './ChallanDetail.js';
 import { ChallanEditor } from './ChallanEditor.js';
+import { DeliveryChallans } from './DeliveryChallans.js';
 import { IssueChallanDetail } from './IssueChallanDetail.js';
 import { IssueChallanEditor } from './IssueChallanEditor.js';
 import { Masters, type MastersTab } from './Masters.js';
@@ -67,6 +69,7 @@ interface PendingDeparture {
 type ModuleKey =
   | 'dashboard'
   | 'works'
+  | 'delivery-challans'
   | 'quotations'
   | 'approvals'
   | 'search'
@@ -86,6 +89,11 @@ const NAVIGATION = [
   {
     label: 'Documents',
     items: [
+      {
+        key: 'delivery-challans' as const,
+        label: 'Delivery Challans',
+        icon: Truck,
+      },
       { key: 'quotations' as const, label: 'Quotations', icon: FileText },
       { key: 'approvals' as const, label: 'Approvals', icon: CheckCircle },
     ],
@@ -108,6 +116,7 @@ const NAVIGATION = [
 ] as const;
 
 const MOBILE_MORE_ITEMS = [
+  { key: 'delivery-challans', label: 'Delivery Challans', icon: Truck },
   { key: 'quotations', label: 'Quotations', icon: FileText },
   { key: 'approvals', label: 'Approvals', icon: CheckCircle },
   // The header's search box is desktop-only, so the mobile shell reaches
@@ -133,6 +142,8 @@ function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'dashboard' };
     case 'works':
       return { name: 'works' };
+    case 'delivery-challans':
+      return { name: 'delivery-challans' };
     case 'quotations':
       return { name: 'quotations' };
     case 'approvals':
@@ -152,7 +163,12 @@ function defaultViewOf(key: ModuleKey): WorkspaceView {
 
 function activeModuleOf(view: WorkspaceView): ModuleKey {
   switch (view.name) {
+    // Both of the module's views light the same nav lamp: the register
+    // and an opened record are one place.
+    case 'delivery-challan':
+      return 'delivery-challans';
     case 'dashboard':
+    case 'delivery-challans':
     case 'quotations':
     case 'approvals':
     case 'search':
@@ -190,6 +206,10 @@ function pageTitleOf(view: WorkspaceView): string {
       return 'Edit Issue Challan';
     case 'issue-challan':
       return 'Issue Challan';
+    case 'delivery-challans':
+      return 'Delivery Challans';
+    case 'delivery-challan':
+      return 'Delivery Challan';
     case 'quotations':
       return 'Quotations';
     case 'approvals':
@@ -1096,6 +1116,27 @@ export function OperationsWorkspace({
               }}
               onBack={() => {
                 setView({ name: 'works' });
+              }}
+            />
+          )}
+
+          {(view.name === 'delivery-challans' || view.name === 'delivery-challan') && (
+            <DeliveryChallans
+              api={api}
+              organisationId={organisation.id}
+              canModify={canModify}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              openChallanId={view.name === 'delivery-challan' ? view.challanId : null}
+              onOpenChallan={(challanId) => {
+                navigate(
+                  challanId === null
+                    ? { name: 'delivery-challans' }
+                    : { name: 'delivery-challan', challanId },
+                );
+              }}
+              onOpenWorkChallan={(workId, challanId) => {
+                navigate({ name: 'challan', workId, workCode: '', challanId });
               }}
             />
           )}
