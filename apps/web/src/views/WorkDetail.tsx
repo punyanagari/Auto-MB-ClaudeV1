@@ -11,6 +11,7 @@ import type {
   Serial,
   UnfinishedWorkItem,
   WorkCompletionBlocker,
+  SupersedeEligibilityResponse,
   WorkCompletionReadiness,
   WorkDetailResponse,
 } from '@auto-mb/contracts';
@@ -343,6 +344,11 @@ export function WorkDetail({
   /** What the server would say to a completion attempt, asked before the
    * operator writes a note. Null while it is still being read. */
   const [readiness, setReadiness] = useState<WorkCompletionReadiness | null>(null);
+  /** Whether this Work may still be withdrawn (migration 0071). Null while
+   * unread, and left null when the read fails: the Amendments tab then
+   * offers nothing, which is the honest state for a question that could
+   * not be asked. */
+  const [supersede, setSupersede] = useState<SupersedeEligibilityResponse | null>(null);
   const [ownTab, setOwnTab] = useState<WorkTab>('overview');
   const relatedGenerationRef = useRef(0);
   const tab = controlledTab ?? ownTab;
@@ -365,6 +371,7 @@ export function WorkDetail({
     setRelatedPending(new Set(ALL_RELATED_LABELS));
     setRelatedFailures(new Set());
     setReadiness(null);
+    setSupersede(null);
 
     // The Work identity and schedules are the page's critical read. Load them
     // independently so a temporary failure in one supporting register cannot
@@ -467,6 +474,17 @@ export function WorkDetail({
       })
       .catch(() => {
         if (!cancelled) setReadiness(null);
+      });
+    // Asked and allowed to fail for the same reason as the readiness read:
+    // it decides whether the supersede panel is worth offering, not whether
+    // the Work can be read, and the server refuses again on the way in.
+    api
+      .getSupersedeEligibility(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setSupersede(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setSupersede(null);
       });
     return () => {
       cancelled = true;
@@ -1273,6 +1291,7 @@ export function WorkDetail({
             schedules={schedules}
             workItems={workItems}
             canCreateDocuments={canCreateDocuments}
+            supersede={supersede}
             pending={pending}
             act={act}
           />

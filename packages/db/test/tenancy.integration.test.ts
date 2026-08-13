@@ -67,6 +67,9 @@ const TENANT_TABLES = [
   // The railway variation order cited for an omission (0058): uploaded
   // evidence, so the application role holds SELECT and INSERT only.
   'amendment_variation_orders',
+  // The record that a confirmed Work was withdrawn and what replaced it
+  // (0071).
+  'work_supersessions',
   'installations',
   'installation_serials',
   'correction_notices',
@@ -162,6 +165,9 @@ const DELETE_REVOKED_TABLES = [
   // A cited variation order is immutable evidence: no UPDATE and no
   // DELETE privilege at all (0058).
   'amendment_variation_orders',
+  // A supersession is the only record that a Work was withdrawn: it binds
+  // its successor once and is never removed (0071).
+  'work_supersessions',
   // Installation records cancel with a note; attachments release (0017).
   'installations',
   'installation_serials',
@@ -345,7 +351,7 @@ async function seedTenantGraph(
     `;
     if (!workItem) throw new Error('seed work item insert returned no row');
 
-    await tx`
+    const [loaDocument] = await tx<{ id: string }[]>`
       insert into loa_documents (
         organisation_id, object_key, original_filename, sha256,
         media_type, size_bytes, uploaded_by_user_id
@@ -354,7 +360,9 @@ async function seedTenantGraph(
         ${organisationId}, ${`${organisationId}/loa/${workCode}.pdf`}, ${`${workCode}.pdf`},
         ${shaFill.repeat(64)}, 'application/pdf', 1024, ${userId}
       )
+      returning id
     `;
+    if (!loaDocument) throw new Error('seed LOA document insert returned no row');
 
     const [challan] = await tx<{ id: string }[]>`
       insert into delivery_challans (
@@ -483,6 +491,20 @@ async function seedTenantGraph(
       returning id
     `;
     if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // The record of a Work withdrawn by an approved supersede request
+    // (0071). Seeded against the same approval row; the isolation proof
+    // needs the row to exist, not the Work to be soft-deleted.
+    await tx`
+      insert into work_supersessions (
+        organisation_id, superseded_work_id, loa_document_id,
+        approval_request_id, reason, superseded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${loaDocument.id},
+        ${approvalRequest.id}, 'Integration seed supersession', ${userId}
+      )
+    `;
 
     // The railway variation order an omission cites (0058). Only verified
     // orders exist, so the seed writes one.

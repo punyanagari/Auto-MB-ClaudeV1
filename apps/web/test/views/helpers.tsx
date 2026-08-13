@@ -224,6 +224,8 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     proposeAmendment: vi.fn<ApiClient['proposeAmendment']>(),
     proposeAddItem: vi.fn<ApiClient['proposeAddItem']>(),
     proposeItemRemoval: vi.fn<ApiClient['proposeItemRemoval']>(),
+    getSupersedeEligibility: vi.fn<ApiClient['getSupersedeEligibility']>(),
+    proposeWorkSupersede: vi.fn<ApiClient['proposeWorkSupersede']>(),
     attachVariationOrder: vi.fn<ApiClient['attachVariationOrder']>(),
     downloadVariationOrderFile: vi.fn<ApiClient['downloadVariationOrderFile']>(),
     approveAmendment: vi.fn<ApiClient['approveAmendment']>(),

@@ -89,6 +89,10 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // written once at upload and never rewritten, so no UPDATE and no
   // DELETE either (0058).
   amendment_variation_orders: 'SELECT, INSERT',
+  // The record that a confirmed Work was withdrawn and what replaced it
+  // (0071). UPDATE binds the successor once; no DELETE, because this is
+  // the only place the withdrawal is written down.
+  work_supersessions: 'SELECT, INSERT, UPDATE',
   // Installation records cancel with a note, never delete; attachments
   // release, never delete (0017).
   installations: 'SELECT, INSERT, UPDATE',

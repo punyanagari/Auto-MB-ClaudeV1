@@ -1,4 +1,9 @@
-import type { ApprovalRequest, WorkDetailResponse, WorkItem } from '@auto-mb/contracts';
+import type {
+  ApprovalRequest,
+  SupersedeEligibilityResponse,
+  WorkDetailResponse,
+  WorkItem,
+} from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { useState } from 'react';
 import { formValue, type ApiClient } from '../api.js';
@@ -18,6 +23,10 @@ interface WorkAmendmentsProps {
   readonly schedules: WorkDetailResponse['schedules'];
   readonly workItems: readonly WorkItem[];
   readonly canCreateDocuments: boolean;
+  /** Whether this Work may still be withdrawn and its letter read again
+   * (migration 0071), and what stands in the way if not. Null when the
+   * question could not be asked, in which case nothing is offered. */
+  readonly supersede: SupersedeEligibilityResponse | null;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
@@ -36,6 +45,7 @@ export function WorkAmendments({
   schedules,
   workItems,
   canCreateDocuments,
+  supersede,
   pending,
   act,
 }: WorkAmendmentsProps) {
@@ -119,6 +129,113 @@ export function WorkAmendments({
             }}
           />
         </Disclosure>
+      )}
+      {canCreateDocuments && supersede !== null && (
+        <Disclosure label="Supersede this Work">
+          <WorkSupersedePanel
+            eligibility={supersede}
+            pending={pending}
+            onPropose={(reason) => {
+              void act(async () => {
+                await api.proposeWorkSupersede(organisationId, workId, { reason });
+                await refresh();
+              }, 'Supersede request recorded. It waits on the Approvals screen; approving it withdraws this Work and returns its letter to review.');
+            }}
+          />
+        </Disclosure>
+      )}
+    </>
+  );
+}
+
+/** The exit for a Work confirmed from a letter that was read wrongly.
+ *
+ * It is deliberately not an amendment: an amendment records that the
+ * contract changed, and nothing changed here — the letter was always what
+ * it says, and the Work is what got it wrong. So the panel states what
+ * superseding does in full, and refuses to hide the fact that the Work
+ * disappears from the register. Everything it says about eligibility comes
+ * from the server, which re-checks it at proposal and again at approval. */
+function WorkSupersedePanel({
+  eligibility,
+  pending,
+  onPropose,
+}: {
+  readonly eligibility: SupersedeEligibilityResponse;
+  readonly pending: boolean;
+  readonly onPropose: (reason: string) => void;
+}) {
+  return (
+    <>
+      <p className="text-muted-foreground">
+        Withdraws this Work and returns its LOA document to review, so the letter can
+        be read again and confirmed in its place. Use it when the extracted values are
+        wrong — the rates, the quantities, the letter number — rather than when the
+        railway has changed the contract. Nothing is withdrawn until an approver with
+        the cancel authority approves the request.
+      </p>
+      {eligibility.pendingRequestId !== null && (
+        <p>A supersede request for this Work is already awaiting a decision.</p>
+      )}
+      {eligibility.loaDocumentId === null && (
+        <p>
+          This Work was not confirmed from an LOA document in this product, so there is
+          no letter to read again. Correct it through an amendment instead.
+        </p>
+      )}
+      {eligibility.blockers.length > 0 && (
+        <>
+          <p>
+            This Work cannot be superseded — it already carries documents that depend
+            on it. Correct it through an amendment or a correction notice.
+          </p>
+          <DataTable>
+            <caption className="sr-only">
+              Registers that hold documents for this Work
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Register</th>
+                <th scope="col">Records</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eligibility.blockers.map((blocker) => (
+                <tr key={blocker.register}>
+                  <th scope="row" className={wrapCell}>
+                    {blocker.label}
+                  </th>
+                  <td className="font-mono tabular-nums">{blocker.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </>
+      )}
+      {eligibility.eligible && eligibility.pendingRequestId === null && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            onPropose(formValue(data, 'supersede-reason').trim());
+          }}
+        >
+          <Field>
+            <label htmlFor="supersede-reason">Reason</label>
+            <input
+              id="supersede-reason"
+              name="supersede-reason"
+              required
+              minLength={3}
+              maxLength={2000}
+            />
+          </Field>
+          <Actions>
+            <Button type="submit" variant="destructive" disabled={pending}>
+              Request supersede
+            </Button>
+          </Actions>
+        </form>
       )}
     </>
   );

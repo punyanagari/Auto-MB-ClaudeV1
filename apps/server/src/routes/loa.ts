@@ -53,6 +53,7 @@ import {
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
+import { bindSupersessionSuccessor } from '../work-supersede.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import type { ObjectStorage } from '../storage.js';
@@ -1431,6 +1432,18 @@ export function registerLoaRoutes(
               and extraction_status <> 'discarded'
           `;
 
+        // If this letter was released by an approved supersession
+        // (migration 0071), the Work just confirmed is the successor the
+        // supersession was waiting for, and the provenance is bound in
+        // this same transaction. Confirming a letter that no supersession
+        // is waiting for is the ordinary case and binds nothing.
+        const supersessionId = await bindSupersessionSuccessor(
+          tx,
+          user.id,
+          documentId,
+          work.id,
+        );
+
         await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
@@ -1439,6 +1452,10 @@ export function registerLoaRoutes(
               ${organisationId}, ${user.id}, 'work.created', 'works', ${work.id},
               ${jsonb(tx, {
                 loaDocumentId: documentId,
+                // Present only on a reconfirmation: the supersession this
+                // Work is the successor of. The trail then answers "where
+                // did this Work come from" without a join.
+                supersessionId,
                 workCode: body.workCode,
                 scheduleCount: body.schedules.length,
                 itemCount: body.schedules.reduce(

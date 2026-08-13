@@ -204,8 +204,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 
 ## 5. Business invariants
 
-1. **Work identity:** `work_code` is 1–20 uppercase letters, digits, `-`, `_`, or `/`, begins alphanumeric, and is unique forever within an organisation, including soft-deleted Works.
-2. **Letter identity:** LOA letter number is unique forever within an organisation.
+1. **Work identity:** `work_code` is 1–20 uppercase letters, digits, `-`, `_`, or `/`, begins alphanumeric, and is unique among an organisation's live Works. A **superseded** Work keeps the code it was confirmed under but stops claiming it, so the successor confirmed from the same letter carries the same identity — it is the same contract. Nothing else releases a work code.
+2. **Letter identity:** LOA letter number is unique among an organisation's live Works, released by supersession on the same terms as the work code.
 3. **One draft:** at most one draft DC per Work, and at most one open standalone draft per consignee contact.
 4. **Gap-free issue sequence:** numbers are assigned only at issue, serialised per Work — or per financial year for a standalone challan — and never reused after cancellation.
 5. **Quantity ceiling:** issued quantity cannot exceed awarded quantity unless excess delivery is explicitly enabled. Only Work item lines count towards it; manual and standalone lines are inert.
@@ -219,7 +219,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
-16. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
+16. **A confirmed Work with wrong extracted data is superseded, not edited:** a Work whose letter was read wrongly cannot be amended into shape — an amendment records that the contract changed, and nothing changed. It is instead withdrawn by an approved **supersede** request and its letter returned to review, so the letter can be read again. This is available only while the Work carries no downstream document at all, and only through the approval engine; the decider needs the cancel authority as well as the approval authority. See §5.4.
+17. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
 ### 5.1 Verifying a variation order
 
@@ -351,13 +352,48 @@ real letters, up to 29%) it overstated every figure, and above par it
 understated them — the contractor invoicing a quarter less than the agreement
 entitled them to.
 
+### 5.4 Superseding a confirmed Work
+
+The awarded LOA baseline is immutable and an omission needs a railway
+variation order. Neither helps when the extraction itself was wrong — the
+rates read at advertised figures, a mistyped letter number, a quantity off
+by a decimal place. §5.3 records exactly this case: Works confirmed before
+the accepted-rate rule still carry advertised rates, and the remedy is to
+read the letter again. Until a Work can be withdrawn, there is no way to
+read it again, because a confirmed letter cannot be discarded.
+
+**The exit.** An owner or office member files a supersede request against
+the Work, with a reason. It never applies on filing, however much authority
+the filer holds. An approver who also holds the **cancel** authority decides
+it; approving withdraws the Work and returns its LOA document to review, in
+one transaction. The letter is then an ordinary unconfirmed intake package
+again: it can be reviewed and confirmed into a successor, or — when the
+scan is the problem — discarded and uploaded again.
+
+**Eligibility.** Only a Work with **no downstream document at all**: no
+delivery or issue challan, installation, Measurement Book or entry, tax
+invoice, credit note, PAC certificate, correction notice, submitted
+instrument, bill, extension request, purchase order, cited variation order,
+or live change request. Anything issued or received means the Work is
+corrected through the paths that already exist. Per-Work numbering counters
+and the Work's own body — schedules, items, payment matrix, consignee
+preferences, assignments — are not documents and do not block.
+
+**What survives.** The withdrawn Work is soft-deleted, never removed: its
+items, its rates and its reason for withdrawal stay answerable. A
+supersession record carries the withdrawal, the approval that authorised
+it, the released letter, and — once the letter is confirmed again — the
+successor, so the provenance reads in both directions. Numbering is
+untouched: the successor is a new Work with its own counters, and no
+number a superseded Work's series reached is ever minted twice.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.
 - Money is PostgreSQL `numeric`, represented as decimal strings at API boundaries.
 - Original filenames never become storage paths.
 - Issued records are never hard-deleted.
-- Soft-deleted Work identity remains reserved.
+- A superseded Work keeps its identity on the record and releases the organisation's live claim on it (§5.4); nothing else releases a work code or letter number.
 - All tenant-owned tables include `organisation_id`.
 
 ## 7. First-release acceptance

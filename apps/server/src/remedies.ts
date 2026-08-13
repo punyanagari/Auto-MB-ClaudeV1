@@ -161,6 +161,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Change at least one line before filing the correction; a notice identical to the issued document corrects nothing.',
   WORK_NOT_FULLY_EXECUTED:
     'Deliver and install the balance, or amend the outstanding quantities down, before completing the Work.',
+  WORK_HAS_DOWNSTREAM_DOCUMENTS:
+    'Correct the Work through an amendment or a correction notice; superseding is available only while nothing has been issued or received against it.',
+  WORK_HAS_NO_LOA_DOCUMENT:
+    'Correct this Work through an amendment; a Work with no letter in the product has nothing to read again and no successor to be confirmed from.',
+  WORK_ALREADY_SUPERSEDED:
+    'Open the successor Work; the letter this Work came from has already been released and can be confirmed only once more.',
 
   // ---- Masters and configuration -----------------------------------------
   CONTACT_RETIRED:
