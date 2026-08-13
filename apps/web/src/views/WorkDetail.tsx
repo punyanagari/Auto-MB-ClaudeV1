@@ -34,6 +34,7 @@ import { WorkAmendments } from './WorkAmendments.js';
 import { WorkSchedules } from './WorkSchedules.js';
 import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
+import { WorkBillSettlement } from './WorkBillSettlement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
@@ -1226,6 +1227,19 @@ export function WorkDetail({
               act={act}
             />
           </RelatedSectionGate>
+          {/* And what the railway actually paid against those bills. It
+              belongs on this tab rather than on one of its own: a bill and
+              its settlement are the same fact read from two ends, and
+              splitting them puts the amount on one screen and the word
+              "paid" on another — which is how the register came to be a
+              spreadsheet in the first place. */}
+          <WorkBillSettlement
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            canIssue={canIssueDocuments}
+            canCancel={canCancel}
+          />
           {/* The GST document sits with the money it bills: the bill is
               what the contract owes, the tax invoice is what the law
               requires for it. */}

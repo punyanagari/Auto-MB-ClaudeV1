@@ -63,6 +63,17 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   work_instruments: 'SELECT, INSERT, UPDATE',
   bills: 'SELECT, INSERT, UPDATE',
   bill_counters: 'SELECT, INSERT, UPDATE',
+  // The payment register (0067). A recorded receipt of money is never
+  // edited and never deleted: UPDATE exists only so it can be VOIDED,
+  // which the 0067 guard is the only permitted use of. A deduction has no
+  // UPDATE at all — a wrong breakup is corrected by voiding the whole
+  // advice and recording it again, so there is nothing to edit in place.
+  bill_payments: 'SELECT, INSERT, UPDATE',
+  bill_payment_deductions: 'SELECT, INSERT',
+  // The outstanding-with-railway VIEW over the four tables that decide
+  // it (0067): security_invoker, so their RLS is re-checked for the
+  // caller and this grant adds no visibility. Read-only by construction.
+  bill_settlement_positions: 'SELECT',
   mb_entries: 'SELECT, INSERT, UPDATE',
   // Master data retires via the active flag; no DELETE exists (0013).
   location_masters: 'SELECT, INSERT, UPDATE',

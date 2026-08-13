@@ -21,6 +21,7 @@ import { Search } from '../../src/views/Search.js';
 import { Settings } from '../../src/views/Settings.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
+import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
@@ -413,6 +414,22 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry timeline/,
     empty: { text: /No activity recorded yet/ },
+  },
+  {
+    view: 'WorkBillSettlement.tsx',
+    name: 'outstanding with the railway',
+    loads: ['listBillSettlement'],
+    render: (api) => (
+      <WorkBillSettlement
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canIssue
+        canCancel
+      />
+    ),
+    retry: /Retry payments against bills/,
+    empty: { text: /nothing is outstanding with the railway yet/ },
   },
   {
     view: 'WorkBillingReadiness.tsx',

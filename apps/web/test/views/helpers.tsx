@@ -291,6 +291,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listReceivedRailwayBills']>()
       .mockResolvedValue([]),
     discardReceivedRailwayBill: vi.fn<ApiClient['discardReceivedRailwayBill']>(),
+    listBillSettlement: vi.fn<ApiClient['listBillSettlement']>().mockResolvedValue([]),
+    recordBillPayment: vi.fn<ApiClient['recordBillPayment']>(),
+    voidBillPayment: vi.fn<ApiClient['voidBillPayment']>(),
     closeMeasurementBook: vi.fn<ApiClient['closeMeasurementBook']>(),
     renderMeasurementBook: vi.fn<ApiClient['renderMeasurementBook']>(),
     downloadMeasurementBookPdf: vi.fn<ApiClient['downloadMeasurementBookPdf']>(),

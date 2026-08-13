@@ -184,6 +184,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Read the signature panel on the recorded railway bill, and ask the railway for a correctly signed copy if the bill itself is at fault.',
   BILL_MEASUREMENT_BOOK_NOT_CLOSED:
     "Close the Measurement Book with the railway's verified On-Account Bill first; payment is recorded against a settlement the railway signed.",
+  BILL_ALREADY_PAID:
+    'Record the correction as a receipt or a deduction against a later bill, the way a billed Measurement Book is corrected on a subsequent one, because the register of a paid bill is closed in both directions.',
   RAILWAY_BILL_EXTRACTION_FAILED:
     'Upload the IWRCMS bill PDF as downloaded rather than a scan or a print; the bill number, date, amount and measurement are read from its text layer.',
   RAILWAY_BILL_MEASUREMENT_UNMATCHED:

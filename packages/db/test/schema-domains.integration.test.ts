@@ -180,7 +180,7 @@ describe('the schema at head names all three shapes', () => {
     const adopted = columns.filter(
       (column) => column.type === 'money_amount' || column.type === 'quantity_amount',
     );
-    expect(adopted.length).toBe(53);
+    expect(adopted.length).toBe(55);
   });
 
   it('types every digest column as sha256_hex', () => {

@@ -75,6 +75,12 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'decision_note',
   ],
 
+  // A recorded receipt of money (0067). Every fact of it is frozen the
+  // moment it is written — there is no edit path at all — and the only
+  // later act is the void, which is the three columns below plus the
+  // maintained timestamp.
+  bill_payments: ['id', 'updated_at', 'voided_at', 'voided_by_user_id', 'void_reason'],
+
   // The legacy bill record (0006). Its money and lines snapshot are
   // frozen; submission and payment are the two later facts.
   bills: ['id', 'status', 'submitted_at', 'paid_at'],

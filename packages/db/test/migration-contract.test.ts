@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 146;
+const TRIGGER_CENSUS = 150;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
