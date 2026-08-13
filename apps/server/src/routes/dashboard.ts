@@ -75,6 +75,114 @@ interface PbgRequirementRow extends Record<string, unknown> {
 }
 
 /**
+ * The Works a member may see: everything for full scope, the assigned
+ * set otherwise. `$1` is the full-scope flag, `$2` the user. Shared
+ * verbatim by the progress and PBG statements below so both answer for
+ * exactly the same Works.
+ */
+const VISIBLE_WORKS_CTE = `
+  visible as (
+    select w.id, w.work_code, w.title, w.status, w.contract_value,
+           w.gst_basis, w.gst_rate, w.created_at, w.letter_date,
+           w.pbg_required_amount, w.pbg_submission_days, w.pbg_extension_days
+    from works w
+    where w.deleted_at is null
+      and ($1::boolean or exists (
+        select 1 from work_assignments wa
+        where wa.work_id = w.id and wa.user_id = $2
+      ))
+  )
+`;
+
+/**
+ * Per-Work delivered and billed money, PRE-AGGREGATED: each evidence
+ * table is grouped by `work_id` once and joined to the visible Works.
+ * The predecessor hung a correlated lateral off every Work, so the
+ * delivered sum re-scanned the challan lines per Work — 881 ms at the
+ * review's measured 412k items, on the screen every session opens with.
+ * The sums, casts and ordering are unchanged, so every figure the
+ * dashboard reports is character-for-character what the laterals
+ * produced (proved on a seeded fixture by the equivalence test, which
+ * runs the retired lateral text beside this one).
+ *
+ * Exported so `test/query-aggregates.integration.test.ts` can EXPLAIN
+ * exactly what production runs.
+ */
+export const DASHBOARD_PROGRESS_SQL = `
+  with ${VISIBLE_WORKS_CTE},
+  delivered as (
+    select c.work_id,
+           sum(i.line_amount) as total,
+           count(distinct c.id) as challans
+    from delivery_challans c
+    join delivery_challan_items i on i.delivery_challan_id = c.id
+    join visible v on v.id = c.work_id
+    where c.status = 'issued'
+    group by c.work_id
+  ),
+  billed as (
+    select b.work_id, sum(b.total_amount) as total
+    from bills b
+    join visible v on v.id = b.work_id
+    group by b.work_id
+  )
+  select
+    v.id as work_id,
+    v.work_code,
+    v.title,
+    v.status,
+    v.contract_value::text as contract_value,
+    coalesce(delivered.total, 0)::numeric(18,2)::text as delivered_value,
+    coalesce(billed.total, 0)::numeric(18,2)::text as billed_value,
+    -- The basis all three of those figures are stated on: the
+    -- delivered and billed sums are built from the Work's own item
+    -- rates, which came off the LOA schedule, so they carry the
+    -- letter's basis exactly as contract_value does (0062).
+    v.gst_basis,
+    v.gst_rate::text as gst_rate,
+    coalesce(delivered.challans, 0)::text as issued_challans
+  from visible v
+  left join delivered on delivered.work_id = v.id
+  left join billed on billed.work_id = v.id
+  order by v.created_at desc
+`;
+
+/**
+ * PBG requirement vs submission, with the active instruments grouped
+ * once rather than re-aggregated per Work. Comparison and date
+ * arithmetic both stay in SQL.
+ */
+export const DASHBOARD_PBG_SQL = `
+  with ${VISIBLE_WORKS_CTE},
+  active as (
+    select wi.work_id, count(*) as count, sum(wi.amount) as total
+    from work_instruments wi
+    join visible v on v.id = wi.work_id
+    where wi.kind = 'pbg' and wi.status = 'active'
+    group by wi.work_id
+  )
+  select
+    w.id as work_id,
+    w.work_code,
+    w.pbg_required_amount::text as required_amount,
+    (w.letter_date + w.pbg_submission_days)::text as normal_due,
+    (w.letter_date + w.pbg_submission_days
+      + coalesce(w.pbg_extension_days, 0))::text as extended_due,
+    ((w.letter_date + w.pbg_submission_days) - current_date)::text
+      as days_to_normal,
+    ((w.letter_date + w.pbg_submission_days
+      + coalesce(w.pbg_extension_days, 0)) - current_date)::text
+      as days_to_extended,
+    coalesce(active.count, 0)::text as active_count,
+    coalesce(active.total, 0)::numeric(18,2)::text as active_amount,
+    (coalesce(active.total, 0) < w.pbg_required_amount) as under_required
+  from visible w
+  left join active on active.work_id = w.id
+  where w.pbg_required_amount is not null
+  order by w.created_at desc
+`;
+
+/**
  * The signed-in landing view: everything across the organisation that
  * needs attention (expiring instruments, review queues, open drafts,
  * unpaid bills) plus per-work delivery progress. All sums are exact SQL
@@ -98,43 +206,10 @@ export function registerDashboardRoutes(
       return tenant(async (tx) => {
         // 'assigned'-scoped members see a dashboard of their Works only.
         const full = await hasFullWorkScope(tx, user.id);
-        const works = await tx<ProgressRow[]>`
-          select
-            w.id as work_id,
-            w.work_code,
-            w.title,
-            w.status,
-            w.contract_value::text as contract_value,
-            coalesce(delivered.total, 0)::numeric(18,2)::text as delivered_value,
-            coalesce(billed.total, 0)::numeric(18,2)::text as billed_value,
-            -- The basis all three of those figures are stated on: the
-            -- delivered and billed sums are built from the Work's own item
-            -- rates, which came off the LOA schedule, so they carry the
-            -- letter's basis exactly as contract_value does (0062).
-            w.gst_basis,
-            w.gst_rate::text as gst_rate,
-            coalesce(delivered.challans, 0)::text as issued_challans
-          from works w
-          left join lateral (
-            select
-              sum(i.line_amount) as total,
-              count(distinct c.id) as challans
-            from delivery_challans c
-            join delivery_challan_items i on i.delivery_challan_id = c.id
-            where c.work_id = w.id and c.status = 'issued'
-          ) delivered on true
-          left join lateral (
-            select sum(b.total_amount) as total
-            from bills b
-            where b.work_id = w.id
-          ) billed on true
-          where w.deleted_at is null
-            and (${full} or exists (
-              select 1 from work_assignments wa
-              where wa.work_id = w.id and wa.user_id = ${user.id}
-            ))
-          order by w.created_at desc
-        `;
+        const works = (await tx.unsafe(DASHBOARD_PROGRESS_SQL, [
+          full,
+          user.id,
+        ])) as unknown as ProgressRow[];
 
         // The IRP reporting window (migration 0049): submitted invoices
         // whose frozen deadline exists and which are still unregistered,
@@ -218,37 +293,11 @@ export function registerDashboardRoutes(
 
         // PBG requirement vs submission: every Work whose letter demands
         // a PBG, with the exact-numeric total of its active 'pbg'
-        // instruments. Comparison and date arithmetic both stay in SQL.
-        const pbgRequirements = await tx<PbgRequirementRow[]>`
-          select
-            w.id as work_id,
-            w.work_code,
-            w.pbg_required_amount::text as required_amount,
-            (w.letter_date + w.pbg_submission_days)::text as normal_due,
-            (w.letter_date + w.pbg_submission_days
-              + coalesce(w.pbg_extension_days, 0))::text as extended_due,
-            ((w.letter_date + w.pbg_submission_days) - current_date)::text
-              as days_to_normal,
-            ((w.letter_date + w.pbg_submission_days
-              + coalesce(w.pbg_extension_days, 0)) - current_date)::text
-              as days_to_extended,
-            coalesce(active.count, 0)::text as active_count,
-            coalesce(active.total, 0)::numeric(18,2)::text as active_amount,
-            (coalesce(active.total, 0) < w.pbg_required_amount) as under_required
-          from works w
-          left join lateral (
-            select count(*) as count, sum(wi.amount) as total
-            from work_instruments wi
-            where wi.work_id = w.id and wi.kind = 'pbg' and wi.status = 'active'
-          ) active on true
-          where w.deleted_at is null
-            and w.pbg_required_amount is not null
-            and (${full} or exists (
-              select 1 from work_assignments wa
-              where wa.work_id = w.id and wa.user_id = ${user.id}
-            ))
-          order by w.created_at desc
-        `;
+        // instruments.
+        const pbgRequirements = (await tx.unsafe(DASHBOARD_PBG_SQL, [
+          full,
+          user.id,
+        ])) as unknown as PbgRequirementRow[];
 
         const unpaidBills = await tx<
           { work_id: string; work_code: string; bill_number: number; status: string }[]

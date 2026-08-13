@@ -1,4 +1,4 @@
-import { assertProductionSecret, buildApp } from './app.js';
+import { assertProductionSecret, buildApp, SERVER_LIMITS } from './app.js';
 import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
 import { assertProductionMfaEnforcement } from './mfa-policy.js';
 import { TRUST_ANCHOR_PATH_ENV, loadTrustAnchors } from './pdf-signature.js';
@@ -17,6 +17,31 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
 
 const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
 const whitebooksConfig = readWhitebooksConfig(process.env);
+
+/** A positive-integer environment override, or the built-in default. A
+ * misconfigured limit refuses to boot rather than silently falling back:
+ * `DATABASE_POOL_MAX=0` would otherwise start an instance that can serve
+ * nothing. */
+const positiveIntEnv = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+};
+const limits = {
+  poolMax: positiveIntEnv('DATABASE_POOL_MAX', SERVER_LIMITS.poolMax),
+  requestTimeoutMs: positiveIntEnv(
+    'REQUEST_TIMEOUT_MS',
+    SERVER_LIMITS.requestTimeoutMs,
+  ),
+  keepAliveTimeoutMs: positiveIntEnv(
+    'KEEP_ALIVE_TIMEOUT_MS',
+    SERVER_LIMITS.keepAliveTimeoutMs,
+  ),
+};
 
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '0');
 if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
@@ -46,6 +71,7 @@ const pdfTrustAnchors = await loadTrustAnchors(process.env[TRUST_ANCHOR_PATH_ENV
 const app = await buildApp({
   pdfTrustAnchors,
   logger: true,
+  limits,
   // Finding 36: MFA refusals for privilege holders deploy dark and are
   // switched on with MFA_ENFORCE=true. Passed only when the variable is
   // set so the mfa-policy default (also read from MFA_ENFORCE) stands.

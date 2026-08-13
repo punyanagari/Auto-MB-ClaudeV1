@@ -90,21 +90,25 @@ export async function seedDefaultGstRates(
   tx: TransactionSql,
   organisationId: string,
 ): Promise<number> {
-  let inserted = 0;
-  for (const seed of DEFAULT_GST_RATES) {
-    const result = await tx`
-      insert into gst_rates (
-        organisation_id, rate, label, effective_from, effective_to
-      )
-      values (
-        ${organisationId}, ${seed.rate}, ${seed.label},
-        ${seed.effectiveFrom}, ${seed.effectiveTo}
-      )
-      on conflict (organisation_id, rate, effective_from) do nothing
-    `;
-    inserted += result.count;
-  }
-  return inserted;
+  // One statement for the whole default history: `ON CONFLICT DO
+  // NOTHING` still skips each row that already exists, and the
+  // statement's own count is exactly the number the per-row loop
+  // accumulated.
+  const result = await tx`
+    insert into gst_rates (
+      organisation_id, rate, label, effective_from, effective_to
+    )
+    select ${organisationId}, seed.rate, seed.label, seed.effective_from,
+           seed.effective_to
+    from unnest(
+      ${DEFAULT_GST_RATES.map((seed) => seed.rate)}::numeric(5,2)[],
+      ${DEFAULT_GST_RATES.map((seed) => seed.label)}::text[],
+      ${DEFAULT_GST_RATES.map((seed) => seed.effectiveFrom)}::date[],
+      ${DEFAULT_GST_RATES.map((seed) => seed.effectiveTo)}::date[]
+    ) as seed(rate, label, effective_from, effective_to)
+    on conflict (organisation_id, rate, effective_from) do nothing
+  `;
+  return result.count;
 }
 
 /**

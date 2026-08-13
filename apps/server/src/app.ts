@@ -141,7 +141,39 @@ export interface BuildAppOptions {
    * trusts no proxy: request.ip is the socket peer, and forwarded
    * headers are ignored — the safe default when exposed directly. */
   readonly trustProxyHops?: number;
+  /** Connection-pool and socket limits, wired from the environment by
+   * main.ts (DATABASE_POOL_MAX / REQUEST_TIMEOUT_MS /
+   * KEEP_ALIVE_TIMEOUT_MS). Defaults live in `SERVER_LIMITS`. */
+  readonly limits?: {
+    readonly poolMax?: number;
+    readonly requestTimeoutMs?: number;
+    readonly keepAliveTimeoutMs?: number;
+  };
 }
+
+/**
+ * Concurrency and socket limits, in one place because they are a single
+ * decision about how much work one instance accepts.
+ *
+ * `poolMax` was 5, which — with a dashboard that used to take the better
+ * part of a second — capped a single instance at roughly five concurrent
+ * database-bound requests and made the pool, not PostgreSQL, the queue.
+ * 20 is well inside a default `max_connections = 100` for the two pools
+ * (postgres.js plus Better Auth's) of a small number of instances, and is
+ * overridable per deployment.
+ *
+ * The two timeouts exist because a request that never completes and a
+ * connection that is never reused both hold a slot in that pool
+ * indefinitely. `requestTimeout` is deliberately longer than the slowest
+ * legitimate synchronous route (PDF rendering through Gotenberg), and
+ * `keepAliveTimeout` sits above the usual 60 s proxy idle timeout so the
+ * server is not the side that races a proxy into a reset.
+ */
+export const SERVER_LIMITS = {
+  poolMax: 20,
+  requestTimeoutMs: 120_000,
+  keepAliveTimeoutMs: 72_000,
+} as const;
 
 /** Better Auth's sign-up/sign-in responses carry the user object; the
  * audit trail needs only its id. Anything unparseable yields null. */
@@ -260,12 +292,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
 
   // The type provider is compile-time only (see app-instance.ts): route
   // schemas type request.params/body/query instead of `as` casts.
+  const poolMax = options.limits?.poolMax ?? SERVER_LIMITS.poolMax;
   const app = Fastify({
     logger: options.logger ?? false,
     requestIdHeader: 'x-request-id',
     genReqId: (request) =>
       request.headers['x-request-id']?.toString() ?? crypto.randomUUID(),
     disableRequestLogging: false,
+    // A request that never finishes holds a pool slot forever; see
+    // SERVER_LIMITS for why these two numbers are what they are.
+    requestTimeout: options.limits?.requestTimeoutMs ?? SERVER_LIMITS.requestTimeoutMs,
+    keepAliveTimeout:
+      options.limits?.keepAliveTimeoutMs ?? SERVER_LIMITS.keepAliveTimeoutMs,
     // Without this, every request behind Caddy shares the proxy's own
     // address and the per-client rate limits collapse into one global
     // bucket (external re-audit).
@@ -280,7 +318,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   const database = options.databaseUrl
     ? createDatabasePool({
         url: options.databaseUrl,
-        max: 5,
+        max: poolMax,
         applicationName: 'auto-mb-server',
       })
     : undefined;
@@ -298,7 +336,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     if (options.authSecret !== undefined && options.databaseUrl !== undefined) {
       // Better Auth manages its own tables through node-postgres; the pool
       // is separate from the app's postgres.js pool and closed with it.
-      authPool = new pg.Pool({ connectionString: options.databaseUrl, max: 5 });
+      authPool = new pg.Pool({ connectionString: options.databaseUrl, max: poolMax });
       const pool = authPool;
       app.addHook('onClose', async () => {
         await pool.end();

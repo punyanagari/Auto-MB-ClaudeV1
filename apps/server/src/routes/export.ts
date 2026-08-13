@@ -1,4 +1,8 @@
+import { once } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { ApiErrorSchema } from '@auto-mb/contracts';
+import { Type, type TSchema } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
@@ -12,17 +16,543 @@ const errorResponses = {
   403: ApiErrorSchema,
 } as const;
 
-function parseColumns<T extends Record<string, unknown>>(
-  rows: readonly T[],
-  jsonbColumns: readonly (keyof T)[],
-): T[] {
-  return rows.map((row) => {
-    const parsed = { ...row };
-    for (const column of jsonbColumns) {
-      parsed[column] = parseJsonbColumn(row[column]) as T[typeof column];
+/**
+ * export-v12: every inbound PDF carries the digital-signature verdict
+ * recorded when its bytes were accepted (0060) — signature_status,
+ * signature_verdict and signature_verified_at ride along on loaDocuments.
+ * The export is the incident procedure's evidence snapshot and the
+ * contractor's data portability, and a document exported without the
+ * verdict that was relied on when it was accepted is missing the part
+ * that says whether it was authentic.
+ *
+ * export-v11: an ITEMISED invoice's lines (0057) join the record —
+ * without them such an invoice would export as a header with no
+ * document.
+ */
+const EXPORT_FORMAT_VERSION = 'export-v12';
+
+/** Rows fetched per round-trip while streaming a section. Large enough
+ * that a big table is not a per-row conversation, small enough that no
+ * section is ever fully resident. */
+const CURSOR_ROWS = 500;
+
+/** One stored object the record refers to. */
+interface ManifestEntry {
+  readonly kind: string;
+  readonly objectKey: unknown;
+  readonly sha256: unknown;
+}
+
+/** Where a section's rows contribute to the object manifest. Buckets are
+ * emitted in a fixed order (MANIFEST_ORDER), independent of the order
+ * their sections stream, so the manifest reads the same as it always
+ * has. */
+type ManifestBucket =
+  | 'organisation-logo'
+  | 'loa-document'
+  | 'challan'
+  | 'correction-notice'
+  | 'pac-certificate'
+  | 'issue-challan'
+  | 'extension'
+  | 'measurement-book'
+  | 'credit-note'
+  | 'tax-invoice-render';
+
+const MANIFEST_ORDER: readonly ManifestBucket[] = [
+  'organisation-logo',
+  'loa-document',
+  'challan',
+  'correction-notice',
+  'pac-certificate',
+  'issue-challan',
+  'extension',
+  'measurement-book',
+  'credit-note',
+  'tax-invoice-render',
+];
+
+type ExportRow = Record<string, unknown>;
+
+interface ExportSection {
+  /** The key this section is published under. */
+  readonly key: string;
+  /** The statement, streamed through a cursor. RLS scopes every one of
+   * them; nothing here names the organisation id in SQL. */
+  readonly sql: string;
+  /** Columns postgres.js hands back as JSON text and the package
+   * publishes as structured values. */
+  readonly jsonbColumns?: readonly string[];
+  /** Stored objects this section's rows refer to. */
+  readonly manifest?: {
+    readonly bucket: ManifestBucket;
+    readonly entries: (row: ExportRow) => ManifestEntry[];
+  };
+}
+
+/**
+ * Every section of the package, in the order it is written — which is
+ * also the order it is READ, and that order is load-bearing: the
+ * consistency proof in `test/integrity.integration.test.ts` parks the
+ * export on a `loa_documents` lock between the `works` read and the
+ * `delivery_challans` read.
+ *
+ * The catalog-driven completeness test in the same file fails the build
+ * when a tenant table has no section here, so a new table cannot be
+ * silently left out of a recovery package.
+ */
+const SECTIONS: readonly ExportSection[] = [
+  {
+    key: 'members',
+    sql: `select user_id, role, work_scope, can_issue_documents,
+                 can_cancel_documents, can_approve_amendments,
+                 can_manage_statutory_reporting, status, created_at
+          from organisation_memberships
+          where organisation_id = app_private.current_organisation_id()
+          order by created_at`,
+  },
+  {
+    key: 'workAssignments',
+    sql: `select user_id, work_id, created_at
+          from work_assignments order by created_at`,
+  },
+  { key: 'works', sql: `select * from works order by created_at` },
+  {
+    key: 'workSchedules',
+    sql: `select * from work_schedules order by work_id, position`,
+  },
+  {
+    key: 'workItems',
+    sql: `select * from work_items order by work_id, item_number`,
+    jsonbColumns: ['source_evidence'],
+  },
+  {
+    key: 'loaDocuments',
+    sql: `select * from loa_documents order by created_at`,
+    jsonbColumns: ['extraction_payload', 'identity_match', 'signature_verdict'],
+    manifest: {
+      bucket: 'loa-document',
+      entries: (row) => [
+        { kind: 'loa-document', objectKey: row.object_key, sha256: row.sha256 },
+      ],
+    },
+  },
+  {
+    key: 'deliveryChallans',
+    sql: `select * from delivery_challans order by created_at`,
+    jsonbColumns: ['consignee_snapshot', 'issued_snapshot'],
+    manifest: {
+      bucket: 'challan',
+      entries: (row) => [
+        ...(row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'challan-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : []),
+        ...(row.signed_copy_object_key !== null
+          ? [
+              {
+                kind: 'challan-signed-copy',
+                objectKey: row.signed_copy_object_key,
+                sha256: row.signed_copy_sha256 ?? null,
+              },
+            ]
+          : []),
+      ],
+    },
+  },
+  {
+    key: 'deliveryChallanItems',
+    sql: `select * from delivery_challan_items
+          order by delivery_challan_id, position`,
+    jsonbColumns: ['source_evidence'],
+  },
+  { key: 'challanReceipts', sql: `select * from challan_receipts order by created_at` },
+  {
+    key: 'challanItemSerials',
+    sql: `select * from challan_item_serials order by created_at`,
+  },
+  {
+    key: 'issueChallans',
+    sql: `select * from issue_challans order by created_at, id`,
+    jsonbColumns: ['issued_snapshot'],
+    manifest: {
+      bucket: 'issue-challan',
+      entries: (row) => [
+        ...(row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'issue-challan-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : []),
+        ...(row.signed_copy_object_key !== null
+          ? [
+              {
+                kind: 'issue-challan-signed-copy',
+                objectKey: row.signed_copy_object_key,
+                sha256: row.signed_copy_sha256 ?? null,
+              },
+            ]
+          : []),
+      ],
+    },
+  },
+  {
+    key: 'issueChallanLines',
+    sql: `select * from issue_challan_lines order by issue_challan_id, position`,
+  },
+  { key: 'workInstruments', sql: `select * from work_instruments order by created_at` },
+  {
+    key: 'extensionRequests',
+    sql: `select * from extension_requests order by created_at, id`,
+    jsonbColumns: ['finalised_snapshot'],
+    manifest: {
+      bucket: 'extension',
+      entries: (row) => [
+        ...(row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'extension-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : []),
+        ...(row.response_object_key !== null
+          ? [
+              {
+                kind: 'extension-response-document',
+                objectKey: row.response_object_key,
+                sha256: row.response_sha256 ?? null,
+              },
+            ]
+          : []),
+      ],
+    },
+  },
+  {
+    key: 'mbEntries',
+    sql: `select * from mb_entries order by measured_on, created_at`,
+  },
+  {
+    key: 'bills',
+    sql: `select * from bills order by work_id, bill_number`,
+    jsonbColumns: ['lines_snapshot'],
+  },
+  {
+    key: 'installations',
+    sql: `select * from installations order by installed_on, created_at, id`,
+  },
+  {
+    key: 'installationSerials',
+    sql: `select * from installation_serials order by created_at, id`,
+  },
+  {
+    key: 'approvalRequests',
+    sql: `select * from approval_requests order by created_at, id`,
+    jsonbColumns: ['proposed', 'diff'],
+  },
+  // The railway variation orders cited for omissions (0058). The stored
+  // PDFs travel with the object store, as every uploaded document does;
+  // this is the row that proves which order authorised which omission,
+  // and its verdict.
+  {
+    key: 'amendmentVariationOrders',
+    sql: `select * from amendment_variation_orders order by created_at, id`,
+    jsonbColumns: ['verdict'],
+  },
+  {
+    key: 'correctionNotices',
+    sql: `select * from correction_notices order by created_at, id`,
+    jsonbColumns: ['snapshot'],
+    manifest: {
+      bucket: 'correction-notice',
+      entries: (row) =>
+        row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'correction-notice-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : [],
+    },
+  },
+  {
+    key: 'paymentMatrices',
+    sql: `select * from payment_matrices order by work_id, category`,
+  },
+  {
+    key: 'pacCertificates',
+    sql: `select * from pac_certificates order by issue_date, created_at, id`,
+    manifest: {
+      bucket: 'pac-certificate',
+      entries: (row) =>
+        row.document_object_key !== null
+          ? [
+              {
+                kind: 'pac-certificate-document',
+                objectKey: row.document_object_key,
+                sha256: row.document_sha256 ?? null,
+              },
+            ]
+          : [],
+    },
+  },
+  {
+    key: 'pacCertificateItems',
+    sql: `select * from pac_certificate_items
+          order by pac_certificate_id, work_item_id`,
+  },
+  // Milestone 8 phase 2 (Measurement Book lifecycle).
+  {
+    key: 'measurementBooks',
+    sql: `select * from measurement_books order by created_at, id`,
+    manifest: {
+      bucket: 'measurement-book',
+      entries: (row) =>
+        row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'measurement-book-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : [],
+    },
+  },
+  {
+    key: 'measurementBookLines',
+    sql: `select * from measurement_book_lines
+          order by measurement_book_id, item_number, id`,
+  },
+  { key: 'mbSources', sql: `select * from mb_sources order by created_at, id` },
+  {
+    key: 'measurementBookMergeProvenance',
+    sql: `select * from measurement_book_merge_provenance
+          order by target_measurement_book_id, record_measurement_book_id,
+                   source_type nulls first, source_id, id`,
+  },
+  {
+    key: 'importBatches',
+    sql: `select * from import_batches order by started_at, id`,
+    jsonbColumns: ['reconciliation'],
+  },
+  {
+    key: 'importRecords',
+    sql: `select * from import_records order by imported_at, id`,
+    jsonbColumns: ['payload'],
+  },
+  // M6/7 retrofit (migration 0028): the unified Contacts master and the
+  // Work<->consignee association. consignee_masters was never a section
+  // of this export; contacts supersedes it, so the format became part of
+  // the current export with the procurement/statutory set.
+  { key: 'contacts', sql: `select * from contacts order by created_at, id` },
+  {
+    key: 'workConsignees',
+    sql: `select * from work_consignees order by created_at, id`,
+  },
+  { key: 'locationMasters', sql: `select * from location_masters order by name, id` },
+  { key: 'unitMasters', sql: `select * from unit_masters order by name, id` },
+  {
+    key: 'gstRates',
+    sql: `select * from gst_rates order by rate, effective_from, id`,
+  },
+  {
+    key: 'organisationSignatories',
+    sql: `select * from organisation_signatories order by created_at, id`,
+  },
+  {
+    key: 'purchaseOrders',
+    sql: `select * from purchase_orders order by created_at, id`,
+    jsonbColumns: ['vendor_snapshot'],
+  },
+  {
+    key: 'purchaseOrderLines',
+    sql: `select * from purchase_order_lines order by purchase_order_id, line_number, id`,
+  },
+  {
+    key: 'budgetaryQuotations',
+    sql: `select * from budgetary_quotations order by created_at, id`,
+    jsonbColumns: ['customer_snapshot'],
+  },
+  {
+    key: 'budgetaryQuotationLines',
+    sql: `select * from budgetary_quotation_lines
+          order by budgetary_quotation_id, line_number, id`,
+  },
+  {
+    key: 'taxInvoices',
+    sql: `select * from tax_invoices order by created_at, id`,
+    jsonbColumns: ['buyer_snapshot', 'ship_to_snapshot', 'issued_snapshot'],
+  },
+  // An ITEMISED invoice's document IS its lines (0057), so an export
+  // without them would hand back an incomplete invoice.
+  {
+    key: 'taxInvoiceLines',
+    sql: `select * from tax_invoice_lines order by tax_invoice_id, position, id`,
+  },
+  {
+    key: 'taxInvoiceRenders',
+    sql: `select * from tax_invoice_renders
+          order by tax_invoice_id, version, created_at, id`,
+    manifest: {
+      bucket: 'tax-invoice-render',
+      entries: (row) => [
+        {
+          kind: 'tax-invoice-rendered-pdf-version',
+          objectKey: row.object_key,
+          sha256: row.pdf_sha256,
+        },
+        ...(row.logo_object_key === null
+          ? []
+          : [
+              {
+                kind: 'tax-invoice-render-logo',
+                objectKey: row.logo_object_key,
+                sha256: row.logo_sha256,
+              },
+            ]),
+      ],
+    },
+  },
+  {
+    key: 'creditNotes',
+    sql: `select * from credit_notes order by created_at, id`,
+    jsonbColumns: ['issued_snapshot'],
+    manifest: {
+      bucket: 'credit-note',
+      entries: (row) =>
+        row.rendered_object_key !== null
+          ? [
+              {
+                kind: 'credit-note-rendered-pdf',
+                objectKey: row.rendered_object_key,
+                sha256: row.rendered_sha256 ?? null,
+              },
+            ]
+          : [],
+    },
+  },
+  { key: 'ewayBills', sql: `select * from eway_bills order by created_at, id` },
+  {
+    key: 'documentNumberSeries',
+    sql: `select * from document_number_series order by document_type`,
+  },
+  {
+    key: 'statutoryProviderOperations',
+    sql: `select * from statutory_provider_operations order by started_at, id`,
+  },
+  {
+    key: 'deliveryChallanCounters',
+    sql: `select * from delivery_challan_counters order by work_id`,
+  },
+  { key: 'billCounters', sql: `select * from bill_counters order by work_id` },
+  {
+    key: 'extensionRequestCounters',
+    sql: `select * from extension_request_counters order by work_id`,
+  },
+  {
+    key: 'issueChallanCounters',
+    sql: `select * from issue_challan_counters order by work_id`,
+  },
+  {
+    key: 'correctionNoticeCounters',
+    sql: `select * from correction_notice_counters order by work_id`,
+  },
+  {
+    key: 'measurementBookCounters',
+    sql: `select * from measurement_book_counters order by work_id`,
+  },
+  {
+    key: 'purchaseOrderCounters',
+    sql: `select * from purchase_order_counters order by work_id`,
+  },
+  {
+    key: 'budgetaryQuotationCounters',
+    sql: `select * from budgetary_quotation_counters order by organisation_id`,
+  },
+  {
+    key: 'taxInvoiceCounters',
+    sql: `select * from tax_invoice_counters order by fy_label`,
+  },
+  {
+    key: 'creditNoteCounters',
+    sql: `select * from credit_note_counters order by fy_label`,
+  },
+  // The standalone Delivery Challan's per-FY sequence (0056). Found
+  // missing by the catalog-driven completeness test: recovery needs
+  // every counter, or a restored organisation reissues numbers it has
+  // already used.
+  {
+    key: 'standaloneChallanCounters',
+    sql: `select * from standalone_challan_counters order by fy_label`,
+  },
+];
+
+const rowsSchema = Type.Array(Type.Record(Type.String(), Type.Unknown()));
+
+/**
+ * The 200 shape, declared so the OpenAPI document stops calling the
+ * organisation's whole business record an untyped success. It documents
+ * the package rather than serialising it: the body is a stream, and
+ * Fastify pipes a stream without running a serializer over it.
+ */
+const ExportResponseSchema = Type.Object(
+  {
+    exportedAt: Type.String({ format: 'date-time' }),
+    formatVersion: Type.Literal(EXPORT_FORMAT_VERSION),
+    organisation: Type.Union([Type.Record(Type.String(), Type.Unknown()), Type.Null()]),
+    ...(Object.fromEntries(
+      SECTIONS.map((section) => [section.key, rowsSchema]),
+    ) as Record<string, TSchema>),
+    objectManifest: Type.Array(
+      Type.Object(
+        {
+          kind: Type.String(),
+          objectKey: Type.Unknown(),
+          sha256: Type.Unknown(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    auditEvents: rowsSchema,
+  },
+  {
+    description:
+      'The complete tenant record: one array per section, plus a manifest of every stored object it refers to.',
+  },
+);
+
+function parseRow(row: ExportRow, jsonbColumns: readonly string[]): ExportRow {
+  if (jsonbColumns.length === 0) return row;
+  const parsed = { ...row };
+  for (const column of jsonbColumns) {
+    parsed[column] = parseJsonbColumn(row[column]);
+  }
+  return parsed;
+}
+
+/** Writes to the response stream, waiting for the consumer whenever the
+ * buffer fills — the reason this route no longer holds the whole package
+ * in memory. */
+class ChunkWriter {
+  constructor(private readonly stream: PassThrough) {}
+
+  async write(chunk: string): Promise<void> {
+    if (!this.stream.write(chunk)) {
+      await once(this.stream, 'drain');
     }
-    return parsed;
-  });
+  }
 }
 
 /**
@@ -38,18 +568,15 @@ export function registerExportRoutes(
   database: Sql,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
-  // No 200 schema is declared (the package shape is versioned by its own
-  // formatVersion field, not by the API contract), so the explicit Reply
-  // generic stands in for the success type the provider cannot infer.
   tenantRoute(
     {
       method: 'GET',
       url: '/api/export',
-      schema: { response: { ...errorResponses } },
+      schema: { response: { 200: ExportResponseSchema, ...errorResponses } },
     },
-    async ({ user, organisationId, tenantSnapshot }) => {
+    async ({ reply, user, organisationId, tenantSnapshot }) => {
       // REPEATABLE READ, not the default READ COMMITTED. The package below
-      // is built from around forty-five sequential SELECTs, and under READ
+      // is built from around sixty sequential SELECTs, and under READ
       // COMMITTED each one takes its own snapshot: a writer committing
       // midway is invisible to the earlier queries and visible to the
       // later ones, so the exported package can be referentially broken —
@@ -60,498 +587,113 @@ export function registerExportRoutes(
       return tenantSnapshot(async (tx) => {
         await requireOwner(tx, user.id);
 
-        const [organisation] = await tx<Record<string, unknown>[]>`
-          select * from organisations
-          where id = app_private.current_organisation_id()
-        `;
-        const members = await tx<Record<string, unknown>[]>`
-          select user_id, role, work_scope, can_issue_documents,
-                 can_cancel_documents, can_approve_amendments,
-                 can_manage_statutory_reporting, status, created_at
-          from organisation_memberships
-          where organisation_id = app_private.current_organisation_id()
-          order by created_at
-        `;
-        const assignments = await tx<Record<string, unknown>[]>`
-          select user_id, work_id, created_at
-          from work_assignments order by created_at
-        `;
-        const works = await tx<Record<string, unknown>[]>`
-          select * from works order by created_at
-        `;
-        const schedules = await tx<Record<string, unknown>[]>`
-          select * from work_schedules order by work_id, position
-        `;
-        const items = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from work_items order by work_id, item_number
-          `,
-          ['source_evidence'],
-        );
-        const documents = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from loa_documents order by created_at
-          `,
-          ['extraction_payload', 'identity_match', 'signature_verdict'],
-        );
-        const challans = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from delivery_challans order by created_at
-          `,
-          ['consignee_snapshot', 'issued_snapshot'],
-        );
-        const challanItems = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from delivery_challan_items
-            order by delivery_challan_id, position
-          `,
-          ['source_evidence'],
-        );
-        const receipts = await tx<Record<string, unknown>[]>`
-          select * from challan_receipts order by created_at
-        `;
-        const serials = await tx<Record<string, unknown>[]>`
-          select * from challan_item_serials order by created_at
-        `;
-        const issueChallans = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from issue_challans order by created_at, id
-          `,
-          ['issued_snapshot'],
-        );
-        const issueChallanLines = await tx<Record<string, unknown>[]>`
-          select * from issue_challan_lines order by issue_challan_id, position
-        `;
-        const instruments = await tx<Record<string, unknown>[]>`
-          select * from work_instruments order by created_at
-        `;
-        const extensionRequests = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from extension_requests order by created_at, id
-          `,
-          ['finalised_snapshot'],
-        );
-        const mbEntries = await tx<Record<string, unknown>[]>`
-          select * from mb_entries order by measured_on, created_at
-        `;
-        const bills = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from bills order by work_id, bill_number
-          `,
-          ['lines_snapshot'],
-        );
-        const installations = await tx<Record<string, unknown>[]>`
-          select * from installations order by installed_on, created_at, id
-        `;
-        const installationSerials = await tx<Record<string, unknown>[]>`
-          select * from installation_serials order by created_at, id
-        `;
-        const approvalRequests = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from approval_requests order by created_at, id
-          `,
-          ['proposed', 'diff'],
-        );
-        // The railway variation orders cited for omissions (0058). The
-        // stored PDFs travel with the object store, as every uploaded
-        // document does; this is the row that proves which order
-        // authorised which omission, and its verdict.
-        const amendmentVariationOrders = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from amendment_variation_orders order by created_at, id
-          `,
-          ['verdict'],
-        );
-        const correctionNotices = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from correction_notices order by created_at, id
-          `,
-          ['snapshot'],
-        );
-        const paymentMatrices = await tx<Record<string, unknown>[]>`
-          select * from payment_matrices order by work_id, category
-        `;
-        const pacCertificates = await tx<Record<string, unknown>[]>`
-          select * from pac_certificates order by issue_date, created_at, id
-        `;
-        const pacCertificateItems = await tx<Record<string, unknown>[]>`
-          select * from pac_certificate_items
-          order by pac_certificate_id, work_item_id
-        `;
-        const measurementBooks = await tx<Record<string, unknown>[]>`
-          select * from measurement_books order by created_at, id
-        `;
-        const measurementBookLines = await tx<Record<string, unknown>[]>`
-          select * from measurement_book_lines
-          order by measurement_book_id, item_number, id
-        `;
-        const mbSources = await tx<Record<string, unknown>[]>`
-          select * from mb_sources order by created_at, id
-        `;
-        const measurementBookMergeProvenance = await tx<Record<string, unknown>[]>`
-          select * from measurement_book_merge_provenance
-          order by target_measurement_book_id, record_measurement_book_id,
-                   source_type nulls first, source_id, id
-        `;
-        const importBatches = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from import_batches order by started_at, id
-          `,
-          ['reconciliation'],
-        );
-        const importRecords = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from import_records order by imported_at, id
-          `,
-          ['payload'],
-        );
-        // M6/7 retrofit (migration 0028): the unified Contacts master and
-        // the Work<->consignee association. consignee_masters was never a
-        // section of this export; contacts supersedes it, so the format
-        // became part of the current export with the procurement/statutory set.
-        const contacts = await tx<Record<string, unknown>[]>`
-          select * from contacts order by created_at, id
-        `;
-        const workConsignees = await tx<Record<string, unknown>[]>`
-          select * from work_consignees order by created_at, id
-        `;
-        const locationMasters = await tx<Record<string, unknown>[]>`
-          select * from location_masters order by name, id
-        `;
-        const unitMasters = await tx<Record<string, unknown>[]>`
-          select * from unit_masters order by name, id
-        `;
-        const organisationSignatories = await tx<Record<string, unknown>[]>`
-          select * from organisation_signatories order by created_at, id
-        `;
-        const gstRates = await tx<Record<string, unknown>[]>`
-          select * from gst_rates order by rate, effective_from, id
-        `;
-        const purchaseOrders = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from purchase_orders order by created_at, id
-          `,
-          ['vendor_snapshot'],
-        );
-        const purchaseOrderLines = await tx<Record<string, unknown>[]>`
-          select * from purchase_order_lines order by purchase_order_id, line_number, id
-        `;
-        const budgetaryQuotations = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from budgetary_quotations order by created_at, id
-          `,
-          ['customer_snapshot'],
-        );
-        const budgetaryQuotationLines = await tx<Record<string, unknown>[]>`
-          select * from budgetary_quotation_lines
-          order by budgetary_quotation_id, line_number, id
-        `;
-        const taxInvoices = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from tax_invoices order by created_at, id
-          `,
-          ['buyer_snapshot', 'ship_to_snapshot', 'issued_snapshot'],
-        );
-        // An ITEMISED invoice's document IS its lines (0057), so an
-        // export without them would hand back an incomplete invoice.
-        const taxInvoiceLines = await tx<Record<string, unknown>[]>`
-          select * from tax_invoice_lines
-          order by tax_invoice_id, position, id
-        `;
-        const taxInvoiceRenders = await tx<Record<string, unknown>[]>`
-          select * from tax_invoice_renders
-          order by tax_invoice_id, version, created_at, id
-        `;
-        const ewayBills = await tx<Record<string, unknown>[]>`
-          select * from eway_bills order by created_at, id
-        `;
-        const creditNotes = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from credit_notes order by created_at, id
-          `,
-          ['issued_snapshot'],
-        );
-        const documentNumberSeries = await tx<Record<string, unknown>[]>`
-          select * from document_number_series order by document_type
-        `;
-        const statutoryProviderOperations = await tx<Record<string, unknown>[]>`
-          select * from statutory_provider_operations order by started_at, id
-        `;
-        const deliveryChallanCounters = await tx<Record<string, unknown>[]>`
-          select * from delivery_challan_counters order by work_id
-        `;
-        const billCounters = await tx<Record<string, unknown>[]>`
-          select * from bill_counters order by work_id
-        `;
-        const extensionRequestCounters = await tx<Record<string, unknown>[]>`
-          select * from extension_request_counters order by work_id
-        `;
-        const issueChallanCounters = await tx<Record<string, unknown>[]>`
-          select * from issue_challan_counters order by work_id
-        `;
-        const correctionNoticeCounters = await tx<Record<string, unknown>[]>`
-          select * from correction_notice_counters order by work_id
-        `;
-        const measurementBookCounters = await tx<Record<string, unknown>[]>`
-          select * from measurement_book_counters order by work_id
-        `;
-        const purchaseOrderCounters = await tx<Record<string, unknown>[]>`
-          select * from purchase_order_counters order by work_id
-        `;
-        const budgetaryQuotationCounters = await tx<Record<string, unknown>[]>`
-          select * from budgetary_quotation_counters order by organisation_id
-        `;
-        const taxInvoiceCounters = await tx<Record<string, unknown>[]>`
-          select * from tax_invoice_counters order by fy_label
-        `;
-        const creditNoteCounters = await tx<Record<string, unknown>[]>`
-          select * from credit_note_counters order by fy_label
-        `;
-        // The standalone Delivery Challan's per-FY sequence (0056). Found
-        // missing by the catalog-driven completeness test: recovery needs
-        // every counter, or a restored organisation reissues numbers it
-        // has already used.
-        const standaloneChallanCounters = await tx<Record<string, unknown>[]>`
-          select * from standalone_challan_counters order by fy_label
-        `;
-        // Recorded first so the export contains its own audit record.
-        await tx`
-          insert into audit_events (
-            organisation_id, actor_user_id, action, entity_type, details
-          )
-          values (
-            ${organisationId}, ${user.id}, 'organisation.exported',
-            'organisations', '{}'::jsonb
-          )
-        `;
-        const auditEvents = parseColumns(
-          await tx<Record<string, unknown>[]>`
-            select * from audit_events order by occurred_at, id
-          `,
-          ['details'],
-        );
+        // The package is STREAMED: each section is read through a cursor
+        // and written straight to the response, so a large tenant no
+        // longer needs its entire record — every row of every table —
+        // resident in the server's heap at once, and the client starts
+        // receiving before the last table is read. The transaction stays
+        // open for the whole write, which is what keeps the one-instant
+        // guarantee above.
+        const stream = new PassThrough();
+        const out = new ChunkWriter(stream);
+        reply.header('content-type', 'application/json; charset=utf-8');
+        void reply.send(stream);
 
-        // A portable manifest of every stored object the record refers
-        // to — logo, uploaded LOAs, rendered and signed challan PDFs —
-        // with the recorded hashes, so an offboarding or incident package
-        // can fetch and verify the bytes (external re-audit).
-        const objectManifest = [
-          ...(organisation && organisation.logo_object_key !== null
-            ? [
-                {
-                  kind: 'organisation-logo',
-                  objectKey: organisation.logo_object_key,
-                  sha256: null,
-                },
-              ]
-            : []),
-          ...documents.map((document) => ({
-            kind: 'loa-document',
-            objectKey: document.object_key,
-            sha256: document.sha256,
-          })),
-          ...challans.flatMap((challan) => [
-            ...(challan.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'challan-rendered-pdf',
-                    objectKey: challan.rendered_object_key,
-                    sha256: challan.rendered_sha256 ?? null,
-                  },
-                ]
-              : []),
-            ...(challan.signed_copy_object_key !== null
-              ? [
-                  {
-                    kind: 'challan-signed-copy',
-                    objectKey: challan.signed_copy_object_key,
-                    sha256: challan.signed_copy_sha256 ?? null,
-                  },
-                ]
-              : []),
-          ]),
-          ...correctionNotices.flatMap((notice) =>
-            notice.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'correction-notice-rendered-pdf',
-                    objectKey: notice.rendered_object_key,
-                    sha256: notice.rendered_sha256 ?? null,
-                  },
-                ]
-              : [],
-          ),
-          ...pacCertificates.flatMap((certificate) =>
-            certificate.document_object_key !== null
-              ? [
-                  {
-                    kind: 'pac-certificate-document',
-                    objectKey: certificate.document_object_key,
-                    sha256: certificate.document_sha256 ?? null,
-                  },
-                ]
-              : [],
-          ),
-          ...issueChallans.flatMap((challan) => [
-            ...(challan.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'issue-challan-rendered-pdf',
-                    objectKey: challan.rendered_object_key,
-                    sha256: challan.rendered_sha256 ?? null,
-                  },
-                ]
-              : []),
-            ...(challan.signed_copy_object_key !== null
-              ? [
-                  {
-                    kind: 'issue-challan-signed-copy',
-                    objectKey: challan.signed_copy_object_key,
-                    sha256: challan.signed_copy_sha256 ?? null,
-                  },
-                ]
-              : []),
-          ]),
-          ...extensionRequests.flatMap((extension) => [
-            ...(extension.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'extension-rendered-pdf',
-                    objectKey: extension.rendered_object_key,
-                    sha256: extension.rendered_sha256 ?? null,
-                  },
-                ]
-              : []),
-            ...(extension.response_object_key !== null
-              ? [
-                  {
-                    kind: 'extension-response-document',
-                    objectKey: extension.response_object_key,
-                    sha256: extension.response_sha256 ?? null,
-                  },
-                ]
-              : []),
-          ]),
-          ...measurementBooks.flatMap((book) =>
-            book.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'measurement-book-rendered-pdf',
-                    objectKey: book.rendered_object_key,
-                    sha256: book.rendered_sha256 ?? null,
-                  },
-                ]
-              : [],
-          ),
-          ...creditNotes.flatMap((note) =>
-            note.rendered_object_key !== null
-              ? [
-                  {
-                    kind: 'credit-note-rendered-pdf',
-                    objectKey: note.rendered_object_key,
-                    sha256: note.rendered_sha256 ?? null,
-                  },
-                ]
-              : [],
-          ),
-          ...taxInvoiceRenders.flatMap((render) => [
-            {
-              kind: 'tax-invoice-rendered-pdf-version',
-              objectKey: render.object_key,
-              sha256: render.pdf_sha256,
-            },
-            ...(render.logo_object_key === null
-              ? []
-              : [
-                  {
-                    kind: 'tax-invoice-render-logo',
-                    objectKey: render.logo_object_key,
-                    sha256: render.logo_sha256,
-                  },
-                ]),
-          ]),
-        ];
-
-        return {
-          exportedAt: new Date().toISOString(),
-          // export-v12: every inbound PDF carries the digital-signature
-          // verdict recorded when its bytes were accepted (0060) —
-          // signature_status, signature_verdict and signature_verified_at
-          // ride along on loaDocuments. The export is the incident
-          // procedure's evidence snapshot and the contractor's data
-          // portability, and a document exported without the verdict that
-          // was relied on when it was accepted is missing the part that
-          // says whether it was authentic.
-          //
-          // export-v11: an ITEMISED invoice's lines (0057) join the
-          // record — without them such an invoice would export as a
-          // header with no document.
-          formatVersion: 'export-v12',
-          organisation,
-          members,
-          workAssignments: assignments,
-          works,
-          workSchedules: schedules,
-          workItems: items,
-          loaDocuments: documents,
-          deliveryChallans: challans,
-          deliveryChallanItems: challanItems,
-          challanReceipts: receipts,
-          challanItemSerials: serials,
-          issueChallans,
-          issueChallanLines,
-          workInstruments: instruments,
-          extensionRequests,
-          mbEntries,
-          bills,
-          installations,
-          installationSerials,
-          approvalRequests,
-          amendmentVariationOrders,
-          correctionNotices,
-          paymentMatrices,
-          pacCertificates,
-          pacCertificateItems,
-          // Milestone 8 phase 2 (Measurement Book lifecycle). The
-          // Measurement Book lifecycle records.
-          measurementBooks,
-          measurementBookLines,
-          mbSources,
-          measurementBookMergeProvenance,
-          importBatches,
-          importRecords,
-          // M6/7 retrofit (migration 0028): unified Contacts master.
-          contacts,
-          workConsignees,
-          locationMasters,
-          unitMasters,
-          gstRates,
-          organisationSignatories,
-          purchaseOrders,
-          purchaseOrderLines,
-          budgetaryQuotations,
-          budgetaryQuotationLines,
-          taxInvoices,
-          taxInvoiceLines,
-          taxInvoiceRenders,
-          creditNotes,
-          ewayBills,
-          documentNumberSeries,
-          statutoryProviderOperations,
-          deliveryChallanCounters,
-          billCounters,
-          extensionRequestCounters,
-          issueChallanCounters,
-          correctionNoticeCounters,
-          measurementBookCounters,
-          purchaseOrderCounters,
-          budgetaryQuotationCounters,
-          taxInvoiceCounters,
-          creditNoteCounters,
-          standaloneChallanCounters,
-          objectManifest,
-          auditEvents,
+        const manifest = new Map<ManifestBucket, ManifestEntry[]>();
+        const collect = (bucket: ManifestBucket, entries: ManifestEntry[]): void => {
+          if (entries.length === 0) return;
+          const existing = manifest.get(bucket);
+          if (existing) existing.push(...entries);
+          else manifest.set(bucket, [...entries]);
         };
+
+        try {
+          await out.write(
+            `{"exportedAt":${JSON.stringify(new Date().toISOString())},` +
+              `"formatVersion":${JSON.stringify(EXPORT_FORMAT_VERSION)},`,
+          );
+
+          const [organisation] = await tx<ExportRow[]>`
+            select * from organisations
+            where id = app_private.current_organisation_id()
+          `;
+          if (organisation && organisation.logo_object_key !== null) {
+            collect('organisation-logo', [
+              {
+                kind: 'organisation-logo',
+                objectKey: organisation.logo_object_key,
+                sha256: null,
+              },
+            ]);
+          }
+          await out.write(`"organisation":${JSON.stringify(organisation ?? null)},`);
+
+          for (const section of SECTIONS) {
+            await out.write(`${JSON.stringify(section.key)}:[`);
+            let separator = '';
+            // The async-iterable cursor: PostgreSQL hands back
+            // CURSOR_ROWS at a time and the section is written as it
+            // arrives, so no table is ever fully resident.
+            for await (const rows of tx
+              .unsafe(section.sql)
+              .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
+              for (const row of rows) {
+                const parsed = parseRow(row, section.jsonbColumns ?? []);
+                if (section.manifest) {
+                  collect(section.manifest.bucket, section.manifest.entries(parsed));
+                }
+                await out.write(separator + JSON.stringify(parsed));
+                separator = ',';
+              }
+            }
+            await out.write('],');
+          }
+
+          // A portable manifest of every stored object the record refers
+          // to — logo, uploaded LOAs, rendered and signed PDFs — with the
+          // recorded hashes, so an offboarding or incident package can
+          // fetch and verify the bytes (external re-audit). Emitted in a
+          // fixed bucket order, so streaming the sections did not reorder
+          // it.
+          const objectManifest = MANIFEST_ORDER.flatMap(
+            (bucket) => manifest.get(bucket) ?? [],
+          );
+          await out.write(`"objectManifest":${JSON.stringify(objectManifest)},`);
+
+          // Recorded before the audit section is read, so the package
+          // contains its own audit record.
+          await tx`
+            insert into audit_events (
+              organisation_id, actor_user_id, action, entity_type, details
+            )
+            values (
+              ${organisationId}, ${user.id}, 'organisation.exported',
+              'organisations', '{}'::jsonb
+            )
+          `;
+          await out.write('"auditEvents":[');
+          let separator = '';
+          for await (const rows of tx
+            .unsafe(`select * from audit_events order by occurred_at, id`)
+            .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
+            for (const row of rows) {
+              await out.write(separator + JSON.stringify(parseRow(row, ['details'])));
+              separator = ',';
+            }
+          }
+          await out.write(']}');
+          stream.end();
+          // The transaction closes only once the client has the whole
+          // package: the snapshot is what makes it internally consistent.
+          await finished(stream).catch(() => undefined);
+        } catch (error) {
+          // A half-written package must not read as a whole one: the
+          // response is destroyed, which the client sees as a truncated
+          // body, and the transaction rolls back.
+          stream.destroy(error instanceof Error ? error : new Error(String(error)));
+          throw error;
+        }
+        return reply;
       });
     },
   );

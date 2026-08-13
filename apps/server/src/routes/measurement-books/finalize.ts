@@ -271,35 +271,74 @@ export function registerMeasurementBookFinalizeRoutes(
 
         // Snapshot the lines while the book is still draft (the line
         // guard requires it), then stamp the finalized shape.
-        for (const line of computation.lines) {
-          await tx`
-            insert into measurement_book_lines (
-              organisation_id, measurement_book_id, work_id, work_item_id,
-              item_number, description, unit_code, payment_category,
-              resolved_category, pct_supply, pct_installation, pct_pac,
-              pct_final_bill, effective_rate,
-              delta_supplied, delta_installed, delta_pac, delta_final_bill,
-              prior_supplied, prior_installed, prior_pac, prior_final_bill,
-              amount_supply, amount_installation, amount_pac, amount_final_bill,
-              line_total, remark
-            )
-            values (
-              ${organisationId}, ${id}, ${book.work_id}, ${line.workItemId},
-              ${line.itemNumber}, ${line.description}, ${line.unitCode},
-              ${line.paymentCategory}, ${line.resolvedCategory},
-              ${line.percentages.pctSupply}, ${line.percentages.pctInstallation},
-              ${line.percentages.pctPac}, ${line.percentages.pctFinalBill},
-              ${line.effectiveRate},
-              ${line.deltaSupplied}, ${line.deltaInstalled}, ${line.deltaPac},
-              ${line.deltaFinalBill},
-              ${line.priorSupplied}, ${line.priorInstalled}, ${line.priorPac},
-              ${line.priorFinalBill},
-              ${line.amountSupply}, ${line.amountInstallation}, ${line.amountPac},
-              ${line.amountFinalBill},
-              ${line.lineTotal}, ${line.remark}
-            )
-          `;
-        }
+        //
+        // ONE statement for every line, not one per line: a Work with a
+        // few hundred items paid a round-trip each, inside the Work row
+        // lock every other finalize of the Work is queued behind. Each
+        // money and quantity figure travels as the exact decimal STRING
+        // computeMeasurementBook produced and is cast by PostgreSQL to
+        // the column's own numeric type — the same path a per-row
+        // parameter took, and still never through a JS float.
+        const lines = computation.lines;
+        await tx`
+          insert into measurement_book_lines (
+            organisation_id, measurement_book_id, work_id, work_item_id,
+            item_number, description, unit_code, payment_category,
+            resolved_category, pct_supply, pct_installation, pct_pac,
+            pct_final_bill, effective_rate,
+            delta_supplied, delta_installed, delta_pac, delta_final_bill,
+            prior_supplied, prior_installed, prior_pac, prior_final_bill,
+            amount_supply, amount_installation, amount_pac, amount_final_bill,
+            line_total, remark
+          )
+          select ${organisationId}, ${id}, ${book.work_id}, mbl.work_item_id,
+                 mbl.item_number, mbl.description, mbl.unit_code,
+                 mbl.payment_category, mbl.resolved_category,
+                 mbl.pct_supply, mbl.pct_installation, mbl.pct_pac,
+                 mbl.pct_final_bill, mbl.effective_rate,
+                 mbl.delta_supplied, mbl.delta_installed, mbl.delta_pac,
+                 mbl.delta_final_bill,
+                 mbl.prior_supplied, mbl.prior_installed, mbl.prior_pac,
+                 mbl.prior_final_bill,
+                 mbl.amount_supply, mbl.amount_installation, mbl.amount_pac,
+                 mbl.amount_final_bill,
+                 mbl.line_total, mbl.remark
+          from unnest(
+            ${lines.map((line) => line.workItemId)}::uuid[],
+            ${lines.map((line) => line.itemNumber)}::text[],
+            ${lines.map((line) => line.description)}::text[],
+            ${lines.map((line) => line.unitCode)}::text[],
+            ${lines.map((line) => line.paymentCategory)}::text[],
+            ${lines.map((line) => line.resolvedCategory)}::text[],
+            ${lines.map((line) => line.percentages.pctSupply)}::numeric(5,2)[],
+            ${lines.map((line) => line.percentages.pctInstallation)}::numeric(5,2)[],
+            ${lines.map((line) => line.percentages.pctPac)}::numeric(5,2)[],
+            ${lines.map((line) => line.percentages.pctFinalBill)}::numeric(5,2)[],
+            ${lines.map((line) => line.effectiveRate)}::numeric(18,6)[],
+            ${lines.map((line) => line.deltaSupplied)}::numeric(18,3)[],
+            ${lines.map((line) => line.deltaInstalled)}::numeric(18,3)[],
+            ${lines.map((line) => line.deltaPac)}::numeric(18,3)[],
+            ${lines.map((line) => line.deltaFinalBill)}::numeric(18,3)[],
+            ${lines.map((line) => line.priorSupplied)}::numeric(18,3)[],
+            ${lines.map((line) => line.priorInstalled)}::numeric(18,3)[],
+            ${lines.map((line) => line.priorPac)}::numeric(18,3)[],
+            ${lines.map((line) => line.priorFinalBill)}::numeric(18,3)[],
+            ${lines.map((line) => line.amountSupply)}::numeric(18,2)[],
+            ${lines.map((line) => line.amountInstallation)}::numeric(18,2)[],
+            ${lines.map((line) => line.amountPac)}::numeric(18,2)[],
+            ${lines.map((line) => line.amountFinalBill)}::numeric(18,2)[],
+            ${lines.map((line) => line.lineTotal)}::numeric(18,2)[],
+            ${lines.map((line) => line.remark)}::text[]
+          ) as mbl(
+            work_item_id, item_number, description, unit_code, payment_category,
+            resolved_category, pct_supply, pct_installation, pct_pac,
+            pct_final_bill, effective_rate,
+            delta_supplied, delta_installed, delta_pac, delta_final_bill,
+            prior_supplied, prior_installed, prior_pac, prior_final_bill,
+            amount_supply, amount_installation, amount_pac, amount_final_bill,
+            line_total, remark
+          )
+        `;
         await tx`
           update measurement_books
           set status = 'finalized', mb_number = ${mbNumber},

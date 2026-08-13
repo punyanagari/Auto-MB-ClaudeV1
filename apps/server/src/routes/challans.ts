@@ -550,29 +550,35 @@ export async function reopenClosedPurchaseOrders(
   note: string,
   linkedOrders: readonly LinkedPurchaseOrderLock[],
 ): Promise<void> {
-  for (const order of linkedOrders) {
-    if (order.status !== 'closed') continue;
-    await tx`
-      update purchase_orders
-      set status = 'issued', closed_at = null, updated_at = now()
-      where id = ${order.id} and status = 'closed'
-    `;
-    await tx`
-      insert into audit_events (
-        organisation_id, actor_user_id, action, entity_type, entity_id, details
-      ) values (
-        ${organisationId}, ${userId},
-        'purchase_order.reopened_after_challan_cancellation',
-        'purchase_orders', ${order.id},
-        ${jsonb(tx, {
+  const closed = linkedOrders.filter((order) => order.status === 'closed');
+  if (closed.length === 0) return;
+  // Two statements for the whole set rather than two per order; the
+  // orders are already row-locked by the caller, so reopening them
+  // together is the same act.
+  await tx`
+    update purchase_orders
+    set status = 'issued', closed_at = null, updated_at = now()
+    where id = any(${closed.map((order) => order.id)}::uuid[]) and status = 'closed'
+  `;
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    select ${organisationId}, ${userId},
+           'purchase_order.reopened_after_challan_cancellation',
+           'purchase_orders', reopened.id, reopened.details::jsonb
+    from unnest(
+      ${closed.map((order) => order.id)}::uuid[],
+      ${closed.map((order) =>
+        JSON.stringify({
           poNumber: order.po_number,
           challanId: challan.id,
           challanNumber: challan.challan_number,
           cancellationNote: note,
-        })}
-      )
-    `;
-  }
+        }),
+      )}::text[]
+    ) as reopened(id, details)
+  `;
 }
 
 /** The receipt link (0033): a challan line may name the purchase-order
@@ -755,6 +761,18 @@ export async function writeLines(
   await tx`
     delete from delivery_challan_items where delivery_challan_id = ${challanId}
   `;
+  // Every line is resolved and refused BEFORE anything is written, in
+  // request order, so the message the operator reads is still the first
+  // fault in their document. The rows then land as one statement per
+  // shape instead of one per line.
+  const manualLines: {
+    position: number;
+    line: Extract<ResolvedLine, { shape: 'manual' }>;
+  }[] = [];
+  const itemLines: {
+    position: number;
+    line: Extract<ResolvedLine, { shape: 'work_item' }>;
+  }[] = [];
   for (const [index, item] of body.items.entries()) {
     // The column reads `numeric(18,3) NOT NULL CHECK (quantity > 0)`,
     // while the shared DecimalString shape admits '0', '-5' and a
@@ -798,19 +816,7 @@ export async function writeLines(
           `Line ${lineNumber}: the rate ${line.rate} is too large to record — check for a mistyped digit.`,
         );
       }
-      await tx`
-        insert into delivery_challan_items (
-          organisation_id, delivery_challan_id, work_id, work_item_id,
-          description_snapshot, unit_snapshot, quantity, rate_snapshot,
-          line_amount, position, purchase_order_line_id
-        )
-        values (
-          ${organisationId}, ${challanId}, ${workId}, null,
-          ${line.description}, ${line.unit}, ${line.quantity}, ${line.rate},
-          (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,2))::numeric(18,2),
-          ${index + 1}, null
-        )
-      `;
+      manualLines.push({ position: index + 1, line });
       continue;
     }
 
@@ -833,7 +839,35 @@ export async function writeLines(
         `Line ${lineNumber}`,
       );
     }
-    const [inserted] = await tx<{ id: string }[]>`
+    itemLines.push({ position: index + 1, line });
+  }
+
+  if (manualLines.length > 0) {
+    await tx`
+      insert into delivery_challan_items (
+        organisation_id, delivery_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, rate_snapshot,
+        line_amount, position, purchase_order_line_id
+      )
+      select ${organisationId}, ${challanId}, ${workId}, null,
+             manual.description, manual.unit, manual.quantity, manual.rate,
+             (manual.quantity * manual.rate)::numeric(18,2),
+             manual.position, null
+      from unnest(
+        ${manualLines.map((entry) => entry.line.description)}::text[],
+        ${manualLines.map((entry) => entry.line.unit)}::text[],
+        ${manualLines.map((entry) => entry.line.quantity)}::numeric(18,3)[],
+        ${manualLines.map((entry) => entry.line.rate)}::numeric(18,2)[],
+        ${manualLines.map((entry) => entry.position)}::int[]
+      ) as manual(description, unit, quantity, rate, position)
+    `;
+  }
+
+  if (itemLines.length > 0) {
+    // The join to work_items is what snapshots description, unit and
+    // rate, and what refuses an item of another Work: a line whose item
+    // does not join produces no row, so a short count names the fault.
+    const inserted = await tx<{ work_item_id: string }[]>`
       insert into delivery_challan_items (
         organisation_id, delivery_challan_id, work_id, work_item_id,
         description_snapshot, unit_snapshot, quantity, rate_snapshot,
@@ -841,15 +875,20 @@ export async function writeLines(
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
              coalesce(wi.effective_description, wi.description),
-             coalesce(wi.effective_unit, wi.unit_code), ${line.quantity},
+             coalesce(wi.effective_unit, wi.unit_code), requested.quantity,
              coalesce(wi.effective_unit_rate, wi.effective_rate),
-             (${line.quantity}::numeric(18,3)
+             (requested.quantity
                * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
-             ${index + 1}, ${line.purchaseOrderLineId}
-      from work_items wi
-      where wi.id = ${line.workItemId} and wi.work_id = ${workId}
-        and wi.deleted_at is null
-      returning id
+             requested.position, requested.purchase_order_line_id
+      from unnest(
+        ${itemLines.map((entry) => entry.line.workItemId)}::uuid[],
+        ${itemLines.map((entry) => entry.line.quantity)}::numeric(18,3)[],
+        ${itemLines.map((entry) => entry.position)}::int[],
+        ${itemLines.map((entry) => entry.line.purchaseOrderLineId)}::uuid[]
+      ) as requested(work_item_id, quantity, position, purchase_order_line_id)
+      join work_items wi on wi.id = requested.work_item_id
+        and wi.work_id = ${workId} and wi.deleted_at is null
+      returning work_item_id
     `.catch((error: unknown) => {
       if (error instanceof Error && 'code' in error && error.code === '23505') {
         throw httpError(
@@ -860,7 +899,7 @@ export async function writeLines(
       }
       throw error;
     });
-    if (!inserted) {
+    if (inserted.length !== itemLines.length) {
       throw httpError(
         404,
         'WORK_ITEM_NOT_FOUND',
