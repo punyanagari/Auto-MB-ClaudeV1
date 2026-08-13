@@ -203,6 +203,34 @@ export function location(index: number) {
   };
 }
 
+/** The Work the dashboard fixture already names, reused by the specs that
+ * need to open one of its documents. */
+export const WORK_ID = '33333333-3333-4333-8333-333333333333';
+
+/** One row of a Work's delivery balance — the shape the challan editor
+ * draws a table row and a controlled quantity input from. `count` is the
+ * only lever a test needs on how dense that editor is. */
+export function workBalance(count: number) {
+  return {
+    allowExcessDelivery: false,
+    today: '2026-08-13',
+    items: Array.from({ length: count }, (_unused, index) => {
+      const sno = String(index + 1);
+      return {
+        workItemId: `44444444-4444-4444-8444-${sno.padStart(12, '0')}`,
+        itemNumber: `A-${sno.padStart(3, '0')}`,
+        description: 'Main switchboard, floor mounted, with all accessories',
+        unitCode: 'Numbers',
+        awardedQuantity: '20.000',
+        effectiveQuantity: null,
+        deliveredQuantity: '4.000',
+        remainingQuantity: '16.000',
+        effectiveRate: '450.000000',
+      };
+    }),
+  };
+}
+
 export async function mockWorkspace(
   page: Page,
   options: {
