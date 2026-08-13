@@ -185,6 +185,113 @@ export interface ItemInputRow {
 }
 
 /**
+ * The one statement behind `loadItemInputs`, as text so the query-budget
+ * and plan-shape tests can EXPLAIN exactly what production runs
+ * (`test/query-aggregates.integration.test.ts`). `$1` is the Work,
+ * `$2` the Measurement Book.
+ *
+ * SHAPE, and why it matters: every stage is a CTE that GROUPS BY
+ * `work_item_id` once, and the item list left-joins those groups. The
+ * predecessor cross-joined six correlated laterals, so each aggregate
+ * re-ran per item — 33,669 index probes and 446 ms on the review's
+ * measured Work, growing with items x evidence. The arithmetic is
+ * unchanged: the same sums over the same rows, still in exact SQL
+ * numeric, still `coalesce(..., 0)::numeric(18,3)` per item, so every
+ * reported quantity is character-for-character what the laterals
+ * produced (proved on a seeded fixture by the equivalence test, which
+ * runs the retired lateral text beside this one).
+ *
+ * `items` is referenced by every stage, so PostgreSQL materialises it:
+ * one scan of the Work's live items feeds all six aggregates, and each
+ * aggregate scans its own evidence once.
+ */
+export const ITEM_INPUTS_SQL = `
+  with items as (
+    select wi.id, wi.item_number, wi.description, wi.unit_code,
+           wi.payment_category,
+           coalesce(wi.effective_unit_rate, wi.effective_rate) as effective_rate
+    from work_items wi
+    where wi.work_id = $1 and wi.deleted_at is null
+  ),
+  delta_supplied as (
+    select dci.work_item_id, sum(dci.quantity) as total
+    from mb_sources ms
+    join delivery_challans dc on dc.id = ms.source_id and dc.status = 'issued'
+    join delivery_challan_items dci on dci.delivery_challan_id = ms.source_id
+    join items it on it.id = dci.work_item_id
+    where ms.measurement_book_id = $2
+      and ms.source_type = 'delivery_challan'
+    group by dci.work_item_id
+  ),
+  delta_installed as (
+    select i.work_item_id, sum(i.quantity) as total
+    from mb_sources ms
+    join installations i on i.id = ms.source_id and i.status = 'recorded'
+    join items it on it.id = i.work_item_id
+    where ms.measurement_book_id = $2
+      and ms.source_type = 'installation'
+    group by i.work_item_id
+  ),
+  delta_pac as (
+    select pci.work_item_id, sum(pci.certified_quantity) as total
+    from mb_sources ms
+    join pac_certificates pc on pc.id = ms.source_id and pc.status = 'recorded'
+    join pac_certificate_items pci on pci.pac_certificate_id = ms.source_id
+    join items it on it.id = pci.work_item_id
+    where ms.measurement_book_id = $2
+      and ms.source_type = 'pac_certificate'
+    group by pci.work_item_id
+  ),
+  prior as (
+    select l.work_item_id,
+           sum(l.delta_supplied) as supplied,
+           sum(l.delta_installed) as installed,
+           sum(l.delta_pac) as pac,
+           sum(l.delta_final_bill) as final_bill
+    from measurement_book_lines l
+    join measurement_books pmb on pmb.id = l.measurement_book_id
+    join items it on it.id = l.work_item_id
+    where pmb.status = 'finalized' and pmb.id <> $2
+    group by l.work_item_id
+  ),
+  delivered as (
+    select dci.work_item_id, sum(dci.quantity) as total
+    from delivery_challan_items dci
+    join delivery_challans dc on dc.id = dci.delivery_challan_id
+    join items it on it.id = dci.work_item_id
+    where dc.status = 'issued'
+    group by dci.work_item_id
+  ),
+  installed as (
+    select i.work_item_id, sum(i.quantity) as total
+    from installations i
+    join items it on it.id = i.work_item_id
+    where i.status = 'recorded'
+    group by i.work_item_id
+  )
+  select it.id as work_item_id, it.item_number, it.description, it.unit_code,
+         it.payment_category,
+         it.effective_rate::text as effective_rate,
+         coalesce(ds.total, 0)::numeric(18,3)::text as delta_supplied,
+         coalesce(di.total, 0)::numeric(18,3)::text as delta_installed,
+         coalesce(dp.total, 0)::numeric(18,3)::text as delta_pac,
+         coalesce(p.supplied, 0)::numeric(18,3)::text as prior_supplied,
+         coalesce(p.installed, 0)::numeric(18,3)::text as prior_installed,
+         coalesce(p.pac, 0)::numeric(18,3)::text as prior_pac,
+         coalesce(p.final_bill, 0)::numeric(18,3)::text as prior_final_bill,
+         coalesce(dv.total, 0)::numeric(18,3)::text as cumulative_delivered,
+         coalesce(ins.total, 0)::numeric(18,3)::text as cumulative_installed
+  from items it
+  left join delta_supplied ds on ds.work_item_id = it.id
+  left join delta_installed di on di.work_item_id = it.id
+  left join delta_pac dp on dp.work_item_id = it.id
+  left join prior p on p.work_item_id = it.id
+  left join delivered dv on dv.work_item_id = it.id
+  left join installed ins on ins.work_item_id = it.id
+  order by it.item_number
+`;
+
+/**
  * Loads every item's computation input for one MB: this MB's per-stage
  * deltas summed over its SELECTED sources, the true-cumulative prior
  * billed quantities (SUM of deltas over other FINALIZED MBs' lines —
@@ -200,71 +307,10 @@ export async function loadItemInputs(
   workId: string,
   bookId: string,
 ): Promise<MbItemInput[]> {
-  const rows = await tx<ItemInputRow[]>`
-    select wi.id as work_item_id, wi.item_number, wi.description, wi.unit_code,
-           wi.payment_category,
-           coalesce(wi.effective_unit_rate, wi.effective_rate)::text as effective_rate,
-           delta_supplied.total::text as delta_supplied,
-           delta_installed.total::text as delta_installed,
-           delta_pac.total::text as delta_pac,
-           prior.supplied::text as prior_supplied,
-           prior.installed::text as prior_installed,
-           prior.pac::text as prior_pac,
-           prior.final_bill::text as prior_final_bill,
-           delivered.total::text as cumulative_delivered,
-           installed.total::text as cumulative_installed
-    from work_items wi
-    cross join lateral (
-      select coalesce(sum(dci.quantity), 0)::numeric(18,3) as total
-      from mb_sources ms
-      join delivery_challans dc on dc.id = ms.source_id and dc.status = 'issued'
-      join delivery_challan_items dci on dci.delivery_challan_id = ms.source_id
-      where ms.measurement_book_id = ${bookId}
-        and ms.source_type = 'delivery_challan'
-        and dci.work_item_id = wi.id
-    ) delta_supplied
-    cross join lateral (
-      select coalesce(sum(i.quantity), 0)::numeric(18,3) as total
-      from mb_sources ms
-      join installations i on i.id = ms.source_id and i.status = 'recorded'
-      where ms.measurement_book_id = ${bookId}
-        and ms.source_type = 'installation'
-        and i.work_item_id = wi.id
-    ) delta_installed
-    cross join lateral (
-      select coalesce(sum(pci.certified_quantity), 0)::numeric(18,3) as total
-      from mb_sources ms
-      join pac_certificates pc on pc.id = ms.source_id and pc.status = 'recorded'
-      join pac_certificate_items pci on pci.pac_certificate_id = ms.source_id
-      where ms.measurement_book_id = ${bookId}
-        and ms.source_type = 'pac_certificate'
-        and pci.work_item_id = wi.id
-    ) delta_pac
-    cross join lateral (
-      select coalesce(sum(l.delta_supplied), 0)::numeric(18,3) as supplied,
-             coalesce(sum(l.delta_installed), 0)::numeric(18,3) as installed,
-             coalesce(sum(l.delta_pac), 0)::numeric(18,3) as pac,
-             coalesce(sum(l.delta_final_bill), 0)::numeric(18,3) as final_bill
-      from measurement_book_lines l
-      join measurement_books pmb on pmb.id = l.measurement_book_id
-      where l.work_item_id = wi.id
-        and pmb.status = 'finalized'
-        and pmb.id <> ${bookId}
-    ) prior
-    cross join lateral (
-      select coalesce(sum(dci.quantity), 0)::numeric(18,3) as total
-      from delivery_challan_items dci
-      join delivery_challans dc on dc.id = dci.delivery_challan_id
-      where dci.work_item_id = wi.id and dc.status = 'issued'
-    ) delivered
-    cross join lateral (
-      select coalesce(sum(i.quantity), 0)::numeric(18,3) as total
-      from installations i
-      where i.work_item_id = wi.id and i.status = 'recorded'
-    ) installed
-    where wi.work_id = ${workId} and wi.deleted_at is null
-    order by wi.item_number
-  `;
+  const rows = (await tx.unsafe(ITEM_INPUTS_SQL, [
+    workId,
+    bookId,
+  ])) as unknown as ItemInputRow[];
   return rows.map((row) => ({
     workItemId: row.work_item_id,
     itemNumber: row.item_number,

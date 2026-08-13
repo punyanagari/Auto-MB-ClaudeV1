@@ -344,27 +344,49 @@ export function registerRetentionRoutes(
             `This line shipped ${line.quantity}; ${String(already)} serials are already recorded.`,
           );
         }
+        // The serials are written as ONE statement, so the collision that
+        // used to be named by the failing row's own insert is named here
+        // instead: every serial already recorded in this Work, plus any
+        // the request repeats, found in one read and reported in request
+        // order — the same serial the per-row loop reached first. The
+        // unique index still decides a genuine race, and the catch below
+        // keeps that a clean 409.
+        const taken = await tx<{ serial_number: string }[]>`
+            select serial_number from challan_item_serials
+            where work_id = ${lineWorkId}
+              and serial_number = any(${body.serialNumbers}::text[])
+          `;
+        const takenSet = new Set(taken.map((row) => row.serial_number));
+        const seen = new Set<string>();
         for (const serialNumber of body.serialNumbers) {
-          await tx`
-              insert into challan_item_serials (
-                organisation_id, work_id, delivery_challan_id,
-                delivery_challan_item_id, serial_number
-              )
-              values (
-                ${organisationId}, ${lineWorkId}, ${challanId},
-                ${body.challanItemId}, ${serialNumber}
-              )
-            `.catch((error: unknown) => {
-            if (error instanceof Error && 'code' in error && error.code === '23505') {
-              throw httpError(
-                409,
-                'DUPLICATE_SERIAL',
-                `Serial ${serialNumber} already exists in this Work.`,
-              );
-            }
-            throw error;
-          });
+          if (takenSet.has(serialNumber) || seen.has(serialNumber)) {
+            throw httpError(
+              409,
+              'DUPLICATE_SERIAL',
+              `Serial ${serialNumber} already exists in this Work.`,
+            );
+          }
+          seen.add(serialNumber);
         }
+        await tx`
+            insert into challan_item_serials (
+              organisation_id, work_id, delivery_challan_id,
+              delivery_challan_item_id, serial_number
+            )
+            select ${organisationId}, ${lineWorkId}, ${challanId},
+                   ${body.challanItemId}, requested.serial_number
+            from unnest(${body.serialNumbers}::text[])
+              as requested(serial_number)
+          `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'DUPLICATE_SERIAL',
+              'One of these serials was recorded in this Work concurrently; reload the line and retry.',
+            );
+          }
+          throw error;
+        });
         await audit(
           tx,
           organisationId,

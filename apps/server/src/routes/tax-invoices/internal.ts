@@ -386,30 +386,68 @@ export async function replaceInvoiceLines(
   lines: readonly TaxInvoiceLineInput[],
 ): Promise<void> {
   await tx`delete from tax_invoice_lines where tax_invoice_id = ${invoiceId}`;
-  let position = 0;
-  for (const line of lines) {
-    position += 1;
+  // Shape rules first, in line order, then the whole document in one
+  // statement. Each DISTINCT rate is checked against the notified master
+  // once rather than once per line carrying it — the first line carrying
+  // a rate is the one the refusal named before, and still is.
+  const prepared = lines.map((line, index) => {
+    const position = index + 1;
     assertLineCodeShape(line, position);
-    await assertGstRateNotified(
-      tx,
-      line.gstRate,
-      invoiceDate,
-      `Line ${String(position)}`,
-    );
-    await tx`
-      insert into tax_invoice_lines (
-        organisation_id, tax_invoice_id, position, is_service, hsn_sac_code,
-        description, quantity, unit_label, unit_rate, gst_rate
-      )
-      values (
-        ${organisationId}, ${invoiceId}, ${position}, ${line.isService},
-        ${line.hsnSacCode},
-        ${trimmedLineDescription(line.description, position)},
-        ${line.quantity}, ${line.unitLabel?.trim() ?? null},
-        ${line.unitRate}, ${line.gstRate}
-      )
-    `;
+    return {
+      position,
+      isService: line.isService,
+      hsnSacCode: line.hsnSacCode,
+      description: trimmedLineDescription(line.description, position),
+      quantity: line.quantity,
+      unitLabel: line.unitLabel?.trim() ?? null,
+      unitRate: line.unitRate,
+      gstRate: line.gstRate,
+    };
+  });
+  const checkedRates = new Set<string>();
+  for (const line of prepared) {
+    if (!checkedRates.has(line.gstRate)) {
+      checkedRates.add(line.gstRate);
+      await assertGstRateNotified(
+        tx,
+        line.gstRate,
+        invoiceDate,
+        `Line ${String(line.position)}`,
+      );
+    }
   }
+  if (prepared.length === 0) return;
+  await tx`
+    insert into tax_invoice_lines (
+      organisation_id, tax_invoice_id, position, is_service, hsn_sac_code,
+      description, quantity, unit_label, unit_rate, gst_rate
+    )
+    select ${organisationId}, ${invoiceId}, l.position, l.is_service,
+           l.hsn_sac_code, l.description, l.quantity, l.unit_label,
+           l.unit_rate, l.gst_rate
+    from unnest(
+      ${prepared.map((line) => line.position)}::int[],
+      ${
+        /* Booleans travel as text and are cast in two steps ON PURPOSE.
+           postgres.js types a parameter array from its first element, so
+           an array of JS booleans is declared `bool`, not `bool[]`, and
+           is refused; and a text array cast STRAIGHT to `boolean[]` is
+           serialised against the target type and arrives as all-false.
+           `::text[]::boolean[]` binds the parameter as text and lets
+           PostgreSQL do the conversion. Verified against PostgreSQL 18. */
+        prepared.map((line) => String(line.isService))
+      }::text[]::boolean[],
+      ${prepared.map((line) => line.hsnSacCode)}::text[],
+      ${prepared.map((line) => line.description)}::text[],
+      ${prepared.map((line) => line.quantity)}::numeric(18,3)[],
+      ${prepared.map((line) => line.unitLabel)}::text[],
+      ${prepared.map((line) => line.unitRate)}::numeric(18,2)[],
+      ${prepared.map((line) => line.gstRate)}::numeric(5,2)[]
+    ) as l(
+      position, is_service, hsn_sac_code, description, quantity, unit_label,
+      unit_rate, gst_rate
+    )
+  `;
 }
 
 /**

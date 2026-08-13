@@ -1027,20 +1027,28 @@ export function registerLoaRoutes(
           reason: reason ?? null,
           supportingDocumentIds: supporting.map((row) => row.id),
         });
-        for (const row of supporting) {
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'contract_source.discarded',
-            'loa_documents',
-            row.id,
-            {
-              filename: row.original_filename,
-              parentLoaDocumentId: id,
-              reason: reason ?? null,
-            },
-          );
+        // One row per discarded supporting document, written as a single
+        // statement (the shared `audit` helper writes exactly one row, so
+        // this insert is inline like the other multi-row audit writes).
+        if (supporting.length > 0) {
+          await tx`
+            insert into audit_events (
+              organisation_id, actor_user_id, action, entity_type, entity_id,
+              details
+            )
+            select ${organisationId}, ${user.id}, 'contract_source.discarded',
+                   'loa_documents', doc.id, doc.details::jsonb
+            from unnest(
+              ${supporting.map((row) => row.id)}::uuid[],
+              ${supporting.map((row) =>
+                JSON.stringify({
+                  filename: row.original_filename,
+                  parentLoaDocumentId: id,
+                  reason: reason ?? null,
+                }),
+              )}::text[]
+            ) as doc(id, details)
+          `;
         }
         return {
           document: toDocument(discarded),
@@ -1204,8 +1212,14 @@ export function registerLoaRoutes(
             : null;
         const scheduleBases = acceptedBasisByScheduleId(payload);
 
-        const schedules: WorkSchedule[] = [];
-        for (const [index, schedule] of body.schedules.entries()) {
+        // Every schedule is resolved and every rate derived BEFORE a
+        // single row is written: a confirmation that refuses still saves
+        // nothing (the whole handler is one transaction either way), and
+        // the schedules and their items then land as one statement each
+        // instead of one round-trip per schedule and per item — a full
+        // BOQ used to cost hundreds of round-trips inside the
+        // transaction that holds the Work.
+        const prepared = body.schedules.map((schedule, index) => {
           const binding = parsedScheduleIdOf(schedule, payload);
           if ('conflict' in binding) {
             throw httpError(
@@ -1232,97 +1246,172 @@ export function registerLoaRoutes(
               { scheduleCode: schedule.scheduleCode, parsedScheduleId: binding.id },
             );
           }
+          return {
+            position: index + 1,
+            scheduleCode: schedule.scheduleCode,
+            title: schedule.title,
+            percentage: basis?.percentage ?? null,
+            direction: basis?.direction ?? null,
+            items: schedule.items.map((item) => {
+              // The submitted rate is the one PRINTED in the letter — that
+              // is what the extracted-value lock holds it to. The accepted
+              // rate is derived here, on the server, and is what every
+              // downstream money figure is measured at.
+              //
+              // A MANUAL row is not adjusted. It carries no printed rate to
+              // move: the reviewer typed a rate for a line the letter's item
+              // table does not contain, and applying a tender rebate to a
+              // hand-entered figure would silently change a number a human
+              // chose deliberately. Its advertised and accepted rates are the
+              // same figure, which is exactly what "at the rate entered"
+              // means.
+              const advertisedRate = item.effectiveRate;
+              const acceptedRate =
+                item.manualEntry === true || basis === null
+                  ? advertisedRate
+                  : acceptedRateFrom(advertisedRate, basis);
+              return {
+                item,
+                evidence: sourceEvidenceFor(payload, item),
+                advertisedRate,
+                acceptedRate,
+              };
+            }),
+          };
+        });
 
-          const [scheduleRow] = await tx<{ id: string }[]>`
-              insert into work_schedules (
-                organisation_id, work_id, schedule_code, title, position,
-                accepted_percentage, accepted_percentage_direction
-              )
-              values (
-                ${organisationId}, ${work.id}, ${schedule.scheduleCode},
-                ${schedule.title}, ${index + 1},
-                ${basis?.percentage ?? null}, ${basis?.direction ?? null}
-              )
-              returning id
-            `;
-          if (!scheduleRow) throw new Error('work_schedules insert returned no row');
+        // Positions are assigned above and unique within the Work, so
+        // they identify each returned schedule row without depending on
+        // the order a multi-row INSERT happens to return.
+        const scheduleRows = await tx<{ id: string; position: number }[]>`
+            insert into work_schedules (
+              organisation_id, work_id, schedule_code, title, position,
+              accepted_percentage, accepted_percentage_direction
+            )
+            select ${organisationId}, ${work.id}, s.schedule_code, s.title,
+                   s.position, s.accepted_percentage,
+                   s.accepted_percentage_direction
+            from unnest(
+              ${prepared.map((schedule) => schedule.scheduleCode)}::text[],
+              ${prepared.map((schedule) => schedule.title)}::text[],
+              ${prepared.map((schedule) => schedule.position)}::int[],
+              ${prepared.map((schedule) => schedule.percentage)}::numeric(6,3)[],
+              ${prepared.map((schedule) => schedule.direction)}::text[]
+            ) as s(
+              schedule_code, title, position, accepted_percentage,
+              accepted_percentage_direction
+            )
+            returning id, position
+          `;
+        const scheduleIdByPosition = new Map(
+          scheduleRows.map((row) => [row.position, row.id]),
+        );
+        const scheduleIdOf = (position: number): string => {
+          const scheduleId = scheduleIdByPosition.get(position);
+          if (scheduleId === undefined) {
+            throw new Error('work_schedules insert returned no row');
+          }
+          return scheduleId;
+        };
 
-          const items = [];
-          for (const item of schedule.items) {
-            const evidence = sourceEvidenceFor(payload, item);
-            // The submitted rate is the one PRINTED in the letter — that is
-            // what the extracted-value lock holds it to. The accepted rate
-            // is derived here, on the server, and is what every downstream
-            // money figure is measured at.
-            //
-            // A MANUAL row is not adjusted. It carries no printed rate to
-            // move: the reviewer typed a rate for a line the letter's item
-            // table does not contain, and applying a tender rebate to a
-            // hand-entered figure would silently change a number a human
-            // chose deliberately. Its advertised and accepted rates are the
-            // same figure, which is exactly what "at the rate entered"
-            // means.
-            const advertisedRate = item.effectiveRate;
-            const acceptedRate =
-              item.manualEntry === true || basis === null
-                ? advertisedRate
-                : acceptedRateFrom(advertisedRate, basis);
-            const [itemRow] = await tx<{ id: string }[]>`
+        // One flat list across every schedule. Item numbers are unique
+        // within a Work (the constraint whose 23505 becomes
+        // DUPLICATE_ENTRY below), so they identify the returned ids.
+        // Money and quantities travel as the exact decimal strings the
+        // request carried and are cast by PostgreSQL to each column's
+        // numeric type — never through a JS float.
+        const itemsToInsert = prepared.flatMap((schedule) =>
+          schedule.items.map((entry) => ({
+            ...entry,
+            scheduleId: scheduleIdOf(schedule.position),
+          })),
+        );
+        const itemRows =
+          itemsToInsert.length === 0
+            ? []
+            : await tx<{ id: string; item_number: string }[]>`
                 insert into work_items (
                   organisation_id, work_id, schedule_id, item_number,
                   description, unit_code, awarded_quantity,
                   advertised_rate, effective_rate,
                   payment_category, source_evidence
                 )
-                values (
-                  ${organisationId}, ${work.id}, ${scheduleRow.id},
-                  ${item.itemNumber}, ${item.description}, ${item.unitCode},
-                  ${item.awardedQuantity}, ${advertisedRate}, ${acceptedRate},
-                  ${item.paymentCategory ?? null}, ${jsonb(tx, evidence)}
+                select ${organisationId}, ${work.id}, i.schedule_id,
+                       i.item_number, i.description, i.unit_code,
+                       i.awarded_quantity, i.advertised_rate, i.effective_rate,
+                       i.payment_category, i.source_evidence::jsonb
+                from unnest(
+                  ${itemsToInsert.map((entry) => entry.scheduleId)}::uuid[],
+                  ${itemsToInsert.map((entry) => entry.item.itemNumber)}::text[],
+                  ${itemsToInsert.map((entry) => entry.item.description)}::text[],
+                  ${itemsToInsert.map((entry) => entry.item.unitCode)}::text[],
+                  ${itemsToInsert.map((entry) => entry.item.awardedQuantity)}::numeric(18,3)[],
+                  ${itemsToInsert.map((entry) => entry.advertisedRate)}::numeric(18,6)[],
+                  ${itemsToInsert.map((entry) => entry.acceptedRate)}::numeric(18,6)[],
+                  ${itemsToInsert.map((entry) => entry.item.paymentCategory ?? null)}::text[],
+                  ${itemsToInsert.map((entry) => JSON.stringify(entry.evidence))}::text[]
+                ) as i(
+                  schedule_id, item_number, description, unit_code,
+                  awarded_quantity, advertised_rate, effective_rate,
+                  payment_category, source_evidence
                 )
-                returning id
+                returning id, item_number
               `;
-            if (!itemRow) throw new Error('work_items insert returned no row');
-            items.push({
-              id: itemRow.id,
-              scheduleId: scheduleRow.id,
-              itemNumber: item.itemNumber,
-              description: item.description,
-              unitCode: item.unitCode,
-              awardedQuantity: item.awardedQuantity,
-              // The DERIVED rate, not the submitted one: the response says
-              // what was stored, and what the Work will be billed at.
-              effectiveRate: acceptedRate,
-              advertisedRate,
-              // Serial traceability is switched on per item after
-              // confirmation, once the contractor knows which items
-              // ship serialised equipment.
-              requiresSerials: false,
-              // Milestone 8: reviewer-set at confirmation (the parser
-              // never proposes it); editable later via the payment
-              // category route.
-              paymentCategory: item.paymentCategory ?? null,
-            });
+        const itemIdByNumber = new Map(
+          itemRows.map((row) => [row.item_number, row.id]),
+        );
+        const itemIdOf = (itemNumber: string): string => {
+          const itemId = itemIdByNumber.get(itemNumber);
+          if (itemId === undefined) {
+            throw new Error('work_items insert returned no row');
           }
-          schedules.push({
-            id: scheduleRow.id,
-            scheduleCode: schedule.scheduleCode,
-            title: schedule.title,
-            position: index + 1,
-            items,
-          });
-        }
+          return itemId;
+        };
 
-        for (const matrixRow of body.paymentMatrix ?? []) {
+        const schedules: WorkSchedule[] = prepared.map((schedule) => ({
+          id: scheduleIdOf(schedule.position),
+          scheduleCode: schedule.scheduleCode,
+          title: schedule.title,
+          position: schedule.position,
+          items: schedule.items.map((entry) => ({
+            id: itemIdOf(entry.item.itemNumber),
+            scheduleId: scheduleIdOf(schedule.position),
+            itemNumber: entry.item.itemNumber,
+            description: entry.item.description,
+            unitCode: entry.item.unitCode,
+            awardedQuantity: entry.item.awardedQuantity,
+            // The DERIVED rate, not the submitted one: the response says
+            // what was stored, and what the Work will be billed at.
+            effectiveRate: entry.acceptedRate,
+            advertisedRate: entry.advertisedRate,
+            // Serial traceability is switched on per item after
+            // confirmation, once the contractor knows which items
+            // ship serialised equipment.
+            requiresSerials: false,
+            // Milestone 8: reviewer-set at confirmation (the parser
+            // never proposes it); editable later via the payment
+            // category route.
+            paymentCategory: entry.item.paymentCategory ?? null,
+          })),
+        }));
+
+        const matrixRows = body.paymentMatrix ?? [];
+        if (matrixRows.length > 0) {
           await tx`
               insert into payment_matrices (
                 organisation_id, work_id, category, pct_supply,
                 pct_installation, pct_pac, pct_final_bill, created_by_user_id
               )
-              values (
-                ${organisationId}, ${work.id}, ${matrixRow.category},
-                ${matrixRow.pctSupply}, ${matrixRow.pctInstallation},
-                ${matrixRow.pctPac}, ${matrixRow.pctFinalBill}, ${user.id}
+              select ${organisationId}, ${work.id}, m.category, m.pct_supply,
+                     m.pct_installation, m.pct_pac, m.pct_final_bill, ${user.id}
+              from unnest(
+                ${matrixRows.map((matrixRow) => matrixRow.category)}::text[],
+                ${matrixRows.map((matrixRow) => matrixRow.pctSupply)}::numeric(5,2)[],
+                ${matrixRows.map((matrixRow) => matrixRow.pctInstallation)}::numeric(5,2)[],
+                ${matrixRows.map((matrixRow) => matrixRow.pctPac)}::numeric(5,2)[],
+                ${matrixRows.map((matrixRow) => matrixRow.pctFinalBill)}::numeric(5,2)[]
+              ) as m(
+                category, pct_supply, pct_installation, pct_pac, pct_final_bill
               )
             `;
         }

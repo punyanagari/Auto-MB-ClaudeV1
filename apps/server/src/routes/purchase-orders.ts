@@ -408,6 +408,32 @@ function isNumericOverflow(error: unknown): boolean {
  * or is inherited from the Work item, whose tax facts are contract data
  * rather than a fresh keystroke.
  */
+/** `value` as an integer scaled by 10^scale, without floating point:
+ * the digits are read off the decimal string. */
+function scaledInteger(value: string, scale: number): bigint {
+  const [whole = '0', fraction = ''] = value.replace('-', '').split('.');
+  return BigInt(
+    (whole === '' ? '0' : whole) + (fraction + '0'.repeat(scale)).slice(0, scale),
+  );
+}
+
+/** Whether quantity x rate lands outside `numeric(18,2)` — used ONLY to
+ * name the offending line when PostgreSQL refuses the batch with a
+ * 22003. The stored amount is always PostgreSQL's own exact product;
+ * this comparison is exact decimal arithmetic too (BigInt on the digit
+ * strings), never a float. */
+function overflowsAmountColumn(line: {
+  readonly quantity: string;
+  readonly rate: string;
+}): boolean {
+  // numeric(18,2) holds at most 16 integer digits; the product carries
+  // 3 + 6 decimal places before rounding.
+  return (
+    scaledInteger(line.quantity, 3) * scaledInteger(line.rate, 6) >=
+    10n ** 16n * 10n ** 9n
+  );
+}
+
 async function writeLines(
   tx: TransactionSql,
   organisationId: string,
@@ -419,80 +445,138 @@ async function writeLines(
   await tx`
     delete from purchase_order_lines where purchase_order_id = ${purchaseOrderId}
   `;
-  for (const [index, line] of lines.entries()) {
+  // Text rules, then the notified-rate check, then the writes. Every
+  // refusal is raised in line order exactly as the per-line loop raised
+  // it; the difference is that the rows now land in one statement per
+  // shape, and each DISTINCT stated rate is checked once rather than
+  // once per line that carries it (the first line carrying a rate is
+  // the one the refusal named before, and still is).
+  interface PreparedLine {
+    readonly lineNumber: number;
+    readonly label: string;
+    readonly workItemId: string | undefined;
+    readonly description: string;
+    readonly unitCode: string;
+    readonly hsnCode: string | null;
+    readonly gstRate: string | null;
+    readonly quantity: string;
+    readonly rate: string;
+  }
+  const prepared: PreparedLine[] = lines.map((line, index) => {
     const lineNumber = index + 1;
     const label = `Line ${String(lineNumber)}`;
-    const description = trimmedText(
-      line.description,
-      3,
-      1000,
-      'PO_LINE_INVALID',
-      `${label}: the description`,
-    );
-    const unitCode = trimmedText(
-      line.unitCode,
-      1,
-      20,
-      'PO_LINE_INVALID',
-      `${label}: the unit`,
-    );
-    const hsnCode = line.hsnCode ?? null;
-    const gstRate = line.gstRate ?? null;
-    if (gstRate !== null) {
-      await assertGstRateNotified(tx, gstRate, poDate, label);
+    return {
+      lineNumber,
+      label,
+      workItemId: line.workItemId,
+      description: trimmedText(
+        line.description,
+        3,
+        1000,
+        'PO_LINE_INVALID',
+        `${label}: the description`,
+      ),
+      unitCode: trimmedText(
+        line.unitCode,
+        1,
+        20,
+        'PO_LINE_INVALID',
+        `${label}: the unit`,
+      ),
+      hsnCode: line.hsnCode ?? null,
+      gstRate: line.gstRate ?? null,
+      quantity: line.quantity,
+      rate: line.rate,
+    };
+  });
+  const checkedRates = new Set<string>();
+  for (const line of prepared) {
+    if (line.gstRate !== null && !checkedRates.has(line.gstRate)) {
+      checkedRates.add(line.gstRate);
+      await assertGstRateNotified(tx, line.gstRate, poDate, line.label);
     }
-    const inserted = await (
-      line.workItemId === undefined
-        ? tx<{ id: string }[]>`
-          insert into purchase_order_lines (
-            organisation_id, purchase_order_id, work_item_id, line_number,
-            description, hsn_code, unit_code, quantity, rate, gst_rate,
-            line_amount
-          )
-          values (
-            ${organisationId}, ${purchaseOrderId}, null, ${lineNumber},
-            ${description}, ${hsnCode}, ${unitCode}, ${line.quantity},
-            ${line.rate}, ${gstRate},
-            (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,6))
-              ::numeric(18,2)
-          )
-          returning id
-        `
-        : tx<{ id: string }[]>`
-          insert into purchase_order_lines (
-            organisation_id, purchase_order_id, work_item_id, line_number,
-            description, hsn_code, unit_code, quantity, rate, gst_rate,
-            line_amount
-          )
-          select ${organisationId}, ${purchaseOrderId}, wi.id, ${lineNumber},
-                 ${description}, coalesce(${hsnCode}::text, wi.hsn_code),
-                 ${unitCode}, ${line.quantity}, ${line.rate},
-                 coalesce(${gstRate}::numeric(5,2), wi.gst_rate),
-                 (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,6))
-                   ::numeric(18,2)
-          from work_items wi
-          where wi.id = ${line.workItemId} and wi.work_id = ${workId}
-            and wi.deleted_at is null
-          returning id
-        `
-    ).catch((error: unknown) => {
-      // quantity x rate wider than the numeric(18,2) amount column: a
-      // 22003 carries no HTTP status, so it would reach the operator as
-      // 'The request could not be completed.' Name the line instead.
-      if (isNumericOverflow(error)) {
-        throw httpError(
-          400,
-          'PO_LINE_INVALID',
-          `${label}: the quantity and rate multiply out to an amount too large to record — check for a mistyped digit.`,
-        );
-      }
-      throw error;
-    });
-    if (inserted.length === 0) {
+  }
+
+  // quantity x rate wider than the numeric(18,2) amount column: a 22003
+  // carries no HTTP status, so it would reach the operator as 'The
+  // request could not be completed.' Name the offending line instead —
+  // found by re-multiplying the batch's lines, since one statement
+  // cannot say which row overflowed.
+  const nameOverflow = (error: unknown, batch: readonly PreparedLine[]): never => {
+    if (isNumericOverflow(error)) {
+      const culprit = batch.find((line) => overflowsAmountColumn(line)) ?? batch[0];
+      throw httpError(
+        400,
+        'PO_LINE_INVALID',
+        `${culprit?.label ?? 'A line'}: the quantity and rate multiply out to an amount too large to record — check for a mistyped digit.`,
+      );
+    }
+    throw error;
+  };
+
+  const manualLines = prepared.filter((line) => line.workItemId === undefined);
+  if (manualLines.length > 0) {
+    await tx`
+      insert into purchase_order_lines (
+        organisation_id, purchase_order_id, work_item_id, line_number,
+        description, hsn_code, unit_code, quantity, rate, gst_rate,
+        line_amount
+      )
+      select ${organisationId}, ${purchaseOrderId}, null, l.line_number,
+             l.description, l.hsn_code, l.unit_code, l.quantity, l.rate,
+             l.gst_rate, (l.quantity * l.rate)::numeric(18,2)
+      from unnest(
+        ${manualLines.map((line) => line.lineNumber)}::int[],
+        ${manualLines.map((line) => line.description)}::text[],
+        ${manualLines.map((line) => line.hsnCode)}::text[],
+        ${manualLines.map((line) => line.unitCode)}::text[],
+        ${manualLines.map((line) => line.quantity)}::numeric(18,3)[],
+        ${manualLines.map((line) => line.rate)}::numeric(18,6)[],
+        ${manualLines.map((line) => line.gstRate)}::numeric(5,2)[]
+      ) as l(
+        line_number, description, hsn_code, unit_code, quantity, rate, gst_rate
+      )
+    `.catch((error: unknown) => nameOverflow(error, manualLines));
+  }
+
+  const itemLines = prepared.filter((line) => line.workItemId !== undefined);
+  if (itemLines.length > 0) {
+    const inserted = await tx<{ work_item_id: string }[]>`
+      insert into purchase_order_lines (
+        organisation_id, purchase_order_id, work_item_id, line_number,
+        description, hsn_code, unit_code, quantity, rate, gst_rate,
+        line_amount
+      )
+      select ${organisationId}, ${purchaseOrderId}, wi.id, l.line_number,
+             l.description, coalesce(l.hsn_code, wi.hsn_code),
+             l.unit_code, l.quantity, l.rate,
+             coalesce(l.gst_rate, wi.gst_rate),
+             (l.quantity * l.rate)::numeric(18,2)
+      from unnest(
+        ${itemLines.map((line) => line.workItemId ?? null)}::uuid[],
+        ${itemLines.map((line) => line.lineNumber)}::int[],
+        ${itemLines.map((line) => line.description)}::text[],
+        ${itemLines.map((line) => line.hsnCode)}::text[],
+        ${itemLines.map((line) => line.unitCode)}::text[],
+        ${itemLines.map((line) => line.quantity)}::numeric(18,3)[],
+        ${itemLines.map((line) => line.rate)}::numeric(18,6)[],
+        ${itemLines.map((line) => line.gstRate)}::numeric(5,2)[]
+      ) as l(
+        work_item_id, line_number, description, hsn_code, unit_code, quantity,
+        rate, gst_rate
+      )
+      join work_items wi on wi.id = l.work_item_id
+        and wi.work_id = ${workId} and wi.deleted_at is null
+      returning work_item_id
+    `.catch((error: unknown) => nameOverflow(error, itemLines));
+    if (inserted.length !== itemLines.length) {
+      const missing = itemLines.find(
+        (line) => !inserted.some((row) => row.work_item_id === line.workItemId),
+      );
       throw httpError(
         404,
         'WORK_ITEM_NOT_FOUND',
-        `${label}: the selected item does not belong to this Work.`,
+        `${missing?.label ?? 'A line'}: the selected item does not belong to this Work.`,
       );
     }
   }

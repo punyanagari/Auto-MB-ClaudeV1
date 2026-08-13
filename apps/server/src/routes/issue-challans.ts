@@ -277,6 +277,15 @@ export async function writeLines(
   await tx`
     delete from issue_challan_lines where issue_challan_id = ${challanId}
   `;
+  // Refuse every bad line in request order first, then write each shape
+  // in one statement rather than one round-trip per line.
+  const itemLines: { position: number; workItemId: string; quantity: string }[] = [];
+  const manualLines: {
+    position: number;
+    description: string;
+    unit: string;
+    quantity: string;
+  }[] = [];
   for (const [index, line] of body.lines.entries()) {
     if (!isPositiveDecimal(line.quantity)) {
       throw httpError(
@@ -286,34 +295,11 @@ export async function writeLines(
       );
     }
     if ('workItemId' in line) {
-      const [inserted] = await tx<{ id: string }[]>`
-        insert into issue_challan_lines (
-          organisation_id, issue_challan_id, work_id, work_item_id,
-          description_snapshot, unit_snapshot, quantity, position
-        )
-        select ${organisationId}, ${challanId}, ${workId}, wi.id,
-               wi.description, wi.unit_code, ${line.quantity}, ${index + 1}
-        from work_items wi
-        where wi.id = ${line.workItemId} and wi.work_id = ${workId}
-          and wi.deleted_at is null
-        returning id
-      `.catch((error: unknown) => {
-        if (error instanceof Error && 'code' in error && error.code === '23505') {
-          throw httpError(
-            409,
-            'DUPLICATE_ITEM',
-            'The same Work item appears more than once on this Issue Challan.',
-          );
-        }
-        throw error;
+      itemLines.push({
+        position: index + 1,
+        workItemId: line.workItemId,
+        quantity: line.quantity,
       });
-      if (!inserted) {
-        throw httpError(
-          404,
-          'WORK_ITEM_NOT_FOUND',
-          'A selected item does not belong to this Work.',
-        );
-      }
     } else {
       const description = line.description.trim();
       const unit = line.unit.trim();
@@ -324,17 +310,67 @@ export async function writeLines(
           'Manual lines need a description of at least 3 characters and a unit.',
         );
       }
-      await tx`
-        insert into issue_challan_lines (
-          organisation_id, issue_challan_id, work_id, work_item_id,
-          description_snapshot, unit_snapshot, quantity, position
-        )
-        values (
-          ${organisationId}, ${challanId}, ${workId}, null,
-          ${description}, ${unit}, ${line.quantity}, ${index + 1}
-        )
-      `;
+      manualLines.push({
+        position: index + 1,
+        description,
+        unit,
+        quantity: line.quantity,
+      });
     }
+  }
+
+  if (itemLines.length > 0) {
+    // A line whose item belongs to another Work joins nothing and
+    // produces no row, so a short count is the not-found refusal.
+    const inserted = await tx<{ work_item_id: string }[]>`
+      insert into issue_challan_lines (
+        organisation_id, issue_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, position
+      )
+      select ${organisationId}, ${challanId}, ${workId}, wi.id,
+             wi.description, wi.unit_code, requested.quantity, requested.position
+      from unnest(
+        ${itemLines.map((line) => line.workItemId)}::uuid[],
+        ${itemLines.map((line) => line.quantity)}::numeric(18,3)[],
+        ${itemLines.map((line) => line.position)}::int[]
+      ) as requested(work_item_id, quantity, position)
+      join work_items wi on wi.id = requested.work_item_id
+        and wi.work_id = ${workId} and wi.deleted_at is null
+      returning work_item_id
+    `.catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === '23505') {
+        throw httpError(
+          409,
+          'DUPLICATE_ITEM',
+          'The same Work item appears more than once on this Issue Challan.',
+        );
+      }
+      throw error;
+    });
+    if (inserted.length !== itemLines.length) {
+      throw httpError(
+        404,
+        'WORK_ITEM_NOT_FOUND',
+        'A selected item does not belong to this Work.',
+      );
+    }
+  }
+
+  if (manualLines.length > 0) {
+    await tx`
+      insert into issue_challan_lines (
+        organisation_id, issue_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, position
+      )
+      select ${organisationId}, ${challanId}, ${workId}, null,
+             manual.description, manual.unit, manual.quantity, manual.position
+      from unnest(
+        ${manualLines.map((line) => line.description)}::text[],
+        ${manualLines.map((line) => line.unit)}::text[],
+        ${manualLines.map((line) => line.quantity)}::numeric(18,3)[],
+        ${manualLines.map((line) => line.position)}::int[]
+      ) as manual(description, unit, quantity, position)
+    `;
   }
 }
 

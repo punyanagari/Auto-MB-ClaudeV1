@@ -415,54 +415,96 @@ async function writeLines(
     delete from budgetary_quotation_lines
     where budgetary_quotation_id = ${quotationId}
   `;
-  for (const [index, line] of lines.entries()) {
+  // Text rules first, in line order, then one statement for the lot.
+  // Each DISTINCT stated rate is checked against the notified master
+  // once instead of once per line carrying it; the first line carrying
+  // a rate is the one the refusal named before, and still is.
+  const prepared = lines.map((line, index) => {
     const lineNumber = index + 1;
-    const description = trimmedAtLeast(
-      line.description,
-      3,
-      'LINE_DESCRIPTION_REQUIRED',
-      `Line ${String(lineNumber)}: the description must be at least three characters that are not blank.`,
-    );
-    const unitCode = trimmedAtLeast(
-      line.unitCode,
-      1,
-      'LINE_UNIT_REQUIRED',
-      `Line ${String(lineNumber)}: the unit code must not be blank.`,
-    );
-    if (line.gstRate !== undefined) {
+    return {
+      lineNumber,
+      description: trimmedAtLeast(
+        line.description,
+        3,
+        'LINE_DESCRIPTION_REQUIRED',
+        `Line ${String(lineNumber)}: the description must be at least three characters that are not blank.`,
+      ),
+      unitCode: trimmedAtLeast(
+        line.unitCode,
+        1,
+        'LINE_UNIT_REQUIRED',
+        `Line ${String(lineNumber)}: the unit code must not be blank.`,
+      ),
+      hsnCode: line.hsnCode ?? null,
+      quantity: line.quantity,
+      rate: line.rate ?? null,
+      gstRate: line.gstRate ?? null,
+    };
+  });
+  const checkedRates = new Set<string>();
+  for (const line of prepared) {
+    if (line.gstRate !== null && !checkedRates.has(line.gstRate)) {
+      checkedRates.add(line.gstRate);
       await assertGstRateNotified(
         tx,
         line.gstRate,
         bqDate,
-        `Line ${String(lineNumber)}`,
+        `Line ${String(line.lineNumber)}`,
       );
     }
-    await tx`
-      insert into budgetary_quotation_lines (
-        organisation_id, budgetary_quotation_id, line_number, description,
-        hsn_code, unit_code, quantity, rate, gst_rate, line_amount
-      )
-      values (
-        ${organisationId}, ${quotationId}, ${lineNumber}, ${description},
-        ${line.hsnCode ?? null}, ${unitCode}, ${line.quantity}, ${line.rate},
-        ${line.gstRate ?? null},
-        (${line.quantity}::numeric(18,3) * ${line.rate}::numeric(18,6))::numeric(18,2)
-      )
-    `.catch((error: unknown) => {
-      // quantity and rate each fit their own column (the contract's
-      // bounded primitives hold that), but their PRODUCT need not fit
-      // numeric(18,2) — a 22003 carries no HTTP status, so it would
-      // otherwise reach the operator as a bare 500.
-      if (isNumericOverflow(error)) {
-        throw httpError(
-          400,
-          'LINE_AMOUNT_TOO_LARGE',
-          `Line ${String(lineNumber)}: ${line.quantity} x ${line.rate} is too large to record — check for a mistyped digit.`,
-        );
-      }
-      throw error;
-    });
   }
+  if (prepared.length === 0) return;
+  await tx`
+    insert into budgetary_quotation_lines (
+      organisation_id, budgetary_quotation_id, line_number, description,
+      hsn_code, unit_code, quantity, rate, gst_rate, line_amount
+    )
+    select ${organisationId}, ${quotationId}, l.line_number, l.description,
+           l.hsn_code, l.unit_code, l.quantity, l.rate, l.gst_rate,
+           (l.quantity * l.rate)::numeric(18,2)
+    from unnest(
+      ${prepared.map((line) => line.lineNumber)}::int[],
+      ${prepared.map((line) => line.description)}::text[],
+      ${prepared.map((line) => line.hsnCode)}::text[],
+      ${prepared.map((line) => line.unitCode)}::text[],
+      ${prepared.map((line) => line.quantity)}::numeric(18,3)[],
+      ${prepared.map((line) => line.rate)}::numeric(18,6)[],
+      ${prepared.map((line) => line.gstRate)}::numeric(5,2)[]
+    ) as l(
+      line_number, description, hsn_code, unit_code, quantity, rate, gst_rate
+    )
+  `.catch((error: unknown) => {
+    // quantity and rate each fit their own column (the contract's
+    // bounded primitives hold that), but their PRODUCT need not fit
+    // numeric(18,2) — a 22003 carries no HTTP status, so it would
+    // otherwise reach the operator as a bare 500. One statement cannot
+    // say which row overflowed, so the offending line is found by exact
+    // decimal comparison (BigInt on the digit strings, never a float).
+    if (isNumericOverflow(error)) {
+      const culprit =
+        prepared.find(
+          (line) =>
+            line.rate !== null &&
+            scaledInteger(line.quantity, 3) * scaledInteger(line.rate, 6) >=
+              10n ** 16n * 10n ** 9n,
+        ) ?? prepared[0];
+      throw httpError(
+        400,
+        'LINE_AMOUNT_TOO_LARGE',
+        `Line ${String(culprit?.lineNumber ?? 1)}: ${culprit?.quantity ?? ''} x ${culprit?.rate ?? ''} is too large to record — check for a mistyped digit.`,
+      );
+    }
+    throw error;
+  });
+}
+
+/** `value` as an integer scaled by 10^scale, without floating point:
+ * the digits are read off the decimal string. */
+function scaledInteger(value: string, scale: number): bigint {
+  const [whole = '0', fraction = ''] = value.replace('-', '').split('.');
+  return BigInt(
+    (whole === '' ? '0' : whole) + (fraction + '0'.repeat(scale)).slice(0, scale),
+  );
 }
 
 /** The draft's lines in request-input shape for audit diffing; the

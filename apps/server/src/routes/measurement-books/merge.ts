@@ -212,36 +212,45 @@ export function registerMeasurementBookMergeRoutes(
         // Capture ownership while every claim still sits on its source
         // record. The insert guard can therefore prove exact provenance;
         // after the records become merged this ledger accepts no additions.
-        for (const record of records) {
+        // One row per transferred claim, plus a source-less marker row
+        // for a record that claimed nothing — written as ONE statement
+        // rather than a round-trip per claim.
+        const provenanceRows: {
+          readonly recordId: string;
+          readonly sourceType: MbSourceType | null;
+          readonly sourceId: string | null;
+        }[] = records.flatMap((record) => {
           const recordClaims = claims.filter(
             (claim) => claim.measurement_book_id === record.id,
           );
-          if (recordClaims.length === 0) {
-            await tx`
-                insert into measurement_book_merge_provenance (
-                  organisation_id, target_measurement_book_id,
-                  record_measurement_book_id, work_id, source_type, source_id,
-                  created_by_user_id
-                ) values (
-                  ${organisationId}, ${target.id}, ${record.id}, ${workId},
-                  null, null, ${user.id}
-                )
-              `;
-            continue;
-          }
-          for (const claim of recordClaims) {
-            await tx`
-                insert into measurement_book_merge_provenance (
-                  organisation_id, target_measurement_book_id,
-                  record_measurement_book_id, work_id, source_type, source_id,
-                  created_by_user_id
-                ) values (
-                  ${organisationId}, ${target.id}, ${record.id}, ${workId},
-                  ${claim.source_type}, ${claim.source_id}, ${user.id}
-                )
-              `;
-          }
-        }
+          const rows: {
+            readonly recordId: string;
+            readonly sourceType: MbSourceType | null;
+            readonly sourceId: string | null;
+          }[] =
+            recordClaims.length === 0
+              ? [{ recordId: record.id, sourceType: null, sourceId: null }]
+              : recordClaims.map((claim) => ({
+                  recordId: record.id,
+                  sourceType: claim.source_type,
+                  sourceId: claim.source_id,
+                }));
+          return rows;
+        });
+        await tx`
+            insert into measurement_book_merge_provenance (
+              organisation_id, target_measurement_book_id,
+              record_measurement_book_id, work_id, source_type, source_id,
+              created_by_user_id
+            )
+            select ${organisationId}, ${target.id}, prov.record_id, ${workId},
+                   prov.source_type, prov.source_id, ${user.id}
+            from unnest(
+              ${provenanceRows.map((entry) => entry.recordId)}::uuid[],
+              ${provenanceRows.map((entry) => entry.sourceType)}::text[],
+              ${provenanceRows.map((entry) => entry.sourceId)}::uuid[]
+            ) as prov(record_id, source_type, source_id)
+          `;
         // The claim transfer: delete off the records (draft-time
         // claims delete cleanly, 0024), then claim the union on the
         // target. The union has no duplicates — the partial unique
@@ -484,19 +493,28 @@ export function registerMeasurementBookMergeRoutes(
         // loosened check here.
         await validateSources(tx, book.work_id, restored, true);
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
-        for (const record of absorbed) {
-          const sources = provenance.get(record.id) ?? [];
-          if (sources.length === 0) continue;
-          const types = sources.map((source) => source.sourceType);
-          const ids = sources.map((source) => source.sourceId);
+        // Every restored claim in ONE statement: the record each source
+        // returns to travels in the array beside it, so the number of
+        // round-trips no longer grows with the number of merged records.
+        const restoredClaims = absorbed.flatMap((record) =>
+          (provenance.get(record.id) ?? []).map((source) => ({
+            recordId: record.id,
+            sourceType: source.sourceType,
+            sourceId: source.sourceId,
+          })),
+        );
+        if (restoredClaims.length > 0) {
           await tx`
             insert into mb_sources (
               organisation_id, measurement_book_id, work_id, source_type, source_id
             )
-            select ${organisationId}, ${record.id}, ${book.work_id},
+            select ${organisationId}, req.record_id, ${book.work_id},
                    req.source_type, req.source_id
-            from unnest(${types as string[]}::text[], ${ids}::uuid[])
-              as req(source_type, source_id)
+            from unnest(
+              ${restoredClaims.map((claim) => claim.recordId)}::uuid[],
+              ${restoredClaims.map((claim) => claim.sourceType)}::text[],
+              ${restoredClaims.map((claim) => claim.sourceId)}::uuid[]
+            ) as req(record_id, source_type, source_id)
           `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23505') {
               throw httpError(

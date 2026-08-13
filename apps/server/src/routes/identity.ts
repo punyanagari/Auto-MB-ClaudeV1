@@ -533,12 +533,18 @@ export function registerIdentityRoutes(
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
           `;
-        for (const workId of body.workIds) {
+        if (body.workIds.length > 0) {
+          // One statement for the whole set; the composite foreign key
+          // still refuses a Work of another organisation, and its 23503
+          // still becomes the same named 404.
           await tx`
               insert into work_assignments (
                 organisation_id, work_id, user_id, created_by_user_id
               )
-              values (${organisationId}, ${workId}, ${memberUserId}, ${user.id})
+              select ${organisationId}, assigned.work_id, ${memberUserId},
+                     ${user.id}
+              from unnest(${body.workIds}::uuid[])
+                as assigned(work_id)
             `.catch((error: unknown) => {
             if (error instanceof Error && 'code' in error && error.code === '23503') {
               throw httpError(
