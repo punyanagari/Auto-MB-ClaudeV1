@@ -64,6 +64,8 @@ const FIELD_LABELS: Record<string, string> = {
   workScope: 'Work scope',
   canIssueDocuments: 'Issue authority',
   canCancelDocuments: 'Cancel authority',
+  canApproveAmendments: 'Amendment approval authority',
+  canManageStatutoryReporting: 'Statutory reporting authority',
   workIds: 'Assigned Works',
   name: 'Name',
   address: 'Address',

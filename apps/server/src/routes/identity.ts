@@ -409,7 +409,8 @@ export function registerIdentityRoutes(
             canApproveAmendments:
               body.canApproveAmendments ?? current.can_approve_amendments,
             canManageStatutoryReporting:
-              body.canManageStatutoryReporting ?? current.can_manage_statutory_reporting,
+              body.canManageStatutoryReporting ??
+              current.can_manage_statutory_reporting,
             status: body.status ?? current.status,
           },
         );

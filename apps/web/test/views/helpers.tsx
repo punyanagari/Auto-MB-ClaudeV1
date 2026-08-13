@@ -393,6 +393,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canIssueDocuments: true,
     canCancelDocuments: true,
     canApproveAmendments: false,
+    canManageStatutoryReporting: false,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,

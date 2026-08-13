@@ -18,6 +18,10 @@ interface CreditNotesPanelProps {
   readonly canModify: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** The compliance authority (migration 0061). Gates the CRN portal
+   * controls only — issuing and cancelling the credit note itself are
+   * local acts and keep their own authorities. */
+  readonly canManageStatutory: boolean;
   readonly pending: boolean;
   readonly act: ActRunner;
   /** Reloads the register, the invoice detail, and its credit notes. */
@@ -38,12 +42,15 @@ export function CreditNotesPanel({
   canModify,
   canIssue,
   canCancel,
+  canManageStatutory,
   pending,
   act,
   refresh,
 }: CreditNotesPanelProps) {
   const [creditNoteCancelNote, setCreditNoteCancelNote] = useState('');
   if (invoice.status !== 'submitted' && invoice.status !== 'superseded') return null;
+  const mayRegister = canIssue && canManageStatutory;
+  const mayCancelAtPortal = canCancel && canManageStatutory;
   const liveNote = creditNotes.find((note) => note.status !== 'cancelled') ?? null;
   return (
     <>
@@ -241,7 +248,7 @@ export function CreditNotesPanel({
             )}
           </dl>
           <Actions>
-            {canIssue &&
+            {mayRegister &&
               liveNote.irn === null &&
               liveNote.irpProviderState !== 'cancelling' && (
                 <Button
@@ -353,7 +360,7 @@ export function CreditNotesPanel({
               </Hint>
             </Field>
           )}
-          {canCancel &&
+          {mayCancelAtPortal &&
             liveNote.irpProvider === 'whitebooks' &&
             liveNote.irpProviderState === 'registered' &&
             !liveNote.irpCancelWindowOpen && (
@@ -363,7 +370,7 @@ export function CreditNotesPanel({
                 cannot be cancelled.
               </p>
             )}
-          {canCancel &&
+          {mayCancelAtPortal &&
             liveNote.irpProvider === 'whitebooks' &&
             ((liveNote.irpProviderState === 'registered' &&
               liveNote.irpCancelWindowOpen) ||
