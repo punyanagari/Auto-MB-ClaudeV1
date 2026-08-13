@@ -39,7 +39,7 @@ injection does not cross tenants.
 ## The design the programme row prescribed, and why it is rejected as written
 
 The pack row proposed: verify membership once at bind time, write the
-result to a *verified* GUC (e.g. `app.verified_organisation_id`), and have
+result to a _verified_ GUC (e.g. `app.verified_organisation_id`), and have
 policies read that GUC through a cheap, table-free function.
 
 The performance is real, but the floor does not survive it. Postgres user
@@ -116,7 +116,7 @@ floor remains the helper.
 - Expected: register/list scans stop paying a per-row definer call; the
   review's 4.1× filter-position overhead collapses to once per statement.
   The implementation must measure this, not assert it: `EXPLAIN (ANALYZE,
-  BUFFERS)` on a register query at fixture scale, before and after, stated
+BUFFERS)` on a register query at fixture scale, before and after, stated
   in the PR.
 - Membership revocation semantics are unchanged: the helper is `STABLE`,
   so it was already fixed within a statement; across statements in a
@@ -144,8 +144,7 @@ floor remains the helper.
      `organisation-read-pinning`, `cross-org-authority`) must pass
      unmodified except where it asserts exact policy qual text.
 - Migration 0069 is policy-only plus one function; it may apply out of
-  order relative to 0066–0068 (runner applies any unapplied id; precedent
-  0070) and depends on none of them.
+  order relative to 0066–0068 (runner applies any unapplied id; precedent 0070) and depends on none of them.
 - This ADR touches the security kernel. The implementation PR is opened,
   not merged — CONTRIBUTING requires fresh human review for RLS and
   authentication changes, and approval of this ADR does not waive it.
