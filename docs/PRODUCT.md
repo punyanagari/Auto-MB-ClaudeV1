@@ -217,7 +217,7 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 11. **Rounding:** round each line to two decimals, then sum lines.
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
-14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
+14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered, installed and/or certified quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened. Which quantity an item is measured on is decided by its payment category; see §5.4.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
 16. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
@@ -350,6 +350,55 @@ than its Net Bid Value. The error followed the letter: below par (four of six
 real letters, up to 29%) it overstated every figure, and above par it
 understated them — the contractor invoicing a quarter less than the agreement
 entitled them to.
+
+### 5.4 The payment category decides how an item is executed
+
+An item's payment category is the product's single answer to "how is this
+item executed, and how is it paid". It selects three things at once: which
+quantity the completion predicate measures, which base the final-bill stage
+earns on, and which per-Work payment-matrix row supplies the four stage
+percentages. There is deliberately no second classification axis — no
+per-item completion basis and no per-item percentage entry — because two
+axes can contradict each other and the contradiction has no meaning.
+
+| Category                  | Executed when                                                    | Recorded by              |
+| ------------------------- | ---------------------------------------------------------------- | ------------------------ |
+| `SUPPLY`, `SPARE_SUPPLY`  | fully delivered                                                  | issued Delivery Challans |
+| `PURE_INSTALLATION`       | fully installed                                                  | installation records     |
+| `SUPPLY_AND_INSTALLATION` | fully delivered **and** installed                                | both                     |
+| `AMC`                     | fully certified                                                  | acceptance certificates  |
+| uncategorised             | installed if the description says "installation", else delivered | as above                 |
+
+**AMC is the annual-maintenance category.** A railway LOA routinely prices
+maintenance as its own schedule quoted in `Year` — the flagship corpus
+letter PL270-CRB carries two, together about 16% of its net bid value.
+Nothing is ever delivered against such an item and nothing is ever
+installed against it: a period of maintenance is served, and the railway
+certifies that it was. So an AMC item is executed by certified quantity,
+and three rules follow.
+
+- **No movement record may name an AMC item.** A Delivery Challan line or
+  an installation record naming one is refused at the API and again by a
+  database trigger. Moving an item that already carries movement into the
+  category is refused for the same reason, and names the holding
+  documents.
+- **Certification caps at the sanctioned quantity, not the installed
+  total.** Every other item is capped at what was installed, because a
+  certificate accepts work that exists. An AMC item has no installation
+  at all, so that ceiling would be zero; its ceiling is the sanctioned
+  quantity, which is the ceiling installation itself already carries.
+- **An AMC matrix row bills only on the certification and final-bill
+  stages.** Its supply and installation stage deltas are permanently
+  zero, so contract value parked on either could never be billed.
+
+**Why it matters.** Before the category existed, an AMC item fell through
+to the uncategorised rule; a maintenance description does not contain the
+word "installation", so it resolved to _delivery_. The completion
+predicate then demanded that five years of maintenance be delivered, which
+no honest document can record. Completion was unsatisfiable on any Work
+carrying a maintenance schedule unless somebody issued a Delivery Challan
+claiming the years had moved as goods. The rule "100% executed value" is
+unchanged; what changed is that an AMC schedule can now reach it.
 
 ## 6. Data conventions
 

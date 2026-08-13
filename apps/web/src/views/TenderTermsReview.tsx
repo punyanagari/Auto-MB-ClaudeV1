@@ -22,6 +22,7 @@ const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
   SUPPLY_AND_INSTALLATION: 'Supply + installation',
   PURE_INSTALLATION: 'Purely installation',
   SPARE_SUPPLY: 'Spare supply',
+  AMC: 'Annual maintenance (AMC)',
   UNCATEGORISED: 'Uncategorised items',
 };
 

@@ -73,6 +73,7 @@ function itemInput(overrides: Partial<MbItemInput>): MbItemInput {
     priorFinalBill: '0',
     cumulativeDelivered: '0',
     cumulativeInstalled: '0',
+    cumulativeAmcCertified: '0',
     ...overrides,
   };
 }

@@ -194,6 +194,57 @@ async function assertItemNotBilled(
   );
 }
 
+/**
+ * Refuses moving an item INTO the AMC category while any Delivery
+ * Challan line or installation record names it (migration 0068).
+ *
+ * The AMC category asserts a structural fact about the item — annual
+ * maintenance is served and certified, never delivered and never
+ * installed — and the database enforces it going forward with two
+ * triggers. Neither trigger can speak about rows already written, so an
+ * item that HAS moved would land in a state the schema forbids and the
+ * completion predicate cannot read honestly: it would owe certified
+ * quantity while carrying delivered quantity that nothing measures any
+ * more. The remedy is to cancel the movement, not to relabel it, so the
+ * refusal names each holding document.
+ *
+ * Cancelled challans and cancelled installations do not count. They
+ * released their quantities, so the item has moved nothing.
+ */
+async function assertItemHasNoMovement(
+  tx: TransactionSql,
+  workItemId: string,
+  itemNumber: string,
+): Promise<void> {
+  const movement = await tx<{ kind: string; label: string }[]>`
+    select 'delivery_challan' as kind,
+           coalesce(dc.challan_number, dc.id::text) as label
+    from delivery_challan_items dci
+    join delivery_challans dc on dc.id = dci.delivery_challan_id
+    where dci.work_item_id = ${workItemId} and dc.status <> 'cancelled'
+    union all
+    select 'installation', i.installed_on::text
+    from installations i
+    where i.work_item_id = ${workItemId} and i.status = 'recorded'
+    order by 1, 2
+  `;
+  if (movement.length === 0) return;
+  throw httpError(
+    409,
+    'ITEM_HAS_MOVEMENT',
+    `Item ${itemNumber} cannot become an AMC item: annual maintenance is certified rather than delivered or installed, and this item already carries movement — ${movement
+      .map((row) =>
+        row.kind === 'delivery_challan'
+          ? `delivery challan ${row.label}`
+          : `installation dated ${row.label}`,
+      )
+      .join(
+        '; ',
+      )}. Cancel those records first if the item really is a maintenance schedule.`,
+    { workItemId, itemNumber },
+  );
+}
+
 const MATRIX_COLUMNS_SQL = `
   id, work_id, category, pct_supply::text as pct_supply,
   pct_installation::text as pct_installation, pct_pac::text as pct_pac,
@@ -504,6 +555,9 @@ export function registerPaymentRoutes(
         // value actually moves.
         if (body.paymentCategory !== item.payment_category) {
           await assertItemNotBilled(tx, item.id, item.item_number);
+          if (body.paymentCategory === 'AMC') {
+            await assertItemHasNoMovement(tx, item.id, item.item_number);
+          }
         }
 
         const [updated] = await tx<

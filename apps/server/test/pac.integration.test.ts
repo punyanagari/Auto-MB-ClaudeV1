@@ -391,6 +391,11 @@ describe('recording PAC certificates (§5.5)', () => {
       workItemId: itemAId,
       itemNumber: 'A/1',
       installedQuantity: '3.000',
+      // Every item in this fixture is installable, so the R18 ceiling is
+      // the installed total (migration 0068 changes the basis only for
+      // AMC items, which have no installation at all).
+      certificationBasis: 'installed',
+      supportingQuantity: '3.000',
       pacCertifiedQuantity: '1.000',
       availableQuantity: '2.000',
     });
@@ -494,7 +499,8 @@ describe('the R18 cap: certified <= installed minus already certified', () => {
         {
           workItemId: itemAId,
           itemNumber: 'A/1',
-          installed: '3.000',
+          basis: 'installed',
+          supporting: '3.000',
           covered: '1.000',
           available: '2.000',
         },

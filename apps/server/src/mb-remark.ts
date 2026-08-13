@@ -74,7 +74,8 @@ export interface StageAmountsResult {
 export interface FinalBillBaseInput {
   /**
    * The item's payment category (SUPPLY, SUPPLY_AND_INSTALLATION,
-   * PURE_INSTALLATION, SPARE_SUPPLY) or null for an uncategorised item.
+   * PURE_INSTALLATION, SPARE_SUPPLY, AMC) or null for an uncategorised
+   * item.
    */
   readonly paymentCategory: string | null;
   /** The item description; only consulted for uncategorised items. */
@@ -83,11 +84,22 @@ export interface FinalBillBaseInput {
   readonly deliveredQuantity: string;
   /** Cumulative installed quantity at final-MB time (non-cancelled installations). */
   readonly installedQuantity: string;
+  /** Cumulative certified quantity at final-MB time (non-cancelled
+   * acceptance certificates) for an AMC item — the final-bill base of an
+   * item that is neither delivered nor installed.
+   *
+   * The name carries the restriction on purpose. Only the AMC branch
+   * reads it, so the loader computes it only for AMC items and passes 0
+   * for every other category (`ITEM_INPUTS_SQL`'s `certified` CTE). A
+   * zero here means "not an AMC item", never "certified nothing" — read
+   * the acceptance-certificate aggregates directly if you want the
+   * certified total of an installable item. */
+  readonly amcCertifiedQuantity: string;
 }
 
 export interface FinalBillBaseResult {
   readonly baseQuantity: string;
-  readonly branch: 'delivered' | 'installed';
+  readonly branch: 'delivered' | 'installed' | 'certified';
 }
 
 // ---------------------------------------------------------------------------
@@ -307,9 +319,17 @@ export function computeStageAmounts(input: StageAmountsInput): StageAmountsResul
  * installation — earn it on the INSTALLED quantity only:
  * supplied-but-never-installed material earns its supply stage and nothing
  * more.
+ *
+ * AMC items (migration 0068) earn it on the CERTIFIED quantity. They are
+ * never delivered and never installed, so both of the workbook's two
+ * bases are permanently zero for them; the quantity an annual
+ * maintenance item has actually earned is the one the railway certified.
+ * The workbook has no note for this case because the agency's example
+ * carried no maintenance schedule — this branch is the same principle
+ * applied to the dimension AMC moves on, not a rule read off the paper.
  */
 export function resolveFinalBillBase(input: FinalBillBaseInput): FinalBillBaseResult {
-  let branch: 'delivered' | 'installed';
+  let branch: FinalBillBaseResult['branch'];
   switch (input.paymentCategory) {
     case 'SUPPLY':
     case 'SPARE_SUPPLY':
@@ -318,6 +338,9 @@ export function resolveFinalBillBase(input: FinalBillBaseInput): FinalBillBaseRe
     case 'SUPPLY_AND_INSTALLATION':
     case 'PURE_INSTALLATION':
       branch = 'installed';
+      break;
+    case 'AMC':
+      branch = 'certified';
       break;
     case null:
       branch = input.description.toLowerCase().includes('installation')
@@ -329,9 +352,10 @@ export function resolveFinalBillBase(input: FinalBillBaseInput): FinalBillBaseRe
         `Unknown payment category: ${JSON.stringify(input.paymentCategory)}`,
       );
   }
-  return {
-    branch,
-    baseQuantity:
-      branch === 'delivered' ? input.deliveredQuantity : input.installedQuantity,
-  };
+  const baseByBranch = {
+    delivered: input.deliveredQuantity,
+    installed: input.installedQuantity,
+    certified: input.amcCertifiedQuantity,
+  } as const;
+  return { branch, baseQuantity: baseByBranch[branch] };
 }

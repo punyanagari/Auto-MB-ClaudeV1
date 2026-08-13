@@ -182,6 +182,7 @@ export interface ItemInputRow {
   prior_final_bill: string;
   cumulative_delivered: string;
   cumulative_installed: string;
+  cumulative_amc_certified: string;
 }
 
 /**
@@ -202,8 +203,13 @@ export interface ItemInputRow {
  * runs the retired lateral text beside this one).
  *
  * `items` is referenced by every stage, so PostgreSQL materialises it:
- * one scan of the Work's live items feeds all six aggregates, and each
+ * one scan of the Work's live items feeds every aggregate, and each
  * aggregate scans its own evidence once.
+ *
+ * Migration 0068 added a seventh aggregate, `certified`, for the AMC
+ * final-bill base. It is the one aggregate restricted to a subset of the
+ * items, because it is the one whose value only a single branch of
+ * `resolveFinalBillBase` reads — see the CTE's own note.
  */
 export const ITEM_INPUTS_SQL = `
   with items as (
@@ -268,6 +274,21 @@ export const ITEM_INPUTS_SQL = `
     join items it on it.id = i.work_item_id
     where i.status = 'recorded'
     group by i.work_item_id
+  ),
+  -- The AMC final-bill base (migration 0068), and ONLY that. Unlike the
+  -- delivered and installed aggregates beside it, this one is read by a
+  -- single branch of resolveFinalBillBase, so it is restricted to the
+  -- items that branch can select. A Work with no maintenance schedule —
+  -- which is most of them — pays nothing for it, and one with a
+  -- maintenance schedule aggregates over its one or two AMC items
+  -- rather than over every certificate the Work holds.
+  certified as (
+    select pci.work_item_id, sum(pci.certified_quantity) as total
+    from pac_certificate_items pci
+    join pac_certificates pc on pc.id = pci.pac_certificate_id
+    join items it on it.id = pci.work_item_id and it.payment_category = 'AMC'
+    where pc.status = 'recorded'
+    group by pci.work_item_id
   )
   select it.id as work_item_id, it.item_number, it.description, it.unit_code,
          it.payment_category,
@@ -280,7 +301,8 @@ export const ITEM_INPUTS_SQL = `
          coalesce(p.pac, 0)::numeric(18,3)::text as prior_pac,
          coalesce(p.final_bill, 0)::numeric(18,3)::text as prior_final_bill,
          coalesce(dv.total, 0)::numeric(18,3)::text as cumulative_delivered,
-         coalesce(ins.total, 0)::numeric(18,3)::text as cumulative_installed
+         coalesce(ins.total, 0)::numeric(18,3)::text as cumulative_installed,
+         coalesce(crt.total, 0)::numeric(18,3)::text as cumulative_amc_certified
   from items it
   left join delta_supplied ds on ds.work_item_id = it.id
   left join delta_installed di on di.work_item_id = it.id
@@ -288,6 +310,7 @@ export const ITEM_INPUTS_SQL = `
   left join prior p on p.work_item_id = it.id
   left join delivered dv on dv.work_item_id = it.id
   left join installed ins on ins.work_item_id = it.id
+  left join certified crt on crt.work_item_id = it.id
   order by it.item_number
 `;
 
@@ -295,8 +318,10 @@ export const ITEM_INPUTS_SQL = `
  * Loads every item's computation input for one MB: this MB's per-stage
  * deltas summed over its SELECTED sources, the true-cumulative prior
  * billed quantities (SUM of deltas over other FINALIZED MBs' lines —
- * cancelled MBs excluded), and the Work-lifetime delivered/installed
- * aggregates for the final-bill base. All sums run in exact SQL
+ * cancelled MBs excluded), and the Work-lifetime
+ * delivered/installed/certified aggregates for the final-bill base (an
+ * AMC item earns its final bill on the certified quantity, being neither
+ * delivered nor installed — migration 0068). All sums run in exact SQL
  * numeric arithmetic. The delta joins filter on the source's billable
  * status, so a dead claim (source cancelled while selected on a draft
  * in a write-skew race) contributes nothing to the preview; finalize
@@ -327,6 +352,7 @@ export async function loadItemInputs(
     priorFinalBill: row.prior_final_bill,
     cumulativeDelivered: row.cumulative_delivered,
     cumulativeInstalled: row.cumulative_installed,
+    cumulativeAmcCertified: row.cumulative_amc_certified,
   }));
 }
 

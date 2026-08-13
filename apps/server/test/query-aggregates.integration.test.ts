@@ -368,11 +368,28 @@ describe('the Measurement Book loader is one grouped statement', () => {
       }),
     );
     expect(retired).toHaveLength(ITEMS);
-    // Byte-identical, JSON-encoded: same rows, same order, same columns,
-    // same decimal text in every money and quantity field.
-    expect(JSON.stringify(current)).toBe(JSON.stringify(retired));
+    // Byte-identical, JSON-encoded, over the columns the retired
+    // statement produced: same rows, same order, same decimal text in
+    // every money and quantity field.
+    //
+    // The projection is not a loosening. The retired statement is kept
+    // as EVIDENCE of the six-lateral shape that was actually retired, so
+    // it is not extended when the loader gains a column; migration 0068
+    // added `cumulative_amc_certified` for the AMC final-bill base, which
+    // never existed in the retired shape and therefore has nothing to
+    // agree with. Every column the retired statement did produce is
+    // still compared exactly, and the new one is asserted below on its
+    // own terms.
+    const retiredColumns = Object.keys(retired[0] ?? {});
+    expect(retiredColumns).not.toContain('cumulative_amc_certified');
+    const projected = current.map((row) =>
+      Object.fromEntries(retiredColumns.map((column) => [column, row[column]])),
+    );
+    expect(JSON.stringify(projected)).toBe(JSON.stringify(retired));
     // And the figures are the ones the fixture implies, so the pair
     // agreeing is not two identical mistakes: 3 challans x 3.000 each.
+    // The certified total is the fixture's own PAC evidence, the same
+    // aggregate `delta_pac` reads through the MB's source selection.
     expect(current[0]).toMatchObject({
       delta_supplied: '9.000',
       delta_installed: '2.000',
@@ -380,6 +397,12 @@ describe('the Measurement Book loader is one grouped statement', () => {
       prior_supplied: '1.000',
       cumulative_delivered: '9.000',
       cumulative_installed: '2.000',
+      // Zero, and correctly so: the fixture's items are
+      // SUPPLY_AND_INSTALLATION, and the certified aggregate is
+      // restricted to the AMC items that are the only ones whose
+      // final-bill base reads it. The AMC path itself is measured in
+      // `apps/server/test/amc-schedule.integration.test.ts`.
+      cumulative_amc_certified: '0.000',
     });
   });
 

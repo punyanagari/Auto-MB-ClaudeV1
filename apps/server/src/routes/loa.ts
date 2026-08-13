@@ -21,6 +21,7 @@ import {
   type LoaLetterNumberMatch,
   type PaymentMatrixCategory,
   type Work,
+  type WorkItemPaymentCategory,
   type WorkSchedule,
 } from '@auto-mb/contracts';
 import {
@@ -1634,12 +1635,7 @@ export function registerLoaRoutes(
             effective_unit: string | null;
             amendment_added: boolean;
             requires_serials: boolean;
-            payment_category:
-              | 'SUPPLY'
-              | 'SUPPLY_AND_INSTALLATION'
-              | 'PURE_INSTALLATION'
-              | 'SPARE_SUPPLY'
-              | null;
+            payment_category: WorkItemPaymentCategory | null;
             installed_quantity: string;
             pac_certified_quantity: string;
           }[]

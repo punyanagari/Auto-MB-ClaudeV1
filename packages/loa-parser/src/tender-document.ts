@@ -12,6 +12,7 @@ export type TenderMatrixCategory =
   | 'SUPPLY_AND_INSTALLATION'
   | 'PURE_INSTALLATION'
   | 'SPARE_SUPPLY'
+  | 'AMC'
   | 'UNCATEGORISED';
 
 export interface TenderField {
@@ -202,8 +203,26 @@ function percentageNear(block: string, expressions: readonly RegExp[]): string |
 }
 
 function matrixCategory(block: string): TenderMatrixCategory {
+  // Spare supply is tested FIRST and stays first. A "maintenance spare"
+  // is a spare part despatched under a maintenance obligation — material
+  // that moves, and therefore a supply category — while AMC is the
+  // service itself. The two read alike and the spare test is the
+  // narrower one, so it keeps its precedence and the AMC test below
+  // cannot capture it.
   if (/spare\s+supply|mandatory\s+spare|maintenance\s+spare/i.test(block)) {
     return 'SPARE_SUPPLY';
+  }
+  // AMC (migration 0068). The corpus spells it as a schedule heading —
+  // PL270-CRB's "Schedule B-AMC for complete SCH A systems" and its item
+  // "AMC for SCH A items for the period of 5 year" — and the expanded
+  // form appears as "annual maintenance". A bare "maintenance period"
+  // clause is deliberately NOT enough: every tender carries one, and it
+  // describes a warranty obligation on supplied material rather than a
+  // priced maintenance schedule.
+  if (
+    /\bAMC\b|annual\s+(?:comprehensive\s+)?maintenance(?:\s+contract)?/i.test(block)
+  ) {
+    return 'AMC';
   }
   if (/pure(?:ly)?\s+installation|installation\s+only/i.test(block)) {
     return 'PURE_INSTALLATION';
