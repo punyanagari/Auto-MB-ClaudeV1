@@ -51,14 +51,37 @@ export interface TrustAnchor {
 
 export interface TrustAnchorStore {
   readonly anchors: readonly TrustAnchor[];
+  /**
+   * Certificates that may COMPLETE a path but can never end one.
+   *
+   * A real need, not a nicety: in the sample corpus a contractor's
+   * signature from ProDigiSign embedded only its leaf, so the path had
+   * nowhere to go and the signature — perfectly genuine — could only be
+   * reported as reaching no anchor. Fetching the missing intermediate from
+   * the certificate's own AIA URL at verification time would fix that by
+   * turning an attacker-supplied URL into a server-side fetch, so the
+   * intermediates are installed by the operator instead.
+   *
+   * They are kept in a SEPARATE list from the anchors on purpose. Loading
+   * licensed-CA certificates as anchors is the classic fatal mistake here:
+   * it would make one CA's compromise indistinguishable from a compromise
+   * of the CCA root, and would silently accept paths that never actually
+   * reach the root at all.
+   */
+  readonly intermediates: readonly TrustAnchor[];
   /** What was configured, for reporting alongside a verdict. */
   readonly configuredPath: string | null;
 }
 
 export const EMPTY_TRUST_ANCHOR_STORE: TrustAnchorStore = {
   anchors: [],
+  intermediates: [],
   configuredPath: null,
 };
+
+/** Sub-directory of the configured path holding chain-completion
+ * certificates that carry no trust of their own. */
+export const INTERMEDIATES_DIRECTORY = 'intermediates';
 
 const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
 const ANCHOR_EXTENSIONS = new Set(['.pem', '.crt', '.cer']);
@@ -77,6 +100,22 @@ function readPemBlocks(text: string, source: string): TrustAnchor[] {
   return anchors;
 }
 
+async function readCertificateDirectory(directory: string): Promise<TrustAnchor[]> {
+  let entries: string[];
+  try {
+    entries = (await readdir(directory)).sort();
+  } catch {
+    return [];
+  }
+  const found: TrustAnchor[] = [];
+  for (const entry of entries) {
+    if (!ANCHOR_EXTENSIONS.has(path.extname(entry).toLowerCase())) continue;
+    const file = path.join(directory, entry);
+    found.push(...readPemBlocks(await readFile(file, 'utf8'), file));
+  }
+  return found;
+}
+
 /**
  * Loads the configured anchors. A configured-but-unusable path throws; an
  * unconfigured one returns an empty store, which downstream reports as
@@ -89,9 +128,8 @@ export async function loadTrustAnchors(
     return EMPTY_TRUST_ANCHOR_STORE;
   }
   const resolved = path.resolve(configuredPath);
-  let entries: string[];
   try {
-    entries = (await readdir(resolved)).sort();
+    await readdir(resolved);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOTDIR') {
@@ -102,25 +140,23 @@ export async function loadTrustAnchors(
           `${TRUST_ANCHOR_PATH_ENV} points at ${resolved}, which contains no PEM certificate blocks.`,
         );
       }
-      return { anchors, configuredPath: resolved };
+      return { anchors, intermediates: [], configuredPath: resolved };
     }
     throw new TrustAnchorConfigurationError(
       `${TRUST_ANCHOR_PATH_ENV} points at ${resolved}, which could not be read (${code ?? 'unknown error'}).`,
     );
   }
 
-  const anchors: TrustAnchor[] = [];
-  for (const entry of entries) {
-    if (!ANCHOR_EXTENSIONS.has(path.extname(entry).toLowerCase())) continue;
-    const file = path.join(resolved, entry);
-    anchors.push(...readPemBlocks(await readFile(file, 'utf8'), file));
-  }
+  const anchors = await readCertificateDirectory(resolved);
   if (anchors.length === 0) {
     throw new TrustAnchorConfigurationError(
       `${TRUST_ANCHOR_PATH_ENV} points at ${resolved}, which holds no .pem/.crt/.cer certificate files.`,
     );
   }
-  return { anchors, configuredPath: resolved };
+  const intermediates = await readCertificateDirectory(
+    path.join(resolved, INTERMEDIATES_DIRECTORY),
+  );
+  return { anchors, intermediates, configuredPath: resolved };
 }
 
 export interface CertificateSummary {
@@ -251,6 +287,7 @@ export function validateChain(
 
     const candidates = [
       ...store.anchors.map((entry) => entry.certificate),
+      ...store.intermediates.map((entry) => entry.certificate),
       ...intermediates,
     ];
     const issuer = candidates.find(

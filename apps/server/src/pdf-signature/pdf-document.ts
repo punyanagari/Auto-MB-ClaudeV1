@@ -152,12 +152,41 @@ function readStringEntry(window: string, key: string): string | null {
   return null;
 }
 
-/** Strips the trailing zero padding a signing application reserves inside
- * `/Contents` so the DER blob can be replaced without moving any offsets. */
-function trimContentsPadding(hex: string): string {
-  let end = hex.length;
-  while (end >= 2 && hex.slice(end - 2, end) === '00') end -= 2;
-  return hex.slice(0, end);
+/**
+ * Cuts the reserved padding off a `/Contents` blob by reading the DER
+ * length of the outer structure, NOT by stripping trailing zero bytes.
+ *
+ * A signing application reserves a fixed-size `/Contents` string so the
+ * real blob can be dropped in without moving any byte offsets, and pads the
+ * remainder with `00`. Stripping trailing `00` bytes gets the common case
+ * right and silently corrupts the blob whenever the DER legitimately ends
+ * in a zero octet — a signature value ending in `0x00` is ordinary. Reading
+ * the outer TLV length is exact.
+ */
+function derPrefix(raw: Buffer): Buffer {
+  if (raw.length < 2) return raw;
+  const first = raw[1];
+  if (first === undefined) return raw;
+  let headerLength: number;
+  let contentLength: number;
+  if (first < 0x80) {
+    headerLength = 2;
+    contentLength = first;
+  } else {
+    const octets = first & 0x7f;
+    // Indefinite length (0x80) and absurd length forms are left for the
+    // ASN.1 reader to refuse with its own message.
+    if (octets === 0 || octets > 4 || raw.length < 2 + octets) return raw;
+    headerLength = 2 + octets;
+    contentLength = 0;
+    for (let index = 0; index < octets; index += 1) {
+      const octet = raw[2 + index];
+      if (octet === undefined) return raw;
+      contentLength = contentLength * 256 + octet;
+    }
+  }
+  const total = headerLength + contentLength;
+  return total > 0 && total <= raw.length ? raw.subarray(0, total) : raw;
 }
 
 interface ContentsString {
@@ -192,7 +221,7 @@ function readContentsString(
     found = {
       start,
       end: close + 1,
-      der: Buffer.from(trimContentsPadding(hex.replace(/\s/g, '')), 'hex'),
+      der: derPrefix(Buffer.from(hex.replace(/\s/g, ''), 'hex')),
     };
   }
   return found;

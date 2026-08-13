@@ -11,7 +11,7 @@
 import {
   createHash,
   constants as cryptoConstants,
-  createPublicKey,
+
   verify as cryptoVerify,
   X509Certificate,
 } from 'node:crypto';
@@ -39,6 +39,7 @@ export const OID_ATTR_CONTENT_TYPE = '1.2.840.113549.1.9.3';
 export const OID_ATTR_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
 export const OID_ATTR_SIGNING_TIME = '1.2.840.113549.1.9.5';
 export const OID_ATTR_TIMESTAMP_TOKEN = '1.2.840.113549.1.9.16.2.14';
+export const OID_ATTR_SIGNING_CERTIFICATE = '1.2.840.113549.1.9.16.2.12';
 export const OID_ATTR_SIGNING_CERTIFICATE_V2 = '1.2.840.113549.1.9.16.2.47';
 export const OID_CT_TST_INFO = '1.2.840.113549.1.9.16.1.4';
 
@@ -98,6 +99,11 @@ export interface CmsSignerInfo {
   readonly signatureFamily: 'rsa' | 'rsa-pss' | 'ecdsa';
   /** PSS salt length in bytes when the algorithm is RSASSA-PSS. */
   readonly pssSaltLength: number | null;
+  /** PSS hash, which lives in the SIGNATURE algorithm's parameters and may
+   * legitimately differ from `digestAlgorithm` (which covers the content).
+   * Defaulting this instead of reading it is a documented interoperability
+   * and security hazard, so it is read. */
+  readonly pssHashAlgorithm: string | null;
   readonly signature: Buffer;
   readonly signedAttributes: readonly CmsAttribute[] | null;
   readonly unsignedAttributes: readonly CmsAttribute[] | null;
@@ -134,16 +140,41 @@ function algorithmOid(element: Asn1Element): {
   return { oid, parameters: parts[1] ?? null };
 }
 
-function readPssSaltLength(parameters: Asn1Element | null): number {
-  // RSASSA-PSS-params ::= SEQUENCE { hashAlgorithm [0], maskGenAlgorithm [1],
-  //                                  saltLength [2] INTEGER DEFAULT 20, ... }
-  if (parameters === null || !isUniversal(parameters, UNIVERSAL_SEQUENCE)) return 20;
+/**
+ * RSASSA-PSS-params ::= SEQUENCE {
+ *   hashAlgorithm    [0] AlgorithmIdentifier DEFAULT sha1,
+ *   maskGenAlgorithm [1] AlgorithmIdentifier DEFAULT mgf1SHA1,
+ *   saltLength       [2] INTEGER            DEFAULT 20,
+ *   trailerField     [3] INTEGER            DEFAULT 1 }
+ *
+ * Both defaults are SHA-1 era values. They are applied as written rather
+ * than "modernised" to SHA-256: guessing a different hash or salt length
+ * than the signer used makes a good signature fail, and guessing a longer
+ * salt than was used makes nothing safer.
+ */
+function readPssParameters(parameters: Asn1Element | null): {
+  readonly saltLength: number;
+  readonly hashAlgorithm: string;
+} {
+  let saltLength = 20;
+  let hashAlgorithm = 'sha1';
+  if (parameters === null || !isUniversal(parameters, UNIVERSAL_SEQUENCE)) {
+    return { saltLength, hashAlgorithm };
+  }
   for (const child of children(parameters)) {
+    if (isContext(child, 0)) {
+      const oid = algorithmOid(childAt(children(child), 0, 'PSS hashAlgorithm')).oid;
+      const named = DIGEST_OIDS.get(oid);
+      if (named === undefined) {
+        throw new Asn1Error(`unsupported RSASSA-PSS hash algorithm ${oid}`);
+      }
+      hashAlgorithm = named;
+    }
     if (isContext(child, 2)) {
-      return readSmallInteger(childAt(children(child), 0, 'PSS saltLength'));
+      saltLength = readSmallInteger(childAt(children(child), 0, 'PSS saltLength'));
     }
   }
-  return 20;
+  return { saltLength, hashAlgorithm };
 }
 
 function readAttributes(element: Asn1Element): readonly CmsAttribute[] {
@@ -227,11 +258,16 @@ function readSignerInfo(element: Asn1Element): CmsSignerInfo {
     unsignedAttributes = readAttributes(maybeUnsigned);
   }
 
+  const pss =
+    family.family === 'rsa-pss'
+      ? readPssParameters(signatureAlgorithm.parameters)
+      : null;
+
   return {
     digestAlgorithm,
     signatureFamily: family.family,
-    pssSaltLength:
-      family.family === 'rsa-pss' ? readPssSaltLength(signatureAlgorithm.parameters) : null,
+    pssSaltLength: pss?.saltLength ?? null,
+    pssHashAlgorithm: pss?.hashAlgorithm ?? null,
     signature: Buffer.from(signature.content),
     signedAttributes,
     unsignedAttributes,
@@ -465,20 +501,45 @@ export function checkContentBinding(
 }
 
 /**
- * Verifies the signer's signature with the certificate's public key, over
- * the exact bytes RFC 5652 defines: the re-tagged signedAttrs when they are
- * present, the content itself when they are not.
+ * The exact octets RFC 5652 §5.4 defines as signed.
+ *
+ * Two cases, and getting the second one wrong is the difference between
+ * verifying this document and verifying nothing:
+ *
+ * - signedAttrs present: the DER encoding of `signedAttrs` as a `SET OF`.
+ * - signedAttrs ABSENT: the content itself — which for the encapsulating
+ *   `adbe.pkcs7.sha1` form is the ENCAPSULATED octet string (a 20-byte
+ *   SHA-1 digest), NOT the document bytes. Every IREPS signature in the
+ *   corpus takes this branch. Passing the document bytes here would make
+ *   every genuine railway signature report as invalid, and — far worse —
+ *   an implementation that "fixed" that by falling back to another buffer
+ *   would be verifying a signature over something nobody signed.
+ *   `checkContentBinding` is what ties that digest to this document; the
+ *   two checks are only meaningful together.
+ */
+function signedOctets(signedData: CmsSignedData, signer: CmsSignerInfo, detached: Buffer): Buffer {
+  if (signer.signedAttributesDer !== null) return signer.signedAttributesDer;
+  return signedData.eContent ?? detached;
+}
+
+/**
+ * Verifies the signer's signature with the certificate's public key.
+ *
+ * `detachedContent` is the externally-supplied content for a detached
+ * signature (the PDF ByteRange bytes); it is ignored when the CMS
+ * encapsulates its content or carries signed attributes.
  */
 export function verifySignerSignature(
+  signedData: CmsSignedData,
   signer: CmsSignerInfo,
   certificate: X509Certificate,
-  content: Buffer,
+  detachedContent: Buffer,
 ): boolean {
-  const signed = signer.signedAttributesDer ?? content;
-  const key = createPublicKey(certificate.publicKey);
+  const signed = signedOctets(signedData, signer, detachedContent);
+  const key = certificate.publicKey;
   if (signer.signatureFamily === 'rsa-pss') {
     return cryptoVerify(
-      signer.digestAlgorithm,
+      signer.pssHashAlgorithm ?? signer.digestAlgorithm,
       signed,
       {
         key,
@@ -497,6 +558,53 @@ export function verifySignerSignature(
     );
   }
   return cryptoVerify(signer.digestAlgorithm, signed, key, signer.signature);
+}
+
+export type SigningCertificateBinding = 'absent' | 'matches' | 'mismatch';
+
+/**
+ * Checks the ESS `signing-certificate` / `signing-certificate-v2` signed
+ * attribute (RFC 2634 / RFC 5035) against the certificate actually used.
+ *
+ * Without this attribute, a CMS blob names its signer only by the
+ * unprotected `SignerIdentifier`; an attacker who can add a certificate to
+ * the bag can make a verifier attribute the signature to a different
+ * subject. The attribute is inside `signedAttrs`, so it cannot be swapped.
+ * PAdES (`ETSI.CAdES.detached`) REQUIRES it; the older Adobe SubFilters do
+ * not, so `absent` is a fact to report rather than a failure by itself —
+ * `pdf-signature.ts` decides what each SubFilter's absence means.
+ */
+export function checkSigningCertificateAttribute(
+  signer: CmsSignerInfo,
+  certificate: X509Certificate,
+): SigningCertificateBinding {
+  const v2 = findAttribute(signer.signedAttributes, OID_ATTR_SIGNING_CERTIFICATE_V2);
+  const v1 = findAttribute(signer.signedAttributes, OID_ATTR_SIGNING_CERTIFICATE);
+  const attribute = v2 ?? v1;
+  const value = attribute?.values[0];
+  if (value === undefined) return 'absent';
+
+  // SigningCertificate[V2] ::= SEQUENCE { certs SEQUENCE OF ESSCertID[V2], ... }
+  const certs = children(childAt(children(value), 0, 'ESS certs'));
+  const first = certs[0];
+  if (first === undefined) return 'mismatch';
+  const parts = children(first);
+  // ESSCertIDv2 ::= SEQUENCE { hashAlgorithm DEFAULT sha256, certHash, ... }
+  // ESSCertID   ::= SEQUENCE { certHash (SHA-1), issuerSerial OPTIONAL }
+  let digestAlgorithm = attribute === v1 ? 'sha1' : 'sha256';
+  let hashIndex = 0;
+  const head = childAt(parts, 0, 'ESSCertID body');
+  if (isUniversal(head, UNIVERSAL_SEQUENCE) && attribute !== v1) {
+    const oid = readObjectIdentifier(childAt(children(head), 0, 'ESS hashAlgorithm'));
+    const named = DIGEST_OIDS.get(oid);
+    if (named === undefined) return 'mismatch';
+    digestAlgorithm = named;
+    hashIndex = 1;
+  }
+  const certHash = childAt(parts, hashIndex, 'ESS certHash');
+  if (!isUniversal(certHash, UNIVERSAL_OCTET_STRING)) return 'mismatch';
+  const actual = createHash(digestAlgorithm).update(certificate.raw).digest();
+  return actual.equals(certHash.content) ? 'matches' : 'mismatch';
 }
 
 /** The `signingTime` signed attribute, when present. Signed, so it cannot
