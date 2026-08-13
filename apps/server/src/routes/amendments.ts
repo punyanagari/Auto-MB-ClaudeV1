@@ -404,30 +404,6 @@ export async function applyApproval(
       where id = ${item.id}
     `;
   } else if (proposed.kind === 'remove_item') {
-    // THE AUTHORISATION GATE (owner ruling, 2026-08-13). An omission after
-    // award is a contractual event, and the railway's variation order is
-    // what authorises it. The order is uploaded and VERIFIED against this
-    // very amendment before it is stored, so the presence of a row here is
-    // the authorisation — there is no unverified kind to check for.
-    //
-    // Checked inside the same transaction that applies, under the request
-    // lock the caller already holds, exactly like the approver-authority
-    // check: a request filed without an order is lawful, approving one is
-    // not. Migration 0058 holds the identical rule against every writer,
-    // twice — at the request when it becomes approved, and at the item
-    // when it is soft-deleted.
-    const [cited] = await tx<{ id: string }[]>`
-      select id from amendment_variation_orders
-      where approval_request_id = ${request.id} and verified
-    `;
-    if (!cited) {
-      throw httpError(
-        409,
-        'OMISSION_VARIATION_REFERENCE_REQUIRED',
-        'This omission cannot be approved until the railway variation order authorising it has been uploaded and verified. Cite the variation order against this request, then approve it.',
-        { approvalId: request.id },
-      );
-    }
     // R7 omission. Soft-delete under the item row lock, never erasure:
     // the item number stays reserved for the life of the Work (the 0001
     // uniqueness constraint counts deleted rows), so a later addition
@@ -503,6 +479,36 @@ export async function applyApproval(
         409,
         'AMENDMENT_ITEM_HAS_EVIDENCE',
         `Item ${item.item_number} carries evidence and cannot be omitted: ${blocking.join(', ')}. Cancel that evidence first.`,
+      );
+    }
+    // THE AUTHORISATION GATE (owner ruling, 2026-08-13). An omission after
+    // award is a contractual event, and the railway's variation order is
+    // what authorises it. The order is uploaded and VERIFIED against this
+    // very amendment before it is stored, so the presence of a row here is
+    // the authorisation — there is no unverified kind to check for.
+    //
+    // Checked inside the same transaction that applies, under the request
+    // and item locks the caller already holds, exactly like the approver-
+    // authority check: a request filed without an order is lawful,
+    // approving one is not. Migration 0058 holds the identical rule
+    // against every writer, twice — at the request when it becomes
+    // approved, and at the item when it is soft-deleted.
+    //
+    // Deliberately AFTER the evidence test, and 0058's trigger orders the
+    // two the same way: an item carrying a delivery challan cannot be
+    // omitted at all, and answering "go and fetch a variation order" would
+    // send the operator to obtain paperwork that will not help. What they
+    // need to hear first is "cancel that challan".
+    const [cited] = await tx<{ id: string }[]>`
+      select id from amendment_variation_orders
+      where approval_request_id = ${request.id} and verified
+    `;
+    if (!cited) {
+      throw httpError(
+        409,
+        'OMISSION_VARIATION_REFERENCE_REQUIRED',
+        `Item ${item.item_number} cannot be omitted until the railway variation order authorising it has been uploaded and verified. Cite the variation order against this request, then approve it.`,
+        { approvalId: request.id },
       );
     }
     await tx`
