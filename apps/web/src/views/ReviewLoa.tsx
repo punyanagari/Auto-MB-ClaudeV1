@@ -10,6 +10,7 @@ import type {
   ConfirmPaymentMatrixRow,
   ConfirmWorkRequest,
   ContractSourceContext,
+  GstBasis,
   LoaDocumentDetail,
   WorkDetailResponse,
   WorkItemPaymentCategory,
@@ -130,6 +131,10 @@ interface HeaderDraft {
   pricingShape: 'letter_percentage' | 'per_schedule';
   letterPercentage: string;
   letterPercentageDirection: 'below' | 'at_par' | 'above' | '';
+  /** Whether the letter's rates are quoted inclusive or exclusive of GST
+   * (migration 0062). Never extracted — the letter does not say — so it is
+   * always an answerable question here, defaulted to the common case. */
+  gstBasis: GstBasis;
 }
 
 interface PbgDraft {
@@ -184,6 +189,10 @@ function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
       pricingShape.letter_percentage?.toFixed(3) ??
       (pricingShape.letter_percentage_direction === 'at_par' ? '0' : ''),
     letterPercentageDirection: pricingShape.letter_percentage_direction ?? '',
+    // The parser proposes nothing here, on any letter. 'inclusive' is the
+    // ordinary Indian works contract, and the control below makes the
+    // rarer answer a deliberate act rather than a discovery.
+    gstBasis: 'inclusive',
   };
 }
 
@@ -713,6 +722,7 @@ export function ReviewLoa({
       advertisedValue: header.advertisedValue,
       contractValue: header.contractValue,
       pricingShape: header.pricingShape,
+      gstBasis: header.gstBasis,
       ...(withPercentage && header.letterPercentageDirection !== ''
         ? {
             letterPercentage: header.letterPercentage,
@@ -1102,6 +1112,35 @@ export function ReviewLoa({
             {fieldErrors['work-code'] !== undefined && (
               <FieldError id="work-code-error">{fieldErrors['work-code']}</FieldError>
             )}
+          </Field>
+          {/* The GST basis (migration 0062). Always asked, never
+              extracted: the letter is silent on GST, and the declaration
+              appears on the railway's own bill instead. It cannot be
+              changed later, because executed value — and therefore
+              whether this Work may ever be marked completed — is measured
+              against it, so the hint says which way the rare answer
+              matters. */}
+          <Field>
+            <label htmlFor="gst-basis">Rates quoted</label>
+            <select
+              id="gst-basis"
+              ref={(node) => {
+                registerField('gst-basis', node);
+              }}
+              value={header.gstBasis}
+              onChange={(event) => {
+                updateHeader('gstBasis', event.target.value as GstBasis);
+              }}
+            >
+              <option value="inclusive">Inclusive of GST (18%)</option>
+              <option value="exclusive">Exclusive of GST (18% extra)</option>
+            </select>
+            <Hint>
+              Almost every works-contract LOA quotes rates inclusive of GST. Check the
+              letter and the schedule before choosing the other: executed value is
+              measured against this, and reading an exclusive letter as inclusive
+              overstates execution by 18%.
+            </Hint>
           </Field>
           {!locks.letterNumber && (
             <Field>

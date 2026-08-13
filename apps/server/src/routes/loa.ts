@@ -39,6 +39,7 @@ import {
   membershipOf,
   requireWriterRole,
 } from '../authz.js';
+import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { assertExtractedValuesUnmodified } from '../loa-extracted-values.js';
@@ -285,6 +286,8 @@ interface WorkRow {
   pricing_shape: Work['pricingShape'];
   letter_percentage: string | null;
   letter_percentage_direction: Work['letterPercentageDirection'];
+  gst_basis: Work['gstBasis'];
+  gst_rate: string;
   pbg_required_amount: string | null;
   pbg_submission_days: number | null;
   pbg_extension_days: number | null;
@@ -308,6 +311,8 @@ function toWork(row: WorkRow): Work {
     pricingShape: row.pricing_shape,
     letterPercentage: row.letter_percentage,
     letterPercentageDirection: row.letter_percentage_direction,
+    gstBasis: row.gst_basis,
+    gstRate: row.gst_rate,
     pbgRequiredAmount: row.pbg_required_amount,
     pbgSubmissionDays: row.pbg_submission_days,
     pbgExtensionDays: row.pbg_extension_days,
@@ -1035,11 +1040,35 @@ export function registerLoaRoutes(
         const pbgSource =
           pbg === undefined ? null : pbgRequirementSourceFor(payload, pbg);
 
+        // The GST basis (migration 0062). The parser proposes nothing —
+        // the letter is silent on GST — so this is the reviewer's
+        // statement, defaulted to the common case: an Indian works
+        // contract quoting rates inclusive of 18% GST. Everything
+        // downstream that compares money against this Work's contract
+        // value reads it back from here (src/executed-value.ts).
+        const gstBasis = body.gstBasis ?? 'inclusive';
+        const gstRate = body.gstRate ?? '18.00';
+        // Notified as of the LETTER date, not today: the basis is a fact
+        // about rates quoted in a letter signed then. Same master and same
+        // refusal every other tax-bearing document uses.
+        await assertGstRateNotified(tx, gstRate, body.letterDate, 'GST basis');
+        // The column is numeric(5,2) CHECK (>= 0 AND < 100); GstRateSchema
+        // admits '100', so that one value is refused here with a message
+        // rather than by an unmapped CHECK violation.
+        if (Number(gstRate) >= 100) {
+          throw httpError(
+            400,
+            'GST_RATE_INVALID',
+            `A GST rate of ${gstRate}% is not a rate any letter is quoted against. Give the slab the LOA's rates refer to — 18% for an ordinary works contract.`,
+          );
+        }
+
         const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
               letter_percentage, letter_percentage_direction,
+              gst_basis, gst_rate,
               pbg_required_amount, pbg_submission_days, pbg_extension_days,
               pbg_penal_interest_percent, pbg_requirement_source,
               created_by_user_id
@@ -1050,6 +1079,7 @@ export function registerLoaRoutes(
               ${body.contractValue}, ${body.pricingShape},
               ${body.letterPercentage ?? null},
               ${body.letterPercentageDirection ?? null},
+              ${gstBasis}, ${gstRate},
               ${pbg?.requiredAmount ?? null}, ${pbg?.submissionDays ?? null},
               ${pbg?.extensionDays ?? null}, ${pbg?.penalInterestPercent ?? null},
               ${pbgSource === null ? null : jsonb(tx, pbgSource)},
@@ -1058,6 +1088,7 @@ export function registerLoaRoutes(
             returning id, work_code, letter_number, letter_date::text as letter_date,
                       title, advertised_value, contract_value, pricing_shape,
                       letter_percentage, letter_percentage_direction,
+                      gst_basis, gst_rate::text as gst_rate,
                       pbg_required_amount::text as pbg_required_amount,
                       pbg_submission_days, pbg_extension_days,
                       pbg_penal_interest_percent::text as pbg_penal_interest_percent,
@@ -1191,6 +1222,17 @@ export function registerLoaRoutes(
                   0,
                 ),
                 paymentMatrixRows: body.paymentMatrix?.length ?? 0,
+                // The GST basis this Work's executed value will forever be
+                // computed on, and whether the reviewer stated it or took
+                // the default. Recorded because the basis is not visible in
+                // any document: if a Work's execution percentage is ever
+                // disputed, this row is the only evidence of which way the
+                // question was answered, and by whom.
+                gst: {
+                  basis: gstBasis,
+                  rate: gstRate,
+                  stated: body.gstBasis !== undefined,
+                },
                 // The extracted-value lock's verdict, so the trail shows
                 // what was held to the letter, which holes the reviewer
                 // filled, and what the payload did with the parsed rows.
@@ -1285,6 +1327,7 @@ export function registerLoaRoutes(
             select id, work_code, letter_number, letter_date::text as letter_date,
                    title, advertised_value, contract_value, pricing_shape,
                    letter_percentage, letter_percentage_direction,
+                   gst_basis, gst_rate::text as gst_rate,
                    pbg_required_amount::text as pbg_required_amount,
                    pbg_submission_days, pbg_extension_days,
                    pbg_penal_interest_percent::text as pbg_penal_interest_percent,
@@ -1320,6 +1363,7 @@ export function registerLoaRoutes(
           select id, work_code, letter_number, letter_date::text as letter_date,
                  title, advertised_value, contract_value, pricing_shape,
                  letter_percentage, letter_percentage_direction,
+                 gst_basis, gst_rate::text as gst_rate,
                  pbg_required_amount::text as pbg_required_amount,
                  pbg_submission_days, pbg_extension_days,
                  pbg_penal_interest_percent::text as pbg_penal_interest_percent,

@@ -15,6 +15,7 @@ import {
   compareDecimalStrings,
   formatCompactInr,
   formatInr,
+  formatServerPercent,
   progressPercent,
 } from '../format.js';
 import { Badge } from '../ui/badge.js';
@@ -151,10 +152,11 @@ export function OperationsDashboard({
     data.totals.deliveredValue,
     data.totals.contractValue,
   );
-  const billedPercent = progressPercent(
-    data.totals.billedValue,
-    data.totals.contractValue,
-  );
+  // Executed value against contract — the number work completion is
+  // argued about. Taken from the server, never divided here: each Work's
+  // GST basis decides what its contract value is comparable with, and the
+  // browser does not know it (migration 0062).
+  const executedLabel = formatServerPercent(data.totals.executedPercent);
   const activeWorks = data.works.filter((work) => work.status === 'active').length;
   const completedWorks = data.works.filter(
     (work) => work.status === 'completed',
@@ -181,7 +183,10 @@ export function OperationsDashboard({
     {
       label: 'Billed value',
       value: formatCompactInr(data.totals.billedValue),
-      helper: `${String(billedPercent)}% of contract value`,
+      helper:
+        executedLabel === null
+          ? 'No contract value recorded'
+          : `${executedLabel} of contract value`,
       icon: FileText,
       tone: 'bg-primary/10 text-primary',
     },

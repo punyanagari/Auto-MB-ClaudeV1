@@ -45,6 +45,30 @@ export type LetterPercentage = Static<typeof LetterPercentageSchema>;
 
 const WorkCodeSchema = Type.String({ pattern: '^[A-Z0-9][A-Z0-9_/-]{0,19}$' });
 
+/**
+ * Whether a Work's LOA rates — and therefore its contract value and every
+ * amount derived from those rates — are quoted INCLUSIVE or EXCLUSIVE of
+ * GST (migration 0062).
+ *
+ * Owner ruling, 13 August 2026: usually inclusive at 18%, because works
+ * contracts sit in the 18% slab, but some LOAs quote exclusive rates.
+ * Rare, and real. It is NOT parsed: the letter is silent on GST (the
+ * railway's own bill is where 'Rate is inclusive of GST: Yes' appears), so
+ * the reviewer states it at LOA review time and the default follows the
+ * common case.
+ *
+ * It is carried on the wire because executed value is meaningless without
+ * it: comparing money on one basis against a contract value on the other
+ * moves the answer by the whole GST factor, and in the dangerous direction
+ * — an exclusive letter read as inclusive OVERSTATES execution, so the
+ * Work can be completed with roughly a sixth of the contract unbilled.
+ */
+export const GstBasisSchema = Type.Union([
+  Type.Literal('inclusive'),
+  Type.Literal('exclusive'),
+]);
+export type GstBasis = Static<typeof GstBasisSchema>;
+
 /** One corrected item as the reviewer confirms it. `sourceRef` points back
  * into the stored extraction payload (schedule id + printed serial) so the
  * server can attach the parser's verbatim source block as evidence.
@@ -138,6 +162,15 @@ export const ConfirmWorkRequestSchema = Type.Object(
     pricingShape: PricingShapeSchema,
     letterPercentage: Type.Optional(LetterPercentageSchema),
     letterPercentageDirection: Type.Optional(LetterPercentageDirectionSchema),
+    /** The GST basis these rates are quoted on, and the rate it refers
+     * to. Optional on the wire and defaulted to inclusive/18.00 by the
+     * server: the parser never proposes either (the letter is silent), so
+     * this is a HOLE the reviewer fills rather than an extracted truth,
+     * and an older client that omits it gets the common case. The rate is
+     * validated against the organisation's notified GST rate master as of
+     * the letter date. */
+    gstBasis: Type.Optional(GstBasisSchema),
+    gstRate: Type.Optional(GstRateSchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
     paymentMatrix: Type.Optional(
       Type.Array(ConfirmPaymentMatrixRowSchema, { minItems: 1, maxItems: 5 }),
@@ -163,6 +196,12 @@ export const WorkSchema = Type.Object(
       LetterPercentageDirectionSchema,
       Type.Null(),
     ]),
+    /** The basis this Work's rates are quoted on, and the rate it refers
+     * to. Never null: migration 0062 defaults every Work to inclusive at
+     * 18.00. Any comparison of money against `contractValue` must be made
+     * on this basis (apps/server/src/executed-value.ts). */
+    gstBasis: GstBasisSchema,
+    gstRate: GstRateSchema,
     /** The letter's PBG requirement (all null when the letter demands
      * none). What the contractor actually submitted lives on the Work's
      * instruments, not here. */

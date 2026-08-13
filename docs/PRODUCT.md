@@ -35,15 +35,23 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
 5. A human reviews the proposal and **supplies only what the parser could not
    read**. Every value the parser produced and did not flag is read-only — see
    "Extracted values are read-only", below.
-6. Confirmation atomically creates the Work, schedules, and items.
-7. Empty numeric and category fields are stored as null, never as zero or empty strings.
-8. A byte-identical re-upload within the organisation is refused, naming the
+6. The reviewer also states the **GST basis** of the letter's rates —
+   inclusive or exclusive — and the rate it refers to. This is asked, never
+   parsed: LOA letters are silent on GST (the declaration appears on the
+   railway's own bill), so there is no extracted value to protect and it is a
+   hole the reviewer fills like any other. It defaults to inclusive at 18%,
+   which is what an Indian works contract almost always means, and the rate is
+   validated against the organisation's notified GST rate master as of the
+   letter date. See "Executed value is measured on a recorded basis", below.
+7. Confirmation atomically creates the Work, schedules, and items.
+8. Empty numeric and category fields are stored as null, never as zero or empty strings.
+9. A byte-identical re-upload within the organisation is refused, naming the
    document already held — its filename, upload date, status, and whether it
    became a Work.
-9. A letter number matching an earlier document or Work is **not** refused;
-   revised and re-issued letters legitimately repeat one. The review screen
-   names the earlier intake so the reviewer decides.
-10. An intake package that has not become a Work can be **discarded**: it leaves
+10. A letter number matching an earlier document or Work is **not** refused;
+    revised and re-issued letters legitimately repeat one. The review screen
+    names the earlier intake so the reviewer decides.
+11. An intake package that has not become a Work can be **discarded**: it leaves
     the working list with its supporting contract documents, keeps its stored
     object for the retention path, and records who discarded it, when, and why.
     A single supporting document can be discarded on its own. Discard is
@@ -210,7 +218,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered and/or installed quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened.
-15. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
+15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
+16. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
 ### 5.1 Verifying a variation order
 
@@ -246,6 +255,56 @@ variation orders and which the same document also authorises (it states a
 proposed quantity for every item, not only the omitted ones). The owner
 scoped this ruling to omissions; extending it is a change of expectation,
 not of machinery.
+
+### 5.2 Executed value is measured on a recorded basis
+
+LOA rates are **usually** quoted inclusive of GST — works contracts in India
+sit in the 18% slab — but **some** LOAs quote GST-exclusive rates. It is rare,
+and it is real. So the basis is a per-Work attribute recorded from its letter,
+never a constant in code.
+
+**Why it matters.** Executed value drives work completion, and a Work may be
+marked completed only at 100% executed value. The failure is not symmetric:
+
+- Reading a GST-**exclusive** letter as inclusive compares GST-inclusive money
+  against a contract value that excludes GST and **overstates** execution by
+  the GST factor. Such a Work reads 100% executed at about 85% of its real
+  value, so it can be closed with roughly a sixth of the contract still
+  unbilled — silently.
+- The opposite mistake merely holds a finished Work open, which is visible and
+  annoying rather than silent and expensive.
+
+**The rule is "compare like with like", not "divide by 1.18".** Once the basis
+is known, executed value is the same percentage whether computed GST-inclusive
+(bill totals against the Net Bid Value) or GST-exclusive (invoice taxable
+values against Net Bid Value ÷ 1.18) — both sides scale by the same factor.
+What must never happen is **mixing** the two, which is the natural mistake:
+bills state a GST-inclusive figure while tax invoices state a taxable one, so
+reaching for whichever number is nearest moves the answer by the whole GST
+wedge. On the PL-270 corpus that is 29.4874% consistent against 24.9893%
+mixed, and the ratio between them is exactly 1.18 — which is what makes the
+mistake recognisable in a report rather than merely suspected.
+
+**Where the basis comes from.** It is captured at LOA review time and defaults
+to inclusive at 18%. It is not parsed, because the letter does not say: the
+declaration ("Rate is inclusive of GST: Yes") appears on the railway's own
+bill, not on the award. Under the extracted-value rule a value the parser
+never produced is a hole the reviewer fills, so this is asked outright, and
+the `work.created` audit records the answer and whether a human stated it or
+took the default.
+
+**Where it is applied.** Any comparison of money against a Work's contract
+value goes through one module, which takes the basis of the numerator as an
+argument — a figure whose basis the caller cannot name is a figure it cannot
+compare. Cross-Work aggregates restate every term as taxable value first, so a
+portfolio holding both kinds of letter aggregates coherently.
+
+**Known gap.** The per-Work money figures on the dashboard (contract,
+delivered, billed) are still added as printed rupees across Works. On a
+portfolio mixing bases that sum is not on any single basis. It is left that way
+deliberately — stating it correctly would drop a visible tile by a sixth for
+today's all-inclusive portfolio — and is an open question for the owner rather
+than a settled expectation.
 
 ## 6. Data conventions
 
