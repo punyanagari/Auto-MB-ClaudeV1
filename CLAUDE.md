@@ -51,10 +51,15 @@ knowledge gaps. Reach for it when query/path/explain do not surface
 enough, not as a first step.
 
 Two things it is known to be weak at, so do not read absence as
-evidence: symbol-level imports across workspace packages are
-under-linked where a barrel file re-exports them (the file-level edge
-survives, the symbol-level one does not), and the smaller communities
-carry names derived from their directory rather than their meaning.
+evidence. Symbol-level imports across workspace packages are
+under-linked wherever a barrel file re-exports them — the file-level
+edge survives, the symbol-level one does not, so "who imports
+`@auto-mb/db`" is answerable but "who imports its `sql` export" is not.
+And community names are only as good as the last full run: an
+incremental rebuild re-clusters and renames communities after their hub
+symbol, so a name like `routes/challans.ts` tells you where a cluster
+centres, not what it means. Read community names as a pointer, never as
+a claim.
 
 A `post-commit` hook rebuilds the code half of the graph automatically
 (AST only, no LLM, no API cost). It deliberately does nothing inside a
