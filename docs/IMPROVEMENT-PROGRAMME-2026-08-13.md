@@ -1,0 +1,242 @@
+# Improvement programme — 13 August 2026
+
+- As-of: `main` @ `43ed973` (63 migrations, all PRs merged, combined verify green
+  in an isolated worktree against a fresh database).
+- Inputs: a ten-reviewer expert panel (36 dimensions, evidence-measured against
+  the working tree) and one independent external review (45 dimensions, judged
+  largely from contracts, specs and documentation).
+- Purpose: reconcile the two reviews into one score sheet, then define an
+  execution programme that a set of parallel sessions can run without stepping
+  on each other.
+
+This document is the hand-off. A session picking up any pack below should need
+nothing from the conversation that produced it.
+
+---
+
+## 1. Reconciliation
+
+### 1.1 Why the two reviews disagree
+
+The independent review averages 7.5; the panel averages 6.2. The gap has one
+cause, visible dimension by dimension: **the independent review scored what the
+contracts and documents promise; the panel measured what the code does.** Where
+the two disagree by 1.5 points or more, the panel's number stands whenever it
+carries a measurement, because a measurement can be re-run and a reading of the
+spec cannot. Where the independent review credited something real that the
+panel under-weighted (instrumentation quality, retraction culture, the org-entry
+flow), the reconciled score moves up toward it.
+
+The clearest example: error/empty/loading states. The independent review gave
+8.0, citing the state vocabulary in the contract and `docs/UX.md`. The panel
+gave 5, having counted: one skeleton in the entire client, retry beside 3 of
+~30 load failures, and ~75% of the 672 server refusals stating a fact with no
+remedy. Both observations are true. The product _specified_ an 8 and _shipped_
+a 5. Reconciled: 5.
+
+### 1.2 Factual corrections to the independent review
+
+Recorded so they are not re-imported into future rounds:
+
+1. **"Shared Zod contracts" — the contracts are TypeBox** (`packages/contracts`,
+   `@sinclair/typebox`), not Zod.
+2. **`Workspace.tsx` is treated as a live view that "will grow one-offs." It is
+   dead.** Zero importers in `src`, `test`, and `e2e`; superseded by
+   `OperationsWorkspace.tsx`; 24 commits have touched it since, including one on
+   2026-08-13 that propagated a permissions feature into it.
+3. **"Navigation matches `docs/UX.md`" — it does not.** The spec names five
+   global destinations and seven Work areas; the shipped shell has ten
+   destinations in four groups and ten Work tabs named after the data model.
+   Either direction may be right; they currently disagree.
+4. **"Live Whitebooks uncertified" is stale.** Sandbox certification was
+   completed 2026-08-12 with live IRP register/cancel evidence —
+   `docs/WHITEBOOKS-SANDBOX-CERTIFICATION.md`. Production credentials and a
+   production run remain open, which is what the reconciled score reflects.
+5. **The accessibility gate is weaker than "blocking Playwright + axe" implies.**
+   It discards all moderate findings, enables zero WCAG 2.2-specific rules
+   (axe's only 2.2 rule ships disabled), and runs at a single 1280×720 viewport
+   with near-empty fixtures.
+
+### 1.3 Reconciled score sheet (45 dimensions)
+
+Scores: I = independent review, P = panel (– where the panel did not score the
+dimension separately), R = reconciled. One-line basis for each reconciliation.
+
+| #   | Dimension                        |   I |   P |       R | Basis                                                                                                                                                                                                                                 |
+| --- | -------------------------------- | --: | --: | ------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Visual design quality            | 7.5 |   7 |   **7** | Sticky ledger headers render behind the app header on all 59 tables (`ui/table.tsx:22` vs the 4.5rem shell header) — user-visible on the core screen.                                                                                 |
+| 2   | Typography                       | 8.5 |   8 |   **8** | Scale is real and enforced, but dashboard KPI figures are not mono and Devanagari 600 is unloaded under `font-synthesis: none`.                                                                                                       |
+| 3   | Design-system coherence          | 8.0 |   7 |   **7** | 958 dead lines carrying the retired aesthetic; three missing primitives with measured verbatim duplication (8× detail-list, 7× nav item).                                                                                             |
+| 4   | Responsive / field usability     | 6.5 |   4 |   **4** | Measured: 48/59 tables have no scroll container; inputs at 14px trigger iOS zoom; the self-described mobile view has zero responsive prefixes in 506 lines.                                                                           |
+| 5   | Overall UX                       | 7.5 |   7 |   **7** | Agreement, different emphasis.                                                                                                                                                                                                        |
+| 6   | Clerk ease of operation          | 6.5 |   6 |   **6** | No password recovery exists anywhere; with mandatory TOTP that is an unrecoverable lockout.                                                                                                                                           |
+| 7   | Navigation / IA                  | 8.0 |   7 |   **7** | Shipped IA diverges from `docs/UX.md` (correction 3); departure protection covers the two short editors and not `ReviewLoa`.                                                                                                          |
+| 8   | Error / empty / loading          | 8.0 |   5 |   **5** | Measured: 1 skeleton, 3/30 retries, ~27 dead-end load failures, ~75% of refusals without a remedy.                                                                                                                                    |
+| 9   | Onboarding / first-run           | 7.0 |   3 | **3.5** | Org entry is genuinely clean (independent is right); but zero first-run guidance exists and the default deploy shows an unactionable trust-anchor warning on the flagship screen.                                                     |
+| 10  | Accessibility (WCAG 2.2 AA)      | 7.0 |   6 |   **6** | Five confirmed Level A failures; the CI gate passes the worst of them while asserting on it.                                                                                                                                          |
+| 11  | API design                       | 8.0 |   6 |   **6** | 323 undeclared error-code strings; no pagination on ~50 list endpoints; version string already drifted (`/api/health` 0.1.0 vs 0.11.0).                                                                                               |
+| 12  | Database schema                  | 9.0 |   8 | **8.5** | Composite `(organisation_id, id)` FKs and constraint-encoded state machines are top-decile; no domains, and the FK-index audit was one-off.                                                                                           |
+| 13  | Data integrity & migrations      | 9.0 |   8 | **8.5** | The runner is near-flawless; capped by the fail-open denylist on issued-document guards (already missed `reverse_charge_applicable` once).                                                                                            |
+| 14  | Backup / restore / DR            | 6.5 |   5 | **5.5** | CI restore proof is real and rare; no PITR/off-host/encryption, dump and object archive at different instants (finding 33), `AUTH_SECRET` in no recovery set.                                                                         |
+| 15  | Extensibility / modularity       | 7.0 |   6 |   **6** | Registrar is a mechanism with a proof; but a new numbered document type is a ten-file change and two hand lists already disagree with the route table.                                                                                |
+| 16  | Simplicity / readability         | 6.5 |   7 |   **7** | Independent reacted to file sizes; panel measured median handler 60 lines and zero `any` across 92k lines. Tail is bad but bounded.                                                                                                   |
+| 17  | File / module organisation       | 7.5 |   6 | **6.5** | Package boundaries enforced; module level accretive (8 route files import from `challans.ts`; shared primitives parked in the biggest consumer).                                                                                      |
+| 18  | Bloat                            | 7.0 |   6 |   **6** | ~1,005 confirmed-dead lines including two orphans in the statutory path; ~870-line IRP state-machine triplication; independent missed the dead shell.                                                                                 |
+| 19  | Comments & naming                | 8.5 |   8 |   **8** | Best-in-repo writing, but six comment references are provably broken and one is inverted on a live data-seeding path.                                                                                                                 |
+| 20  | Application security             | 8.0 |   8 |   **8** | Agreement, from opposite directions.                                                                                                                                                                                                  |
+| 21  | Business-logic hardening         | 8.5 |   7 |   **7** | Panel found what the independent didn't: install-before-delivery has no DB backstop in either form; 5 of 11 counter tables lack the decrease guard, including `tax_invoice_counters`.                                                 |
+| 22  | Production readiness             | 5.5 |   4 | **4.5** | One failure domain, backup docs promise what the script doesn't do, prod image carries the dev toolchain, nothing detects schema/artefact drift.                                                                                      |
+| 23  | Observability                    | 6.5 |   3 |   **4** | Both right about different halves: the instrumentation is disciplined (independent), and nothing scrapes it, nothing alerts, and readiness reports ready with no scanner (panel).                                                     |
+| 24  | CI/CD                            | 8.0 |   6 | **6.5** | SHA-pinned and well-guarded deploys; but `main` is never tested as `main`, and the topology/restore jobs run weekly, not per-PR.                                                                                                      |
+| 25  | Dependency / supply chain        | 7.5 |   6 | **6.5** | 26 direct runtime deps and enforced pinning; no image scanning at all, audit non-blocking, prod image ships dev deps.                                                                                                                 |
+| 26  | Test quality                     | 9.0 |   8 | **8.5** | Raw-SQL trigger attacks and hand-written mutation tests; capped by untyped web stubs (309 tests against a fiction) and a corpus test importing zero production code.                                                                  |
+| 27  | Coverage vs risk                 | 8.5 |   8 |   **8** | Money/tenancy/numbering disproportionately covered; concurrency almost entirely N=2; 131 triggers, 4 named in tests.                                                                                                                  |
+| 28  | Test reliability / speed         | 7.0 |   6 |   **6** | Zero sleep-based waits (good); zero flake instrumentation (bad); the named flake is a Windows `rm` retry issue, diagnosed, ~1h fix.                                                                                                   |
+| 29  | Fixtures / test data             | 9.0 |   8 | **8.5** | Real-document corpora with double drift-guards and tested pseudonymisation; setup is raw admin SQL bypassing API validation.                                                                                                          |
+| 30  | Domain fidelity                  | 9.0 |   6 |   **7** | The paper is modelled with rare fidelity (independent right); but the tender percentage was never applied to any rate until 0063 and AMC schedules make completion unsatisfiable on the flagship work (panel right).                  |
+| 31  | Statutory / regulatory           | 7.0 |   7 |   **7** | Agreement, with correction 4 applied.                                                                                                                                                                                                 |
+| 32  | Completeness vs stated scope     | 8.5 |   7 | **7.5** | Scope discipline is real; the received railway bill — the only document the agency does not author — is entirely unmodelled.                                                                                                          |
+| 33  | Time saved vs spreadsheets       | 6.0 |   6 |   **6** | Agreement: strong on document production, absent on money tracking, no measured clerk study.                                                                                                                                          |
+| 34  | Backend performance              | 5.5 |   5 |   **5** | Measured: MB loader 33,669 probes/446ms; RLS helper 4.1× in filter position; 19 per-row write loops; 59 unpaginated lists.                                                                                                            |
+| 35  | Frontend dense-table performance | 5.0 |   4 |   **4** | Measured: zero `React.memo`, zero virtualisation, one 872 KiB chunk, keystroke re-renders 129 controlled inputs.                                                                                                                      |
+| 36  | Scalability headroom             | 5.5 |   4 |   **4** | Measured: pool of 5, dashboard 881ms at 412k items → ~5 req/s ceiling; all growth curves unbounded.                                                                                                                                   |
+| 37  | Tenant isolation / RLS           | 8.5 |   – | **8.5** | Panel's security review corroborates: FORCEd RLS, catalog-asserted, allowlist complete.                                                                                                                                               |
+| 38  | Authorization & privileges       | 8.5 |   – |   **8** | Solid, minus: a new authority column is silently MFA-exempt (no exhaustiveness link), two membership writes lack the org predicate.                                                                                                   |
+| 39  | Issued documents & money         | 8.0 |   – | **7.5** | Immutability is real but denylist-shaped; taxable value is enforced in exactly one layer (route), unlike every security control (two).                                                                                                |
+| 40  | Document generation              | 7.5 |   – | **7.5** | Accepted.                                                                                                                                                                                                                             |
+| 41  | External integrations            | 6.5 |   – |   **7** | Corrected upward: sandbox certification exists with live evidence; production run open.                                                                                                                                               |
+| 42  | Developer experience             | 8.0 |   – |   **8** | Accepted.                                                                                                                                                                                                                             |
+| 43  | Documentation honesty            | 8.5 |   – | **6.5** | The retraction culture is real, but ops docs promise encryption/PITR/retention the script lacks, OPERATIONS describes a removed rate-limiter design, ADR-0008's load-bearing premise is false, and six comment references are broken. |
+| 44  | Parser / AI safety               | 9.0 |   – | **8.5** | The lock/confirm/discard discipline is exemplary; capped because extraction fixtures are never re-derived and Poppler is unpinned and different between CI (apt) and prod (apk).                                                      |
+| 45  | Maintainability / bus factor     | 6.5 |   – | **6.5** | Accepted. Bus factor is 1 and that is an owner fact, not a code fact.                                                                                                                                                                 |
+
+**Reconciled mean: ~6.6** (independent 7.5, panel 6.2). The shape matters more
+than the mean: the core (schema, integrity, tests, tenancy, parser safety) sits
+at 8–8.5 while the wrapper (operations, onboarding, performance, mobile) sits
+at 3.5–5.
+
+### 1.4 The four recurring findings
+
+Every pack below traces to one of these.
+
+1. **Invariants established once, never converted into standing checks.** The
+   immutability column list, FK-index coverage, counter monotonicity, upload
+   throttle scope, MFA authority coverage, dead-file detection. The house style
+   for the fix already exists (the catalog-driven RLS / privilege / export
+   drift tests) and is applied unevenly.
+2. **Security is enforced twice; money once.** Tenancy has RLS + explicit
+   predicates + an enumerating test. The taxable value has a route function.
+   The install-vs-delivered floor has a route check and no trigger.
+3. **Docs claim more than the code does.** Backup encryption/PITR, the
+   rate-limiter paragraph, ADR-0008's compose-churn premise, six broken comment
+   references (one inverted on the unit-seeding path).
+4. **Specified but not shipped.** Nine UX states specified, ~two implemented;
+   five global destinations specified, ten shipped; a11y gates defined in
+   `package.json` and wired into nothing.
+
+---
+
+## 2. The programme
+
+### 2.1 Ground rules for every pack
+
+- **One pack = one branch = one PR.** Branch names `pack/p<NN>-<slug>`.
+- **File ownership is exclusive.** The owner column below is a contract; a pack
+  must not touch another pack's files. Shared hotspots (`package.json`,
+  `scripts/check-architecture.mjs`, `ci.yml`) are assigned to exactly one pack
+  per wave; later packs rebase.
+- **Every pack lands its regression guard in the same PR as its fix.** A pack
+  that fixes without guarding is incomplete; the guard is the deliverable.
+- **Verify in isolation.** Full `pnpm verify` before the PR, in a detached
+  worktree pinned to the merge-base, against a freshly created database — never
+  the shared checkout, never the shared `auto_mb` DB. (Both contaminations
+  produced false verify results on 2026-08-13; this is the lesson, encoded.)
+- **Review sensitivity is marked per pack.** Packs touching migrations, auth,
+  uploads, money, permissions or infrastructure are opened as PRs and **held
+  for owner review** per `CONTRIBUTING.md` — they are never self-merged.
+  Docs/test/UI-only packs merge when green.
+- **Migration numbers are reserved here** to prevent the collisions that
+  occurred twice in the previous round: **0064** → P2, **0065** → P2,
+  **0066** → P14, **0067** → P15, **0068** → P16, **0069** → P17. A pack that
+  does not ship its migration returns the number by editing this file.
+
+### 2.2 Wave 1 — guards and closures (all seven packs runnable in parallel)
+
+| Pack                               | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Owns (exclusively)                                                                                                                                                                                                           | Effort    | Unlocks                                                                     | Review                        |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------- | ----------------------------- |
+| **P1 Dead code + knip**            | Delete `views/Workspace.tsx`, `views/Dashboard.tsx`, `gsp/ewb-payload.ts`, `gsp/eway-by-irn.ts`, dead hash helpers; fix the six broken comment references (incl. the inverted unit-list comment in `needs-review.ts:402`); correct ADR-0008's compose-churn claim; add `knip` with frozen baseline + comment-reference linter (`scripts/check-comment-refs.mjs`) into `pnpm verify`.                                                                                                                                                                     | the four deleted files, `knip.json`, `scripts/check-comment-refs.mjs`, `adr/0008`, root `package.json` (wave-1 owner)                                                                                                        | ~1 day    | Bloat 6→7, Comments 8→8.5, Docs-honesty +0.5                                | merge when green              |
+| **P2 DB invariant guards**         | New `packages/db/test/issued-immutability-coverage` (guard ROW list ∪ declared-mutable ≡ catalog, per issued table); trigger census + counter-table rule in `migration-contract.test.ts`; FK-index catalog test; **migration 0064**: `guard_counter_decrease` on the four unprotected counter tables + unique `(organisation_id, fy_label, sequence_number)` on tax invoices; **migration 0065**: `CREATE DOMAIN sha256_hex / money_amount / quantity_amount` + `work_items_live` view; org predicate on the two membership writes in `identity.ts`.     | `packages/db/test/*` (new files), `packages/db/migrations/0064-0065`, `apps/server/src/routes/identity.ts`                                                                                                                   | ~2 days   | Data integrity 8.5→9, Biz-logic 7→7.5, Schema 8.5→9                         | **HOLD — migrations + money** |
+| **P3 Table & mobile primitive**    | `ui/table.tsx`: `scroll` default true, `tabIndex=0` + `role="region"` + label on the wrapper, `--header-h` token + sticky offset (incl. `schedule-section` stacking); `globals.css`: 16px inputs on coarse pointers, 24px checkboxes, `--input` ≥3:1; Playwright `projects` (1280 / 768 / **320**) + `scrollWidth <= innerWidth` assertion + sticky-occlusion assertion; widen the axe gate (drop severity filter, enable wcag22 tags + `target-size`).                                                                                                  | `apps/web/src/ui/table.tsx`, `ui/schedule-section.tsx`, `apps/web/src/globals.css`, `apps/web/playwright.config.ts`, `apps/web/e2e/*`                                                                                        | ~1.5 days | Responsive 4→6, Visual 7→7.5, A11y 6→6.5, and un-blinds two gate dimensions | merge when green              |
+| **P4 Server upload/authz hygiene** | Derive upload throttle from registrar `bodyLimit` (closes the live unthrottled variation-order path); shared `consumeUpload()` replacing 7 copied magic-byte blocks + upload-inventory test; production boot assertion for `CLAMAV_HOST`; MFA exhaustiveness (`Record<DocumentAuthority, true>` + `can_%` column census test).                                                                                                                                                                                                                           | `apps/server/src/app.ts` (wave-1 owner), `upload-guards.ts`, `mfa-policy.ts`, `apps/server/test/upload-inventory*`, `test/mfa-policy*`                                                                                       | ~1.5 days | Security 8→8.5, Extensibility 6→6.5                                         | **HOLD — auth/uploads**       |
+| **P5 Recovery + unsaved work**     | `sendResetPassword` + SignIn flow (the only unrecoverable failure in either review); `ReviewLoa` dirty tracking routed through `requestDeparture`; `check-architecture` rule: `setView(` outside `navigate`/`requestDeparture` fails.                                                                                                                                                                                                                                                                                                                    | `apps/server/src/auth.ts`, `apps/web/src/views/SignIn.tsx`, `views/ReviewLoa.tsx`, `views/OperationsWorkspace.tsx` (wave-1 owner)                                                                                            | ~1 day    | Clerk ease 6→7, Navigation 7→7.5                                            | **HOLD — auth**               |
+| **P6 Ops gates**                   | `/api/ready` 503s when the applied-migration ledger is behind the image's migration dir; deploy readiness gate gains the component greps CI already has; healthchecks for server/caddy/gotenberg/clamav + log rotation + resource limits; Trivy on built images + digest-pin bases; prod image `--prod`, compiled not `tsx`; backup: encrypt, include `AUTH_SECRET`, fix finding-33 snapshot skew, off-host copy; commit `alert_rules.yml` + prometheus/alertmanager services; rewrite the backup/RUNBOOK paragraphs to state only what the script does. | `apps/server/src/routes/health.ts`, `deploy/**`, `scripts/backup.sh`, `scripts/restore.sh`, `.github/workflows/deploy.yml`, `docs/OPERATIONS.md`, `docs/RUNBOOK.md`                                                          | ~3 days   | Prod-readiness 4.5→6, Observability 4→6, Backup 5.5→7, CI/CD +0.5           | **HOLD — infrastructure**     |
+| **P7 Test infrastructure**         | Test census (`scripts/check-test-census.mjs`, ratchet: counts may only rise, skips need reasons); CI flake detector (`--retry=1` + JSON reporter + fail on pass-after-retry); fix `backup-restore` `rm` (`maxRetries`) + tighten its bare `.rejects.toThrow()`; type `stubApi` payloads against `ApiClient`; pin Poppler to one exact version in CI **and** `Dockerfile.server` + one PDF→text round-trip test; nightly Stryker scoped to 4 invariant files.                                                                                             | `scripts/check-test-census.mjs`, `.github/workflows/ci.yml` (wave-1 owner), `.github/workflows/mutation-nightly.yml`, `packages/db/test/backup-restore*`, `apps/web/test/views/helpers.tsx`, `apps/server/test/loa-extract*` | ~2 days   | Test reliability 6→7.5, Test quality 8.5→9, Parser safety 8.5→9             | merge when green              |
+
+### 2.3 Wave 2 — states, performance, contracts (after wave 1 merges)
+
+| Pack                               | Scope                                                                                                                                                                                                                                                                                                                                                                                                              | Owns                                                                                                                                                                                                  | Effort  | Unlocks                             | Review                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------- | ------------------------------------------------ |
+| **P8 State primitives + remedies** | `ui/state.tsx` (`Skeleton`, `EmptyState`, `ErrorState` with **required** `onRetry`); convert the ~27 dead-end views; render `details.existingRecordId` as a link in `UploadLoa`; `remedy` field on the API error envelope + backfill the top 40 refusals; generated per-view state-coverage test.                                                                                                                  | `apps/web/src/ui/state.tsx`, all `views/*` state branches, `packages/contracts/src/errors.ts` (shared with P12 — P12 rebases), `apps/web/test/views/state-coverage*`                                  | ~4 days | Error states 5→7.5, UX 7→7.5        | merge when green                                 |
+| **P9 Onboarding**                  | `SetupChecklist` on zero-Works dashboard (reuse the `WorkBillingReadiness` pattern); five Masters empty states with purpose + auto-opened create; CCA India root bundle in `deploy/` + default `AUTO_MB_PDF_TRUST_ANCHORS` + `check-config` rule; role-aware Works CTA; `DateField` wrapper with DD/MM/YYYY hint; work-code `Hint` + `maxLength`; first-run no-dead-end test.                                      | `views/OperationsDashboard.tsx`, `views/Masters.tsx`, `views/Works.tsx`, `ui/date-field.tsx`, `deploy/trust-anchors/**`, `scripts/check-config.mjs`                                                   | ~3 days | Onboarding 3.5→6.5, Clerk ease +0.5 | trust-anchor part **HOLD — deploy**; rest merges |
+| **P10 Frontend performance**       | `React.memo` row components + `Map` lookups (`ChallanDetail`, `MeasurementBooks`); fix `ChallanEditor` keystroke clone; `React.lazy` at the view switch; bundle budget (gzip ≤220 KB ratchet) in verify; `table-perf.spec.ts` (129-item fixture, no long task >200ms, ≤3 commits/keystroke); cache `Intl.DateTimeFormat`.                                                                                          | `views/ChallanEditor.tsx`, `views/ChallanDetail.tsx`, `views/MeasurementBooks.tsx`, `lib/format.ts`, `apps/web/scripts/check-bundle-size.mjs`, `e2e/table-perf.spec.ts`                               | ~3 days | Frontend perf 4→6                   | merge when green                                 |
+| **P11 Backend performance**        | MB `loadItemInputs` six-lateral → grouped aggregate; bulk-insert the 19 write loops; dashboard pre-aggregation; pool `max` 5→20 + `requestTimeout`/`keepAliveTimeout`; query-count budgets, EXPLAIN plan assertions, buffer-count ratchets (`scale-budget` test with committed thresholds); stream `/api/export` with a 200 schema.                                                                                | `apps/server/src/routes/measurement-books/**`, `routes/dashboard.ts`, `routes/export.ts`, `routes/loa.ts` (confirm loop), `apps/server/src/main.ts`, `apps/server/test/query-*`, `test/scale-budget*` | ~4 days | Backend perf 5→7, Scalability 4→5   | **HOLD — money paths (MB compute)**              |
+| **P12 API contract**               | `ERROR_CODES` const union in contracts, `httpError` retyped (typecheck-enforced vocabulary; dedupe the 323); keyset pagination on the six largest lists (adopt the timeline shape); fix `/api/health` version to read `API_VERSION`; route-inventory additions (429 in every response schema, unpaginated-list allowlist).                                                                                         | `packages/contracts/src/errors.ts` (after P8), `packages/contracts/src/pagination*`, `apps/server/src/http.ts`, the six list routes, `apps/web/src/api.ts` (wave-2 owner)                             | ~4 days | API 6→8                             | merge when green                                 |
+| **P13 Accessibility completion**   | Masters tablist: real keyboard pattern or demote to the honest nav; per-view `document.title`; shared `ui/dialog.tsx`/`ui/confirm.tsx` extracted from the two correct implementations, migrate the ~12 broken confirm sites; async-arrival announcements in `ReviewLoa`; skip link; source-invariant a11y greps (caption-per-DataTable, tablist⇒onKeyDown, aria-expanded⇒aria-controls); `eslint-plugin-jsx-a11y`. | `views/Masters.tsx`, `ui/dialog.tsx`, `ui/confirm.tsx`, `App.tsx`, `apps/web/test/a11y-invariants*`, `eslint.config.js`                                                                               | ~3 days | A11y 6.5→8                          | merge when green                                 |
+
+### 2.4 Wave 3 — product builds (each needs an owner decision or review first)
+
+| Pack                               | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Migration | Effort             | Why it matters                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **P14 Received railway bill**      | New inbound document kind on the `loa_documents` machinery (storage, magic bytes, scan, RLS, 0060 signature-verdict columns all exist); link to finalized MB by measurement **sequence** with L2→FL2 normalisation and line-wrap rejoin (traps recorded in `apps/server/test/fixtures/railway-settlement/corpus.json`); carry bill number/date/amount + three-signature verdict; verdict gates MB closure and invoice settlement per the owner's 2026-08-13 gating rulings (intact + chains to CCA India, expiry ignored). | **0066**  | ~1 week            | Both reviews' #1 adoption blocker: the only chain document the agency does not author. Closes the loop the settlement corpus documents. |
+| **P15 Payment & deduction record** | Amount received against a bill with deduction breakup (GST TDS §51, IT TDS §194C, retention/SD, penalties); outstanding-with-railway view.                                                                                                                                                                                                                                                                                                                                                                                 | **0067**  | ~3 days            | "Paid" is currently a checkbox with no amount; this is the spreadsheet operators would still keep.                                      |
+| **P16 AMC schedule category**      | Fifth payment category (or per-item completion basis) so `Year`-unit AMC schedules neither block completion nor require fabricated challan lines; completion predicate honest on PL-270.                                                                                                                                                                                                                                                                                                                                   | **0068**  | ~3 days            | Completion is currently unsatisfiable on the flagship corpus work (~15% of its value is AMC).                                           |
+| **P17 RLS memoisation**            | ADR first: bind-time membership verification with policies reading the verified GUC (4.1× measured win in filter position) **without weakening the tenancy floor**; implement only after the ADR is approved.                                                                                                                                                                                                                                                                                                              | **0069**  | ADR ½ day + ~1 day | The single largest uniform backend win; touches the security kernel, so design-before-code.                                             |
+| **P18 Worker wiring**              | First real job in `apps/worker` (`FOR UPDATE SKIP LOCKED` queue table): move Gotenberg render, ClamAV scan, Poppler extraction, signature verification off the request path; honours the ADR-0008 tripwire.                                                                                                                                                                                                                                                                                                                | –         | 1–2 weeks          | Scalability 5→7; makes a second API instance meaningful.                                                                                |
+| **P19 Confirmed-Work supersede**   | Approval-gated discard-and-reconfirm for a confirmed Work with no downstream documents (soft-delete + successor with provenance), so the remedy 0063's own header prescribes is executable.                                                                                                                                                                                                                                                                                                                                | –         | ~4 days            | The correction deadlock: today a confirmed Work with wrong extracted data has no exit.                                                  |
+
+Deliberately **not** scheduled (owner-money or externally gated): replica /
+managed Postgres, registry + protected environments, staging + DAST, outbound
+DSC signing (ADR-0009's two procurement blockers), IRP production
+certification, Aadhaar eSign evaluation.
+
+### 2.5 Parallel execution plan
+
+**Sessions.** Each pack is one session in its own worktree
+(`git worktree add ../amb-p<NN> -b pack/p<NN>-<slug> origin/main`). Wave 1 =
+up to seven concurrent sessions; the file-ownership table is the collision
+contract. A session brief needs only: this file, the pack row, and the two
+standing rules (verify isolated; high-risk PRs are opened, not merged).
+
+**Shared-file owners per wave** (everyone else rebases): wave 1 —
+`package.json` → P1, `check-architecture.mjs` → P5, `ci.yml` → P7,
+`app.ts` → P4. Wave 2 — `contracts/errors.ts` → P8 then P12, `api.ts` → P12.
+
+**Merge order within a wave:** smallest diff first (P1 → P3 → P5 → P7 → P4 →
+P2 → P6 for wave 1), each followed by branch-update of the remainder. After
+each wave: combined `pnpm verify` from a pinned worktree + fresh database,
+then re-run the graphify build so the knowledge graph tracks the tree.
+
+**Definition of done per pack:** fix merged **and** guard merged **and** the
+guard demonstrably fails on the pre-fix tree (state the command in the PR) —
+plus the score dimension it claims, re-checked in the next review round.
+
+**Projected effect** (taking the reviewers' own unlock estimates): wave 1
+≈ +0.4 on the reconciled mean with every guard in place; waves 1–2 ≈ 6.6 →
+**~7.4** with no dimension below 5; wave 3 moves adoption rather than scores.
+
+---
+
+## 3. Standing corrections
+
+1. `docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
+   `scripts/backup.sh` actually does until P6 lands (encryption, retention,
+   off-host copy are currently claimed and absent). P6 owns this edit.
+2. `AUDIT-2026-08-12.md` and the disposition carry three overstatements
+   (constraint-trigger wording; "malware scanning fails closed" without the
+   config caveat; "every membership read" while two writes lack the predicate)
+   and no as-of commit marker. Any future citation should verify against code.
+3. The independent review's factual errors (§1.2) are corrected here so they
+   are not re-imported.
+
+_Maintained with the same rule as the audit disposition: when a pack lands,
+update its row in the same PR._
