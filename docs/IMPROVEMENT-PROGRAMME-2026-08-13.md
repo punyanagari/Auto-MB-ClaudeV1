@@ -256,6 +256,22 @@ mid-wave and immediately caught two real defects local verifies missed;
 seven concurrent sessions saturate this machine — stagger heavy packs, and
 treat timeout-shaped failures as contention proven per-package.
 
+### 2.7 Wave 2 landing record (2026-08-13)
+
+Same verification standard as wave 1: isolated worktree, freshly created
+database, full `pnpm verify`, and a guard proved to fail on the pre-fix
+tree with the command stated in the PR.
+
+| Pack | PR  | Notes beyond the brief                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P9   | #55 | The CCA publishes four current roots; only three are bundled. `CCA India 2015 SPL` as served fails its own self-signature check (`openssl verify -check_ss_sig` → `certificate signature failure`), reproduced on three downloads from both hostnames, so it is documented and left out rather than shipped unverified. Provenance is one channel (TLS from `cca.gov.in`) corroborated for `CCA India 2022` by the fingerprint already in `docs/OPERATIONS.md` §8; the out-of-band `verifyroot@cca.gov.in` confirmation stays an operator step and the docs now say so. The Masters "auto-opened create" half of the row already existed (`MasterForm startOpen`); what was missing was the purpose sentence, so the empty states name it and point at the open form. |
+
+Process notes for wave 3: `docs/OPERATIONS.md` §8 asserted "why they are
+not shipped in the image" — shipping a default made a documentation
+sentence false, and updating it was part of the change, not follow-up
+(recurring finding 3). A pack that ships an artefact should expect to own
+the paragraph that explains its absence.
+
 ---
 
 ## 3. Standing corrections
