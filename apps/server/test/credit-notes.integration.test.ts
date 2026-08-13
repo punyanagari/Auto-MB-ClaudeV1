@@ -12,7 +12,11 @@ import type {
   TaxInvoiceDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 import type { StatutoryProvider } from '../src/gsp/statutory-provider.js';
 
@@ -503,51 +507,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const org of [organisationId, undeclaredOrganisationId]) {
-      if (!org) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'work_assignments',
-          'statutory_provider_operations',
-          'tax_invoice_renders',
-          'eway_bills',
-          'credit_notes',
-          'credit_note_counters',
-          'tax_invoices',
-          'tax_invoice_counters',
-          'document_number_series',
-          'mb_sources',
-          'measurement_book_lines',
-          'measurement_book_counters',
-          'bills',
-          'measurement_books',
-          'bill_counters',
-          'payment_matrices',
-          'contacts',
-          'mb_entries',
-          'challan_item_serials',
-          'challan_receipts',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'delivery_challans',
-          'work_items',
-          'work_schedules',
-          'works',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [org],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId, undeclaredOrganisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

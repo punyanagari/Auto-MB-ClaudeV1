@@ -10,7 +10,11 @@ import type {
   BudgetaryQuotationListResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -293,32 +297,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    // The 0033 line guard (rightly) refuses to delete the lines of an
-    // issued quotation; fixture cleanup is exactly the case
-    // session_replication_role exists for.
-    await admin.unsafe(`set session_replication_role = 'replica'`);
-    try {
-      for (const org of [organisationId, otherOrganisationId, raceOrganisationId]) {
-        if (!org) continue;
-        for (const table of [
-          'audit_events',
-          'budgetary_quotation_lines',
-          'budgetary_quotation_counters',
-          'budgetary_quotations',
-          'contacts',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [org],
-          );
-        }
-      }
-    } finally {
-      await admin.unsafe(`set session_replication_role = 'origin'`);
-    }
+    await removeOrganisationResidue(admin, [
+      organisationId,
+      otherOrganisationId,
+      raceOrganisationId,
+    ]);
     await admin`
       delete from identity_audit_events
       where user_id in (

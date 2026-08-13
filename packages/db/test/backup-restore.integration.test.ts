@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '../src/index.js';
-import { createDatabasePool, runMigrations } from '../src/index.js';
+import {
+  assertNoForeignKeyOrphans,
+  createDatabasePool,
+  runMigrations,
+} from '../src/index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -123,6 +127,14 @@ describe('backup and restore', () => {
       console.warn(`skipped: ${skipReason}`);
       return;
     }
+    // The restore below re-creates every foreign key, so it can only
+    // succeed if the database is orphan-free at dump time. Assert that
+    // first: when another suite's cleanup has stranded rows, this fails
+    // with the offending table and constraint instead of an opaque
+    // pg_restore error, making the proof independent of suite order in
+    // its diagnosis.
+    await assertNoForeignKeyOrphans(admin);
+
     const backupRoot = path.join(workDir, 'backups');
     const beforeBackup = Math.floor(Date.now() / 1000);
     const { stdout } = await execFileAsync('bash', ['backup.sh'], {

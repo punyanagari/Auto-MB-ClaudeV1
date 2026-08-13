@@ -7,7 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { DashboardResponse, OrganisationProfile } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  jsonb,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -192,25 +197,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    if (organisationId) {
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      for (const table of [
-        'audit_events',
-        'bills',
-        'work_instruments',
-        'loa_documents',
-        'works',
-        'gst_rates',
-        'organisation_memberships',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [organisationId],
-        );
-      }
-      await admin.unsafe(`set session_replication_role = 'origin'`);
-    }
+    await removeOrganisationResidue(admin, [organisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

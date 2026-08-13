@@ -6,7 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations, withTenant } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+  withTenant,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 import { membershipOf } from '../src/authz.js';
 
@@ -204,23 +209,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const organisation of [victimOrganisationId, escalationOrganisationId]) {
-      if (!organisation) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      for (const table of [
-        'audit_events',
-        'work_assignments',
-        'gst_rates',
-        'organisation_memberships',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [organisation],
-        );
-      }
-      await admin.unsafe(`set session_replication_role = 'origin'`);
-    }
+    await removeOrganisationResidue(admin, [
+      victimOrganisationId,
+      escalationOrganisationId,
+    ]);
     await admin`
       delete from identity_audit_events
       where user_id in (

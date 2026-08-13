@@ -11,7 +11,12 @@ import type {
   TaxInvoiceDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations, withTenant } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+  withTenant,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -354,40 +359,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    if (organisationId) {
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'statutory_provider_operations',
-          'tax_invoice_renders',
-          'eway_bills',
-          'tax_invoices',
-          'tax_invoice_counters',
-          'purchase_order_lines',
-          'purchase_orders',
-          'purchase_order_counters',
-          'budgetary_quotation_lines',
-          'budgetary_quotations',
-          'budgetary_quotation_counters',
-          'document_number_series',
-          'work_items',
-          'work_schedules',
-          'works',
-          'contacts',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [organisationId],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

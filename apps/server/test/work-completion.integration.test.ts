@@ -18,7 +18,12 @@ import type {
   WorkStatusResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  jsonb,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -367,43 +372,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const orgId of [organisationId, outsiderOrganisationId]) {
-      if (orgId === undefined) continue;
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        await admin`delete from audit_events where organisation_id = ${orgId}`;
-        await admin`delete from installation_serials where organisation_id = ${orgId}`;
-        await admin`delete from installations where organisation_id = ${orgId}`;
-        await admin`delete from pac_certificate_items where organisation_id = ${orgId}`;
-        await admin`delete from pac_certificates where organisation_id = ${orgId}`;
-        await admin`delete from mb_sources where organisation_id = ${orgId}`;
-        await admin`delete from measurement_book_lines where organisation_id = ${orgId}`;
-        await admin`delete from measurement_books where organisation_id = ${orgId}`;
-        await admin`delete from measurement_book_counters where organisation_id = ${orgId}`;
-        await admin`delete from approval_requests where organisation_id = ${orgId}`;
-        await admin`delete from extension_requests where organisation_id = ${orgId}`;
-        await admin`delete from extension_request_counters where organisation_id = ${orgId}`;
-        await admin`delete from issue_challan_lines where organisation_id = ${orgId}`;
-        await admin`delete from issue_challans where organisation_id = ${orgId}`;
-        await admin`delete from issue_challan_counters where organisation_id = ${orgId}`;
-        await admin`delete from challan_item_serials where organisation_id = ${orgId}`;
-        await admin`delete from delivery_challan_items where organisation_id = ${orgId}`;
-        await admin`delete from delivery_challans where organisation_id = ${orgId}`;
-        await admin`delete from delivery_challan_counters where organisation_id = ${orgId}`;
-        await admin`delete from payment_matrices where organisation_id = ${orgId}`;
-        await admin`delete from work_items where organisation_id = ${orgId}`;
-        await admin`delete from work_schedules where organisation_id = ${orgId}`;
-        await admin`delete from work_assignments where organisation_id = ${orgId}`;
-        await admin`delete from works where organisation_id = ${orgId}`;
-        await admin`delete from location_masters where organisation_id = ${orgId}`;
-        await admin`delete from contacts where organisation_id = ${orgId}`;
-        await admin`delete from gst_rates where organisation_id = ${orgId}`;
-        await admin`delete from organisation_memberships where organisation_id = ${orgId}`;
-        await admin`delete from organisations where id = ${orgId}`;
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId, outsiderOrganisationId]);
     await admin`
       delete from auth_users
       where "email" in (${ownerEmail}, ${officeEmail}, ${siteEmail}, ${viewerEmail},

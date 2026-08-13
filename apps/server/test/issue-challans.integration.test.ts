@@ -8,7 +8,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -247,39 +251,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const org of [organisationId, strangerOrganisationId]) {
-      if (!org) continue;
-      // The immutability triggers (rightly) block deleting issued rows;
-      // fixture cleanup is exactly the case session_replication_role
-      // exists for.
-      await admin.unsafe(`set session_replication_role = 'replica'`);
-      try {
-        for (const table of [
-          'audit_events',
-          'issue_challan_lines',
-          'issue_challan_counters',
-          'issue_challans',
-          'delivery_challan_items',
-          'delivery_challan_counters',
-          'delivery_challans',
-          'work_assignments',
-          'work_items',
-          'work_schedules',
-          'loa_documents',
-          'works',
-          'gst_rates',
-          'organisation_memberships',
-          'organisations',
-        ]) {
-          await admin.unsafe(
-            `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-            [org],
-          );
-        }
-      } finally {
-        await admin.unsafe(`set session_replication_role = 'origin'`);
-      }
-    }
+    await removeOrganisationResidue(admin, [organisationId, strangerOrganisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (
