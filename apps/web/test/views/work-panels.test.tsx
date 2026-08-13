@@ -665,7 +665,63 @@ describe('Approvals queue', () => {
     decidedByUserId: null,
     decidedAt: null,
     decisionNote: null,
+    variationOrder: null,
     createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  /** An omission, which the 2026-08-13 ruling holds cannot be approved
+   * until the railway variation order authorising it has been uploaded and
+   * verified against the document. */
+  const OMISSION = {
+    ...APPROVAL,
+    id: '88888888-8888-4888-8888-888888888888',
+    proposed: {
+      kind: 'remove_item' as const,
+      workItemId: ITEM_A,
+      itemNumber: 'A/1',
+    },
+    diff: [
+      { field: 'item', before: 'A/1', after: null },
+      { field: 'quantity', before: '5.000', after: null },
+    ],
+    reason: 'Not required at site.',
+  };
+
+  const CITED_ORDER = {
+    id: '77777777-7777-4777-8777-777777777777',
+    approvalRequestId: OMISSION.id,
+    loaNumber: '00341490031451',
+    loaDate: '2021-01-29',
+    agreementNumber: 'CR/BSL/S&T/2021/0006',
+    variationNumber: '3',
+    originalFilename: 'variation-3.pdf',
+    sha256: 'a'.repeat(64),
+    sizeBytes: 204_800,
+    uploadedByUserId: 'user-b',
+    createdAt: '2026-08-12T00:00:00.000Z',
+    verdict: {
+      verified: true,
+      failedClaims: [],
+      claims: [
+        {
+          code: 'item_omitted' as const,
+          verified: true,
+          required: true,
+          detail: 'The order proposes a quantity of 0.0 for item A/1.',
+          found: '0.0',
+          expected: '0',
+        },
+        {
+          code: 'loa_amount' as const,
+          verified: false,
+          required: false,
+          detail:
+            'The order prints an LOA amount of 41,301,860 against this Work’s contract value of 39,853,884.12. Advisory only.',
+          found: '41,301,860',
+          expected: '39853884.12',
+        },
+      ],
+    },
   };
 
   it('renders the diff and approves with a note', async () => {
@@ -776,5 +832,123 @@ describe('Approvals queue', () => {
       />,
     );
     expect(await screen.findByText('Nothing is waiting for a decision.')).toBeTruthy();
+  });
+
+  it('will not let an omission be approved before its variation order is cited', async () => {
+    const attachVariationOrder = vi.fn().mockResolvedValue({
+      approval: { ...OMISSION, variationOrder: CITED_ORDER },
+      verdict: CITED_ORDER.verdict,
+    });
+    const api = stubApi({
+      listApprovals: vi.fn().mockResolvedValue([OMISSION]),
+      attachVariationOrder,
+    });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    const approve = await screen.findByRole('button', { name: 'Approve and apply' });
+    expect((approve as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/cannot be approved until the railway variation order/i),
+    ).toBeTruthy();
+
+    // There is no field to type a letter number into: the server reads
+    // every fact out of the uploaded order itself.
+    expect(screen.queryByLabelText(/letter number/i)).toBeNull();
+    const input = screen.getByLabelText('Variation order (PDF)') as HTMLInputElement;
+    const file = new File(['%PDF-1.4'], 'variation-3.pdf', { type: 'application/pdf' });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(screen.getByRole('button', { name: 'Cite variation order' })).toBeTruthy();
+    // Submitted through the form rather than the button: jsdom's own
+    // constraint validation does not see the file list this test injects,
+    // and would block a click on a form carrying a required file input.
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+    await waitFor(() => {
+      expect(attachVariationOrder).toHaveBeenCalledWith(
+        ORG_ID,
+        OMISSION.id,
+        file,
+        'variation-3.pdf',
+      );
+    });
+  });
+
+  it('shows the cited order beside the omission, advisory notes included', async () => {
+    const api = stubApi({
+      listApprovals: vi
+        .fn()
+        .mockResolvedValue([{ ...OMISSION, variationOrder: CITED_ORDER }]),
+    });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('Variation order');
+    // Railway references and the letter date, in the product's mono
+    // treatment; the date through formatDate, never a raw ISO string.
+    expect(screen.getByText('CR/BSL/S&T/2021/0006')).toBeTruthy();
+    expect(screen.getByText('00341490031451')).toBeTruthy();
+    expect(screen.getByText('29 Jan 2021')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    // The one advisory claim is shown rather than hidden: the approver
+    // decides what a differing agreement value means.
+    expect(screen.getByText(/Advisory only/)).toBeTruthy();
+    // With an order cited, the decision is available again.
+    const approve = screen.getByRole('button', { name: 'Approve and apply' });
+    expect((approve as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByLabelText('Variation order (PDF)')).toBeNull();
+  });
+
+  it('reports a refused variation order without approving anything', async () => {
+    const attachVariationOrder = vi
+      .fn()
+      .mockRejectedValue(
+        new RequestFailedError(
+          409,
+          'OMISSION_VARIATION_ORDER_UNVERIFIED',
+          'The uploaded document does not authorise this omission. item_omitted: The order proposes a quantity of 2.0 for item A/1, not zero.',
+        ),
+      );
+    const approveAmendment = vi.fn();
+    const api = stubApi({
+      listApprovals: vi.fn().mockResolvedValue([OMISSION]),
+      attachVariationOrder,
+      approveAmendment,
+    });
+    render(
+      <Approvals
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-a"
+        canApprove={true}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    const input = (await screen.findByLabelText(
+      'Variation order (PDF)',
+    )) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(['%PDF-1.4'], 'wrong.pdf', { type: 'application/pdf' })],
+      },
+    });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    expect(await screen.findByText(/not zero/)).toBeTruthy();
+    expect(approveAmendment).not.toHaveBeenCalled();
   });
 });
