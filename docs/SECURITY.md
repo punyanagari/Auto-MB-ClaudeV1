@@ -58,7 +58,8 @@ Primary risks:
   the in-process maps;
 - MFA for privilege holders: any user holding, in any organisation, an
   active owner membership or a document authority (issue, cancel, approve
-  amendments) must have TOTP two-factor enabled. The requirement is
+  amendments, manage statutory reporting) must have TOTP two-factor
+  enabled. The requirement is
   computed on every tenant-scoped request after the membership floor
   binds and refused with 403 `MFA_ENROLMENT_REQUIRED` until enrolment;
   two-factor disable is refused for such users (`MFA_REQUIRED_BY_POLICY`);
@@ -76,7 +77,29 @@ Primary risks:
   (`assertProductionMfaEnforcement`, mirroring the auth-secret gate
   below), so a production process can no longer come up one unset or
   mistyped environment variable away from an open gate;
-- sensitive issue/cancel actions require explicit authority;
+- sensitive issue/cancel actions require explicit authority. The
+  per-member authorities are boolean columns on
+  `organisation_memberships`, granted by an owner and checked
+  server-side inside the bound-tenant transaction:
+  - `can_issue_documents` — issue a numbered document;
+  - `can_cancel_documents` — cancel an issued document;
+  - `can_approve_amendments` — decide an approval request;
+  - `can_manage_statutory_reporting` (migration 0061) — the compliance
+    authority: register, reconcile-by-lookup or cancel a document at the
+    IRP or the NIC E-way Bill portal, drive stale-operation recovery, and
+    record manual portal evidence. It closes the "no dedicated compliance
+    authority" residue of audit finding 2: binding the organisation's
+    statutory identity at a government portal is a different act from
+    issuing a document of our own. It is checked IN ADDITION to the
+    document authority, never instead of it, so every statutory route
+    demands both. It defaults false and is never backfilled from
+    `can_issue_documents` — the owner's ruling of 13 August 2026 is that
+    it is granted deliberately, accepting that existing issue-holders
+    lose IRP access until it is. Local acts on the same records — issuing
+    a credit note, cancelling a local e-way-bill record, reading a frozen
+    payload — are not statutory acts and keep their own authorities
+    alone. Proven by the finding-2 authority describe in
+    `apps/server/test/tax-invoices.integration.test.ts`;
 - **work-free documents and work scope** (migration 0056): work scope is the
   reach mechanism and it binds THROUGH a Work — an `assigned`-scoped membership
   reaches exactly the Works it is assigned to. A standalone Delivery Challan
@@ -248,7 +271,9 @@ Activated with Milestone 2 (uploads and Works exist):
 Activated with Milestone 3 (issued documents exist):
 
 - issue/cancel authority — explicit per-member flags checked over live
-  HTTP, separate from roles; drafting alone never issues a document;
+  HTTP, separate from roles; drafting alone never issues a document, and
+  the issue authority alone never registers one at the IRP (the
+  compliance authority above is checked on top of it);
   approval-gated correction applies revalidate the same flags on the
   deciding user at apply time — cancel-and-replace requires the cancel
   authority and correction-notice issuance requires the issue authority,
@@ -301,6 +326,10 @@ Activated with contract administration, procurement, and tax documents:
   hashes. Database guards enforce contiguous versions, tenant-prefixed keys,
   immutable history, and a current pointer to the latest version; download
   verifies the retained bytes against the recorded SHA-256 before serving;
+- every action that speaks to the IRP or the NIC E-way Bill portal — or
+  records what one of them is said to have answered — requires the
+  dedicated `can_manage_statutory_reporting` authority in addition to the
+  issue or cancel authority the action already needed (migration 0061);
 - IRN, acknowledgement, signed QR, e-way-bill number, and validity are never
   minted locally. Local document status stays distinct from provider status;
   unknown registration or generation is lookup-only and is never blindly
