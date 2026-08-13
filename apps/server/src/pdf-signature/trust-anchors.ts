@@ -15,6 +15,15 @@
  * docs/OPERATIONS.md, so the trust decision is auditable and its age is
  * knowable.
  *
+ * Not to be confused with the DEFAULT bundle. deploy/trust-anchors/ ships
+ * a starting set of CCA roots and the image points this variable at it, so
+ * a fresh install is not stuck reporting "no certifying authorities are
+ * installed". That is data on disk with a recorded provenance and a build
+ * check over its fingerprints (deploy/trust-anchors/README.md,
+ * scripts/check-config.mjs) — a file the operator can replace by mounting
+ * over it — and not a snapshot compiled into this module, which is what
+ * the paragraph above rules out.
+ *
  * Why the embedded chain is never enough on its own. Every signature in
  * the corpus ships its whole path INCLUDING the self-signed CCA root
  * inside the CMS blob. Accepting that root because it is self-signed and
