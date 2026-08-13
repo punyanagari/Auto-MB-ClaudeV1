@@ -96,8 +96,13 @@ describe('OperationsDashboard', () => {
         />,
       );
 
-      await screen.findByRole('heading', { name: 'Dashboard' });
-      expect(screen.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
+      // Awaited on the alert itself, not the "Dashboard" heading: the
+      // dashboard's loading branch renders that heading too, so waiting on
+      // it resolves against the loading state and every read below then
+      // races the dashboard mock (the §2.7 hazard).
+      expect(
+        await screen.findByText(/PBG BG\/22 for PL270-CRB expires/),
+      ).toBeTruthy();
       expect(screen.getByText('38 days left')).toBeTruthy();
       expect(
         screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
