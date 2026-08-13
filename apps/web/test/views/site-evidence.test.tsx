@@ -778,6 +778,47 @@ describe('MeasurementBooks workspace', () => {
     );
   }
 
+  /**
+   * Finding 27's residue. The Measurement Book register reported a failed
+   * load but offered no way out of it, and the consignee pick list beside
+   * it failed silently — which withdrew the record-MB option and looked
+   * identical to a Work that simply has no consignees.
+   */
+  it('offers a retry when the Measurement Books cannot be read', async () => {
+    const listWorkMeasurementBooks = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new RequestFailedError(503, 'UNAVAILABLE', 'Measurement Books are unavailable.'),
+      )
+      .mockResolvedValue({ books: [MB_FINAL, MB_DRAFT] });
+    renderMb(mbApi({ listWorkMeasurementBooks }));
+
+    expect(await screen.findByText(/Measurement Books are unavailable/)).toBeTruthy();
+    // Never an empty register: the operator must not read this as "no
+    // Measurement Books exist".
+    expect(screen.queryByRole('button', { name: 'DCW-1-MB-02' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Measurement Books' }));
+    expect(await screen.findByRole('button', { name: 'DCW-1-MB-02' })).toBeTruthy();
+  });
+
+  it('says when the consignee list could not be read, instead of dropping the option', async () => {
+    const api = mbApi({
+      listWorkConsignees: vi
+        .fn()
+        .mockRejectedValue(
+          new RequestFailedError(503, 'UNAVAILABLE', 'Consignees are unavailable.'),
+        ),
+    });
+    renderMb(api);
+
+    expect(await screen.findByText(/Consignees are unavailable/)).toBeTruthy();
+    // The books themselves are unaffected — the warning is scoped to the
+    // action it actually removed.
+    expect(screen.getByRole('button', { name: 'DCW-1-MB-02' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry consignees' })).toBeTruthy();
+  });
+
   it('lists MBs with status chips, totals, and the FINAL BILL badge', async () => {
     renderMb(mbApi());
 
