@@ -14,109 +14,117 @@ import {
 } from './helpers.js';
 
 describe('OperationsDashboard', () => {
-  it('shows totals, alerts with severity, and routes work opens', async () => {
-    const dashboard = vi.fn().mockResolvedValue({
-      totals: {
-        works: 2,
-        contractValue: '5807500.00',
-        deliveredValue: '1450000.00',
-        billedValue: '300.00',
-        openDrafts: 1,
-        loaAwaitingReview: 1,
-      },
-      alerts: [
-        {
-          kind: 'instrument_expiring',
-          severity: 'warning',
-          message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
-          workId: WORK_ID,
-          workCode: 'PL270-CRB',
-          dueInDays: 38,
-        },
-        {
-          kind: 'loa_review_pending',
-          severity: 'notice',
-          message: '1 LOA letter is waiting for review and confirmation.',
-          workId: null,
-          workCode: null,
-          dueInDays: null,
-        },
-      ],
-      works: [
-        {
-          workId: WORK_ID,
-          workCode: 'PL270-CRB',
-          title: 'Signalling gear, CR Bhusawal',
-          status: 'active',
-          contractValue: '4520000.00',
+  // Second-heaviest here (~340ms alone): a full workspace render plus a view
+  // transition. Under the same contention that stretched the challan-guard
+  // test 14x it lands around 4.7s — inside a rounding error of the 5s default,
+  // so it is budgeted before it starts flaking rather than after.
+  it(
+    'shows totals, alerts with severity, and routes work opens',
+    { timeout: 15_000 },
+    async () => {
+      const dashboard = vi.fn().mockResolvedValue({
+        totals: {
+          works: 2,
+          contractValue: '5807500.00',
           deliveredValue: '1450000.00',
           billedValue: '300.00',
-          issuedChallans: 3,
+          openDrafts: 1,
+          loaAwaitingReview: 1,
         },
-        {
-          workId: '22222222-2222-4222-8222-222222222222',
-          workCode: 'VALUE-9',
-          title: 'Nine rupee comparison work',
-          status: 'active',
-          contractValue: '9.00',
-          deliveredValue: '0.00',
-          billedValue: '0.00',
-          issuedChallans: 0,
-        },
-        {
-          workId: '44444444-4444-4444-8444-444444444445',
-          workCode: 'VALUE-100',
-          title: 'One hundred rupee comparison work',
-          status: 'active',
-          contractValue: '100.00',
-          deliveredValue: '0.00',
-          billedValue: '0.00',
-          issuedChallans: 0,
-        },
-      ],
-    });
-    const onOpenWork = vi.fn();
-    const onOpenWorks = vi.fn();
-    render(
-      <OperationsDashboard
-        api={stubApi({ dashboard })}
-        organisationId={ORG_ID}
-        canModify
-        onOpenWork={onOpenWork}
-        onOpenWorks={onOpenWorks}
-        onUploadLoa={vi.fn()}
-        onOpenApprovals={vi.fn()}
-      />,
-    );
+        alerts: [
+          {
+            kind: 'instrument_expiring',
+            severity: 'warning',
+            message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
+            workId: WORK_ID,
+            workCode: 'PL270-CRB',
+            dueInDays: 38,
+          },
+          {
+            kind: 'loa_review_pending',
+            severity: 'notice',
+            message: '1 LOA letter is waiting for review and confirmation.',
+            workId: null,
+            workCode: null,
+            dueInDays: null,
+          },
+        ],
+        works: [
+          {
+            workId: WORK_ID,
+            workCode: 'PL270-CRB',
+            title: 'Signalling gear, CR Bhusawal',
+            status: 'active',
+            contractValue: '4520000.00',
+            deliveredValue: '1450000.00',
+            billedValue: '300.00',
+            issuedChallans: 3,
+          },
+          {
+            workId: '22222222-2222-4222-8222-222222222222',
+            workCode: 'VALUE-9',
+            title: 'Nine rupee comparison work',
+            status: 'active',
+            contractValue: '9.00',
+            deliveredValue: '0.00',
+            billedValue: '0.00',
+            issuedChallans: 0,
+          },
+          {
+            workId: '44444444-4444-4444-8444-444444444445',
+            workCode: 'VALUE-100',
+            title: 'One hundred rupee comparison work',
+            status: 'active',
+            contractValue: '100.00',
+            deliveredValue: '0.00',
+            billedValue: '0.00',
+            issuedChallans: 0,
+          },
+        ],
+      });
+      const onOpenWork = vi.fn();
+      const onOpenWorks = vi.fn();
+      render(
+        <OperationsDashboard
+          api={stubApi({ dashboard })}
+          organisationId={ORG_ID}
+          canModify
+          onOpenWork={onOpenWork}
+          onOpenWorks={onOpenWorks}
+          onUploadLoa={vi.fn()}
+          onOpenApprovals={vi.fn()}
+        />,
+      );
 
-    await screen.findByRole('heading', { name: 'Dashboard' });
-    expect(screen.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
-    expect(screen.getByText('38 days left')).toBeTruthy();
-    expect(
-      screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
-    ).toBeTruthy();
-    // 1450000 / 4520000 = 32%
-    expect(screen.getByText('32%')).toBeTruthy();
+      await screen.findByRole('heading', { name: 'Dashboard' });
+      expect(screen.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
+      expect(screen.getByText('38 days left')).toBeTruthy();
+      expect(
+        screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
+      ).toBeTruthy();
+      // 1450000 / 4520000 = 32%
+      expect(screen.getByText('32%')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open PL270-CRB' }));
-    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+      fireEvent.click(screen.getByRole('button', { name: 'Open PL270-CRB' }));
+      expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
 
-    const portfolio = screen.getByRole('table', {
-      name: 'Work execution and billing progress',
-    });
-    expect(
-      within(portfolio)
-        .getAllByRole('rowheader')
-        .map((header) => header.textContent),
-    ).toEqual([
-      expect.stringContaining('PL270-CRB'),
-      expect.stringContaining('VALUE-100'),
-      expect.stringContaining('VALUE-9'),
-    ]);
+      const portfolio = screen.getByRole('table', {
+        name: 'Work execution and billing progress',
+      });
+      expect(
+        within(portfolio)
+          .getAllByRole('rowheader')
+          .map((header) => header.textContent),
+      ).toEqual([
+        expect.stringContaining('PL270-CRB'),
+        expect.stringContaining('VALUE-100'),
+        expect.stringContaining('VALUE-9'),
+      ]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review LOAs' }));
-    expect(onOpenWorks).toHaveBeenCalledTimes(1);
-  });
+      fireEvent.click(screen.getByRole('button', { name: 'Review LOAs' }));
+      expect(onOpenWorks).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe('OperationsWorkspace mobile shell', () => {
@@ -220,77 +228,95 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
   });
 
-  it('protects an edited challan from shell navigation', async () => {
-    renderWorkspace({
-      dashboard: vi.fn().mockResolvedValue({
-        totals: {
-          works: 1,
-          contractValue: '900.00',
-          deliveredValue: '0.00',
-          billedValue: '0.00',
-          openDrafts: 0,
-          loaAwaitingReview: 0,
-        },
-        alerts: [],
-        works: [
-          {
-            workId: WORK_ID,
-            workCode: 'DCW-1',
-            title: 'Supply of switchboards',
-            status: 'active',
+  // The heaviest test in this package: one full workspace render, then
+  // Dashboard -> Work detail -> Deliveries -> the challan editor, then three
+  // navigation-guard round trips, each re-rendering the whole shell. It costs
+  // ~1s alone — four times its neighbours — and a fully parallel `pnpm verify`
+  // (this package's jsdom suites competing with the server's database suites
+  // for one machine) stretched it to 13.8s, blowing vitest's 5s default. The
+  // budget is deliberately per-test rather than a raised global timeout: every
+  // other test here finishes inside 350ms and should still fail fast.
+  it(
+    'protects an edited challan from shell navigation',
+    { timeout: 30_000 },
+    async () => {
+      renderWorkspace({
+        dashboard: vi.fn().mockResolvedValue({
+          totals: {
+            works: 1,
             contractValue: '900.00',
             deliveredValue: '0.00',
             billedValue: '0.00',
-            issuedChallans: 0,
+            openDrafts: 0,
+            loaAwaitingReview: 0,
           },
-        ],
-      }),
-      getWork: vi.fn().mockResolvedValue(challanWork()),
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
-    });
+          alerts: [],
+          works: [
+            {
+              workId: WORK_ID,
+              workCode: 'DCW-1',
+              title: 'Supply of switchboards',
+              status: 'active',
+              contractValue: '900.00',
+              deliveredValue: '0.00',
+              billedValue: '0.00',
+              issuedChallans: 0,
+            },
+          ],
+        }),
+        getWork: vi.fn().mockResolvedValue(challanWork()),
+        workBalance: vi.fn().mockResolvedValue(BALANCE),
+      });
 
-    fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
-    const workTabs = await screen.findByRole('navigation', {
-      name: 'Work sections',
-    });
-    fireEvent.click(
-      within(workTabs).getByRole('button', {
-        name: (name: string) => name.startsWith('Deliveries'),
-      }),
-    );
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'New Delivery Challan' }),
-    );
-    await screen.findByRole('heading', { name: 'New Delivery Challan' });
-    const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
-    fireEvent.change(quantity, { target: { value: '1' } });
+      fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
+      const workTabs = await screen.findByRole('navigation', {
+        name: 'Work sections',
+      });
+      fireEvent.click(
+        within(workTabs).getByRole('button', {
+          name: (name: string) => name.startsWith('Deliveries'),
+        }),
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'New Delivery Challan' }),
+      );
+      await screen.findByRole('heading', { name: 'New Delivery Challan' });
+      const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
+      fireEvent.change(quantity, { target: { value: '1' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
-    expect(screen.getByRole('dialog', { name: 'Unsaved draft changes' })).toBeTruthy();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Keep editing' }),
-    );
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+      expect(
+        screen.getByRole('dialog', { name: 'Unsaved draft changes' }),
+      ).toBeTruthy();
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Keep editing' }),
+      );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
-    expect(screen.queryByRole('dialog', { name: 'Unsaved draft changes' })).toBeNull();
-    expect(
-      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
-    ).toBe('1');
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      expect(
+        screen.queryByRole('dialog', { name: 'Unsaved draft changes' }),
+      ).toBeNull();
+      expect(
+        screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan')
+          .value,
+      ).toBe('1');
 
-    const recordTrigger = screen.getByRole('button', { name: 'Open record actions' });
-    fireEvent.click(recordTrigger);
-    fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
-    expect(document.activeElement).toBe(recordTrigger);
-    expect(
-      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
-    ).toBe('1');
+      const recordTrigger = screen.getByRole('button', { name: 'Open record actions' });
+      fireEvent.click(recordTrigger);
+      fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      expect(document.activeElement).toBe(recordTrigger);
+      expect(
+        screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan')
+          .value,
+      ).toBe('1');
 
-    fireEvent.click(recordTrigger);
-    fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
-    expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
-  });
+      fireEvent.click(recordTrigger);
+      fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
+      expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
+    },
+  );
 });
 
 describe('OperationsWorkspace hash routing', () => {
