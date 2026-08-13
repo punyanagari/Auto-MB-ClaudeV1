@@ -365,6 +365,13 @@ export function registerIdentityRoutes(
           }
         }
 
+        // The organisation predicate is not redundant with row-level
+        // security: every membership READ in this file already carries it,
+        // and this write and the assignment replace below were the two
+        // that did not. Tenancy is enforced twice everywhere else in the
+        // codebase — the policy and the predicate — and a privilege write
+        // keyed on user_id alone is the one place where relying on a
+        // single layer is least defensible.
         await tx`
             update organisation_memberships set
               role = coalesce(${body.role ?? null}, role),
@@ -383,6 +390,7 @@ export function registerIdentityRoutes(
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
+              and organisation_id = app_private.current_organisation_id()
           `;
         // Milestone 6: the trail records what each changed field was
         // and became, not just which keys were touched. Every authority
@@ -521,7 +529,9 @@ export function registerIdentityRoutes(
         // Replace-set semantics: assignments are access control, not
         // history — the new list is the whole truth.
         await tx`
-            delete from work_assignments where user_id = ${memberUserId}
+            delete from work_assignments
+            where user_id = ${memberUserId}
+              and organisation_id = app_private.current_organisation_id()
           `;
         for (const workId of body.workIds) {
           await tx`

@@ -27,6 +27,10 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   organisations: 'SELECT, INSERT, UPDATE',
   works: 'SELECT, INSERT, UPDATE',
   work_items: 'SELECT, INSERT, UPDATE',
+  // The live-items VIEW over work_items (0065): security_invoker, so the
+  // base table's RLS is re-checked for the caller and this grant adds no
+  // visibility. Read-only — writes go to work_items.
+  work_items_live: 'SELECT',
   loa_documents: 'SELECT, INSERT, UPDATE',
   delivery_challan_counters: 'SELECT, INSERT, UPDATE',
   // The standalone Delivery Challan's per-financial-year sequence (0056):
