@@ -310,12 +310,36 @@ function resetProviderMocks(): void {
   cancelEwayBillProvider.mockReset();
 }
 
+/**
+ * The IRP acknowledged one hour ago, so the NIC 24-hour cancellation
+ * window is open whenever the suite runs. These must stay relative to
+ * now(): the window SQL compares ack_date against the wall clock, so any
+ * literal date here eventually expires and the cancel tests start
+ * failing on an untouched tree (they did, on 13/08/2026).
+ */
+const IRP_ACKED_AT = new Date(
+  Math.floor((Date.now() - 60 * 60 * 1000) / 1000) * 1000,
+);
+const IRP_CANCELLED_AT = new Date(IRP_ACKED_AT.getTime() + 30 * 60 * 1000);
+
+/** DD/MM/YYYY HH:mm:ss in IST (UTC+05:30), the NIC portal's text form. */
+function istText(instant: Date): string {
+  const ist = new Date(instant.getTime() + (5 * 60 + 30) * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${pad(ist.getUTCDate())}/${pad(ist.getUTCMonth() + 1)}/${ist.getUTCFullYear()} ` +
+    `${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())}`
+  );
+}
+
+const IRP_CANCEL_RAW_RESPONSE = `{"status_cd":"1","CancelDate":"${istText(IRP_CANCELLED_AT)}"}`;
+
 function irpEvidence(seed: string) {
   return {
     irn: seed.repeat(64).slice(0, 64),
     ackNumber: '900719925474099312345',
-    ackDateText: '12/08/2026 14:30:00',
-    ackDate: '2026-08-12T09:00:00.000Z',
+    ackDateText: istText(IRP_ACKED_AT),
+    ackDate: IRP_ACKED_AT.toISOString(),
     signedQr: `signed-qr-${seed}`,
     signedInvoice: `signed-invoice-${seed}`,
     rawResponse: `{"status_cd":"1","seed":"${seed}"}`,
@@ -2299,9 +2323,9 @@ describe('Whitebooks IRP provider routes', () => {
     const evidence = irpEvidence('a');
     registerInvoiceProvider.mockResolvedValueOnce(evidence);
     cancelInvoiceProvider.mockResolvedValueOnce({
-      cancelledAtText: '12/08/2026 15:00:00',
-      cancelledAt: '2026-08-12T09:30:00.000Z',
-      rawResponse: '{"status_cd":"1","CancelDate":"12/08/2026 15:00:00"}',
+      cancelledAtText: istText(IRP_CANCELLED_AT),
+      cancelledAt: IRP_CANCELLED_AT.toISOString(),
+      rawResponse: IRP_CANCEL_RAW_RESPONSE,
     });
 
     const registered = await authedOn(providerApp, owner, {
@@ -2339,8 +2363,8 @@ describe('Whitebooks IRP provider routes', () => {
     expect(cancelled.statusCode, cancelled.body).toBe(200);
     expect(cancelled.json<TaxInvoiceDetailResponse>().invoice).toMatchObject({
       irpProviderState: 'cancelled',
-      irpCancelledAt: '2026-08-12T09:30:00.000Z',
-      irpCancelledAtText: '12/08/2026 15:00:00',
+      irpCancelledAt: IRP_CANCELLED_AT.toISOString(),
+      irpCancelledAtText: istText(IRP_CANCELLED_AT),
       irpCancelReasonCode: '2',
       irpCancelRemark: 'Data entry correction',
     });
@@ -2388,9 +2412,7 @@ describe('Whitebooks IRP provider routes', () => {
     expect(registerOp?.request_body_truncated).toBe(false);
     expect(registerOp?.response_body).toBe(evidence.rawResponse);
     expect(registerOp?.response_body_truncated).toBe(false);
-    expect(operations[1]?.response_body).toBe(
-      '{"status_cd":"1","CancelDate":"12/08/2026 15:00:00"}',
-    );
+    expect(operations[1]?.response_body).toBe(IRP_CANCEL_RAW_RESPONSE);
 
     // Append-once: completed rows refuse any rewrite of either body.
     for (const [column, operationId] of [
