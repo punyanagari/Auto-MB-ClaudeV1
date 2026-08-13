@@ -157,8 +157,12 @@ Every pack below traces to one of these.
   Docs/test/UI-only packs merge when green.
 - **Migration numbers are reserved here** to prevent the collisions that
   occurred twice in the previous round: **0064** → P2, **0065** → P2,
-  **0066** → P14, **0067** → P15, **0068** → P16, **0069** → P17. A pack that
-  does not ship its migration returns the number by editing this file.
+  **0066** → P14, **0067** → P15, **0068** → P16, **0069** → P17,
+  **0070** → P6. A pack that does not ship its migration returns the number
+  by editing this file. P6 was not expected to need one; it takes 0070
+  rather than 0066 so the wave-3 reservations are left undisturbed, and the
+  gap is harmless because the runner applies any unapplied id regardless of
+  relative order.
 
 ### 2.2 Wave 1 — guards and closures (all seven packs runnable in parallel)
 
