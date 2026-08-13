@@ -48,6 +48,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     signUp: vi.fn().mockResolvedValue(undefined),
     signIn: vi.fn().mockResolvedValue({ twoFactorRequired: false }),
     signOut: vi.fn().mockResolvedValue(undefined),
+    requestPasswordReset: vi.fn().mockResolvedValue(undefined),
+    resetPassword: vi.fn().mockResolvedValue(undefined),
     verifyTotp: vi.fn().mockResolvedValue(undefined),
     verifyBackupCode: vi.fn().mockResolvedValue(undefined),
     enableTwoFactor: vi.fn(),

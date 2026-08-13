@@ -138,6 +138,23 @@ Primary risks:
   characters, or the documented placeholder, unless `NODE_ENV` is
   explicitly `development` or `test`. An unset `NODE_ENV` is treated as
   production, so a bare start cannot fall back to a known constant;
+- password recovery is email-borne and mandatory in production. Better Auth
+  owns the mechanism (`/api/auth/request-password-reset` issues a
+  single-use token, `/api/auth/reset-password` consumes it); this
+  application owns the transport, which is SMTP configured by `SMTP_URL`
+  and `MAIL_FROM`. The request endpoint answers the same neutral message
+  for known and unknown addresses (no account-existence oracle) and Better
+  Auth's own limiter throttles it to three attempts per minute per client
+  address in production. Tokens live one hour, are single-use, are never
+  logged, and a completed reset revokes every other session on the
+  account. Because the endpoint cannot report a failed send without
+  becoming that oracle, an unconfigured transport is caught at boot
+  instead: when `NODE_ENV` is not explicitly `development` or `test` the
+  server refuses to start unless both variables are set
+  (`assertProductionMailSettings`, the same posture as the auth-secret and
+  `MFA_ENFORCE` gates). Resetting a password does not touch the second
+  factor — sign-in still demands the authenticator code — so recovery
+  never becomes a way around MFA;
 - support access is time-limited and fully audited.
 
 ### Uploads and documents

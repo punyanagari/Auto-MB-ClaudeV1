@@ -474,10 +474,45 @@ export function OperationsWorkspace({
     setPendingDeparture({ action });
   }
 
-  function navigate(next: WorkspaceView): void {
-    requestDeparture(() => {
+  interface NavigateOptions {
+    /** The screen being left has already asked its own question — an
+     * editor whose Cancel confirmed the discard, a letter that was just
+     * confirmed into a Work, a letter that was withdrawn. Asking again
+     * would be a second confirmation for one decision, so the flag is
+     * cleared and the move goes through. */
+    readonly confirmed?: boolean;
+    /** The Work tab to open with, for the views that address one. */
+    readonly workTab?: WorkTab;
+    readonly mastersTab?: MastersTab;
+  }
+
+  /**
+   * The only way the workspace changes screen.
+   *
+   * `setView` is deliberately unreachable from anywhere else — every call
+   * site outside this function used to skip the departure confirmation
+   * entirely, which is how `ReviewLoa` could be left mid-correction with
+   * no warning while the two short editors were protected.
+   * `scripts/check-architecture.mjs` now fails the build on a `setView(`
+   * outside `navigate`/`requestDeparture`, so this stays true.
+   */
+  function navigate(next: WorkspaceView, options: NavigateOptions = {}): void {
+    const apply = (): void => {
       setView(next);
-    });
+      if (next.name === 'work' && options.workTab !== undefined) {
+        setTabbedWorkId(next.workId);
+        setWorkTab(options.workTab);
+      }
+      if (next.name === 'masters' && options.mastersTab !== undefined) {
+        setMastersTab(options.mastersTab);
+      }
+    };
+    if (options.confirmed === true) {
+      setEditorDirty(false);
+      apply();
+      return;
+    }
+    requestDeparture(apply);
   }
 
   /** The current navigation state as its canonical fragment. */
@@ -513,18 +548,14 @@ export function OperationsWorkspace({
   // untouched.
   const currentHashRef = useRef(currentHash);
   currentHashRef.current = currentHash;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const applyRoute = useCallback((route: WorkspaceRoute) => {
-    setView(route.view);
-    if (route.view.name === 'work') {
-      setTabbedWorkId(route.view.workId);
-      setWorkTab(route.workTab ?? 'overview');
-    }
-    if (route.view.name === 'masters' && route.mastersTab !== undefined) {
-      setMastersTab(route.mastersTab);
-    }
+    navigateRef.current(route.view, {
+      ...(route.view.name === 'work' ? { workTab: route.workTab ?? 'overview' } : {}),
+      ...(route.mastersTab !== undefined ? { mastersTab: route.mastersTab } : {}),
+    });
   }, []);
-  const requestDepartureRef = useRef(requestDeparture);
-  requestDepartureRef.current = requestDeparture;
   const editorDirtyRef = useRef(editorDirty);
   editorDirtyRef.current = editorDirty;
   useEffect(() => {
@@ -537,9 +568,7 @@ export function OperationsWorkspace({
         // The address bar must keep describing the editor while the
         // confirmation is open; declining then changes nothing at all.
         window.history.replaceState(null, '', currentHashRef.current);
-        requestDepartureRef.current(() => {
-          applyRoute(route);
-        });
+        applyRoute(route);
         return;
       }
       if (parsed === null) {
@@ -613,12 +642,7 @@ export function OperationsWorkspace({
   }
 
   function openRecordTab(workId: string, tab: 'deliveries' | 'measurement'): void {
-    requestDeparture(() => {
-      setTabbedWorkId(workId);
-      setWorkTab(tab);
-      setMobileRecordOpen(false);
-      setView({ name: 'work', workId });
-    });
+    navigate({ name: 'work', workId }, { workTab: tab });
   }
 
   const subItems: Partial<
@@ -654,8 +678,7 @@ export function OperationsWorkspace({
     masters: MASTERS_CATEGORIES.map((category) => ({
       label: category.label,
       open: () => {
-        setMastersTab(category.key);
-        navigate({ name: 'masters' });
+        navigate({ name: 'masters' }, { mastersTab: category.key });
       },
       current: view.name === 'masters' && mastersTab === category.key,
     })),
@@ -1043,16 +1066,16 @@ export function OperationsWorkspace({
               organisationId={organisation.id}
               canModify={canModify}
               onOpenWork={(workId) => {
-                setView({ name: 'work', workId });
+                navigate({ name: 'work', workId });
               }}
               onOpenWorks={() => {
-                setView({ name: 'works' });
+                navigate({ name: 'works' });
               }}
               onUploadLoa={() => {
-                setView({ name: 'upload' });
+                navigate({ name: 'upload' });
               }}
               onOpenApprovals={() => {
-                setView({ name: 'approvals' });
+                navigate({ name: 'approvals' });
               }}
             />
           )}
@@ -1082,13 +1105,13 @@ export function OperationsWorkspace({
               organisationId={organisation.id}
               canModify={canModify}
               onUpload={() => {
-                setView({ name: 'upload' });
+                navigate({ name: 'upload' });
               }}
               onReview={(documentId) => {
-                setView({ name: 'review', documentId });
+                navigate({ name: 'review', documentId });
               }}
               onOpenWork={(workId) => {
-                setView({ name: 'work', workId });
+                navigate({ name: 'work', workId });
               }}
             />
           )}
@@ -1098,14 +1121,14 @@ export function OperationsWorkspace({
               api={api}
               organisationId={organisation.id}
               onUploaded={(document) => {
-                setView(
+                navigate(
                   document.extractionStatus === 'review'
                     ? { name: 'review', documentId: document.id }
                     : { name: 'works' },
                 );
               }}
               onCancel={() => {
-                setView({ name: 'works' });
+                navigate({ name: 'works' });
               }}
             />
           )}
@@ -1117,11 +1140,20 @@ export function OperationsWorkspace({
               documentId={view.documentId}
               canModify={canModify}
               onConfirmed={(created) => {
-                setView({ name: 'work', workId: created.work.id });
+                // The letter is now a Work; the corrections are saved, so
+                // there is nothing left to confirm.
+                navigate(
+                  { name: 'work', workId: created.work.id },
+                  { confirmed: true },
+                );
               }}
               onBack={() => {
-                setView({ name: 'works' });
+                navigate({ name: 'works' });
               }}
+              onDiscarded={() => {
+                navigate({ name: 'works' }, { confirmed: true });
+              }}
+              onDirtyChange={setEditorDirty}
             />
           )}
 
@@ -1179,10 +1211,10 @@ export function OperationsWorkspace({
               canManageStatutory={canManageStatutory}
               isOwner={isOwner}
               onNewChallan={(workId, workCode) => {
-                setView({ name: 'challan-new', workId, workCode });
+                navigate({ name: 'challan-new', workId, workCode });
               }}
               onOpenChallan={(challanId) => {
-                setView({
+                navigate({
                   name: 'challan',
                   workId: view.workId,
                   workCode: '',
@@ -1190,13 +1222,13 @@ export function OperationsWorkspace({
                 });
               }}
               onNewIssueChallan={(workId) => {
-                setView({ name: 'issue-challan-new', workId });
+                navigate({ name: 'issue-challan-new', workId });
               }}
               onOpenIssueChallan={(challanId) => {
-                setView({ name: 'issue-challan', workId: view.workId, challanId });
+                navigate({ name: 'issue-challan', workId: view.workId, challanId });
               }}
               onBack={() => {
-                setView({ name: 'works' });
+                navigate({ name: 'works' });
               }}
               tab={view.workId === tabbedWorkId ? workTab : 'overview'}
               onTabChange={(next) => {
@@ -1216,15 +1248,21 @@ export function OperationsWorkspace({
               workCode={view.workCode === '' ? challanWorkCode : view.workCode}
               challanId={view.name === 'challan-edit' ? view.challanId : null}
               onSaved={(challanId) => {
-                setView({
-                  name: 'challan',
-                  workId: view.workId,
-                  workCode: view.workCode,
-                  challanId,
-                });
+                // Saved, or cancelled after the editor's own discard
+                // confirmation: either way the decision has been taken
+                // once already and must not be asked again here.
+                navigate(
+                  {
+                    name: 'challan',
+                    workId: view.workId,
+                    workCode: view.workCode,
+                    challanId,
+                  },
+                  { confirmed: true },
+                );
               }}
               onCancel={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId }, { confirmed: true });
               }}
               onDirtyChange={setEditorDirty}
             />
@@ -1241,7 +1279,7 @@ export function OperationsWorkspace({
               canRecordEvidence={canRecordEvidence}
               workActive={challanWorkActive}
               onEdit={(challanId) => {
-                setView({
+                navigate({
                   name: 'challan-edit',
                   workId: view.workId,
                   workCode: view.workCode,
@@ -1249,10 +1287,10 @@ export function OperationsWorkspace({
                 });
               }}
               onDeleted={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId });
               }}
               onBack={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId });
               }}
             />
           )}
@@ -1276,10 +1314,13 @@ export function OperationsWorkspace({
               workId={view.workId}
               challanId={view.name === 'issue-challan-edit' ? view.challanId : null}
               onSaved={(challanId) => {
-                setView({ name: 'issue-challan', workId: view.workId, challanId });
+                navigate(
+                  { name: 'issue-challan', workId: view.workId, challanId },
+                  { confirmed: true },
+                );
               }}
               onCancel={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId }, { confirmed: true });
               }}
               onDirtyChange={setEditorDirty}
             />
@@ -1295,17 +1336,17 @@ export function OperationsWorkspace({
               canCancel={canCancel}
               workActive={challanWorkActive}
               onEdit={(challanId) => {
-                setView({
+                navigate({
                   name: 'issue-challan-edit',
                   workId: view.workId,
                   challanId,
                 });
               }}
               onDeleted={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId });
               }}
               onBack={() => {
-                setView({ name: 'work', workId: view.workId });
+                navigate({ name: 'work', workId: view.workId });
               }}
             />
           )}
@@ -1315,10 +1356,10 @@ export function OperationsWorkspace({
               api={api}
               organisationId={organisation.id}
               onOpenWork={(workId) => {
-                setView({ name: 'work', workId });
+                navigate({ name: 'work', workId });
               }}
               onOpenChallan={(workId, challanId) => {
-                setView({ name: 'challan', workId, workCode: '', challanId });
+                navigate({ name: 'challan', workId, workCode: '', challanId });
               }}
             />
           )}
