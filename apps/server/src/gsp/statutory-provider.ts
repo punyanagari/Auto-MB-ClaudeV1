@@ -72,6 +72,12 @@ export interface GenerateEwayBillByIrnRequest {
   readonly payloadJson: string;
 }
 
+export interface GenerateEwayBillRequest {
+  readonly gstin: string;
+  /** Already serialized exact JSON bytes. */
+  readonly payloadJson: string;
+}
+
 export interface StatutoryProvider {
   readonly name: 'whitebooks';
   readonly environment: StatutoryEnvironment;
@@ -104,6 +110,11 @@ export interface StatutoryProvider {
   generateEwayBillByIrn(
     input: GenerateEwayBillByIrnRequest,
   ): Promise<EwayBillProviderEvidence>;
+  /** Direct generation, for a movement with no IRN behind it — the
+   * standalone delivery challan path (ADR-0013). The payload states the
+   * parties, the items and the carriage itself, because there is no
+   * registered invoice at the IRP holding any of it. */
+  generateEwayBill(input: GenerateEwayBillRequest): Promise<EwayBillProviderEvidence>;
   findEwayBillByIrn(input: {
     readonly gstin: string;
     readonly irn: string;

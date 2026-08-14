@@ -58,7 +58,8 @@ type ManifestBucket =
   | 'extension'
   | 'measurement-book'
   | 'credit-note'
-  | 'tax-invoice-render';
+  | 'tax-invoice-render'
+  | 'eway-bill-render';
 
 const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'organisation-logo',
@@ -72,6 +73,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'measurement-book',
   'credit-note',
   'tax-invoice-render',
+  'eway-bill-render',
 ];
 
 type ExportRow = Record<string, unknown>;
@@ -483,6 +485,21 @@ const SECTIONS: readonly ExportSection[] = [
     },
   },
   { key: 'ewayBills', sql: `select * from eway_bills order by created_at, id` },
+  {
+    key: 'ewayBillRenders',
+    sql: `select * from eway_bill_renders
+          order by eway_bill_id, version, created_at, id`,
+    manifest: {
+      bucket: 'eway-bill-render',
+      entries: (row) => [
+        {
+          kind: 'eway-bill-rendered-pdf-version',
+          objectKey: row.object_key,
+          sha256: row.pdf_sha256,
+        },
+      ],
+    },
+  },
   {
     key: 'documentNumberSeries',
     sql: `select * from document_number_series order by document_type`,

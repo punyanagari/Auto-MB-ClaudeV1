@@ -981,7 +981,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
       options.statutoryProvider,
     );
-    registerEwayBillRoutes(app, authInstance, database, options.statutoryProvider);
+    registerEwayBillRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      options.statutoryProvider,
+    );
     registerWorkCompletionRoutes(app, authInstance, database);
     registerWorkSupersedeRoutes(app, authInstance, database);
   }

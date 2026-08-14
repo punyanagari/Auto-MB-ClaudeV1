@@ -13,6 +13,8 @@ import {
   type TransportMode,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
+import { createHash } from 'node:crypto';
+import type { ObjectStorage } from '@auto-mb/documents';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
@@ -33,14 +35,30 @@ import type {
   EwayBillProviderEvidence,
   StatutoryProvider,
 } from '../gsp/statutory-provider.js';
-import { exactJsonInteger, stringifyStatutoryJson } from '../gsp/statutory-json.js';
-import { httpError } from '../http.js';
-import { parseJsonbColumn } from '../jsonb-column.js';
 import {
-  parseTaxInvoiceIssuedSnapshot,
-  TaxInvoiceSnapshotError,
-} from '../tax-invoice-snapshot.js';
-import { cancellationNote } from './challans.js';
+  assertCarriesGoods,
+  assertChallanStatutoryFactsComplete,
+  readChallanSourceFacts,
+  readInvoiceSourceFacts,
+  type EwayBillSourceFacts,
+} from '../gsp/eway-source.js';
+import {
+  buildDirectEwayBillPayload,
+  buildEwayBillByIrnPayload,
+} from '../gsp/eway-payload.js';
+import {
+  exactJsonInteger,
+  statutoryJsonDisplay,
+  stringifyStatutoryJson,
+} from '../gsp/statutory-json.js';
+import {
+  EWAY_BILL_PDF_TEMPLATE_VERSION,
+  renderEwayBillHtml,
+  type EwayBillRenderEvidence,
+} from '../eway-bill-html.js';
+import { httpError } from '../http.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
+import { assertStandaloneChallanAccess, cancellationNote } from './challans.js';
 import {
   audit,
   IdParamsSchema,
@@ -76,8 +94,10 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 interface EwayBillRow {
   id: string;
-  tax_invoice_id: string;
+  tax_invoice_id: string | null;
+  delivery_challan_id: string | null;
   invoice_number: string | null;
+  challan_number: string | null;
   work_id: string | null;
   status: EwayBillStatus;
   transport_mode: TransportMode;
@@ -102,13 +122,17 @@ interface EwayBillRow {
   provider_cancel_reason_code: string | null;
   provider_cancel_remark: string | null;
   cancellation_note: string | null;
+  rendered_object_key: string | null;
+  rendered_sha256: string | null;
+  rendered_version: number | null;
   created_at: Date;
   generated_at: Date | null;
   cancelled_at: Date | null;
 }
 
 const EB_COLUMNS = `
-  eb.id, eb.tax_invoice_id, ti.invoice_number, ti.work_id, eb.status,
+  eb.id, eb.tax_invoice_id, eb.delivery_challan_id,
+  ti.invoice_number, dc.challan_number, ti.work_id, eb.status,
   eb.transport_mode, eb.transporter_id, eb.transporter_name,
   eb.vehicle_number, eb.transport_doc_number,
   eb.transport_doc_date::text as transport_doc_date, eb.distance_km,
@@ -117,19 +141,31 @@ const EB_COLUMNS = `
   eb.legacy_evidence_missing,
   eb.provider_cancelled_at, eb.provider_cancelled_at_text,
   eb.provider_cancel_reason_code, eb.provider_cancel_remark,
-  eb.cancellation_note, eb.created_at, eb.generated_at, eb.cancelled_at
+  eb.cancellation_note, eb.rendered_object_key, eb.rendered_sha256,
+  eb.rendered_version,
+  eb.created_at, eb.generated_at, eb.cancelled_at
 `;
 
+/** Both joins are LEFT: exactly one of the two sources is set on any row
+ * (the 0076 CHECK), so an inner join on either would hide every bill that
+ * names the other. `work_id` therefore comes from the invoice when there
+ * is one and is NULL on the challan path, which is exactly right — a
+ * standalone challan belongs to no Work, and `assertWorkAccess` treats a
+ * null Work as organisation-wide reach. */
 const EB_FROM = `
   from eway_bills eb
-  join tax_invoices ti on ti.id = eb.tax_invoice_id
+  left join tax_invoices ti on ti.id = eb.tax_invoice_id
+  left join delivery_challans dc on dc.id = eb.delivery_challan_id
 `;
 
 function toEwayBill(row: EwayBillRow): EwayBill {
   return {
     id: row.id,
     taxInvoiceId: row.tax_invoice_id,
+    deliveryChallanId: row.delivery_challan_id,
+    source: row.tax_invoice_id === null ? 'delivery_challan' : 'tax_invoice',
     invoiceNumber: row.invoice_number,
+    challanNumber: row.challan_number,
     status: row.status,
     transportMode: row.transport_mode,
     transporterId: row.transporter_id,
@@ -156,6 +192,8 @@ function toEwayBill(row: EwayBillRow): EwayBill {
     createdAt: row.created_at.toISOString(),
     generatedAt: row.generated_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    renderedAvailable: row.rendered_object_key !== null,
+    renderedVersion: row.rendered_version,
   };
 }
 
@@ -197,6 +235,139 @@ async function assertWorkAccess(
   workId: string | null,
 ): Promise<void> {
   if (workId !== null) await assertScopedWorkAccess(tx, userId, workId);
+}
+
+/** A standalone challan belongs to no Work, so work scope has nothing to
+ * bind through: it is reachable by every member with organisation-wide
+ * reach, and by nobody else (the rule 0056's module established, restated
+ * here through the same helper the challan routes use). Access is checked
+ * before the kind, so a challan a scoped user may not see gets the same
+ * 404 whether it is a work challan or a guessed id that names nothing. */
+async function assertChallanReadable(
+  tx: TransactionSql,
+  userId: string,
+  challanId: string,
+): Promise<void> {
+  const [challan] = await tx<{ challan_kind: string }[]>`
+    select challan_kind from delivery_challans where id = ${challanId}
+  `;
+  if (!challan) {
+    throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such delivery challan.');
+  }
+  // Access BEFORE kind, matching the sibling POST at this file. A scoped
+  // membership does not reach standalone challans at all, so it 404s here;
+  // if the kind check ran first, a scoped user asking about a WORK challan
+  // in their org would get 409 CHALLAN_NOT_STANDALONE while a random UUID
+  // got 404 — a difference that confirms the work challan exists. With the
+  // access check first the unreachable id is always 404, whatever it names.
+  await assertStandaloneChallanAccess(tx, userId);
+  if (challan.challan_kind !== 'standalone') {
+    throw httpError(
+      409,
+      'CHALLAN_NOT_STANDALONE',
+      'An e-way bill is raised from a standalone delivery challan. A work challan moves under the Work it belongs to.',
+    );
+  }
+}
+
+/** Who may see a bill, decided by the source it names.
+ *
+ * An invoice-sourced bill inherits the invoice's Work scope, which is
+ * null for a direct invoice and therefore organisation-wide. A
+ * challan-sourced bill has no Work at all: 0056's rule for a document
+ * with none is that it is reachable by every member with
+ * organisation-wide reach and by nobody else, so a work-scoped user is
+ * answered 404 rather than shown a movement they have no scope for. */
+async function assertBillAccess(
+  tx: TransactionSql,
+  userId: string,
+  row: EwayBillRow,
+): Promise<void> {
+  if (row.delivery_challan_id !== null) {
+    await assertStandaloneChallanAccess(tx, userId);
+    return;
+  }
+  await assertWorkAccess(tx, userId, row.work_id);
+}
+
+/** The evidence and carriage a printable summary states, taken from the
+ * bill row. Used twice — once to render, once to prove nothing moved
+ * while the renderer ran — so it exists as one function rather than two
+ * hand-kept object literals. */
+function renderInputs(
+  row: EwayBillRow,
+  ewbNumber: string,
+): {
+  evidence: EwayBillRenderEvidence;
+  carriage: {
+    transportMode: string;
+    transporterId: string | null;
+    transporterName: string | null;
+    vehicleNumber: string | null;
+    transportDocNumber: string | null;
+    transportDocDate: string | null;
+    distanceKm: number;
+    fromPincode: string;
+    toPincode: string;
+  };
+} {
+  return {
+    evidence: {
+      ewbNumber,
+      ewbDateText: row.ewb_date_text,
+      validUntilText: row.valid_until_text,
+      provider: row.provider,
+      status: row.status,
+      providerCancelledAtText: row.provider_cancelled_at_text,
+      cancellationNote: row.cancellation_note,
+      legacyEvidenceMissing: row.legacy_evidence_missing,
+    },
+    carriage: {
+      transportMode: row.transport_mode,
+      transporterId: row.transporter_id,
+      transporterName: row.transporter_name,
+      vehicleNumber: row.vehicle_number,
+      transportDocNumber: row.transport_doc_number,
+      transportDocDate: row.transport_doc_date,
+      distanceKm: row.distance_km,
+      fromPincode: row.from_pincode,
+      toPincode: row.to_pincode,
+    },
+  };
+}
+
+/** The NIC payload for a bill, keyed on which door its source opens.
+ *
+ * The e-way bill ROW is authoritative for the carriage that goes on the
+ * wire — it is what the 0035 CHECK measures and what an operator edits
+ * while the bill is a draft — so the carriage block is read from here
+ * rather than from the source document, whose own transport facts are the
+ * record of what was printed on the paper. */
+function buildPayload(source: EwayBillSourceFacts, row: EwayBillRow): unknown {
+  const carriage = {
+    transportMode: row.transport_mode,
+    transporterId: row.transporter_id,
+    transporterName: row.transporter_name,
+    vehicleNumber: row.vehicle_number,
+    transportDocNumber: row.transport_doc_number,
+    transportDocDate: row.transport_doc_date,
+    distanceKm: row.distance_km,
+    fromPincode: row.from_pincode,
+    toPincode: row.to_pincode,
+  };
+  return source.kind === 'tax_invoice'
+    ? buildEwayBillByIrnPayload(source, carriage)
+    : buildDirectEwayBillPayload(source, carriage);
+}
+
+/** The source document a bill names, whichever of the two it is. */
+async function readSourceFacts(
+  tx: TransactionSql,
+  row: EwayBillRow,
+): Promise<EwayBillSourceFacts> {
+  return row.tax_invoice_id === null
+    ? readChallanSourceFacts(tx, row.delivery_challan_id ?? '')
+    : readInvoiceSourceFacts(tx, row.tax_invoice_id);
 }
 
 // --- Field guards -----------------------------------------------------------
@@ -266,6 +437,8 @@ export function registerEwayBillRoutes(
   app: AppInstance,
   auth: Auth,
   database: Sql,
+  storage: ObjectStorage,
+  gotenbergUrl: string,
   provider?: StatutoryProvider,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
@@ -340,6 +513,12 @@ export function registerEwayBillRoutes(
             `An e-way bill moves a submitted invoice (current status: ${invoice.status}) — a draft has no legal number to move, and a cancelled invoice moves nothing.`,
           );
         }
+        // ADR-0013: applicability is a property of the LINES. A cumulative
+        // SAC invoice, and an itemised one whose every line is a service,
+        // are refused here rather than at generation — there is no reason
+        // to let an operator fill in carriage facts for a movement NIC
+        // will never issue a bill for.
+        assertCarriesGoods(await readInvoiceSourceFacts(tx, invoiceId));
         // One live e-way bill per invoice (the 0035 partial unique
         // index is the arbiter); the 409 names the live one.
         const [live] = await tx<{ id: string; ewb_number: string | null }[]>`
@@ -412,6 +591,151 @@ export function registerEwayBillRoutes(
   tenantRoute(
     {
       method: 'GET',
+      url: '/api/challans/:id/eway-bills',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: EwayBillListResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }) => {
+      const { id: challanId } = request.params;
+      const rows = await tenant(async (tx) => {
+        await assertChallanReadable(tx, user.id, challanId);
+        return (await tx.unsafe(
+          `select ${EB_COLUMNS} ${EB_FROM}
+             where eb.delivery_challan_id = $1
+             order by eb.created_at desc, eb.id`,
+          [challanId],
+        )) as unknown as EwayBillRow[];
+      });
+      return { ewayBills: rows.map(toEwayBill) };
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/challans/:id/eway-bills',
+      schema: {
+        params: IdParamsSchema,
+        body: SaveEwayBillRequestSchema,
+        response: { 201: EwayBillDetailResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: challanId } = request.params;
+      const body = normalisedSave(request.body);
+      const detail = await tenant(async (tx) => {
+        await requireWriterRole(tx, user.id);
+        // The challan row lock serialises this create against the
+        // challan's own cancel and against a concurrent create on the
+        // same challan, exactly as the invoice lock does above.
+        const [challan] = await tx<
+          {
+            id: string;
+            challan_kind: string;
+            status: string;
+            challan_number: string | null;
+          }[]
+        >`
+            select id, challan_kind, status, challan_number
+            from delivery_challans where id = ${challanId}
+            for update
+          `;
+        if (!challan) {
+          throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such delivery challan.');
+        }
+        await assertStandaloneChallanAccess(tx, user.id);
+        if (challan.challan_kind !== 'standalone') {
+          throw httpError(
+            409,
+            'CHALLAN_NOT_STANDALONE',
+            'An e-way bill is raised from a standalone delivery challan. A work challan moves under the Work it belongs to.',
+          );
+        }
+        if (challan.status !== 'issued') {
+          throw httpError(
+            409,
+            'CHALLAN_STATUS_CONFLICT',
+            `An e-way bill moves an issued challan (current status: ${challan.status}) — a draft has no number to move, and a cancelled challan moves nothing.`,
+          );
+        }
+        // The two rules, in the order that produces the more useful
+        // refusal: an unclassified challan is told what to record, and a
+        // fully classified service-only one is told NIC will not issue a
+        // bill for it at all.
+        await assertChallanStatutoryFactsComplete(tx, challanId);
+        assertCarriesGoods(await readChallanSourceFacts(tx, challanId));
+        const [live] = await tx<{ id: string; ewb_number: string | null }[]>`
+            select id, ewb_number from eway_bills
+            where delivery_challan_id = ${challanId} and status <> 'cancelled'
+          `;
+        if (live) {
+          throw draftConflictError(
+            'EWAY_BILL_EXISTS',
+            `This challan already has a live e-way bill${live.ewb_number === null ? '' : ` (${live.ewb_number})`}; cancel or delete it before raising another.`,
+            live.id,
+          );
+        }
+        const [created] = await tx<{ id: string }[]>`
+            insert into eway_bills (
+              organisation_id, delivery_challan_id, transport_mode,
+              transporter_id, transporter_name, vehicle_number,
+              transport_doc_number, transport_doc_date, distance_km,
+              from_pincode, to_pincode, created_by_user_id
+            )
+            values (
+              ${organisationId}, ${challanId}, ${body.transportMode},
+              ${body.transporterId}, ${body.transporterName},
+              ${body.vehicleNumber}, ${body.transportDocNumber},
+              ${body.transportDocDate}, ${body.distanceKm}, ${body.fromPincode},
+              ${body.toPincode}, ${user.id}
+            )
+            returning id
+          `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'EWAY_BILL_EXISTS',
+              'This challan already has a live e-way bill; cancel or delete it before raising another.',
+            );
+          }
+          throw error;
+        });
+        if (!created) throw new Error('eway bill insert returned no row');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.created',
+          'eway_bills',
+          created.id,
+          {
+            deliveryChallanId: challanId,
+            challanNumber: challan.challan_number,
+            transportMode: body.transportMode,
+            distanceKm: body.distanceKm,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, created.id)) };
+      }).catch(async (error: unknown) => {
+        throw await nameDraftConflict(error, 'EWAY_BILL_EXISTS', () =>
+          tenant(async (tx) => {
+            const [row] = await tx<{ id: string }[]>`
+              select id from eway_bills
+              where delivery_challan_id = ${challanId} and status <> 'cancelled'
+            `;
+            return row?.id ?? null;
+          }),
+        );
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'GET',
       url: '/api/eway-bills/:id',
       schema: {
         params: IdParamsSchema,
@@ -422,7 +746,7 @@ export function registerEwayBillRoutes(
       const { id } = request.params;
       return tenant(async (tx) => {
         const row = await readEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         return { ewayBill: toEwayBill(row) };
       });
     },
@@ -444,7 +768,7 @@ export function registerEwayBillRoutes(
       const body = normalisedSave(request.body);
       return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         // A generated e-way bill is NIC's record: no edits, ever. Vehicle
         // updates and extensions are their own NIC transactions and out
         // of scope here.
@@ -516,7 +840,7 @@ export function registerEwayBillRoutes(
       const { id } = request.params;
       await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         // Rule 8: a draft is not yet a document, so it deletes; a
         // generated e-way bill cancels and keeps its number forever.
         requireStatus(row, 'draft');
@@ -537,6 +861,7 @@ export function registerEwayBillRoutes(
           id,
           {
             taxInvoiceId: row.tax_invoice_id,
+            deliveryChallanId: row.delivery_challan_id,
           },
         );
       });
@@ -557,7 +882,7 @@ export function registerEwayBillRoutes(
       const { id } = request.params;
       const detail = await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         // Branched per state, so this route declares nothing and checks
         // inline. Recovery closes out a statutory operation and moves
         // the bill's provider state, so it needs the compliance
@@ -610,10 +935,10 @@ export function registerEwayBillRoutes(
           ...errorResponses,
         },
       },
-      // Only the reconcile-by-lookup branch is reachable here (fresh
-      // generation is refused for SAC service invoices, finding 1), and
-      // the lookup still opens a ledger operation and writes the NIC
-      // portal's answer onto the bill. Compliance authority required.
+      // Fresh generation and reconcile-by-lookup share this route: both
+      // open a ledger operation and write the NIC portal's answer onto the
+      // bill, which is one authority question and not two. Compliance
+      // authority required either way.
       authority: ['issue', 'statutory'],
     },
     async ({ request, reply, user, organisationId, tenant }) => {
@@ -622,7 +947,7 @@ export function registerEwayBillRoutes(
       const prepared = await tenant(async (tx) => {
         await recoverStaleStatutoryOperation(tx, { ewayBillId: id });
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         requireStatus(row, 'draft');
         if (row.provider_state === 'generating') {
           throw httpError(
@@ -642,12 +967,17 @@ export function registerEwayBillRoutes(
             `E-way bill generation cannot start from ${row.provider_state}.`,
           );
         }
+        // Reconcile-by-lookup is the invoice path's alone: the lookup NIC
+        // offers is by IRN, and a challan-sourced bill has no IRN to look
+        // itself up with. An unknown challan generation stays unknown
+        // until somebody reconciles it against the portal by hand, which
+        // is the honest answer rather than a second blind send.
         const reconcileOnly = row.provider_state === 'generation_unknown';
-        if (!reconcileOnly) {
+        if (reconcileOnly && row.tax_invoice_id === null) {
           throw httpError(
             409,
-            'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
-            'This cumulative tax invoice contains a SAC service line. Fresh E-way Bill generation is disabled until a goods/HSN delivery-challan model supplies the legally required item facts.',
+            'EWAY_PROVIDER_STATE_CONFLICT',
+            'The earlier generation result is unknown and this bill has no IRN to look itself up by. Reconcile it on the NIC portal, then record the result there.',
           );
         }
         if (provider === undefined) {
@@ -657,60 +987,94 @@ export function registerEwayBillRoutes(
             'Whitebooks transport is not configured.',
           );
         }
-        const [priorEwayBill] = await tx<{ id: string }[]>`
-            select id from eway_bills
-            where tax_invoice_id = ${row.tax_invoice_id} and id <> ${id}
-            limit 1
-          `;
-        if (priorEwayBill) {
-          throw httpError(
-            409,
-            'EWAY_REGENERATION_RECONCILIATION_UNSUPPORTED',
-            'This IRN already has earlier local EWB history. Automatic regeneration is disabled because an IRN-only lookup could attach old or cancelled provider evidence.',
-          );
-        }
-        const [invoice] = await tx<
-          {
-            status: string;
-            irn: string | null;
-            irp_provider: string | null;
-            irp_provider_state: string;
-            issued_snapshot: unknown;
-          }[]
-        >`
-            select status, irn, irp_provider, irp_provider_state,
-                   issued_snapshot
-            from tax_invoices where id = ${row.tax_invoice_id}
-          `;
-        if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
-        if (
-          invoice.status !== 'submitted' ||
-          invoice.irn === null ||
-          invoice.irp_provider !== 'whitebooks' ||
-          invoice.irp_provider_state !== 'registered'
-        ) {
-          throw httpError(
-            409,
-            'EWAY_IRP_REGISTRATION_REQUIRED',
-            'Generate an e-way bill through Whitebooks only after this invoice has a provider-verified, active IRN.',
-          );
-        }
-        const issued = parseJsonbColumn(invoice.issued_snapshot);
-        let snapshot: ReturnType<typeof parseTaxInvoiceIssuedSnapshot>;
-        try {
-          snapshot = parseTaxInvoiceIssuedSnapshot(issued);
-        } catch (error) {
-          if (error instanceof TaxInvoiceSnapshotError) {
-            throw httpError(409, error.code, error.message);
+        if (reconcileOnly) {
+          const [priorEwayBill] = await tx<{ id: string }[]>`
+              select id from eway_bills
+              where tax_invoice_id = ${row.tax_invoice_id} and id <> ${id}
+              limit 1
+            `;
+          if (priorEwayBill) {
+            throw httpError(
+              409,
+              'EWAY_REGENERATION_RECONCILIATION_UNSUPPORTED',
+              'This IRN already has earlier local EWB history. Automatic regeneration is disabled because an IRN-only lookup could attach old or cancelled provider evidence.',
+            );
           }
-          throw error;
         }
-        const requestJson = stringifyStatutoryJson({ Irn: invoice.irn });
+        // The applicability rule, at the moment it decides something: a
+        // service-only document is refused here with the code it has
+        // always carried (ADR-0013).
+        const source = await readSourceFacts(tx, row);
+        assertCarriesGoods(source);
+        // The carriage must be complete before a payload is assembled, or
+        // the 0035 CHECK surfaces as an opaque 500 later.
+        assertCarriageComplete(row);
+
+        let gstin: string;
+        if (row.tax_invoice_id !== null) {
+          const [invoice] = await tx<
+            {
+              status: string;
+              irn: string | null;
+              irp_provider: string | null;
+              irp_provider_state: string;
+            }[]
+          >`
+              select status, irn, irp_provider, irp_provider_state
+              from tax_invoices where id = ${row.tax_invoice_id}
+            `;
+          if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
+          if (
+            invoice.status !== 'submitted' ||
+            invoice.irn === null ||
+            invoice.irp_provider !== 'whitebooks' ||
+            invoice.irp_provider_state !== 'registered'
+          ) {
+            throw httpError(
+              409,
+              'EWAY_IRP_REGISTRATION_REQUIRED',
+              'Generate an e-way bill through Whitebooks only after this invoice has a provider-verified, active IRN.',
+            );
+          }
+          gstin = source.supplier.gstin ?? '';
+        } else {
+          // Re-read the challan's live status the way the invoice branch
+          // re-reads the invoice's: the source must still be an ISSUED
+          // standalone challan at the moment of generation. The challan
+          // cancel route refuses while a non-cancelled bill references it,
+          // so this is a race/raw-SQL backstop — NIC evidence must never
+          // attach to a cancelled consignment.
+          const [challan] = await tx<{ status: string; challan_kind: string }[]>`
+              select status, challan_kind from delivery_challans
+              where id = ${row.delivery_challan_id} for update
+            `;
+          if (!challan) throw new Error(`e-way bill ${id} lost its challan`);
+          if (challan.challan_kind !== 'standalone' || challan.status !== 'issued') {
+            throw httpError(
+              409,
+              'CHALLAN_STATUS_CONFLICT',
+              `An e-way bill moves an issued standalone challan (current status: ${challan.status}) — a cancelled challan moves nothing.`,
+            );
+          }
+          await assertChallanStatutoryFactsComplete(tx, row.delivery_challan_id ?? '');
+          if (source.supplier.gstin === null) {
+            throw httpError(
+              409,
+              'EWAY_SOURCE_FACTS_INCOMPLETE',
+              'This organisation has no GSTIN on its profile, so it cannot declare a consignor to NIC. Record it under Administration, then try again.',
+            );
+          }
+          gstin = source.supplier.gstin;
+        }
+
+        const requestJson = reconcileOnly
+          ? stringifyStatutoryJson({ Irn: source.irn })
+          : stringifyStatutoryJson(buildPayload(source, row));
         const operationId = await startStatutoryOperation(tx, {
           organisationId,
           userId: user.id,
           provider,
-          operation: 'reconcile_eway_bill',
+          operation: reconcileOnly ? 'reconcile_eway_bill' : 'generate_eway_bill',
           requestSha256: sha256Hex(requestJson),
           requestBody: requestJson,
           ewayBillId: id,
@@ -722,8 +1086,11 @@ export function registerEwayBillRoutes(
           `;
         return {
           operationId,
-          gstin: snapshot.supplier.gstin,
-          irn: invoice.irn,
+          reconcileOnly,
+          gstin,
+          irn: source.irn,
+          payloadJson: requestJson,
+          sourceKind: source.kind,
           provider,
         };
       });
@@ -731,27 +1098,46 @@ export function registerEwayBillRoutes(
       let evidence: EwayBillProviderEvidence | null = null;
       let failure: ReturnType<typeof providerFailure> | null = null;
       try {
-        evidence = await prepared.provider.findEwayBillByIrn({
-          gstin: prepared.gstin,
-          irn: prepared.irn,
-        });
-        if (evidence === null) {
-          failure = {
-            status: 'unknown',
-            providerCode: null,
-            httpStatus: null,
-            publicCode: 'WHITEBOOKS_EWB_NOT_FOUND',
-            rawResponse: null,
-          };
+        if (prepared.reconcileOnly) {
+          evidence = await prepared.provider.findEwayBillByIrn({
+            gstin: prepared.gstin,
+            irn: prepared.irn ?? '',
+          });
+          if (evidence === null) {
+            failure = {
+              status: 'unknown',
+              providerCode: null,
+              httpStatus: null,
+              publicCode: 'WHITEBOOKS_EWB_NOT_FOUND',
+              rawResponse: null,
+            };
+          }
+        } else if (prepared.sourceKind === 'tax_invoice') {
+          evidence = await prepared.provider.generateEwayBillByIrn({
+            gstin: prepared.gstin,
+            irn: prepared.irn ?? '',
+            payloadJson: prepared.payloadJson,
+          });
+        } else {
+          evidence = await prepared.provider.generateEwayBill({
+            gstin: prepared.gstin,
+            payloadJson: prepared.payloadJson,
+          });
         }
       } catch (error) {
-        const lookupFailure = providerFailure(error);
-        failure = { ...lookupFailure, status: 'unknown' };
+        const callFailure = providerFailure(error);
+        // A LOOKUP that fails leaves nothing behind at NIC, so its outcome
+        // is recorded as unknown rather than failed — there was no attempt
+        // to have failed. A GENERATION keeps the provider's own verdict: a
+        // refusal is a refusal, and only an ambiguous result is unknown.
+        failure = prepared.reconcileOnly
+          ? { ...callFailure, status: 'unknown' }
+          : callFailure;
       }
 
       const detail = await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (row.status !== 'draft' || row.provider_state !== 'generating') {
           throw new Error(`e-way bill ${id} left the generating state`);
         }
@@ -782,7 +1168,9 @@ export function registerEwayBillRoutes(
             id,
             {
               taxInvoiceId: row.tax_invoice_id,
+              deliveryChallanId: row.delivery_challan_id,
               ewbNumber: evidence.ewbNumber,
+              reconciled: prepared.reconcileOnly,
               provider: prepared.provider.name,
               operationId: prepared.operationId,
             },
@@ -819,8 +1207,10 @@ export function registerEwayBillRoutes(
             id,
             {
               taxInvoiceId: row.tax_invoice_id,
+              deliveryChallanId: row.delivery_challan_id,
               outcome: result.status,
               providerCode: result.providerCode,
+              reconciled: prepared.reconcileOnly,
               provider: prepared.provider.name,
               operationId: prepared.operationId,
             },
@@ -853,17 +1243,25 @@ export function registerEwayBillRoutes(
     },
     async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
-      const payloadJson = await tenant(async (tx) => {
+      // The payload this bill would send, for an operator reconciling
+      // against the NIC portal by hand. It is built by the same function
+      // the generation call uses, so what is shown is what would go — a
+      // second, "display" builder would be a second thing to keep true.
+      //
+      // Exact numeric lexemes are rendered as STRINGS here
+      // (`statutoryJsonDisplay`), so a browser cannot parse and
+      // re-stringify a rupee figure through binary floating point on its
+      // way to somebody's eyes.
+      const payload = await tenant(async (tx) => {
         const row = await readEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
-        throw httpError(
-          409,
-          'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
-          'This cumulative tax invoice contains a SAC service line. No E-way Bill payload is exposed until goods/HSN delivery facts exist.',
-        );
+        await assertBillAccess(tx, user.id, row);
+        const source = await readSourceFacts(tx, row);
+        assertCarriesGoods(source);
+        assertCarriageComplete(row);
+        return statutoryJsonDisplay(buildPayload(source, row));
       });
       void reply.type('application/json; charset=utf-8');
-      return reply.send(payloadJson);
+      return reply.send(payload);
     },
   );
 
@@ -885,7 +1283,7 @@ export function registerEwayBillRoutes(
         // Compatibility import only. Manually typed evidence is explicitly
         // unverified and requires issue authority.
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (provider !== undefined) {
           throw httpError(
             409,
@@ -936,7 +1334,9 @@ export function registerEwayBillRoutes(
           id,
           {
             taxInvoiceId: row.tax_invoice_id,
+            deliveryChallanId: row.delivery_challan_id,
             invoiceNumber: row.invoice_number,
+            challanNumber: row.challan_number,
             ewbNumber: body.ewbNumber,
             ewbDate: body.ewbDate,
             validUntil: body.validUntil,
@@ -965,7 +1365,7 @@ export function registerEwayBillRoutes(
       const remark = body.remark.trim();
       return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (row.status !== 'generated' && row.status !== 'cancelled') {
           throw httpError(
             409,
@@ -1039,7 +1439,7 @@ export function registerEwayBillRoutes(
           ewayBillId: id,
         });
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (provider === undefined) {
           throw httpError(
             409,
@@ -1070,14 +1470,17 @@ export function registerEwayBillRoutes(
               : 'Only a Whitebooks-generated active e-way bill can use provider cancellation.',
           );
         }
-        const [invoice] = await tx<{ issued_snapshot: unknown }[]>`
-            select issued_snapshot from tax_invoices
-            where id = ${row.tax_invoice_id}
-          `;
-        if (!invoice) throw new Error(`e-way bill ${id} lost its invoice`);
-        const gstin = parseTaxInvoiceIssuedSnapshot(
-          parseJsonbColumn(invoice.issued_snapshot),
-        ).supplier.gstin;
+        // NIC cancels against the CONSIGNOR's GSTIN, which both sources
+        // can state: the invoice from its frozen supplier snapshot, the
+        // challan from the organisation's own profile.
+        const gstin = (await readSourceFacts(tx, row)).supplier.gstin;
+        if (gstin === null) {
+          throw httpError(
+            409,
+            'EWAY_SOURCE_FACTS_INCOMPLETE',
+            'This organisation has no GSTIN on its profile, so NIC has nothing to authenticate the cancellation against. Record it under Administration, then try again.',
+          );
+        }
         const requestJson = stringifyStatutoryJson({
           ewbNo: exactJsonInteger(row.ewb_number),
           cancelRsnCode: exactJsonInteger(body.reasonCode),
@@ -1128,7 +1531,7 @@ export function registerEwayBillRoutes(
 
       const detail = await tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (row.provider_state !== 'cancelling') {
           throw new Error(`e-way bill ${id} left the cancelling state`);
         }
@@ -1214,7 +1617,7 @@ export function registerEwayBillRoutes(
       const note = cancellationNote(body.note);
       return tenant(async (tx) => {
         const row = await lockEwayBill(tx, id);
-        await assertWorkAccess(tx, user.id, row.work_id);
+        await assertBillAccess(tx, user.id, row);
         if (row.status === 'draft') {
           throw httpError(
             409,
@@ -1250,11 +1653,202 @@ export function registerEwayBillRoutes(
           {
             ewbNumber: row.ewb_number,
             taxInvoiceId: row.tax_invoice_id,
+            deliveryChallanId: row.delivery_challan_id,
             note,
           },
         );
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
+    },
+  );
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/eway-bills/:id/render',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+
+      // The tax invoice's render posture (0044), at this document's
+      // smaller scale: immutable inputs read in one short transaction,
+      // Gotenberg and object storage run under no database lock, and a
+      // second transaction re-verifies that the facts did not move before
+      // the render is recorded. A print of facts that changed underneath
+      // it is a print of nothing.
+      const prepared = await tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        if (row.status === 'draft') {
+          throw httpError(
+            409,
+            'EWAY_BILL_STATUS_CONFLICT',
+            'A draft e-way bill has no NIC facts to print. Generate it first.',
+          );
+        }
+        if (row.ewb_number === null) {
+          throw httpError(
+            409,
+            'RENDER_INPUT_INVALID',
+            'This e-way bill carries no NIC number, so there is nothing to print.',
+          );
+        }
+        const source = await readSourceFacts(tx, row);
+        return { source, ...renderInputs(row, row.ewb_number) };
+      });
+
+      const sourceSha256 = sha256Hex(
+        stringifyStatutoryJson({
+          source: prepared.source,
+          evidence: prepared.evidence,
+          carriage: prepared.carriage,
+          template: EWAY_BILL_PDF_TEMPLATE_VERSION,
+        }),
+      );
+
+      let html: string;
+      try {
+        html = renderEwayBillHtml(
+          prepared.source,
+          prepared.evidence,
+          prepared.carriage,
+        );
+      } catch (error) {
+        request.log.error({ err: error }, 'e-way bill render input failed');
+        throw httpError(
+          409,
+          'RENDER_INPUT_INVALID',
+          'The recorded e-way bill facts cannot be rendered safely.',
+        );
+      }
+
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
+          'The PDF service is unavailable; the e-way bill is unaffected — retry later.',
+        logError: (error) => {
+          request.log.error({ err: error }, 'e-way bill render failed');
+        },
+      });
+
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const objectKey = `${organisationId}/ewb/${id}-${sha256.slice(0, 16)}.pdf`;
+      try {
+        await storage.put(objectKey, pdf);
+      } catch (error) {
+        request.log.error({ err: error }, 'e-way bill render storage failed');
+        throw httpError(
+          502,
+          'RENDER_STORAGE_FAILED',
+          'The rendered PDF could not be stored. The e-way bill and any previous PDF remain unaffected.',
+        );
+      }
+
+      return tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        if (row.ewb_number === null) {
+          throw new Error(`e-way bill ${id} lost its NIC number`);
+        }
+        const current = await readSourceFacts(tx, row);
+        const currentHash = sha256Hex(
+          stringifyStatutoryJson({
+            source: current,
+            ...renderInputs(row, row.ewb_number),
+            template: EWAY_BILL_PDF_TEMPLATE_VERSION,
+          }),
+        );
+        if (currentHash !== sourceSha256) {
+          throw httpError(
+            409,
+            'RENDER_SOURCE_CHANGED',
+            'The e-way bill facts changed while it was rendering; the previous PDF remains current — render again.',
+          );
+        }
+        const [nextRender] = await tx<{ version: number }[]>`
+          select coalesce(max(version), 0)::int + 1 as version
+          from eway_bill_renders where eway_bill_id = ${id}
+        `;
+        if (!nextRender) throw new Error('e-way bill render version query failed');
+        await tx`
+          insert into eway_bill_renders (
+            organisation_id, eway_bill_id, version, template_version,
+            source_sha256, object_key, pdf_sha256, created_by_user_id
+          )
+          values (
+            ${organisationId}, ${id}, ${nextRender.version},
+            ${EWAY_BILL_PDF_TEMPLATE_VERSION}, ${sourceSha256},
+            ${objectKey}, ${sha256}, ${user.id}
+          )
+        `;
+        await tx`
+          update eway_bills
+          set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256},
+              rendered_version = ${nextRender.version}
+          where id = ${id}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.rendered',
+          'eway_bills',
+          id,
+          {
+            sha256,
+            renderVersion: nextRender.version,
+            sourceSha256,
+            templateVersion: EWAY_BILL_PDF_TEMPLATE_VERSION,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/eway-bills/:id/pdf',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const rendered = await tenant(async (tx) => {
+        const row = await readEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        // The pointer's key and digest are read from ONE row snapshot (the
+        // render_pointer_shape CHECK keeps them both-null-or-both-set), so a
+        // concurrent re-render advancing the pointer between two reads can
+        // no longer pair a new key with an old digest and fail integrity by
+        // version skew.
+        if (row.rendered_object_key === null || row.rendered_sha256 === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'This e-way bill summary has not been rendered yet.',
+          );
+        }
+        return { key: row.rendered_object_key, sha256: row.rendered_sha256 };
+      });
+      const bytes = await storage.get(rendered.key);
+      const actualSha256 = createHash('sha256').update(bytes).digest('hex');
+      if (actualSha256 !== rendered.sha256) {
+        throw httpError(
+          409,
+          'RENDERED_PDF_INTEGRITY_FAILED',
+          'The retained e-way bill PDF no longer matches its recorded digest.',
+        );
+      }
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename="eway-bill-${id}.pdf"`,
+      );
+      return reply.send(bytes);
     },
   );
 }

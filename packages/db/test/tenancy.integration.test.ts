@@ -126,6 +126,8 @@ const TENANT_TABLES = [
   'credit_notes',
   'credit_note_counters',
   'eway_bills',
+  // The printable e-way bill summary, append-only like the invoice's (0076).
+  'eway_bill_renders',
   'statutory_provider_operations',
   // Number formats the organisation defines for itself (0039).
   'document_number_series',
@@ -157,6 +159,7 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     table !== 'statutory_provider_operations' &&
     // Render versions are append-only; the application role has no UPDATE.
     table !== 'tax_invoice_renders' &&
+    table !== 'eway_bill_renders' &&
     // Merge provenance is append-only operational evidence (0045).
     table !== 'measurement_book_merge_provenance' &&
     // A cited variation order is immutable evidence (0058): the
@@ -221,6 +224,7 @@ const DELETE_REVOKED_TABLES = [
   'measurement_book_merge_provenance',
   'statutory_provider_operations',
   'tax_invoice_renders',
+  'eway_bill_renders',
   // Cutover provenance is an append-only ledger (0025).
   'import_batches',
   'import_records',
@@ -1075,6 +1079,41 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${taxInvoice.id}, 120, '422010', '400001',
               ${userId})
+    `;
+    // A second, CANCELLED bill on the same invoice: the 0035 partial
+    // unique index counts only live ones, so this coexists with the
+    // pristine draft above rather than replacing it (the delete-guard
+    // suite below needs that draft to stay pristine). It exists to carry
+    // a printable summary (0076), which 0076's insert guard refuses to
+    // attach to a draft.
+    const [renderedEwayBill] = await tx<{ id: string }[]>`
+      insert into eway_bills (
+        organisation_id, tax_invoice_id, status, vehicle_number, distance_km,
+        from_pincode, to_pincode, ewb_number, ewb_date, valid_until,
+        ewb_date_text, valid_until_text, provider, provider_state,
+        generated_at, generated_by_user_id, cancelled_at, cancelled_by_user_id,
+        cancellation_note, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${taxInvoice.id}, 'cancelled', 'MH12AB1234', 120,
+        '422010', '400001', '123456789012', now(), now() + interval '1 day',
+        '14/08/2026 10:00:00 AM', '15/08/2026 10:00:00 AM', 'manual',
+        'generated', now(), ${userId}, now(), ${userId},
+        'seed: consignment withdrawn', ${userId}
+      )
+      returning id
+    `;
+    if (!renderedEwayBill) throw new Error('seed eway bill insert returned no row');
+    await tx`
+      insert into eway_bill_renders (
+        organisation_id, eway_bill_id, version, template_version,
+        source_sha256, object_key, pdf_sha256, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${renderedEwayBill.id}, 1, 'ewb-v1', ${'d'.repeat(64)},
+        ${`${organisationId}/ewb/${renderedEwayBill.id}-seed.pdf`},
+        ${'e'.repeat(64)}, ${userId}
+      )
     `;
 
     return {

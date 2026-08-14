@@ -256,6 +256,24 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Reload the e-way bill and let the provider operation settle before changing carriage facts; the portal's state is the authoritative one.",
   EWAY_BILL_LIVE:
     'Cancel the live e-way bill first; goods cannot be under a live way bill for an invoice being withdrawn.',
+  EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE:
+    'Raise the e-way bill from the delivery challan carrying the goods instead, because NIC issues none for a document whose every line is a service.',
+  CHALLAN_STATUTORY_FACTS_REQUIRED:
+    'Record the movement reason and the per-line HSN codes on the challan draft before issuing it, because an issued challan is immutable and cannot gain them afterwards.',
+  EWAY_SOURCE_FACTS_INCOMPLETE:
+    'Complete the organisation profile under Administration, and the consignee contact, so the document can state the parties NIC requires.',
+  CHALLAN_NOT_STANDALONE:
+    'Open this challan from its own Work, where a Work-bound movement is edited and issued.',
+  LINE_SHAPE_INVALID:
+    'Give the line one shape and complete it: a Work item, or a manual description with its unit and rate, and an HSN code only alongside its goods-or-service marker.',
+  RENDER_INPUT_INVALID:
+    'Check the frozen facts the document was issued with; nothing was overwritten and the previous PDF, if any, is still current.',
+  RENDER_SOURCE_CHANGED:
+    'Render again; the evidence moved while the renderer ran and the previous PDF remains the current one.',
+  RENDER_STORAGE_FAILED:
+    'Try the render again once storage is reachable; the document and any previous PDF are unaffected.',
+  RENDERED_PDF_INTEGRITY_FAILED:
+    'Render the document again, because the retained bytes no longer match the digest recorded when they were stored.',
 
   // ---- Uploads and rendering ----------------------------------------------
   MALWARE_DETECTED:

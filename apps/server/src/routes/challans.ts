@@ -16,6 +16,7 @@ import {
   type ChallanOverReceiptWarning,
   type Consignee,
   type DeliveryChallanMovement,
+  type MovementReason,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
@@ -30,6 +31,7 @@ import {
   type ChallanSnapshot,
 } from '../challan-html.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
+import { challanEwayEligible } from '../gsp/eway-source.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -88,6 +90,14 @@ interface ChallanRow {
   rendered_object_key: string | null;
   signed_copy_object_key: string | null;
   cancellation_note: string | null;
+  movement_reason: MovementReason | null;
+  consignee_gstin: string | null;
+  transporter_id: string | null;
+  transporter_name: string | null;
+  vehicle_number: string | null;
+  transport_doc_number: string | null;
+  transport_doc_date: string | null;
+  transport_distance_km: number | null;
   created_at: Date;
   issued_at: Date | null;
   cancelled_at: Date | null;
@@ -99,6 +109,9 @@ const CHALLAN_COLUMNS = `
   sequence_number, prefix, consignee_snapshot, template_version,
   warranty_template_version, warranty_text_sha256,
   rendered_object_key, signed_copy_object_key, cancellation_note,
+  movement_reason, consignee_gstin, transporter_id, transporter_name,
+  vehicle_number, transport_doc_number,
+  transport_doc_date::text as transport_doc_date, transport_distance_km,
   created_at, issued_at, cancelled_at
 `;
 
@@ -124,6 +137,14 @@ function toChallan(row: ChallanRow): Challan {
     createdAt: row.created_at.toISOString(),
     issuedAt: row.issued_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    movementReason: row.movement_reason,
+    consigneeGstin: row.consignee_gstin,
+    transporterId: row.transporter_id,
+    transporterName: row.transporter_name,
+    vehicleNumber: row.vehicle_number,
+    transportDocNumber: row.transport_doc_number,
+    transportDocDate: row.transport_doc_date,
+    transportDistanceKm: row.transport_distance_km,
   };
 }
 
@@ -137,6 +158,8 @@ interface ChallanItemRow {
   line_amount: string;
   position: number;
   purchase_order_line_id: string | null;
+  hsn_sac_code: string | null;
+  is_service: boolean | null;
 }
 
 function toChallanItem(row: ChallanItemRow): ChallanItem {
@@ -150,6 +173,8 @@ function toChallanItem(row: ChallanItemRow): ChallanItem {
     lineAmount: row.line_amount,
     position: row.position,
     purchaseOrderLineId: row.purchase_order_line_id,
+    hsnSacCode: row.hsn_sac_code,
+    isService: row.is_service,
   };
 }
 
@@ -160,7 +185,8 @@ async function readItems(
   const rows = await tx<ChallanItemRow[]>`
     select id, work_item_id, description_snapshot, unit_snapshot,
            quantity::text as quantity, rate_snapshot::text as rate_snapshot,
-           line_amount::text as line_amount, position, purchase_order_line_id
+           line_amount::text as line_amount, position, purchase_order_line_id,
+           hsn_sac_code, is_service
     from delivery_challan_items
     where delivery_challan_id = ${challanId}
     order by position
@@ -236,9 +262,30 @@ async function readDetail(
     from delivery_challans where id = ${challanId}
   `;
   if (!row) throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such Delivery Challan.');
+  const items = await readItems(tx, challanId);
   return {
-    challan: toChallan(row),
-    items: await readItems(tx, challanId),
+    challan: {
+      ...toChallan(row),
+      // The server's own applicability answer, so the screen offers the
+      // e-way bill action exactly where the route would accept it
+      // (ADR-0013). It calls the SAME predicate the route gates on —
+      // `challanEwayEligible` — which requires the movement reason, every
+      // line classified (no half/unclassified line), and at least one goods
+      // line. The earlier form omitted the per-line completeness test and
+      // so offered Raise on an issued challan with an unclassified line
+      // that the route permanently refuses (its facts frozen at issue).
+      ewayBillEligible:
+        row.challan_kind === 'standalone' &&
+        row.status === 'issued' &&
+        challanEwayEligible(
+          row.movement_reason,
+          items.map((item) => ({
+            isService: item.isService ?? null,
+            hsnSacCode: item.hsnSacCode ?? null,
+          })),
+        ),
+    },
+    items,
     issuedSnapshot: parseJsonbColumn(row.issued_snapshot),
     // A cancelled challan released its receipts, so it can no longer
     // over-receive anything; otherwise the notices are recomputed live so
@@ -385,6 +432,81 @@ function integerDigitCount(value: string): number {
   return whole.length;
 }
 
+/** The statutory movement facts of a standalone challan, trimmed the way
+ * their CHECKs measure them (migration 0075).
+ *
+ * A blank string is "not recorded" rather than a validation failure: the
+ * editor shows every field, most of them stay empty on most challans, and
+ * a form that clears a field by sending "" must be able to. The shapes
+ * themselves are the schema's job — the CHECKs on the columns are the
+ * backstop for any writer that is not this route.
+ *
+ * The consignee's GSTIN is defaulted from the contacts master when the
+ * caller sends none, which is the only master read that happens here: it
+ * is a DRAFT-time copy, frozen at issue like the rest of the consignee
+ * block, and never re-read afterwards (rule 7). */
+export interface ChallanStatutoryInput {
+  readonly movementReason?: Challan['movementReason'];
+  readonly consigneeGstin?: string;
+  readonly transporterId?: string;
+  readonly transporterName?: string;
+  readonly vehicleNumber?: string;
+  readonly transportDocNumber?: string;
+  readonly transportDocDate?: string;
+  readonly transportDistanceKm?: number;
+}
+
+interface NormalisedChallanStatutory {
+  readonly movementReason: string | null;
+  readonly consigneeGstin: string | null;
+  readonly transporterId: string | null;
+  readonly transporterName: string | null;
+  readonly vehicleNumber: string | null;
+  readonly transportDocNumber: string | null;
+  readonly transportDocDate: string | null;
+  readonly transportDistanceKm: number | null;
+}
+
+function blankToNull(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+export function normaliseChallanStatutory(
+  body: ChallanStatutoryInput,
+  contactGstin: string | null,
+): NormalisedChallanStatutory {
+  const transportDocNumber = blankToNull(body.transportDocNumber);
+  const transportDocDate = blankToNull(body.transportDocDate);
+  // The 0075 CHECK pairs the two; named here so the operator is told
+  // which half is missing rather than reading a statusless 23514.
+  if ((transportDocNumber === null) !== (transportDocDate === null)) {
+    throw httpError(
+      400,
+      'TRANSPORT_DOC_REQUIRED',
+      'A transport document is a number and a date together — record both, or neither.',
+    );
+  }
+  return {
+    movementReason: body.movementReason ?? null,
+    // Omitting the field defaults it from the master at draft time; sending
+    // it — including an explicit blank — is honoured exactly. The old
+    // `blankToNull(...) ?? contactGstin` re-applied the master on a blank,
+    // so a deliberate clear on a draft silently pulled the GSTIN back and
+    // could never be cleared. `undefined` is "not sent"; '' is "clear".
+    consigneeGstin:
+      body.consigneeGstin === undefined
+        ? contactGstin
+        : blankToNull(body.consigneeGstin),
+    transporterId: blankToNull(body.transporterId),
+    transporterName: blankToNull(body.transporterName),
+    vehicleNumber: blankToNull(body.vehicleNumber),
+    transportDocNumber,
+    transportDocDate,
+    transportDistanceKm: body.transportDistanceKm ?? null,
+  };
+}
+
 /** The consignee block exactly as it will be printed. `ConsigneeSchema`
  * counts RAW characters, so `{name: '  ', address: '   '}` satisfies its
  * minimums, is frozen into the issued snapshot, and reaches the railway
@@ -407,6 +529,13 @@ export function normaliseConsignee(consignee: Consignee): Consignee {
   return { name, address, ...(phone.length > 0 ? { phone } : {}) };
 }
 
+interface StandaloneConsignee {
+  readonly consignee: Consignee;
+  /** The party's GSTIN as the master holds it right now — the default the
+   * draft is seeded with, then frozen onto the challan. */
+  readonly gstin: string | null;
+}
+
 /** The consignee block for a STANDALONE challan, taken from the contacts
  * master and snapshotted onto the document.
  *
@@ -424,16 +553,18 @@ export function normaliseConsignee(consignee: Consignee): Consignee {
 async function loadStandaloneConsignee(
   tx: TransactionSql,
   contactId: string,
-): Promise<Consignee> {
+): Promise<StandaloneConsignee> {
   const [contact] = await tx<
     {
       designation: string;
       address: string | null;
       phone: string | null;
       active: boolean;
+      gstin: string | null;
     }[]
   >`
-    select designation, address, phone, active from contacts where id = ${contactId}
+    select designation, address, phone, active, gstin
+    from contacts where id = ${contactId}
   `;
   if (!contact) {
     throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
@@ -454,9 +585,12 @@ async function loadStandaloneConsignee(
   }
   const phone = contact.phone?.trim() ?? '';
   return {
-    name: contact.designation.trim(),
-    address: contact.address.trim(),
-    ...(phone.length > 0 ? { phone } : {}),
+    consignee: {
+      name: contact.designation.trim(),
+      address: contact.address.trim(),
+      ...(phone.length > 0 ? { phone } : {}),
+    },
+    gstin: contact.gstin,
   };
 }
 
@@ -654,6 +788,14 @@ function requireStatus(row: ChallanRow, status: Challan['status']): void {
   }
 }
 
+/** The statutory classification a line may carry (ADR-0013, migration
+ * 0075). Both null on a line that carries none — the pair travels
+ * together because a code with no kind cannot be read. */
+interface LineStatutoryFacts {
+  readonly hsnSacCode: string | null;
+  readonly isService: boolean | null;
+}
+
 /** One line, resolved to the shape it actually is.
  *
  * A `work_item` line takes description/unit/rate from the live schedule
@@ -666,6 +808,7 @@ type ResolvedLine =
       readonly workItemId: string;
       readonly quantity: string;
       readonly purchaseOrderLineId: string | null;
+      readonly statutory: LineStatutoryFacts;
     }
   | {
       readonly shape: 'manual';
@@ -673,7 +816,46 @@ type ResolvedLine =
       readonly description: string;
       readonly unit: string;
       readonly rate: string;
+      readonly statutory: LineStatutoryFacts;
     };
+
+/** The goods marker as an array-safe lexeme. postgres.js serialises a
+ * SINGLE-element boolean array as a scalar boolean, and the `::boolean[]`
+ * cast then fails with "cannot cast type boolean to boolean[]"; text
+ * arrays have no such problem, so the value travels as text and is cast
+ * back in the select list. */
+function booleanText(value: boolean | null): string | null {
+  return value === null ? null : value ? 'true' : 'false';
+}
+
+/** The classification as sent, refusing the half-stated pair by name.
+ *
+ * The database CHECK (0075) refuses it too, but as a statusless 23514
+ * that reaches the operator as "The request could not be completed." */
+function resolveLineStatutory(
+  item: ChallanItemInput,
+  label: string,
+): LineStatutoryFacts {
+  const code = item.hsnSacCode?.trim() ?? '';
+  if (code.length === 0 && item.isService === undefined) {
+    return { hsnSacCode: null, isService: null };
+  }
+  if (code.length === 0 || item.isService === undefined) {
+    throw httpError(
+      400,
+      'LINE_SHAPE_INVALID',
+      `${label}: an HSN/SAC code and a goods-or-service marker are recorded together — the marker is what says which of the two the code is.`,
+    );
+  }
+  if (item.isService && !/^[0-9]{6}$/.test(code)) {
+    throw httpError(
+      400,
+      'LINE_SHAPE_INVALID',
+      `${label}: a service line carries a six-digit SAC; ${code} is not one.`,
+    );
+  }
+  return { hsnSacCode: code, isService: item.isService };
+}
 
 /**
  * Decides which shape a request line is, and refuses every mixture BY
@@ -731,6 +913,7 @@ function resolveLine(item: ChallanItemInput, label: string): ResolvedLine {
       workItemId: item.workItemId,
       quantity: item.quantity,
       purchaseOrderLineId: item.purchaseOrderLineId ?? null,
+      statutory: resolveLineStatutory(item, label),
     };
   }
 
@@ -769,6 +952,7 @@ function resolveLine(item: ChallanItemInput, label: string): ResolvedLine {
     description,
     unit,
     rate: item.rate ?? '',
+    statutory: resolveLineStatutory(item, label),
   };
 }
 
@@ -883,19 +1067,25 @@ export async function writeLines(
       insert into delivery_challan_items (
         organisation_id, delivery_challan_id, work_id, work_item_id,
         description_snapshot, unit_snapshot, quantity, rate_snapshot,
-        line_amount, position, purchase_order_line_id
+        line_amount, position, purchase_order_line_id,
+        hsn_sac_code, is_service
       )
       select ${organisationId}, ${challanId}, ${workId}, null,
              manual.description, manual.unit, manual.quantity, manual.rate,
              (manual.quantity * manual.rate)::numeric(18,2),
-             manual.position, null
+             manual.position, null, manual.hsn_sac_code,
+             manual.is_service::boolean
       from unnest(
         ${manualLines.map((entry) => entry.line.description)}::text[],
         ${manualLines.map((entry) => entry.line.unit)}::text[],
         ${manualLines.map((entry) => entry.line.quantity)}::numeric(18,3)[],
         ${manualLines.map((entry) => entry.line.rate)}::numeric(18,2)[],
-        ${manualLines.map((entry) => entry.position)}::int[]
-      ) as manual(description, unit, quantity, rate, position)
+        ${manualLines.map((entry) => entry.position)}::int[],
+        ${manualLines.map((entry) => entry.line.statutory.hsnSacCode)}::text[],
+        ${manualLines.map((entry) => booleanText(entry.line.statutory.isService))}::text[]
+      ) as manual(
+        description, unit, quantity, rate, position, hsn_sac_code, is_service
+      )
     `;
   }
 
@@ -939,7 +1129,8 @@ export async function writeLines(
       insert into delivery_challan_items (
         organisation_id, delivery_challan_id, work_id, work_item_id,
         description_snapshot, unit_snapshot, quantity, rate_snapshot,
-        line_amount, position, purchase_order_line_id
+        line_amount, position, purchase_order_line_id,
+        hsn_sac_code, is_service
       )
       select ${organisationId}, ${challanId}, ${workId}, wi.id,
              coalesce(wi.effective_description, wi.description),
@@ -947,13 +1138,19 @@ export async function writeLines(
              coalesce(wi.effective_unit_rate, wi.effective_rate),
              (requested.quantity
                * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
-             requested.position, requested.purchase_order_line_id
+             requested.position, requested.purchase_order_line_id,
+             requested.hsn_sac_code, requested.is_service::boolean
       from unnest(
         ${itemLines.map((entry) => entry.line.workItemId)}::uuid[],
         ${itemLines.map((entry) => entry.line.quantity)}::numeric(18,3)[],
         ${itemLines.map((entry) => entry.position)}::int[],
-        ${itemLines.map((entry) => entry.line.purchaseOrderLineId)}::uuid[]
-      ) as requested(work_item_id, quantity, position, purchase_order_line_id)
+        ${itemLines.map((entry) => entry.line.purchaseOrderLineId)}::uuid[],
+        ${itemLines.map((entry) => entry.line.statutory.hsnSacCode)}::text[],
+        ${itemLines.map((entry) => booleanText(entry.line.statutory.isService))}::text[]
+      ) as requested(
+        work_item_id, quantity, position, purchase_order_line_id,
+        hsn_sac_code, is_service
+      )
       join work_items wi on wi.id = requested.work_item_id
         and wi.work_id = ${workId} and wi.deleted_at is null
       returning work_item_id
@@ -1644,7 +1841,10 @@ export function registerChallanRoutes(
       const detail = await tenant(async (tx) => {
         await assertStandaloneChallanAccess(tx, user.id);
         await assertStandaloneChallanDate(tx, body.challanDate);
-        const consignee = await loadStandaloneConsignee(tx, body.consigneeContactId);
+        const { consignee, gstin: contactGstin } = await loadStandaloneConsignee(
+          tx,
+          body.consigneeContactId,
+        );
 
         // One open draft per consignee (the partial unique index of 0056
         // is the arbiter): the 409 names the existing draft so the client
@@ -1663,15 +1863,23 @@ export function registerChallanRoutes(
           );
         }
 
+        const statutory = normaliseChallanStatutory(body, contactGstin);
         const [created] = await tx<{ id: string }[]>`
           insert into delivery_challans (
             organisation_id, work_id, challan_kind, consignee_contact_id,
-            challan_date, prefix, consignee_snapshot, created_by_user_id
+            challan_date, prefix, consignee_snapshot, created_by_user_id,
+            movement_reason, consignee_gstin, transporter_id, transporter_name,
+            vehicle_number, transport_doc_number, transport_doc_date,
+            transport_distance_km
           )
           values (
             ${organisationId}, null, 'standalone', ${body.consigneeContactId},
             ${body.challanDate}, ${body.prefix},
-            ${jsonb(tx, consignee)}, ${user.id}
+            ${jsonb(tx, consignee)}, ${user.id},
+            ${statutory.movementReason}, ${statutory.consigneeGstin},
+            ${statutory.transporterId}, ${statutory.transporterName},
+            ${statutory.vehicleNumber}, ${statutory.transportDocNumber},
+            ${statutory.transportDocDate}, ${statutory.transportDistanceKm}
           )
           returning id
         `.catch((error: unknown) => {
@@ -1747,13 +1955,25 @@ export function registerChallanRoutes(
         await assertStandaloneChallanAccess(tx, user.id);
         requireStatus(challan, 'draft');
         await assertStandaloneChallanDate(tx, body.challanDate);
-        const consignee = await loadStandaloneConsignee(tx, body.consigneeContactId);
+        const { consignee, gstin: contactGstin } = await loadStandaloneConsignee(
+          tx,
+          body.consigneeContactId,
+        );
+        const statutory = normaliseChallanStatutory(body, contactGstin);
         const linesBefore = await readLineInputs(tx, id);
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
               consignee_contact_id = ${body.consigneeContactId},
-              consignee_snapshot = ${jsonb(tx, consignee)}
+              consignee_snapshot = ${jsonb(tx, consignee)},
+              movement_reason = ${statutory.movementReason},
+              consignee_gstin = ${statutory.consigneeGstin},
+              transporter_id = ${statutory.transporterId},
+              transporter_name = ${statutory.transporterName},
+              vehicle_number = ${statutory.vehicleNumber},
+              transport_doc_number = ${statutory.transportDocNumber},
+              transport_doc_date = ${statutory.transportDocDate},
+              transport_distance_km = ${statutory.transportDistanceKm}
           where id = ${id}
         `.catch((error: unknown) => {
           if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -1771,12 +1991,18 @@ export function registerChallanRoutes(
             challanDate: challan.challan_date,
             prefix: challan.prefix,
             consigneeContactId: challan.consignee_contact_id,
+            movementReason: challan.movement_reason,
+            consigneeGstin: challan.consignee_gstin,
+            vehicleNumber: challan.vehicle_number,
             items: linesBefore,
           },
           {
             challanDate: body.challanDate,
             prefix: body.prefix,
             consigneeContactId: body.consigneeContactId,
+            movementReason: statutory.movementReason,
+            consigneeGstin: statutory.consigneeGstin,
+            vehicleNumber: statutory.vehicleNumber,
             items: await readLineInputs(tx, id),
           },
         );
@@ -2329,6 +2555,23 @@ export function registerChallanRoutes(
         // cancelled — the MB must be cancelled first (the 0024 database
         // guard backstops this against every writer).
         await assertSourceNotBilled(tx, 'delivery_challan', id);
+        // An e-way bill moves THIS challan; cancelling it under a live
+        // movement document would leave the e-way bill moving a cancelled
+        // consignment. The e-way bill goes first — the same interlock the
+        // invoice cancel path enforces (tax-invoices/cancel.ts). The
+        // invoice path carries no DB backstop for this and neither does the
+        // challan path; both refuse it at the route.
+        const [liveEwb] = await tx<{ id: string; ewb_number: string | null }[]>`
+          select id, ewb_number from eway_bills
+          where delivery_challan_id = ${id} and status <> 'cancelled'
+        `;
+        if (liveEwb) {
+          throw httpError(
+            409,
+            'EWAY_BILL_LIVE',
+            `E-way bill ${liveEwb.ewb_number ?? liveEwb.id} still moves this challan; cancel it first.`,
+          );
+        }
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},

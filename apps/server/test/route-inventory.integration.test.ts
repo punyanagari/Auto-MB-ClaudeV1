@@ -131,6 +131,7 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   // --- Bounded by the parent document -------------------------------------
   ['GET /api/tax-invoices/:id/credit-notes', 'the credit notes against one invoice'],
   ['GET /api/tax-invoices/:id/eway-bills', 'the e-way bills of one invoice'],
+  ['GET /api/challans/:id/eway-bills', 'the e-way bills of one delivery challan'],
   ['GET /api/challans/:id/correction-notices', 'the notices against one challan'],
 
   // --- Not registers at all -----------------------------------------------

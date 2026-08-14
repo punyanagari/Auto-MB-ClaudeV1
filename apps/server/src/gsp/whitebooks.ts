@@ -424,11 +424,17 @@ function normaliseEway(
   rawTexts: readonly string[],
   value: unknown,
 ): Omit<EwayBillProviderEvidence, 'rawResponse'> {
+  // A certified response carries a `Status`, and a bill that is not `ACT`
+  // must never be recorded as one that is. ADR-0013 reuses this adapter
+  // AS-IS on the new direct-generation path; the certification that would
+  // establish that path's response shape has not been re-run, so relaxing
+  // the requirement now would record a status-less answer as a live bill
+  // on the strength of an assumption. A genuinely status-less certified
+  // response is handled after re-certification, not before.
   const providerStatus = textValue(value, ['Status']);
   if (providerStatus === null) {
     throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
-  }
-  if (providerStatus.toUpperCase() !== 'ACT') {
+  } else if (providerStatus.toUpperCase() !== 'ACT') {
     throw new StatutoryProviderError(
       'WHITEBOOKS_EWB_NOT_ACTIVE',
       'unknown',
@@ -849,6 +855,36 @@ export class WhitebooksProvider implements StatutoryProvider {
       {
         query: { email: this.config.email, irp: this.config.irp },
         headers: await this.#irpHeaders(input.gstin),
+        body: input.payloadJson,
+        mutation: true,
+      },
+    );
+    if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_EMPTY', 'unknown');
+    return withRawResponse(result.raw, () => ({
+      ...normaliseEway(result.rawTexts, result.parsed),
+      rawResponse: result.raw,
+    }));
+  }
+
+  /** Direct generation on the e-way bill API, for a movement with no IRN
+   * behind it (ADR-0013).
+   *
+   * It rides the DEDICATED e-way credential pair rather than the
+   * e-invoice one — the same pair `cancelEwayBill` uses and the sandbox
+   * certification of 12 August proved against
+   * `/ewaybillapi/v1.03/authenticate` — because this endpoint lives on the
+   * e-way bill API rather than behind the IRP. */
+  async generateEwayBill(input: {
+    readonly gstin: string;
+    readonly payloadJson: string;
+  }): Promise<EwayBillProviderEvidence> {
+    await this.#authenticateEway(input.gstin);
+    const result = await this.#request(
+      'POST',
+      '/ewaybillapi/v1.03/ewayapi/genewaybill',
+      {
+        query: { email: this.config.email, irp: this.config.irp },
+        headers: this.#ewayCommonHeaders(input.gstin),
         body: input.payloadJson,
         mutation: true,
       },

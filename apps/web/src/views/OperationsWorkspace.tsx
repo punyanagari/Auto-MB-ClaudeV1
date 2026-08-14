@@ -1343,6 +1343,7 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 canIssue={canIssue}
                 canCancel={canCancel}
+                canManageStatutory={canManageStatutory}
                 openChallanId={view.name === 'delivery-challan' ? view.challanId : null}
                 onOpenChallan={(challanId) => {
                   navigate(

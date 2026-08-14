@@ -8,7 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
   Contact,
-  EwayBillDetailResponse,
+  EwayBillListResponse,
   MeasurementBookDetailResponse,
   PurchaseOrderDetailResponse,
   TaxInvoiceDetailResponse,
@@ -98,7 +98,6 @@ const BUYER_ADDRESS = 'DRM Office, State Entry Road, New Delhi, 110055';
 const VENDOR_GSTIN = '27AABCB1234C1ZP';
 const SERVICE_DESCRIPTION = 'Works contract services for signalling installation';
 const SAC = '995421';
-const TRANSPORTER_ID = '07ABCDE1234F1Z5';
 
 let admin: Sql;
 let app: FastifyInstance;
@@ -127,7 +126,6 @@ let record2Id: string;
 let mb1Id: string;
 let mb2Id: string;
 let invoice1Id: string;
-let ewayBillId: string;
 
 interface CookieJar {
   cookie: string;
@@ -1095,8 +1093,17 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
     expect(detail.signedQr).toBe('signed-qr-jws-payload');
   });
 
-  it('moves the invoice on an e-way bill: draft, NIC payload, NIC response', async () => {
-    const created = await authed(owner, {
+  it('raises no e-way bill: this railway invoice supplies services', async () => {
+    // The 2026-08-10 disposition, surviving ADR-0013 intact. This Work's
+    // invoice is the CUMULATIVE shape — one SAC service line — and an
+    // e-way bill moves goods. NIC states the same rule and enforces it
+    // (error 4009, observed live in the 12 August sandbox run), so the
+    // refusal comes at the moment the bill would be drafted rather than
+    // after a clerk has filled in a lorry's registration number.
+    //
+    // The generation path that a goods document DOES take is proved in
+    // eway-bills.integration.test.ts, on both source documents.
+    const refused = await authed(owner, {
       method: 'POST',
       url: `/api/tax-invoices/${invoice1Id}/eway-bills`,
       organisationId,
@@ -1107,62 +1114,18 @@ describe('6 — the cumulative tax invoice, the IRP, and the e-way bill', () => 
         toPincode: '110055',
       },
     });
-    expect(created.statusCode, created.body).toBe(201);
-    ewayBillId = created.json<EwayBillDetailResponse>().ewayBill.id;
-    expect(created.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
-      taxInvoiceId: invoice1Id,
-      invoiceNumber: 'P1026001',
-      status: 'draft',
-      vehicleNumber: null,
-    });
-
-    // Service-invoice EWB uses the Whitebooks generate-by-IRN surface.
-    // With no provider configured, no standalone SAC-as-goods payload is exposed.
-    const incomplete = await authed(owner, {
-      method: 'GET',
-      url: `/api/eway-bills/${ewayBillId}/nic-payload`,
-      organisationId,
-    });
-    expect(incomplete.statusCode).toBe(409);
-    expect(incomplete.json<{ code: string }>().code).toBe(
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
       'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
     );
 
-    const edited = await authed(owner, {
-      method: 'PUT',
-      url: `/api/eway-bills/${ewayBillId}`,
+    const bills = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${invoice1Id}/eway-bills`,
       organisationId,
-      payload: {
-        transportMode: 'road',
-        distanceKm: 25,
-        fromPincode: '110002',
-        toPincode: '110055',
-        transporterId: TRANSPORTER_ID,
-        transporterName: 'Sharma Roadways',
-        vehicleNumber: 'DL01AB1234',
-      },
     });
-    expect(edited.statusCode, edited.body).toBe(200);
-
-    const generated = await authed(owner, {
-      method: 'POST',
-      url: `/api/eway-bills/${ewayBillId}/nic-response`,
-      organisationId,
-      payload: {
-        ewbNumber: '123456789012',
-        ewbDate: '2026-08-09T12:00:00.000Z',
-        validUntil: '2026-08-10T23:59:59.000Z',
-        ewbDateText: '09/08/2026 17:30:00',
-        validUntilText: '10/08/2026 23:59:59',
-      },
-    });
-    expect(generated.statusCode, generated.body).toBe(200);
-    expect(generated.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
-      status: 'generated',
-      ewbNumber: '123456789012',
-      ewbDate: '2026-08-09T12:00:00.000Z',
-      validUntil: '2026-08-10T23:59:59.000Z',
-    });
+    expect(bills.statusCode, bills.body).toBe(200);
+    expect(bills.json<EwayBillListResponse>().ewayBills).toEqual([]);
   });
 });
 

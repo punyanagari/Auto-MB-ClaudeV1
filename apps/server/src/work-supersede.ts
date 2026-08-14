@@ -125,7 +125,9 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   purchase_order_lines: 'lines of a purchase order, which blocks',
   tax_invoice_lines: 'lines of a tax invoice, which blocks',
   tax_invoice_renders: 'render history of a tax invoice, which blocks',
-  eway_bills: 'the e-way bill of a tax invoice, which blocks',
+  eway_bills:
+    'the e-way bill of a tax invoice or a standalone delivery challan, either of which blocks',
+  eway_bill_renders: 'render history of an e-way bill, which blocks',
   statutory_provider_operations:
     'portal evidence for an invoice, credit note or e-way bill, each of which blocks',
   // The rule's own bookkeeping: it points at both ends of the change, and

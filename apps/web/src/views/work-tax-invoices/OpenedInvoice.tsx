@@ -7,7 +7,7 @@ import type {
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../../api.js';
 import { CreditNotesPanel } from './CreditNotesPanel.js';
-import { EwayBillsPanel } from './EwayBillsPanel.js';
+import { EwayBillsPanel } from '../EwayBillsPanel.js';
 import { InvoiceCancelPanel, InvoiceDetail } from './InvoiceDetail.js';
 import { IrpPanel } from './IrpPanel.js';
 import { type ActRunner } from './shared.js';
@@ -66,6 +66,19 @@ export function OpenedInvoice({
   onEwayBillsChanged,
 }: OpenedInvoiceProps) {
   const invoice = detail.invoice;
+  // The applicability rule ADR-0013 states, read the same way the server
+  // reads it: a CUMULATIVE invoice is one SAC service line by definition,
+  // and an ITEMISED one carries goods when any of its lines does.
+  const invoiceCarriesGoods =
+    invoice.lineShape === 'itemised' && detail.lines.some((line) => !line.isService);
+  // A bill can be RAISED only from a submitted goods invoice; a cancelled
+  // one keeps its history for cancel/reconcile but offers no new Raise.
+  const invoiceEwayEligible = invoice.status === 'submitted' && invoiceCarriesGoods;
+  // The panel is shown for any NON-DRAFT invoice, not only a submitted one:
+  // an invoice cancelled while its e-way bill is still live must keep the
+  // panel so the bill stays cancellable and reconcilable, which is exactly
+  // what the service-only refusal copy promises. A draft never has bills.
+  const showEwayPanel = invoice.status !== 'draft';
   return (
     <section>
       <InvoiceDetail
@@ -112,18 +125,37 @@ export function OpenedInvoice({
         refresh={refresh}
       />
 
-      <EwayBillsPanel
-        api={api}
-        organisationId={organisationId}
-        invoice={invoice}
-        ewayBills={ewayBills}
-        canIssue={canIssue}
-        canCancel={canCancel}
-        canManageStatutory={canManageStatutory}
-        pending={pending}
-        act={act}
-        onEwayBillsChanged={onEwayBillsChanged}
-      />
+      {showEwayPanel && (
+        <EwayBillsPanel
+          api={api}
+          organisationId={organisationId}
+          source={{
+            kind: 'tax_invoice',
+            id: invoice.id,
+            number: invoice.invoiceNumber,
+            // ADR-0013: applicability is a property of the LINES. A
+            // cumulative invoice carries one SAC service line by
+            // definition and can never raise a bill; an itemised one is
+            // asked whether any of its lines is goods. The server holds
+            // the same rule and refuses the same documents. Raising also
+            // requires a SUBMITTED invoice, so a cancelled one is not
+            // eligible even when its lines are goods — its bills stay
+            // visible for cancel/reconcile, but no new Raise is offered.
+            eligible: invoiceEwayEligible,
+            refusal: invoiceCarriesGoods
+              ? null
+              : 'Every line of this invoice is a service. An e-way bill moves goods, so NIC refuses one for a service-only document; historical records stay readable, reconcilable and cancellable.',
+          }}
+          ewayBills={ewayBills}
+          canModify={canModify}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          canManageStatutory={canManageStatutory}
+          pending={pending}
+          act={act}
+          onEwayBillsChanged={onEwayBillsChanged}
+        />
+      )}
 
       {canCancel && (
         <InvoiceCancelPanel

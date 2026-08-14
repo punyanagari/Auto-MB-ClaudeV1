@@ -82,6 +82,7 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}, props = {
       canModify
       canIssue
       canCancel
+      canManageStatutory
       openChallanId={null}
       onOpenChallan={onOpenChallan}
       onOpenWorkChallan={onOpenWorkChallan}
@@ -194,5 +195,102 @@ describe('the Delivery Challan register', () => {
     renderRegister({}, { canModify: false });
     await screen.findByRole('link', { name: 'DC/1' });
     expect(screen.queryByRole('button', { name: 'New standalone challan' })).toBeNull();
+  });
+
+  it('carries the stage-3b statutory facts on the draft it sends', async () => {
+    const createStandaloneChallan = vi.fn().mockResolvedValue({
+      challan: { ...STANDALONE, id: STANDALONE_ID },
+      items: [],
+      issuedSnapshot: null,
+    });
+    renderRegister({ createStandaloneChallan });
+
+    await screen.findByRole('link', { name: 'DC/1' });
+    await openForm('New standalone challan');
+    fireEvent.change(await screen.findByLabelText('Consignee'), {
+      target: { value: CONTACT_ID },
+    });
+    fireEvent.change(screen.getByLabelText('Challan date'), {
+      target: { value: '2026-08-09' },
+    });
+    fireEvent.change(screen.getByLabelText('Prefix'), { target: { value: 'SDC' } });
+    fireEvent.change(screen.getByLabelText('Line 1 description'), {
+      target: { value: 'Relay casing' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), {
+      target: { value: 'Nos' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 quantity'), {
+      target: { value: '10' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 rate'), {
+      target: { value: '125.00' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 HSN or SAC code'), {
+      target: { value: '85444999' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 goods or service'), {
+      target: { value: 'goods' },
+    });
+    await openForm('Statutory movement facts (for an e-way bill)');
+    fireEvent.change(screen.getByLabelText('Reason for the movement'), {
+      target: { value: 'job_work' },
+    });
+    fireEvent.change(screen.getByLabelText('Vehicle number'), {
+      target: { value: 'dl01ab1234' },
+    });
+    fireEvent.change(screen.getByLabelText('Distance (km)'), {
+      target: { value: '25' },
+    });
+    fireEvent.click(submitButton('Create standalone challan'));
+
+    await waitFor(() => {
+      expect(createStandaloneChallan).toHaveBeenCalledWith(ORG_ID, {
+        challanDate: '2026-08-09',
+        prefix: 'SDC',
+        consigneeContactId: CONTACT_ID,
+        items: [
+          {
+            description: 'Relay casing',
+            unit: 'Nos',
+            quantity: '10',
+            rate: '125.00',
+            hsnSacCode: '85444999',
+            isService: false,
+          },
+        ],
+        movementReason: 'job_work',
+        vehicleNumber: 'DL01AB1234',
+        transportDistanceKm: 25,
+      });
+    });
+  });
+
+  it('refuses a half-stated line classification before the round trip', async () => {
+    renderRegister();
+    await screen.findByRole('link', { name: 'DC/1' });
+    await openForm('New standalone challan');
+    fireEvent.change(await screen.findByLabelText('Consignee'), {
+      target: { value: CONTACT_ID },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 description'), {
+      target: { value: 'Relay casing' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), {
+      target: { value: 'Nos' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 quantity'), {
+      target: { value: '10' },
+    });
+    fireEvent.change(screen.getByLabelText('Line 1 rate'), {
+      target: { value: '125.00' },
+    });
+    // A code with no marker cannot be read: the marker is what says which
+    // of the two the code is, and the server refuses the pair by name.
+    fireEvent.change(screen.getByLabelText('Line 1 HSN or SAC code'), {
+      target: { value: '85444999' },
+    });
+    expect(submitButton('Create standalone challan')).toHaveProperty('disabled', true);
+    expect(screen.getByText(/whether it is goods or a service/)).toBeDefined();
   });
 });
