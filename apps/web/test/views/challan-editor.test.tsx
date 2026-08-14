@@ -582,6 +582,107 @@ describe('ChallanEditor carries the previous challan forward', () => {
   });
 });
 
+describe('ChallanEditor keeps typed input across a late Work code', () => {
+  /** On reload or deep-link the workspace mounts the editor with
+   * workCode '' and substitutes the real code only after its own Work
+   * request resolves. That substitution used to re-run the entire load
+   * and overwrite the form with freshly loaded state, discarding
+   * whatever the operator had typed in between. */
+  function renderWithLateWorkCode(api: ApiClient, onCancel = vi.fn()) {
+    return render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode=""
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+  }
+
+  function rerenderWithWorkCode(
+    rerender: ReturnType<typeof render>['rerender'],
+    api: ApiClient,
+    onCancel = vi.fn(),
+  ) {
+    rerender(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+  }
+
+  it('keeps what the operator typed and fills only the empty prefix', async () => {
+    const workBalance = vi.fn().mockResolvedValue(BALANCE);
+    const api = stubApi({ workBalance });
+    const { rerender } = renderWithLateWorkCode(api);
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe('');
+
+    // The operator starts filling the form before the Work resolves.
+    fireEvent.change(screen.getByLabelText('Consignee name'), {
+      target: { value: 'Sr. DEE (G)' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '1.500' },
+    });
+
+    rerenderWithWorkCode(rerender, api);
+
+    // The typed values survive, the prefix fills in, and the load ran once.
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G)',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('1.500');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1',
+    );
+    expect(workBalance).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a prefix the operator already typed alone', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    const { rerender } = renderWithLateWorkCode(api);
+    await screen.findByText('2.000');
+    fireEvent.change(screen.getByLabelText('Number prefix'), {
+      target: { value: 'DC/2026' },
+    });
+
+    rerenderWithWorkCode(rerender, api);
+
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DC/2026',
+    );
+  });
+
+  it('does not count the filled-in prefix as an edit worth a discard prompt', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(BALANCE) });
+    const onCancel = vi.fn();
+    const { rerender } = renderWithLateWorkCode(api, onCancel);
+    await screen.findByText('2.000');
+
+    rerenderWithWorkCode(rerender, api, onCancel);
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1',
+    );
+
+    // Nothing was typed, so Cancel leaves without asking.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ChallanEditor consignee picker', () => {
   it('prefills the snapshot fields from a chosen master and keeps them editable', async () => {
     const api = stubApi({
