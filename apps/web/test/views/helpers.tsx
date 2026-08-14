@@ -249,7 +249,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWorkInstallations: vi
       .fn<ApiClient['listWorkInstallations']>()
       .mockResolvedValue({ installations: [], itemSummaries: [], nextCursor: null }),
-    listInstallations: vi.fn<ApiClient['listInstallations']>().mockResolvedValue([]),
+    listInstallations: vi
+      .fn<ApiClient['listInstallations']>()
+      .mockResolvedValue({ installations: [], nextCursor: null }),
     recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
     cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
     challanCorrectionEligibility: vi
@@ -624,6 +626,9 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
         ],
       },
     ],
+    // The Work read carries the Installations tab's tally, so the Work
+    // page never asks the serial-expanded list for a badge.
+    installationCounts: { recorded: 0, cancelled: 0 },
   };
 }
 

@@ -302,7 +302,8 @@ describe('Installations', () => {
     renderInstallations(api);
 
     fireEvent.change(
-      await screen.findByLabelText(/Cancellation note for A\/2 on 2026-08-01/),
+      // The date reads the way every other date in the product does.
+      await screen.findByLabelText(/Cancellation note for A\/2 on 01 Aug 2026/),
       { target: { value: 'Wrong item picked' } },
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel record' }));

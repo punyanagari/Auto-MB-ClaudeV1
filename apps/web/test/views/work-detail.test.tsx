@@ -66,6 +66,7 @@ describe('WorkDetail retention', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   };
 
   const ISSUED_CHALLAN = {
@@ -268,6 +269,104 @@ describe('WorkDetail retention', () => {
     expect(screen.getByRole('heading', { name: 'Serial trace' })).toBeTruthy();
     // …and the challan register does not follow it there.
     expect(screen.queryByRole('link', { name: 'DC/1' })).toBeNull();
+  });
+
+  /* The Installations tab's badge and tiles used to come from the record
+     list, which expands every record's serials — so every Work open paid
+     for a serial-joined query to print two integers, and the same query
+     ran again when the tab was opened. The tally rides on the Work read
+     now, and the list belongs to the tab. */
+  it('counts the installation records without reading them', async () => {
+    const listWorkInstallations = vi
+      .fn()
+      .mockResolvedValue({ installations: [], itemSummaries: [], nextCursor: null });
+    const api = retentionApi({
+      getWork: vi.fn().mockResolvedValue({
+        ...WORK_DETAIL,
+        installationCounts: { recorded: 4, cancelled: 1 },
+      }),
+      listWorkInstallations,
+    });
+    renderWorkDetail(api);
+
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    // 4 recorded + 1 cancelled, on the badge, with no record read behind it.
+    expect(
+      within(tabs).getByRole('button', {
+        name: (name: string) => name.startsWith('Installations'),
+      }).textContent,
+    ).toContain('5');
+    expect(listWorkInstallations).not.toHaveBeenCalled();
+
+    await openWorkTab('Installations');
+    await screen.findByText('No installations recorded yet.');
+    // Opened once by the tab itself — not twice, and not before.
+    expect(listWorkInstallations).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves the tally when a record is cancelled, without reloading the page', async () => {
+    const INSTALLATION = {
+      id: '5f1c9a52-0000-4000-8000-0000000000f1',
+      workId: WORK_ID,
+      workItemId: ITEM_A,
+      itemNumber: 'A/1',
+      quantity: '1.000',
+      installedOn: '2026-08-05',
+      locationId: '5f1c9a52-0000-4000-8000-0000000000f2',
+      locationName: 'Nashik Road station',
+      remarks: null,
+      status: 'recorded',
+      cancellationNote: null,
+      serials: [],
+      createdAt: '2026-08-05T00:00:00.000Z',
+      cancelledAt: null,
+    };
+    const listWorkInstallations = vi
+      .fn()
+      .mockResolvedValueOnce({
+        installations: [INSTALLATION],
+        itemSummaries: [],
+        nextCursor: null,
+      })
+      .mockResolvedValue({
+        installations: [{ ...INSTALLATION, status: 'cancelled' }],
+        itemSummaries: [],
+        nextCursor: null,
+      });
+    const api = retentionApi({
+      getWork: vi.fn().mockResolvedValue({
+        ...WORK_DETAIL,
+        installationCounts: { recorded: 1, cancelled: 0 },
+      }),
+      listWorkInstallations,
+      listLocationMasters: vi.fn().mockResolvedValue([]),
+      cancelWorkInstallation: vi
+        .fn()
+        .mockResolvedValue({ ...INSTALLATION, status: 'cancelled' }),
+    });
+    renderWorkDetail(api);
+
+    await openWorkTab('Installations');
+    fireEvent.change(await screen.findByLabelText(/Cancellation note for A\/1/), {
+      target: { value: 'Recorded against the wrong run' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel record' }));
+
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    await waitFor(() => {
+      expect(
+        within(tabs).getByRole('button', {
+          name: (name: string) => name.startsWith('Installations'),
+        }).textContent,
+      ).toContain('1');
+    });
+    // The tile moved with it: nothing recorded, one cancelled.
+    await openWorkTab('Overview');
+    await waitFor(() => {
+      expect(screen.getByText('Cancelled').parentElement?.textContent).toContain('1');
+    });
+    // …and the Work itself was read once, at open.
+    expect(api.getWork).toHaveBeenCalledTimes(1);
   });
 
   it('keeps stage-wise Measurement Books open when loose entries fail', async () => {
@@ -522,6 +621,7 @@ describe('WorkDetail R8 completion panel', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   };
 
   function renderDetail(api: ApiClient, canModify = true) {
@@ -805,6 +905,7 @@ describe('WorkDetail amendments', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   };
 
   function amendedApi(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -1131,6 +1232,7 @@ describe('WorkDetail serial tracking toggle', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   });
 
   function renderDetail(api: ApiClient, canModify: boolean) {
@@ -1268,6 +1370,7 @@ describe('WorkSchedules tax facts', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   });
 
   function renderDetail(api: ApiClient, canModify: boolean) {
@@ -1410,6 +1513,7 @@ describe('WorkDetail PBG requirement', () => {
         items: [],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   });
 
   function renderDetail(detail: unknown) {

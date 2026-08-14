@@ -869,6 +869,7 @@ describe('WorkDetail Issue Challans section', () => {
         ],
       },
     ],
+    installationCounts: { recorded: 0, cancelled: 0 },
   };
 
   function renderWorkDetail(

@@ -184,6 +184,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             ],
           },
         ],
+        // The Work read carries the Installations tab's tally; the tab
+        // loads the records themselves only when it is opened.
+        installationCounts: { recorded: 1, cancelled: 0 },
       }),
     ),
   );
@@ -326,8 +329,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // The tenant-wide register, which reads the same records across Works.
   // Registered before the Work-scoped route above would ever be consulted
   // for it: the two paths are distinct, so neither pattern shadows the
-  // other.
-  await page.route('**/api/installations', (route) =>
+  // other. The trailing `?*` is load-bearing — the register asks for a
+  // page, so every request it makes carries a query string, and a pattern
+  // without one would match none of them.
+  await page.route('**/api/installations?*', (route) =>
     route.fulfill(
       json({
         installations: [

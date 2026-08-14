@@ -1,6 +1,7 @@
-import type { Serial, WorkItem } from '@auto-mb/contracts';
+import type { InstallationCounts, Serial, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
+import { formatDate } from '../format.js';
 import { StatusChip } from '../ui/chip.js';
 import { FormError } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -15,6 +16,9 @@ interface WorkInstallationsProps {
   readonly serialsState: 'loading' | 'unavailable' | 'ready';
   readonly setSerials: Dispatch<SetStateAction<readonly Serial[]>>;
   readonly canRecordSiteEvidence: boolean;
+  /** Hands the Work page the tally behind its tab badge, on load and
+   * after every record or cancel. */
+  readonly onCountsChanged?: (counts: InstallationCounts) => void;
 }
 
 /** What has physically gone in at site under this Work: the quantity
@@ -37,6 +41,7 @@ export function WorkInstallations({
   serialsState,
   setSerials,
   canRecordSiteEvidence,
+  onCountsChanged,
 }: WorkInstallationsProps) {
   return (
     <>
@@ -48,6 +53,7 @@ export function WorkInstallations({
         workItems={workItems}
         serials={serials}
         onSerialsChanged={setSerials}
+        {...(onCountsChanged === undefined ? {} : { onCountsChanged })}
       />
 
       <h2>Serial trace</h2>
@@ -82,7 +88,7 @@ export function WorkInstallations({
                 <td>
                   {serial.installedOn !== null ? (
                     <StatusChip status="installed">
-                      installed {serial.installedOn}
+                      installed {formatDate(serial.installedOn)}
                       {typeof serial.installationLocation === 'string'
                         ? ` at ${serial.installationLocation}`
                         : ''}
