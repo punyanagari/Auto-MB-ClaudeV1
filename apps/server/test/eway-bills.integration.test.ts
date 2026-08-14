@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
@@ -75,8 +76,6 @@ const ORG_GSTIN = '07ABCDE1234F1Z5';
 const ORG_ADDRESS = 'Plot 5, Okhla Phase II, New Delhi, 110020';
 const BUYER_GSTIN = '07AAAGM0289C1ZL';
 const BUYER_ADDRESS = 'DRM Office, State Entry Road, New Delhi, 110055';
-const SERVICE_DESCRIPTION = 'Works contract services for signalling installation';
-const SAC = '995421';
 const TRANSPORTER_ID = '07ABCDE1234F1Z5';
 
 let admin: Sql;
@@ -97,6 +96,7 @@ let railEwbId: string;
 interface CookieJar {
   cookie: string;
 }
+let fakeGotenberg: http.Server | undefined;
 let owner: CookieJar;
 let clerk: CookieJar;
 let viewer: CookieJar;
@@ -218,6 +218,12 @@ async function draftInvoiceOn(
   });
   expect(finalized.statusCode, finalized.body).toBe(200);
 
+  // ITEMISED, and its one line is GOODS. ADR-0013 keys e-way bill
+  // applicability on line content rather than on who the buyer is, so a
+  // Work-backed railway invoice that happens to supply goods is as valid
+  // a movement source as a direct one — and a SAC-only railway invoice
+  // still is not, which `serviceInvoiceOn` below is the proof of. The
+  // line sums to the Measurement Book total the submit route checks.
   const invoice = await authed(owner, {
     method: 'POST',
     url: `/api/works/${workId}/tax-invoices`,
@@ -225,12 +231,21 @@ async function draftInvoiceOn(
     payload: {
       measurementBookId: mbId,
       invoiceDate,
-      sacCode: SAC,
-      serviceDescription: SERVICE_DESCRIPTION,
-      gstRate: '18',
       placeOfSupply: '07',
       reverseChargeApplicable: false,
       buyerContactId,
+      lineShape: 'itemised',
+      lines: [
+        {
+          isService: false,
+          hsnSacCode: '85444999',
+          description: 'Signalling cable, 4 core',
+          quantity: `${quantity}.000`,
+          unitLabel: 'm',
+          unitRate: '100.00',
+          gstRate: '18',
+        },
+      ],
     },
   });
   expect(invoice.statusCode, invoice.body).toBe(201);
@@ -260,7 +275,52 @@ async function createEwayBill(
   });
 }
 
+/** A submitted direct invoice that MOVES GOODS.
+ *
+ * ADR-0013 keys e-way bill applicability on line content, so the movement
+ * document this suite exercises has to sit behind a document that carries
+ * at least one HSN goods line. The service-only refusal is proved
+ * separately by `submittedServiceInvoice` below rather than by making
+ * every case in the suite an accidental test of it. */
 async function submittedDirectInvoice(suffix: string): Promise<string> {
+  const created = await authed(owner, {
+    method: 'POST',
+    url: '/api/tax-invoices',
+    organisationId,
+    payload: {
+      invoiceDate: '2026-08-08',
+      placeOfSupply: '07',
+      reverseChargeApplicable: false,
+      buyerContactId,
+      lineShape: 'itemised',
+      lines: [
+        {
+          isService: false,
+          hsnSacCode: '85444999',
+          description: `Signalling cable, 4 core (${suffix})`,
+          quantity: '100.000',
+          unitLabel: 'm',
+          unitRate: '10.00',
+          gstRate: '18',
+        },
+      ],
+    },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  const id = created.json<TaxInvoiceDetailResponse>().invoice.id;
+  const submitted = await authed(owner, {
+    method: 'POST',
+    url: `/api/tax-invoices/${id}/submit`,
+    organisationId,
+  });
+  expect(submitted.statusCode, submitted.body).toBe(201);
+  return id;
+}
+
+/** A submitted direct invoice whose every line is a SERVICE — the
+ * document the 2026-08-10 disposition was about, and the one NIC refuses
+ * with error 4009. */
+async function submittedServiceInvoice(suffix: string): Promise<string> {
   const created = await authed(owner, {
     method: 'POST',
     url: '/api/tax-invoices',
@@ -338,17 +398,37 @@ beforeAll(async () => {
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-ewb-objects-'));
+  // The printable e-way bill summary renders through the same Gotenberg
+  // path every other document uses, so the suite stands one up.
+  fakeGotenberg = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.setHeader('content-type', 'application/pdf');
+      response.end(Buffer.from(`%PDF-1.4 stub ${runId}`));
+    });
+  });
+  await new Promise<void>((resolve) => {
+    fakeGotenberg?.listen(0, '127.0.0.1', resolve);
+  });
+  const gotenbergAddress = fakeGotenberg.address();
+  if (gotenbergAddress === null || typeof gotenbergAddress === 'string') {
+    throw new Error('stub Gotenberg failed to bind a port');
+  }
+  const gotenbergUrl = `http://127.0.0.1:${String(gotenbergAddress.port)}`;
+
   app = await buildApp({
     databaseUrl: appUrl,
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+    gotenbergUrl,
   });
   providerApp = await buildApp({
     databaseUrl: appUrl,
     authSecret: `integration-secret-${'0'.repeat(32)}`,
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
+    gotenbergUrl,
     statutoryProvider: providerStub,
   });
 
@@ -507,6 +587,15 @@ afterAll(async () => {
   }
   await providerApp?.close();
   await app?.close();
+  await new Promise<void>((resolve) => {
+    if (fakeGotenberg === undefined) {
+      resolve();
+      return;
+    }
+    fakeGotenberg.close(() => {
+      resolve();
+    });
+  });
   await admin?.end();
   if (storageDir !== undefined) {
     await rm(storageDir, { recursive: true, force: true });
@@ -582,15 +671,16 @@ describe('drafting the movement', () => {
 
 describe('the NIC payload and response, road carriage', () => {
   it('refuses the incomplete carriage as the named 400s', async () => {
+    // The payload is assembled for real now (ADR-0013), so an incomplete
+    // carriage is refused where it is missing rather than swallowed by a
+    // blanket 409 that used to answer this route unconditionally.
     const payload = await authed(owner, {
       method: 'GET',
       url: `/api/eway-bills/${roadEwbId}/nic-payload`,
       organisationId,
     });
-    expect(payload.statusCode).toBe(409);
-    expect(payload.json<{ code: string }>().code).toBe(
-      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
-    );
+    expect(payload.statusCode).toBe(400);
+    expect(payload.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
 
     const generated = await authed(owner, {
       method: 'POST',
@@ -608,7 +698,7 @@ describe('the NIC payload and response, road carriage', () => {
     expect(generated.json<{ code: string }>().code).toBe('VEHICLE_REQUIRED');
   });
 
-  it('refuses the legacy standalone SAC-as-goods payload', async () => {
+  it('serves the real NIC payload once the carriage is complete', async () => {
     const edited = await authed(owner, {
       method: 'PUT',
       url: `/api/eway-bills/${roadEwbId}`,
@@ -625,6 +715,9 @@ describe('the NIC payload and response, road carriage', () => {
       'Sharma Roadways',
     );
 
+    // The invoice path generates BY IRN, and this fixture invoice was
+    // never registered at the IRP, so the payload route says exactly that
+    // rather than showing a body that could not be sent.
     const response = await authed(owner, {
       method: 'GET',
       url: `/api/eway-bills/${roadEwbId}/nic-payload`,
@@ -632,9 +725,12 @@ describe('the NIC payload and response, road carriage', () => {
     });
     expect(response.statusCode, response.body).toBe(409);
     expect(response.json<{ code: string }>().code).toBe(
-      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+      'EWAY_IRP_REGISTRATION_REQUIRED',
     );
 
+    // On the app built WITHOUT Whitebooks transport, the missing provider
+    // is the first thing in the way and says so: nothing downstream can
+    // happen without it, whatever else is also incomplete.
     const generate = await authed(owner, {
       method: 'POST',
       url: `/api/eway-bills/${roadEwbId}/generate`,
@@ -642,7 +738,7 @@ describe('the NIC payload and response, road carriage', () => {
     });
     expect(generate.statusCode, generate.body).toBe(409);
     expect(generate.json<{ code: string }>().code).toBe(
-      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+      'STATUTORY_PROVIDER_NOT_CONFIGURED',
     );
   });
 
@@ -786,7 +882,7 @@ describe('the NIC payload and response, road carriage', () => {
 });
 
 describe('rail carriage', () => {
-  it('drafts on the freed slot and refuses the legacy rail payload', async () => {
+  it('drafts on the freed slot and names the missing IRN', async () => {
     const created = await createEwayBill(submittedInvoiceId, {
       transportMode: 'rail',
       transportDocNumber: 'RR-123456',
@@ -805,7 +901,7 @@ describe('rail carriage', () => {
     });
     expect(response.statusCode, response.body).toBe(409);
     expect(response.json<{ code: string }>().code).toBe(
-      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+      'EWAY_IRP_REGISTRATION_REQUIRED',
     );
   });
 
@@ -1170,6 +1266,472 @@ describe('concurrency', () => {
       status: 'generated',
       providerState: 'cancelled',
       providerCancelledAt: '2026-08-12T11:30:00.000Z',
+    });
+  });
+});
+
+/**
+ * ADR-0013: applicability is a property of the LINES, never of the
+ * document kind.
+ *
+ * Three cases, because three is what the rule actually has: a document
+ * whose every line is a service is refused, a mixed one proceeds, and a
+ * goods-only one proceeds. The first is the 2026-08-10 disposition
+ * surviving intact — a SAC-only invoice still cannot raise an e-way bill,
+ * and NIC's own error 4009 is why.
+ */
+describe('applicability keys on line content', () => {
+  it('refuses a service-only invoice with the code it has always had', async () => {
+    const serviceInvoiceId = await submittedServiceInvoice('service only');
+    const refused = await createEwayBill(serviceInvoiceId, roadBody());
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
+  });
+
+  it('admits a MIXED invoice: one goods line among services is enough', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-08-08',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        lineShape: 'itemised',
+        lines: [
+          {
+            isService: true,
+            hsnSacCode: '995461',
+            description: 'Laying and termination',
+            quantity: '1.000',
+            unitLabel: 'job',
+            unitRate: '5000.00',
+            gstRate: '18',
+          },
+          {
+            isService: false,
+            hsnSacCode: '85444999',
+            description: 'Signalling cable, 4 core',
+            quantity: '10.000',
+            unitLabel: 'm',
+            unitRate: '100.00',
+            gstRate: '18',
+          },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const mixedId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+    const submitted = await authed(owner, {
+      method: 'POST',
+      url: `/api/tax-invoices/${mixedId}/submit`,
+      organisationId,
+    });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+
+    const drafted = await createEwayBill(
+      mixedId,
+      roadBody({ vehicleNumber: 'DL01AB1234' }),
+    );
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    expect(drafted.json<EwayBillDetailResponse>().ewayBill.source).toBe('tax_invoice');
+  });
+});
+
+/**
+ * The challan path (ADR-0013, migrations 0075 and 0076).
+ *
+ * A standalone Delivery Challan carrying goods to a private customer is a
+ * goods movement in its own right, so it raises its own e-way bill —
+ * direct generation, no IRN anywhere in it.
+ */
+describe('the standalone delivery challan as an e-way bill source', () => {
+  let goodsChallanId: string;
+  let serviceChallanId: string;
+
+  async function standaloneChallan(
+    lines: readonly Record<string, unknown>[],
+    statutory: Record<string, unknown> = {},
+  ): Promise<string> {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'SDC',
+        consigneeContactId: buyerContactId,
+        items: lines,
+        ...statutory,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json<ChallanDetailResponse>().challan.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    return id;
+  }
+
+  it('records the stage-3b facts on the draft and freezes them at issue', async () => {
+    goodsChallanId = await standaloneChallan(
+      [
+        {
+          description: 'Signalling cable, 4 core',
+          unit: 'm',
+          quantity: '40',
+          rate: '100.00',
+          hsnSacCode: '85444999',
+          isService: false,
+        },
+      ],
+      {
+        movementReason: 'supply',
+        vehicleNumber: 'DL01AB1234',
+        transportDistanceKm: 25,
+      },
+    );
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${goodsChallanId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const body = detail.json<ChallanDetailResponse>();
+    expect(body.challan).toMatchObject({
+      movementReason: 'supply',
+      vehicleNumber: 'DL01AB1234',
+      transportDistanceKm: 25,
+      // Defaulted from the contacts master at draft time, then frozen.
+      consigneeGstin: BUYER_GSTIN,
+      ewayBillEligible: true,
+    });
+    expect(body.items[0]).toMatchObject({
+      hsnSacCode: '85444999',
+      isService: false,
+    });
+
+    // The issued challan is immutable, statutory facts included: the
+    // 0075 guard is what lets the e-way bill path trust them.
+    await expect(
+      admin`
+        update delivery_challans set movement_reason = 'job_work'
+        where id = ${goodsChallanId}
+      `,
+    ).rejects.toThrow(/issued Delivery Challan business data is immutable/);
+  });
+
+  it('refuses a half-stated line classification by name', async () => {
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'SDC',
+        consigneeContactId: buyerContactId,
+        items: [
+          {
+            description: 'Cable drum',
+            unit: 'nos',
+            quantity: '1',
+            rate: '10.00',
+            hsnSacCode: '85444999',
+          },
+        ],
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe('LINE_SHAPE_INVALID');
+  });
+
+  it('raises a bill from the goods challan and generates it directly', async () => {
+    const drafted = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/challans/${goodsChallanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const bill = drafted.json<EwayBillDetailResponse>().ewayBill;
+    expect(bill).toMatchObject({
+      source: 'delivery_challan',
+      deliveryChallanId: goodsChallanId,
+      taxInvoiceId: null,
+    });
+
+    // The payload states everything itself: no IRN, and the items NIC
+    // needs to see that this movement is goods.
+    const payload = await authedOn(providerApp, owner, {
+      method: 'GET',
+      url: `/api/eway-bills/${bill.id}/nic-payload`,
+      organisationId,
+    });
+    expect(payload.statusCode, payload.body).toBe(200);
+    const body = payload.json<{
+      docType: string;
+      subSupplyType: string;
+      toGstin: string;
+      itemList: { hsnCode: string; taxableAmount: string }[];
+    }>();
+    expect(body.docType).toBe('CHL');
+    expect(body.subSupplyType).toBe('1');
+    expect(body.toGstin).toBe(BUYER_GSTIN);
+    expect(body.itemList).toEqual([
+      expect.objectContaining({ hsnCode: '85444999', taxableAmount: '4000' }),
+    ]);
+
+    generateEwayBillDirectProvider.mockResolvedValueOnce({
+      ewbNumber: '881234567890',
+      ewbDateText: '08/08/2026 12:00:00',
+      ewbDate: '2026-08-08T06:30:00.000Z',
+      validUntilText: '09/08/2026 23:59:59',
+      validUntil: '2026-08-09T18:29:59.000Z',
+      rawResponse: '{"ewayBillNo":881234567890}',
+    });
+    const generated = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${bill.id}/generate`,
+      organisationId,
+    });
+    expect(generated.statusCode, generated.body).toBe(200);
+    expect(generated.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      status: 'generated',
+      providerState: 'generated',
+      ewbNumber: '881234567890',
+    });
+    // Direct generation, never the by-IRN door.
+    expect(generateEwayBillDirectProvider).toHaveBeenCalledTimes(1);
+    expect(generateEwayBillProvider).not.toHaveBeenCalled();
+
+    const [operation] = await admin<{ operation: string; status: string }[]>`
+      select operation, status from statutory_provider_operations
+      where eway_bill_id = ${bill.id}
+    `;
+    expect(operation).toEqual({
+      operation: 'generate_eway_bill',
+      status: 'succeeded',
+    });
+
+    // The printable summary: a convenience print that says on its face
+    // that the NIC portal holds the statutory original.
+    const rendered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${bill.id}/render`,
+      organisationId,
+    });
+    expect(rendered.statusCode, rendered.body).toBe(200);
+    expect(rendered.json<EwayBillDetailResponse>().ewayBill).toMatchObject({
+      renderedAvailable: true,
+      renderedVersion: 1,
+    });
+    const pdf = await authedOn(providerApp, owner, {
+      method: 'GET',
+      url: `/api/eway-bills/${bill.id}/pdf`,
+      organisationId,
+    });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-type']).toContain('application/pdf');
+    // Append-only, exactly like tax_invoice_renders.
+    await expect(
+      admin`delete from eway_bill_renders where eway_bill_id = ${bill.id}`,
+    ).rejects.toThrow(/e-way bill renders are append-only/);
+  });
+
+  it('refuses a service-only challan with the same code an invoice gets', async () => {
+    serviceChallanId = await standaloneChallan(
+      [
+        {
+          description: 'Site survey',
+          unit: 'job',
+          quantity: '1',
+          rate: '500.00',
+          hsnSacCode: '995461',
+          isService: true,
+        },
+      ],
+      { movementReason: 'supply' },
+    );
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${serviceChallanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE',
+    );
+  });
+
+  it('refuses a challan that never recorded its statutory facts', async () => {
+    const bareId = await standaloneChallan([
+      {
+        description: 'Cable drum',
+        unit: 'nos',
+        quantity: '1',
+        rate: '10.00',
+        hsnSacCode: '85444999',
+        isService: false,
+      },
+    ]);
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${bareId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'CHALLAN_STATUTORY_FACTS_REQUIRED',
+    );
+  });
+
+  it('refuses a work-scoped user and another tenant alike', async () => {
+    // A standalone challan belongs to no Work, so work scope has nothing
+    // to bind through: organisation-wide reach or nothing (0056's rule).
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned'
+      where organisation_id = ${organisationId}
+        and user_id = (select "id" from auth_users where "email" = ${clerkEmail})
+    `;
+    const scoped = await authed(clerk, {
+      method: 'GET',
+      url: `/api/challans/${goodsChallanId}/eway-bills`,
+      organisationId,
+    });
+    expect(scoped.statusCode, scoped.body).toBe(404);
+    await admin`
+      update organisation_memberships
+      set work_scope = 'all'
+      where organisation_id = ${organisationId}
+        and user_id = (select "id" from auth_users where "email" = ${clerkEmail})
+    `;
+
+    const foreign = await authed(outsider, {
+      method: 'GET',
+      url: `/api/challans/${goodsChallanId}/eway-bills`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(foreign.statusCode).toBe(404);
+  });
+
+  it('holds one live bill per challan and refuses a second source', async () => {
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${goodsChallanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(second.statusCode, second.body).toBe(409);
+    expect(second.json<{ code: string }>().code).toBe('EWAY_BILL_EXISTS');
+
+    // And the database refuses a bill that names both documents, which is
+    // the 0076 CHECK rather than anything the route decides. The invoice
+    // has to be a LIVE submitted one, or 0076's insert guard refuses the
+    // row first and the CHECK never gets to speak.
+    const liveInvoiceId = await submittedServiceInvoice('two sources');
+    await expect(
+      admin`
+        insert into eway_bills (
+          organisation_id, tax_invoice_id, delivery_challan_id, distance_km,
+          from_pincode, to_pincode, vehicle_number, created_by_user_id
+        )
+        values (
+          ${organisationId}, ${liveInvoiceId}, ${serviceChallanId}, 10,
+          '110020', '110055', 'DL01AB1234', ${ownerUserId}
+        )
+      `,
+    ).rejects.toThrow(/eway_bills_source_shape/);
+
+    // Neither is refused by the same CHECK.
+    await expect(
+      admin`
+        insert into eway_bills (
+          organisation_id, distance_km, from_pincode, to_pincode,
+          vehicle_number, created_by_user_id
+        )
+        values (
+          ${organisationId}, 10, '110020', '110055', 'DL01AB1234',
+          ${ownerUserId}
+        )
+      `,
+    ).rejects.toThrow(/eway_bills_source_shape/);
+  });
+
+  it('refuses a bill raised from a work challan or a draft one', async () => {
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'SDC',
+        consigneeContactId: buyerContactId,
+        movementReason: 'supply',
+        items: [
+          {
+            description: 'Cable drum',
+            unit: 'nos',
+            quantity: '1',
+            rate: '10.00',
+            hsnSacCode: '85444999',
+            isService: false,
+          },
+        ],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const draftId = draft.json<ChallanDetailResponse>().challan.id;
+    const onDraft = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draftId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(onDraft.statusCode, onDraft.body).toBe(409);
+    expect(onDraft.json<{ code: string }>().code).toBe('CHALLAN_STATUS_CONFLICT');
+    expect(draft.json<ChallanDetailResponse>().challan.ewayBillEligible).toBe(false);
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${draftId}`,
+      organisationId,
+    });
+
+    // A WORK challan moves under its Work; ADR-0013 admits the standalone
+    // only, and the 0076 insert guard says the same to raw SQL.
+    const workChallan = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-07-01',
+        prefix: `${workCode}DC`,
+        consignee: { name: 'Sr. DEE (G) NR', address: 'Delhi Division' },
+        items: [{ workItemId: itemId, quantity: '1' }],
+      },
+    });
+    expect(workChallan.statusCode, workChallan.body).toBe(201);
+    const workChallanId = workChallan.json<ChallanDetailResponse>().challan.id;
+    const onWork = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${workChallanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(onWork.statusCode, onWork.body).toBe(409);
+    expect(onWork.json<{ code: string }>().code).toBe('CHALLAN_NOT_STANDALONE');
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${workChallanId}`,
+      organisationId,
     });
   });
 });

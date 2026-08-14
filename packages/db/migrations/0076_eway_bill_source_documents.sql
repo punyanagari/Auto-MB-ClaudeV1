@@ -103,6 +103,14 @@ DECLARE
   v_status text;
   v_kind text;
 BEGIN
+  -- A row naming NEITHER source is the source CHECK's to refuse, and it
+  -- says so in one sentence. Reaching the challan branch with a NULL id
+  -- would answer "delivery challan <NULL> is missing", which describes
+  -- the symptom rather than the rule.
+  IF NEW.tax_invoice_id IS NULL AND NEW.delivery_challan_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
   IF NEW.tax_invoice_id IS NOT NULL THEN
     SELECT status INTO v_status FROM tax_invoices
     WHERE organisation_id = NEW.organisation_id AND id = NEW.tax_invoice_id;

@@ -13,6 +13,8 @@ import {
   type TransportMode,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
+import { createHash } from 'node:crypto';
+import type { ObjectStorage } from '@auto-mb/documents';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
@@ -49,7 +51,13 @@ import {
   statutoryJsonDisplay,
   stringifyStatutoryJson,
 } from '../gsp/statutory-json.js';
+import {
+  EWAY_BILL_PDF_TEMPLATE_VERSION,
+  renderEwayBillHtml,
+  type EwayBillRenderEvidence,
+} from '../eway-bill-html.js';
 import { httpError } from '../http.js';
+import { renderPdfViaGotenberg } from '../pdf-render.js';
 import { assertStandaloneChallanAccess, cancellationNote } from './challans.js';
 import {
   audit,
@@ -275,6 +283,52 @@ async function assertBillAccess(
   await assertWorkAccess(tx, userId, row.work_id);
 }
 
+/** The evidence and carriage a printable summary states, taken from the
+ * bill row. Used twice — once to render, once to prove nothing moved
+ * while the renderer ran — so it exists as one function rather than two
+ * hand-kept object literals. */
+function renderInputs(
+  row: EwayBillRow,
+  ewbNumber: string,
+): {
+  evidence: EwayBillRenderEvidence;
+  carriage: {
+    transportMode: string;
+    transporterId: string | null;
+    transporterName: string | null;
+    vehicleNumber: string | null;
+    transportDocNumber: string | null;
+    transportDocDate: string | null;
+    distanceKm: number;
+    fromPincode: string;
+    toPincode: string;
+  };
+} {
+  return {
+    evidence: {
+      ewbNumber,
+      ewbDateText: row.ewb_date_text,
+      validUntilText: row.valid_until_text,
+      provider: row.provider,
+      status: row.status,
+      providerCancelledAtText: row.provider_cancelled_at_text,
+      cancellationNote: row.cancellation_note,
+      legacyEvidenceMissing: row.legacy_evidence_missing,
+    },
+    carriage: {
+      transportMode: row.transport_mode,
+      transporterId: row.transporter_id,
+      transporterName: row.transporter_name,
+      vehicleNumber: row.vehicle_number,
+      transportDocNumber: row.transport_doc_number,
+      transportDocDate: row.transport_doc_date,
+      distanceKm: row.distance_km,
+      fromPincode: row.from_pincode,
+      toPincode: row.to_pincode,
+    },
+  };
+}
+
 /** The NIC payload for a bill, keyed on which door its source opens.
  *
  * The e-way bill ROW is authoritative for the carriage that goes on the
@@ -376,6 +430,8 @@ export function registerEwayBillRoutes(
   app: AppInstance,
   auth: Auth,
   database: Sql,
+  storage: ObjectStorage,
+  gotenbergUrl: string,
   provider?: StatutoryProvider,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
@@ -1578,6 +1634,194 @@ export function registerEwayBillRoutes(
         );
         return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
       });
+    },
+  );
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/eway-bills/:id/render',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: EwayBillDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+
+      // The tax invoice's render posture (0044), at this document's
+      // smaller scale: immutable inputs read in one short transaction,
+      // Gotenberg and object storage run under no database lock, and a
+      // second transaction re-verifies that the facts did not move before
+      // the render is recorded. A print of facts that changed underneath
+      // it is a print of nothing.
+      const prepared = await tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        if (row.status === 'draft') {
+          throw httpError(
+            409,
+            'EWAY_BILL_STATUS_CONFLICT',
+            'A draft e-way bill has no NIC facts to print. Generate it first.',
+          );
+        }
+        if (row.ewb_number === null) {
+          throw httpError(
+            409,
+            'RENDER_INPUT_INVALID',
+            'This e-way bill carries no NIC number, so there is nothing to print.',
+          );
+        }
+        const source = await readSourceFacts(tx, row);
+        return { source, ...renderInputs(row, row.ewb_number) };
+      });
+
+      const sourceSha256 = sha256Hex(
+        stringifyStatutoryJson({
+          source: prepared.source,
+          evidence: prepared.evidence,
+          carriage: prepared.carriage,
+          template: EWAY_BILL_PDF_TEMPLATE_VERSION,
+        }),
+      );
+
+      let html: string;
+      try {
+        html = renderEwayBillHtml(
+          prepared.source,
+          prepared.evidence,
+          prepared.carriage,
+        );
+      } catch (error) {
+        request.log.error({ err: error }, 'e-way bill render input failed');
+        throw httpError(
+          409,
+          'RENDER_INPUT_INVALID',
+          'The recorded e-way bill facts cannot be rendered safely.',
+        );
+      }
+
+      const pdf = await renderPdfViaGotenberg(gotenbergUrl, html, {
+        failureMessage:
+          'The PDF service is unavailable; the e-way bill is unaffected — retry later.',
+        logError: (error) => {
+          request.log.error({ err: error }, 'e-way bill render failed');
+        },
+      });
+
+      const sha256 = createHash('sha256').update(pdf).digest('hex');
+      const objectKey = `${organisationId}/ewb/${id}-${sha256.slice(0, 16)}.pdf`;
+      try {
+        await storage.put(objectKey, pdf);
+      } catch (error) {
+        request.log.error({ err: error }, 'e-way bill render storage failed');
+        throw httpError(
+          502,
+          'RENDER_STORAGE_FAILED',
+          'The rendered PDF could not be stored. The e-way bill and any previous PDF remain unaffected.',
+        );
+      }
+
+      return tenant(async (tx) => {
+        const row = await lockEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        if (row.ewb_number === null) {
+          throw new Error(`e-way bill ${id} lost its NIC number`);
+        }
+        const current = await readSourceFacts(tx, row);
+        const currentHash = sha256Hex(
+          stringifyStatutoryJson({
+            source: current,
+            ...renderInputs(row, row.ewb_number),
+            template: EWAY_BILL_PDF_TEMPLATE_VERSION,
+          }),
+        );
+        if (currentHash !== sourceSha256) {
+          throw httpError(
+            409,
+            'RENDER_SOURCE_CHANGED',
+            'The e-way bill facts changed while it was rendering; the previous PDF remains current — render again.',
+          );
+        }
+        const [nextRender] = await tx<{ version: number }[]>`
+          select coalesce(max(version), 0)::int + 1 as version
+          from eway_bill_renders where eway_bill_id = ${id}
+        `;
+        if (!nextRender) throw new Error('e-way bill render version query failed');
+        await tx`
+          insert into eway_bill_renders (
+            organisation_id, eway_bill_id, version, template_version,
+            source_sha256, object_key, pdf_sha256, created_by_user_id
+          )
+          values (
+            ${organisationId}, ${id}, ${nextRender.version},
+            ${EWAY_BILL_PDF_TEMPLATE_VERSION}, ${sourceSha256},
+            ${objectKey}, ${sha256}, ${user.id}
+          )
+        `;
+        await tx`
+          update eway_bills
+          set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256},
+              rendered_version = ${nextRender.version}
+          where id = ${id}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'eway_bill.rendered',
+          'eway_bills',
+          id,
+          {
+            sha256,
+            renderVersion: nextRender.version,
+            sourceSha256,
+            templateVersion: EWAY_BILL_PDF_TEMPLATE_VERSION,
+          },
+        );
+        return { ewayBill: toEwayBill(await readEwayBill(tx, id)) };
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/eway-bills/:id/pdf',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const rendered = await tenant(async (tx) => {
+        const row = await readEwayBill(tx, id);
+        await assertBillAccess(tx, user.id, row);
+        if (row.rendered_object_key === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'This e-way bill summary has not been rendered yet.',
+          );
+        }
+        const [pointer] = await tx<{ rendered_sha256: string | null }[]>`
+          select rendered_sha256 from eway_bills where id = ${id}
+        `;
+        if (!pointer?.rendered_sha256) {
+          throw new Error(`e-way bill ${id} lost its render digest`);
+        }
+        return { key: row.rendered_object_key, sha256: pointer.rendered_sha256 };
+      });
+      const bytes = await storage.get(rendered.key);
+      const actualSha256 = createHash('sha256').update(bytes).digest('hex');
+      if (actualSha256 !== rendered.sha256) {
+        throw httpError(
+          409,
+          'RENDERED_PDF_INTEGRITY_FAILED',
+          'The retained e-way bill PDF no longer matches its recorded digest.',
+        );
+      }
+      void reply.type('application/pdf');
+      void reply.header('content-disposition', `inline; filename="eway-bill-${id}.pdf"`);
+      return reply.send(bytes);
     },
   );
 }

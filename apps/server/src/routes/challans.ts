@@ -805,6 +805,15 @@ type ResolvedLine =
       readonly statutory: LineStatutoryFacts;
     };
 
+/** The goods marker as an array-safe lexeme. postgres.js serialises a
+ * SINGLE-element boolean array as a scalar boolean, and the `::boolean[]`
+ * cast then fails with "cannot cast type boolean to boolean[]"; text
+ * arrays have no such problem, so the value travels as text and is cast
+ * back in the select list. */
+function booleanText(value: boolean | null): string | null {
+  return value === null ? null : value ? 'true' : 'false';
+}
+
 /** The classification as sent, refusing the half-stated pair by name.
  *
  * The database CHECK (0075) refuses it too, but as a statusless 23514
@@ -1050,7 +1059,8 @@ export async function writeLines(
       select ${organisationId}, ${challanId}, ${workId}, null,
              manual.description, manual.unit, manual.quantity, manual.rate,
              (manual.quantity * manual.rate)::numeric(18,2),
-             manual.position, null, manual.hsn_sac_code, manual.is_service
+             manual.position, null, manual.hsn_sac_code,
+             manual.is_service::boolean
       from unnest(
         ${manualLines.map((entry) => entry.line.description)}::text[],
         ${manualLines.map((entry) => entry.line.unit)}::text[],
@@ -1058,7 +1068,7 @@ export async function writeLines(
         ${manualLines.map((entry) => entry.line.rate)}::numeric(18,2)[],
         ${manualLines.map((entry) => entry.position)}::int[],
         ${manualLines.map((entry) => entry.line.statutory.hsnSacCode)}::text[],
-        ${manualLines.map((entry) => entry.line.statutory.isService)}::boolean[]
+        ${manualLines.map((entry) => booleanText(entry.line.statutory.isService))}::text[]
       ) as manual(
         description, unit, quantity, rate, position, hsn_sac_code, is_service
       )
@@ -1115,14 +1125,14 @@ export async function writeLines(
              (requested.quantity
                * coalesce(wi.effective_unit_rate, wi.effective_rate))::numeric(18,2),
              requested.position, requested.purchase_order_line_id,
-             requested.hsn_sac_code, requested.is_service
+             requested.hsn_sac_code, requested.is_service::boolean
       from unnest(
         ${itemLines.map((entry) => entry.line.workItemId)}::uuid[],
         ${itemLines.map((entry) => entry.line.quantity)}::numeric(18,3)[],
         ${itemLines.map((entry) => entry.position)}::int[],
         ${itemLines.map((entry) => entry.line.purchaseOrderLineId)}::uuid[],
         ${itemLines.map((entry) => entry.line.statutory.hsnSacCode)}::text[],
-        ${itemLines.map((entry) => entry.line.statutory.isService)}::boolean[]
+        ${itemLines.map((entry) => booleanText(entry.line.statutory.isService))}::text[]
       ) as requested(
         work_item_id, quantity, position, purchase_order_line_id,
         hsn_sac_code, is_service

@@ -126,7 +126,14 @@ export function buildEwayBillByIrnPayload(
   carriage: EwayCarriage,
 ): unknown {
   if (source.irn === null) {
-    throw new Error('generation by IRN needs an IRN');
+    // Reachable through the payload-preview route on an invoice that has
+    // not been registered at the IRP, so it is a named refusal rather
+    // than a bare Error the operator reads as a 500.
+    throw httpError(
+      409,
+      'EWAY_IRP_REGISTRATION_REQUIRED',
+      'This invoice has no IRN yet, and the invoice path generates an e-way bill BY IRN. Register the invoice at the IRP first.',
+    );
   }
   return {
     Irn: source.irn,

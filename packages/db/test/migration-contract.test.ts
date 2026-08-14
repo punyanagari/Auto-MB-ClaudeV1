@@ -430,6 +430,11 @@ describe('tenant migration contract', () => {
       [...insertGuard.matchAll(/WHERE organisation_id = NEW\.organisation_id/g)],
     ).toHaveLength(2);
     expect(insertGuard).toContain("v_kind <> 'standalone'");
+    // A row naming neither source defers to the CHECK rather than
+    // reporting a NULL challan as missing.
+    expect(insertGuard).toContain(
+      'NEW.tax_invoice_id IS NULL AND NEW.delivery_challan_id IS NULL',
+    );
     expect(insertGuard).toContain("v_status <> 'issued'");
     // The source is frozen once the bill leaves draft.
     expect(sql).toContain('NEW.delivery_challan_id');
