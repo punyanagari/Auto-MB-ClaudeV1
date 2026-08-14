@@ -564,4 +564,36 @@ describe('Whitebooks E-way Bill transport', () => {
       outcome: 'unknown',
     });
   });
+
+  it('requires an explicit status on the direct generate response too', async () => {
+    // ADR-0013 reuses this adapter AS-IS: the direct-generation path must
+    // not record a status-less answer as a live bill on the strength of an
+    // uncertified assumption about the response shape. A genuinely
+    // status-less certified response is handled after re-certification.
+    const fetchImpl = vi.fn<typeof fetch>((input) => {
+      const url = inputUrl(input);
+      if (url.pathname.endsWith('/authenticate')) {
+        return Promise.resolve(jsonResponse({ status_cd: '1', data: { Status: '1' } }));
+      }
+      // genewaybill answers with a number, date and validity but NO Status.
+      return Promise.resolve(
+        jsonResponse({
+          status_cd: '1',
+          data: {
+            EwbNo: 881234567890,
+            EwbDt: '11/08/2026 12:30:00',
+            EwbValidTill: '12/08/2026 23:59:59',
+          },
+        }),
+      );
+    });
+    const provider = new WhitebooksProvider(baseConfig, fetchImpl);
+
+    await expect(
+      provider.generateEwayBill({ gstin: baseConfig.gstin, payloadJson: '{}' }),
+    ).rejects.toMatchObject({
+      code: 'WHITEBOOKS_EWB_STATUS_MISSING',
+      outcome: 'unknown',
+    });
+  });
 });
