@@ -1,68 +1,56 @@
-import type {
-  Challan,
-  CorrectionNotice,
-  Serial,
-  WorkDetailResponse,
-  WorkItem,
-} from '@auto-mb/contracts';
+import type { Challan, CorrectionNotice, WorkDetailResponse } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
-import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
+import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
 import { FormError } from '../ui/form.js';
-import { DataTable, wrapCell } from '../ui/table.js';
-import { Installations } from './Installations.js';
+import { DataTable } from '../ui/table.js';
 
 interface WorkDeliveriesProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly workId: string;
   readonly work: WorkDetailResponse['work'];
-  readonly workItems: readonly WorkItem[];
   /** Null while the list is still loading — distinct from "none yet". */
   readonly challans: readonly Challan[] | null;
   readonly challansState: 'loading' | 'unavailable' | 'ready';
   readonly correctionNotices: readonly CorrectionNotice[];
   readonly correctionNoticesState: 'loading' | 'unavailable' | 'ready';
   readonly setCorrectionNotices: Dispatch<SetStateAction<readonly CorrectionNotice[]>>;
-  readonly serials: readonly Serial[];
-  readonly serialsState: 'loading' | 'unavailable' | 'ready';
-  readonly setSerials: Dispatch<SetStateAction<readonly Serial[]>>;
   readonly canCreateDocuments: boolean;
-  readonly canRecordSiteEvidence: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
+  /** Switches the Work page to its Installations tab, where the records
+   * that used to sit below the challans now live. */
+  readonly onOpenInstallations: () => void;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
 }
 
-/** What has physically been delivered under this Work: the Delivery
- * Challans and any correction notices against them, the installations
- * recorded on site, and the serial trace. Split out of WorkDetail, which
- * was rendering eleven areas from one file. */
+/** The movement documents recorded under this Work: the Delivery Challans
+ * and any correction notices raised against them. Split out of WorkDetail,
+ * which was rendering eleven areas from one file; the installation records
+ * and the serial trace that used to stack below these moved on again, to
+ * the Installations tab (`WorkInstallations`). */
 export function WorkDeliveries({
   api,
   organisationId,
   workId,
   work,
-  workItems,
   challans,
   challansState,
   correctionNotices,
   correctionNoticesState,
   setCorrectionNotices,
-  serials,
-  serialsState,
-  setSerials,
   canCreateDocuments,
-  canRecordSiteEvidence,
   onNewChallan,
   onOpenChallan,
+  onOpenInstallations,
   pending,
   act,
 }: WorkDeliveriesProps) {
@@ -92,10 +80,25 @@ export function WorkDeliveries({
             </Button>
           ))}
       </CardHeader>
+      {/* Always here, not only in the failure branch. The installation
+          records and the serial trace used to be the tail of this tab, and
+          an operator who knew where they were will look here first; a
+          pointer that appears only when the challan register happens to be
+          broken is a pointer nobody sees. */}
+      <p className="m-0 text-sm text-muted-foreground">
+        Installation records and the serial trace moved to the{' '}
+        <a
+          href={workHash(workId, 'installations')}
+          onClick={navigateOnClick(onOpenInstallations)}
+        >
+          Installations tab
+        </a>
+        .
+      </p>
       {challansState === 'unavailable' ? (
         <FormError>
           Delivery Challans could not be loaded. Installation and serial information
-          remain available below.
+          remain available on the Installations tab.
         </FormError>
       ) : challansState === 'loading' || challans === null ? (
         <p className="text-muted-foreground" role="status">
@@ -227,69 +230,6 @@ export function WorkDeliveries({
           </DataTable>
         </>
       ) : null}
-
-      <Installations
-        api={api}
-        organisationId={organisationId}
-        workId={workId}
-        canRecordEvidence={canRecordSiteEvidence && serialsState === 'ready'}
-        workItems={workItems}
-        serials={serials}
-        onSerialsChanged={setSerials}
-      />
-
-      <h2>Serial trace</h2>
-      {serialsState === 'loading' ? (
-        <p className="text-muted-foreground" role="status">
-          Loading serial trace…
-        </p>
-      ) : serialsState === 'unavailable' ? (
-        <FormError>
-          The serial trace could not be loaded. Installation recording remains read-only
-          until it is available.
-        </FormError>
-      ) : serials.length > 0 ? (
-        <DataTable>
-          <caption className="sr-only">
-            Every serial number delivered under this Work
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Serial</th>
-              <th scope="col">Item</th>
-              <th scope="col">Challan</th>
-              <th scope="col">Installation</th>
-            </tr>
-          </thead>
-          <tbody>
-            {serials.map((serial) => (
-              <tr key={serial.id}>
-                <th scope="row">{serial.serialNumber}</th>
-                <td className={wrapCell}>{serial.itemDescription}</td>
-                <td>{serial.challanNumber ?? '—'}</td>
-                <td>
-                  {serial.installedOn !== null ? (
-                    <StatusChip status="installed">
-                      installed {serial.installedOn}
-                      {typeof serial.installationLocation === 'string'
-                        ? ` at ${serial.installationLocation}`
-                        : ''}
-                    </StatusChip>
-                  ) : (
-                    <span className="text-muted-foreground">not installed</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
-      ) : (
-        <p className="text-muted-foreground">
-          No serial numbers recorded yet. Serials are recorded on the challan itself —
-          on the draft for items flagged for serial traceability, which the server holds
-          the issue for until every unit has one, and after issue for the rest.
-        </p>
-      )}
     </>
   );
 }

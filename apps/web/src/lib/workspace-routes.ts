@@ -27,6 +27,11 @@ export type WorkspaceView =
   | { name: 'quotations' }
   | { name: 'approvals' }
   | { name: 'serials' }
+  /** The installation module's own register: every recorded installation
+   * across the Works the caller may see. A record still opens through its
+   * Work (`work` above, Installations tab) — this is the way in when the
+   * question is about a date or a location rather than a contract. */
+  | { name: 'installations' }
   /** Tenant-wide record search. The query is part of the route, so a
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
@@ -42,13 +47,22 @@ export interface WorkspaceRoute {
   readonly mastersTab?: MastersTab;
 }
 
-/** Kept in sync with WorkDetail's WORK_TABS — the routes module owns the
- * parse so a stale tab name in a hash degrades to Overview instead of
- * crashing the restore. */
-const WORK_TAB_NAMES = [
+/** Kept in sync with WorkDetail's `WORK_TABS`, and held to it by
+ * `apps/web/test/workspace-routes.test.ts`, which imports both lists and
+ * asserts they are the same set. The duplication is deliberate — the
+ * parser must not import a view — but a duplicate that nothing checks is
+ * a drift waiting to happen, and the drift is silent: a tab added to the
+ * page and not to this list is simply unreachable by URL.
+ *
+ * A stale tab name in an otherwise well-formed Work fragment degrades to
+ * that Work's Overview rather than to the Dashboard: the id in the hash is
+ * the durable half of the address, and a renamed section is no reason to
+ * throw away the Work the operator asked for. */
+export const WORK_TAB_NAMES = [
   'overview',
   'schedules',
   'deliveries',
+  'installations',
   'procurement',
   'issues',
   'measurement',
@@ -128,6 +142,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/approvals';
     case 'serials':
       return '#/serials';
+    case 'installations':
+      return '#/installations';
     case 'search':
       // encodeURIComponent escapes '/' as %2F, and the parser splits the
       // raw fragment before decoding, so a query containing a slash stays
@@ -249,6 +265,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'quotations':
     case 'approvals':
     case 'serials':
+    case 'installations':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;
@@ -298,8 +315,10 @@ function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {
     }
     return null;
   }
-  if (third === undefined && isWorkTab(second)) {
-    return { view: { name: 'work', workId }, workTab: second };
-  }
-  return null;
+  if (third !== undefined) return null;
+  // A known section, or the Work's Overview: see WORK_TAB_NAMES above for
+  // why an unrecognised section keeps the Work instead of losing it.
+  return isWorkTab(second)
+    ? { view: { name: 'work', workId }, workTab: second }
+    : { view: { name: 'work', workId } };
 }

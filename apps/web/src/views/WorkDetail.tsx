@@ -12,6 +12,7 @@ import type {
   Challan,
   CorrectionNotice,
   Instrument,
+  InstallationCounts,
   IssueChallan,
   MbEntry,
   PaymentMatrixCategory,
@@ -49,6 +50,7 @@ import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
 import { WorkBillSettlement } from './WorkBillSettlement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
+import { WorkInstallations } from './WorkInstallations.js';
 import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
@@ -86,11 +88,16 @@ interface WorkDetailProps {
 }
 
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
- * now answers for itself, and Overview summarises the rest. */
-const WORK_TABS = [
+ * now answers for itself, and Overview summarises the rest.
+ *
+ * Exported so `lib/workspace-routes.ts`, which parses a tab name out of a
+ * hash fragment, can be held to exactly this list by a test rather than by
+ * a comment asking the next author to remember. */
+export const WORK_TABS = [
   'overview',
   'schedules',
   'deliveries',
+  'installations',
   'procurement',
   'issues',
   'measurement',
@@ -106,6 +113,7 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   overview: 'Overview',
   schedules: 'Schedules & items',
   deliveries: 'Deliveries',
+  installations: 'Installations',
   procurement: 'Procurement',
   issues: 'Issues',
   measurement: 'Measurement',
@@ -133,6 +141,11 @@ type RelatedState = 'loading' | 'unavailable' | 'ready';
 const ALL_RELATED_LABELS = Object.values(RELATED);
 const RELATED_BY_TAB: Partial<Record<WorkTab, readonly RelatedLabel[]>> = {
   deliveries: [RELATED.challans],
+  // Installations is deliberately absent: the tab loads its own records
+  // when it is opened, so the Work page has no pending read to gate it on
+  // and no failure of its own to report. Its count comes off the Work read
+  // (`installationCounts`), which is why opening a Work no longer costs a
+  // serial-expanded installation list.
   procurement: [RELATED.purchaseOrders],
   issues: [RELATED.issueChallans],
   measurement: [RELATED.measurements],
@@ -354,6 +367,19 @@ export function WorkDetail({
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
   const [serials, setSerials] = useState<readonly Serial[]>([]);
+  /** The Installations tab's tally, for its badge and its summary tiles.
+   *
+   * It arrives on the Work read rather than from the records, because the
+   * records are the one list on this page that is expensive to count: the
+   * installation list expands every record's serials, so a Work opened by
+   * someone who never touches the tab was paying a serial-joined query for
+   * two integers. The tab still owns its own load, its retry and its
+   * refresh-after-record — it just no longer duplicates one the page has
+   * already made. `null` only until the Work itself arrives; recording or
+   * cancelling on the tab patches it back through `onCountsChanged`, so
+   * the badge tracks the tab without a page reload. */
+  const [installationCounts, setInstallationCounts] =
+    useState<InstallationCounts | null>(null);
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
@@ -411,6 +437,7 @@ export function WorkDetail({
     setMbEntries([]);
     setBills([]);
     setSerials([]);
+    setInstallationCounts(null);
     setAmendments([]);
     setCorrectionNotices([]);
     setLoadError(null);
@@ -426,7 +453,9 @@ export function WorkDetail({
     api
       .getWork(organisationId, workId)
       .then((loaded) => {
-        if (!cancelled) setDetail(loaded);
+        if (cancelled) return;
+        setDetail(loaded);
+        setInstallationCounts(loaded.installationCounts);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -858,6 +887,24 @@ export function WorkDetail({
             : '—',
       },
     ],
+    installations: [
+      // An em dash until the count is actually known. A zero the page has
+      // not measured reads as "nothing installed", which is a different
+      // claim from "not read yet".
+      {
+        label: 'Recorded',
+        value: installationCounts === null ? '—' : String(installationCounts.recorded),
+      },
+      {
+        label: 'Cancelled',
+        value: installationCounts === null ? '—' : String(installationCounts.cancelled),
+      },
+      {
+        label: 'Serials traced',
+        value:
+          relatedStateFor([RELATED.serials]) === 'ready' ? String(serials.length) : '—',
+      },
+    ],
     procurement: [
       {
         label: 'Issued',
@@ -898,6 +945,10 @@ export function WorkDetail({
     schedules: relatedStateForTab('schedules') === 'ready' ? workItems.length : null,
     deliveries:
       relatedStateForTab('deliveries') === 'ready' ? (challans?.length ?? 0) : null,
+    installations:
+      installationCounts === null
+        ? null
+        : installationCounts.recorded + installationCounts.cancelled,
     procurement:
       relatedStateForTab('procurement') === 'ready'
         ? (purchaseOrders?.length ?? 0)
@@ -1316,21 +1367,33 @@ export function WorkDetail({
           organisationId={organisationId}
           workId={workId}
           work={work}
-          workItems={workItems}
           challans={challans}
           challansState={relatedStateFor([RELATED.challans])}
           correctionNotices={correctionNotices}
           correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
           setCorrectionNotices={setCorrectionNotices}
+          canCreateDocuments={canCreateDocuments}
+          onNewChallan={onNewChallan}
+          onOpenChallan={onOpenChallan}
+          onOpenInstallations={() => {
+            setTab('installations');
+          }}
+          pending={pending}
+          act={act}
+        />
+      )}
+
+      {tab === 'installations' && (
+        <WorkInstallations
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
           serials={serials}
           serialsState={relatedStateFor([RELATED.serials])}
           setSerials={setSerials}
-          canCreateDocuments={canCreateDocuments}
           canRecordSiteEvidence={canRecordSiteEvidence}
-          onNewChallan={onNewChallan}
-          onOpenChallan={onOpenChallan}
-          pending={pending}
-          act={act}
+          onCountsChanged={setInstallationCounts}
         />
       )}
 

@@ -300,8 +300,8 @@ async function readPage(url: string, arrayKey: string): Promise<Page> {
   };
 }
 
-/** The six registers, each named by its route, its array property, and
- * whether the route already carries a query string. */
+/** Every keyset-paginated register, each named by its route, its array
+ * property, and whether the route already carries a query string. */
 const REGISTERS = [
   {
     name: 'the Work challan register',
@@ -326,6 +326,11 @@ const REGISTERS = [
   {
     name: 'the installation register',
     url: () => `/api/works/${workId}/installations`,
+    key: 'installations',
+  },
+  {
+    name: 'the tenant-wide installation register',
+    url: () => '/api/installations',
     key: 'installations',
   },
   { name: 'the approvals queue', url: () => '/api/approvals', key: 'approvals' },

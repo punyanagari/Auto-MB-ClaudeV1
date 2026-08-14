@@ -37,7 +37,12 @@ import {
   renderNumberTemplate,
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
+import {
+  cursorRowId,
+  keysetPage,
+  sqlLimit,
+  workScopedCursorRowId,
+} from '../pagination.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertSourceNotBilled } from './measurement-books/index.js';
@@ -1529,8 +1534,16 @@ export function registerChallanRoutes(
         // was ascending under two descending keys, which no single row
         // comparison can express, so it is descending now — a difference
         // only two challans issued in the same instant on the same date
-        // could ever see.
-        const cursor = await cursorRowId(tx, 'delivery_challans', query.cursor);
+        // could ever see. The cursor is proven against the work-scope
+        // predicate as well as the tenant, so an 'assigned'-scoped member
+        // cannot use a forbidden challan's id as a position and read its
+        // date back out of the comparison; see `workScopedCursorRowId`.
+        const cursor = await workScopedCursorRowId(
+          tx,
+          'delivery_challans',
+          query.cursor,
+          { userId: user.id, full },
+        );
         const rows = await tx<
           {
             id: string;

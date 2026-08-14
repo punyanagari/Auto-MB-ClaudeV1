@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { InstallationCountsSchema } from './installations.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -323,6 +324,10 @@ export const WorkDetailResponseSchema = Type.Object(
   {
     work: WorkSchema,
     schedules: Type.Array(WorkScheduleSchema),
+    /** The Work's installation-record tally. Carried on the Work read
+     * because the Work page needs the count on every open and the records
+     * only when their tab is opened; see `InstallationCountsSchema`. */
+    installationCounts: InstallationCountsSchema,
   },
   { additionalProperties: false },
 );

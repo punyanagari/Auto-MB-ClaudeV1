@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
   Installation,
+  InstallationCounts,
   InstallationListResponse,
   LocationKind,
   LocationMaster,
@@ -9,7 +10,7 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { todayIso } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -25,6 +26,18 @@ interface InstallationsProps {
   readonly workItems: readonly WorkItem[];
   readonly serials: readonly Serial[];
   readonly onSerialsChanged: (serials: readonly Serial[]) => void;
+  /** Reports the tally back to the Work page, which carries it on its
+   * tab badge and its summary tiles and reads it from the Work itself
+   * rather than from this list. Called on every load and after every
+   * record or cancel, so the badge tracks the panel without a reload. */
+  readonly onCountsChanged?: (counts: InstallationCounts) => void;
+}
+
+function countsOf(data: InstallationListResponse): InstallationCounts {
+  return {
+    recorded: data.installations.filter((one) => one.status === 'recorded').length,
+    cancelled: data.installations.filter((one) => one.status === 'cancelled').length,
+  };
 }
 
 const LOCATION_KINDS: readonly { value: LocationKind; label: string }[] = [
@@ -51,6 +64,7 @@ export function Installations({
   workItems,
   serials,
   onSerialsChanged,
+  onCountsChanged,
 }: InstallationsProps) {
   const [data, setData] = useState<InstallationListResponse | null>(null);
   const [locations, setLocations] = useState<readonly LocationMaster[]>([]);
@@ -76,6 +90,7 @@ export function Installations({
       .then((loaded) => {
         if (cancelled) return;
         setData(loaded);
+        onCountsChanged?.(countsOf(loaded));
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -88,6 +103,9 @@ export function Installations({
     return () => {
       cancelled = true;
     };
+    // onCountsChanged is the parent's state setter, stable across renders
+    // and deliberately not a dependency: the load is keyed on the Work, not
+    // on who is listening to its tally.
   }, [api, organisationId, workId, loadVersion]);
 
   function retry(): void {
@@ -142,8 +160,9 @@ export function Installations({
       api.listWorkSerials(organisationId, workId),
     ]);
     setData(freshData);
+    onCountsChanged?.(countsOf(freshData));
     onSerialsChanged(freshSerials);
-  }, [api, organisationId, workId, onSerialsChanged]);
+  }, [api, organisationId, workId, onSerialsChanged, onCountsChanged]);
 
   if (loadError !== null) {
     return (
@@ -253,7 +272,7 @@ export function Installations({
               <tr key={installation.id}>
                 <th scope="row">{installation.itemNumber}</th>
                 <td className={numericCell}>{installation.quantity}</td>
-                <td>{installation.installedOn}</td>
+                <td>{formatDate(installation.installedOn)}</td>
                 <td className={wrapCell}>{installation.locationName}</td>
                 <td className={wrapCell}>
                   {installation.serials.length > 0
@@ -263,11 +282,7 @@ export function Installations({
                     : '—'}
                 </td>
                 <td>
-                  {installation.status === 'cancelled' ? (
-                    <StatusChip status="cancelled" />
-                  ) : (
-                    <StatusChip status="installed">recorded</StatusChip>
-                  )}
+                  <StatusChip status={installation.status} />
                   {installation.cancellationNote !== null && (
                     <span className="text-muted-foreground">
                       {' '}
@@ -298,7 +313,7 @@ export function Installations({
                         <Field>
                           <label htmlFor={`cancel-note-${installation.id}`}>
                             Cancellation note for {installation.itemNumber} on{' '}
-                            {installation.installedOn}
+                            {formatDate(installation.installedOn)}
                           </label>
                           <input
                             id={`cancel-note-${installation.id}`}

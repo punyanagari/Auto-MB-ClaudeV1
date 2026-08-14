@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { NextCursorSchema } from './pagination.js';
+import { NextCursorSchema, withKeysetQuery } from './pagination.js';
 import { LocationKindSchema } from './masters.js';
 import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
 
@@ -97,6 +97,90 @@ export const InstallationItemSummarySchema = Type.Object(
   { additionalProperties: false },
 );
 export type InstallationItemSummary = Static<typeof InstallationItemSummarySchema>;
+
+/** How many installation records a Work carries, by lifecycle state.
+ *
+ * Two integers, so the Work page can label and count its Installations
+ * area without reading the records themselves. The list is serial-expanded
+ * — one nested aggregate per record — and a page that only needs a number
+ * should not pay for the numbers' provenance; the Work read already
+ * aggregates installations per item, so this rides along with it. The
+ * records themselves stay on the Installations tab, which loads them when
+ * it is opened. */
+export const InstallationCountsSchema = Type.Object(
+  {
+    recorded: Type.Integer({ minimum: 0 }),
+    cancelled: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type InstallationCounts = Static<typeof InstallationCountsSchema>;
+
+/** One row of the tenant-wide installation register.
+ *
+ * Deliberately NOT the full `Installation`: the register answers "what
+ * went in, where, and under which Work", so it carries the Work's
+ * identity and a serial COUNT rather than the serial list. The record's
+ * own screen — its Work's Installations tab — remains the place the
+ * serial numbers, the remarks and the cancellation note are read. */
+export const InstallationRegisterEntrySchema = Type.Object(
+  {
+    id: UuidSchema,
+    workId: UuidSchema,
+    workCode: Type.String(),
+    workTitle: Type.String(),
+    workItemId: UuidSchema,
+    itemNumber: Type.String(),
+    quantity: DecimalStringSchema,
+    installedOn: DateOnlySchema,
+    /** Snapshot of the master's name at record time, exactly as on the
+     * record itself. */
+    locationName: Type.String(),
+    /** How many serials this record was made against. A cancelled record
+     * keeps its attachment history, so the count stays what it was
+     * recorded with rather than dropping to zero when release returns the
+     * units to the pool. */
+    serialCount: Type.Integer({ minimum: 0 }),
+    status: InstallationStatusSchema,
+  },
+  { additionalProperties: false },
+);
+export type InstallationRegisterEntry = Static<typeof InstallationRegisterEntrySchema>;
+
+/** The register's query: a date window over `installedOn`, plus the two
+ * keyset parameters.
+ *
+ * The window is the only filter, because it is the only one the surface's
+ * stated question needs — "what went in this week, and where" is a date
+ * range and nothing else. Work and status filters are deliberately absent:
+ * a Work's own records are read on the Work, and a register that hid
+ * cancelled records would report what still stands rather than what was
+ * recorded. Both bounds are inclusive; either may be sent alone. */
+export const InstallationRegisterQuerySchema = withKeysetQuery(
+  Type.Object(
+    {
+      installedFrom: Type.Optional(DateOnlySchema),
+      installedTo: Type.Optional(DateOnlySchema),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type InstallationRegisterQuery = Static<typeof InstallationRegisterQuerySchema>;
+
+/** Every installation record in the organisation the caller may see,
+ * newest first. Cancelled records stay listed with their status: a
+ * register that hid them would be a register of what is still true, not
+ * of what was recorded. `nextCursor` pages the list; see `pagination.ts`. */
+export const InstallationRegisterResponseSchema = Type.Object(
+  {
+    installations: Type.Array(InstallationRegisterEntrySchema),
+    nextCursor: NextCursorSchema,
+  },
+  { additionalProperties: false },
+);
+export type InstallationRegisterResponse = Static<
+  typeof InstallationRegisterResponseSchema
+>;
 
 /** The Work's installation records, with the per-item totals.
  *

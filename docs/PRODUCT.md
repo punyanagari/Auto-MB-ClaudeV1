@@ -213,6 +213,48 @@ them side by side:
 - Statutory movement facts (HSN, movement reason, party GSTIN) and e-way bills
   for these documents are a later stage and are not part of this module.
 
+### Installation records
+
+An installation record says "N units of item X went in at location L on
+date D". It is the evidence behind the installed half of the executed
+value, and the authoritative installed quantity is the sum of quantity
+over non-cancelled records for the item — computed nowhere else.
+
+- Recording is a site action, not an office one: the location is picked
+  from the master or created inline while standing at it, and serial-
+  flagged items attach exactly one delivered, uninstalled serial per unit.
+- Per item, the cumulative installed quantity never exceeds the sanctioned
+  LOA quantity. The excess-delivery permission lifts the delivery ceiling
+  only and deliberately does not apply here.
+- Records are never edited. A record cancels with a note, keeps its
+  history, and releases its serials back to the delivered-but-uninstalled
+  pool.
+- **Two homes, one record.** Recording and the full record — its serials,
+  its remarks, its cancellation — live on the Work, because a record is
+  capped by that Work's sanctioned quantity and drawn from that Work's
+  delivered serials. Alongside them, a tenant-wide register lists every
+  record across Works, newest first, with its Work, item, quantity, date,
+  location, serial count and status. Site supervision asks "what went in
+  this week, and where" far more often than it asks about one contract,
+  and a gang works several Works in a day.
+- **Reach.** The register is bounded by Work scope exactly as the Work
+  page is: a member without organisation-wide work scope sees only the
+  installations of the Works they are assigned to. Cancelled records stay
+  listed with their status — the register reports what was recorded, not
+  only what still stands. The scope binds the pagination cursor as well as
+  the rows: a cursor naming a record outside the caller's Works is refused
+  exactly as a nonexistent one is, so the register's paging cannot be used
+  to learn that such a record exists or when it was made.
+- **Window.** The register's one filter is an inclusive `installedOn` date
+  range, because the question it exists for is a date range. It is read a
+  page at a time, newest first. Work and status filters are deliberately
+  absent: a Work's own records are read on the Work, and a status filter
+  would offer to hide exactly what the register keeps visible.
+- **Counting.** A Work's page shows how many installation records it
+  carries, recorded and cancelled, from the Work read itself. The records
+  are loaded only when their section is opened — the list expands every
+  record's serials, and a badge does not need them.
+
 ### Quantity ledger
 
 For each Work item:
@@ -884,7 +926,8 @@ The current product also includes:
 - completion extensions, approval-gated baseline amendments, item omission
   gated on a verified railway variation order, correction notices, Work
   completion/reopen, and per-Work activity history;
-- Issue Challans, receipts, serial traceability, quantity installations,
+- Issue Challans, receipts, serial traceability, quantity installations
+  (recorded on the Work, and listed tenant-wide in their own register),
   warranty certificates, instruments, and PAC certificates;
 - record, on-account, and final Measurement Books with category payment
   matrices, stage-wise billing, immutable snapshots, and generated documents;

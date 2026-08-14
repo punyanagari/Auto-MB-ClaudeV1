@@ -10,6 +10,7 @@ import { Approvals } from '../../src/views/Approvals.js';
 import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { Installations } from '../../src/views/Installations.js';
+import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
@@ -183,6 +184,21 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'An unlisted location master is offered as a free-text location, not as an empty picker.',
     },
+  },
+  {
+    view: 'InstallationsRegister.tsx',
+    name: 'the installation register',
+    loads: ['listInstallations'],
+    render: (api) => (
+      <InstallationsRegister
+        api={api}
+        organisationId={ORG_ID}
+        onOpenWork={noop}
+        onOpenWorks={noop}
+      />
+    ),
+    retry: /Retry installations/,
+    empty: { text: /No installations recorded yet/ },
   },
   {
     view: 'IssueChallanDetail.tsx',

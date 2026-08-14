@@ -28,6 +28,7 @@ import {
   Settings as SettingsIcon,
   Upload,
   Users,
+  Wrench,
   X,
 } from 'lucide-react';
 import type { ApiClient, MeResponse } from '../api.js';
@@ -70,6 +71,11 @@ const ChallanEditor = lazy(() =>
 const DeliveryChallans = lazy(() =>
   import('./DeliveryChallans.js').then((module) => ({
     default: module.DeliveryChallans,
+  })),
+);
+const InstallationsRegister = lazy(() =>
+  import('./InstallationsRegister.js').then((module) => ({
+    default: module.InstallationsRegister,
   })),
 );
 const IssueChallanDetail = lazy(() =>
@@ -192,6 +198,7 @@ type ModuleKey =
   | 'approvals'
   | 'search'
   | 'serials'
+  | 'installations'
   | 'masters'
   | 'members'
   | 'settings';
@@ -221,6 +228,7 @@ const NAVIGATION = [
     items: [
       { key: 'search' as const, label: 'Search', icon: Search },
       { key: 'serials' as const, label: 'Serial Lookup', icon: ScanBarcode },
+      { key: 'installations' as const, label: 'Installations', icon: Wrench },
       { key: 'masters' as const, label: 'Masters', icon: Database },
     ],
   },
@@ -241,6 +249,7 @@ const MOBILE_MORE_ITEMS = [
   // the same view from here.
   { key: 'search', label: 'Search', icon: Search },
   { key: 'serials', label: 'Serial Lookup', icon: ScanBarcode },
+  { key: 'installations', label: 'Installations', icon: Wrench },
   { key: 'masters', label: 'Masters', icon: Database },
   { key: 'members', label: 'Members', icon: Users },
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -270,6 +279,8 @@ function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'search', query: '' };
     case 'serials':
       return { name: 'serials' };
+    case 'installations':
+      return { name: 'installations' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -291,6 +302,7 @@ function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'approvals':
     case 'search':
     case 'serials':
+    case 'installations':
     case 'masters':
     case 'members':
     case 'settings':
@@ -336,6 +348,8 @@ function pageTitleOf(view: WorkspaceView): string {
       return 'Search';
     case 'serials':
       return 'Serial Lookup';
+    case 'installations':
+      return 'Installations';
     case 'masters':
       return 'Masters';
     case 'members':
@@ -725,7 +739,10 @@ export function OperationsWorkspace({
     departure.action();
   }
 
-  function openRecordTab(workId: string, tab: 'deliveries' | 'measurement'): void {
+  function openRecordTab(
+    workId: string,
+    tab: 'deliveries' | 'installations' | 'measurement',
+  ): void {
     navigate({ name: 'work', workId }, { workTab: tab });
   }
 
@@ -1512,6 +1529,19 @@ export function OperationsWorkspace({
               />
             )}
 
+            {view.name === 'installations' && (
+              <InstallationsRegister
+                api={api}
+                organisationId={organisation.id}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId }, { workTab: 'installations' });
+                }}
+                onOpenWorks={() => {
+                  navigate({ name: 'works' });
+                }}
+              />
+            )}
+
             {view.name === 'search' && (
               <SearchView
                 api={api}
@@ -1685,15 +1715,37 @@ export function OperationsWorkspace({
               <p className="px-2 pb-2 text-xs text-muted-foreground">
                 Record site evidence against the open Work.
               </p>
+              {/* Two buttons, not one "Delivery evidence": the two records
+                  now live on different tabs, and a site user tapping Record
+                  on a phone means one of them specifically.
+
+                  Drafting a challan is a Work modification, which a site
+                  membership does not carry — so the button is not offered
+                  to one, the way Upload LOA is not. Offering it would open
+                  a tab whose only action is absent, which is the dead end
+                  this sheet exists to avoid; the two records it CAN make
+                  are still one tap each. */}
+              {canModify && (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                  onClick={() => {
+                    openRecordTab(recordWorkId, 'deliveries');
+                  }}
+                >
+                  <Truck className="size-4 text-primary" aria-hidden="true" />
+                  Delivery challan
+                </button>
+              )}
               <button
                 type="button"
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
                 onClick={() => {
-                  openRecordTab(recordWorkId, 'deliveries');
+                  openRecordTab(recordWorkId, 'installations');
                 }}
               >
-                <BriefcaseBusiness className="size-4 text-primary" aria-hidden="true" />
-                Delivery evidence
+                <Wrench className="size-4 text-primary" aria-hidden="true" />
+                Installation
               </button>
               <button
                 type="button"

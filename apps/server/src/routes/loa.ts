@@ -15,6 +15,7 @@ import {
   type ConfirmWorkItem,
   type ConfirmWorkRequest,
   type ConfirmWorkSchedule,
+  type InstallationCounts,
   type LoaDocument,
   type LoaDocumentDetail,
   type PdfSignatureReport,
@@ -368,6 +369,9 @@ function parsedScheduleIdOf(
   if (ids.size > 1) return { conflict: [...ids].sort() };
   return { id: ids.size === 1 ? ([...ids][0] ?? null) : null };
 }
+
+/** The installation tally of a Work that cannot yet have one. */
+const ZERO_INSTALLATIONS: InstallationCounts = { recorded: 0, cancelled: 0 };
 
 interface WorkRow {
   id: string;
@@ -1643,7 +1647,13 @@ export function registerLoaRoutes(
             `;
         }
 
-        return { work: toWork(work), schedules };
+        // A Work confirmed from its LOA has no installation records yet,
+        // by construction — this transaction is the one that creates it.
+        return {
+          work: toWork(work),
+          schedules,
+          installationCounts: ZERO_INSTALLATIONS,
+        };
       }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
           throw httpError(
@@ -1806,9 +1816,25 @@ export function registerLoaRoutes(
               pacCertifiedQuantity: item.pac_certified_quantity,
             })),
         }));
+        // The Work page's Installations tally. The records themselves are
+        // read only when their tab is opened — the list expands every
+        // record's serials, which is a lot of query for a number on a
+        // tab — so the number rides on the read the page always makes.
+        const [installationCounts] = await tx<
+          { recorded: number; cancelled: number }[]
+        >`
+          select count(*) filter (where status = 'recorded')::int as recorded,
+                 count(*) filter (where status = 'cancelled')::int as cancelled
+          from installations
+          where work_id = ${id}
+        `;
         return {
           work: { ...toWork(work), allowExcessDelivery: work.allow_excess_delivery },
           schedules,
+          installationCounts: {
+            recorded: installationCounts?.recorded ?? 0,
+            cancelled: installationCounts?.cancelled ?? 0,
+          },
         };
       });
     },

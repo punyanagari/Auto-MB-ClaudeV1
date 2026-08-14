@@ -86,6 +86,7 @@ import type {
   WorkItemSerialsResponse,
   Installation,
   InstallationListResponse,
+  InstallationRegisterResponse,
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
@@ -785,6 +786,19 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<InstallationListResponse>;
+  /** The installation module's own register: every record in the
+   * organisation the caller may see, across all their Works. Paged — the
+   * screen sends a `limit` and pages with `nextCursor` — and narrowable to
+   * an inclusive `installedOn` window. */
+  readonly listInstallations: (
+    organisationId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly limit?: number;
+      readonly installedFrom?: string;
+      readonly installedTo?: string;
+    },
+  ) => Promise<InstallationRegisterResponse>;
   readonly recordWorkInstallation: (
     organisationId: string,
     workId: string,
@@ -2506,6 +2520,21 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async listWorkInstallations(organisationId, workId) {
       return request<InstallationListResponse>(`/api/works/${workId}/installations`, {
+        organisationId,
+      });
+    },
+    async listInstallations(organisationId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      if (options.installedFrom !== undefined) {
+        parameters.set('installedFrom', options.installedFrom);
+      }
+      if (options.installedTo !== undefined) {
+        parameters.set('installedTo', options.installedTo);
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
         organisationId,
       });
     },

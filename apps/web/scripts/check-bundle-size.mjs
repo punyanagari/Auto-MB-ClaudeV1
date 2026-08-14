@@ -71,6 +71,7 @@ const LAZY_VIEWS = [
   'ChallanDetail',
   'ChallanEditor',
   'DeliveryChallans',
+  'InstallationsRegister',
   'IssueChallanDetail',
   'IssueChallanEditor',
   'Masters',
