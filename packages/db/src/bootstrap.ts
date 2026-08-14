@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url';
 import type { Sql } from 'postgres';
 import { createDatabasePool } from './pool.js';
 import { runMigrations } from './migration-runner.js';
+import { ensureApplicationRole, ensureDefinerRole } from './roles.js';
+
+export { ensureApplicationRole, ensureDefinerRole } from './roles.js';
 
 /**
  * Idempotent production bootstrap (external review, ops batch): creates
@@ -234,42 +237,6 @@ const FUNCTION_GRANTS = [
  * (pg_restore --no-owner) they come back owned by the restoring role and
  * organisation creation breaks; the bootstrap repairs ownership. */
 const DEFINER_FUNCTIONS = FUNCTION_GRANTS;
-
-export async function ensureApplicationRole(
-  admin: Sql,
-  password: string,
-): Promise<void> {
-  const escaped = password.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        ALTER ROLE auto_mb_app LOGIN PASSWORD '${escaped}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
-      ELSE
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escaped}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
-      END IF;
-    END
-    $$;
-  `);
-}
-
-/** The NOLOGIN BYPASSRLS function-owner role (migration 0004). Created
- * here as well so a fresh cluster can receive a restore whose dump
- * references it — roles are cluster-level and never travel in a
- * database dump. */
-export async function ensureDefinerRole(admin: Sql): Promise<void> {
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_definer') THEN
-        CREATE ROLE auto_mb_definer NOLOGIN BYPASSRLS;
-      END IF;
-    END
-    $$;
-  `);
-}
 
 export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(`GRANT USAGE ON SCHEMA public, app_private TO auto_mb_app`);

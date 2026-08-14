@@ -11,8 +11,9 @@ import type {
   TimelineResponse,
   WorkDetailResponse,
 } from '@auto-mb/contracts';
+import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -147,17 +148,7 @@ beforeAll(async () => {
     );
   }
 
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-pay-objects-'));
@@ -599,6 +590,133 @@ describe('item payment categories', () => {
     ).toBe('SUPPLY');
   });
 
+  it('accepts an initial matrix that configures every category at once', async () => {
+    // The confirm body's `maxItems` was a bare 5 and stayed there when
+    // migration 0068 added AMC, so a reviewer who filled all six rows was
+    // refused by the schema — with a validation message naming the array
+    // rather than the rule, and no way to tell which row to drop. The
+    // bound reads the vocabulary now; this is the row count it has to
+    // admit.
+    const documentId = randomUUID();
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256,
+        media_type, size_bytes, extraction_status, extraction_payload,
+        uploaded_by_user_id
+      )
+      values (
+        ${documentId}, ${organisationId},
+        ${`${organisationId}/loa/${documentId}.pdf`}, 'pay-sixrow.pdf',
+        ${'e'.repeat(64)}, 'application/pdf', 1024, 'review', '{}'::jsonb,
+        ${ownerUserId}
+      )
+    `;
+    const confirmed = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `PAY6-${runId.toUpperCase()}`,
+        letterNumber: `pay-sixrow-${runId}`,
+        letterDate: '2025-07-01',
+        title: 'Every payment category configured at confirmation',
+        advertisedValue: '1000.00',
+        contractValue: '900.00',
+        pricingShape: 'per_schedule',
+        paymentMatrix: [
+          {
+            category: 'SUPPLY',
+            pctSupply: '90',
+            pctInstallation: '0',
+            pctPac: '0',
+            pctFinalBill: '10',
+          },
+          {
+            category: 'SUPPLY_AND_INSTALLATION',
+            pctSupply: '60',
+            pctInstallation: '30',
+            pctPac: '5',
+            pctFinalBill: '5',
+          },
+          {
+            category: 'PURE_INSTALLATION',
+            pctSupply: '0',
+            pctInstallation: '90',
+            pctPac: '5',
+            pctFinalBill: '5',
+          },
+          {
+            category: 'SPARE_SUPPLY',
+            pctSupply: '100',
+            pctInstallation: '0',
+            pctPac: '0',
+            pctFinalBill: '0',
+          },
+          // Migration 0068: an AMC row bills only on certification and
+          // the final bill, so its first two stages must be 0.
+          {
+            category: 'AMC',
+            pctSupply: '0',
+            pctInstallation: '0',
+            pctPac: '80',
+            pctFinalBill: '20',
+          },
+          {
+            category: 'UNCATEGORISED',
+            pctSupply: '70',
+            pctInstallation: '20',
+            pctPac: '0',
+            pctFinalBill: '10',
+          },
+        ],
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'A/1',
+                description: 'Supplied panels',
+                unitCode: 'Nos',
+                awardedQuantity: '1.000',
+                effectiveRate: '100.00',
+                manualEntry: true,
+                paymentCategory: 'SUPPLY',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    const sixRowWorkId = confirmed.json<WorkDetailResponse>().work.id;
+
+    const matrix = await listMatrix(sixRowWorkId);
+    expect(matrix.rows.map((row) => row.category).sort()).toEqual(
+      [...PAYMENT_MATRIX_CATEGORIES].sort(),
+    );
+    expect(matrix.rows.find((row) => row.category === 'AMC')?.pctPac).toBe('80.00');
+
+    // And the rows are attributed. The confirm path used to insert them
+    // silently, so a matrix entered WITH the letter appeared on the
+    // Work's timeline from nowhere while every later edit to it carried
+    // an actor and a before/after pair.
+    const created = await admin<{ details: Record<string, unknown> }[]>`
+      select ae.details from audit_events ae
+      join payment_matrices pm on pm.id = ae.entity_id
+      where ae.organisation_id = ${organisationId}
+        and ae.entity_type = 'payment_matrices'
+        and ae.action = 'payment_matrix.row_created'
+        and pm.work_id = ${sixRowWorkId}
+    `;
+    expect(created).toHaveLength(PAYMENT_MATRIX_CATEGORIES.length);
+    expect(
+      created.find(
+        (event) => (event.details as { category?: string }).category === 'AMC',
+      )?.details,
+    ).toMatchObject({ before: {}, after: { pctPac: '80' } });
+  });
+
   it('rejects an invalid category at the confirmation boundary', async () => {
     const documentId = randomUUID();
     await admin`
@@ -731,6 +849,375 @@ describe('item payment categories', () => {
       payload: { paymentCategory: 'FREEFORM' },
     });
     expect(rejectedValue.statusCode).toBe(400);
+  });
+});
+
+/**
+ * POST /api/works/:id/payment-setup — the whole payment configuration in
+ * one transaction, which is what the post-creation setup dialog's single
+ * Save posts.
+ *
+ * The properties worth proving are the ones the composition could lose:
+ * that it writes both halves, that it refuses as a unit (a bad item takes
+ * the matrix rows down with it), and that it inherits — rather than
+ * re-implements — the role, work-scope and tenant checks the two routes
+ * it composes already carry.
+ */
+describe('payment setup in one transaction', () => {
+  it('writes the matrix rows and the item categories together', async () => {
+    const response = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'PURE_INSTALLATION',
+            pctSupply: '0.00',
+            pctInstallation: '85.00',
+            pctPac: '5.00',
+            pctFinalBill: '10.00',
+          },
+          {
+            category: 'UNCATEGORISED',
+            pctSupply: '70.00',
+            pctInstallation: '20.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'PURE_INSTALLATION' },
+          { workItemId: itemBId, paymentCategory: null },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const saved = response.json<{
+      items: { id: string; itemNumber: string; paymentCategory: string | null }[];
+    }>();
+    // The response carries the items only — the matrix is read back from
+    // the Work, because an echo of the request could not report a row
+    // another operator configured meanwhile.
+    expect(Object.keys(saved)).toEqual(['items']);
+    expect(saved.items.find((item) => item.id === itemAId)?.paymentCategory).toBe(
+      'PURE_INSTALLATION',
+    );
+    expect(saved.items.find((item) => item.id === itemBId)?.paymentCategory).toBeNull();
+
+    const matrix = await listMatrix();
+    const installation = matrix.rows.find(
+      (row) => row.category === 'PURE_INSTALLATION',
+    );
+    expect(installation?.pctInstallation).toBe('85.00');
+    const [stored] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(stored?.payment_category).toBe('PURE_INSTALLATION');
+
+    // One audit row per matrix row and one per item, all under the same
+    // actor — the trail a reviewer reads is the same whether the write
+    // came through this route or through the two it composes.
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId}
+        and action in ('payment_matrix.row_created', 'payment_matrix.row_updated',
+                       'work_item.payment_category_changed')
+      order by occurred_at desc
+      limit 4
+    `;
+    expect(
+      events.filter((event) => event.action === 'work_item.payment_category_changed')
+        .length,
+    ).toBe(2);
+    expect(
+      events.filter((event) => event.action.startsWith('payment_matrix.')).length,
+    ).toBe(2);
+  });
+
+  it('writes nothing at all when one item in the request is refused', async () => {
+    const foreignItemId = randomUUID();
+    const response = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'SPARE_SUPPLY',
+            pctSupply: '90.00',
+            pctInstallation: '0.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'SUPPLY' },
+          // Not an item of this Work: the row the dialog never sends, and
+          // the one that proves the transaction is a unit.
+          { workItemId: foreignItemId, paymentCategory: 'SUPPLY' },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('WORK_ITEM_NOT_FOUND');
+
+    const matrix = await listMatrix();
+    expect(matrix.rows.some((row) => row.category === 'SPARE_SUPPLY')).toBe(false);
+    const [unchanged] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(unchanged?.payment_category).toBe('PURE_INSTALLATION');
+  });
+
+  it('applies the same percentage, AMC and duplicate rules as the per-row upsert', async () => {
+    const sum = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'SUPPLY',
+            pctSupply: '50.00',
+            pctInstallation: '10.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(sum.statusCode).toBe(400);
+    expect(sum.json<{ code: string }>().code).toBe('PAYMENT_MATRIX_SUM_INVALID');
+
+    const amc = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'AMC',
+            pctSupply: '40.00',
+            pctInstallation: '0.00',
+            pctPac: '50.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(amc.statusCode).toBe(400);
+    expect(amc.json<{ code: string }>().code).toBe('PAYMENT_MATRIX_AMC_STAGE_INVALID');
+
+    const duplicateCategory = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          { category: 'SUPPLY', ...FULL_SUPPLY },
+          { category: 'SUPPLY', ...FULL_SUPPLY },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(duplicateCategory.statusCode).toBe(400);
+    expect(duplicateCategory.json<{ code: string }>().code).toBe(
+      'PAYMENT_MATRIX_CATEGORY_DUPLICATE',
+    );
+
+    const duplicateItem = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'SUPPLY' },
+          { workItemId: itemAId, paymentCategory: 'PURE_INSTALLATION' },
+        ],
+      },
+    });
+    expect(duplicateItem.statusCode).toBe(400);
+    // The vocabulary's existing name for "this request names one record
+    // twice", shared with the challan line guard rather than spelt a
+    // second way for this route.
+    expect(duplicateItem.json<{ code: string }>().code).toBe('DUPLICATE_ITEM');
+  });
+
+  it('gates the save on the writer role, work scope and tenant', async () => {
+    const payload = {
+      matrixRows: [{ category: 'SUPPLY', ...FULL_SUPPLY }],
+      itemCategories: [{ workItemId: itemAId, paymentCategory: 'SUPPLY' }],
+    };
+
+    const deniedRole = await authed(viewer, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload,
+    });
+    expect(deniedRole.statusCode).toBe(403);
+
+    const deniedScope = await authed(assigned, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload,
+    });
+    expect(deniedScope.statusCode).toBe(404);
+
+    const crossTenant = await authed(outsider, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId: outsiderOrganisationId,
+      payload,
+    });
+    expect(crossTenant.statusCode).toBe(404);
+
+    // None of the three refusals wrote anything.
+    const [unchanged] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(unchanged?.payment_category).toBe('PURE_INSTALLATION');
+  });
+
+  it('refuses to leave an item billing through a category with no row', async () => {
+    // The guard that makes the dialog worth asking. Without it the save
+    // happily writes a category whose matrix row does not exist, and the
+    // Work reaches the Measurement Book unbillable — days later, and to
+    // whoever happens to be billing rather than to whoever set it.
+    await admin`
+      delete from payment_matrices
+      where work_id = ${workId} and category = 'SPARE_SUPPLY'
+    `;
+    const refused = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [{ workItemId: itemBId, paymentCategory: 'SPARE_SUPPLY' }],
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    const body = refused.json<{ code: string; message: string }>();
+    expect(body.code).toBe('PAYMENT_MATRIX_ROW_MISSING');
+    expect(body.message).toContain('SPARE_SUPPLY');
+    // The categories that ARE covered are not named at the operator.
+    expect(body.message).not.toContain('PURE_INSTALLATION');
+
+    const [stored] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemBId}
+    `;
+    expect(stored?.payment_category).toBeNull();
+  });
+
+  it('accepts the same save when the missing row travels with it', async () => {
+    const accepted = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [{ category: 'SPARE_SUPPLY', ...FULL_SUPPLY }],
+        itemCategories: [
+          { workItemId: itemBId, paymentCategory: 'SPARE_SUPPLY', proposed: true },
+        ],
+      },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+
+    // The provenance the dialog claimed, on the audit event rather than
+    // on the row: an accepted keyword proposal and a typed choice write
+    // the identical category, and only the trail can say afterwards
+    // which act set one that turns out to be wrong.
+    const [event] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and entity_type = 'work_items' and entity_id = ${itemBId}
+        and action = 'work_item.payment_category_changed'
+      order by occurred_at desc, id desc
+      limit 1
+    `;
+    expect(event?.details).toMatchObject({
+      itemNumber: 'A/2',
+      source: 'payment_setup',
+      proposed: true,
+      after: { paymentCategory: 'SPARE_SUPPLY' },
+    });
+
+    // A category the operator typed rather than accepted is recorded as
+    // exactly that, so the two are distinguishable in one query.
+    const typed = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [{ workItemId: itemBId, paymentCategory: 'PURE_INSTALLATION' }],
+      },
+    });
+    expect(typed.statusCode, typed.body).toBe(200);
+    const [typedEvent] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and entity_type = 'work_items' and entity_id = ${itemBId}
+        and action = 'work_item.payment_category_changed'
+      order by occurred_at desc, id desc
+      limit 1
+    `;
+    expect(typedEvent?.details).toMatchObject({
+      source: 'payment_setup',
+      proposed: false,
+    });
+  });
+
+  it('refuses every item of a completed Work, as R8 requires', async () => {
+    // The bulk route asserts R8 once for the set rather than once per
+    // item, so the rule has to be proved through it as well as through
+    // the per-item PATCH the set-based rewrite replaced.
+    // Set directly rather than through the completion route: the
+    // fixture Work is nowhere near 100% executed value, and R8's own
+    // guard (migration 0031) still requires the note and the actor, so
+    // the state reached here is a real one.
+    await admin`
+      update works set status = 'completed', completed_at = now(),
+        completed_by_user_id = ${ownerUserId},
+        completion_note = 'Completed for the R8 payment-setup refusal test.'
+      where id = ${workId}
+    `;
+    try {
+      const refused = await authed(office, {
+        method: 'POST',
+        url: `/api/works/${workId}/payment-setup`,
+        organisationId,
+        payload: {
+          matrixRows: [],
+          itemCategories: [{ workItemId: itemAId, paymentCategory: 'SUPPLY' }],
+        },
+      });
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json<{ code: string }>().code).toBe('WORK_COMPLETED');
+    } finally {
+      // 0031 asks for a note in both directions and for the completion
+      // columns to be cleared on the way back out, so the reopen leaves
+      // exactly the shape an operator's reopen would have left.
+      await admin`
+        update works set status = 'active',
+          completed_at = null, completed_by_user_id = null,
+          completion_note = null,
+          reopened_at = now(), reopened_by_user_id = ${ownerUserId},
+          reopen_note = 'Reopened after the R8 payment-setup refusal test.'
+        where id = ${workId}
+      `;
+    }
+
+    const [unchanged] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(unchanged?.payment_category).toBe('PURE_INSTALLATION');
   });
 });
 

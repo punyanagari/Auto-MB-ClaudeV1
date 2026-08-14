@@ -151,7 +151,11 @@ export function registerInstallationRoutes(
         // (installed_on, created_at, id) — the trailing id turned
         // descending to match the comparison, which only reorders records
         // sharing both a date and a creation instant.
-        const cursor = await cursorRowId(tx, 'installations', query.cursor);
+        // The cursor must name an installation OF THIS WORK — an id from
+        // another Work is refused as CURSOR_INVALID, indistinguishable
+        // from a nonexistent one; see `cursorRowId` for the oracle this
+        // closes.
+        const cursor = await cursorRowId(tx, 'installations', query.cursor, workId);
         const rows = (await tx.unsafe(
           `select ${INSTALLATION_COLUMNS}
            from installations i

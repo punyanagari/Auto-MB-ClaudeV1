@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -211,17 +211,7 @@ beforeAll(async () => {
     );
   }
 
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-payg-objects-'));
@@ -385,6 +375,42 @@ describe('G2 — the payment category is frozen once a Measurement Book has bill
 
     // The refusal left the stored category exactly as billed.
     expect(await storedCategory(billedItemId)).toBe('SUPPLY');
+  });
+
+  it('refuses the same change through the payment-setup save', async () => {
+    // The bulk route evaluates this guard once over the whole set rather
+    // than once per item, which is a different piece of SQL from the one
+    // the PATCH above exercises. The refusal has to be the same refusal:
+    // the same code, naming the same item and the same Measurement Book,
+    // and it has to survive being submitted alongside an item that is
+    // perfectly legal to change.
+    const refused = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [
+          { workItemId: evidenceOnlyItemId, paymentCategory: 'SUPPLY' },
+          { workItemId: billedItemId, paymentCategory: 'SUPPLY_AND_INSTALLATION' },
+        ],
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    const body = refused.json<{
+      code: string;
+      message: string;
+      details: { itemNumber: string };
+    }>();
+    expect(body.code).toBe('ITEM_BILLED_IN_MB');
+    expect(body.message).toContain('B/1');
+    expect(body.message).toContain(`PAYGW-${runId.toUpperCase()}-MB-01`);
+    expect(body.details.itemNumber).toBe('B/1');
+
+    // The legal half of the request went down with the refused half:
+    // one transaction, all of it or none.
+    expect(await storedCategory(billedItemId)).toBe('SUPPLY');
+    expect(await storedCategory(evidenceOnlyItemId)).toBeNull();
   });
 
   it('refuses clearing a billed item back to uncategorised', async () => {

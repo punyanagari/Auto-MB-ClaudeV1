@@ -90,6 +90,8 @@ import type {
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
+  PaymentSetupResponse,
+  SavePaymentSetupRequest,
   UpsertPaymentMatrixRowRequest,
   WorkItemPaymentCategory,
   WorkItemPaymentCategoryResponse,
@@ -873,6 +875,13 @@ export interface ApiClient {
     workItemId: string,
     paymentCategory: WorkItemPaymentCategory | null,
   ) => Promise<WorkItemPaymentCategoryResponse>;
+  /** The whole payment configuration of a Work in one transaction — the
+   * post-creation setup dialog's single Save. */
+  readonly saveWorkPaymentSetup: (
+    organisationId: string,
+    workId: string,
+    body: SavePaymentSetupRequest,
+  ) => Promise<PaymentSetupResponse>;
   /** PAC certificates (Milestone 8 phase 1). */
   readonly listWorkPacCertificates: (
     organisationId: string,
@@ -2632,6 +2641,13 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/work-items/${workItemId}/payment-category`,
         { method: 'PATCH', body: { paymentCategory }, organisationId },
       );
+    },
+    async saveWorkPaymentSetup(organisationId, workId, body) {
+      return request<PaymentSetupResponse>(`/api/works/${workId}/payment-setup`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
     async listWorkPacCertificates(organisationId, workId) {
       return request<PacCertificateListResponse>(

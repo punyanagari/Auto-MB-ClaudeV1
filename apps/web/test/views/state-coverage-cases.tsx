@@ -25,6 +25,7 @@ import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
+import { WorkPaymentSetup } from '../../src/views/WorkPaymentSetup.js';
 import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
 import {
   billableBook,
@@ -307,6 +308,27 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'A Work with no tender documents shows no comparison panel rather than an empty one.',
     },
+  },
+  {
+    view: 'WorkPaymentSetup.tsx',
+    name: 'the payment matrix behind the post-creation setup dialog',
+    loads: ['getPaymentMatrix'],
+    render: (api) => (
+      <WorkPaymentSetup
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        onClose={noop}
+        onSaved={noop}
+      />
+    ),
+    retry: /Retry payment setup/,
+    // The percentage half is a fixed row per category, which has no
+    // empty state — but the ITEMS half is a register of the Work's items,
+    // and a Work with none of them is a real state the dialog can open
+    // in. It is what a confirmation with an empty schedule produces.
+    empty: { text: /This Work has no items/ },
   },
   {
     view: 'RailwayBillPanel.tsx',

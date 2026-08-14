@@ -8,6 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
+  ensureClusterRoles,
   jsonb,
   removeOrganisationResidue,
   runMigrations,
@@ -98,17 +99,7 @@ beforeAll(async () => {
     applicationName: 'auto-mb-pagination-admin',
   });
   await admin`select 1 as ready`;
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-pagination-'));
@@ -428,6 +419,294 @@ describe('the approvals queue', () => {
 
     const decided = await readPage('/api/approvals?status=approved', 'approvals');
     expect(decided.ids).toHaveLength(0);
+  });
+});
+
+describe('a cursor from another Work', () => {
+  /*
+   * The oracle these tests hold shut: every cursor used to be validated
+   * organisation-wide, so a per-Work register answered 200 for another
+   * Work's row id and 400 for a nonexistent one — existence disclosed —
+   * and the keyset predicate then compared against the foreign row's sort
+   * key, so its date and creation instant could be binary-searched without
+   * a row of it ever being returned. A cursor is now proven against the
+   * SAME predicate the register's rows are: the path Work's work_id on a
+   * per-Work list, the caller's work-scope on the approvals queue. The
+   * refusal is byte-identical to the nonexistent-id one, which is what
+   * makes the two indistinguishable.
+   */
+  let workBId: string;
+  let foreignChallanId: string;
+  let foreignSerialId: string;
+  let foreignMbEntryId: string;
+  let foreignInstallationId: string;
+  let foreignApprovalId: string;
+  let homeApprovalId: string;
+  let scoped: { cookie: string };
+
+  beforeAll(async () => {
+    // --- A second Work carrying one row in each register -------------------
+    workBId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${workBId}, ${organisationId}, ${`PGB-${codeSuffix}`}, ${`LB-${runId}`},
+        '2026-01-10', 'Foreign-cursor probe work', '100000.00', '90000.00',
+        'per_schedule', ${ownerUserId}
+      )
+    `;
+    const scheduleBId = randomUUID();
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position
+      )
+      values (${scheduleBId}, ${organisationId}, ${workBId}, 'B', 'Schedule B', 1)
+    `;
+    const itemBId = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number,
+        description, unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${itemBId}, ${organisationId}, ${workBId}, ${scheduleBId}, 'B/1',
+        'Foreign item', 'Nos', '1000.000', '100.00'
+      )
+    `;
+    const locationBId = randomUUID();
+    await admin`
+      insert into location_masters (id, organisation_id, name, kind, created_by_user_id)
+      values (
+        ${locationBId}, ${organisationId}, ${`Site B ${runId}`}, 'station',
+        ${ownerUserId}
+      )
+    `;
+    foreignChallanId = randomUUID();
+    await admin`
+      insert into delivery_challans (
+        id, organisation_id, work_id, challan_date, prefix,
+        consignee_snapshot, created_by_user_id
+      )
+      values (
+        ${foreignChallanId}, ${organisationId}, ${workBId}, '2026-08-01', 'PGB',
+        ${jsonb(admin, { name: 'Sr. DEE (G) NR', address: 'New Delhi' })},
+        ${ownerUserId}
+      )
+    `;
+    const challanItemBId = randomUUID();
+    await admin`
+      insert into delivery_challan_items (
+        id, organisation_id, delivery_challan_id, work_id, work_item_id,
+        description_snapshot, unit_snapshot, quantity, rate_snapshot,
+        line_amount, position
+      )
+      values (
+        ${challanItemBId}, ${organisationId}, ${foreignChallanId}, ${workBId},
+        ${itemBId}, 'Foreign item', 'Nos', '1.000', '100.00', '100.00', 1
+      )
+    `;
+    await admin`
+      update delivery_challans
+      set status = 'issued', challan_number = ${`PGB-${codeSuffix}-0`},
+          sequence_number = 1, issued_snapshot = ${jsonb(admin, { lines: [] })},
+          issued_by_user_id = ${ownerUserId}, issued_at = now()
+      where id = ${foreignChallanId}
+    `;
+    foreignSerialId = randomUUID();
+    await admin`
+      insert into challan_item_serials (
+        id, organisation_id, work_id, delivery_challan_id,
+        delivery_challan_item_id, serial_number
+      )
+      values (
+        ${foreignSerialId}, ${organisationId}, ${workBId}, ${foreignChallanId},
+        ${challanItemBId}, 'SER-B-000'
+      )
+    `;
+    foreignMbEntryId = randomUUID();
+    await admin`
+      insert into mb_entries (
+        id, organisation_id, work_id, work_item_id, measured_quantity,
+        measured_on, recorded_by_user_id
+      )
+      values (
+        ${foreignMbEntryId}, ${organisationId}, ${workBId}, ${itemBId}, '1.000',
+        '2026-08-02', ${ownerUserId}
+      )
+    `;
+    foreignInstallationId = randomUUID();
+    await admin`
+      insert into installations (
+        id, organisation_id, work_id, work_item_id, quantity, installed_on,
+        location_id, location_name, recorded_by_user_id
+      )
+      values (
+        ${foreignInstallationId}, ${organisationId}, ${workBId}, ${itemBId},
+        '1.000', '2026-08-03', ${locationBId}, ${`Site B ${runId}`},
+        ${ownerUserId}
+      )
+    `;
+    foreignApprovalId = randomUUID();
+    await admin`
+      insert into approval_requests (
+        id, organisation_id, entity_type, entity_id, work_id, proposed, diff,
+        reason, requested_by_user_id
+      )
+      values (
+        ${foreignApprovalId}, ${organisationId}, 'work_item_amendment',
+        ${itemBId}, ${workBId},
+        ${jsonb(admin, {
+          kind: 'change_item',
+          workItemId: itemBId,
+          itemNumber: 'B/1',
+          changes: { quantity: '2.000' },
+        })},
+        ${jsonb(admin, [{ field: 'quantity', before: '1.000', after: '2.000' }])},
+        'Foreign-cursor probe', ${ownerUserId}
+      )
+    `;
+    const [homeApproval] = await admin<{ id: string }[]>`
+      select id from approval_requests where work_id = ${workId} limit 1
+    `;
+    homeApprovalId = homeApproval?.id ?? '';
+    expect(homeApprovalId).toBeTruthy();
+
+    // --- A member narrowed to the first Work only --------------------------
+    const scopedEmail = `page-scoped-${runId}@integration.test`;
+    const signUp = await app.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: { email: scopedEmail, password, name: 'Pagination Scoped' },
+    });
+    expect(signUp.statusCode, signUp.body).toBe(200);
+    scoped = { cookie: extractCookies(signUp.headers['set-cookie']) };
+    const [scopedRow] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${scopedEmail}
+    `;
+    const scopedUserId = scopedRow?.id ?? '';
+    expect(scopedUserId).toBeTruthy();
+    await admin`
+      insert into organisation_memberships (
+        id, organisation_id, user_id, role, work_scope,
+        can_issue_documents, can_cancel_documents, can_approve_amendments, status
+      )
+      values (
+        ${randomUUID()}, ${organisationId}, ${scopedUserId}, 'office', 'assigned',
+        false, false, false, 'active'
+      )
+    `;
+    await admin`
+      insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
+      values (${organisationId}, ${workId}, ${scopedUserId}, ${ownerUserId})
+    `;
+  });
+
+  /** The per-Work registers, each with the other Work's row in the same
+   * table. The prober is the OWNER, whose scope covers both Works — what
+   * is being proven is that the cursor is bound to the Work in the path,
+   * not merely to what the caller may reach. */
+  const PER_WORK_CASES = [
+    {
+      name: 'the Work challan register',
+      url: () => `/api/works/${workId}/challans`,
+      key: 'challans',
+      foreignId: () => foreignChallanId,
+    },
+    {
+      name: 'the serial register',
+      url: () => `/api/works/${workId}/serials`,
+      key: 'serials',
+      foreignId: () => foreignSerialId,
+    },
+    {
+      name: 'the site-measurement register',
+      url: () => `/api/works/${workId}/mb-entries`,
+      key: 'entries',
+      foreignId: () => foreignMbEntryId,
+    },
+    {
+      name: 'the installation register',
+      url: () => `/api/works/${workId}/installations`,
+      key: 'installations',
+      foreignId: () => foreignInstallationId,
+    },
+    {
+      name: 'the per-Work amendment history',
+      url: () => `/api/works/${workId}/amendments`,
+      key: 'approvals',
+      foreignId: () => foreignApprovalId,
+    },
+  ] as const;
+
+  describe.each(PER_WORK_CASES)('$name', ({ url, key, foreignId }) => {
+    it('accepts a cursor naming a row of this Work', async () => {
+      const first = await readPage(`${url()}?limit=1`, key);
+      expect(first.nextCursor).not.toBeNull();
+      const second = await readPage(
+        `${url()}?limit=1&cursor=${first.nextCursor ?? ''}`,
+        key,
+      );
+      expect(second.ids).toHaveLength(1);
+    });
+
+    it("refuses another Work's row id exactly like a nonexistent one", async () => {
+      const foreign = await authed(owner, {
+        method: 'GET',
+        url: `${url()}?limit=1&cursor=${foreignId()}`,
+      });
+      const nonexistent = await authed(owner, {
+        method: 'GET',
+        url: `${url()}?limit=1&cursor=${randomUUID()}`,
+      });
+
+      expect(foreign.statusCode, foreign.body).toBe(400);
+      // Indistinguishable: same status, same code, same sentence (the
+      // requestId differs per request, so the envelope is compared
+      // without it).
+      const strip = ({ requestId: _, ...rest }: Record<string, unknown>) => rest;
+      expect(strip(foreign.json())).toEqual(strip(nonexistent.json()));
+      expect(foreign.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+    });
+  });
+
+  describe('the approvals queue', () => {
+    it("refuses an assigned-scoped member's forbidden cursor exactly like a nonexistent one", async () => {
+      const forbidden = await authed(scoped, {
+        method: 'GET',
+        url: `/api/approvals?limit=1&cursor=${foreignApprovalId}`,
+      });
+      const nonexistent = await authed(scoped, {
+        method: 'GET',
+        url: `/api/approvals?limit=1&cursor=${randomUUID()}`,
+      });
+
+      expect(forbidden.statusCode, forbidden.body).toBe(400);
+      const strip = ({ requestId: _, ...rest }: Record<string, unknown>) => rest;
+      expect(strip(forbidden.json())).toEqual(strip(nonexistent.json()));
+      expect(forbidden.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+    });
+
+    it('accepts the same member paging within their own scope', async () => {
+      const response = await authed(scoped, {
+        method: 'GET',
+        url: `/api/approvals?limit=1&cursor=${homeApprovalId}`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    });
+
+    it('accepts a full-scope caller paging across Works', async () => {
+      // The queue reads across Works, so for a full-scope member the
+      // other Work's request IS a row of this register — the work-bound
+      // rule of the per-Work lists must not leak into it.
+      const response = await authed(owner, {
+        method: 'GET',
+        url: `/api/approvals?limit=1&cursor=${foreignApprovalId}`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    });
   });
 });
 

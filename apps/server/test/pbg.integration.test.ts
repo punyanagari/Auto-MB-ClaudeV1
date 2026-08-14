@@ -11,7 +11,12 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  ensureClusterRoles,
+  jsonb,
+  runMigrations,
+} from '@auto-mb/db';
 import {
   loadLetter,
   resolveCanonicalUnitCode,
@@ -282,17 +287,7 @@ beforeAll(async () => {
     applicationName: 'auto-mb-pbg-admin',
   });
   await admin`select 1 as ready`;
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-pbg-'));

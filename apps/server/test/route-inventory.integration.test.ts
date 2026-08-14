@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, runMigrations } from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 import {
   registeredRoutesOf,
@@ -99,7 +99,7 @@ const UNPAGINATED_LISTS = new Map<string, string>([
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
-  ['GET /api/works/:id/payment-matrix', 'at most four payment categories'],
+  ['GET /api/works/:id/payment-matrix', 'at most one row per payment matrix category'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
   [
@@ -339,6 +339,28 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
     'PUT /api/works/:id/payment-matrix/:category',
     { pctSupply: '100.00', pctInstallation: '0', pctPac: '0', pctFinalBill: '0' },
   ],
+  // Same guard, reached through the payment-setup save: it validates
+  // every submitted row before opening the transaction, and the sampler's
+  // one synthesised row cannot sum to 100. A REAL row and a real item,
+  // not an empty setup: an empty body clears the pre-tenant guards
+  // trivially, so it would prove the membership floor holds for a
+  // request that asks for nothing. This one asks for both halves of the
+  // save and must still be refused at the floor.
+  [
+    'POST /api/works/:id/payment-setup',
+    {
+      matrixRows: [
+        {
+          category: 'SUPPLY',
+          pctSupply: '100.00',
+          pctInstallation: '0',
+          pctPac: '0',
+          pctFinalBill: '0',
+        },
+      ],
+      itemCategories: [{ workItemId: randomUUID(), paymentCategory: 'SUPPLY' }],
+    },
+  ],
   // The AMENDMENT_EMPTY guard runs before the tenant transaction; the
   // sampler omits optional fields, so name one change explicitly.
   [
@@ -446,17 +468,7 @@ beforeAll(async () => {
     applicationName: 'auto-mb-route-inventory-admin',
   });
   await admin`select 1 as ready`;
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-inventory-'));

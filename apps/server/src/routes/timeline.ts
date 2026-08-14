@@ -63,42 +63,123 @@ function toEvent(row: EventRow): TimelineEvent {
 
 /**
  * Proves the keyset cursor (an event id from a previous page) names an
- * event, and answers with nothing more than its id.
+ * event OF THE TRAIL BEING PAGED, and answers with nothing more than its
+ * id. Two rules meet here, both because a cursor is caller input:
  *
- * It used to carry `occurred_at::text` back out and send it in as
- * `::timestamptz`, precisely to keep the microseconds a JavaScript Date
- * would lose — and pack P12 measured that this defence does not always
- * hold: the driver re-encodes a parameter it types as `timestamptz`
- * through a Date anyway, and a cursor read as `.527771` reached the
- * server as `.527`. This trail was TESTED and does not currently lose
- * them (`test/pagination.integration.test.ts` walks four events four
- * microseconds apart, and it passes on the old shape too), so this is
- * hardening rather than a repair. It is worth doing because the failure
- * it prevents is the silent one: on a DESCENDING trail a truncated
- * cursor sorts earlier than the event it names, so every event sharing
- * that millisecond and preceding it drops out of the next page, and a
- * short trail looks like a quiet day.
+ * 1. The cursor must satisfy the same predicate as the page it restarts.
+ *    The first shape of this check proved only that the id existed in
+ *    `audit_events` — which RLS narrows to the organisation, never to the
+ *    Work — so a member whose scope excludes a Work could still use the
+ *    cursor as an existence oracle for that Work's event ids: a leaked id
+ *    answered 200, a made-up one 400. `audit_events` carries no work_id,
+ *    so the cursor row is proven against the same entity-to-Work mapping
+ *    (or the same entity pair) the page's own WHERE clause uses, and the
+ *    refusal is the identical 400 CURSOR_INVALID either way — a cursor
+ *    outside the trail is indistinguishable from one that never existed.
  *
- * The position is now read inside the comparison itself
- * (`src/pagination.ts` states the rule), so the timestamp never leaves
- * PostgreSQL and cannot be rounded on the way back.
+ * 2. The cursor's position never leaves PostgreSQL. It used to carry
+ *    `occurred_at::text` back out and send it in as `::timestamptz`,
+ *    precisely to keep the microseconds a JavaScript Date would lose —
+ *    and pack P12 measured that this defence does not always hold: the
+ *    driver re-encodes a parameter it types as `timestamptz` through a
+ *    Date anyway, and a cursor read as `.527771` reached the server as
+ *    `.527`. On a DESCENDING trail a truncated cursor sorts earlier than
+ *    the event it names, so every event sharing that millisecond and
+ *    preceding it drops out of the next page, and a short trail looks
+ *    like a quiet day. The position is therefore read inside the
+ *    comparison itself (`src/pagination.ts` states the rule), so the
+ *    timestamp never leaves PostgreSQL and cannot be rounded on the way
+ *    back.
  */
-async function resolveCursor(
+function cursorInvalid(): Error {
+  return httpError(
+    400,
+    'CURSOR_INVALID',
+    'The pagination cursor does not name a known event.',
+  );
+}
+
+async function resolveWorkCursor(
   tx: TransactionSql,
+  workId: string,
   cursor: string | undefined,
 ): Promise<string | null> {
   if (cursor === undefined) return null;
   const [row] = await tx<{ id: string }[]>`
-    select id from audit_events where id = ${cursor}
+    select ae.id from audit_events ae
+    where ae.id = ${cursor} and ${workEventPredicate(tx, workId)}
   `;
-  if (!row) {
-    throw httpError(
-      400,
-      'CURSOR_INVALID',
-      'The pagination cursor does not name a known event.',
-    );
-  }
+  if (!row) throw cursorInvalid();
   return row.id;
+}
+
+async function resolveEntityCursor(
+  tx: TransactionSql,
+  entityType: string,
+  entityId: string,
+  cursor: string | undefined,
+): Promise<string | null> {
+  if (cursor === undefined) return null;
+  const [row] = await tx<{ id: string }[]>`
+    select ae.id from audit_events ae
+    where ae.id = ${cursor}
+      and ae.entity_type = ${entityType} and ae.entity_id = ${entityId}
+  `;
+  if (!row) throw cursorInvalid();
+  return row.id;
+}
+
+/**
+ * Maps each event to the Work it belongs to, over `audit_events` aliased
+ * as `ae`. This is the membership half of the per-Work timeline's WHERE
+ * clause, shared verbatim between the page query and the cursor proof so
+ * the two can never disagree about which events the trail contains.
+ * serials.recorded events carry the challan id as entity_id (the serials
+ * were recorded against that challan), so challan_item_serials accepts
+ * either id shape.
+ */
+function workEventPredicate(tx: TransactionSql, workId: string) {
+  return tx`(
+    (ae.entity_type = 'works' and ae.entity_id = ${workId})
+    or (ae.entity_type = 'delivery_challans' and ae.entity_id in (
+      select id from delivery_challans where work_id = ${workId}))
+    or (ae.entity_type = 'issue_challans' and ae.entity_id in (
+      select id from issue_challans where work_id = ${workId}))
+    or (ae.entity_type = 'challan_receipts' and ae.entity_id in (
+      select id from challan_receipts where work_id = ${workId}))
+    or (ae.entity_type = 'challan_item_serials' and (
+      ae.entity_id in (
+        select id from challan_item_serials where work_id = ${workId})
+      or ae.entity_id in (
+        select id from delivery_challans where work_id = ${workId})))
+    or (ae.entity_type = 'work_instruments' and ae.entity_id in (
+      select id from work_instruments where work_id = ${workId}))
+    or (ae.entity_type = 'mb_entries' and ae.entity_id in (
+      select id from mb_entries where work_id = ${workId}))
+    or (ae.entity_type = 'bills' and ae.entity_id in (
+      select id from bills where work_id = ${workId}))
+    or (ae.entity_type = 'bill_payments' and ae.entity_id in (
+      select p.id from bill_payments p
+      join bills b on b.organisation_id = p.organisation_id
+                   and b.id = p.bill_id
+      where b.work_id = ${workId}))
+    or (ae.entity_type = 'installations' and ae.entity_id in (
+      select id from installations where work_id = ${workId}))
+    or (ae.entity_type = 'approval_requests' and ae.entity_id in (
+      select id from approval_requests where work_id = ${workId}))
+    or (ae.entity_type = 'correction_notices' and ae.entity_id in (
+      select id from correction_notices where work_id = ${workId}))
+    or (ae.entity_type = 'work_items' and ae.entity_id in (
+      select id from work_items where work_id = ${workId}))
+    or (ae.entity_type = 'payment_matrices' and ae.entity_id in (
+      select id from payment_matrices where work_id = ${workId}))
+    or (ae.entity_type = 'pac_certificates' and ae.entity_id in (
+      select id from pac_certificates where work_id = ${workId}))
+    or (ae.entity_type = 'measurement_books' and ae.entity_id in (
+      select id from measurement_books where work_id = ${workId}))
+    or (ae.entity_type = 'received_railway_bills' and ae.entity_id in (
+      select id from received_railway_bills where work_id = ${workId}))
+  )`;
 }
 
 function parseEntityTypes(raw: string | undefined): readonly TimelineEntityType[] {
@@ -163,14 +244,12 @@ export function registerTimelineRoutes(
           select id from works where id = ${workId} and deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        const cursor = await resolveCursor(tx, query.cursor);
+        const cursor = await resolveWorkCursor(tx, workId, query.cursor);
 
         // One pass over the timeline index (organisation_id,
         // occurred_at DESC, id): RLS pins the organisation, the ORDER BY
-        // matches the index, and the entity predicate maps each child
-        // table back to the Work. serials.recorded events carry the
-        // challan id as entity_id (the serials were recorded against that
-        // challan), so challan_item_serials accepts either id shape.
+        // matches the index, and the shared predicate maps each child
+        // table back to the Work.
         const rows = await tx<EventRow[]>`
           select ae.id, ae.occurred_at, ae.actor_user_id,
                  u."name" as actor_name, ae.action, ae.entity_type,
@@ -178,47 +257,7 @@ export function registerTimelineRoutes(
           from audit_events ae
           left join auth_users u on u."id" = ae.actor_user_id
           where ae.entity_type = any(${entityTypes as string[]}::text[])
-            and (
-              (ae.entity_type = 'works' and ae.entity_id = ${workId})
-              or (ae.entity_type = 'delivery_challans' and ae.entity_id in (
-                select id from delivery_challans where work_id = ${workId}))
-              or (ae.entity_type = 'issue_challans' and ae.entity_id in (
-                select id from issue_challans where work_id = ${workId}))
-              or (ae.entity_type = 'challan_receipts' and ae.entity_id in (
-                select id from challan_receipts where work_id = ${workId}))
-              or (ae.entity_type = 'challan_item_serials' and (
-                ae.entity_id in (
-                  select id from challan_item_serials where work_id = ${workId})
-                or ae.entity_id in (
-                  select id from delivery_challans where work_id = ${workId})))
-              or (ae.entity_type = 'work_instruments' and ae.entity_id in (
-                select id from work_instruments where work_id = ${workId}))
-              or (ae.entity_type = 'mb_entries' and ae.entity_id in (
-                select id from mb_entries where work_id = ${workId}))
-              or (ae.entity_type = 'bills' and ae.entity_id in (
-                select id from bills where work_id = ${workId}))
-              or (ae.entity_type = 'bill_payments' and ae.entity_id in (
-                select p.id from bill_payments p
-                join bills b on b.organisation_id = p.organisation_id
-                             and b.id = p.bill_id
-                where b.work_id = ${workId}))
-              or (ae.entity_type = 'installations' and ae.entity_id in (
-                select id from installations where work_id = ${workId}))
-              or (ae.entity_type = 'approval_requests' and ae.entity_id in (
-                select id from approval_requests where work_id = ${workId}))
-              or (ae.entity_type = 'correction_notices' and ae.entity_id in (
-                select id from correction_notices where work_id = ${workId}))
-              or (ae.entity_type = 'work_items' and ae.entity_id in (
-                select id from work_items where work_id = ${workId}))
-              or (ae.entity_type = 'payment_matrices' and ae.entity_id in (
-                select id from payment_matrices where work_id = ${workId}))
-              or (ae.entity_type = 'pac_certificates' and ae.entity_id in (
-                select id from pac_certificates where work_id = ${workId}))
-              or (ae.entity_type = 'measurement_books' and ae.entity_id in (
-                select id from measurement_books where work_id = ${workId}))
-              or (ae.entity_type = 'received_railway_bills' and ae.entity_id in (
-                select id from received_railway_bills where work_id = ${workId}))
-            )
+            and ${workEventPredicate(tx, workId)}
             and (${cursor === null} or (ae.occurred_at, ae.id) < (
               select c.occurred_at, c.id from audit_events c where c.id = ${cursor}))
           order by ae.occurred_at desc, ae.id desc
@@ -259,7 +298,12 @@ export function registerTimelineRoutes(
           throw httpError(404, 'ENTITY_NOT_FOUND', 'No such record.');
         }
         await assertWorkAccess(tx, user.id, workId);
-        const cursor = await resolveCursor(tx, query.cursor);
+        const cursor = await resolveEntityCursor(
+          tx,
+          entityType,
+          entityId,
+          query.cursor,
+        );
 
         const rows = await tx<EventRow[]>`
           select ae.id, ae.occurred_at, ae.actor_user_id,

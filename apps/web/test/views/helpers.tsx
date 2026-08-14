@@ -284,6 +284,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['deletePaymentMatrixRow']>()
       .mockResolvedValue(undefined),
     setWorkItemPaymentCategory: vi.fn<ApiClient['setWorkItemPaymentCategory']>(),
+    saveWorkPaymentSetup: vi
+      .fn<ApiClient['saveWorkPaymentSetup']>()
+      .mockResolvedValue({ items: [] }),
     listWorkPacCertificates: vi
       .fn<ApiClient['listWorkPacCertificates']>()
       .mockResolvedValue({ certificates: [], itemSummaries: [] }),

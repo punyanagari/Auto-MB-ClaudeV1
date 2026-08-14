@@ -5,6 +5,7 @@ import { organisationA, organisationB } from './fixtures.js';
 import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
+import { ensureClusterRoles } from '../src/roles.js';
 import { removeOrganisationResidue } from '../src/testing.js';
 import {
   TENANT_BIND_REFUSED_SQLSTATE,
@@ -1105,18 +1106,10 @@ beforeAll(async () => {
 
   // The docker-compose init script creates the application role on first
   // boot; CI service containers and bare instances do not run it, so the
-  // suite converges the role itself before migrating.
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  // suite converges the roles itself before migrating (race-safe: sibling
+  // suites and packages bootstrap the same cluster-level roles in
+  // parallel).
+  await ensureClusterRoles(admin, appPassword);
 
   await runMigrations(admin, migrationsDirectory);
 

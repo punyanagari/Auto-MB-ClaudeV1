@@ -105,6 +105,84 @@ export type SetWorkItemPaymentCategoryRequest = Static<
   typeof SetWorkItemPaymentCategoryRequestSchema
 >;
 
+/** One row of the matrix as the payment-setup dialog submits it: the
+ * category it configures plus its four stage percentages. Same values as
+ * the per-row upsert body, with the category inside the object because
+ * the whole matrix travels in one request. */
+export const PaymentSetupMatrixRowSchema = Type.Object(
+  {
+    category: PaymentMatrixCategorySchema,
+    pctSupply: DecimalStringSchema,
+    pctInstallation: DecimalStringSchema,
+    pctPac: DecimalStringSchema,
+    pctFinalBill: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type PaymentSetupMatrixRow = Static<typeof PaymentSetupMatrixRowSchema>;
+
+export const PaymentSetupItemCategorySchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    paymentCategory: Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
+    /**
+     * Whether this value is the keyword proposal the dialog offered,
+     * accepted without being touched.
+     *
+     * Provenance, recorded on the audit event rather than on the row: an
+     * accepted proposal and a typed choice produce the identical
+     * `payment_category`, and only the trail can say afterwards which act
+     * set a category that turns out to be wrong. Without it a review of
+     * a mis-categorised item cannot tell "the operator decided this" from
+     * "a keyword decided this and nobody looked", which are different
+     * findings with different fixes.
+     *
+     * Optional on the wire and false when absent: it is a statement ABOUT
+     * a value, not part of it, and a client that has no proposer to speak
+     * for simply does not make the claim. It grants nothing — the value
+     * is written and guarded identically either way.
+     */
+    proposed: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+export type PaymentSetupItemCategory = Static<typeof PaymentSetupItemCategorySchema>;
+
+/**
+ * POST /api/works/:id/payment-setup — the whole payment configuration of
+ * a Work in ONE request, which is what the post-creation setup dialog
+ * asks the operator for and therefore what its Save must do.
+ *
+ * It exists because the alternative is a burst of up to six matrix
+ * upserts and one PATCH per item from the browser: a failure part-way
+ * through leaves the Work half-configured with no statement of what
+ * landed, and the operator cannot tell which half to redo. One request
+ * is one transaction — every row and every item, or none of them.
+ *
+ * It adds NO authority. Each row goes through the same percentage, sum
+ * and AMC rules as the per-row upsert, and each item through the same
+ * work-scope, Work-operable, billed and AMC guards as the per-item
+ * PATCH — the same functions, not copies of them.
+ */
+export const SavePaymentSetupRequestSchema = Type.Object(
+  {
+    matrixRows: Type.Array(PaymentSetupMatrixRowSchema, {
+      maxItems: PAYMENT_MATRIX_CATEGORIES.length,
+    }),
+    /**
+     * 500 is the house ceiling for a per-item bulk body — the bound the
+     * PAC certificate, purchase order, installation-serial and
+     * Measurement Book source arrays all take. The largest Work in the
+     * LOA regression corpus carries 129 items, so it is roughly four
+     * times the biggest thing the product has seen, and a request naming
+     * more than 500 items of one Work is a mistake rather than a save.
+     */
+    itemCategories: Type.Array(PaymentSetupItemCategorySchema, { maxItems: 500 }),
+  },
+  { additionalProperties: false },
+);
+export type SavePaymentSetupRequest = Static<typeof SavePaymentSetupRequestSchema>;
+
 export const WorkItemPaymentCategoryResponseSchema = Type.Object(
   {
     id: UuidSchema,
@@ -116,3 +194,19 @@ export const WorkItemPaymentCategoryResponseSchema = Type.Object(
 export type WorkItemPaymentCategoryResponse = Static<
   typeof WorkItemPaymentCategoryResponseSchema
 >;
+
+/**
+ * What the payment-setup save wrote: each item whose category it set.
+ *
+ * The matrix rows are deliberately NOT returned. Nothing consumed them —
+ * the dialog closes on success and the Work page re-reads the matrix,
+ * because a save that was partly refused, or a row another operator
+ * configured meanwhile, are both things an echo of the request could not
+ * have told it. The items are here because the Work page folds them into
+ * its own copy of the schedules rather than refetching the whole Work.
+ */
+export const PaymentSetupResponseSchema = Type.Object(
+  { items: Type.Array(WorkItemPaymentCategoryResponseSchema) },
+  { additionalProperties: false },
+);
+export type PaymentSetupResponse = Static<typeof PaymentSetupResponseSchema>;

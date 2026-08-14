@@ -772,7 +772,10 @@ export function registerRetentionRoutes(
         // The id is the tie-break that makes the sort total: a day's
         // measurements are typed up in one sitting and share a
         // measured_on, and a batch insert can share a created_at.
-        const cursor = await cursorRowId(tx, 'mb_entries', query.cursor);
+        // The cursor must name an entry OF THIS WORK — an id from another
+        // Work is refused as CURSOR_INVALID, indistinguishable from a
+        // nonexistent one; see `cursorRowId` for the oracle this closes.
+        const cursor = await cursorRowId(tx, 'mb_entries', query.cursor, workId);
         const rows = await tx<MbEntryRow[]>`
             select mb.id, mb.work_item_id, wi.item_number,
                    mb.delivery_challan_id, mb.measured_quantity::text as measured_quantity,
@@ -1105,7 +1108,10 @@ async function listSerials(
   }[];
   nextCursor: string | null;
 }> {
-  const cursor = await cursorRowId(tx, 'challan_item_serials', page.cursor);
+  // The cursor must name a serial OF THIS WORK — an id from another Work
+  // is refused as CURSOR_INVALID, indistinguishable from a nonexistent
+  // one; see `cursorRowId` for the oracle this closes.
+  const cursor = await cursorRowId(tx, 'challan_item_serials', page.cursor, workId);
   const rows = await tx<
     {
       id: string;
