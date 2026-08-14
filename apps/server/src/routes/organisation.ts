@@ -21,7 +21,7 @@ import type { Auth } from '../auth.js';
 import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import {
   ALLOWED_TOKENS,
   DEFAULT_TEMPLATES,

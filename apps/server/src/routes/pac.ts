@@ -24,7 +24,7 @@ import {
   type PaymentMatrixRowData,
 } from '../payment-matrix.js';
 import { assertSourceNotBilled } from './measurement-books/index.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { assertWorkOperable } from '../work-status.js';
 import {
   assertNotMalware,

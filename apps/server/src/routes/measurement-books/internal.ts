@@ -24,7 +24,7 @@ import {
 } from '../../mb-html.js';
 import { loadPaymentMatrix } from '../../payment-matrix.js';
 import { canonicalRateText } from '../../rate-text.js';
-import type { ObjectStorage } from '../../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { withBoundTenant } from '../../tenant-context.js';
 import { renderPdfViaGotenberg } from '../../pdf-render.js';
 

@@ -32,7 +32,7 @@ import {
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { assertWorkOperable } from '../work-status.js';
 import {
   audit,

@@ -6,7 +6,7 @@ import {
   isPopplerVersionBanner,
   PdfToTextConfigurationError,
   resetPdfToTextProbeForTests,
-} from '../src/loa-extract.js';
+} from '@auto-mb/documents';
 
 /**
  * The LOA extractor's binary guard.

@@ -9,7 +9,7 @@ import type { LoaDocumentDetail } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
-import { loadTrustAnchors } from '../src/pdf-signature.js';
+import { loadTrustAnchors } from '@auto-mb/documents';
 import {
   appendSignature,
   createTestPki,

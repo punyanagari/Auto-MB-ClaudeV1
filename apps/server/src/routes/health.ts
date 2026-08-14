@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { HealthResponseSchema, ReadinessResponseSchema } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { API_VERSION } from '../api-version.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import type { AppInstance } from '../app-instance.js';
 
 // A wedged-but-connected dependency must surface as 503 within this

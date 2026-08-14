@@ -10,7 +10,7 @@ import { assertWorkAccess, requireWriterRole } from '../../authz.js';
 import { httpError } from '../../http.js';
 import { MB_TEMPLATE_VERSION, renderMeasurementBookHtml } from '../../mb-html.js';
 import { MB_REMARK_TEMPLATE_VERSION } from '../../mb-remark.js';
-import type { ObjectStorage } from '../../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { audit, errorResponses, IdParamsSchema } from '../shared.js';
 import type { AppInstance } from '../../app-instance.js';
 import { createTenantRouteRegistrar } from '../../tenant-route.js';

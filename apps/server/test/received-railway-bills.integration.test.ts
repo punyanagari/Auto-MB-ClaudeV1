@@ -14,7 +14,7 @@ import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
 import { assertNoForeignKeyOrphans, removeOrganisationResidue } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
-import { loadTrustAnchors } from '../src/pdf-signature.js';
+import { loadTrustAnchors } from '@auto-mb/documents';
 import { appendSignature, createTestPki, type TestPki } from './helpers/signed-pdf.js';
 import { railwayBillText, textLayoutPdf } from './helpers/railway-bill-pdf.js';
 

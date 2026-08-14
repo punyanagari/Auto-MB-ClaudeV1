@@ -46,7 +46,7 @@ import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { assertExtractedValuesUnmodified } from '../loa-extracted-values.js';
-import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
+import { extractLoaPdfText, PdfToTextConfigurationError } from '@auto-mb/documents';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import {
@@ -54,10 +54,10 @@ import {
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
-import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import { verifyUploadedPdf } from '@auto-mb/documents';
 import { assertAmcStagePercentages } from './payment.js';
-import type { TrustAnchorStore } from '../pdf-signature.js';
-import type { ObjectStorage } from '../storage.js';
+import type { TrustAnchorStore } from '@auto-mb/documents';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';

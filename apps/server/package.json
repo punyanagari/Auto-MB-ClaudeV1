@@ -13,6 +13,7 @@
   "dependencies": {
     "@auto-mb/contracts": "workspace:*",
     "@auto-mb/db": "workspace:*",
+    "@auto-mb/documents": "workspace:*",
     "@auto-mb/loa-parser": "workspace:*",
     "@fastify/swagger": "9.8.1",
     "@fastify/swagger-ui": "6.1.0",
