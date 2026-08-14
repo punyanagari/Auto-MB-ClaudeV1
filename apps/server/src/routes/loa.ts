@@ -1647,12 +1647,15 @@ export function registerLoaRoutes(
             `;
         }
 
-        // A Work confirmed from its LOA has no installation records yet,
-        // by construction — this transaction is the one that creates it.
+        // A Work confirmed from its LOA has no installation records,
+        // Measurement Books, or tax invoices yet, by construction — this
+        // transaction is the one that creates it.
         return {
           work: toWork(work),
           schedules,
           installationCounts: ZERO_INSTALLATIONS,
+          measurementBookCount: 0,
+          taxInvoiceCount: 0,
         };
       }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -1828,6 +1831,17 @@ export function registerLoaRoutes(
           from installations
           where work_id = ${id}
         `;
+        // Same reasoning for the Measurement and Bills tab badges: the
+        // formal Measurement Books and the tax invoices render inside
+        // their tabs from their own reads, so without these numbers a
+        // badge could claim zero while a book or an invoice exists.
+        const [documentCounts] = await tx<{ books: number; invoices: number }[]>`
+          select
+            (select count(*)::int from measurement_books where work_id = ${id})
+              as books,
+            (select count(*)::int from tax_invoices where work_id = ${id})
+              as invoices
+        `;
         return {
           work: { ...toWork(work), allowExcessDelivery: work.allow_excess_delivery },
           schedules,
@@ -1835,6 +1849,8 @@ export function registerLoaRoutes(
             recorded: installationCounts?.recorded ?? 0,
             cancelled: installationCounts?.cancelled ?? 0,
           },
+          measurementBookCount: documentCounts?.books ?? 0,
+          taxInvoiceCount: documentCounts?.invoices ?? 0,
         };
       });
     },

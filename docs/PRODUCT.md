@@ -253,7 +253,13 @@ over non-cancelled records for the item — computed nowhere else.
 - **Counting.** A Work's page shows how many installation records it
   carries, recorded and cancelled, from the Work read itself. The records
   are loaded only when their section is opened — the list expands every
-  record's serials, and a badge does not need them.
+  record's serials, and a badge does not need them. The same rule holds
+  for the two other sections whose registers load on open: the Work read
+  carries the formal Measurement Book count and the tax invoice count, and
+  each section's badge counts everything the section shows — a book with
+  no loose evidence entries, or an invoice with no railway bill, is still
+  a non-zero badge. The sections report their own lists back as they load
+  or change, so the badges track them without a page reload.
 
 ### Quantity ledger
 

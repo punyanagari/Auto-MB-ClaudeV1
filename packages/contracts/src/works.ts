@@ -328,6 +328,15 @@ export const WorkDetailResponseSchema = Type.Object(
      * because the Work page needs the count on every open and the records
      * only when their tab is opened; see `InstallationCountsSchema`. */
     installationCounts: InstallationCountsSchema,
+    /** How many formal Measurement Books the Work carries, any status.
+     * The Measurement tab's badge must count what the tab shows, and the
+     * books are read only when the tab is opened — a book with no loose
+     * evidence entries left the badge claiming zero measurements. */
+    measurementBookCount: Type.Integer({ minimum: 0 }),
+    /** How many tax invoices the Work carries, any status — the Bills
+     * tab renders them beside the railway bills, so its badge counts
+     * both for the same reason. */
+    taxInvoiceCount: Type.Integer({ minimum: 0 }),
   },
   { additionalProperties: false },
 );

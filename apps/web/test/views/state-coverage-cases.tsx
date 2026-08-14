@@ -559,6 +559,7 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => (
       <WorkTaxInvoices
         api={api}
+        onInvoicesKnown={() => {}}
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify
@@ -580,6 +581,7 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => (
       <WorkTaxInvoices
         api={api}
+        onInvoicesKnown={() => {}}
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify
