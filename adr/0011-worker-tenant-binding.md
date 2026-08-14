@@ -1,10 +1,10 @@
 # ADR-0011: Worker jobs impersonate their requesting user; the queue is reached only through definer functions
 
 - Status: Accepted (owner approval 2026-08-14), with **two amendments
-  proposed by the P18 implementation review and awaiting owner
-  ratification** — see "Proposed amendments" at the foot of this file.
-  Both correct statements of fact that turned out to be wrong; neither
-  changes the decision, and the implementation follows the corrected text.
+  raised by the P18 implementation review and ratified by the owner on
+  2026-08-14** — see "Amendments" at the foot of this file. Both correct
+  statements of fact that turned out to be wrong; neither changes the
+  decision, and the implementation follows the corrected text.
 - Date: 2026-08-14
 - Programme reference: P18 (worker wiring), IMPROVEMENT-PROGRAMME-2026-08-13 §2.4; ADR-0008 (worker scaffold); ADR-0010 (bind-time verification)
 
@@ -134,12 +134,13 @@ so a job claimed maliciously yields nothing readable.
   PR is opened, not merged — CONTRIBUTING's fresh-human-review
   requirement applies, and approval of this ADR does not waive it.
 
-## Proposed amendments (P18 implementation review, 2026-08-14)
+## Amendments (P18 implementation review, ratified by owner 2026-08-14)
 
 Raised by the review of the implementation pull request, applied to the
-implementation, and recorded here for owner ratification rather than
-folded in silently — the treatment ADR-0010's own correction had in
-pull request #70. Neither changes the decision this ADR takes.
+implementation, and put to the owner rather than folded in silently — the
+treatment ADR-0010's own correction had in pull request #70. **Both were
+ratified on 2026-08-14**, so this ADR reads as the decision ultimately
+taken. Neither changes the decision this ADR takes.
 
 **(a) The residual-exposure bound was falsifiable, and false.** The
 original text held that the exposure was metadata disclosure plus
