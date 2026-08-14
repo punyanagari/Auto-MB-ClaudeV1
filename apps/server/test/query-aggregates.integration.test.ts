@@ -6,6 +6,7 @@ import type { PlanNode, Sql, TransactionSql } from '@auto-mb/db';
 import {
   aggregateLoops,
   createDatabasePool,
+  ensureClusterRoles,
   explainPlan,
   removeOrganisationResidue,
   runMigrations,
@@ -314,17 +315,7 @@ beforeAll(async () => {
     applicationName: 'p11-query-admin',
   });
   await runMigrations(admin, migrationsDirectory);
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    do $$
-    begin
-      if not exists (select 1 from pg_roles where rolname = 'auto_mb_app') then
-        create role auto_mb_app login password '${escapedPassword}'
-          nosuperuser nocreatedb nocreaterole noinherit;
-      end if;
-    end
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   appPool = createDatabasePool({
     url: appUrl,
     max: 4,

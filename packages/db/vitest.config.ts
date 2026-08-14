@@ -14,5 +14,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.{test,spec}.{js,ts}'],
+    // Cluster-level roles are created once, race-safely, before any file
+    // runs: suites migrating parallel throwaway databases would otherwise
+    // race migration 0004's CREATE ROLE (roles are cluster-wide; the
+    // migration advisory lock is database-scoped and cannot help).
+    globalSetup: ['test/support/global-setup.ts'],
   },
 });
