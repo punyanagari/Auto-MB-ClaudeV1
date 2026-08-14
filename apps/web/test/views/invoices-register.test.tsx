@@ -1,9 +1,36 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { TaxInvoiceRegisterEntry } from '@auto-mb/contracts';
+import type { TaxInvoice, TaxInvoiceRegisterEntry } from '@auto-mb/contracts';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
-import { CLIENT_CONTACT, ORG_ID, WORK_ID, stubApi } from './helpers.js';
+import {
+  CLIENT_CONTACT,
+  ORG_ID,
+  SUBMITTED_INVOICE,
+  TAX_INVOICE_ID,
+  WORK_ID,
+  challanWork,
+  stubApi,
+  taxInvoice,
+} from './helpers.js';
+
+/** One opened invoice's detail response, from a `TaxInvoice`. */
+function detailOf(invoice: TaxInvoice) {
+  return {
+    invoice,
+    buyerSnapshot: null,
+    shipToSnapshot: null,
+    issuedSnapshot: null,
+    signedQr: null,
+    lines: [],
+  };
+}
+
+/** The Work behind an opened invoice, active or completed, for the R8 gate. */
+function work(status: 'active' | 'completed') {
+  const base = challanWork();
+  return { ...base, work: { ...base.work, status } };
+}
 
 /* The register answers what the per-Work list cannot: what have we
  * billed, to whom, and what is still unregistered — across Works, and
@@ -23,7 +50,6 @@ const WORK_BACKED: TaxInvoiceRegisterEntry = {
   buyerName: 'Sr. DEE/TRD/Bhusawal',
   taxableValue: '125000.00',
   gstAmount: '22500.00',
-  totalAmount: '147500.00',
   irn: 'a'.repeat(64),
   irpProvider: 'whitebooks',
   irpProviderState: 'registered',
@@ -42,7 +68,6 @@ const DIRECT: TaxInvoiceRegisterEntry = {
   buyerName: 'Deccan Switchgear Pvt Ltd',
   taxableValue: null,
   gstAmount: null,
-  totalAmount: null,
   irn: null,
   irpProvider: null,
   irpProviderState: 'not_requested',
@@ -57,7 +82,10 @@ function page(
   return { invoices, nextCursor };
 }
 
-function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
+function renderRegister(
+  overrides: Parameters<typeof stubApi>[0] = {},
+  props: { hasFullWorkScope?: boolean; openInvoiceId?: string | null } = {},
+) {
   const onOpenInvoice = vi.fn();
   const onOpenWork = vi.fn();
   const api = stubApi({
@@ -73,7 +101,8 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
       canIssue
       canCancel
       canManageStatutory
-      openInvoiceId={null}
+      hasFullWorkScope={props.hasFullWorkScope ?? true}
+      openInvoiceId={props.openInvoiceId ?? null}
       onOpenInvoice={onOpenInvoice}
       onOpenWork={onOpenWork}
     />,
@@ -246,5 +275,124 @@ describe('the tax-invoice register', () => {
     });
     expect(blocked.hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('link', { name: /Masters/ })).toBeTruthy();
+  });
+
+  it('does not offer a direct invoice to an assigned-scope member', async () => {
+    renderRegister({}, { hasFullWorkScope: false });
+
+    await screen.findByRole('link', { name: 'TI/2026-27/001' });
+    // The server refuses a direct invoice to an 'assigned'-scoped member
+    // (assertDirectInvoiceAccess -> 404). The form is not offered rather
+    // than failing after it is filled; the disabled control says why.
+    const blocked = screen.getByRole('button', {
+      name: 'Raise an invoice for a private customer',
+    });
+    expect(blocked.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/access to all of the organisation/i)).toBeTruthy();
+    // …and the working form is absent.
+    expect(screen.queryByRole('button', { name: 'Create draft' })).toBeNull();
+  });
+
+  it('reads a cancelled IRN as cancelled, never as registered', async () => {
+    const cancelled: TaxInvoiceRegisterEntry = {
+      ...WORK_BACKED,
+      irpProviderState: 'cancelled',
+    };
+    renderRegister({
+      listTaxInvoices: vi.fn().mockResolvedValue(page([cancelled])),
+    });
+
+    await screen.findByRole('link', { name: 'TI/2026-27/001' });
+    // The bug: short-circuiting on irn !== null and printing "Registered"
+    // for an IRN that had since been cancelled.
+    expect(screen.queryByText('Registered')).toBeNull();
+    expect(screen.getByText(/cancelled/i)).toBeTruthy();
+  });
+});
+
+describe('the register opening one invoice', () => {
+  it('loads the shared detail surface and fetches the e-way bills and credit notes of a submitted invoice', async () => {
+    const getTaxInvoice = vi.fn().mockResolvedValue(detailOf(SUBMITTED_INVOICE));
+    const getWork = vi.fn().mockResolvedValue(work('active'));
+    const listInvoiceEwayBills = vi.fn().mockResolvedValue([]);
+    const listInvoiceCreditNotes = vi.fn().mockResolvedValue([]);
+    renderRegister(
+      { getTaxInvoice, getWork, listInvoiceEwayBills, listInvoiceCreditNotes },
+      { openInvoiceId: TAX_INVOICE_ID },
+    );
+
+    // The opened surface is the same OpenedInvoice the Work tab opens; its
+    // IRP panel is the marker only it renders.
+    expect(await screen.findByText('Government e-invoicing')).toBeTruthy();
+    expect(getTaxInvoice).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID);
+    // Submitted, so both statutory lists are read.
+    expect(listInvoiceEwayBills).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID);
+    expect(listInvoiceCreditNotes).toHaveBeenCalledWith(ORG_ID, TAX_INVOICE_ID);
+  });
+
+  it('does not read e-way bills, credit notes or a Work for a direct draft', async () => {
+    const draft = taxInvoice({
+      id: TAX_INVOICE_ID,
+      workId: null,
+      measurementBookId: null,
+      mbNumber: null,
+      statedTaxableValue: '125000.00',
+      status: 'draft',
+    });
+    const getTaxInvoice = vi.fn().mockResolvedValue(detailOf(draft));
+    const getWork = vi.fn();
+    const listInvoiceEwayBills = vi.fn().mockResolvedValue([]);
+    const listInvoiceCreditNotes = vi.fn().mockResolvedValue([]);
+    renderRegister(
+      { getTaxInvoice, getWork, listInvoiceEwayBills, listInvoiceCreditNotes },
+      { openInvoiceId: TAX_INVOICE_ID },
+    );
+
+    await screen.findByRole('heading', { name: /Draft tax invoice/ });
+    // A draft has no e-way bills or credit notes, and a direct invoice has
+    // no Work: none of those round trips is made.
+    expect(listInvoiceEwayBills).not.toHaveBeenCalled();
+    expect(listInvoiceCreditNotes).not.toHaveBeenCalled();
+    expect(getWork).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed detail load and retries only that load', async () => {
+    const getTaxInvoice = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(detailOf(SUBMITTED_INVOICE));
+    const getWork = vi.fn().mockResolvedValue(work('active'));
+    const listTaxInvoices = vi.fn().mockResolvedValue(page([WORK_BACKED]));
+    renderRegister(
+      { getTaxInvoice, getWork, listTaxInvoices },
+      { openInvoiceId: TAX_INVOICE_ID },
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry this invoice' }));
+    expect(await screen.findByText('Government e-invoicing')).toBeTruthy();
+    expect(getTaxInvoice).toHaveBeenCalledTimes(2);
+    // The retry re-ran the detail load only, not the list.
+    expect(listTaxInvoices).toHaveBeenCalledTimes(1);
+  });
+
+  it('withholds Submit for a work-backed invoice on a completed Work', async () => {
+    const draft = taxInvoice({ id: TAX_INVOICE_ID, status: 'draft' });
+    const getTaxInvoice = vi.fn().mockResolvedValue(detailOf(draft));
+    const getWork = vi.fn().mockResolvedValue(work('completed'));
+    renderRegister({ getTaxInvoice, getWork }, { openInvoiceId: TAX_INVOICE_ID });
+
+    await screen.findByRole('heading', { name: /Draft tax invoice/ });
+    // R8: the Work is completed, so the money moment is refused — the
+    // server backstop enforces it and the control is not even offered.
+    expect(screen.queryByRole('button', { name: 'Submit invoice' })).toBeNull();
+  });
+
+  it('offers Submit for a work-backed draft while its Work is active', async () => {
+    const draft = taxInvoice({ id: TAX_INVOICE_ID, status: 'draft' });
+    const getTaxInvoice = vi.fn().mockResolvedValue(detailOf(draft));
+    const getWork = vi.fn().mockResolvedValue(work('active'));
+    renderRegister({ getTaxInvoice, getWork }, { openInvoiceId: TAX_INVOICE_ID });
+
+    expect(await screen.findByRole('button', { name: 'Submit invoice' })).toBeTruthy();
   });
 });

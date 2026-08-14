@@ -576,7 +576,6 @@ export const TaxInvoiceRegisterEntrySchema = Type.Object(
     /** CGST + SGST + IGST. Which heads carry it is a property of the
      * document, not of a register column. */
     gstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
-    totalAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     irn: Type.Union([IrnSchema, Type.Null()]),
     irpProvider: Type.Union([
       Type.Literal('manual'),

@@ -68,6 +68,11 @@ interface InvoicesRegisterProps {
   readonly canIssue: boolean;
   readonly canCancel: boolean;
   readonly canManageStatutory: boolean;
+  /** Whether this member has organisation-wide work scope. A DIRECT
+   * invoice belongs to no Work, so an 'assigned'-scoped member cannot
+   * raise one — the server refuses with a 404 (assertDirectInvoiceAccess).
+   * The form is withheld from them rather than failing after it is filled. */
+  readonly hasFullWorkScope: boolean;
   /** The invoice the route names, or null for the register itself. */
   readonly openInvoiceId: string | null;
   readonly onOpenInvoice: (invoiceId: string | null) => void;
@@ -83,6 +88,7 @@ export function InvoicesRegister({
   canIssue,
   canCancel,
   canManageStatutory,
+  hasFullWorkScope,
   openInvoiceId,
   onOpenInvoice,
   onOpenWork,
@@ -345,11 +351,18 @@ export function InvoicesRegister({
   const canIssueOpened =
     canIssue &&
     (detail === null || detail.invoice.workId === null || openWorkActive);
-  const canDraftDirect = canModify && clients.length > 0;
+  // A direct invoice needs organisation-wide scope; the server refuses an
+  // 'assigned'-scoped member with a 404, so the form is not offered to one.
+  const canDraftDirect = canModify && hasFullWorkScope && clients.length > 0;
   // The one prerequisite an operator can fix elsewhere right now: no
   // client contact exists to name as the buyer. Shown as a disabled
   // action with the way there, instead of silently hiding the workflow.
-  const draftBlockedByMissingClient = canModify && clients.length === 0;
+  const draftBlockedByMissingClient =
+    canModify && hasFullWorkScope && clients.length === 0;
+  // A modify-capable member who nonetheless cannot raise a direct invoice
+  // because their scope is limited to assigned Works. Told why, rather
+  // than handed a form that fails after it is filled.
+  const draftBlockedByScope = canModify && !hasFullWorkScope;
 
   return (
     <>
@@ -530,6 +543,19 @@ export function InvoicesRegister({
               invoices above are unaffected.
             </FormError>
           ))}
+
+        {draftBlockedByScope && (
+          <div>
+            <Button disabled aria-disabled="true">
+              Raise an invoice for a private customer
+            </Button>
+            <p className="text-muted-foreground">
+              A direct invoice belongs to no Work, so raising one needs access to all
+              of the organisation&rsquo;s Works. Your membership is limited to assigned
+              Works — an owner can widen it, or raise the invoice for you.
+            </p>
+          </div>
+        )}
 
         {draftBlockedByMissingClient && (
           <div>

@@ -93,7 +93,6 @@ export function registerTaxInvoiceRegisterRoute(
             buyer_name: string;
             taxable_value: string | null;
             gst_amount: string | null;
-            total_amount: string | null;
             irn: string | null;
             irp_provider: TaxInvoice['irpProvider'];
             irp_provider_state: TaxInvoice['irpProviderState'];
@@ -117,7 +116,6 @@ export function registerTaxInvoiceRegisterRoute(
                  -- invoice is a draft, because none of them exist yet.
                  (ti.cgst_amount + ti.sgst_amount + ti.igst_amount)
                    ::numeric(18,2)::text as gst_amount,
-                 ti.total_amount::text as total_amount,
                  ti.irn, ti.irp_provider, ti.irp_provider_state,
                  ti.irp_reporting_deadline::text as irp_reporting_deadline,
                  -- The frozen reporting window (migration 0049): the SAME
@@ -163,7 +161,6 @@ export function registerTaxInvoiceRegisterRoute(
             buyerName: row.buyer_name,
             taxableValue: row.taxable_value,
             gstAmount: row.gst_amount,
-            totalAmount: row.total_amount,
             irn: row.irn,
             irpProvider: row.irp_provider,
             irpProviderState: row.irp_provider_state,

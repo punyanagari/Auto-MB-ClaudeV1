@@ -85,8 +85,8 @@ describe('WorkDetail tax invoices', () => {
     renderInvoiceWork(api);
     await openWorkTab('Bills');
 
-    expect(await screen.findByText('IRP due 30 Jan 2099')).toBeTruthy();
-    expect(screen.getByText('IRP overdue')).toBeTruthy();
+    expect(await screen.findByText('IRP Due 30 Jan 2099')).toBeTruthy();
+    expect(screen.getByText('IRP Overdue')).toBeTruthy();
   });
 
   it('does not present a failed tax-invoice register as empty or creatable', async () => {

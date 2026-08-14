@@ -213,6 +213,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canIssue
         canCancel
         canManageStatutory
+        hasFullWorkScope
         openInvoiceId={null}
         onOpenInvoice={noop}
         onOpenWork={noop}

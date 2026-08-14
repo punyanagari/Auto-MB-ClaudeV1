@@ -1568,6 +1568,7 @@ export function OperationsWorkspace({
                 canIssue={canIssue}
                 canCancel={canCancel}
                 canManageStatutory={canManageStatutory}
+                hasFullWorkScope={membership?.workScope === 'all'}
                 openInvoiceId={view.name === 'invoice' ? view.invoiceId : null}
                 onOpenInvoice={(invoiceId) => {
                   navigate(
