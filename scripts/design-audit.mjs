@@ -8,7 +8,8 @@
 // the Playwright axe suite (`pnpm --filter @auto-mb/web test:e2e`), which
 // scans real renders of the shipped bundle in both themes.
 //
-// Usage: node scripts/design-audit.mjs <script-basename> <file.html> [flags]
+// Usage: node scripts/design-audit.mjs, passing the audit script basename,
+// then the rendered HTML file to measure, then any flags.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 

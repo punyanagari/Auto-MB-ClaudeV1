@@ -358,7 +358,75 @@ const WCAG_TAGS = [
  * WCAG failure, so the entry has to name an owner who will remove it. */
 const KNOWN_VIOLATIONS: ReadonlyMap<string, string> = new Map<string, string>();
 
-export async function expectNoAxeViolations(page: Page, context: string) {
+/* Both themes, on every screen the gate is pointed at.
+ *
+ * docs/UX.md § Visual system asks that text/tint pairings hold WCAG AA
+ * 4.5:1 "in both themes", and names the live axe/contrast gate as the
+ * proof. Until this, no browser test ever set a theme, so the dark half
+ * of that promise was asserted by nobody. The gate now runs each scan
+ * twice rather than each test twice: one call site, two passes, and the
+ * spec files stay a list of screens.
+ *
+ * The theme is applied the way the product applies it — `data-theme` on
+ * <html>, which is what `lib/theme.ts` writes and what pins
+ * `color-scheme` over the `prefers-color-scheme` media query. Emulating
+ * the media query instead would resolve the same token values, but only
+ * the attribute is a path an operator can actually reach (the Appearance
+ * card under Settings). */
+const THEMES = ['light', 'dark'] as const;
+
+/* Colour transitions are the reason this needs care rather than two
+ * lines. The shared Button carries `transition-all` and the rail items
+ * carry `transition-colors`, both 150ms, so for six frames after a theme
+ * flip the page is showing interpolations between the two palettes:
+ * ink that is on its way from white to #0d1420 over a fill that is on
+ * its way from #155eef to #7ca2f7. Those in-between pairs belong to
+ * neither theme and are not what the contract is about, but axe will
+ * happily measure them and report a serious violation with a colour pair
+ * that appears nowhere in globals.css — which is exactly the disputed
+ * finding this branch settled. Freezing transitions for the duration of
+ * the scan makes the gate measure the resting palette, deterministically,
+ * instead of racing a 150ms animation. */
+const FREEZE_STYLE_ID = 'axe-gate-frozen-transitions';
+
+async function freezeTransitions(page: Page) {
+  await page.evaluate((id) => {
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `*, *::before, *::after {
+      transition: none !important;
+      animation: none !important;
+    }`;
+    document.head.append(style);
+  }, FREEZE_STYLE_ID);
+}
+
+async function thawTransitions(page: Page) {
+  await page.evaluate((id) => {
+    document.getElementById(id)?.remove();
+  }, FREEZE_STYLE_ID);
+}
+
+/** Applies a theme and reports the ground colour it resolved to, so the
+ * caller can prove the two passes were actually two different palettes. */
+async function applyTheme(page: Page, theme: (typeof THEMES)[number] | null) {
+  return page.evaluate((value) => {
+    const root = document.documentElement;
+    if (value === null) {
+      delete root.dataset['theme'];
+    } else {
+      root.dataset['theme'] = value;
+    }
+    const style = getComputedStyle(root);
+    return {
+      colorScheme: style.colorScheme,
+      background: style.getPropertyValue('--background').trim(),
+    };
+  }, theme);
+}
+
+async function analyze(page: Page, context: string) {
   const results = await new AxeBuilder({ page })
     .options({
       runOnly: { type: 'tag', values: WCAG_TAGS },
@@ -388,8 +456,55 @@ export async function expectNoAxeViolations(page: Page, context: string) {
   expect(
     unexpected.map(
       (violation) =>
-        `${violation.id} (${violation.impact ?? 'no impact'}, ${String(violation.nodes.length)} nodes) at ${violation.nodes.map((node) => node.target.join(' ')).join(', ')}`,
+        `${violation.id} (${violation.impact ?? 'no impact'}, ${String(violation.nodes.length)} nodes) at ${violation.nodes.map((node) => node.target.join(' ')).join(', ')}${
+          violation.id === 'color-contrast'
+            ? ` [${violation.nodes
+                .map((node) =>
+                  node.any
+                    .map((check) => {
+                      const data = check.data as
+                        | { fgColor?: string; bgColor?: string; contrastRatio?: number }
+                        | undefined;
+                      return `${data?.fgColor ?? '?'} on ${data?.bgColor ?? '?'} = ${String(data?.contrastRatio ?? '?')}`;
+                    })
+                    .join('; '),
+                )
+                .join(' | ')}]`
+            : ''
+        }`,
     ),
     `${context}: unexpected axe violations`,
   ).toEqual([]);
+}
+
+export async function expectNoAxeViolations(page: Page, context: string) {
+  const original = await page.evaluate(() =>
+    document.documentElement.getAttribute('data-theme'),
+  );
+  await freezeTransitions(page);
+  const grounds = new Set<string>();
+  try {
+    for (const theme of THEMES) {
+      const resolved = await applyTheme(page, theme);
+      expect(
+        resolved.colorScheme,
+        `${context}: the ${theme} pass did not pin color-scheme`,
+      ).toBe(theme);
+      grounds.add(resolved.background);
+      await analyze(page, `${context} — ${theme} theme`);
+    }
+    /* A gate that flipped an attribute nothing reads would pass twice on
+     * one palette and claim to have proved two. The ground colour has to
+     * differ between the passes for the dark scan to mean anything. */
+    expect(
+      [...grounds],
+      `${context}: both theme passes resolved the same --background; the dark scan proved nothing`,
+    ).toHaveLength(THEMES.length);
+  } finally {
+    await applyTheme(
+      page,
+      original === 'light' || original === 'dark' ? original : null,
+    );
+    await thawTransitions(page);
+  }
 }
