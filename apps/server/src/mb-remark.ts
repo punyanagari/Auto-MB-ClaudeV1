@@ -89,11 +89,15 @@ export interface FinalBillBaseInput {
    * item that is neither delivered nor installed.
    *
    * The name carries the restriction on purpose. Only the AMC branch
-   * reads it, so the loader computes it only for AMC items and passes 0
-   * for every other category (`ITEM_INPUTS_SQL`'s `certified` CTE). A
-   * zero here means "not an AMC item", never "certified nothing" — read
-   * the acceptance-certificate aggregates directly if you want the
-   * certified total of an installable item. */
+   * reads it, so it is filled only for AMC items and every other category
+   * gets 0. It is deliberately NOT part of `ITEM_INPUTS_SQL`: that
+   * statement is P11's six laterals and stays byte-identical to them, so
+   * the certified read is its own statement, `loadAmcCertified`, issued
+   * by `computeForBook` only when a final book actually holds an AMC item
+   * (`routes/measurement-books/internal.ts`). A zero here means "not an
+   * AMC item", never "certified nothing" — read the acceptance-certificate
+   * aggregates directly if you want the certified total of an installable
+   * item. */
   readonly amcCertifiedQuantity: string;
 }
 
