@@ -5,13 +5,16 @@ This is initially a private product repository.
 ## Before coding
 
 1. Read `AGENTS.md`.
-2. Link work to a bounded GitHub issue.
+2. Link work to its row in the current programme document, or to a bounded
+   GitHub issue.
 3. State the user outcome, acceptance criteria, and non-goals.
 4. For high-risk changes, obtain plan approval before implementation.
 
 ## Branch and commit
 
-- branch: `claude/<issue>-<description>`
+- branch: `pack/<id>-<slug>` for a programme pack (`pack/p18-worker-wiring`),
+  `chore/<slug>` for landing records and maintenance
+  (`chore/wave3-tranche-b-record`)
 - commits: small, intentional, and reviewable
 - no direct commits to protected `main`
 
@@ -23,8 +26,21 @@ A pull request must include:
 - why the chosen implementation is the smallest correct option;
 - schema/security/operations effects;
 - exact verification commands and results;
-- screenshots for visible UI changes;
+- evidence for visible UI changes, per the section below;
 - migration and rollback/mitigation notes when relevant.
+
+### Evidence for a visible UI change
+
+Paste the images into the pull request thread. They are review artefacts, not
+product assets, and they are not committed to the repository —
+`docs/screenshots/p14-railway-bill/` is the one historical exception, and its
+own README records that the directory may be deleted at any time.
+
+Where capture is genuinely infeasible from the environment the change was made
+in, the fallback is text assertions of the changed states that run in CI on
+every commit, together with an explicit statement in the pull request that no
+images were produced and why. Silence is not the fallback: a reviewer must be
+able to tell a substitution from an omission.
 
 ## Required review
 
