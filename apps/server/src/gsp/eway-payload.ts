@@ -49,6 +49,30 @@ const TRANS_MODE: Record<string, string> = {
   ship: '4',
 };
 
+/** NIC's closed Unit Quantity Code list. The wire will only accept a code
+ * from this set; a free-text trade unit ('m', 'each', 'metre') is not one
+ * and inventing a mapping would put a false claim on a statutory filing.
+ * A label is sent through only when it is already a UQC verbatim; anything
+ * else becomes 'OTH', the same refusal the IRP item builder documents. */
+const UQC_CODES: ReadonlySet<string> = new Set([
+  'BAG', 'BAL', 'BDL', 'BKL', 'BOU', 'BOX', 'BTL', 'BUN', 'CAN', 'CBM',
+  'CCM', 'CMS', 'CTN', 'DOZ', 'DRM', 'GGK', 'GMS', 'GRS', 'GYD', 'KGS',
+  'KLR', 'KME', 'LTR', 'MLT', 'MTR', 'MTS', 'NOS', 'PAC', 'PCS', 'PRS',
+  'QTL', 'ROL', 'SET', 'SQF', 'SQM', 'SQY', 'TBS', 'TGM', 'THD', 'TON',
+  'TUB', 'UGS', 'UNT', 'YDS', 'OTH',
+]);
+
+/** A source line's free-text unit, resolved to a NIC UQC. Only an exact
+ * (case-insensitive) match to a real UQC survives; every other label —
+ * 'm', 'each', 'metre' — is 'OTH'. Never truncate-to-fit: 'metre'.slice(3)
+ * is 'MET', which is not a UQC and which NIC would reject or, worse,
+ * silently mis-read as a different unit. */
+function qtyUnitCode(unitLabel: string | null): string {
+  if (unitLabel === null) return 'OTH';
+  const candidate = unitLabel.trim().toUpperCase();
+  return UQC_CODES.has(candidate) ? candidate : 'OTH';
+}
+
 /** The carriage facts as the e-way bill row holds them. The row is
  * authoritative for the wire: it is the record the carriage CHECK measures
  * and the one an operator edits while the bill is a draft. */
@@ -93,6 +117,14 @@ function assertDirectPayloadComplete(
   }
   if (source.consignee.address.trim().length === 0) {
     missing.push("the consignee's address");
+  }
+  // Every other party fact is checked here; the consignee state code was
+  // the one omission, and buildDirectEwayBillPayload defaults a null to
+  // '0' — a toStateCode of 0 is not a state, so an unregistered consignee
+  // whose contact master carries no state code would sail onto the wire
+  // as a false declaration. Refuse it by name instead.
+  if (source.consignee.stateCode === null) {
+    missing.push("the consignee's state code");
   }
   if (source.documentNumber.trim().length === 0) {
     missing.push('the challan number, which is assigned at issue');
@@ -207,9 +239,13 @@ export function buildDirectEwayBillPayload(
     itemList: source.lines.map((line) => ({
       productName: line.description.slice(0, 100),
       productDesc: line.description.slice(0, 100),
-      hsnCode: exactJsonInteger(line.hsnSacCode),
+      // HSN is an identifier, not a quantity: exactJsonInteger would strip
+      // a chapter-01 code's leading zero (01012100 -> 1012100) and declare
+      // a different commodity. It travels as the string it is, exactly as
+      // the IRP item builder sends HsnCd.
+      hsnCode: line.hsnSacCode,
       quantity: exactJsonNumber(trimDecimal(line.quantity)),
-      qtyUnit: (line.unitLabel ?? 'OTH').slice(0, 3).toUpperCase(),
+      qtyUnit: qtyUnitCode(line.unitLabel),
       cgstRate: exactJsonNumber('0'),
       sgstRate: exactJsonNumber('0'),
       igstRate: exactJsonNumber('0'),

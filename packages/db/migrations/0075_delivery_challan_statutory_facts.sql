@@ -58,11 +58,25 @@ ALTER TABLE delivery_challan_items
 -- a service line is a SAC and a SAC is six digits; a goods line is an HSN
 -- and may be deepened to eight. The two columns arrive together or not at
 -- all, so "classified" is never a half state a reader has to interpret.
+--
+-- The both-or-neither rule is stated as its own equality rather than folded
+-- into the OR chain. A three-valued disjunction like
+--   (hsn IS NULL AND is_service IS NULL)
+--   OR (is_service AND hsn ~ ...) OR (NOT is_service AND hsn ~ ...)
+-- evaluates to NULL — not FALSE — on a HALF-classified line (hsn set,
+-- is_service NULL: false OR NULL OR NULL = NULL), and a CHECK passes on
+-- NULL. That let a half-state into the table, which readChallanSourceFacts
+-- then silently filters out of the NIC declaration — an understated
+-- consignment. `(a IS NULL) = (b IS NULL)` is FALSE (never NULL) when
+-- exactly one is null, so the half-state is refused at the database.
 ALTER TABLE delivery_challan_items
   ADD CONSTRAINT delivery_challan_items_code_shape CHECK (
-    (hsn_sac_code IS NULL AND is_service IS NULL)
-    OR (is_service AND hsn_sac_code ~ '^[0-9]{6}$')
-    OR (NOT is_service AND hsn_sac_code ~ '^[0-9]{6,8}$')
+    (hsn_sac_code IS NULL) = (is_service IS NULL)
+    AND (
+      hsn_sac_code IS NULL
+      OR (is_service AND hsn_sac_code ~ '^[0-9]{6}$')
+      OR (NOT is_service AND hsn_sac_code ~ '^[0-9]{6,8}$')
+    )
   );
 
 -- The applicability rule's read: "does this challan carry at least one
@@ -164,8 +178,9 @@ COMMENT ON COLUMN delivery_challans.consignee_gstin IS
 -- cannot move under it afterwards.
 --
 -- The body below is 0056's VERBATIM — which is 0032's, which is 0031's,
--- which restated 0018's, which restated 0001's — plus the six new header
--- columns in the issued-immutability row comparison. Nothing is dropped:
+-- which restated 0018's, which restated 0001's — plus the eight new header
+-- columns (movement_reason, consignee_gstin, and the six-field transport
+-- block) in the issued-immutability row comparison. Nothing is dropped:
 -- the kind clause (0056), the warranty columns (0018), the
 -- final-Measurement-Book and completed-Work issue refusals (0031) and
 -- the completed-Work cancel refusal (0032) all survive intact.

@@ -423,21 +423,17 @@ function normaliseIrp(
 function normaliseEway(
   rawTexts: readonly string[],
   value: unknown,
-  /** The IRP's e-way responses carry a `Status` field and a bill that is
-   * not `ACT` must never be recorded as one that is. The e-way bill API's
-   * own direct-generation response (ADR-0013) carries no such field: it
-   * answers with the number, date and validity of the bill it has just
-   * created, and there is no state for a just-created bill to be in other
-   * than active. Absence is accepted only where the response shape has no
-   * status to give; a status that is PRESENT and not ACT is refused on
-   * both paths. */
-  statusOptional = false,
 ): Omit<EwayBillProviderEvidence, 'rawResponse'> {
+  // A certified response carries a `Status`, and a bill that is not `ACT`
+  // must never be recorded as one that is. ADR-0013 reuses this adapter
+  // AS-IS on the new direct-generation path; the certification that would
+  // establish that path's response shape has not been re-run, so relaxing
+  // the requirement now would record a status-less answer as a live bill
+  // on the strength of an assumption. A genuinely status-less certified
+  // response is handled after re-certification, not before.
   const providerStatus = textValue(value, ['Status']);
   if (providerStatus === null) {
-    if (!statusOptional) {
-      throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
-    }
+    throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
   } else if (providerStatus.toUpperCase() !== 'ACT') {
     throw new StatutoryProviderError(
       'WHITEBOOKS_EWB_NOT_ACTIVE',
@@ -895,7 +891,7 @@ export class WhitebooksProvider implements StatutoryProvider {
     );
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_EMPTY', 'unknown');
     return withRawResponse(result.raw, () => ({
-      ...normaliseEway(result.rawTexts, result.parsed, true),
+      ...normaliseEway(result.rawTexts, result.parsed),
       rawResponse: result.raw,
     }));
   }

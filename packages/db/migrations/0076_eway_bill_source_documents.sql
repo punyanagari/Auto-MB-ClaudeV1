@@ -89,9 +89,13 @@ COMMENT ON COLUMN eway_bills.delivery_challan_id IS
 --
 -- SECURITY DEFINER, as 0035 wrote it, and therefore tenant-pinned by the
 -- row's own organisation_id rather than by the session binding — the 0046
--- review found a definer guard reading across tenants once and it must
--- not come back. (0035's invoice read was pinned by primary key alone;
--- it gains the organisation predicate here for the same reason.)
+-- review took the position that a definer guard must not read across
+-- tenants. 0035's invoice read was pinned by primary key alone, which was
+-- error-message disclosure only, NOT a cross-tenant write: the composite
+-- FK (organisation_id, tax_invoice_id) already blocked an insert naming a
+-- foreign invoice, so all a PK-only read could leak was whether some other
+-- tenant's invoice existed and its status. The organisation predicate here
+-- closes that disclosure on both the invoice and the new challan read.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION app_private.guard_eway_invoice()
 RETURNS trigger
@@ -315,6 +319,18 @@ ALTER TABLE eway_bills
       AND rendered_version IS NOT NULL)
   );
 
+-- The PARENT pointer's key must sit under the organisation's own prefix,
+-- the same scope 0044 asserts. The ledger carries its own
+-- eway_bill_renders_pdf_key_scope; this restates it on the pointer column
+-- directly so /pdf can never be repointed at another tenant's object even
+-- by raw same-tenant SQL that bypasses the ledger. Mirrors the shape of
+-- eway_bill_renders_pdf_key_scope above.
+ALTER TABLE eway_bills
+  ADD CONSTRAINT eway_bills_rendered_key_scope CHECK (
+    rendered_object_key IS NULL
+    OR rendered_object_key LIKE organisation_id::text || '/ewb/%'
+  );
+
 -- Append-only: a render that could be edited or deleted is not evidence
 -- of what was printed. 0044's tax_invoice_renders_immutable_guard, said
 -- again for this table.
@@ -336,10 +352,18 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_eway_bill_render_immutable();
 -- A render belongs to a GENERATED bill and its versions are contiguous
 -- from one, so "version 3" always means "the third print of this bill"
 -- and never "the third that happened to survive".
+--
+-- INVOKER rights, deliberately, exactly as 0044's
+-- guard_tax_invoice_render_insert is. Under the app role's forced RLS a
+-- foreign-tenant parent is simply invisible here, so a probe against
+-- another tenant's bill collapses to the one generic 'is missing' message
+-- and cannot distinguish existence, status, or render count. A
+-- SECURITY DEFINER body would read the foreign row and leak exactly those
+-- through its branch-specific messages; the composite FK already blocks
+-- the write, so definer rights would buy nothing but the disclosure.
 CREATE FUNCTION app_private.guard_eway_bill_render_insert()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
@@ -373,6 +397,86 @@ $$;
 CREATE TRIGGER eway_bill_renders_insert_guard
 BEFORE INSERT ON eway_bill_renders
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_eway_bill_render_insert();
+
+-- The parent pointer columns may only advance to the newest retained
+-- render. 0044's guard_tax_invoice_render_pointer, said for this table:
+-- raw same-tenant SQL cannot make /pdf point at untracked bytes, clear the
+-- pointer, or present an older render as current. eway_bills carries no
+-- template_version on the parent (the render row holds it), so the
+-- comparison is over the three pointer columns against the latest render's
+-- (object_key, pdf_sha256, version).
+CREATE FUNCTION app_private.guard_eway_bill_render_pointer()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  latest eway_bill_renders%ROWTYPE;
+BEGIN
+  IF NEW.rendered_object_key IS NOT DISTINCT FROM OLD.rendered_object_key
+     AND NEW.rendered_sha256 IS NOT DISTINCT FROM OLD.rendered_sha256
+     AND NEW.rendered_version IS NOT DISTINCT FROM OLD.rendered_version THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.rendered_object_key IS NULL
+     OR NEW.rendered_sha256 IS NULL
+     OR NEW.rendered_version IS NULL THEN
+    RAISE EXCEPTION 'e-way bill render pointer cannot be cleared or partial'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW.status = 'draft' THEN
+    RAISE EXCEPTION 'only a generated e-way bill may advance its render pointer'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT render.* INTO latest
+  FROM eway_bill_renders render
+  WHERE render.organisation_id = NEW.organisation_id
+    AND render.eway_bill_id = NEW.id
+  ORDER BY render.version DESC
+  LIMIT 1;
+
+  IF NOT FOUND
+     OR NEW.rendered_object_key IS DISTINCT FROM latest.object_key
+     OR NEW.rendered_sha256 IS DISTINCT FROM latest.pdf_sha256
+     OR NEW.rendered_version IS DISTINCT FROM latest.version THEN
+    RAISE EXCEPTION 'e-way bill render pointer must match its latest retained version'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER eway_bills_render_pointer_guard
+BEFORE UPDATE OF rendered_object_key, rendered_sha256, rendered_version
+ON eway_bills
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_eway_bill_render_pointer();
+
+CREATE FUNCTION app_private.advance_eway_bill_render_pointer()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  UPDATE eway_bills
+  SET rendered_object_key = NEW.object_key,
+      rendered_sha256 = NEW.pdf_sha256,
+      rendered_version = NEW.version
+  WHERE organisation_id = NEW.organisation_id
+    AND id = NEW.eway_bill_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'e-way bill render parent disappeared'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER eway_bill_renders_advance_pointer
+AFTER INSERT ON eway_bill_renders
+FOR EACH ROW EXECUTE FUNCTION app_private.advance_eway_bill_render_pointer();
 
 -- Tenant isolation and least privilege for the new table. Renders are
 -- append-only for the application role too: SELECT and INSERT, nothing
