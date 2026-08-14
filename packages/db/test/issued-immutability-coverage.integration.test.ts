@@ -130,7 +130,18 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'signed_copy_sha256',
   ],
 
-  eway_bills: ['id', 'updated_at', 'status'],
+  // The render pointer (0076) moves every time the printable summary is
+  // regenerated, exactly as it does on delivery_challans and credit_notes
+  // above: the PDF is a convenience print of frozen facts, so reprinting
+  // one changes which bytes the pointer names and nothing that NIC said.
+  eway_bills: [
+    'id',
+    'updated_at',
+    'status',
+    'rendered_object_key',
+    'rendered_sha256',
+    'rendered_version',
+  ],
 
   extension_requests: [
     'id',

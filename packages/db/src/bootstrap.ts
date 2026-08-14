@@ -163,6 +163,10 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   gst_rates: 'SELECT, INSERT, UPDATE',
   tax_invoice_renders: 'SELECT, INSERT',
   eway_bills: 'SELECT, INSERT, UPDATE, DELETE',
+  // The printable e-way bill summary (0076): append-only like its
+  // tax-invoice sibling above. A render is evidence of what was printed,
+  // so the application role may add one and never rewrite one.
+  eway_bill_renders: 'SELECT, INSERT',
   document_number_series: 'SELECT, INSERT, UPDATE, DELETE',
   statutory_provider_operations: 'SELECT, INSERT, UPDATE',
   // Shared throttle state (0054): windows decay and clear by DELETE; the

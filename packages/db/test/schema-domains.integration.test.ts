@@ -193,7 +193,9 @@ describe('the schema at head names all three shapes', () => {
     expect(wrong, `digest columns not typed sha256_hex: ${wrong.join(', ')}`).toEqual(
       [],
     );
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(22);
+    // 22 before 0076, which adds eway_bills.rendered_sha256 plus the
+    // render ledger's source_sha256 and pdf_sha256.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(25);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

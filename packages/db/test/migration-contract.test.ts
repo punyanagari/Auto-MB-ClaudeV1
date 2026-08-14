@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 156;
+const TRIGGER_CENSUS = 158;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -352,5 +352,94 @@ describe('tenant migration contract', () => {
       expect(sql).toContain(`DROP TRIGGER ${trigger} ON tax_invoices;`);
       expect(sql).toContain(`CREATE TRIGGER ${trigger}`);
     }
+  });
+
+  it("binds the challan's stage-3b statutory facts in 0075", async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0075_delivery_challan_statutory_facts.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // The line facts take 0057's shape, including the CHECK that pairs
+    // code length to kind, plus the unclassified branch this table needs.
+    expect(sql).toContain('delivery_challan_items_code_shape');
+    expect(sql).toMatch(/\(is_service AND hsn_sac_code ~ '\^\[0-9\]\{6\}\$'\)/);
+    expect(sql).toMatch(/\(NOT is_service AND hsn_sac_code ~ '\^\[0-9\]\{6,8\}\$'\)/);
+    expect(sql).toContain('(hsn_sac_code IS NULL AND is_service IS NULL)');
+    // The header facts: NIC's movement vocabulary and the transport
+    // shapes 0035 proved on eway_bills.
+    expect(sql).toMatch(
+      /movement_reason IN \('supply', 'job_work', 'for_own_use', 'others'\)/,
+    );
+    expect(sql).toContain("vehicle_number ~ '^[A-Z0-9]{6,12}$'");
+    expect(sql).toContain("transporter_id ~ '^[0-9]{2}[0-9A-Z]{13}$'");
+    expect(sql).toContain(
+      'transport_distance_km >= 0 AND transport_distance_km <= 4000',
+    );
+    expect(sql).toContain('delivery_challans_transport_doc_shape');
+    // Every new header column is frozen at issue: the guard's row
+    // comparison is what makes an issued challan safe to raise a bill on.
+    for (const column of [
+      'movement_reason',
+      'consignee_gstin',
+      'transporter_id',
+      'transporter_name',
+      'vehicle_number',
+      'transport_doc_number',
+      'transport_doc_date',
+      'transport_distance_km',
+    ]) {
+      expect(sql, column).toContain(`NEW.${column}`);
+      expect(sql, column).toContain(`OLD.${column}`);
+    }
+    expect(sql).toContain("RAISE EXCEPTION 'issued Delivery Challan business data is immutable'");
+  });
+
+  it('makes an e-way bill name exactly one source document in 0076', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0076_eway_bill_source_documents.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    expect(sql).toContain(
+      'ALTER TABLE eway_bills ALTER COLUMN tax_invoice_id DROP NOT NULL;',
+    );
+    expect(sql).toContain('eway_bills_source_shape');
+    expect(sql).toMatch(
+      /\(tax_invoice_id IS NOT NULL AND delivery_challan_id IS NULL\)\s+OR\s+\(tax_invoice_id IS NULL AND delivery_challan_id IS NOT NULL\)/,
+    );
+    // One live bill per source, the challan half of 0035's rule.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX eway_bills_one_live_per_challan\s+ON eway_bills \(organisation_id, delivery_challan_id\)\s+WHERE status <> 'cancelled';/,
+    );
+    // Referential integrity cannot use a partial index, so the FK gets an
+    // unconditional one of its own.
+    expect(sql).toMatch(
+      /CREATE INDEX eway_bills_challan_idx\s+ON eway_bills \(organisation_id, delivery_challan_id\);/,
+    );
+    // The insert guard reads whichever source the row names, and the
+    // definer read is pinned to the row's own tenant on BOTH branches.
+    const insertGuard = sql.slice(
+      sql.indexOf('CREATE OR REPLACE FUNCTION app_private.guard_eway_invoice()'),
+      sql.indexOf('CREATE OR REPLACE FUNCTION app_private.guard_eway_bill_issued_update()'),
+    );
+    expect(insertGuard).toContain('SECURITY DEFINER');
+    expect(
+      [...insertGuard.matchAll(/WHERE organisation_id = NEW\.organisation_id/g)],
+    ).toHaveLength(2);
+    expect(insertGuard).toContain("v_kind <> 'standalone'");
+    expect(insertGuard).toContain("v_status <> 'issued'");
+    // The source is frozen once the bill leaves draft.
+    expect(sql).toContain('NEW.delivery_challan_id');
+    expect(sql).toContain('OLD.delivery_challan_id');
+    // The printable summary is append-only, generated-only, contiguous.
+    expect(sql).toContain('CREATE TABLE eway_bill_renders');
+    expect(sql).toContain('eway_bill_renders_pdf_key_scope');
+    expect(sql).toContain("RAISE EXCEPTION 'e-way bill renders are append-only'");
+    expect(sql).toContain('a draft e-way bill has no NIC facts to print');
+    expect(sql).toContain('e-way bill render versions are contiguous from one');
+    expect(sql).toContain('eway_bills_render_pointer_shape');
   });
 });
