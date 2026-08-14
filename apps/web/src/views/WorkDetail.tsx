@@ -1233,11 +1233,21 @@ export function WorkDetail({
               splitting them puts the amount on one screen and the word
               "paid" on another — which is how the register came to be a
               spreadsheet in the first place. */}
+          {/* `canIssue`, deliberately, and NOT `canIssueDocuments`. R8
+              closes every create/record surface with the Work, and this is
+              the one that must not close with it: recording that the
+              railway paid moves no quantity and creates no document, and
+              payment legitimately continues for months after execution
+              finishes. `routes/retention.ts` says so in as many words and
+              refuses nothing here, so gating the form on `workActive`
+              would hide the only way to satisfy a "Mark paid" button that
+              stays visible — an operator on a completed Work could see the
+              refusal and have no route out of it. */}
           <WorkBillSettlement
             api={api}
             organisationId={organisationId}
             workId={workId}
-            canIssue={canIssueDocuments}
+            canIssue={canIssue}
             canCancel={canCancel}
           />
           {/* The GST document sits with the money it bills: the bill is

@@ -3,8 +3,8 @@ import { BillStatusSchema } from './retention.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
-  NonNegativeDecimalStringSchema,
-  PositiveDecimalStringSchema,
+  NonNegativeMoneyStringSchema,
+  PositiveMoneyStringSchema,
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
@@ -46,7 +46,7 @@ export const BillPaymentDeductionSchema = Type.Object(
   {
     id: UuidSchema,
     category: BillDeductionCategorySchema,
-    amount: PositiveDecimalStringSchema,
+    amount: PositiveMoneyStringSchema,
     /** Required on `OTHER` and optional elsewhere: a named head explains
      * itself, an unnamed one has to be explained. */
     description: Type.Union([Type.String(), Type.Null()]),
@@ -62,15 +62,15 @@ export const BillPaymentSchema = Type.Object(
     receivedOn: DateOnlySchema,
     /** What reached the bank. Zero is legitimate — a bill entirely
      * consumed by a recovery is a real event and has to be recordable. */
-    receivedAmount: NonNegativeDecimalStringSchema,
+    receivedAmount: NonNegativeMoneyStringSchema,
     reference: Type.Union([Type.String(), Type.Null()]),
     remarks: Type.Union([Type.String(), Type.Null()]),
     deductions: Type.Array(BillPaymentDeductionSchema),
     /** Summed in SQL, never in the browser. */
-    deductionTotal: NonNegativeDecimalStringSchema,
+    deductionTotal: NonNegativeMoneyStringSchema,
     /** `receivedAmount + deductionTotal`: the part of the bill this
      * receipt settles, which is what the outstanding position moves by. */
-    grossAmount: NonNegativeDecimalStringSchema,
+    grossAmount: NonNegativeMoneyStringSchema,
     voidedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     voidReason: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
@@ -90,14 +90,14 @@ export type BillPayment = Static<typeof BillPaymentSchema>;
 export const RecordBillPaymentRequestSchema = Type.Object(
   {
     receivedOn: DateOnlySchema,
-    receivedAmount: NonNegativeDecimalStringSchema,
+    receivedAmount: NonNegativeMoneyStringSchema,
     reference: Type.Optional(nonBlankString({ minLength: 3, maxLength: 100 })),
     remarks: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })),
     deductions: Type.Array(
       Type.Object(
         {
           category: BillDeductionCategorySchema,
-          amount: PositiveDecimalStringSchema,
+          amount: PositiveMoneyStringSchema,
           description: Type.Optional(nonBlankString({ minLength: 3, maxLength: 200 })),
         },
         { additionalProperties: false },
@@ -126,7 +126,7 @@ export type VoidBillPaymentRequest = Static<typeof VoidBillPaymentRequestSchema>
  * GST-inclusive — and not `preparedAmount`, which is what the agency
  * prepared on the Work's recorded GST basis. Both are reported so a
  * difference between them is visible; only the first is subtracted from.
- * `docs/PRODUCT.md` §5.6 states why.
+ * `docs/PRODUCT.md` §5.7 states why.
  *
  * `outstandingAmount` is null exactly when `railwayBillAmount` is: until
  * the measurement is closed by a verified railway bill there is no agreed
@@ -149,11 +149,11 @@ export const BillSettlementPositionSchema = Type.Object(
     receivedRailwayBillId: Type.Union([UuidSchema, Type.Null()]),
     railwayBillNumber: Type.Union([Type.String(), Type.Null()]),
     railwayBillDate: Type.Union([DateOnlySchema, Type.Null()]),
-    railwayBillAmount: Type.Union([PositiveDecimalStringSchema, Type.Null()]),
-    receivedTotal: NonNegativeDecimalStringSchema,
+    railwayBillAmount: Type.Union([PositiveMoneyStringSchema, Type.Null()]),
+    receivedTotal: NonNegativeMoneyStringSchema,
     /** Money the railway KEPT. Settled, not outstanding — the whole
      * reason the position takes three figures. */
-    deductionTotal: NonNegativeDecimalStringSchema,
+    deductionTotal: NonNegativeMoneyStringSchema,
     outstandingAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     payments: Type.Array(BillPaymentSchema),
   },

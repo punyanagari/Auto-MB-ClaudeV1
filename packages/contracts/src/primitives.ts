@@ -98,6 +98,44 @@ export const NonNegativeDecimalStringSchema = Type.String({
 });
 export type NonNegativeDecimalString = Static<typeof NonNegativeDecimalStringSchema>;
 
+/* --- Money, at the scale money is stored ------------------------------
+ *
+ * The two schemas above admit THREE fraction digits, because they serve
+ * quantities as well as money. Every money column in this schema is
+ * `money_amount`, which is `numeric(18,2)` (migration 0065), and the gap
+ * between the two is not cosmetic — it is three separate defects:
+ *
+ *   * `0.004` passes the contract, rounds to `0.00` in the column, and a
+ *     `CHECK (amount > 0)` then refuses it as a 23514 the operator reads
+ *     as a bare 500;
+ *   * `0.005` passes the contract and rounds UP, so a figure the route
+ *     compared against a ceiling is not the figure the column stores —
+ *     which on a settlement ceiling is the difference between "paid" and
+ *     "one paisa outstanding";
+ *   * the route and the database therefore disagree about what the
+ *     request said, which is the one thing a two-layer money rule must
+ *     never do.
+ *
+ * A money field takes two fraction digits, and says so at the boundary.
+ */
+
+/** Strictly positive money: at most two fraction digits, as stored. */
+export const PositiveMoneyStringSchema = Type.String({
+  pattern: '^(?:[1-9]\\d{0,14}(?:\\.\\d{1,2})?|0\\.(?:[1-9]\\d?|0[1-9]))$',
+  description:
+    'Strictly positive money transported as a string; at most two fraction digits, matching the money_amount column.',
+});
+export type PositiveMoneyString = Static<typeof PositiveMoneyStringSchema>;
+
+/** Non-negative money: at most two fraction digits, as stored. Zero is a
+ * legitimate value; a minus sign is not. */
+export const NonNegativeMoneyStringSchema = Type.String({
+  pattern: '^(?:0|[1-9]\\d{0,14})(?:\\.\\d{1,2})?$',
+  description:
+    'Non-negative money transported as a string; at most two fraction digits, matching the money_amount column.',
+});
+export type NonNegativeMoneyString = Static<typeof NonNegativeMoneyStringSchema>;
+
 /** Non-negative RATE — deliberately not positive. PRODUCT.md invariant 6
  * makes rates non-negative, and free-issue / nil-rate supply lines are
  * real, so '0' must keep working. */

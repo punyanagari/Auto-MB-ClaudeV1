@@ -196,6 +196,15 @@ function record(billId: string, body: RecordBillPaymentRequest, as?: string) {
   });
 }
 
+/** The Work a bill belongs to, for a test that starts from the bill. */
+async function billWork(billId: string): Promise<{ work_id: string }> {
+  const [row] = await admin<{ work_id: string }[]>`
+    select work_id from bills where id = ${billId}
+  `;
+  if (row === undefined) throw new Error('bill missing');
+  return row;
+}
+
 function settlement(workId: string) {
   return authed({
     method: 'GET',
@@ -538,6 +547,12 @@ describe('voiding a receipt', () => {
 });
 
 describe('the database refuses what the route refuses', () => {
+  /* Asserted on SQLSTATE rather than on the text of each RAISE.
+   * `apps/server/src/routes/bill-payments.ts` maps these codes to named
+   * 409s, so the code is the contract between the two layers and the
+   * message is prose that may be improved; a test that pinned the prose
+   * would make rewording a refusal a test failure and would not notice a
+   * code that changed. Migration 0067 lists what each code means. */
   it('refuses a payment written straight to the table against an open book', async () => {
     // Recurring finding 2: money enforced twice. The route is not in this
     // path at all — this is the trigger answering a writer that never
@@ -551,7 +566,7 @@ describe('the database refuses what the route refuses', () => {
         )
         values (${organisationId}, ${billId}, '2026-06-01', '1.00', ${ownerUserId})
       `,
-    ).rejects.toThrow(/not closed by a verified railway bill/);
+    ).rejects.toMatchObject({ code: '23A03' });
   });
 
   it('refuses a bill BORN paid with an empty register', async () => {
@@ -571,7 +586,7 @@ describe('the database refuses what the route refuses', () => {
           ${RAILWAY_BILL_AMOUNT}, ${ownerUserId}, ${bookId}, now(), now()
         )
       `,
-    ).rejects.toThrow(/cannot be marked paid/);
+    ).rejects.toMatchObject({ code: '23A05' });
   });
 
   it('refuses a deduction that would push the register past the railway figure', async () => {
@@ -590,7 +605,7 @@ describe('the database refuses what the route refuses', () => {
         )
         values (${organisationId}, ${paymentId}, 'PENALTY', '0.01')
       `,
-    ).rejects.toThrow(/would be settled to/);
+    ).rejects.toMatchObject({ code: '23A01' });
   });
 
   it('refuses to edit a recorded receipt or a recorded deduction', async () => {
@@ -602,13 +617,271 @@ describe('the database refuses what the route refuses', () => {
       admin`
         update bill_payments set received_amount = '1.00' where id = ${paymentId}
       `,
-    ).rejects.toThrow(/immutable/);
+    ).rejects.toMatchObject({ code: '23A04' });
     await expect(
       admin`
         update bill_payment_deductions set amount = '1.00'
         where bill_payment_id = ${paymentId}
       `,
-    ).rejects.toThrow(/immutable/);
+    ).rejects.toMatchObject({ code: '23A04' });
+  });
+});
+
+describe('two receipts at once', () => {
+  it('lets exactly one of two simultaneous receipts take the last of the bill', async () => {
+    // AGENTS.md's definition of done asks concurrency-sensitive work for a
+    // simultaneous-request test, and this is the one path where the route's
+    // pre-flight check cannot be the whole answer: both requests read the
+    // register before either writes. What makes it correct is the `FOR
+    // UPDATE` on the bill row, taken in the same order by the route and by
+    // the trigger — and the loser's refusal is the `rethrowWriteRefusal`
+    // branch, which nothing else in this suite executes.
+    const { billId } = await seedBill('BPR');
+    const each: RecordBillPaymentRequest = {
+      receivedOn: '2026-06-01',
+      receivedAmount: '600000.00',
+      deductions: [],
+    };
+
+    const [first, second] = await Promise.all([
+      record(billId, { ...each, reference: 'UTR-RACE-A' }),
+      record(billId, { ...each, reference: 'UTR-RACE-B' }),
+    ]);
+    const codes = [first, second].map((response) => response.statusCode).sort();
+    // Two receipts of six lakh against a ten-lakh bill: one fits, and the
+    // two together do not.
+    expect(codes, `${first.body} | ${second.body}`).toEqual([201, 409]);
+
+    const loser = [first, second].find((response) => response.statusCode === 409);
+    expect(loser?.json<{ code: string }>().code).toBe(
+      'BILL_PAYMENT_EXCEEDS_SETTLEMENT',
+    );
+
+    // And the register holds exactly one of them, so the refusal was a
+    // refusal rather than a rollback of both.
+    const [position] = (
+      await settlement((await billWork(billId)).work_id)
+    ).json<BillSettlementResponse>().positions;
+    expect(position?.receivedTotal).toBe('600000.00');
+    expect(position?.payments).toHaveLength(1);
+  });
+});
+
+describe('the deduction breakup is checked as a whole', () => {
+  it('refuses a multi-row breakup that fits row by row but not as a statement', async () => {
+    // THE VOLATILITY PIN (migration 0067 section 6).
+    //
+    // The route inserts a whole breakup as ONE multi-row INSERT, so the
+    // BEFORE trigger fires once per deduction inside a single statement.
+    // Each firing sees the siblings the same statement already inserted
+    // only because the trigger function is VOLATILE — a VOLATILE PL/pgSQL
+    // function runs its statements read-write, which increments the command
+    // counter and makes those rows visible. Marked STABLE, which the body
+    // would not obviously contradict, the siblings vanish and three rows
+    // that individually fit would jointly pass the ceiling.
+    //
+    // The route is deliberately bypassed: it sums the request itself and
+    // would refuse this before the database ever saw it, so going through
+    // it would prove nothing about the second layer. Four deductions of
+    // ₹3,00,000 against a ₹10,00,000 bill with nothing else recorded —
+    // each fits alone, the statement does not.
+    const { billId } = await seedBill('BPS');
+    const [payment] = await admin<{ id: string }[]>`
+      insert into bill_payments (
+        organisation_id, bill_id, received_on, received_amount,
+        recorded_by_user_id
+      )
+      values (${organisationId}, ${billId}, '2026-06-01', '0.00', ${ownerUserId})
+      returning id
+    `;
+    await expect(
+      admin`
+        insert into bill_payment_deductions (
+          organisation_id, bill_payment_id, category, amount
+        )
+        select ${organisationId}, ${payment?.id ?? ''}, category, '300000.00'
+        from unnest(array['GST_TDS', 'INCOME_TAX_TDS', 'SECURITY_DEPOSIT', 'PENALTY'])
+          as category
+      `,
+    ).rejects.toMatchObject({ code: '23A01' });
+  });
+});
+
+describe('the same advice twice', () => {
+  it('refuses a second live receipt quoting the same reference', async () => {
+    const { billId } = await seedBill('BPT');
+    const first = await record(billId, {
+      receivedOn: '2026-06-01',
+      receivedAmount: '100000.00',
+      reference: 'UTR-DUP-9001',
+      deductions: [],
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    const again = await record(billId, {
+      receivedOn: '2026-06-02',
+      receivedAmount: '100000.00',
+      // Padded on purpose: the column stores trimmed text and the index
+      // is on `btrim(reference)`, so a duplicate cannot be smuggled past
+      // either of them with a leading space.
+      reference: '  UTR-DUP-9001  ',
+      deductions: [],
+    });
+    expect(again.statusCode, again.body).toBe(409);
+    expect(again.json<{ code: string }>().code).toBe(
+      'BILL_PAYMENT_DUPLICATE_REFERENCE',
+    );
+
+    // The index is the half that survives a route forgetting to ask, so it
+    // is attacked directly as well.
+    await expect(
+      admin`
+        insert into bill_payments (
+          organisation_id, bill_id, received_on, received_amount, reference,
+          recorded_by_user_id
+        )
+        values (${organisationId}, ${billId}, '2026-06-03', '1.00',
+                'UTR-DUP-9001', ${ownerUserId})
+      `,
+    ).rejects.toMatchObject({ code: '23505' });
+
+    // Withdrawing the first frees the reference: the index is partial on
+    // the live rows, because a corrected receipt legitimately re-quotes
+    // the advice it replaces.
+    const withdrawn = await authed({
+      method: 'POST',
+      url: `/api/bill-payments/${first.json<BillPayment>().id}/void`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { reason: 'Keyed against the wrong bill' },
+    });
+    expect(withdrawn.statusCode, withdrawn.body).toBe(200);
+    const replacement = await record(billId, {
+      receivedOn: '2026-06-04',
+      receivedAmount: '100000.00',
+      reference: 'UTR-DUP-9001',
+      deductions: [],
+    });
+    expect(replacement.statusCode, replacement.body).toBe(201);
+  });
+
+  it('stores the reference as btrim would judge it', async () => {
+    const { billId } = await seedBill('BPU');
+    const response = await record(billId, {
+      receivedOn: '2026-06-01',
+      receivedAmount: '1000.00',
+      reference: '  UTR-PADDED-1  ',
+      remarks: '  Against the May advice  ',
+      deductions: [],
+    });
+    // Untrimmed, this reached the btrim CHECK as a 23514 and the operator
+    // read a bare 500.
+    expect(response.statusCode, response.body).toBe(201);
+    const payment = response.json<BillPayment>();
+    expect(payment.reference).toBe('UTR-PADDED-1');
+    expect(payment.remarks).toBe('Against the May advice');
+    // And every money figure is two-place, including the derived ones on
+    // a receipt with no deductions at all — where the coalesce falls back
+    // to an integer and used to answer "0" beside a column of "0.00".
+    expect(payment.deductionTotal).toBe('0.00');
+    expect(payment.grossAmount).toBe('1000.00');
+  });
+});
+
+describe('when a receipt may be dated', () => {
+  it('refuses a future date and a date before the railway bill', async () => {
+    const { billId } = await seedBill('BPV');
+    const future = await record(billId, {
+      receivedOn: '2099-01-01',
+      receivedAmount: '1000.00',
+      deductions: [],
+    });
+    expect(future.statusCode, future.body).toBe(400);
+    expect(future.json<{ code: string }>().code).toBe('BILL_PAYMENT_DATE_INVALID');
+
+    // The seeded railway bill is dated 2026-05-11; money cannot have
+    // arrived against a bill the railway had not raised.
+    const early = await record(billId, {
+      receivedOn: '2026-05-10',
+      receivedAmount: '1000.00',
+      deductions: [],
+    });
+    expect(early.statusCode, early.body).toBe(400);
+    expect(early.json<{ code: string }>().code).toBe('BILL_PAYMENT_DATE_INVALID');
+
+    // The bill's own date is the boundary and is inclusive: same-day
+    // settlement happens.
+    const sameDay = await record(billId, {
+      receivedOn: '2026-05-11',
+      receivedAmount: '1000.00',
+      deductions: [],
+    });
+    expect(sameDay.statusCode, sameDay.body).toBe(201);
+  });
+});
+
+describe('the column CHECKs refuse what no route would send', () => {
+  it('refuses a void with no reason, a nil deduction, and an unnamed Other', async () => {
+    const { billId } = await seedBill('BPW');
+    const [payment] = await admin<{ id: string }[]>`
+      insert into bill_payments (
+        organisation_id, bill_id, received_on, received_amount,
+        recorded_by_user_id
+      )
+      values (${organisationId}, ${billId}, '2026-06-01', '100.00', ${ownerUserId})
+      returning id
+    `;
+    const paymentId = payment?.id ?? '';
+
+    // The void columns travel together, and the reason is required —
+    // unlike a discarded railway bill's, because retracting a recorded
+    // receipt of money is never self-evident from the record.
+    await expect(
+      admin`
+        update bill_payments set voided_at = now(), voided_by_user_id = ${ownerUserId}
+        where id = ${paymentId}
+      `,
+    ).rejects.toMatchObject({ constraint_name: 'bill_payments_void_shape_check' });
+
+    // A deduction of nothing is not a deduction.
+    await expect(
+      admin`
+        insert into bill_payment_deductions (
+          organisation_id, bill_payment_id, category, amount
+        )
+        values (${organisationId}, ${paymentId}, 'PENALTY', '0.00')
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+
+    // OTHER without a description is the one category that cannot be
+    // written without saying what it is.
+    await expect(
+      admin`
+        insert into bill_payment_deductions (
+          organisation_id, bill_payment_id, category, amount
+        )
+        values (${organisationId}, ${paymentId}, 'OTHER', '1.00')
+      `,
+    ).rejects.toMatchObject({
+      constraint_name: 'bill_payment_deductions_other_needs_description_check',
+    });
+
+    // And a named head twice on one advice, which the partial unique index
+    // refuses even though the route checks it first.
+    await admin`
+      insert into bill_payment_deductions (
+        organisation_id, bill_payment_id, category, amount
+      )
+      values (${organisationId}, ${paymentId}, 'GST_TDS', '1.00')
+    `;
+    await expect(
+      admin`
+        insert into bill_payment_deductions (
+          organisation_id, bill_payment_id, category, amount
+        )
+        values (${organisationId}, ${paymentId}, 'GST_TDS', '2.00')
+      `,
+    ).rejects.toMatchObject({ code: '23505' });
   });
 });
 

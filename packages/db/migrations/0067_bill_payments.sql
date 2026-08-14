@@ -69,6 +69,26 @@ SET LOCAL statement_timeout = '5min';
 -- always sets `mb_id`, so such a row could only predate 0024 and is better
 -- served by an explicit migration than by a hole nobody watches.
 --
+-- THE REFUSALS CARRY THEIR OWN SQLSTATEs, and that is load-bearing rather
+-- than tidy. `apps/server/src/routes/bill-payments.ts` turns a trigger
+-- refusal that beat it to the row into a named 409, and the only durable
+-- thing to recognise it by is the code: matching on the English of a
+-- RAISE means a reworded message silently downgrades a 409 to a 500,
+-- which is the failure mode nobody sees until an operator reports it.
+-- Class 23 (integrity constraint violation) with a letter in the fourth
+-- position, on migration 0069's precedent for `28A01`, so PostgreSQL can
+-- never assign the same code to something else:
+--
+--   23A01  the register would settle more than the railway billed
+--   23A02  the bill is paid, so its register is closed both ways
+--   23A03  no railway figure: the measurement is not closed
+--   23A04  a recorded receipt or deduction is immutable
+--   23A05  the bill cannot be marked paid; something is outstanding
+--   23A06  the payment names a bill this transaction cannot read
+--
+-- Each also carries `CONSTRAINT`, so `error.constraint_name` names the
+-- rule in a log without anybody decoding the number.
+--
 -- ENFORCED TWICE, AS MONEY MUST BE. Recurring finding 2 of the improvement
 -- programme is that this repository enforces security twice and money
 -- once. Every rule below is in `apps/server/src/routes/bill-payments.ts`
@@ -146,11 +166,20 @@ CREATE TABLE bill_payments (
   -- railway bill the reason is REQUIRED. Discarding an uploaded document
   -- can be self-evident from the document; retracting a recorded receipt
   -- of money never is.
+  --
+  -- `void_reason IS NOT NULL` is stated separately and is not redundant.
+  -- A CHECK passes when it evaluates to NULL, and `length(btrim(NULL))
+  -- BETWEEN 3 AND 500` is NULL rather than false — so writing only the
+  -- length test would have admitted exactly the row this constraint
+  -- exists to refuse: a void with no reason at all. Found by the
+  -- failing-path test rather than by reading, which is the argument for
+  -- attacking a CHECK instead of trusting it.
   CONSTRAINT bill_payments_void_shape_check CHECK (
     (voided_at IS NULL AND voided_by_user_id IS NULL AND void_reason IS NULL)
     OR (
       voided_at IS NOT NULL
       AND voided_by_user_id IS NOT NULL
+      AND void_reason IS NOT NULL
       AND length(btrim(void_reason)) BETWEEN 3 AND 500
     )
   )
@@ -226,6 +255,25 @@ CREATE UNIQUE INDEX bill_payment_deductions_one_per_named_category
   ON bill_payment_deductions (organisation_id, bill_payment_id, category)
   WHERE category <> 'OTHER';
 
+-- One live receipt per reference per bill.
+--
+-- The same payment advice recorded twice is the mistake this catches, and
+-- it is a MONEY mistake rather than a tidiness one: a duplicated receipt
+-- moves the outstanding position by its whole amount and can carry a bill
+-- to `paid` on money that arrived once. `received_railway_bills` takes
+-- the same posture on a bill number (0066), for the same reason and with
+-- the same partial predicate — a withdrawn receipt stops counting, so its
+-- reference is free to be used by the receipt that replaces it.
+--
+-- `btrim` because the route stores trimmed text and a CHECK enforces it;
+-- indexing the same expression means the index cannot disagree with the
+-- column about what "the same reference" is. Receipts with NO reference
+-- are outside the rule: a bank statement line sometimes carries none, and
+-- two of those are two facts.
+CREATE UNIQUE INDEX bill_payments_reference_per_bill
+  ON bill_payments (organisation_id, bill_id, btrim(reference))
+  WHERE reference IS NOT NULL AND voided_at IS NULL;
+
 -- ---------------------------------------------------------------------
 -- 3. Indexes.
 --
@@ -277,19 +325,42 @@ GRANT SELECT, INSERT ON bill_payment_deductions TO auto_mb_app;
 
 -- What the railway agreed to pay for this bill, or NULL when it has not
 -- agreed yet. NULL is the gate: no railway figure, no payment record.
-CREATE FUNCTION app_private.bill_settlement_reference(p_bill_id uuid)
+-- Taken from the MEASUREMENT BOOK rather than from the bill, and that is
+-- not a stylistic choice. `guard_bill_paid_needs_full_settlement` runs
+-- BEFORE INSERT as well as BEFORE UPDATE — a bill can be born `paid`,
+-- which is the hole 0066 recorded — and on an INSERT the row does not
+-- exist in `bills` yet, so a lookup keyed on the bill's own id finds
+-- nothing and reports "no railway bill has settled this measurement"
+-- about a measurement that was settled weeks ago. The book id travels on
+-- the NEW row and is available in both operations.
+CREATE FUNCTION app_private.bill_settlement_reference_for_book(p_mb_id uuid)
 RETURNS numeric
 LANGUAGE sql
 STABLE
 SET search_path = pg_catalog, public
 AS $$
   SELECT rb.bill_amount::numeric
-  FROM bills b
-  JOIN measurement_books mb
-    ON mb.organisation_id = b.organisation_id AND mb.id = b.mb_id
+  FROM measurement_books mb
   JOIN received_railway_bills rb
     ON rb.organisation_id = mb.organisation_id
    AND rb.id = mb.closed_by_received_bill_id
+  WHERE mb.id = p_mb_id
+$$;
+
+COMMENT ON FUNCTION app_private.bill_settlement_reference_for_book(uuid) IS
+  'The railway''s own On-Account Bill amount for a closed Measurement Book. NULL until the measurement is closed.';
+
+-- The convenient form, for every caller that already holds a bill: the
+-- route, and the two payment guards, all of which run against a bill row
+-- that exists.
+CREATE FUNCTION app_private.bill_settlement_reference(p_bill_id uuid)
+RETURNS numeric
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $$
+  SELECT app_private.bill_settlement_reference_for_book(b.mb_id)
+  FROM bills b
   WHERE b.id = p_bill_id
 $$;
 
@@ -343,7 +414,7 @@ BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF OLD.voided_at IS NOT NULL THEN
       RAISE EXCEPTION 'a voided bill payment is immutable'
-        USING ERRCODE = 'check_violation';
+        USING ERRCODE = '23A04', CONSTRAINT = 'bill_payment_immutable';
     END IF;
     IF ROW(
       NEW.organisation_id, NEW.bill_id, NEW.received_on, NEW.received_amount,
@@ -353,7 +424,7 @@ BEGIN
       OLD.reference, OLD.remarks, OLD.recorded_by_user_id, OLD.created_at
     ) THEN
       RAISE EXCEPTION 'a recorded bill payment is immutable; void it instead'
-        USING ERRCODE = 'check_violation';
+        USING ERRCODE = '23A04', CONSTRAINT = 'bill_payment_immutable';
     END IF;
   END IF;
 
@@ -366,7 +437,7 @@ BEGIN
     RAISE EXCEPTION
       'bill payment names bill %, which this transaction cannot read',
       NEW.bill_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A06', CONSTRAINT = 'bill_payment_bill_unreadable';
   END IF;
 
   -- A paid bill's register is closed. Adding to it or retracting from it
@@ -377,7 +448,7 @@ BEGIN
   IF v_status = 'paid' THEN
     RAISE EXCEPTION
       'bill % is paid; its payment register is closed', NEW.bill_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A02', CONSTRAINT = 'bill_payment_register_closed';
   END IF;
 
   -- Voiding only ever reduces the settled total, so it needs no ceiling
@@ -391,7 +462,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % cannot take a payment: its Measurement Book is not closed by a verified railway bill, so there is no settled amount to measure against',
       NEW.bill_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A03', CONSTRAINT = 'bill_payment_needs_closed_book';
   END IF;
 
   v_settled := app_private.bill_settled_total(NEW.bill_id);
@@ -399,7 +470,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % would be settled to % against a railway bill of %',
       NEW.bill_id, v_settled + NEW.received_amount::numeric, v_reference
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A01', CONSTRAINT = 'bill_payment_exceeds_settlement';
   END IF;
 
   RETURN NEW;
@@ -422,6 +493,41 @@ FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
 -- total already includes it. There is no UPDATE privilege on this table;
 -- the UPDATE arm exists so that a future grant cannot open an unguarded
 -- path, which is the shape 0066's own INSERT hole taught.
+--
+-- LOAD-BEARING, AND INVISIBLE: THIS FUNCTION MUST STAY VOLATILE.
+--
+-- The route inserts a whole breakup as ONE multi-row INSERT, so this
+-- BEFORE trigger fires once per deduction inside a single statement. Each
+-- firing has to see the deductions the same statement already inserted,
+-- or three rows that individually fit would jointly pass the ceiling and
+-- the second layer would agree to a settlement the first one caught.
+--
+-- Whether it sees them turns on the trigger function's VOLATILITY, and on
+-- nothing else that is visible when reading the body. A VOLATILE PL/pgSQL
+-- function runs its SQL statements read-write, which increments the
+-- command counter before each one, and that is what makes rows inserted
+-- earlier in the current statement visible to the next firing. The body
+-- only reads, so marking it STABLE looks like a tidy-up; it is not.
+--
+-- Two things then break, and the difference between them is worth
+-- recording because only one was expected. The sibling rows stop being
+-- visible, which is the silent failure. And the `FOR UPDATE` below stops
+-- being legal at all — PostgreSQL refuses row locking in a non-volatile
+-- function — which is the loud one, and which is what actually fires
+-- first when the volatility is changed on this particular body. So the
+-- immediate consequence today is an error rather than a quiet
+-- under-count; the quiet under-count is one edit away, the day somebody
+-- removes the lock and keeps the STABLE.
+--
+-- Either way the test catches it, which is the point of having one:
+-- `apps/server/test/bill-payments.integration.test.ts` inserts a
+-- multi-row breakup that fits row by row and does not fit as a statement,
+-- and asserts SQLSTATE 23A01. Verified by running it against this
+-- function marked STABLE, where it fails.
+--
+-- `app_private.bill_settled_total` stays STABLE and is unaffected: it is
+-- called from inside this function's statements and therefore reads
+-- whatever snapshot they took.
 -- ---------------------------------------------------------------------
 CREATE FUNCTION app_private.guard_bill_payment_deduction_write()
 RETURNS trigger
@@ -437,7 +543,7 @@ DECLARE
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     RAISE EXCEPTION 'a recorded deduction is immutable; void its payment instead'
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A04', CONSTRAINT = 'bill_payment_immutable';
   END IF;
 
   SELECT p.bill_id, p.voided_at INTO v_bill_id, v_voided_at
@@ -448,13 +554,13 @@ BEGIN
     RAISE EXCEPTION
       'deduction names bill payment %, which this transaction cannot read',
       NEW.bill_payment_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A06', CONSTRAINT = 'bill_payment_bill_unreadable';
   END IF;
   IF v_voided_at IS NOT NULL THEN
     RAISE EXCEPTION
       'bill payment % is voided and takes no further deductions',
       NEW.bill_payment_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A04', CONSTRAINT = 'bill_payment_immutable';
   END IF;
 
   SELECT b.status INTO v_status
@@ -465,7 +571,7 @@ BEGIN
   IF v_status = 'paid' THEN
     RAISE EXCEPTION
       'bill % is paid; its payment register is closed', v_bill_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A02', CONSTRAINT = 'bill_payment_register_closed';
   END IF;
 
   v_reference := app_private.bill_settlement_reference(v_bill_id);
@@ -473,7 +579,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % cannot take a deduction: its Measurement Book is not closed by a verified railway bill',
       v_bill_id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A03', CONSTRAINT = 'bill_payment_needs_closed_book';
   END IF;
 
   v_settled := app_private.bill_settled_total(v_bill_id);
@@ -481,7 +587,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % would be settled to % against a railway bill of %',
       v_bill_id, v_settled + NEW.amount::numeric, v_reference
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A01', CONSTRAINT = 'bill_payment_exceeds_settlement';
   END IF;
 
   RETURN NEW;
@@ -534,7 +640,10 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_reference := app_private.bill_settlement_reference(NEW.id);
+  -- Keyed on the BOOK, not on this bill's id: on an INSERT the row is not
+  -- in `bills` yet, and a bill-keyed lookup would report an unsettled
+  -- measurement for one the railway settled weeks ago.
+  v_reference := app_private.bill_settlement_reference_for_book(NEW.mb_id);
   IF v_reference IS NULL THEN
     -- Unreachable through the closed-book guard, which refuses this same
     -- row first. Stated anyway: a guard that assumes another guard ran is
@@ -542,7 +651,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % cannot be marked paid: no railway bill has settled its measurement',
       NEW.id
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A03', CONSTRAINT = 'bill_payment_needs_closed_book';
   END IF;
 
   v_settled := app_private.bill_settled_total(NEW.id);
@@ -550,7 +659,7 @@ BEGIN
     RAISE EXCEPTION
       'bill % cannot be marked paid: % of % is accounted for, leaving % outstanding',
       NEW.id, v_settled, v_reference, v_reference - v_settled
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '23A05', CONSTRAINT = 'bill_not_fully_settled';
   END IF;
 
   RETURN NEW;
@@ -642,6 +751,8 @@ COMMENT ON VIEW bill_settlement_positions IS
 -- to answer "what is outstanding", so the grant is real rather than a
 -- formality — a trigger function's own body would not have needed it.
 REVOKE ALL ON FUNCTION app_private.bill_settlement_reference(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app_private.bill_settlement_reference_for_book(uuid)
+  FROM PUBLIC;
 REVOKE ALL ON FUNCTION app_private.bill_settled_total(uuid) FROM PUBLIC;
 
 DO $$
@@ -649,6 +760,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
     GRANT SELECT ON bill_settlement_positions TO auto_mb_app;
     GRANT EXECUTE ON FUNCTION app_private.bill_settlement_reference(uuid)
+      TO auto_mb_app;
+    GRANT EXECUTE ON FUNCTION app_private.bill_settlement_reference_for_book(uuid)
       TO auto_mb_app;
     GRANT EXECUTE ON FUNCTION app_private.bill_settled_total(uuid) TO auto_mb_app;
   END IF;

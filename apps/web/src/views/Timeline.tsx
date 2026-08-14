@@ -37,6 +37,8 @@ const ACTION_LABELS: Record<string, string> = {
   'bill.prepared': 'Bill prepared',
   'bill.submitted': 'Bill submitted',
   'bill.paid': 'Bill paid',
+  'bill_payment.recorded': 'Payment received',
+  'bill_payment.voided': 'Payment withdrawn',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -84,6 +86,7 @@ const ENTITY_FILTERS = [
   { value: 'work_instruments', label: 'Instruments' },
   { value: 'mb_entries', label: 'Measurements' },
   { value: 'bills', label: 'Bills' },
+  { value: 'bill_payments', label: 'Payments received' },
   { value: 'installations', label: 'Installations' },
   { value: 'issue_challans', label: 'Issue challans' },
   { value: 'approval_requests', label: 'Approvals' },

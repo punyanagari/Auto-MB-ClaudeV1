@@ -200,6 +200,80 @@ describe('outstanding with the railway', () => {
     });
   });
 
+  it('closes the register in both directions once the bill is paid', async () => {
+    // A paid bill takes no further receipts and gives none back, so
+    // neither control is offered. Both used to render, and both led to
+    // the same 409 — a button whose only outcome is a refusal is worse
+    // than no button, because it reads as something the operator did
+    // wrong.
+    const api = stubApi({
+      listBillSettlement: vi.fn().mockResolvedValue([
+        position({
+          status: 'paid',
+          receivedTotal: '940000.00',
+          deductionTotal: '60000.00',
+          outstandingAmount: '0.00',
+        }),
+      ]),
+    });
+    renderPanel(api);
+
+    expect(await screen.findByText('UTR-0001')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /New receipt/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).toBeNull();
+  });
+
+  it('holds the withdrawal until a reason is written, and says why', async () => {
+    const voidBillPayment = vi.fn();
+    const api = stubApi({
+      listBillSettlement: vi.fn().mockResolvedValue([position()]),
+      voidBillPayment,
+    });
+    renderPanel(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Withdraw' }));
+    const confirm = screen.getByRole('button', { name: 'Withdraw receipt' });
+    expect(confirm).toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByLabelText('Why it is being withdrawn'), {
+      target: { value: 'no' },
+    });
+    // Too short is a visible refusal rather than a dead button: the field
+    // states the rule and the control stays held.
+    expect(
+      screen.getByText(/A reason of at least three characters is required/),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Withdraw receipt' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(voidBillPayment).not.toHaveBeenCalled();
+  });
+
+  it('says why a withdrawn receipt was withdrawn', async () => {
+    // The reason is the whole point of withdrawing rather than deleting,
+    // and "(voided)" on its own hid it.
+    const api = stubApi({
+      listBillSettlement: vi.fn().mockResolvedValue([
+        position({
+          receivedTotal: '0.00',
+          deductionTotal: '0.00',
+          outstandingAmount: '1000000.00',
+          payments: [
+            payment({
+              voidedAt: '2026-06-02T00:00:00.000Z',
+              voidReason: 'Credited against the wrong bill',
+            }),
+          ],
+        }),
+      ]),
+    });
+    renderPanel(api);
+    expect(
+      await screen.findByText(/Withdrawn: Credited against the wrong bill/),
+    ).toBeTruthy();
+  });
+
   it('opens the form behind a verb that is not the submit button', async () => {
     const api = stubApi({
       listBillSettlement: vi.fn().mockResolvedValue([position()]),

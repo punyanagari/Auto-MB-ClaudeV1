@@ -8,6 +8,7 @@ import {
   type BillPaymentDeduction,
   type BillSettlementPosition,
   type BillStatus,
+  type ErrorCode,
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
@@ -32,17 +33,30 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * Every rule here is also a database trigger (migration 0067), because
  * the improvement programme's recurring finding 2 is that this repository
  * enforces security twice and money once. The split is the same one
- * `docs/PRODUCT.md` §5.5 states for the railway bill and §5.6 restates
+ * `docs/PRODUCT.md` §5.5 states for the railway bill and §5.7 restates
  * for this one: the database owns the arithmetic and the structure, this
  * module owns authority, work scope, the audit trail, and saying it in a
  * sentence rather than a SQLSTATE.
  */
 
+/**
+ * The two refusals an operator can meet from either layer.
+ *
+ * Written once because they ARE one refusal each: the route catches the
+ * common case under a row lock and the trigger catches the concurrent
+ * one, and an operator who met two different sentences for the same
+ * situation would reasonably conclude they were two different problems.
+ */
+const SETTLEMENT_BREACH =
+  'This receipt would settle more than the railway billed. Re-read the register: another receipt may have been recorded first.';
+const REGISTER_CLOSED =
+  'This bill is fully paid; its payment register is closed in both directions.';
+
 /** The reference every position is measured against: the railway's own
  * On-Account Bill amount, reached through the Measurement Book that bill
  * closed. Null until the measurement is closed, and while it is null
  * nothing may be recorded — there is no agreed figure to measure against.
- * `docs/PRODUCT.md` §5.6 explains why this and not `bills.total_amount`. */
+ * `docs/PRODUCT.md` §5.7 explains why this and not `bills.total_amount`. */
 interface BillPositionRow {
   readonly bill_id: string;
   readonly work_id: string;
@@ -104,8 +118,12 @@ const POSITION_COLUMNS = `
 const PAYMENT_COLUMNS = `
   bp.id, bp.bill_id, bp.received_on::text as received_on,
   bp.received_amount::text as received_amount, bp.reference, bp.remarks,
-  coalesce(d.total, 0)::text as deduction_total,
-  (bp.received_amount + coalesce(d.total, 0))::text as gross_amount,
+  -- Cast to the money domain before the text, or a payment with no
+  -- deductions answers "0" where every other figure answers "0.00": the
+  -- coalesce falls back to an integer literal, and only the column's own
+  -- scale makes the rest two-place.
+  coalesce(d.total, 0)::money_amount::text as deduction_total,
+  (bp.received_amount + coalesce(d.total, 0))::money_amount::text as gross_amount,
   bp.voided_at, bp.void_reason, bp.created_at
 `;
 
@@ -238,6 +256,65 @@ async function readPayment(tx: TransactionSql, id: string): Promise<BillPayment>
   return toPayment(row, deductions.map(toDeduction));
 }
 
+/**
+ * Text as the DATABASE will judge it.
+ *
+ * The `reference` and `remarks` CHECKs on `bill_payments` measure
+ * `btrim(x)`, and `btrim` removes SPACES only while JavaScript's `trim()`
+ * removes every whitespace character. A reference of `" UTR-1 "` satisfies
+ * the contract schema, reaches the column with its spaces, and fails
+ * `btrim(reference) = reference` as a 23514 the operator reads as a bare
+ * 500. The same shape `routes/quotations.ts` established for the 0033 text
+ * columns, applied here: trim at the boundary, so the trimmed text is also
+ * what gets STORED and the record says what the operator meant.
+ *
+ * The contract stays permissive on purpose. A schema that refused padded
+ * text would refuse a paste out of a bank statement, which is where these
+ * references come from.
+ */
+function trimmedOrNull(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * When a receipt may be dated.
+ *
+ * Both bounds are the discipline the sibling document routes already
+ * apply to a legal date, and both catch a real mis-key rather than a
+ * hypothetical one. A receipt dated in the future is a typed year; a
+ * receipt dated before the railway raised the bill it settles is a
+ * transposed day, and it would sort above the bill in every register that
+ * reads the two together.
+ *
+ * "Today" is the organisation's own day, not the server's: an operator in
+ * Kolkata recording an evening receipt would otherwise be refused for
+ * five and a half hours a day by a UTC clock.
+ */
+function assertReceiptDate(
+  receivedOn: string,
+  railwayBillDate: string,
+  today: string,
+): void {
+  if (receivedOn > today) {
+    throw httpError(
+      400,
+      'BILL_PAYMENT_DATE_INVALID',
+      `A receipt cannot be dated ${receivedOn}, which is in the future; today is ${today}.`,
+      { field: 'receivedOn' },
+    );
+  }
+  if (receivedOn < railwayBillDate) {
+    throw httpError(
+      400,
+      'BILL_PAYMENT_DATE_INVALID',
+      `A receipt cannot be dated ${receivedOn}, before the railway bill it settles (${railwayBillDate}).`,
+      { field: 'receivedOn' },
+    );
+  }
+}
+
 export function registerBillPaymentRoutes(
   app: AppInstance,
   auth: Auth,
@@ -342,11 +419,7 @@ export function registerBillPaymentRoutes(
         }
         await assertWorkAccess(tx, user.id, bill.work_id);
         if (bill.status === 'paid') {
-          throw httpError(
-            409,
-            'BILL_ALREADY_PAID',
-            'This bill is fully paid; its payment register is closed.',
-          );
+          throw httpError(409, 'BILL_ALREADY_PAID', REGISTER_CLOSED);
         }
 
         // The ceiling, computed in SQL. Every term is an exact numeric and
@@ -354,9 +427,17 @@ export function registerBillPaymentRoutes(
         // compare them against a money column is the floating-point
         // arithmetic engineering rule 5 forbids, and it would be wrong at
         // the boundary that matters most — the one where a payment exactly
-        // closes a bill.
+        // closes a bill. The railway bill's date and the organisation's own
+        // today ride along in the same statement, because both are bounds
+        // on the receipt and neither is worth a second round trip.
         const [ceiling] = await tx<
-          { reference: string | null; remaining: string | null; gross: string }[]
+          {
+            reference: string | null;
+            railway_bill_date: string | null;
+            today: string;
+            remaining: string | null;
+            gross: string;
+          }[]
         >`
           with request as (
             select ${body.receivedAmount}::numeric
@@ -371,7 +452,22 @@ export function registerBillPaymentRoutes(
                  (app_private.bill_settlement_reference(${billId})
                    - app_private.bill_settled_total(${billId})
                    - request.gross)::text as remaining,
-                 request.gross::text as gross
+                 request.gross::text as gross,
+                 (
+                   select rb.bill_date::text
+                   from bills b
+                   join measurement_books mb
+                     on mb.organisation_id = b.organisation_id and mb.id = b.mb_id
+                   join received_railway_bills rb
+                     on rb.organisation_id = mb.organisation_id
+                    and rb.id = mb.closed_by_received_bill_id
+                   where b.id = ${billId}
+                 ) as railway_bill_date,
+                 (
+                   select (now() at time zone o.timezone)::date::text
+                   from organisations o
+                   where o.id = app_private.current_organisation_id()
+                 ) as today
           from request
         `;
         if (ceiling?.reference == null) {
@@ -381,16 +477,40 @@ export function registerBillPaymentRoutes(
             "This bill's Measurement Book is not closed by a verified railway bill, so there is no settled amount to record against.",
           );
         }
+        // Refused before the ceiling: a mis-keyed date is the likelier of
+        // the two mistakes, and hearing about the money first would send
+        // the operator to change the wrong field.
+        assertReceiptDate(
+          body.receivedOn,
+          ceiling.railway_bill_date ?? body.receivedOn,
+          ceiling.today,
+        );
         if (ceiling.remaining !== null && Number(ceiling.remaining) < 0) {
           // The comparison is `< 0` on a value PostgreSQL already
           // computed exactly; JavaScript only reads its sign, which no
           // rounding can change.
-          throw httpError(
-            409,
-            'BILL_PAYMENT_EXCEEDS_SETTLEMENT',
-            `This receipt of ${ceiling.gross} would settle more than the railway's bill of ${ceiling.reference}.`,
-            { field: 'receivedAmount' },
-          );
+          throw httpError(409, 'BILL_PAYMENT_EXCEEDS_SETTLEMENT', SETTLEMENT_BREACH, {
+            field: 'receivedAmount',
+          });
+        }
+
+        // Trimmed as `btrim` would trim it, so the CHECK cannot refuse
+        // what the schema accepted, and so the stored text is the text.
+        const reference = trimmedOrNull(body.reference);
+        if (reference !== null) {
+          const [duplicate] = await tx<{ id: string }[]>`
+            select id from bill_payments
+            where bill_id = ${billId} and voided_at is null
+              and btrim(reference) = ${reference}
+          `;
+          if (duplicate !== undefined) {
+            throw httpError(
+              409,
+              'BILL_PAYMENT_DUPLICATE_REFERENCE',
+              `A live receipt quoting ${reference} is already recorded against this bill.`,
+              { field: 'reference' },
+            );
+          }
         }
 
         const [row] = await tx<{ id: string }[]>`
@@ -400,11 +520,11 @@ export function registerBillPaymentRoutes(
           )
           values (
             ${organisationId}, ${billId}, ${body.receivedOn},
-            ${body.receivedAmount}, ${body.reference ?? null},
-            ${body.remarks ?? null}, ${user.id}
+            ${body.receivedAmount}, ${reference},
+            ${trimmedOrNull(body.remarks)}, ${user.id}
           )
           returning id
-        `.catch(rethrowSettlementBreach);
+        `.catch(rethrowWriteRefusal);
         if (row === undefined) throw new Error('bill payment insert returned no row');
 
         if (body.deductions.length > 0) {
@@ -426,7 +546,7 @@ export function registerBillPaymentRoutes(
                 (deduction) => deduction.description ?? null,
               )}::text[]
             ) as d(category, amount, description)
-          `.catch(rethrowSettlementBreach);
+          `.catch(rethrowWriteRefusal);
         }
 
         const payment = await readPayment(tx, row.id);
@@ -499,11 +619,7 @@ export function registerBillPaymentRoutes(
         // there is no honest way back — the correction is a compensating
         // entry on a later bill.
         if (bill.status === 'paid') {
-          throw httpError(
-            409,
-            'BILL_ALREADY_PAID',
-            'This bill is paid; a receipt behind a paid bill cannot be withdrawn. Record the correction against a later bill.',
-          );
+          throw httpError(409, 'BILL_ALREADY_PAID', REGISTER_CLOSED);
         }
         await tx`
           update bill_payments
@@ -528,30 +644,49 @@ export function registerBillPaymentRoutes(
 }
 
 /**
- * The database's ceiling refusal, restated as this module's own.
+ * The database's refusals, restated as this module's own.
  *
- * The route checks the ceiling before it writes, so this only fires when
- * a concurrent advice took the remaining balance between the check and
- * the insert — which is exactly the case the trigger exists for. Turning
- * it into a 409 rather than letting a `check_violation` reach the error
- * handler as a 500 is the difference between "somebody else recorded a
- * payment first" and "the server broke".
+ * The route checks each of these before it writes, so a trigger only wins
+ * the race when a concurrent advice took the remaining balance, or paid
+ * the bill, between the check and the insert — which is exactly the case
+ * the triggers exist for. Turning that into a named 409 rather than
+ * letting an integrity violation reach the error handler as a 500 is the
+ * difference between "somebody else recorded a payment first" and "the
+ * server broke".
+ *
+ * Matched on SQLSTATE, never on the text of the RAISE. Migration 0067
+ * gives each rule its own code in class 23 for this one reason: a reworded
+ * message must not be able to silently turn a 409 back into a 500, and a
+ * substring match is a coupling nothing checks. `constraint_name` rides
+ * along so a log line names the rule without anybody decoding the number.
  */
-function rethrowSettlementBreach(error: unknown): never {
-  const message =
-    error instanceof Error && typeof error.message === 'string' ? error.message : '';
-  if (message.includes('would be settled to')) {
+const DATABASE_REFUSALS: Readonly<Record<string, readonly [ErrorCode, string]>> = {
+  '23A01': ['BILL_PAYMENT_EXCEEDS_SETTLEMENT', SETTLEMENT_BREACH],
+  '23A02': ['BILL_ALREADY_PAID', REGISTER_CLOSED],
+  '23A03': [
+    'BILL_MEASUREMENT_BOOK_NOT_CLOSED',
+    "This bill's Measurement Book is not closed by a verified railway bill, so there is no settled amount to record against.",
+  ],
+  '23A04': [
+    'BILL_PAYMENT_ALREADY_VOIDED',
+    'This payment was withdrawn while the receipt was being recorded.',
+  ],
+};
+
+function rethrowWriteRefusal(error: unknown): never {
+  const code =
+    error !== null && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : '';
+  const refusal = DATABASE_REFUSALS[code];
+  if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
+  // The duplicate-reference index (0067). The route checks it first under
+  // the bill lock, so this is the concurrent-insert arm of the same rule.
+  if (code === '23505') {
     throw httpError(
       409,
-      'BILL_PAYMENT_EXCEEDS_SETTLEMENT',
-      'This payment would settle more than the railway billed. Re-read the register: another receipt may have been recorded first.',
-    );
-  }
-  if (message.includes('is paid; its payment register is closed')) {
-    throw httpError(
-      409,
-      'BILL_ALREADY_PAID',
-      'This bill is fully paid; its payment register is closed.',
+      'BILL_PAYMENT_DUPLICATE_REFERENCE',
+      'A live receipt quoting this reference was recorded against this bill first.',
     );
   }
   throw error;

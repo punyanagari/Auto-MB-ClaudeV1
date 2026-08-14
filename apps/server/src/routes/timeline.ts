@@ -197,6 +197,11 @@ export function registerTimelineRoutes(
                 select id from mb_entries where work_id = ${workId}))
               or (ae.entity_type = 'bills' and ae.entity_id in (
                 select id from bills where work_id = ${workId}))
+              or (ae.entity_type = 'bill_payments' and ae.entity_id in (
+                select p.id from bill_payments p
+                join bills b on b.organisation_id = p.organisation_id
+                             and b.id = p.bill_id
+                where b.work_id = ${workId}))
               or (ae.entity_type = 'installations' and ae.entity_id in (
                 select id from installations where work_id = ${workId}))
               or (ae.entity_type = 'approval_requests' and ae.entity_id in (

@@ -8,7 +8,7 @@ import type { ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Disclosure } from '../ui/disclosure.js';
-import { Actions, Field, FieldRow, Hint } from '../ui/form.js';
+import { Actions, Field, FieldError, FieldRow, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
@@ -270,7 +270,16 @@ export function WorkBillSettlement({
                     <tr key={payment.id}>
                       <th scope="row" className="tabular-nums">
                         {formatDate(payment.receivedOn)}
-                        {payment.voidedAt !== null && ' (voided)'}
+                        {payment.voidedAt !== null && (
+                          // The reason is the whole point of withdrawing
+                          // rather than deleting. "(voided)" on its own
+                          // says a receipt was retracted and hides why,
+                          // which is the question anybody reading the
+                          // register a year later is asking.
+                          <span className="block font-normal text-muted-foreground">
+                            Withdrawn: {payment.voidReason ?? 'no reason recorded'}
+                          </span>
+                        )}
                       </th>
                       <td className="tabular-nums">{payment.reference ?? '—'}</td>
                       <td className={numericCell}>
@@ -291,7 +300,12 @@ export function WorkBillSettlement({
                       <td className={numericCell}>{formatInr(payment.grossAmount)}</td>
                       {canCancel && (
                         <td>
-                          {payment.voidedAt === null && (
+                          {/* Gated on the bill's status exactly as the
+                              receipt form is: a paid bill's register is
+                              closed in BOTH directions, so a Withdraw
+                              button here is a button whose only outcome
+                              is a 409. */}
+                          {payment.voidedAt === null && position.status !== 'paid' && (
                             <Button
                               variant="outline"
                               disabled={pending}
@@ -455,8 +469,13 @@ export function WorkBillSettlement({
           onCancel={() => {
             setWithdrawing(null);
           }}
+          confirmDisabled={withdrawReason.trim().length < 3}
           onConfirm={() => {
             const reason = withdrawReason.trim();
+            // Belt as well as braces: the button is disabled above, and a
+            // press that somehow arrives anyway must not silently do
+            // nothing — a confirm button that neither acts nor explains
+            // is the failure this replaced.
             if (reason.length < 3) return;
             const paymentId = withdrawing;
             void act(async () => {
@@ -472,11 +491,22 @@ export function WorkBillSettlement({
               type="text"
               value={withdrawReason}
               disabled={pending}
+              aria-describedby="withdraw-reason-hint"
+              aria-invalid={withdrawReason !== '' && withdrawReason.trim().length < 3}
               onChange={(event) => {
                 setWithdrawReason(event.currentTarget.value);
               }}
             />
-            <Hint>At least three characters. It is kept with the record.</Hint>
+            {withdrawReason !== '' && withdrawReason.trim().length < 3 ? (
+              <FieldError id="withdraw-reason-hint">
+                A reason of at least three characters is required, because it is what
+                the record keeps in place of the receipt.
+              </FieldError>
+            ) : (
+              <Hint id="withdraw-reason-hint">
+                At least three characters. It is kept with the record.
+              </Hint>
+            )}
           </Field>
         </ConfirmDialog>
       )}
