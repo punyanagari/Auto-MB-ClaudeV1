@@ -216,6 +216,17 @@ A cursor's sort key is read inside the comparing statement rather than sent
 back as a value — `apps/server/src/pagination.ts` records why, and it is a
 correctness rule, not a preference.
 
+A cursor is proven against the SAME predicate the register's rows are
+before it is used as a position: the path Work's `work_id` on a per-Work
+list, the caller's work-scope on a scope-narrowed register
+(`apps/server/src/pagination.ts`). Validating it any wider — organisation-
+wide, say — leaves an oracle: a forbidden row's id answers 200 where a
+nonexistent one answers 400, and the keyset comparison against the
+forbidden row's sort key lets its date be binary-searched without a row of
+it ever being returned. A cursor that fails the register's predicate is
+refused with the same 400 `CURSOR_INVALID` a nonexistent id gets, so the
+two are indistinguishable.
+
 Not every list pages. Which ones do not, and the fact that bounds each, is
 recorded in `UNPAGINATED_LISTS` in
 `apps/server/test/route-inventory.integration.test.ts`, and the test fails

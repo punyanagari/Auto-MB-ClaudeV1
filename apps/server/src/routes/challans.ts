@@ -1373,7 +1373,11 @@ export function registerChallanRoutes(
         // now so the keyset predicate matches the ORDER BY exactly. Only
         // ties are affected — challans created in the same instant — and
         // no screen depends on their relative order.
-        const cursor = await cursorRowId(tx, 'delivery_challans', query.cursor);
+        // The cursor must name a challan OF THIS WORK — an id from another
+        // Work (or a standalone challan, whose work_id is null) is refused
+        // as CURSOR_INVALID, indistinguishable from a nonexistent one; see
+        // `cursorRowId` for the oracle this closes.
+        const cursor = await cursorRowId(tx, 'delivery_challans', query.cursor, workId);
         const rows = await tx<ChallanRow[]>`
             select ${tx.unsafe(CHALLAN_COLUMNS)}
             from delivery_challans
