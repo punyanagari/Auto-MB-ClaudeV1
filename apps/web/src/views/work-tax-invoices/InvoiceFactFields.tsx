@@ -57,8 +57,7 @@ export function readInvoiceFacts(data: FormData, idPrefix: InvoiceFieldPrefix) {
   return {
     invoiceDate: formValue(data, `${idPrefix}-date`),
     placeOfSupply: formValue(data, `${idPrefix}-place-of-supply`),
-    reverseChargeApplicable:
-      formValue(data, `${idPrefix}-reverse-charge`) === 'true',
+    reverseChargeApplicable: formValue(data, `${idPrefix}-reverse-charge`) === 'true',
     buyerContactId: formValue(data, `${idPrefix}-buyer`),
     ...(customerPoReference === '' ? {} : { customerPoReference }),
     ...(unitLabel === '' ? {} : { unitLabel }),
@@ -96,7 +95,12 @@ export function InvoiceFactFields({
       <FieldRow>
         <Field>
           <label htmlFor={`${idPrefix}-date`}>Invoice date</label>
-          <input id={`${idPrefix}-date`} name={`${idPrefix}-date`} type="date" required />
+          <input
+            id={`${idPrefix}-date`}
+            name={`${idPrefix}-date`}
+            type="date"
+            required
+          />
           {invoiceDateHint !== undefined && <Hint>{invoiceDateHint}</Hint>}
         </Field>
         <Field>
@@ -112,7 +116,9 @@ export function InvoiceFactFields({
               );
             }}
           >
-            <option value="service_cumulative">One cumulative service line (SAC)</option>
+            <option value="service_cumulative">
+              One cumulative service line (SAC)
+            </option>
             <option value="itemised">Itemised HSN/SAC lines</option>
           </select>
           <Hint>{lineShapeHint}</Hint>
@@ -134,7 +140,9 @@ export function InvoiceFactFields({
         </Field>
       )}
       <Field>
-        <label htmlFor={`${idPrefix}-reverse-charge`}>Tax payable on reverse charge</label>
+        <label htmlFor={`${idPrefix}-reverse-charge`}>
+          Tax payable on reverse charge
+        </label>
         <select
           id={`${idPrefix}-reverse-charge`}
           name={`${idPrefix}-reverse-charge`}
@@ -145,7 +153,9 @@ export function InvoiceFactFields({
             Confirm who pays GST
           </option>
           <option value="false">No — supplier pays GST (forward charge)</option>
-          <option value="true">Yes — recipient pays GST (issuance not supported yet)</option>
+          <option value="true">
+            Yes — recipient pays GST (issuance not supported yet)
+          </option>
         </select>
         <Hint>
           This legal fact is frozen at submit. Reverse-charge invoices stay as drafts
@@ -199,8 +209,8 @@ export function InvoiceFactFields({
               />
             )}
             <Hint>
-              Only rates the GST rate master lists for the invoice date are accepted. The
-              CGST/SGST split is half each.
+              Only rates the GST rate master lists for the invoice date are accepted.
+              The CGST/SGST split is half each.
             </Hint>
           </Field>
         )}
@@ -216,14 +226,19 @@ export function InvoiceFactFields({
             placeholder="27"
           />
           <Hint>
-            Two-digit state code. Against your own state it decides CGST+SGST (within the
-            state) or IGST (across states) at submit.
+            Two-digit state code. Against your own state it decides CGST+SGST (within
+            the state) or IGST (across states) at submit.
           </Hint>
         </Field>
       </FieldRow>
       <Field>
         <label htmlFor={`${idPrefix}-buyer`}>Buyer</label>
-        <select id={`${idPrefix}-buyer`} name={`${idPrefix}-buyer`} required defaultValue="">
+        <select
+          id={`${idPrefix}-buyer`}
+          name={`${idPrefix}-buyer`}
+          required
+          defaultValue=""
+        >
           <option value="" disabled>
             Pick a client contact
           </option>
@@ -272,7 +287,11 @@ export function InvoiceFactFields({
         </Field>
         <Field>
           <label htmlFor={`${idPrefix}-ship-to`}>Ship to (optional)</label>
-          <select id={`${idPrefix}-ship-to`} name={`${idPrefix}-ship-to`} defaultValue="">
+          <select
+            id={`${idPrefix}-ship-to`}
+            name={`${idPrefix}-ship-to`}
+            defaultValue=""
+          >
             <option value="">Same as buyer</option>
             {shipToContacts.map((contact) => (
               <option key={contact.id} value={contact.id}>

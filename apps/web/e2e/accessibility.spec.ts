@@ -354,6 +354,53 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  // The organisation-wide invoice register. Same `?*` reasoning as the
+  // installation register above: it always asks for a page.
+  await page.route('**/api/tax-invoices?*', (route) =>
+    route.fulfill(
+      json({
+        invoices: [
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            workId: WORK_ID,
+            workCode: 'DCW-1',
+            workTitle: 'Supply of switchboards',
+            invoiceNumber: 'TI/2026-27/001',
+            invoiceDate: '2026-08-04',
+            status: 'submitted',
+            buyerName: 'Sr. DEE/TRD/Bhusawal',
+            taxableValue: '125000.00',
+            gstAmount: '22500.00',
+            totalAmount: '147500.00',
+            irn: null,
+            irpProvider: null,
+            irpProviderState: 'not_requested',
+            irpReportingDeadline: '2026-09-03',
+            irpReportingOverdue: false,
+          },
+          {
+            id: '88888888-8888-4888-8888-888888888889',
+            workId: null,
+            workCode: null,
+            workTitle: null,
+            invoiceNumber: null,
+            invoiceDate: '2026-08-02',
+            status: 'draft',
+            buyerName: 'Deccan Switchgear Pvt Ltd',
+            taxableValue: null,
+            gstAmount: null,
+            totalAmount: null,
+            irn: null,
+            irpProvider: null,
+            irpProviderState: 'not_requested',
+            irpReportingDeadline: null,
+            irpReportingOverdue: false,
+          },
+        ],
+        nextCursor: null,
+      }),
+    ),
+  );
   await page.route('**/api/masters/locations', (route) =>
     route.fulfill(
       json({
@@ -425,6 +472,25 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             isConsignee: true,
             isVendor: false,
             isClient: false,
+            active: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+          // A client contact, so the invoice register's direct-invoice
+          // form is offered rather than blocked on a missing buyer — the
+          // form is what this spec scans.
+          {
+            id: 'bbbbbbbb-6666-4666-8666-bbbbbbbbbbbc',
+            designation: 'Deccan Switchgear Pvt Ltd',
+            address: 'Nashik 422101',
+            contactPerson: null,
+            phone: null,
+            email: null,
+            gstin: null,
+            pincode: '422101',
+            stateCode: '27',
+            isConsignee: false,
+            isVendor: false,
+            isClient: true,
             active: true,
             createdAt: '2026-01-01T00:00:00.000Z',
           },
@@ -706,6 +772,30 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'DCW-1' })).toBeVisible();
   await expect(page.getByText('Nashik Road station')).toBeVisible();
   await expectNoAxeViolations(page, 'installation register');
+
+  /* The organisation-wide invoice register, reached from the Documents
+     group. Scanned with both kinds of row on screen — a work-backed one
+     linking to its Work and a direct one that has none — because the
+     source cell is the only place in the product where a table cell is
+     sometimes a link and sometimes a word, and with the direct-invoice
+     editor's disclosure present. */
+  await page
+    .getByRole('navigation', { name: 'Modules' })
+    .getByRole('button', { name: 'Invoices' })
+    .click();
+  await expect(page.getByRole('link', { name: 'TI/2026-27/001' })).toBeVisible();
+  await expect(page.getByText('Deccan Switchgear Pvt Ltd')).toBeVisible();
+  await expectNoAxeViolations(page, 'invoice register');
+
+  // The direct-invoice form open: a long two-column form is where label
+  // association and focus order are most likely to go wrong.
+  await page
+    .getByRole('button', { name: 'Raise an invoice for a private customer' })
+    .click();
+  // By role, not by label alone: the register's own table caption names
+  // its Taxable value column, so a bare label lookup matches two things.
+  await expect(page.getByRole('textbox', { name: 'Taxable value' })).toBeVisible();
+  await expectNoAxeViolations(page, 'invoice register — direct invoice form');
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({

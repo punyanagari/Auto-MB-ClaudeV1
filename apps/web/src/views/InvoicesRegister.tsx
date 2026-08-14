@@ -562,7 +562,9 @@ function IrpCell({ row }: { readonly row: TaxInvoiceRegisterEntry }) {
   }
   if (row.irpReportingDeadline !== null) {
     return (
-      <StatusChip status="review">Due {formatDate(row.irpReportingDeadline)}</StatusChip>
+      <StatusChip status="review">
+        Due {formatDate(row.irpReportingDeadline)}
+      </StatusChip>
     );
   }
   return <>—</>;

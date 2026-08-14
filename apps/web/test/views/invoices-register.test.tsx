@@ -168,7 +168,9 @@ describe('the tax-invoice register', () => {
 
     // A filtered zero is not the same state as an empty register: it
     // offers the window back rather than the drafting story.
-    expect(await screen.findByText(/No invoices were raised in these dates/)).toBeTruthy();
+    expect(
+      await screen.findByText(/No invoices were raised in these dates/),
+    ).toBeTruthy();
     expect(listTaxInvoices).toHaveBeenLastCalledWith(ORG_ID, {
       limit: 100,
       invoicedFrom: '2026-08-01',
@@ -195,14 +197,18 @@ describe('the tax-invoice register', () => {
     fireEvent.change(screen.getByLabelText('Invoice date'), {
       target: { value: '2026-08-11' },
     });
-    fireEvent.change(screen.getByLabelText('SAC code'), { target: { value: '998734' } });
+    fireEvent.change(screen.getByLabelText('SAC code'), {
+      target: { value: '998734' },
+    });
     fireEvent.change(screen.getByLabelText('Tax payable on reverse charge'), {
       target: { value: 'false' },
     });
     fireEvent.change(screen.getByLabelText('Service description'), {
       target: { value: 'Panel commissioning at customer premises' },
     });
-    fireEvent.change(screen.getByLabelText('GST rate (%)'), { target: { value: '18' } });
+    fireEvent.change(screen.getByLabelText('GST rate (%)'), {
+      target: { value: '18' },
+    });
     fireEvent.change(screen.getByLabelText('Place of supply'), {
       target: { value: '27' },
     });

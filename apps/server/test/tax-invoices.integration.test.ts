@@ -4242,7 +4242,9 @@ describe('the organisation-wide tax-invoice register', () => {
       '?invoicedFrom=2026-02-20&invoicedTo=2026-02-20',
     );
     expect(sameDay.invoices.length).toBeGreaterThan(0);
-    expect(sameDay.invoices.every((row) => row.invoiceDate === '2026-02-20')).toBe(true);
+    expect(sameDay.invoices.every((row) => row.invoiceDate === '2026-02-20')).toBe(
+      true,
+    );
     expect(sameDay.invoices.some((row) => row.id === directInvoiceId)).toBe(true);
     // Both bounds inclusive, and the work-backed invoice's 10 April is
     // outside this one.

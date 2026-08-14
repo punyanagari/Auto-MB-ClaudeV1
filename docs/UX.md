@@ -258,7 +258,7 @@ The approved design pack covers:
 23. Organisation-wide document register
 24. Serial lookup and traceability
 25. Installation register (tenant-wide)
-25a. Tax-invoice register (organisation-wide), with the direct-invoice
+    25a. Tax-invoice register (organisation-wide), with the direct-invoice
     editor and the shared invoice detail it opens
 26. Contacts
 27. Locations, units and signatories
