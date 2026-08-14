@@ -122,6 +122,7 @@ import type {
   SetBudgetaryQuotationOutcomeRequest,
   TaxInvoice,
   TaxInvoiceDetailResponse,
+  TaxInvoiceRegisterResponse,
   CreateDirectTaxInvoiceRequest,
   CreateTaxInvoiceRequest,
   CreditNote,
@@ -1137,6 +1138,19 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly TaxInvoice[]>;
+  /** The invoice module's own register: every tax invoice in the
+   * organisation the caller may see, work-backed and direct alike. Paged
+   * — the screen sends a `limit` and pages with `nextCursor` — and
+   * narrowable to an inclusive `invoiceDate` window. */
+  readonly listTaxInvoices: (
+    organisationId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly limit?: number;
+      readonly invoicedFrom?: string;
+      readonly invoicedTo?: string;
+    },
+  ) => Promise<TaxInvoiceRegisterResponse>;
   readonly createWorkTaxInvoice: (
     organisationId: string,
     workId: string,
@@ -2977,6 +2991,21 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return payload.invoices;
+    },
+    async listTaxInvoices(organisationId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      if (options.invoicedFrom !== undefined) {
+        parameters.set('invoicedFrom', options.invoicedFrom);
+      }
+      if (options.invoicedTo !== undefined) {
+        parameters.set('invoicedTo', options.invoicedTo);
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<TaxInvoiceRegisterResponse>(`/api/tax-invoices${suffix}`, {
+        organisationId,
+      });
     },
     async createWorkTaxInvoice(organisationId, workId, body) {
       return request<TaxInvoiceDetailResponse>(`/api/works/${workId}/tax-invoices`, {

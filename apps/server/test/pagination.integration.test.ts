@@ -179,6 +179,19 @@ beforeAll(async () => {
       ${locationId}, ${organisationId}, ${`Site ${runId}`}, 'station', ${ownerUserId}
     )
   `;
+  // The buyer every seeded tax invoice names: the column is NOT NULL, and
+  // the register reads its designation as the row's buyer.
+  const buyerContactId = randomUUID();
+  await admin`
+    insert into contacts (
+      id, organisation_id, designation, address, pincode, state_code,
+      locality, is_client, active, created_by_user_id
+    )
+    values (
+      ${buyerContactId}, ${organisationId}, ${`Paginated buyer ${runId}`},
+      'New Delhi 110001', '110001', '07', 'New Delhi', true, true, ${ownerUserId}
+    )
+  `;
 
   for (let index = 0; index < ROWS; index += 1) {
     const challanId = randomUUID();
@@ -250,6 +263,22 @@ beforeAll(async () => {
       values (
         ${organisationId}, ${workId}, ${itemId}, '1.000', '2026-08-03',
         ${locationId}, ${`Site ${runId}`}, ${ownerUserId}
+      )
+    `;
+    // DIRECT invoices — no Work, no Measurement Book, a stated taxable
+    // value — because that is the row the organisation-wide register was
+    // built to reach, and the one whose NULL work_id the keyset and the
+    // work-scope predicate both have to survive. They share one
+    // invoice_date for the same reason the challans share one date.
+    await admin`
+      insert into tax_invoices (
+        organisation_id, invoice_date, sac_code, service_description,
+        gst_rate, place_of_supply, stated_taxable_value, buyer_contact_id,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, '2026-08-04', '998734', 'Paginated supply',
+        '18.00', '27', '1000.00', ${buyerContactId}, ${ownerUserId}
       )
     `;
     await admin`
@@ -332,6 +361,11 @@ const REGISTERS = [
     name: 'the tenant-wide installation register',
     url: () => '/api/installations',
     key: 'installations',
+  },
+  {
+    name: 'the organisation-wide tax-invoice register',
+    url: () => '/api/tax-invoices',
+    key: 'invoices',
   },
   { name: 'the approvals queue', url: () => '/api/approvals', key: 'approvals' },
   {

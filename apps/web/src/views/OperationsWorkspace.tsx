@@ -23,6 +23,7 @@ import {
   Menu,
   MoreHorizontal,
   Plus,
+  ReceiptText,
   ScanBarcode,
   Search,
   Settings as SettingsIcon,
@@ -76,6 +77,11 @@ const DeliveryChallans = lazy(() =>
 const InstallationsRegister = lazy(() =>
   import('./InstallationsRegister.js').then((module) => ({
     default: module.InstallationsRegister,
+  })),
+);
+const InvoicesRegister = lazy(() =>
+  import('./InvoicesRegister.js').then((module) => ({
+    default: module.InvoicesRegister,
   })),
 );
 const IssueChallanDetail = lazy(() =>
@@ -194,6 +200,7 @@ type ModuleKey =
   | 'dashboard'
   | 'works'
   | 'delivery-challans'
+  | 'invoices'
   | 'quotations'
   | 'approvals'
   | 'search'
@@ -219,6 +226,7 @@ const NAVIGATION = [
         label: 'Delivery Challans',
         icon: Truck,
       },
+      { key: 'invoices' as const, label: 'Invoices', icon: ReceiptText },
       { key: 'quotations' as const, label: 'Quotations', icon: FileText },
       { key: 'approvals' as const, label: 'Approvals', icon: CheckCircle },
     ],
@@ -243,6 +251,7 @@ const NAVIGATION = [
 
 const MOBILE_MORE_ITEMS = [
   { key: 'delivery-challans', label: 'Delivery Challans', icon: Truck },
+  { key: 'invoices', label: 'Invoices', icon: ReceiptText },
   { key: 'quotations', label: 'Quotations', icon: FileText },
   { key: 'approvals', label: 'Approvals', icon: CheckCircle },
   // The header's search box is desktop-only, so the mobile shell reaches
@@ -271,6 +280,8 @@ function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'works' };
     case 'delivery-challans':
       return { name: 'delivery-challans' };
+    case 'invoices':
+      return { name: 'invoices' };
     case 'quotations':
       return { name: 'quotations' };
     case 'approvals':
@@ -296,8 +307,11 @@ function activeModuleOf(view: WorkspaceView): ModuleKey {
     // and an opened record are one place.
     case 'delivery-challan':
       return 'delivery-challans';
+    case 'invoice':
+      return 'invoices';
     case 'dashboard':
     case 'delivery-challans':
+    case 'invoices':
     case 'quotations':
     case 'approvals':
     case 'search':
@@ -340,6 +354,10 @@ function pageTitleOf(view: WorkspaceView): string {
       return 'Delivery Challans';
     case 'delivery-challan':
       return 'Delivery Challan';
+    case 'invoices':
+      return 'Invoices';
+    case 'invoice':
+      return 'Tax invoice';
     case 'quotations':
       return 'Quotations';
     case 'approvals':
@@ -1538,6 +1556,29 @@ export function OperationsWorkspace({
                 }}
                 onOpenWorks={() => {
                   navigate({ name: 'works' });
+                }}
+              />
+            )}
+
+            {(view.name === 'invoices' || view.name === 'invoice') && (
+              <InvoicesRegister
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                canManageStatutory={canManageStatutory}
+                hasFullWorkScope={membership?.workScope === 'all'}
+                openInvoiceId={view.name === 'invoice' ? view.invoiceId : null}
+                onOpenInvoice={(invoiceId) => {
+                  navigate(
+                    invoiceId === null
+                      ? { name: 'invoices' }
+                      : { name: 'invoice', invoiceId },
+                  );
+                }}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId }, { workTab: 'bills' });
                 }}
               />
             )}

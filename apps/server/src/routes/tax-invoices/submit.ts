@@ -21,6 +21,7 @@ import { createTenantRouteRegistrar } from '../../tenant-route.js';
 import {
   assertInvoiceDateNotFuture,
   assertInvoiceWorkAccess,
+  assertInvoiceWorkOperable,
   DEFAULT_UNIT_LABEL,
   financialYearLabel,
   lockInvoice,
@@ -664,6 +665,12 @@ export function registerTaxInvoiceSubmitRoute(
         const invoice = await lockInvoice(tx, id);
         await assertInvoiceWorkAccess(tx, user.id, invoice.work_id);
         requireStatus(invoice, 'draft');
+        // R8, server-side: a completed Work refuses the issue of its
+        // invoice, the same money moment a challan issue and an MB
+        // finalize are. No-op for a direct invoice, which has no Work.
+        // The works row is locked here so this serialises against
+        // completion, mirroring the challan issue route.
+        await assertInvoiceWorkOperable(tx, invoice.work_id);
         await assertInvoiceDateNotFuture(tx, invoice.invoice_date);
         // Re-checked at the money moment: the rate and the date were
         // both checked when the draft was written, but either may have

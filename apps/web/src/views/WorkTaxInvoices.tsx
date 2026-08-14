@@ -15,15 +15,9 @@ import { mastersHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
-import { CreditNotesPanel } from './work-tax-invoices/CreditNotesPanel.js';
-import { EwayBillsPanel } from './work-tax-invoices/EwayBillsPanel.js';
 import { InvoiceDraftForm } from './work-tax-invoices/InvoiceDraftForm.js';
-import {
-  InvoiceCancelPanel,
-  InvoiceDetail,
-} from './work-tax-invoices/InvoiceDetail.js';
 import { InvoiceList } from './work-tax-invoices/InvoiceList.js';
-import { IrpPanel } from './work-tax-invoices/IrpPanel.js';
+import { OpenedInvoice } from './work-tax-invoices/OpenedInvoice.js';
 
 interface WorkTaxInvoicesProps {
   readonly api: ApiClient;
@@ -140,7 +134,12 @@ export function WorkTaxInvoices({
       .listContacts(organisationId)
       .then((contacts) => {
         if (!cancelled) {
-          setClients(contacts.filter((contact) => contact.isClient));
+          // Active clients only, exactly as the organisation-wide register
+          // filters them: the server refuses a retired buyer with
+          // CONTACT_RETIRED, so offering one is a picker that promises what
+          // submit rejects. An existing draft's own retired buyer is added
+          // back by BuyerOptions so editing it is never blocked.
+          setClients(contacts.filter((contact) => contact.isClient && contact.active));
           setShipToContacts(contacts);
         }
       })
@@ -238,7 +237,6 @@ export function WorkTaxInvoices({
     );
   }
 
-  const invoice = detail?.invoice ?? null;
   // A Measurement Book is billable once, so an MB already carrying a live
   // invoice leaves the picker; a cancelled OR superseded invoice puts it
   // back (supersession by an issued credit note releases the MB, 0051).
@@ -262,9 +260,9 @@ export function WorkTaxInvoices({
     canModify && canCreateDocuments && billableBooks.length > 0 && clients.length === 0;
 
   const refreshOpenInvoice = async () => {
-    if (invoice === null) return;
+    if (detail === null) return;
     await refreshList();
-    await openInvoiceDetail(invoice.id);
+    await openInvoiceDetail(detail.invoice.id);
   };
 
   return (
@@ -336,80 +334,29 @@ export function WorkTaxInvoices({
         />
       )}
 
-      {invoice !== null && (
-        <section>
-          <InvoiceDetail
-            key={`${invoice.id}-${invoice.status}`}
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            lines={detail?.lines ?? []}
-            clients={clients}
-            shipToContacts={shipToContacts}
-            gstRates={gstRates}
-            canModify={canModify}
-            canIssue={canIssue}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-            onDeleted={async () => {
-              setDetail(null);
-              await refreshList();
-            }}
-          />
-
-          <IrpPanel
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-          />
-
-          <CreditNotesPanel
-            key={`credit-notes-${invoice.id}`}
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            creditNotes={creditNotes}
-            canModify={canModify}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-          />
-
-          <EwayBillsPanel
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            ewayBills={ewayBills}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            onEwayBillsChanged={setEwayBills}
-          />
-
-          {canCancel && (
-            <InvoiceCancelPanel
-              key={`cancel-${invoice.id}`}
-              api={api}
-              organisationId={organisationId}
-              invoice={invoice}
-              pending={pending}
-              act={act}
-              refresh={refreshOpenInvoice}
-            />
-          )}
-        </section>
+      {detail !== null && (
+        <OpenedInvoice
+          api={api}
+          organisationId={organisationId}
+          detail={detail}
+          ewayBills={ewayBills}
+          creditNotes={creditNotes}
+          clients={clients}
+          shipToContacts={shipToContacts}
+          gstRates={gstRates}
+          canModify={canModify}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          canManageStatutory={canManageStatutory}
+          pending={pending}
+          act={act}
+          refresh={refreshOpenInvoice}
+          onDeleted={async () => {
+            setDetail(null);
+            await refreshList();
+          }}
+          onEwayBillsChanged={setEwayBills}
+        />
       )}
     </>
   );

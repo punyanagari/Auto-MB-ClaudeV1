@@ -85,8 +85,8 @@ describe('WorkDetail tax invoices', () => {
     renderInvoiceWork(api);
     await openWorkTab('Bills');
 
-    expect(await screen.findByText('IRP due 30 Jan 2099')).toBeTruthy();
-    expect(screen.getByText('IRP overdue')).toBeTruthy();
+    expect(await screen.findByText('IRP Due 30 Jan 2099')).toBeTruthy();
+    expect(screen.getByText('IRP Overdue')).toBeTruthy();
   });
 
   it('does not present a failed tax-invoice register as empty or creatable', async () => {
@@ -218,6 +218,7 @@ describe('WorkDetail tax invoices', () => {
       invoice: taxInvoice(),
       buyerSnapshot: null,
       signedQr: null,
+      lines: [],
     });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
@@ -228,6 +229,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: taxInvoice(),
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
     });
     renderInvoiceWork(api);
@@ -424,6 +426,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: SUBMITTED_INVOICE,
         buyerSnapshot: { designation: 'Central Railway Mumbai Division' },
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
     });
@@ -448,6 +451,7 @@ describe('WorkDetail tax invoices', () => {
       shipToSnapshot: null,
       issuedSnapshot: null,
       signedQr: null,
+      lines: [],
     });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
@@ -458,6 +462,7 @@ describe('WorkDetail tax invoices', () => {
         shipToSnapshot: null,
         issuedSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
       renderTaxInvoice,
@@ -485,6 +490,7 @@ describe('WorkDetail tax invoices', () => {
         shipToSnapshot: null,
         issuedSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
     });
@@ -510,6 +516,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: interState,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
     });
@@ -528,6 +535,7 @@ describe('WorkDetail tax invoices', () => {
       invoice: SUBMITTED_INVOICE,
       buyerSnapshot: null,
       signedQr: 'signed',
+      lines: [],
     });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
@@ -536,6 +544,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: SUBMITTED_INVOICE,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
       recordTaxInvoiceIrpResponse,
@@ -589,6 +598,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: SUBMITTED_INVOICE,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([unknownBill]),
       generateEwayBill,
@@ -630,6 +640,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: SUBMITTED_INVOICE,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([generatedBill]),
     });
@@ -660,6 +671,7 @@ describe('WorkDetail tax invoices', () => {
       invoice: SUBMITTED_INVOICE,
       buyerSnapshot: null,
       signedQr: null,
+      lines: [],
     });
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
@@ -668,6 +680,7 @@ describe('WorkDetail tax invoices', () => {
         invoice: SUBMITTED_INVOICE,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       listInvoiceEwayBills: vi.fn().mockResolvedValue([]),
       cancelTaxInvoice,
@@ -947,6 +960,7 @@ describe('Tax invoice draft gating and wayfinding', () => {
         invoice: draft,
         buyerSnapshot: null,
         signedQr: null,
+        lines: [],
       }),
       submitTaxInvoice: vi
         .fn()

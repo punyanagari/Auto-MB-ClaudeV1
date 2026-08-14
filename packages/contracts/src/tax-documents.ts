@@ -13,6 +13,7 @@ import {
   nonBlankString,
 } from './primitives.js';
 import { InvoiceNumberPrefixSchema } from './organisations.js';
+import { NextCursorSchema, withKeysetQuery } from './pagination.js';
 
 /**
  * The two GST tax documents (migration 0035): the TAX INVOICE and the
@@ -537,6 +538,93 @@ export const TaxInvoiceListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type TaxInvoiceListResponse = Static<typeof TaxInvoiceListResponseSchema>;
+
+/** One row of the organisation-wide tax-invoice register.
+ *
+ * Deliberately NOT the full `TaxInvoice`: the register answers "what have
+ * we billed, to whom, and where does it stand" — so it carries the buyer's
+ * name, the money as three figures, the local status and the statutory one,
+ * and where the invoice came from. Everything else about a document is read
+ * on the document.
+ *
+ * `workId`, `workCode` and `workTitle` are all null together on a DIRECT
+ * invoice — one raised against a private customer, which descends from no
+ * LOA and so belongs to no Work. That triple is what a row renders as its
+ * source: a link to the Work, or the word Direct.
+ *
+ * `gstAmount` is the sum of the three tax heads, added in SQL numeric and
+ * returned as a decimal string like every other amount (engineering rule 5).
+ * It is null while the invoice is a draft, exactly as the frozen taxable
+ * value and total are: no money exists on an invoice until submit writes
+ * it. */
+export const TaxInvoiceRegisterEntrySchema = Type.Object(
+  {
+    id: UuidSchema,
+    workId: Type.Union([UuidSchema, Type.Null()]),
+    workCode: Type.Union([Type.String(), Type.Null()]),
+    workTitle: Type.Union([Type.String(), Type.Null()]),
+    /** TI/<fy>/NNN once submitted; null while draft. */
+    invoiceNumber: Type.Union([Type.String(), Type.Null()]),
+    invoiceDate: DateOnlySchema,
+    status: TaxInvoiceStatusSchema,
+    /** The buyer as the DOCUMENT states it: the invoice's frozen submit-time
+     * snapshot designation, so a register line matches the printed and filed
+     * invoice even after the contact master is edited. A draft has no
+     * snapshot yet and falls back to the live contact's designation. */
+    buyerName: Type.String(),
+    taxableValue: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** CGST + SGST + IGST. Which heads carry it is a property of the
+     * document, not of a register column. */
+    gstAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+    irn: Type.Union([IrnSchema, Type.Null()]),
+    irpProvider: Type.Union([
+      Type.Literal('manual'),
+      Type.Literal('whitebooks'),
+      Type.Null(),
+    ]),
+    irpProviderState: IrpProviderStateSchema,
+    irpReportingDeadline: Type.Union([DateOnlySchema, Type.Null()]),
+    irpReportingOverdue: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type TaxInvoiceRegisterEntry = Static<typeof TaxInvoiceRegisterEntrySchema>;
+
+/** The register's query: a date window over `invoiceDate`, plus the two
+ * keyset parameters.
+ *
+ * The window is the only filter, for the reason the installation register
+ * gives: a global register carries the filter its question needs and no
+ * more. "What did we bill this quarter" is a date range. A Work filter
+ * would duplicate the Work's own Bills tab, and a status filter would offer
+ * to hide the drafts and the cancellations the register exists to keep
+ * visible. Both bounds are inclusive; either may be sent alone. */
+export const TaxInvoiceRegisterQuerySchema = withKeysetQuery(
+  Type.Object(
+    {
+      invoicedFrom: Type.Optional(DateOnlySchema),
+      invoicedTo: Type.Optional(DateOnlySchema),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type TaxInvoiceRegisterQuery = Static<typeof TaxInvoiceRegisterQuerySchema>;
+
+/** Every tax invoice in the organisation the caller may see, newest first
+ * — work-backed and direct alike. Cancelled and superseded invoices stay
+ * listed with their status: a numbered document that was cancelled is a
+ * fact the register must keep reporting. `nextCursor` pages the list; see
+ * `pagination.ts`. */
+export const TaxInvoiceRegisterResponseSchema = Type.Object(
+  {
+    invoices: Type.Array(TaxInvoiceRegisterEntrySchema),
+    nextCursor: NextCursorSchema,
+  },
+  { additionalProperties: false },
+);
+export type TaxInvoiceRegisterResponse = Static<
+  typeof TaxInvoiceRegisterResponseSchema
+>;
 
 // --- E-way bill requests -----------------------------------------------------
 

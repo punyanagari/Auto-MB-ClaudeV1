@@ -11,6 +11,7 @@ import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { Installations } from '../../src/views/Installations.js';
 import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
+import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
@@ -199,6 +200,27 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry installations/,
     empty: { text: /No installations recorded yet/ },
+  },
+  {
+    view: 'InvoicesRegister.tsx',
+    name: 'the tax-invoice register',
+    loads: ['listTaxInvoices'],
+    render: (api) => (
+      <InvoicesRegister
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        canIssue
+        canCancel
+        canManageStatutory
+        hasFullWorkScope
+        openInvoiceId={null}
+        onOpenInvoice={noop}
+        onOpenWork={noop}
+      />
+    ),
+    retry: /Retry invoices/,
+    empty: { text: /No tax invoice has been raised yet/ },
   },
   {
     view: 'IssueChallanDetail.tsx',

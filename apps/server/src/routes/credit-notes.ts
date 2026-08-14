@@ -268,14 +268,48 @@ function requireStatus(row: CreditNoteRow, status: CreditNoteStatus): void {
   }
 }
 
-/** A note against a direct (MB-less, Work-less) invoice has no Work
- * scope to check; RLS and the organisation header already bound it. */
+/**
+ * The reach a credit note against a DIRECT invoice needs: organisation-wide.
+ *
+ * A direct invoice belongs to no Work, so no Work assignment could ever
+ * reach a note raised against it — the same standalone shape as
+ * `assertDirectInvoiceAccess` and `assertStandaloneChallanAccess`. The
+ * credit-note register now hides these rows from an 'assigned'-scoped
+ * member, so the per-document guard has to agree, or the list would deny
+ * what the id still handed over.
+ *
+ * 404 and the credit-note module's own not-found sentence: whether a note
+ * against a direct invoice exists is not a fact worth disclosing to
+ * someone who may not reach it.
+ */
+async function assertDirectNoteAccess(
+  tx: TransactionSql,
+  userId: string,
+): Promise<void> {
+  if (await hasFullWorkScope(tx, userId)) return;
+  throw httpError(404, 'CREDIT_NOTE_NOT_FOUND', 'No such credit note.');
+}
+
+/**
+ * The per-document work-scope boundary, dispatched by the note's (or its
+ * invoice's) work_id exactly as `assertChallanAccess` and
+ * `assertInvoiceWorkAccess` dispatch theirs. A null work_id is NOT a free
+ * pass: it means the note rides a direct invoice, and that is checked
+ * against `assertDirectNoteAccess` — the organisation-wide reach the
+ * register demands to list it. Returning on null (as this once did) left
+ * every per-document credit-note route open to any 'assigned'-scoped
+ * member of the tenant, and the register's direct-invoice ids were the
+ * enumeration oracle that made the invoice module's own gap reachable.
+ */
 async function assertNoteWorkAccess(
   tx: TransactionSql,
   userId: string,
   workId: string | null,
 ): Promise<void> {
-  if (workId === null) return;
+  if (workId === null) {
+    await assertDirectNoteAccess(tx, userId);
+    return;
+  }
   await assertWorkAccess(tx, userId, workId);
 }
 
@@ -393,8 +427,15 @@ export function registerCreditNoteRoutes(
   provider?: StatutoryProvider,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
-  // The organisation-wide credit-note register. Work-scoped members see
-  // notes of their assigned Works plus notes against direct invoices.
+  // The organisation-wide credit-note register. A work-scoped member sees
+  // notes of their assigned Works and NOTHING against a direct invoice —
+  // the same settled posture the tax-invoice register takes on a document
+  // that belongs to no Work (register.ts), and now the same one
+  // `assertNoteWorkAccess`/`assertDirectNoteAccess` enforce on the write
+  // path. A direct invoice's notes were the enumeration oracle that made
+  // the invoice module's per-document gap reachable; hiding them here
+  // closes that half. Work-scope binds through a Work; a document with
+  // none is organisation-level reach or nothing.
   tenantRoute(
     {
       method: 'GET',
@@ -412,8 +453,7 @@ export function registerCreditNoteRoutes(
         }
         return (await tx.unsafe(
           `select ${CN_COLUMNS} ${CN_FROM}
-             where cn.work_id is null
-                or cn.work_id in (
+             where cn.work_id in (
                   select work_id from work_assignments where user_id = $1
                 )
              order by cn.created_at desc, cn.id`,

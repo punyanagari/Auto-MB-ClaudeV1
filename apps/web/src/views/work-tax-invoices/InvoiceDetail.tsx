@@ -22,7 +22,7 @@ import {
   toLineInputs,
   type DraftLine,
 } from './InvoiceLineEditor.js';
-import { GstRateOptions, type ActRunner } from './shared.js';
+import { BuyerOptions, GstRateOptions, type ActRunner } from './shared.js';
 
 interface InvoiceDetailProps {
   readonly api: ApiClient;
@@ -447,11 +447,11 @@ export function InvoiceDetail({
                 <option value="" disabled>
                   Pick a client contact
                 </option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.designation}
-                  </option>
-                ))}
+                <BuyerOptions
+                  clients={clients}
+                  allContacts={shipToContacts}
+                  currentBuyerId={invoice.buyerContactId}
+                />
               </select>
             </Field>
             <FieldRow>

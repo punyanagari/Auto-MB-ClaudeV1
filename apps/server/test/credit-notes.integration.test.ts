@@ -8,6 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   ChallanDetailResponse,
   CreditNoteDetailResponse,
+  CreditNoteListResponse,
   MeasurementBookDetailResponse,
   TaxInvoiceDetailResponse,
 } from '@auto-mb/contracts';
@@ -1098,5 +1099,182 @@ describe('the CRN transport under the 0049 gates and the provider ledger', () =>
     });
     expect(register.statusCode, register.body).toBe(409);
     expect(register.json<{ code: string }>().code).toBe('IRP_REPORTING_WINDOW_CLOSED');
+  });
+});
+
+/**
+ * A credit note against a DIRECT invoice belongs to no Work, exactly as
+ * its invoice does, so no Work assignment can reach one — only
+ * organisation-wide scope may.
+ *
+ * This module carried the same permissive early return the invoice module
+ * did (a null work_id returned instead of checking anything), and its
+ * register made the hole worse rather than merely matching it: the list
+ * SHOWED an 'assigned'-scoped member every note against a direct invoice,
+ * handing over the tax_invoice_id of documents that member could not
+ * otherwise name. That was the enumeration oracle. Both halves are closed
+ * here — the list hides them, and the per-document routes refuse them —
+ * and the two must be proved together, because either alone still leaks.
+ */
+describe('direct-invoice credit notes: hidden from, and refused to, assigned scope', () => {
+  let scopedJar: CookieJar;
+  let scopedUserId: string;
+  let directNoteId: string;
+  let workNoteId: string;
+
+  const scopedEmail = `cn-scoped-${runId}@integration.test`;
+
+  beforeAll(async () => {
+    // Full document authority, ASSIGNED work scope, assigned to no Work:
+    // a refusal below is by scope, never by a missing authority.
+    scopedJar = await signUp(scopedEmail, 'CN Scoped');
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email: scopedEmail, role: 'office' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const [row] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${scopedEmail}
+    `;
+    if (!row) throw new Error('scoped user missing');
+    scopedUserId = row.id;
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned', can_issue_documents = true,
+          can_cancel_documents = true, can_manage_statutory_reporting = true
+      where organisation_id = ${organisationId} and user_id = ${scopedUserId}
+    `;
+
+    const directInvoice = await submittedDirectInvoice('scope', '2026-06-20');
+    const draftedDirect = await draftCreditNote(directInvoice.invoice.id, '2026-06-21');
+    expect(draftedDirect.statusCode, draftedDirect.body).toBe(201);
+    directNoteId = draftedDirect.json<CreditNoteDetailResponse>().creditNote.id;
+  });
+
+  afterAll(async () => {
+    await admin`
+      delete from organisation_memberships
+      where organisation_id = ${organisationId} and user_id = ${scopedUserId}
+    `;
+  });
+
+  function expectNotFound(response: Awaited<ReturnType<typeof authed>>): void {
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('CREDIT_NOTE_NOT_FOUND');
+  }
+
+  it('keeps direct-invoice notes out of the register a scoped member reads', async () => {
+    const listed = await authed(scopedJar, {
+      method: 'GET',
+      url: '/api/credit-notes',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const ids = listed
+      .json<CreditNoteListResponse>()
+      .creditNotes.map((note) => note.id);
+    // The oracle: this id used to be listed to this member.
+    expect(ids).not.toContain(directNoteId);
+
+    // The owner, with organisation-wide scope, still sees it — so the row
+    // exists and the absence above is scope, not an empty table.
+    const asOwner = await authed(owner, {
+      method: 'GET',
+      url: '/api/credit-notes',
+      organisationId,
+    });
+    expect(asOwner.statusCode, asOwner.body).toBe(200);
+    expect(
+      asOwner.json<CreditNoteListResponse>().creditNotes.map((note) => note.id),
+    ).toContain(directNoteId);
+  });
+
+  it('refuses the scoped member on read, edit, delete, issue, cancel and register-irp', async () => {
+    const base = `/api/credit-notes/${directNoteId}`;
+    expectNotFound(
+      await authed(scopedJar, { method: 'GET', url: base, organisationId }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'PUT',
+        url: base,
+        organisationId,
+        payload: {
+          noteDate: '2026-06-21',
+          reason: 'Edit attempt from outside the scope that may not see it.',
+        },
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, { method: 'DELETE', url: base, organisationId }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/issue`,
+        organisationId,
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/cancel`,
+        organisationId,
+        payload: { note: 'Cancel attempt from outside scope.' },
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/register-irp`,
+        organisationId,
+      }),
+    );
+  });
+
+  it('still lets an assigned member reach a note of a Work they ARE assigned to (positive control)', async () => {
+    // Assign the scoped member to the fixture Work, then raise a note
+    // against a WORK-backed invoice: the same routes must answer 200/201,
+    // proving the refusals above are the direct-invoice boundary and not a
+    // blanket denial of everything to a scoped member.
+    await admin`
+      insert into work_assignments (
+        organisation_id, work_id, user_id, created_by_user_id
+      )
+      values (${organisationId}, ${workId}, ${scopedUserId}, ${ownerUserId})
+      on conflict do nothing
+    `;
+    try {
+      const mb = await finalizedMb('2026-06-25', '3.000');
+      const invoice = await submittedMbInvoice(mb.id, '2026-06-26');
+      const drafted = await draftCreditNote(invoice.invoice.id, '2026-06-27');
+      expect(drafted.statusCode, drafted.body).toBe(201);
+      workNoteId = drafted.json<CreditNoteDetailResponse>().creditNote.id;
+
+      const seen = await authed(scopedJar, {
+        method: 'GET',
+        url: `/api/credit-notes/${workNoteId}`,
+        organisationId,
+      });
+      expect(seen.statusCode, seen.body).toBe(200);
+
+      const listed = await authed(scopedJar, {
+        method: 'GET',
+        url: '/api/credit-notes',
+        organisationId,
+      });
+      expect(listed.statusCode, listed.body).toBe(200);
+      expect(
+        listed.json<CreditNoteListResponse>().creditNotes.map((note) => note.id),
+      ).toContain(workNoteId);
+    } finally {
+      await admin`
+        delete from work_assignments
+        where organisation_id = ${organisationId} and work_id = ${workId}
+          and user_id = ${scopedUserId}
+      `;
+    }
   });
 });
