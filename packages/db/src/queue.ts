@@ -1,4 +1,5 @@
 import type { Sql, TransactionSql } from 'postgres';
+import { jsonb } from './json.js';
 import { TenantBindRefusedError, withTenant } from './tenant.js';
 
 /**
@@ -81,7 +82,7 @@ export async function enqueueJob(
   payloadRef: JobPayloadRef,
 ): Promise<string> {
   const [row] = await tx<{ enqueue_job: string }[]>`
-    select app_private.enqueue_job(${kind}, ${JSON.stringify(payloadRef)}::jsonb)
+    select app_private.enqueue_job(${kind}, ${jsonb(tx, payloadRef)})
   `;
   if (row === undefined) throw new Error('enqueue_job returned no id');
   return row.enqueue_job;
@@ -134,7 +135,7 @@ export async function completeJob(
     select app_private.complete_job(
       ${job.id}::uuid,
       ${job.claimToken}::uuid,
-      ${outcome === null ? null : JSON.stringify(outcome)}::jsonb
+      ${outcome === null ? null : jsonb(sql, outcome)}
     )
   `;
   return row?.complete_job === true;
