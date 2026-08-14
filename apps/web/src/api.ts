@@ -1295,6 +1295,30 @@ export interface ApiClient {
     invoiceId: string,
     body: SaveEwayBillRequest,
   ) => Promise<EwayBillDetailResponse>;
+  /** The challan path (ADR-0013): a standalone Delivery Challan carrying
+   * goods raises its own e-way bill, with no invoice and no IRN behind
+   * it. The lifecycle beyond creation is the shared one below — the
+   * routes key on the bill, not on the source. */
+  readonly listChallanEwayBills: (
+    organisationId: string,
+    challanId: string,
+  ) => Promise<readonly EwayBill[]>;
+  readonly createChallanEwayBill: (
+    organisationId: string,
+    challanId: string,
+    body: SaveEwayBillRequest,
+  ) => Promise<EwayBillDetailResponse>;
+  /** The printable summary: a convenience print of facts the module
+   * already holds. The NIC portal document remains the statutory
+   * original, and the render says so. */
+  readonly renderEwayBill: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<EwayBillDetailResponse>;
+  readonly downloadEwayBillPdf: (
+    organisationId: string,
+    ewayBillId: string,
+  ) => Promise<Blob>;
   readonly getEwayBill: (
     organisationId: string,
     ewayBillId: string,
@@ -3198,6 +3222,36 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/tax-invoices/${invoiceId}/eway-bills`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async listChallanEwayBills(organisationId, challanId) {
+      const payload = await request<{ ewayBills: EwayBill[] }>(
+        `/api/challans/${challanId}/eway-bills`,
+        { organisationId },
+      );
+      return payload.ewayBills;
+    },
+    async createChallanEwayBill(organisationId, challanId, body) {
+      return request<EwayBillDetailResponse>(`/api/challans/${challanId}/eway-bills`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async renderEwayBill(organisationId, ewayBillId) {
+      return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}/render`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async downloadEwayBillPdf(organisationId, ewayBillId) {
+      // The tenant header travels on every scoped request, so PDFs are
+      // fetched (not linked) and handed to the browser as object URLs.
+      const response = await fetchImpl(`/api/eway-bills/${ewayBillId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async getEwayBill(organisationId, ewayBillId) {
       return request<EwayBillDetailResponse>(`/api/eway-bills/${ewayBillId}`, {

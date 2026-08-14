@@ -7,7 +7,7 @@ import type {
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../../api.js';
 import { CreditNotesPanel } from './CreditNotesPanel.js';
-import { EwayBillsPanel } from './EwayBillsPanel.js';
+import { EwayBillsPanel } from '../EwayBillsPanel.js';
 import { InvoiceCancelPanel, InvoiceDetail } from './InvoiceDetail.js';
 import { IrpPanel } from './IrpPanel.js';
 import { type ActRunner } from './shared.js';
@@ -66,6 +66,11 @@ export function OpenedInvoice({
   onEwayBillsChanged,
 }: OpenedInvoiceProps) {
   const invoice = detail.invoice;
+  // The applicability rule ADR-0013 states, read the same way the server
+  // reads it: a CUMULATIVE invoice is one SAC service line by definition,
+  // and an ITEMISED one carries goods when any of its lines does.
+  const invoiceCarriesGoods =
+    invoice.lineShape === 'itemised' && detail.lines.some((line) => !line.isService);
   return (
     <section>
       <InvoiceDetail
@@ -112,18 +117,34 @@ export function OpenedInvoice({
         refresh={refresh}
       />
 
-      <EwayBillsPanel
-        api={api}
-        organisationId={organisationId}
-        invoice={invoice}
-        ewayBills={ewayBills}
-        canIssue={canIssue}
-        canCancel={canCancel}
-        canManageStatutory={canManageStatutory}
-        pending={pending}
-        act={act}
-        onEwayBillsChanged={onEwayBillsChanged}
-      />
+      {invoice.status === 'submitted' && (
+        <EwayBillsPanel
+          api={api}
+          organisationId={organisationId}
+          source={{
+            kind: 'tax_invoice',
+            id: invoice.id,
+            number: invoice.invoiceNumber,
+            // ADR-0013: applicability is a property of the LINES. A
+            // cumulative invoice carries one SAC service line by
+            // definition and can never raise a bill; an itemised one is
+            // asked whether any of its lines is goods. The server holds
+            // the same rule and refuses the same documents.
+            eligible: invoiceCarriesGoods,
+            refusal: invoiceCarriesGoods
+              ? null
+              : 'Every line of this invoice is a service. An e-way bill moves goods, so NIC refuses one for a service-only document; historical records stay readable, reconcilable and cancellable.',
+          }}
+          ewayBills={ewayBills}
+          canModify={canModify}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          canManageStatutory={canManageStatutory}
+          pending={pending}
+          act={act}
+          onEwayBillsChanged={onEwayBillsChanged}
+        />
+      )}
 
       {canCancel && (
         <InvoiceCancelPanel

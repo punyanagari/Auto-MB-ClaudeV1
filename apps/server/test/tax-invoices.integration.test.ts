@@ -127,8 +127,7 @@ const registerInvoiceProvider = vi.fn<StatutoryProvider['registerInvoice']>();
 const findInvoiceProvider = vi.fn<StatutoryProvider['findInvoiceByDocument']>();
 const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
 const generateEwayBillProvider = vi.fn<StatutoryProvider['generateEwayBillByIrn']>();
-const generateEwayBillDirectProvider =
-  vi.fn<StatutoryProvider['generateEwayBill']>();
+const generateEwayBillDirectProvider = vi.fn<StatutoryProvider['generateEwayBill']>();
 const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
 const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
 const STUB_PORTAL = 'NIC1 via apisandbox.whitebooks.in';

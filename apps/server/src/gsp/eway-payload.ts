@@ -141,7 +141,8 @@ export function buildEwayBillByIrnPayload(
     TransMode: transModeCode(carriage.transportMode),
     TransId: carriage.transporterId,
     TransName: carriage.transporterName,
-    TransDocDt: carriage.transportDocDate === null ? null : nicDate(carriage.transportDocDate),
+    TransDocDt:
+      carriage.transportDocDate === null ? null : nicDate(carriage.transportDocDate),
     TransDocNo: carriage.transportDocNumber,
     VehNo: carriage.vehicleNumber,
     // Regular, as against ODC (over-dimensional cargo). The product has no

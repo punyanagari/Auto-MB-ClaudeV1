@@ -393,7 +393,9 @@ describe('tenant migration contract', () => {
       expect(sql, column).toContain(`NEW.${column}`);
       expect(sql, column).toContain(`OLD.${column}`);
     }
-    expect(sql).toContain("RAISE EXCEPTION 'issued Delivery Challan business data is immutable'");
+    expect(sql).toContain(
+      "RAISE EXCEPTION 'issued Delivery Challan business data is immutable'",
+    );
   });
 
   it('makes an e-way bill name exactly one source document in 0076', async () => {
@@ -423,12 +425,14 @@ describe('tenant migration contract', () => {
     // definer read is pinned to the row's own tenant on BOTH branches.
     const insertGuard = sql.slice(
       sql.indexOf('CREATE OR REPLACE FUNCTION app_private.guard_eway_invoice()'),
-      sql.indexOf('CREATE OR REPLACE FUNCTION app_private.guard_eway_bill_issued_update()'),
+      sql.indexOf(
+        'CREATE OR REPLACE FUNCTION app_private.guard_eway_bill_issued_update()',
+      ),
     );
     expect(insertGuard).toContain('SECURITY DEFINER');
-    expect(
-      [...insertGuard.matchAll(/WHERE organisation_id = NEW\.organisation_id/g)],
-    ).toHaveLength(2);
+    expect([
+      ...insertGuard.matchAll(/WHERE organisation_id = NEW\.organisation_id/g),
+    ]).toHaveLength(2);
     expect(insertGuard).toContain("v_kind <> 'standalone'");
     // A row naming neither source defers to the CHECK rather than
     // reporting a NULL challan as missing.

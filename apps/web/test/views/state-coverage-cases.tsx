@@ -136,6 +136,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canIssue
         canCancel
+        canManageStatutory
         openChallanId={null}
         onOpenChallan={noop}
         onOpenWorkChallan={noop}

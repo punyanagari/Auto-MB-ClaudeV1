@@ -87,7 +87,9 @@ export interface EwayBillSourceFacts {
  * The whole applicability question, in one expression. A v1 (cumulative
  * SAC) invoice snapshot normalises through `snapshotLines` into a single
  * service line, so it answers false without needing a special case. */
-export function carriesGoods(lines: readonly { readonly isService: boolean }[]): boolean {
+export function carriesGoods(
+  lines: readonly { readonly isService: boolean }[],
+): boolean {
   return lines.some((line) => !line.isService);
 }
 
@@ -300,7 +302,9 @@ export async function readChallanSourceFacts(
       // bill can describe. It is dropped here rather than guessed at, and
       // the completeness check below is what refuses the document.
       .filter(
-        (line): line is ChallanLineRow & { hsn_sac_code: string; is_service: boolean } =>
+        (
+          line,
+        ): line is ChallanLineRow & { hsn_sac_code: string; is_service: boolean } =>
           line.hsn_sac_code !== null && line.is_service !== null,
       )
       .map((line) => ({

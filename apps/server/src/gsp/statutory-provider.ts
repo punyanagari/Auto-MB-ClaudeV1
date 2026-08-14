@@ -114,9 +114,7 @@ export interface StatutoryProvider {
    * standalone delivery challan path (ADR-0013). The payload states the
    * parties, the items and the carriage itself, because there is no
    * registered invoice at the IRP holding any of it. */
-  generateEwayBill(
-    input: GenerateEwayBillRequest,
-  ): Promise<EwayBillProviderEvidence>;
+  generateEwayBill(input: GenerateEwayBillRequest): Promise<EwayBillProviderEvidence>;
   findEwayBillByIrn(input: {
     readonly gstin: string;
     readonly irn: string;

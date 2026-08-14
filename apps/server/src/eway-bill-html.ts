@@ -47,10 +47,7 @@ export interface EwayBillRenderCarriage {
   readonly toPincode: string;
 }
 
-const MOVEMENT_REASON_LABEL: Record<
-  EwayBillSourceFacts['movementReason'],
-  string
-> = {
+const MOVEMENT_REASON_LABEL: Record<EwayBillSourceFacts['movementReason'], string> = {
   supply: 'Supply',
   job_work: 'Job work',
   for_own_use: 'For own use',

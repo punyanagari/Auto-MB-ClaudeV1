@@ -1,12 +1,13 @@
-import type { EwayBill, TaxInvoice, TransportMode } from '@auto-mb/contracts';
-import { formValue, type ApiClient } from '../../api.js';
-import { formatDate } from '../../format.js';
-import { Button } from '../../ui/button.js';
-import { StatusChip } from '../../ui/chip.js';
-import { DataTable } from '../../ui/table.js';
-import { Field, FieldRow, Actions, FormError } from '../../ui/form.js';
-import { Disclosure } from '../../ui/disclosure.js';
-import type { ActRunner } from './shared.js';
+import { useState } from 'react';
+import type { EwayBill, TransportMode } from '@auto-mb/contracts';
+import { formValue, type ApiClient } from '../api.js';
+import { formatDate } from '../format.js';
+import { Button } from '../ui/button.js';
+import { StatusChip } from '../ui/chip.js';
+import { DataTable } from '../ui/table.js';
+import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
+import { Disclosure } from '../ui/disclosure.js';
+import type { ActRunner } from './work-tax-invoices/shared.js';
 
 const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   road: 'Road',
@@ -15,11 +16,30 @@ const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   ship: 'Ship',
 };
 
+/** Which document the consignment travels under, and whether the server
+ * would accept a bill raised from it.
+ *
+ * `eligible` is the SERVER's answer, never the screen's: ADR-0013 puts
+ * the applicability rule in one place and this panel offers the action
+ * exactly where that rule would allow it. `refusal` is why not, in the
+ * operator's own words, when the source is a document this product can
+ * see but NIC will not issue a bill for.
+ */
+export interface EwayBillSourceDescriptor {
+  readonly kind: 'tax_invoice' | 'delivery_challan';
+  readonly id: string;
+  /** The document's own number, for the panel's own sentences. */
+  readonly number: string | null;
+  readonly eligible: boolean;
+  readonly refusal: string | null;
+}
+
 interface EwayBillsPanelProps {
   readonly api: ApiClient;
   readonly organisationId: string;
-  readonly invoice: TaxInvoice;
+  readonly source: EwayBillSourceDescriptor;
   readonly ewayBills: readonly EwayBill[];
+  readonly canModify: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
   /** The compliance authority (migration 0061). Gates the NIC portal
@@ -32,16 +52,23 @@ interface EwayBillsPanelProps {
 }
 
 /**
- * The e-way bills that moved a submitted invoice. Fresh generation is
- * unavailable for the cumulative SAC service invoice (owner decision on
- * audit finding 1); historical records remain readable, reconcilable
- * and cancellable, with provider and local cancellation kept separate.
+ * The e-way bill lifecycle for whichever document moves the goods
+ * (ADR-0013): a submitted tax invoice, or an issued standalone Delivery
+ * Challan. One panel, because the routes key on the BILL rather than on
+ * its source, and one operator question — "what is moving, under what
+ * number, and is it still valid".
+ *
+ * Applicability is the server's answer, read from `source.eligible`. A
+ * service-only document is refused there, and the panel says so instead
+ * of offering an action that would be refused: an e-way bill moves goods,
+ * and NIC's error 4009 is the reason.
  */
 export function EwayBillsPanel({
   api,
   organisationId,
-  invoice,
+  source,
   ewayBills,
+  canModify,
   canIssue,
   canCancel,
   canManageStatutory,
@@ -49,24 +76,161 @@ export function EwayBillsPanel({
   act,
   onEwayBillsChanged,
 }: EwayBillsPanelProps) {
-  if (invoice.status !== 'submitted') return null;
+  const [draftOpen, setDraftOpen] = useState(false);
   const mayReconcile = canIssue && canManageStatutory;
   const mayCancelAtPortal = canCancel && canManageStatutory;
   const reloadEwayBills = async () => {
-    onEwayBillsChanged(await api.listInvoiceEwayBills(organisationId, invoice.id));
+    onEwayBillsChanged(
+      source.kind === 'tax_invoice'
+        ? await api.listInvoiceEwayBills(organisationId, source.id)
+        : await api.listChallanEwayBills(organisationId, source.id),
+    );
   };
+  const hasLiveBill = ewayBills.some((bill) => bill.status !== 'cancelled');
   return (
     <>
       <h4>E-way bills</h4>
-      <FormError>
-        Fresh E-way Bill generation is unavailable for this cumulative SAC service
-        invoice. Historical records remain readable, reconcilable, and cancellable.
-        Goods/HSN and delivery-challan lines must be added before generation can be
-        enabled safely.
-      </FormError>
+      {source.refusal !== null && <FormError>{source.refusal}</FormError>}
+      {source.eligible && canModify && !hasLiveBill && (
+        <>
+          <Actions>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDraftOpen((open) => !open);
+              }}
+              disabled={pending}
+              aria-expanded={draftOpen}
+              aria-controls="eway-new-form"
+            >
+              {draftOpen ? 'Close carriage details' : 'Raise an e-way bill'}
+            </Button>
+          </Actions>
+          {draftOpen && (
+            <form
+              id="eway-new-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const mode = formValue(data, 'eway-new-mode') as TransportMode;
+                const vehicle = formValue(data, 'eway-new-vehicle').trim();
+                const docNumber = formValue(data, 'eway-new-doc-number').trim();
+                const docDate = formValue(data, 'eway-new-doc-date').trim();
+                const transporterName = formValue(data, 'eway-new-transporter').trim();
+                void act(async () => {
+                  const body = {
+                    transportMode: mode,
+                    distanceKm: Number(formValue(data, 'eway-new-distance')),
+                    fromPincode: formValue(data, 'eway-new-from'),
+                    toPincode: formValue(data, 'eway-new-to'),
+                    ...(vehicle === '' ? {} : { vehicleNumber: vehicle }),
+                    ...(docNumber === '' ? {} : { transportDocNumber: docNumber }),
+                    ...(docDate === '' ? {} : { transportDocDate: docDate }),
+                    ...(transporterName === '' ? {} : { transporterName }),
+                  };
+                  if (source.kind === 'tax_invoice') {
+                    await api.createInvoiceEwayBill(organisationId, source.id, body);
+                  } else {
+                    await api.createChallanEwayBill(organisationId, source.id, body);
+                  }
+                  await reloadEwayBills();
+                  setDraftOpen(false);
+                }, 'E-way bill drafted. Nothing has been sent to NIC yet — generate it when the carriage is final.');
+              }}
+            >
+              <FieldRow>
+                <Field>
+                  <label htmlFor="eway-new-mode">Transport mode</label>
+                  <select id="eway-new-mode" name="eway-new-mode" defaultValue="road">
+                    <option value="road">Road</option>
+                    <option value="rail">Rail</option>
+                    <option value="air">Air</option>
+                    <option value="ship">Ship</option>
+                  </select>
+                </Field>
+                <Field>
+                  <label htmlFor="eway-new-distance">Distance (km)</label>
+                  <input
+                    id="eway-new-distance"
+                    name="eway-new-distance"
+                    type="number"
+                    min={0}
+                    max={4000}
+                    required
+                  />
+                </Field>
+              </FieldRow>
+              <FieldRow>
+                <Field>
+                  <label htmlFor="eway-new-from">From PIN</label>
+                  <input
+                    id="eway-new-from"
+                    name="eway-new-from"
+                    pattern="[0-9]{6}"
+                    required
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="eway-new-to">To PIN</label>
+                  <input
+                    id="eway-new-to"
+                    name="eway-new-to"
+                    pattern="[0-9]{6}"
+                    required
+                  />
+                </Field>
+              </FieldRow>
+              <FieldRow>
+                <Field>
+                  <label htmlFor="eway-new-vehicle">Vehicle number</label>
+                  <input
+                    id="eway-new-vehicle"
+                    name="eway-new-vehicle"
+                    pattern="[A-Z0-9]{6,12}"
+                  />
+                  <p className="text-muted-foreground">
+                    A road movement names a vehicle; rail, air and ship name a transport
+                    document instead.
+                  </p>
+                </Field>
+                <Field>
+                  <label htmlFor="eway-new-transporter">Transporter</label>
+                  <input
+                    id="eway-new-transporter"
+                    name="eway-new-transporter"
+                    maxLength={200}
+                  />
+                </Field>
+              </FieldRow>
+              <FieldRow>
+                <Field>
+                  <label htmlFor="eway-new-doc-number">Transport document</label>
+                  <input
+                    id="eway-new-doc-number"
+                    name="eway-new-doc-number"
+                    maxLength={30}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="eway-new-doc-date">Transport document date</label>
+                  <input id="eway-new-doc-date" name="eway-new-doc-date" type="date" />
+                </Field>
+              </FieldRow>
+              <Actions>
+                <Button type="submit" disabled={pending}>
+                  Save draft
+                </Button>
+              </Actions>
+            </form>
+          )}
+        </>
+      )}
       {ewayBills.length > 0 ? (
         <DataTable>
-          <caption className="sr-only">E-way bills raised to move this invoice</caption>
+          <caption className="sr-only">
+            E-way bills raised to move this{' '}
+            {source.kind === 'tax_invoice' ? 'invoice' : 'delivery challan'}
+          </caption>
           <thead>
             <tr>
               <th scope="col">EWB number</th>
@@ -101,10 +265,7 @@ export function EwayBillsPanel({
                     (bill.validUntil === null ? '—' : formatDate(bill.validUntil))}
                 </td>
                 <td>
-                  {bill.status === 'draft' &&
-                  mayReconcile &&
-                  (bill.providerState === 'generating' ||
-                    bill.providerState === 'generation_unknown') ? (
+                  {bill.status === 'draft' && mayReconcile ? (
                     <Button
                       variant="secondary"
                       onClick={() => {
@@ -128,6 +289,42 @@ export function EwayBillsPanel({
                           ? 'Reconcile'
                           : 'Generate at Whitebooks'}
                     </Button>
+                  ) : bill.status !== 'draft' && canModify ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          void act(async () => {
+                            await api.renderEwayBill(organisationId, bill.id);
+                            await reloadEwayBills();
+                          }, 'E-way bill summary rendered. It is a convenience print; the NIC portal document remains the statutory original.');
+                        }}
+                        disabled={pending}
+                      >
+                        {bill.renderedAvailable === true
+                          ? 'Re-render PDF'
+                          : 'Render PDF'}
+                      </Button>
+                      {bill.renderedAvailable === true && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            void act(async () => {
+                              const blob = await api.downloadEwayBillPdf(
+                                organisationId,
+                                bill.id,
+                              );
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, '_blank', 'noopener');
+                              URL.revokeObjectURL(url);
+                            }, 'E-way bill summary opened in a new tab.');
+                          }}
+                          disabled={pending}
+                        >
+                          Open PDF
+                        </Button>
+                      )}
+                    </>
                   ) : (
                     '—'
                   )}
@@ -138,8 +335,16 @@ export function EwayBillsPanel({
         </DataTable>
       ) : (
         <p className="text-muted-foreground">
-          No e-way bill has been raised for this invoice.
+          No e-way bill has been raised for this{' '}
+          {source.kind === 'tax_invoice' ? 'invoice' : 'delivery challan'}.
         </p>
+      )}
+
+      {ewayBills.some((bill) => bill.renderedAvailable === true) && (
+        <FormNotice>
+          The rendered summary is a convenience print of the facts recorded here. The
+          statutory e-way bill is the one held on the NIC portal.
+        </FormNotice>
       )}
 
       {mayCancelAtPortal &&

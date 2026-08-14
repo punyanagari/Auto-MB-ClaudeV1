@@ -1820,7 +1820,10 @@ export function registerEwayBillRoutes(
         );
       }
       void reply.type('application/pdf');
-      void reply.header('content-disposition', `inline; filename="eway-bill-${id}.pdf"`);
+      void reply.header(
+        'content-disposition',
+        `inline; filename="eway-bill-${id}.pdf"`,
+      );
       return reply.send(bytes);
     },
   );

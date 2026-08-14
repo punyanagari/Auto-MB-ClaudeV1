@@ -588,7 +588,7 @@ describe('WorkDetail tax invoices', () => {
     });
   });
 
-  it('explains SAC containment and exposes only lookup recovery for historical unknown EWB evidence', async () => {
+  it('refuses a service-only invoice by line content and still offers lookup recovery', async () => {
     const unknownBill = ewayBill();
     const generateEwayBill = vi.fn().mockResolvedValue({ ewayBill: unknownBill });
     const api = stubApi({
@@ -607,10 +607,15 @@ describe('WorkDetail tax invoices', () => {
     await openWorkTab('Bills');
 
     fireEvent.click(await screen.findByRole('button', { name: 'TI/2026-27/001' }));
+    // ADR-0013: the refusal is now about the LINES rather than about the
+    // document kind. This fixture invoice is the cumulative SAC service
+    // one, which is exactly the document the 2026-08-10 disposition was
+    // about, so the panel refuses it and offers no drafting action —
+    // while the historical record's lookup recovery stays reachable.
     expect(
-      await screen.findByText(/Fresh E-way Bill generation is unavailable/),
+      await screen.findByText(/Every line of this invoice is a service/),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Draft an e-way bill' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Raise an e-way bill' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Generate at Whitebooks' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reconcile' }));

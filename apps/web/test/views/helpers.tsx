@@ -403,6 +403,12 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listInvoiceEwayBills']>()
       .mockResolvedValue([]),
     createInvoiceEwayBill: vi.fn<ApiClient['createInvoiceEwayBill']>(),
+    listChallanEwayBills: vi
+      .fn<ApiClient['listChallanEwayBills']>()
+      .mockResolvedValue([]),
+    createChallanEwayBill: vi.fn<ApiClient['createChallanEwayBill']>(),
+    renderEwayBill: vi.fn<ApiClient['renderEwayBill']>(),
+    downloadEwayBillPdf: vi.fn<ApiClient['downloadEwayBillPdf']>(),
     getEwayBill: vi.fn<ApiClient['getEwayBill']>(),
     updateEwayBill: vi.fn<ApiClient['updateEwayBill']>(),
     ewayBillNicPayload: vi.fn<ApiClient['ewayBillNicPayload']>(),

@@ -4,6 +4,8 @@ import type {
   Contact,
   DeliveryChallanMovement,
   DeliveryChallanRegisterEntry,
+  EwayBill,
+  MovementReason,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
@@ -15,6 +17,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { EwayBillsPanel } from './EwayBillsPanel.js';
 
 /**
  * The Delivery Challan register — the movement document's own screen.
@@ -48,6 +51,10 @@ interface DeliveryChallansProps {
   readonly canIssue: boolean;
   /** The per-member cancel authority. */
   readonly canCancel: boolean;
+  /** The compliance authority (migration 0061). Gates the NIC portal
+   * controls on a challan's e-way bill; the challan's own lifecycle is
+   * untouched by it. */
+  readonly canManageStatutory: boolean;
   /** The register row the hash names (`#/delivery-challans/<id>`), or null
    * for the plain register. */
   readonly openChallanId: string | null;
@@ -80,9 +87,32 @@ interface LineDraft {
   unit: string;
   quantity: string;
   rate: string;
+  /** The statutory classification (ADR-0013). Optional on the document:
+   * a challan is a valid movement record without it, and it is required
+   * only before an e-way bill can be raised. Blank means "not
+   * classified"; `kind` is what says which of the two the code is. */
+  hsnSacCode: string;
+  kind: '' | 'goods' | 'service';
 }
 
-const EMPTY_LINE: LineDraft = { description: '', unit: '', quantity: '', rate: '' };
+const EMPTY_LINE: LineDraft = {
+  description: '',
+  unit: '',
+  quantity: '',
+  rate: '',
+  hsnSacCode: '',
+  kind: '',
+};
+
+const MOVEMENT_REASON_LABELS: Record<MovementReason, string> = {
+  supply: 'Supply',
+  job_work: 'Job work',
+  for_own_use: 'For own use',
+  others: 'Others',
+};
+
+const HSN_PATTERN = /^[0-9]{6,8}$/;
+const SAC_PATTERN = /^[0-9]{6}$/;
 
 const PREFIX_PATTERN = /^[A-Z0-9][A-Z0-9_/-]{0,24}$/;
 // The two alternations are the repo's decimal shape (ReviewLoa,
@@ -107,7 +137,42 @@ function lineProblem(line: LineDraft): string | null {
   if (!RATE_PATTERN.test(line.rate)) {
     return 'Every rate is a number that is not negative.';
   }
+  // The pair travels together or not at all: the marker is what says
+  // which of the two the code is, and the server refuses the half-stated
+  // pair by name (LINE_SHAPE_INVALID). Said here so the operator is told
+  // before the round trip.
+  const classified = line.hsnSacCode.trim() !== '' || line.kind !== '';
+  if (classified) {
+    if (line.kind === '') {
+      return 'A classified line says whether it is goods or a service.';
+    }
+    if (line.kind === 'goods' && !HSN_PATTERN.test(line.hsnSacCode.trim())) {
+      return 'A goods line carries a six-to-eight-digit HSN code.';
+    }
+    if (line.kind === 'service' && !SAC_PATTERN.test(line.hsnSacCode.trim())) {
+      return 'A service line carries a six-digit SAC code.';
+    }
+  }
   return null;
+}
+
+/** Why this challan cannot raise an e-way bill, or null when it can.
+ *
+ * The screen never decides eligibility — `challan.ewayBillEligible` is
+ * the server's answer and the only one that counts. This function only
+ * turns a false into a sentence that names the fix. */
+function ewayBillRefusal(detail: ChallanDetailResponse): string | null {
+  if (detail.challan.ewayBillEligible === true) return null;
+  if (detail.challan.status === 'cancelled') {
+    return 'This challan is cancelled, so nothing moves under it.';
+  }
+  if ((detail.challan.movementReason ?? null) === null) {
+    return 'This challan records no reason for the movement, and an issued challan is immutable — the facts belong on the draft. An e-way bill cannot be raised from it.';
+  }
+  if (!detail.items.some((item) => item.isService === false)) {
+    return 'No line of this challan is classified as goods. An e-way bill moves goods, so NIC refuses one for a service-only document.';
+  }
+  return 'This challan cannot raise an e-way bill.';
 }
 
 export function DeliveryChallans({
@@ -116,6 +181,7 @@ export function DeliveryChallans({
   canModify,
   canIssue,
   canCancel,
+  canManageStatutory,
   openChallanId,
   onOpenChallan,
   onOpenWorkChallan,
@@ -137,6 +203,11 @@ export function DeliveryChallans({
   const [prefix, setPrefix] = useState('DC');
   const [consigneeContactId, setConsigneeContactId] = useState('');
   const [lines, setLines] = useState<readonly LineDraft[]>([{ ...EMPTY_LINE }]);
+  const [movementReason, setMovementReason] = useState<'' | MovementReason>('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [transporterName, setTransporterName] = useState('');
+  const [transportDistanceKm, setTransportDistanceKm] = useState('');
+  const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
 
   const refreshList = useCallback(async () => {
     setChallans(await api.listDeliveryChallans(organisationId));
@@ -265,6 +336,10 @@ export function DeliveryChallans({
     setPrefix('DC');
     setConsigneeContactId('');
     setLines([{ ...EMPTY_LINE }]);
+    setMovementReason('');
+    setVehicleNumber('');
+    setTransporterName('');
+    setTransportDistanceKm('');
   }
 
   const standaloneDetail =
@@ -435,7 +510,23 @@ export function DeliveryChallans({
                       unit: line.unit.trim(),
                       quantity: line.quantity,
                       rate: line.rate,
+                      ...(line.kind === ''
+                        ? {}
+                        : {
+                            hsnSacCode: line.hsnSacCode.trim(),
+                            isService: line.kind === 'service',
+                          }),
                     })),
+                    ...(movementReason === '' ? {} : { movementReason }),
+                    ...(vehicleNumber.trim() === ''
+                      ? {}
+                      : { vehicleNumber: vehicleNumber.trim().toUpperCase() }),
+                    ...(transporterName.trim() === ''
+                      ? {}
+                      : { transporterName: transporterName.trim() }),
+                    ...(transportDistanceKm.trim() === ''
+                      ? {}
+                      : { transportDistanceKm: Number(transportDistanceKm) }),
                   });
                   resetForm();
                   await refreshList();
@@ -489,6 +580,68 @@ export function DeliveryChallans({
                 </Field>
               </FieldRow>
 
+              <Disclosure label="Statutory movement facts (for an e-way bill)">
+                <Hint>
+                  Optional on the document, and required before this challan can raise
+                  an e-way bill. They are frozen when the challan is issued, like
+                  everything else printed on it, so record them here rather than
+                  afterwards. The consignee&rsquo;s GSTIN is taken from the contact.
+                </Hint>
+                <FieldRow>
+                  <Field>
+                    <label htmlFor="standalone-movement-reason">
+                      Reason for the movement
+                    </label>
+                    <select
+                      id="standalone-movement-reason"
+                      value={movementReason}
+                      onChange={(event) => {
+                        setMovementReason(event.target.value as '' | MovementReason);
+                      }}
+                    >
+                      <option value="">Not recorded</option>
+                      <option value="supply">Supply</option>
+                      <option value="job_work">Job work</option>
+                      <option value="for_own_use">For own use</option>
+                      <option value="others">Others</option>
+                    </select>
+                  </Field>
+                  <Field>
+                    <label htmlFor="standalone-vehicle">Vehicle number</label>
+                    <input
+                      id="standalone-vehicle"
+                      value={vehicleNumber}
+                      onChange={(event) => {
+                        setVehicleNumber(event.target.value.toUpperCase());
+                      }}
+                    />
+                  </Field>
+                </FieldRow>
+                <FieldRow>
+                  <Field>
+                    <label htmlFor="standalone-transporter">Transporter</label>
+                    <input
+                      id="standalone-transporter"
+                      value={transporterName}
+                      onChange={(event) => {
+                        setTransporterName(event.target.value);
+                      }}
+                    />
+                  </Field>
+                  <Field>
+                    <label htmlFor="standalone-distance">Distance (km)</label>
+                    <input
+                      id="standalone-distance"
+                      inputMode="numeric"
+                      value={transportDistanceKm}
+                      onChange={(event) => {
+                        setTransportDistanceKm(event.target.value);
+                      }}
+                    />
+                  </Field>
+                </FieldRow>
+              </Disclosure>
+
               <DataTable>
                 <caption className="sr-only">Lines on this standalone challan</caption>
                 <thead>
@@ -497,6 +650,8 @@ export function DeliveryChallans({
                     <th scope="col">Unit</th>
                     <th scope="col">Quantity</th>
                     <th scope="col">Rate</th>
+                    <th scope="col">HSN/SAC</th>
+                    <th scope="col">Goods or service</th>
                     <th scope="col">
                       <span className="sr-only">Remove</span>
                     </th>
@@ -568,6 +723,43 @@ export function DeliveryChallans({
                             updateLine(index, { rate: event.target.value });
                           }}
                         />
+                      </td>
+                      <td>
+                        <label
+                          className="sr-only"
+                          htmlFor={`standalone-line-${String(index)}-hsn`}
+                        >
+                          Line {index + 1} HSN or SAC code
+                        </label>
+                        <input
+                          id={`standalone-line-${String(index)}-hsn`}
+                          inputMode="numeric"
+                          value={line.hsnSacCode}
+                          onChange={(event) => {
+                            updateLine(index, { hsnSacCode: event.target.value });
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <label
+                          className="sr-only"
+                          htmlFor={`standalone-line-${String(index)}-kind`}
+                        >
+                          Line {index + 1} goods or service
+                        </label>
+                        <select
+                          id={`standalone-line-${String(index)}-kind`}
+                          value={line.kind}
+                          onChange={(event) => {
+                            updateLine(index, {
+                              kind: event.target.value as LineDraft['kind'],
+                            });
+                          }}
+                        >
+                          <option value="">Not classified</option>
+                          <option value="goods">Goods (HSN)</option>
+                          <option value="service">Service (SAC)</option>
+                        </select>
                       </td>
                       <td>
                         {lines.length > 1 && (
@@ -651,6 +843,7 @@ export function DeliveryChallans({
                   <th scope="col" className={numericCell}>
                     Amount
                   </th>
+                  <th scope="col">HSN/SAC</th>
                 </tr>
               </thead>
               <tbody>
@@ -662,10 +855,35 @@ export function DeliveryChallans({
                     <td className={numericCell}>{item.quantity}</td>
                     <td className={numericCell}>{formatRate(item.rate)}</td>
                     <td className={numericCell}>{formatInr(item.lineAmount)}</td>
+                    <td className={numericCell}>
+                      {item.hsnSacCode ?? '—'}
+                      {item.isService === true
+                        ? ' · service'
+                        : item.isService === false
+                          ? ' · goods'
+                          : ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </DataTable>
+
+            {(standaloneDetail.challan.movementReason ?? null) !== null && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Movement:{' '}
+                {
+                  MOVEMENT_REASON_LABELS[
+                    standaloneDetail.challan.movementReason ?? 'supply'
+                  ]
+                }
+                {(standaloneDetail.challan.vehicleNumber ?? null) !== null &&
+                  ` · vehicle ${standaloneDetail.challan.vehicleNumber ?? ''}`}
+                {(standaloneDetail.challan.transportDistanceKm ?? null) !== null &&
+                  ` · ${String(standaloneDetail.challan.transportDistanceKm)} km`}
+                {(standaloneDetail.challan.consigneeGstin ?? null) !== null &&
+                  ` · consignee GSTIN ${standaloneDetail.challan.consigneeGstin ?? ''}`}
+              </p>
+            )}
 
             <Actions>
               {standaloneDetail.challan.status === 'draft' && canIssue && (
@@ -739,6 +957,32 @@ export function DeliveryChallans({
                 Close
               </Button>
             </Actions>
+
+            {standaloneDetail.challan.status !== 'draft' && (
+              <EwayBillsPanel
+                api={api}
+                organisationId={organisationId}
+                source={{
+                  kind: 'delivery_challan',
+                  id: standaloneDetail.challan.id,
+                  number: standaloneDetail.challan.challanNumber,
+                  // The server's own answer (ADR-0013), not a second copy
+                  // of the rule: it is true only for an issued standalone
+                  // challan that records its movement reason and carries
+                  // at least one goods line.
+                  eligible: standaloneDetail.challan.ewayBillEligible === true,
+                  refusal: ewayBillRefusal(standaloneDetail),
+                }}
+                ewayBills={ewayBills}
+                canModify={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                canManageStatutory={canManageStatutory}
+                pending={pending}
+                act={act}
+                onEwayBillsChanged={setEwayBills}
+              />
+            )}
           </section>
         )}
       </section>
