@@ -16,7 +16,7 @@ Use existing repository scripts. Do not invent a parallel quality system.
 
 ## Run narrow checks first
 
-- Web changes: run web typecheck, component tests, production build, and relevant Playwright tests. Run design:contrast, design:states, design:a11y, design:rtl, and design:taste when runtime prerequisites are available.
+- Web changes: run web typecheck, component tests, production build, and relevant Playwright tests. The Playwright axe suite (`pnpm --filter @auto-mb/web test:e2e`) is the standing accessibility gate — it scans real renders in both themes. The `design:*` scripts audit a single rendered HTML file and require that file as an argument (`pnpm design:a11y <file.html>`); a bare invocation refuses rather than passing. Known caveat: `design:contrast` and `design:states` misparse `oklab()` alpha tints on this palette — trust real-render measurement over their numbers.
 - API or contract changes: run affected server and contract tests plus type checking.
 - Parser changes: run focused parser tests, then parser package suite and corpus regressions.
 - Database or migration changes: run migration validation and real PostgreSQL integration tests. Require cross-tenant denial coverage. Require simultaneous-request coverage for numbering, quantities, migrations, or other concurrency-sensitive behavior.

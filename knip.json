@@ -27,11 +27,15 @@
   //     .secretlintrc.json and loaded by secretlint at run time.
   //   axe-core, playwright — resolved out of node_modules by the
   //     ux-ui-agent-skills scripts that the design:* package scripts run.
+  //   ux-ui-agent-skills — its scripts are invoked by path from
+  //     scripts/design-audit.mjs (the design:* runner), a string knip does
+  //     not resolve to the dependency.
   "ignoreDependencies": [
     "tailwindcss",
     "@secretlint/secretlint-rule-preset-recommend",
     "axe-core",
-    "playwright"
+    "playwright",
+    "ux-ui-agent-skills"
   ],
 
   // stryker — .github/workflows/mutation-weekly.yml installs
