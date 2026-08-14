@@ -12,6 +12,7 @@ import {
   nonBlankString,
 } from './primitives.js';
 import {
+  PAYMENT_MATRIX_CATEGORIES,
   PaymentMatrixCategorySchema,
   WorkItemPaymentCategorySchema,
 } from './payment.js';
@@ -173,7 +174,12 @@ export const ConfirmWorkRequestSchema = Type.Object(
     gstRate: Type.Optional(GstRateSchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
     paymentMatrix: Type.Optional(
-      Type.Array(ConfirmPaymentMatrixRowSchema, { minItems: 1, maxItems: 5 }),
+      // At most one row per matrix category (the server rejects
+      // duplicates), so the category vocabulary is the ceiling.
+      Type.Array(ConfirmPaymentMatrixRowSchema, {
+        minItems: 1,
+        maxItems: PAYMENT_MATRIX_CATEGORIES.length,
+      }),
     ),
     schedules: Type.Array(ConfirmWorkScheduleSchema, { minItems: 1 }),
   },

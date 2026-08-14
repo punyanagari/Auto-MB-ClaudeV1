@@ -6,10 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type {
-  ConfirmWorkRequest,
-  ContractSourceContext,
-  WorkDetailResponse,
+import {
+  PAYMENT_MATRIX_CATEGORIES,
+  type ConfirmWorkRequest,
+  type ContractSourceContext,
+  type WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import {
@@ -1565,6 +1566,102 @@ describe('matched tender and contract-source package', () => {
     expect(
       context.json<ContractSourceContext>().itemSpecifications[0]?.mappedWorkItemIds,
     ).toHaveLength(1);
+  });
+
+  it('confirms a letter carrying a matrix row for every category, UNCATEGORISED included', async () => {
+    // The schema cap is derived from PAYMENT_MATRIX_CATEGORIES, so a
+    // reviewer who fills in every row — the five item categories plus
+    // UNCATEGORISED — must not be refused at validation.
+    const parentId = await seedParentLoa();
+    const fullMatrix: ConfirmWorkRequest['paymentMatrix'] = [
+      {
+        category: 'SUPPLY',
+        pctSupply: '70',
+        pctInstallation: '10',
+        pctPac: '10',
+        pctFinalBill: '10',
+      },
+      {
+        category: 'SUPPLY_AND_INSTALLATION',
+        pctSupply: '55',
+        pctInstallation: '30',
+        pctPac: '10',
+        pctFinalBill: '5',
+      },
+      {
+        category: 'PURE_INSTALLATION',
+        pctSupply: '0',
+        pctInstallation: '80',
+        pctPac: '10',
+        pctFinalBill: '10',
+      },
+      {
+        category: 'SPARE_SUPPLY',
+        pctSupply: '90',
+        pctInstallation: '0',
+        pctPac: '5',
+        pctFinalBill: '5',
+      },
+      // AMC may bill only on certification and final bill.
+      {
+        category: 'AMC',
+        pctSupply: '0',
+        pctInstallation: '0',
+        pctPac: '60',
+        pctFinalBill: '40',
+      },
+      {
+        category: 'UNCATEGORISED',
+        pctSupply: '25',
+        pctInstallation: '25',
+        pctPac: '25',
+        pctFinalBill: '25',
+      },
+    ];
+    expect(fullMatrix).toHaveLength(PAYMENT_MATRIX_CATEGORIES.length);
+
+    const confirm = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${parentId}/confirm`,
+      organisationId,
+      payload: {
+        workCode: `FULLMAT-${runId}`.toUpperCase().slice(0, 20),
+        letterNumber: `LOA-FULL-MATRIX-${runId}`,
+        letterDate: '2025-01-01',
+        title:
+          'Supply installation and commissioning of IP MPLS equipment at Jhansi division',
+        advertisedValue: '100000',
+        contractValue: '90000',
+        pricingShape: 'per_schedule',
+        paymentMatrix: fullMatrix,
+        schedules: [
+          {
+            scheduleCode: 'A',
+            title: 'Schedule A',
+            items: [
+              {
+                itemNumber: 'ITM-001',
+                description: 'IP MPLS edge router',
+                unitCode: 'NOS',
+                awardedQuantity: '10',
+                effectiveRate: '9000',
+                paymentCategory: 'SUPPLY_AND_INSTALLATION',
+                manualEntry: true,
+              },
+            ],
+          },
+        ],
+      } satisfies ConfirmWorkRequest,
+    });
+    expect(confirm.statusCode, confirm.body).toBe(201);
+    const work = confirm.json<WorkDetailResponse>().work;
+
+    const rows = await admin<{ category: string }[]>`
+      select category from payment_matrices where work_id = ${work.id}
+    `;
+    expect(rows.map((row) => row.category).sort()).toEqual(
+      [...PAYMENT_MATRIX_CATEGORIES].sort(),
+    );
   });
 
   it('refuses malformed initial payment rows without creating the Work', async () => {
