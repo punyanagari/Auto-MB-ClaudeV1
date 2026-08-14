@@ -1,6 +1,7 @@
 import {
   CancelInstallationRequestSchema,
   InstallationListResponseSchema,
+  InstallationRegisterQuerySchema,
   InstallationRegisterResponseSchema,
   KeysetQuerySchema,
   InstallationSchema,
@@ -13,7 +14,12 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
+import {
+  cursorRowId,
+  keysetPage,
+  sqlLimit,
+  workScopedCursorRowId,
+} from '../pagination.js';
 import { assertSourceNotBilled } from './measurement-books/index.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
@@ -198,14 +204,15 @@ export function registerInstallationRoutes(
   // Installations tab lists, read across every Work the caller may see.
   // What it buys is the question the per-Work list cannot answer — "what
   // went in this week, anywhere" — which site supervision asks far more
-  // often than it asks about one contract.
+  // often than it asks about one contract. That question is a date range,
+  // which is why the register's one filter is a date window.
   // ------------------------------------------------------------------
   tenantRoute(
     {
       method: 'GET',
       url: '/api/installations',
       schema: {
-        querystring: KeysetQuerySchema,
+        querystring: InstallationRegisterQuerySchema,
         response: { 200: InstallationRegisterResponseSchema, ...errorResponses },
       },
     },
@@ -220,8 +227,16 @@ export function registerInstallationRoutes(
         const full = await hasFullWorkScope(tx, user.id);
         // Newest first, so the keyset runs backward on
         // (installed_on, created_at, id) — the same ordering, and the
-        // same trailing descending id, as the per-Work list above.
-        const cursor = await cursorRowId(tx, 'installations', query.cursor);
+        // same trailing descending id, as the per-Work list above. The
+        // cursor is proven against the work-scope predicate too, not only
+        // against the tenant: see `workScopedCursorRowId` for the oracle
+        // an organisation-wide cursor check leaves behind.
+        const cursor = await workScopedCursorRowId(tx, 'installations', query.cursor, {
+          userId: user.id,
+          full,
+        });
+        const installedFrom = query.installedFrom ?? null;
+        const installedTo = query.installedTo ?? null;
         const rows = await tx<
           {
             id: string;
@@ -242,19 +257,27 @@ export function registerInstallationRoutes(
                  i.quantity::text as quantity,
                  i.installed_on::text as installed_on,
                  i.location_name,
-                 (
-                   select count(*) from installation_serials att
-                   where att.installation_id = i.id
-                 )::text as serial_count,
+                 serials.serial_count::text as serial_count,
                  i.status
           from installations i
           join work_items wi on wi.id = i.work_item_id
           join works w on w.id = i.work_id
+          -- One join over the attachment table for the whole page, in
+          -- place of a per-row correlated count: the Delivery Challan
+          -- register's line-count shape, for the same reason.
+          cross join lateral (
+            select count(*) as serial_count
+            from installation_serials att
+            where att.installation_id = i.id
+          ) serials
           where w.deleted_at is null
             and (${full} or exists (
               select 1 from work_assignments wa
               where wa.work_id = i.work_id and wa.user_id = ${user.id}
             ))
+            -- The date window, both bounds inclusive and either omittable.
+            and (${installedFrom}::date is null or i.installed_on >= ${installedFrom}::date)
+            and (${installedTo}::date is null or i.installed_on <= ${installedTo}::date)
             and (${cursor === null} or
               (i.installed_on, i.created_at, i.id) < (
                 select c.installed_on, c.created_at, c.id from installations c

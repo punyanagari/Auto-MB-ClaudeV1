@@ -57,6 +57,12 @@ const siteEmail = `inst-site-${runId}@integration.test`;
 const viewerEmail = `inst-viewer-${runId}@integration.test`;
 const outsiderEmail = `inst-outsider-${runId}@integration.test`;
 const assignedEmail = `inst-assigned-${runId}@integration.test`;
+/** The tenant-wide register's own assigned-scope member. It has one so
+ * that suite can narrow a membership without narrowing one another suite
+ * in this file already depends on: a describe that mutates shared
+ * fixture state makes every later describe depend on the order they
+ * happen to run in. */
+const registerScopedEmail = `inst-register-${runId}@integration.test`;
 const password = `integration-password-${runId}`;
 
 let admin: Sql;
@@ -81,6 +87,7 @@ let site: CookieJar;
 let viewer: CookieJar;
 let outsider: CookieJar;
 let assigned: CookieJar;
+let registerScoped: CookieJar;
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -201,6 +208,7 @@ beforeAll(async () => {
   viewer = await signUp(viewerEmail, 'INST Viewer');
   outsider = await signUp(outsiderEmail, 'INST Outsider');
   assigned = await signUp(assignedEmail, 'INST Assigned');
+  registerScoped = await signUp(registerScopedEmail, 'INST Register Scoped');
 
   const created = await authed(owner, {
     method: 'POST',
@@ -222,6 +230,7 @@ beforeAll(async () => {
     [siteEmail, 'site'],
     [viewerEmail, 'viewer'],
     [assignedEmail, 'office'],
+    [registerScopedEmail, 'office'],
   ] as const) {
     const added = await authed(owner, {
       method: 'POST',
@@ -1478,19 +1487,21 @@ describe('the tenant-wide installation register', () => {
     });
     expect(cancelled.statusCode, cancelled.body).toBe(200);
 
-    // Stated here rather than inherited from the describe above, so this
-    // suite proves the scope on its own terms whatever else has run.
-    const [assignedUser] = await admin<{ id: string }[]>`
-      select "id" from auth_users where "email" = ${assignedEmail}
+    // This suite's OWN assigned-scope member, narrowed here rather than by
+    // reaching into the membership another describe set up: the scope is
+    // proved on this suite's terms, and no later suite inherits a
+    // membership this one changed.
+    const [scopedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${registerScopedEmail}
     `;
-    if (!assignedUser) throw new Error('assigned user missing');
+    if (!scopedUser) throw new Error('register-scoped user missing');
     await admin`
       update organisation_memberships set work_scope = 'assigned'
-      where organisation_id = ${organisationId} and user_id = ${assignedUser.id}
+      where organisation_id = ${organisationId} and user_id = ${scopedUser.id}
     `;
     await admin`
       insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
-      values (${organisationId}, ${workId}, ${assignedUser.id}, ${ownerUserId})
+      values (${organisationId}, ${workId}, ${scopedUser.id}, ${ownerUserId})
       on conflict do nothing
     `;
   }, 60_000);
@@ -1545,7 +1556,7 @@ describe('the tenant-wide installation register', () => {
   });
 
   it('shows an assigned-scope member only their own Works', async () => {
-    const mine = await readRegister(assigned);
+    const mine = await readRegister(registerScoped);
 
     expect(mine.installations.length).toBeGreaterThan(0);
     // Every row is the one Work they are assigned to — no row of Work B or
@@ -1579,6 +1590,95 @@ describe('the tenant-wide installation register', () => {
     }
 
     expect(walked).toEqual(whole.installations.map((installation) => installation.id));
+  });
+
+  /**
+   * The cursor is part of the scope boundary, not part of the plumbing.
+   *
+   * Validating it organisation-wide would answer 200 for a forbidden row's
+   * id and 400 for a nonexistent one, and the keyset comparison would then
+   * run against that row's (installed_on, created_at, id) — so a caller
+   * paging with chosen cursors could recover the date and the creation
+   * instant of a record no row of which is ever returned. The two refusals
+   * must be the same refusal.
+   */
+  it('refuses an out-of-scope cursor exactly as it refuses a nonexistent one', async () => {
+    // A real installation, of a Work the scoped member is not assigned to.
+    const forbidden = await authed(registerScoped, {
+      method: 'GET',
+      url: `/api/installations?limit=1&cursor=${recordedCId}`,
+      organisationId,
+    });
+    expect(forbidden.statusCode, forbidden.body).toBe(400);
+    expect(forbidden.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+
+    // A uuid naming nothing at all, answered identically — which is what
+    // makes the existence of the record above undisclosed.
+    const absent = await authed(registerScoped, {
+      method: 'GET',
+      url: `/api/installations?limit=1&cursor=${randomUUID()}`,
+      organisationId,
+    });
+    expect(absent.statusCode, absent.body).toBe(400);
+    expect(absent.json<{ code: string }>().code).toBe(
+      forbidden.json<{ code: string }>().code,
+    );
+    expect(absent.json<{ message: string }>().message).toBe(
+      forbidden.json<{ message: string }>().message,
+    );
+
+    // Positive control on the SAME id: the owner sees every Work, so the
+    // cursor is a position rather than a refusal. Without this the test
+    // would pass against a register that had simply stopped paging.
+    const allowed = await authed(owner, {
+      method: 'GET',
+      url: `/api/installations?limit=1&cursor=${recordedCId}`,
+      organisationId,
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+
+    // And a cursor of the member's OWN Work still pages for them.
+    const mine = await readRegister(registerScoped, '?limit=1');
+    const first = mine.installations[0];
+    if (!first) throw new Error('assigned-scope register unexpectedly empty');
+    const onward = await authed(registerScoped, {
+      method: 'GET',
+      url: `/api/installations?limit=1&cursor=${first.id}`,
+      organisationId,
+    });
+    expect(onward.statusCode, onward.body).toBe(200);
+  });
+
+  it('narrows to an inclusive installed-on window', async () => {
+    const sameDay = await readRegister(
+      owner,
+      '?installedFrom=2026-08-10&installedTo=2026-08-10',
+    );
+    expect(sameDay.installations.length).toBeGreaterThan(0);
+    expect(
+      sameDay.installations.every(
+        (installation) => installation.installedOn === '2026-08-10',
+      ),
+    ).toBe(true);
+    expect(
+      sameDay.installations.some((installation) => installation.id === recordedCId),
+    ).toBe(true);
+    // Both bounds inclusive, and the 11th is outside this one.
+    expect(
+      sameDay.installations.some((installation) => installation.id === cancelledCId),
+    ).toBe(false);
+
+    // An open-ended lower bound still excludes what precedes it.
+    const from = await readRegister(owner, '?installedFrom=2026-08-11');
+    expect(
+      from.installations.every(
+        (installation) => installation.installedOn >= '2026-08-11',
+      ),
+    ).toBe(true);
+
+    // A window with nothing in it is an empty register, not an error.
+    const empty = await readRegister(owner, '?installedFrom=2030-01-01');
+    expect(empty.installations).toEqual([]);
   });
 
   it('answers a member of another organisation with 403, not with rows', async () => {

@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { NextCursorSchema } from './pagination.js';
+import { NextCursorSchema, withKeysetQuery } from './pagination.js';
 import { LocationKindSchema } from './masters.js';
 import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
 
@@ -98,6 +98,24 @@ export const InstallationItemSummarySchema = Type.Object(
 );
 export type InstallationItemSummary = Static<typeof InstallationItemSummarySchema>;
 
+/** How many installation records a Work carries, by lifecycle state.
+ *
+ * Two integers, so the Work page can label and count its Installations
+ * area without reading the records themselves. The list is serial-expanded
+ * — one nested aggregate per record — and a page that only needs a number
+ * should not pay for the numbers' provenance; the Work read already
+ * aggregates installations per item, so this rides along with it. The
+ * records themselves stay on the Installations tab, which loads them when
+ * it is opened. */
+export const InstallationCountsSchema = Type.Object(
+  {
+    recorded: Type.Integer({ minimum: 0 }),
+    cancelled: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type InstallationCounts = Static<typeof InstallationCountsSchema>;
+
 /** One row of the tenant-wide installation register.
  *
  * Deliberately NOT the full `Installation`: the register answers "what
@@ -128,6 +146,26 @@ export const InstallationRegisterEntrySchema = Type.Object(
   { additionalProperties: false },
 );
 export type InstallationRegisterEntry = Static<typeof InstallationRegisterEntrySchema>;
+
+/** The register's query: a date window over `installedOn`, plus the two
+ * keyset parameters.
+ *
+ * The window is the only filter, because it is the only one the surface's
+ * stated question needs — "what went in this week, and where" is a date
+ * range and nothing else. Work and status filters are deliberately absent:
+ * a Work's own records are read on the Work, and a register that hid
+ * cancelled records would report what still stands rather than what was
+ * recorded. Both bounds are inclusive; either may be sent alone. */
+export const InstallationRegisterQuerySchema = withKeysetQuery(
+  Type.Object(
+    {
+      installedFrom: Type.Optional(DateOnlySchema),
+      installedTo: Type.Optional(DateOnlySchema),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type InstallationRegisterQuery = Static<typeof InstallationRegisterQuerySchema>;
 
 /** Every installation record in the organisation the caller may see,
  * newest first. Cancelled records stay listed with their status: a

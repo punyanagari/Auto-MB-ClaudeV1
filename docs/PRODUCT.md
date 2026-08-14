@@ -220,7 +220,19 @@ over non-cancelled records for the item — computed nowhere else.
   page is: a member without organisation-wide work scope sees only the
   installations of the Works they are assigned to. Cancelled records stay
   listed with their status — the register reports what was recorded, not
-  only what still stands.
+  only what still stands. The scope binds the pagination cursor as well as
+  the rows: a cursor naming a record outside the caller's Works is refused
+  exactly as a nonexistent one is, so the register's paging cannot be used
+  to learn that such a record exists or when it was made.
+- **Window.** The register's one filter is an inclusive `installedOn` date
+  range, because the question it exists for is a date range. It is read a
+  page at a time, newest first. Work and status filters are deliberately
+  absent: a Work's own records are read on the Work, and a status filter
+  would offer to hide exactly what the register keeps visible.
+- **Counting.** A Work's page shows how many installation records it
+  carries, recorded and cancelled, from the Work read itself. The records
+  are loaded only when their section is opened — the list expands every
+  record's serials, and a badge does not need them.
 
 ### Quantity ledger
 
