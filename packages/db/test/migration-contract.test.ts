@@ -457,9 +457,7 @@ describe('tenant migration contract', () => {
     // The parent pointer is scope-checked directly and may only advance to
     // the latest retained render (0044's render-pointer machinery, ported).
     expect(sql).toContain('eway_bills_rendered_key_scope');
-    expect(sql).toContain(
-      "rendered_object_key LIKE organisation_id::text || '/ewb/%'",
-    );
+    expect(sql).toContain("rendered_object_key LIKE organisation_id::text || '/ewb/%'");
     expect(sql).toContain(
       'CREATE FUNCTION app_private.guard_eway_bill_render_pointer()',
     );
@@ -474,9 +472,7 @@ describe('tenant migration contract', () => {
     // The render-INSERT guard is INVOKER-rights, deliberately: RLS hides a
     // foreign-tenant parent so a probe collapses to one generic message.
     const renderInsertGuard = sql.slice(
-      sql.indexOf(
-        'CREATE FUNCTION app_private.guard_eway_bill_render_insert()',
-      ),
+      sql.indexOf('CREATE FUNCTION app_private.guard_eway_bill_render_insert()'),
       sql.indexOf('CREATE TRIGGER eway_bill_renders_insert_guard'),
     );
     expect(renderInsertGuard).not.toContain('SECURITY DEFINER');
