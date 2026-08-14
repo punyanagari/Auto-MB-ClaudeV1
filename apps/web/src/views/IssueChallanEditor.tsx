@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
-  IssueChallan,
   IssueChallanLineInput,
   IssueChallanMovementType,
   SaveIssueChallanRequest,
@@ -18,6 +17,7 @@ import {
   ActionBar,
   FormError,
   FieldError,
+  Hint,
 } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -64,20 +64,6 @@ interface EditorState {
 const QUANTITY_PATTERN = /^(?:0|[1-9]\d*)$|^(?:0|[1-9]\d*)\.\d{1,3}$/;
 const NONZERO_DIGIT = /[1-9]/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * The Issue Challan a NEW draft copies its standing choices from: the
- * Work's most recent one that still stands.
- *
- * Material leaves the same store, to the same storekeeper, at the same
- * location, movement after movement; retyping all three every time is
- * transcription, and transcription is where they drift apart. A cancelled
- * challan is not a precedent — whatever was wrong with it may be exactly
- * these fields. The list arrives newest first.
- */
-function carryForwardSource(challans: readonly IssueChallan[]): IssueChallan | null {
-  return challans.find((challan) => challan.status !== 'cancelled') ?? null;
-}
 
 function emptyManualLine(key: string): ManualLine {
   return { key, description: '', unit: '', quantity: '' };
@@ -144,16 +130,8 @@ export function IssueChallanEditor({
       challanId === null
         ? Promise.resolve(null)
         : api.getIssueChallan(organisationId, challanId),
-      // Only a new draft carries anything forward, so only a new draft
-      // asks for the history — and an unreadable history simply leaves
-      // the defaults as they always were.
-      challanId === null
-        ? api
-            .listIssueChallans(organisationId, workId)
-            .catch(() => [] as readonly IssueChallan[])
-        : Promise.resolve([] as readonly IssueChallan[]),
     ])
-      .then(([loadedBalance, existing, history]) => {
+      .then(([loadedBalance, existing]) => {
         if (cancelled) return;
         setBalance(loadedBalance);
         const quantities: Record<string, string> = {};
@@ -170,20 +148,26 @@ export function IssueChallanEditor({
             });
           }
         }
-        // The previous challan's standing choices, and only those. The
-        // date stays the organisation's today, the remarks are this
-        // movement's own note, and what moved last time is no default for
-        // what moves this time.
-        const previous = carryForwardSource(history);
+        // The standing choices the server read off this Work's last
+        // ISSUED Issue Challan, and only those. It is null on the Work's
+        // first Issue Challan, and null again whenever a draft is being
+        // EDITED: the draft is already whatever the operator saved, down
+        // to the boxes they deliberately left empty. The MOVEMENT is
+        // never among them: it decides what the document does, and one
+        // 'return' must not open every later Issue Challan as a return.
+        // The date stays the organisation's today, the remarks are this
+        // movement's own note, and what moved last time is no default
+        // for what moves this time.
+        const carried =
+          existing === null ? (loadedBalance.issueCarryForward ?? null) : null;
         const loaded: EditorState = {
           challanDate: existing?.issueChallan.challanDate ?? loadedBalance.today,
-          movementType:
-            existing?.issueChallan.movementType ?? previous?.movementType ?? 'issue',
+          movementType: existing?.issueChallan.movementType ?? 'issue',
           issuedToName:
-            existing?.issueChallan.issuedToName ?? previous?.issuedToName ?? '',
+            existing?.issueChallan.issuedToName ?? carried?.issuedToName ?? '',
           issuedToRole:
-            existing?.issueChallan.issuedToRole ?? previous?.issuedToRole ?? '',
-          location: existing?.issueChallan.location ?? previous?.location ?? '',
+            existing?.issueChallan.issuedToRole ?? carried?.issuedToRole ?? '',
+          location: existing?.issueChallan.location ?? carried?.location ?? '',
           remarks: existing?.issueChallan.remarks ?? '',
           quantities,
           manualLines,
@@ -430,6 +414,12 @@ export function IssueChallanEditor({
     );
   }
 
+  // Where the recipient in these boxes came from, when it was not typed
+  // here. A prefilled form that never says so reads as one the operator
+  // already filled in, so the document that supplied the values is named.
+  // Only a new draft is ever seeded; an existing draft loaded its own.
+  const carriedFrom = challanId === null ? (balance.issueCarryForward ?? null) : null;
+
   return (
     <Card className="w-full" aria-labelledby="issue-challan-editor-title">
       <h1 id="issue-challan-editor-title" tabIndex={-1}>
@@ -548,6 +538,12 @@ export function IssueChallanEditor({
             />
           </Field>
         </FieldRow>
+        {carriedFrom !== null && (
+          <Hint>
+            Carried from {carriedFrom.sourceChallanNumber} — edit if this movement
+            differs.
+          </Hint>
+        )}
 
         <h2>Awarded items</h2>
         <DataTable scroll className="[&_input]:w-28">

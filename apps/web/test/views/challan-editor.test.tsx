@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Challan, SaveChallanRequest } from '@auto-mb/contracts';
+import type {
+  ChallanCarryForward,
+  SaveChallanRequest,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { ChallanEditor } from '../../src/views/ChallanEditor.js';
 import { PacCertificates } from '../../src/views/PacCertificates.js';
@@ -407,27 +411,22 @@ describe('ChallanEditor', () => {
 });
 
 describe('ChallanEditor carries the previous challan forward', () => {
-  const EARLIER_ID = 'bbbb1111-1111-4111-8111-bbbbbbbbbb11';
-  const LATEST_ID = 'bbbb2222-2222-4222-8222-bbbbbbbbbb22';
-
-  /** A challan of this Work as the list endpoint returns it, newest first. */
-  function previousChallan(overrides: Partial<Challan> = {}): Challan {
-    return challanDetail({
-      id: LATEST_ID,
-      status: 'issued',
-      challanDate: '2026-07-02',
-      challanNumber: 'DCW-1/SUP/1',
-      sequenceNumber: 1,
-      prefix: 'DCW-1/SUP',
-      consignee: {
-        name: 'Sr. DEE (G) NR',
-        address: 'Delhi Division, New Delhi',
-        phone: '011-23385678',
-      },
-      issuedAt: '2026-07-02T10:00:00.000Z',
-      ...overrides,
-    }).challan;
-  }
+  /** The Work balance as the server serves it once the Work has an issued
+   * challan. The carried values ride along with the balance the editor
+   * already asks for, so opening a draft costs no second request — and
+   * the policy deciding WHICH challan they came from lives in one place,
+   * on the server, rather than being re-derived here. */
+  const DELIVERY: ChallanCarryForward = {
+    prefix: 'DCW-1/SUP',
+    consigneeName: 'Sr. DEE (G) NR',
+    consigneeAddress: 'Delhi Division, New Delhi',
+    consigneePhone: '011-23385678',
+    sourceChallanNumber: 'DCW-1/SUP/1',
+  };
+  const CARRIED: WorkBalanceResponse = {
+    ...BALANCE,
+    deliveryCarryForward: DELIVERY,
+  };
 
   function renderNewDraft(api: ApiClient) {
     render(
@@ -443,18 +442,20 @@ describe('ChallanEditor carries the previous challan forward', () => {
     );
   }
 
-  it('opens a second challan on the first one’s prefix and consignee, and on nothing else', async () => {
+  it('opens a second challan on the carried prefix and consignee, and on nothing else', async () => {
     const createChallan = vi.fn().mockResolvedValue(challanDetail());
-    const listChallans = vi.fn().mockResolvedValue([previousChallan({})]);
+    const listChallans = vi.fn();
     const api = stubApi({
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
       listChallans,
       createChallan,
     });
     renderNewDraft(api);
 
     await screen.findByText('2.000');
-    expect(listChallans).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    // The history is never read: the server answered the only question
+    // the editor had about it, in the response it was already waiting on.
+    expect(listChallans).not.toHaveBeenCalled();
     expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
       'DCW-1/SUP',
     );
@@ -500,43 +501,39 @@ describe('ChallanEditor carries the previous challan forward', () => {
     expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '1' }]);
   });
 
-  it('skips a cancelled challan and takes the most recent one that still stands', async () => {
+  it('names the challan the consignee was carried from', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(CARRIED) });
+    renderNewDraft(api);
+
+    // A prefilled form that never says so reads as one the operator
+    // already filled in — and the picker above still says "Manual entry".
+    await screen.findByText('2.000');
+    expect(
+      screen.getByText(/Carried from DCW-1\/SUP\/1 — edit if this delivery differs\./),
+    ).toBeTruthy();
+  });
+
+  it('leaves a box the source challan left empty empty', async () => {
     const api = stubApi({
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
-      listChallans: vi.fn().mockResolvedValue([
-        previousChallan({ status: 'cancelled', cancellationNote: 'Wrong consignee' }),
-        previousChallan({
-          id: EARLIER_ID,
-          prefix: 'DCW-1/OLD',
-          consignee: {
-            name: 'SSE (Signal) GZB',
-            address: 'Signal Workshop, Ghaziabad',
-          },
-        }),
-      ]),
+      workBalance: vi.fn().mockResolvedValue({
+        ...CARRIED,
+        deliveryCarryForward: { ...DELIVERY, consigneePhone: null },
+      }),
     });
     renderNewDraft(api);
 
     await screen.findByText('2.000');
-    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
-      'DCW-1/OLD',
-    );
-    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
-      'SSE (Signal) GZB',
-    );
-    // That challan carried no phone, so the box stays empty rather than
-    // inheriting one from the cancelled document above it.
     expect(
       screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
     ).toBe('');
   });
 
-  it('falls back to the Work code and empty fields when every challan was cancelled', async () => {
+  it('opens the Work’s first challan on the plain defaults, and claims nothing', async () => {
     const api = stubApi({
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
-      listChallans: vi
-        .fn()
-        .mockResolvedValue([previousChallan({ status: 'cancelled' })]),
+      workBalance: vi.fn().mockResolvedValue({
+        ...BALANCE,
+        deliveryCarryForward: null,
+      }),
     });
     renderNewDraft(api);
 
@@ -548,29 +545,13 @@ describe('ChallanEditor carries the previous challan forward', () => {
     expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
       '',
     );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
   });
 
-  it('leaves the defaults alone when the history cannot be read', async () => {
+  it('never reseeds an existing draft, whatever the balance carries', async () => {
     const api = stubApi({
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
-      listChallans: vi.fn().mockRejectedValue(new Error('history unavailable')),
-    });
-    renderNewDraft(api);
-
-    // A convenience must never be able to block the editor.
-    await screen.findByText('2.000');
-    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
-      'DCW-1',
-    );
-    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe('');
-  });
-
-  it('never reseeds an existing draft from the history', async () => {
-    const listChallans = vi.fn().mockResolvedValue([previousChallan({})]);
-    const api = stubApi({
-      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
       getChallan: vi.fn().mockResolvedValue(challanDetail()),
-      listChallans,
     });
     render(
       <ChallanEditor
@@ -586,8 +567,7 @@ describe('ChallanEditor carries the previous challan forward', () => {
 
     await screen.findByText('2.000');
     // The draft is already whatever the operator saved, down to the empty
-    // phone box; the history is not even asked for.
-    expect(listChallans).not.toHaveBeenCalled();
+    // phone box, and it claims nothing about carrying.
     expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe('DC');
     expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
       'Sr. DEE (G)',
@@ -598,6 +578,7 @@ describe('ChallanEditor carries the previous challan forward', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
       '2026-08-08',
     );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
   });
 });
 

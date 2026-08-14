@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type {
-  Challan,
   Contact,
   PurchaseOrderDetailResponse,
   SaveChallanRequest,
@@ -83,20 +82,6 @@ function poLineChoicesOf(
     }
   }
   return choices;
-}
-
-/**
- * The challan a NEW draft copies its standing choices from: the Work's
- * most recent one that still stands.
- *
- * A Work delivers to the same consignee under the same number prefix
- * challan after challan, so retyping both on every draft is pure
- * transcription — and transcription is where the consignee snapshot
- * drifts. A cancelled challan is not a precedent: whatever was wrong with
- * it may be exactly these fields. The list arrives newest first.
- */
-function carryForwardSource(challans: readonly Challan[]): Challan | null {
-  return challans.find((challan) => challan.status !== 'cancelled') ?? null;
 }
 
 /** The prefix shape the server accepts (contracts: SaveChallanRequest). It
@@ -373,12 +358,6 @@ export function ChallanEditor({
           ),
         )
         .catch(() => [] as PurchaseOrderDetailResponse[]),
-      // Only a new draft carries anything forward, so only a new draft
-      // asks for the history — and an unreadable history simply leaves
-      // the defaults as they always were.
-      challanId === null
-        ? api.listChallans(organisationId, workId).catch(() => [] as readonly Challan[])
-        : Promise.resolve([] as readonly Challan[]),
     ])
       .then(
         ([
@@ -387,7 +366,6 @@ export function ChallanEditor({
           loadedConsignees,
           loadedWorkConsignees,
           openOrders,
-          history,
         ]) => {
           if (cancelled) return;
           setBalance(loadedBalance);
@@ -415,18 +393,24 @@ export function ChallanEditor({
               poLines[item.workItemId] = item.purchaseOrderLineId;
             }
           }
-          // The previous challan's standing choices, and only those. The
-          // date stays the organisation's today, and nothing about what
-          // moved last time — quantities, purchase-order lines — is a
-          // default for what moves this time.
-          const previous = carryForwardSource(history);
+          // The standing choices the server read off this Work's last
+          // ISSUED challan, and only those. It is null on the Work's
+          // first challan, and null again whenever a draft is being
+          // EDITED: a draft is already whatever the operator saved, down
+          // to the boxes they deliberately left empty, and an optional
+          // box they emptied must not silently refill from a document
+          // they are not looking at. The date stays the organisation's
+          // today, and nothing about what moved last time — quantities,
+          // purchase-order lines — is a default for what moves this time.
+          const carried =
+            existing === null ? (loadedBalance.deliveryCarryForward ?? null) : null;
           const loaded: EditorState = {
             challanDate: existing?.challan.challanDate ?? loadedBalance.today,
-            prefix: existing?.challan.prefix ?? previous?.prefix ?? workCode,
-            name: existing?.challan.consignee.name ?? previous?.consignee.name ?? '',
+            prefix: existing?.challan.prefix ?? carried?.prefix ?? workCode,
+            name: existing?.challan.consignee.name ?? carried?.consigneeName ?? '',
             address:
-              existing?.challan.consignee.address ?? previous?.consignee.address ?? '',
-            phone: existing?.challan.consignee.phone ?? previous?.consignee.phone ?? '',
+              existing?.challan.consignee.address ?? carried?.consigneeAddress ?? '',
+            phone: existing?.challan.consignee.phone ?? carried?.consigneePhone ?? '',
             quantities,
             poLines,
           };
@@ -691,6 +675,14 @@ export function ChallanEditor({
   // always did.
   const offersPoLines = poLineChoices.size > 0;
 
+  // Where the consignee in these boxes came from, when it was not typed
+  // here. A prefilled form that never says so reads as a form the
+  // operator already filled in, and the picker above still says "Manual
+  // entry" — so the document that supplied the values is named. Only a
+  // new draft is ever seeded; an existing draft loaded its own values.
+  const carriedFrom =
+    challanId === null ? (balance.deliveryCarryForward ?? null) : null;
+
   return (
     <Card className="w-full" aria-labelledby="challan-editor-title">
       <h1 id="challan-editor-title" tabIndex={-1}>
@@ -897,6 +889,12 @@ export function ChallanEditor({
             </FieldError>
           )}
         </Field>
+        {carriedFrom !== null && (
+          <Hint>
+            Carried from {carriedFrom.sourceChallanNumber} — edit if this delivery
+            differs.
+          </Hint>
+        )}
 
         <h2>Items</h2>
         <DataTable scroll className="[&_input]:w-28">

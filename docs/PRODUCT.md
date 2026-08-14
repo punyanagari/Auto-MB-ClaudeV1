@@ -121,36 +121,44 @@ item-level holes, how many manual rows, and how many parsed rows were omitted.
 7. Cancelling an issued challan requires a note, retains the number forever, reverses its ledger contribution, and never deletes history.
 8. A signed-copy attachment may be added after issue.
 
-### Standing choices carry forward to the next challan
+### Standing choices carry forward to the next Delivery Challan
 
 A Work delivers to the same consignee, under the same number prefix, challan
-after challan; material leaves to the same storekeeper, at the same location,
-under the same movement type, Issue Challan after Issue Challan. Retyping all
-of that on every draft is transcription, and transcription is where a snapshot
-drifts.
+after challan. Retyping both on every draft is transcription, and transcription
+is where a consignee snapshot drifts.
 
-A NEW draft for a Work that already has challans therefore opens pre-filled
-from that Work's most recent challan of the same kind:
+A NEW Delivery Challan draft for a Work therefore opens pre-filled with the
+**number prefix, consignee name, address, and phone** of that Work's most
+recent ISSUED Delivery Challan. Which challan that is, is decided by the
+server, not by the screen, and always this way:
 
-| Document         | Carried forward                                   |
-| ---------------- | ------------------------------------------------- |
-| Delivery Challan | number prefix, consignee name, address, and phone |
-| Issue Challan    | movement type, issued-to name, role, and location |
+- **Ordered by sequence number, not by date and not by row age.** The sequence
+  is assigned when a challan is issued, so it is the Work's true series order.
+  A challan back-entered for an earlier despatch, or written to the database
+  out of order, cannot displace a later one.
+- **Issued only.** A draft is nobody's precedent: it holds no sequence and is
+  not a document anyone was handed. A cancelled challan is not a precedent
+  either — whatever was wrong with it may be exactly these fields.
+- **This Work only.** A standalone challan carries no Work and is never a
+  source for one.
 
-Rules:
+The rest follows from that:
 
 - The first challan of a Work is unchanged: the prefix still defaults to the
-  Work code, and every other box opens empty.
-- A cancelled challan is never the source — whatever was wrong with it may be
-  exactly these fields. The most recent challan that still stands is used, and
-  when none does the plain defaults apply.
+  Work code, and every other box opens empty. So does a Work whose only
+  challans are drafts or cancelled.
 - Nothing about the last movement carries: the date is always the
-  organisation's today, quantities and purchase-order receipt links start
-  empty, Issue Challan remarks start empty, and no serial is proposed.
-- Editing an existing draft never reseeds it. The draft is whatever the
-  operator saved, down to the boxes they deliberately left empty.
+  organisation's today, and quantities and purchase-order receipt links start
+  empty. No serial is proposed.
+- Editing an existing draft never seeds it from anywhere. The draft is
+  whatever the operator saved, down to the boxes they deliberately left empty.
+- A seeded draft says where the values came from: one line under the consignee
+  block naming the source challan.
 - Every carried value is an editable default, not a binding. The consignee
   remains a per-challan snapshot; it is copied, never referenced.
+
+The Issue Challan has its own, deliberately narrower version of this rule
+(§8, "Standing choices on a new Issue Challan").
 
 ### Delivery Challan module (three movements)
 
@@ -934,6 +942,28 @@ Reverse-charge liability is an explicit invoice fact rather than printed from
 a default. The current calculator supports forward charge only: submit requires
 the operator to confirm forward charge, refuses reverse charge, and preserves a
 missing historical value as unknown.
+
+### Standing choices on a new Issue Challan
+
+Material leaves to the same storekeeper, at the same location, movement after
+movement, so a NEW Issue Challan draft opens pre-filled with the **issued-to
+name, role, and location** of that Work's most recent ISSUED Issue Challan.
+The source is chosen exactly as the Delivery Challan's is — highest sequence
+number, issued only, this Work only — and every consequence listed under §2,
+"Standing choices carry forward to the next Delivery Challan", holds here
+unchanged: an existing draft is never seeded, the date is the organisation's
+today, quantities start empty, and a seeded draft names the challan it was
+carried from.
+
+The **movement type is never carried**. It is the one standing choice that
+changes what the document does rather than who receives it: a `return` reverses
+the direction stock moves, and an issued Issue Challan is immutable. Carrying
+it would mean that after a single return every later Issue Challan opened as a
+return, and an operator filling in familiar-looking boxes would issue documents
+that moved stock the wrong way. The Movement select therefore always opens on
+`issue`, whatever the Work did last.
+
+Remarks are never carried either: they are the individual movement's note.
 
 ## 9. Current non-goals and release boundaries
 
