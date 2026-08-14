@@ -89,7 +89,8 @@ export type DocumentAuthority = 'issue' | 'cancel' | 'statutory';
  * than interpolating an internal token into prose. */
 const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   issue: 'Your membership does not carry the issue authority for documents.',
-  cancel: 'Your membership does not carry the cancel authority for documents.',
+  cancel:
+    'Your membership does not carry the cancel authority, which is required to cancel an issued document or to withdraw a confirmed Work.',
   statutory:
     'Your membership does not carry the statutory reporting authority, which is required to register, reconcile, cancel, or record government e-invoice and E-way Bill evidence.',
 };

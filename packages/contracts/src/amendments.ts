@@ -32,6 +32,9 @@ export const ApprovalEntityTypeSchema = Type.Union([
   Type.Literal('challan_cancel_replace'),
   Type.Literal('issue_challan_cancel_replace'),
   Type.Literal('challan_correction_notice'),
+  /** Withdrawing a confirmed Work that has no downstream document, so its
+   * letter can be read again (migration 0071). The entity is the Work. */
+  Type.Literal('work_supersede'),
 ]);
 export type ApprovalEntityType = Static<typeof ApprovalEntityTypeSchema>;
 

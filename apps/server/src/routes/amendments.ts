@@ -50,6 +50,7 @@ import {
   type VariationOrderVerdict,
 } from '../variation-order-verify.js';
 import { assertWorkOperable } from '../work-status.js';
+import { applyWorkSupersede, type WorkSupersedeProposal } from '../work-supersede.js';
 import { isPositiveDecimal } from './challans.js';
 import {
   audit,
@@ -92,7 +93,8 @@ export type ProposedSnapshot =
     }
   | ChallanCancelReplaceProposal
   | IssueChallanCancelReplaceProposal
-  | CorrectionNoticeProposal;
+  | CorrectionNoticeProposal
+  | WorkSupersedeProposal;
 
 interface ApprovalRow {
   id: string;
@@ -570,6 +572,16 @@ export async function applyApproval(
       request.id,
       proposed,
     );
+  } else if (proposed.kind === 'work_supersede') {
+    // Withdrawing a confirmed Work takes the deciding user's CANCEL
+    // authority on top of the approval authority, for the same reason
+    // cancel-and-replace does: approval authority decides whether a change
+    // is warranted, while taking an authoritative record out of service is
+    // a separate grant. No new permission column exists for this —
+    // superseding mints no number and issues no document, so `cancel` is
+    // the authority the product already means by "may withdraw a record".
+    await requireAuthority(tx, userId, 'cancel');
+    await applyWorkSupersede(tx, organisationId, userId, request.id, proposed);
   } else {
     // Milestone 7 Path B: issue a numbered correction notice; the original
     // challan is never touched. Minting a numbered document demands the
@@ -592,7 +604,9 @@ export async function applyApproval(
     proposed.kind === 'add_item' ||
     proposed.kind === 'remove_item'
       ? 'amendment.approved'
-      : 'correction.approved';
+      : proposed.kind === 'work_supersede'
+        ? 'work.superseded'
+        : 'correction.approved';
   // The authorisation travels with the decision. The audit-diff machinery
   // already records the value pairs the amendment moved; for an omission
   // the trail must also answer "on whose authority", so the cited order's
@@ -1586,7 +1600,9 @@ export function registerAmendmentRoutes(
         const rejectedAction =
           row.entity_type === 'work_item_amendment'
             ? 'amendment.rejected'
-            : 'correction.rejected';
+            : row.entity_type === 'work_supersede'
+              ? 'work.supersede_rejected'
+              : 'correction.rejected';
         await audit(
           tx,
           organisationId,
@@ -1655,7 +1671,9 @@ export function registerAmendmentRoutes(
         const withdrawnAction =
           row.entity_type === 'work_item_amendment'
             ? 'amendment.withdrawn'
-            : 'correction.withdrawn';
+            : row.entity_type === 'work_supersede'
+              ? 'work.supersede_withdrawn'
+              : 'correction.withdrawn';
         await audit(
           tx,
           organisationId,

@@ -486,7 +486,7 @@ export async function applyCorrectionNotice(
     }[]
   >`
     select work_code, title, letter_number, letter_date::text as letter_date
-    from works where id = ${challan.work_id}
+    from works where id = ${challan.work_id} and deleted_at is null
   `;
   if (!work) throw new Error('challan without a Work');
 
