@@ -99,6 +99,10 @@ import type {
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
   ReceivedRailwayBillListResponse,
+  BillPayment,
+  BillSettlementPosition,
+  BillSettlementResponse,
+  RecordBillPaymentRequest,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
   MergeMeasurementBooksRequest,
@@ -951,6 +955,29 @@ export interface ApiClient {
     receivedRailwayBillId: string,
     reason?: string,
   ) => Promise<ReceivedRailwayBill>;
+  /** Outstanding with the railway, one position per prepared bill, with
+   * the receipts that produced it. The three figures never collapse into
+   * one: money the railway KEPT is settled, money that never arrived is
+   * outstanding, and only the second is chased. */
+  readonly listBillSettlement: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<BillSettlementPosition[]>;
+  /** A receipt and its deduction breakup, recorded as one act — a payment
+   * advice arrives as one document and a half-entered one is a wrong
+   * position rather than an incomplete one. */
+  readonly recordBillPayment: (
+    organisationId: string,
+    billId: string,
+    body: RecordBillPaymentRequest,
+  ) => Promise<BillPayment>;
+  /** Withdraws a receipt. The row and its reason stay; the amount becomes
+   * outstanding again. */
+  readonly voidBillPayment: (
+    organisationId: string,
+    billPaymentId: string,
+    reason: string,
+  ) => Promise<BillPayment>;
   /** Records that the railway settled this measurement. Refused unless a
    * recorded bill's signatures pass the gate. */
   readonly closeMeasurementBook: (
@@ -2717,6 +2744,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
           organisationId,
         },
       );
+    },
+    async listBillSettlement(organisationId, workId) {
+      const { positions } = await request<BillSettlementResponse>(
+        `/api/works/${workId}/bill-settlement`,
+        { organisationId },
+      );
+      return positions;
+    },
+    async recordBillPayment(organisationId, billId, body) {
+      return request<BillPayment>(`/api/bills/${billId}/payments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidBillPayment(organisationId, billPaymentId, reason) {
+      return request<BillPayment>(`/api/bill-payments/${billPaymentId}/void`, {
+        method: 'POST',
+        body: { reason },
+        organisationId,
+      });
     },
     async closeMeasurementBook(organisationId, measurementBookId) {
       return request<MeasurementBookDetailResponse>(

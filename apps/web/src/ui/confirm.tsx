@@ -38,6 +38,12 @@ interface ConfirmDialogProps {
   readonly onCancel: () => void;
   /** The request is in flight: both choices are held until it answers. */
   readonly pending?: boolean;
+  /** The decision needs something from `children` that is not there yet —
+   * a required reason, typically. Holding the confirm button is the
+   * honest form of that: a button that is pressable and then does nothing
+   * is the failure this component exists to remove, and the field itself
+   * says what is missing. The SAFE choice stays available throughout. */
+  readonly confirmDisabled?: boolean;
   /** `destructive` for anything that deletes, cancels or discards.
    * `default` for a confirmation that only commits — finalising a book. */
   readonly tone?: 'destructive' | 'default';
@@ -55,6 +61,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   pending = false,
+  confirmDisabled = false,
   tone = 'destructive',
   restoreFocusTo,
 }: ConfirmDialogProps) {
@@ -80,7 +87,7 @@ export function ConfirmDialog({
         </Button>
         <Button
           variant={tone === 'destructive' ? 'destructive' : 'default'}
-          disabled={pending}
+          disabled={pending || confirmDisabled}
           onClick={onConfirm}
         >
           {confirmLabel}

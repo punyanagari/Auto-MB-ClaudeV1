@@ -570,6 +570,122 @@ says so before the operator commits to the discard. Linking a re-uploaded
 letter to the Work it replaces would need a step the product does not have
 and has not been asked for.
 
+### 5.7 The payment, and what the railway kept
+
+Until the payment register existed, `bills.status = 'paid'` was the whole of
+this product's knowledge of money received: a word, with no amount, no date,
+no reference and no breakup. Both reviews of 13 August 2026 said the same
+thing about it — the spreadsheet an operator still keeps beside this product
+is the payment register, because a railway payment is never the bill amount.
+
+**A payment is three figures, never one.** What reached the bank, what the
+railway withheld, and what is still owed. The distinction is the point:
+
+- **GST TDS**, 2% under section 51 of the CGST Act, which the deductor
+  deposits and the agency reclaims in GSTR-7A;
+- **income-tax TDS** under section 194C, which surfaces on Form 26AS;
+- **security deposit / retention**, held by the railway against the contract.
+  This product records that it was withheld and nothing more: there is no
+  release path, no schedule of what is due back and no reconciliation
+  against what was eventually returned, so a retention figure here answers
+  "how much has been held" and never "how much is still held";
+- **penalties and recoveries**, argued individually;
+- **other**, which is the head that always turns up and is the only one that
+  cannot be recorded without saying what it is.
+
+Each is a typed row rather than free text or a nullable column, because each
+is a different conversation with a different authority on a different form.
+A named head may appear once per payment; two `other` rows on one advice are
+two different facts and both stay recordable.
+
+**A deduction is an operator's assertion, not evidence.** Everything about
+the railway's own On-Account Bill is extracted from the document and nothing
+about it can be typed (§5.5). A deduction is the opposite: somebody reads a
+payment advice and enters what it says, and this product holds no copy of
+that advice and no certificate behind any head. The register is therefore as
+good as the person keeping it — which is a large improvement on a
+spreadsheet nobody audits, and is not the same claim the railway bill makes.
+Two consequences follow and are stated rather than left to be discovered.
+The register cannot be used as proof of a TDS credit; GSTR-7A and Form 26AS
+remain the proof, and this is the working note beside them. And because
+receipts and deductions are the same arithmetic to the settlement rule, an
+operator who can record payments can reach `paid` by asserting a deduction
+for the whole shortfall — see the open question at the end of this
+section.
+
+**Deducted money is settled money.** A bill of ₹10,00,000 credited as
+₹9,52,000 is fully settled if ₹48,000 went to the heads above, and 4.8%
+outstanding if it did not. One of those is a closed matter and the other is a
+phone call, and a register that reports a single net figure cannot tell them
+apart — it reports every bill as short by its own statutory deductions,
+forever. So:
+
+    outstanding  =  what the railway settled  −  received  −  deducted
+
+**What "the railway settled" means, and why it is not the prepared amount.**
+The reference is the amount on the railway's own On-Account Bill (§5.5),
+reached through the Measurement Book that bill closed — never the total the
+agency prepared. Two reasons, and the second is load-bearing. The railway pays
+its own bill, so where its certified figure differs from the prepared one the
+difference is a conversation about the measurement rather than an unpaid
+balance. And a bank credit is GST-inclusive, always, as is the railway's bill
+amount; the prepared total is on the Work's recorded basis and is
+GST-exclusive on a GST-exclusive Work. Subtracting one from the other is
+exactly the mixing §5.2 names as the natural mistake. Both figures are
+reported so a difference between them is visible; only the railway's is
+subtracted from.
+
+It follows that **a payment cannot be recorded before the measurement is
+closed**: until then there is no agreed figure to be outstanding against, and
+the position reports no outstanding amount at all rather than reporting the
+prepared amount as a debt nobody has acknowledged.
+
+**`paid` stops being a word.** A prepared bill moves to `paid` only when the
+receipts and their deductions between them reach the railway's figure exactly.
+The status stays a MANUAL act — every state change in this product is an
+explicit, audited transition, and a status that flipped itself the moment a
+sum crossed a threshold would be the only one nobody performed. What changed
+is not who performs it but what it is allowed to assert: `paid` may now only
+be claimed where the register supports it, as an issued document may only be
+claimed where its evidence does.
+
+**Settlement and submission are independent.** Nothing requires a bill to
+have been submitted before money is recorded against it. The status machine
+still runs forward only, so a bill cannot reach `paid` without passing
+through `submitted`, and the position tells the truth at every point in
+between; a bill fully settled while still `prepared` is an unusual record
+rather than an impossible one, and refusing it would police an ordering the
+paper does not have.
+
+**A receipt is never edited and never deleted.** A mis-keyed one is
+**withdrawn** with a required reason: the row and the reason stay, and the
+amount becomes outstanding again. Once a bill is paid its register is closed
+in both directions — nothing may be added and nothing withdrawn — because the
+arithmetic that made it paid would stop holding and `bills` moves forward
+only. The correction is a compensating entry against a later bill, which is
+the remedy ADR-0006 already prescribes for a billed Measurement Book.
+
+**Open question: settlement by asserted deduction.** The two rules above
+compose into a gap the owner should close deliberately rather than by
+accident. Because a deduction settles a bill exactly as a receipt does, and
+because a receipt of zero is legitimate, a member holding the issue
+authority can mark a bill paid by recording nothing received and one
+deduction for the entire outstanding amount. Every step is audited and the
+row names its author, so this is visible after the fact rather than silent —
+but nothing refuses it at the time. Three mitigations are available and none
+is applied yet: cap the deductions of a receipt relative to what it credits;
+require a separate authority for a settlement that credits nothing; or
+accept it as an operator judgement and rely on the audit trail. Recorded
+here so the next reader does not mistake it for an oversight.
+
+**Both layers, doing different halves**, on the same terms §5.5 states for the
+railway bill. The database owns the arithmetic and the structure: that a
+reference figure exists, that the running total never passes it, that a
+recorded fact never changes, and that `paid` is unreachable while anything is
+outstanding — on insert as well as on update, because a bill row may be
+created in any of its three states. The server owns authority, work scope, the
+audit trail, and saying all of it in a sentence rather than a SQLSTATE.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.

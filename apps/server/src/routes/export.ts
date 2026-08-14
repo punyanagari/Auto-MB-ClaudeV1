@@ -268,6 +268,17 @@ const SECTIONS: readonly ExportSection[] = [
     jsonbColumns: ['lines_snapshot'],
   },
   {
+    // The payment register (0067). Deductions follow their payment, and
+    // both are ordered so a diff of two exports is readable.
+    key: 'billPayments',
+    sql: `select * from bill_payments order by bill_id, received_on, id`,
+  },
+  {
+    key: 'billPaymentDeductions',
+    sql: `select * from bill_payment_deductions
+          order by bill_payment_id, category, id`,
+  },
+  {
     key: 'installations',
     sql: `select * from installations order by installed_on, created_at, id`,
   },

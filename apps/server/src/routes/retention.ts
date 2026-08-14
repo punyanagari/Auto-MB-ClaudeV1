@@ -1024,6 +1024,31 @@ export function registerRetentionRoutes(
               "This bill's Measurement Book is not closed by a verified railway bill.",
             );
           }
+          // And the money has to be accounted for (migration 0067).
+          // Before the payment register existed, `paid` was a word with
+          // no amount behind it — the specific complaint pack P15 was
+          // written for. It now asserts that the receipts and the
+          // deductions between them reach the railway's own figure.
+          //
+          // Enforced here AND by
+          // `app_private.guard_bill_paid_needs_full_settlement`, for the
+          // same reason the closure gate above is enforced twice.
+          const [position] = await tx<
+            { outstanding: string | null; reference: string | null }[]
+          >`
+            select app_private.bill_settlement_reference(${id})::text as reference,
+                   (app_private.bill_settlement_reference(${id})
+                     - app_private.bill_settled_total(${id}))::text as outstanding
+          `;
+          if (position?.outstanding == null || Number(position.outstanding) !== 0) {
+            throw httpError(
+              409,
+              'BILL_NOT_FULLY_SETTLED',
+              position?.outstanding == null
+                ? 'This bill has no settled railway amount to account for.'
+                : `${position.outstanding} of the railway's ${String(position.reference)} is still outstanding; record the receipt and its deductions first.`,
+            );
+          }
         }
         const [row] = await tx<BillRow[]>`
           update bills

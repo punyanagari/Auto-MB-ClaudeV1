@@ -229,6 +229,9 @@ describe('guard 1: no tenant policy calls a helper in bare filter position', () 
     const named = await helperPolicies(staged.pool);
     const alreadyWrapped = named.filter((policy) => !bare.includes(policy));
     expect(alreadyWrapped).toEqual([
+      // Pack P15's payment register (migration 0067), authored wrapped.
+      'bill_payment_deductions.bill_payment_deductions_tenant_policy',
+      'bill_payments.bill_payments_tenant_policy',
       'received_railway_bills.received_railway_bills_tenant_policy',
     ]);
     expect(bare).toEqual(named.filter((policy) => !alreadyWrapped.includes(policy)));

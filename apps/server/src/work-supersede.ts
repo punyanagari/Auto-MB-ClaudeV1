@@ -96,6 +96,24 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // are listed rather than omitted because a table that reached `works`
   // through an exempt parent WOULD be invisible to the rule, and telling
   // the two cases apart is the census's whole job.
+  // The payment register (0067). These hold MONEY, which is the strongest
+  // reason a Work should not be withdrawn — and they are nonetheless
+  // exempt, because the register they hang off is already a blocker twice
+  // over. A `bill_payments` row needs a `bills` row, `bills` is in the
+  // list above, and a bill needs a finalized `measurement_books` row,
+  // which is also in the list above. There is no arrangement of rows in
+  // which a Work carries a recorded payment and is eligible: it is
+  // refused by `bills` before this question is asked.
+  //
+  // They also could not join the blocking list as it stands. Every entry
+  // there is counted `where organisation_id = … and work_id = $1`, and
+  // neither table carries `work_id` — deliberately, because `bills`
+  // already holds it under a unique key and a second copy is a second
+  // thing that can be wrong. Adding the column to make them countable
+  // would denormalise a money table to ask a third time a question two
+  // registers have already answered.
+  bill_payments: 'receipts against a bill, which blocks',
+  bill_payment_deductions: 'the breakup of a receipt against a bill, which blocks',
   delivery_challan_items: 'lines of a delivery challan, which blocks',
   challan_receipts: 'receipts against a delivery challan, which blocks',
   challan_item_serials: 'serials on a delivery challan line, which blocks',

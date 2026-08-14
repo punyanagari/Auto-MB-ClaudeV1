@@ -29,4 +29,5 @@ export * from './tax-documents.js';
 export * from './credit-notes.js';
 export * from './contract-sources.js';
 export * from './received-railway-bills.js';
+export * from './bill-payments.js';
 export * from './export.js';

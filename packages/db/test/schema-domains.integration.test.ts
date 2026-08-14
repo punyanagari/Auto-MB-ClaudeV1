@@ -180,7 +180,7 @@ describe('the schema at head names all three shapes', () => {
     const adopted = columns.filter(
       (column) => column.type === 'money_amount' || column.type === 'quantity_amount',
     );
-    expect(adopted.length).toBe(53);
+    expect(adopted.length).toBe(55);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -304,6 +304,39 @@ describe('the schema at head names all three shapes', () => {
         where relname = 'work_items_live' and relkind = 'v'
       `;
       expect(view?.options ?? []).toContain('security_invoker=true');
+    });
+
+    it('pins every tenant-derived view to security_invoker', async () => {
+      // A view over tenant tables that loses `security_invoker` runs with
+      // its OWNER's privileges, and the owner is `auto_mb_owner`, which is
+      // BYPASSRLS. Dropping the option is a one-word edit in a CREATE VIEW
+      // and turns a read of the caller's own rows into a read of every
+      // organisation's — so the property is asserted over the population
+      // rather than view by view, and a new view is covered the day it
+      // lands instead of the day somebody remembers.
+      //
+      // `consignee_masters` (0028) has its own behavioural proof in the
+      // tenancy suite; `work_items_live` (0065) has one above; and
+      // `bill_settlement_positions` (0067) is the reason this census
+      // exists as a census.
+      const views = await database.pool<
+        { relname: string; options: string[] | null }[]
+      >`
+        select c.relname, c.reloptions as options
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind = 'v'
+        order by c.relname
+      `;
+      expect(views.length).toBeGreaterThanOrEqual(3);
+      const definer = views
+        .filter((view) => !(view.options ?? []).includes('security_invoker=true'))
+        .map((view) => view.relname);
+      expect(
+        definer,
+        `views that would read past row-level security: ${definer.join(', ')}`,
+      ).toEqual([]);
+      expect(views.map((view) => view.relname)).toContain('bill_settlement_positions');
     });
 
     it('shows another tenant nothing through the application role', async () => {

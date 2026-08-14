@@ -1103,6 +1103,28 @@ describe('the verdict gate on recording payment', () => {
     // recordable and nothing else changed.
     expect((await upload(bookId, signedBill({ letterNumber }))).statusCode).toBe(201);
     expect((await close(bookId)).statusCode).toBe(200);
+
+    // Migration 0067 added the second half of the same sentence: closure
+    // says the railway settled the measurement, and the payment register
+    // says the money arrived. `paid` now asserts both, so the receipt goes
+    // in here. Its own rules are proved in bill-payments.integration.test.ts;
+    // what this suite still owns is the CLOSURE gate above.
+    const receipt = await authed({
+      method: 'POST',
+      url: `/api/bills/${billId}/payments`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: {
+        receivedOn: '2026-05-20',
+        receivedAmount: '23516112.00',
+        deductions: [
+          { category: 'GST_TDS', amount: '490000.00' },
+          { category: 'SECURITY_DEPOSIT', amount: '510000.00' },
+        ],
+      },
+    });
+    expect(receipt.statusCode, receipt.body).toBe(201);
+
     const again = await authed({
       method: 'POST',
       url: `/api/bills/${billId}/status`,
