@@ -594,6 +594,19 @@ export function InvoicesRegister({
           </ErrorState>
         )}
 
+        {/* The opened document is a region of this page, and the heading
+            level says so. On the Work's Bills tab the same surface sits
+            under that tab's own "Tax Invoices" h2, so its heading starts
+            at h3; here the page heading is the register's h1, and without
+            this the tree would jump h1 to h3. Visually hidden because the
+            document states its own number in the heading directly below —
+            what is missing is the structure, not the words. */}
+        {detail !== null && (
+          <h2 className="sr-only">
+            Opened invoice {detail.invoice.invoiceNumber ?? 'draft'}
+          </h2>
+        )}
+
         {detail !== null && (
           <OpenedInvoice
             api={api}

@@ -115,6 +115,69 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
   const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
+  // The register row the scan opens, and the document behind it.
+  const INVOICE_ID = '88888888-8888-4888-8888-888888888888';
+  const OPENED_INVOICE = {
+    invoice: {
+      id: INVOICE_ID,
+      workId: WORK_ID,
+      measurementBookId: null,
+      statedTaxableValue: null,
+      mbNumber: 'DCW-1-MB-01',
+      status: 'submitted',
+      invoiceNumber: 'TI/2026-27/001',
+      sequenceNumber: 1,
+      fyLabel: '2026-27',
+      invoiceDate: '2026-08-04',
+      lineShape: 'service_cumulative',
+      sacCode: '998734',
+      serviceDescription: 'Works contract services for signalling installation',
+      gstRate: '18.00',
+      placeOfSupply: '27',
+      reverseChargeApplicable: false,
+      buyerContactId: '77777777-7777-4777-8777-777777777777',
+      taxableValue: '125000.00',
+      cgstAmount: '11250.00',
+      sgstAmount: '11250.00',
+      igstAmount: '0.00',
+      roundOff: '0.00',
+      totalAmount: '147500.00',
+      customerPoReference: null,
+      unitLabel: null,
+      notes: null,
+      shipToContactId: null,
+      numberPrefix: null,
+      // Registered at the IRP, so the opened surface renders its fullest
+      // state: the frozen facts, the PDF control, the whole IRP panel with
+      // its acknowledgement, and the credit-note section.
+      irn: 'a'.repeat(64),
+      irpProvider: 'whitebooks',
+      irpProviderState: 'registered',
+      ackNumber: '900719925474099312345',
+      ackDate: '2026-08-04T06:39:00.000Z',
+      ackDateText: '04/08/2026 12:09:00',
+      signedInvoiceAvailable: true,
+      renderedAvailable: true,
+      irpLegacyEvidenceMissing: false,
+      irpCancelledAt: null,
+      irpCancelledAtText: null,
+      irpCancelReasonCode: null,
+      irpCancelRemark: null,
+      irpCancelWindowClosesAt: '2026-08-05T06:39:00.000Z',
+      irpCancelWindowOpen: false,
+      irpReportingDeadline: null,
+      irpReportingOverdue: false,
+      cancellationNote: null,
+      createdAt: '2026-08-04T00:00:00.000Z',
+      submittedAt: '2026-08-04T06:00:00.000Z',
+      cancelledAt: null,
+    },
+    buyerSnapshot: { designation: 'Sr. DEE/TRD/Bhusawal' },
+    shipToSnapshot: null,
+    issuedSnapshot: null,
+    signedQr: 'signed-qr-payload',
+    lines: [],
+  };
   const CHALLAN = {
     id: CHALLAN_ID,
     workId: WORK_ID,
@@ -398,6 +461,21 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
         nextCursor: null,
       }),
     ),
+  );
+  // The invoice the register OPENS. Registered after the register's own
+  // `?*` pattern and distinct from it: this path carries an id and no
+  // query string, so neither shadows the other. A submitted, IRP-
+  // registered invoice, because that is the state where the opened
+  // surface renders the most — the frozen facts, the PDF control, the
+  // whole IRP transport panel and the credit-note section.
+  await page.route(`**/api/tax-invoices/${INVOICE_ID}`, (route) =>
+    route.fulfill(json(OPENED_INVOICE)),
+  );
+  await page.route(`**/api/tax-invoices/${INVOICE_ID}/eway-bills`, (route) =>
+    route.fulfill(json({ ewayBills: [] })),
+  );
+  await page.route(`**/api/tax-invoices/${INVOICE_ID}/credit-notes`, (route) =>
+    route.fulfill(json({ creditNotes: [] })),
   );
   await page.route('**/api/masters/locations', (route) =>
     route.fulfill(
@@ -794,6 +872,23 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // its Taxable value column, so a bare label lookup matches two things.
   await expect(page.getByRole('textbox', { name: 'Taxable value' })).toBeVisible();
   await expectNoAxeViolations(page, 'invoice register — direct invoice form');
+
+  /* One invoice OPENED from the register. This is the only axe coverage
+     the opened-invoice surface has anywhere: it is reached from two
+     screens and scanned from neither, and it is the densest surface in
+     the module — frozen document facts, the PDF control, the IRP
+     transport with its disclosures and forms, credit notes and e-way
+     bills. Opened on a submitted, IRP-registered invoice, because that
+     state renders all of it. */
+  await page.getByRole('link', { name: 'TI/2026-27/001' }).click();
+  // By level: the document's own heading is the h3, and the register adds
+  // a visually hidden h2 above it so the tree does not jump h1 to h3 —
+  // both carry the invoice number, so the level is what tells them apart.
+  await expect(
+    page.getByRole('heading', { level: 3, name: 'TI/2026-27/001 submitted' }),
+  ).toBeVisible();
+  await expect(page.getByText('Government e-invoicing')).toBeVisible();
+  await expectNoAxeViolations(page, 'invoice register — opened invoice');
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({
