@@ -2,7 +2,7 @@ import type { Sql } from '@auto-mb/db';
 import type { AppInstance } from '../../app-instance.js';
 import type { Auth } from '../../auth.js';
 import type { StatutoryProvider } from '../../gsp/statutory-provider.js';
-import type { ObjectStorage } from '../../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { registerTaxInvoiceCancelRoute } from './cancel.js';
 import { registerTaxInvoiceDraftingRoutes } from './drafting.js';
 import { registerTaxInvoiceProviderRoutes } from './provider.js';

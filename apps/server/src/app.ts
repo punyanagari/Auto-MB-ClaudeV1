@@ -69,8 +69,11 @@ import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
 import { registerWorkSupersedeRoutes } from './routes/work-supersede.js';
-import { createFileSystemStorage } from './storage.js';
-import { EMPTY_TRUST_ANCHOR_STORE, type TrustAnchorStore } from './pdf-signature.js';
+import {
+  createFileSystemStorage,
+  EMPTY_TRUST_ANCHOR_STORE,
+  type TrustAnchorStore,
+} from '@auto-mb/documents';
 import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
 import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
@@ -906,7 +909,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerPaymentRoutes(app, authInstance, database);
     registerBillPaymentRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
-    registerLoaRoutes(app, authInstance, database, storage, scanner, pdfTrustAnchors);
+    registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(
       app,
       authInstance,

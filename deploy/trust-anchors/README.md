@@ -20,7 +20,7 @@ Only **CCA India roots** sit at the top level. Certificates under
 never end one; installing a licensed CA as an anchor would make that one
 CA's compromise indistinguishable from a compromise of the CCA root. The
 loader keeps the two lists apart deliberately
-(`apps/server/src/pdf-signature/trust-anchors.ts`).
+(`packages/documents/src/pdf-signature/trust-anchors.ts`).
 
 | File                     | Subject              | Valid from | Valid to   | SHA-256 of the DER                                                 |
 | ------------------------ | -------------------- | ---------- | ---------- | ------------------------------------------------------------------ |

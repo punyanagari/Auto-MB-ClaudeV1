@@ -9,7 +9,7 @@ import {
   verifyPdfSignatures,
   TrustAnchorConfigurationError,
   type TrustAnchorStore,
-} from '../src/pdf-signature.js';
+} from '@auto-mb/documents';
 import {
   appendSignature,
   createTestPki,

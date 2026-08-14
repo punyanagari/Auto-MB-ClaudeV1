@@ -34,10 +34,10 @@ import {
 import { httpError } from '../http.js';
 import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
+import { extractPdfText, PdfToTextConfigurationError } from '@auto-mb/documents';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import {
   assertNotMalware,
   consumeUpload,

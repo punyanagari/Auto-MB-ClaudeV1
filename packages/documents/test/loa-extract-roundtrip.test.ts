@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractLoaPdfText, extractPdfText } from '../src/loa-extract.js';
+import { extractLoaPdfText, extractPdfText } from '@auto-mb/documents';
 
 /**
  * PDF → text round trip against the REAL `pdftotext`.

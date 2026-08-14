@@ -136,7 +136,7 @@ objects_snapshot_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # empty archive) and the restored tree keeps its shape.
 #
 # The store's atomic writes go to `.put-<uuid>.tmp` in the destination
-# directory and are then renamed onto the key (apps/server/src/storage.ts).
+# directory and are then renamed onto the key (packages/documents/src/storage.ts).
 # Those names are the one thing here that legitimately disappears, and no
 # object key can ever resolve to one, so they are excluded — otherwise a
 # concurrent upload completing between the enumeration and the archive

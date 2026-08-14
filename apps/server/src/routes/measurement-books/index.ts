@@ -1,7 +1,7 @@
 import type { Sql } from '@auto-mb/db';
 import type { AppInstance } from '../../app-instance.js';
 import type { Auth } from '../../auth.js';
-import type { ObjectStorage } from '../../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { registerMeasurementBookCloseRoute } from './close.js';
 import { registerMeasurementBookDraftingRoutes } from './drafting.js';
 import { registerMeasurementBookFinalizeRoutes } from './finalize.js';

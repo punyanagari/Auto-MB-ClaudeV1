@@ -13,7 +13,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 const { rename } = await import('node:fs/promises');
 const { assertSafeObjectKey, createFileSystemStorage } =
-  await import('../src/storage.js');
+  await import('@auto-mb/documents');
 
 const ORGANISATION = '0f0e0d0c-0b0a-0908-0706-050403020100';
 const KEY = `${ORGANISATION}/loa/document-1.pdf`;

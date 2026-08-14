@@ -8,5 +8,20 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@auto-mb/db": "workspace:*",
+    "@auto-mb/documents": "workspace:*",
+    "@auto-mb/loa-parser": "workspace:*"
+  },
+  "exports": {
+    "./runtime": {
+      "types": "./src/runtime.ts",
+      "default": "./src/runtime.ts"
+    },
+    "./handlers/loa-document-intake": {
+      "types": "./src/handlers/loa-document-intake.ts",
+      "default": "./src/handlers/loa-document-intake.ts"
+    }
   }
 }

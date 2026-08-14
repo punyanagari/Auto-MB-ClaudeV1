@@ -36,7 +36,16 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/server ./apps/server
-RUN pnpm install --frozen-lockfile --filter "@auto-mb/server..." --filter "@auto-mb/db..."
+# The worker ships in THIS image rather than one of its own, because its
+# runtime surface is identical to the server's: it needs poppler-utils to
+# extract text, the CCA trust anchors to decide who signed, the
+# object-storage volume to read the bytes, and the same database client. A
+# second Dockerfile would be a second copy of the pinned Poppler assertion
+# and the anchor bundle, kept in step by hope. One image, two entry
+# points, two compose services.
+COPY apps/worker ./apps/worker
+RUN pnpm install --frozen-lockfile --filter "@auto-mb/server..." \
+  --filter "@auto-mb/worker..." --filter "@auto-mb/db..."
 
 # The workspace packages publish TypeScript source through their `exports`
 # maps, so "compiled" means bundling them into the entry points that use
@@ -64,18 +73,33 @@ RUN mkdir -p apps/server/dist \
     --bundle --platform=node --format=esm --target=node22 \
     --outfile=apps/server/dist/bootstrap.mjs --log-level=warning $EXTERNALS
 
+# The worker's own externals, derived from its OWN manifest for exactly
+# the reason the server's are derived from its: a hand-kept list is one
+# dependency behind the moment somebody adds one, and a CommonJS package
+# inlined into an ESM bundle throws at runtime rather than at build time.
+RUN mkdir -p apps/worker/dist \
+  && EXTERNALS="$(node -p "Object.keys(require('/app/apps/worker/package.json').dependencies).filter((name) => !name.startsWith('@auto-mb/')).map((name) => '--external:' + name).join(' ')")" \
+  && echo "worker externals: ${EXTERNALS}" \
+  && esbuild apps/worker/src/main.ts \
+    --bundle --platform=node --format=esm --target=node22 \
+    --outfile=apps/worker/dist/worker.mjs --log-level=warning $EXTERNALS
+
 # Replace the full install with a production-only one. `--prod` is what
 # takes the dev toolchain out of the shipped image; doing it here rather
 # than in the runtime stage keeps the runtime free of a package manager.
-RUN rm -rf node_modules apps/server/node_modules packages/*/node_modules \
+RUN rm -rf node_modules apps/server/node_modules apps/worker/node_modules \
+    packages/*/node_modules \
   && pnpm install --frozen-lockfile --prod \
-    --filter "@auto-mb/server..." --filter "@auto-mb/db..."
+    --filter "@auto-mb/server..." --filter "@auto-mb/worker..." \
+    --filter "@auto-mb/db..."
 
 # Prove, against the pruned production install and from the directory the
 # bundles will occupy at runtime, that every retained import resolves.
 COPY scripts/check-bundle-externals.mjs ./scripts/check-bundle-externals.mjs
 RUN cd apps/server/dist \
   && node /app/scripts/check-bundle-externals.mjs server.mjs bootstrap.mjs
+RUN cd apps/worker/dist \
+  && node /app/scripts/check-bundle-externals.mjs worker.mjs
 
 # --- runtime ------------------------------------------------------------
 FROM node:22.16.0-alpine3.21@sha256:9f3ae04faa4d2188825803bf890792f33cc39033c9241fc6bb201149470436ca
@@ -108,6 +132,8 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 # api-version.ts reads ../package.json relative to its own module URL; from
 # apps/server/dist that is exactly this file, which is why it travels.
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
@@ -142,4 +168,10 @@ RUN mkdir -p /data/objects && chown -R node:node /data
 
 USER node
 EXPOSE 3000
+# The API is the default entry point. The `worker` service in
+# deploy/docker-compose.prod.yml overrides this with
+# `node apps/worker/dist/worker.mjs` — the same image and the same
+# dependencies, a different process. ADR-0008's tripwire (the scaffold is
+# not deployed, and the first pull request to land a real job must give
+# the worker a deployment) is discharged here and in that compose file.
 CMD ["node", "apps/server/dist/server.mjs"]

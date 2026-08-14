@@ -564,6 +564,24 @@ describe('export completeness is catalog-driven', () => {
     organisation_memberships: 'members',
   };
 
+  /**
+   * Tenant tables the organisation export deliberately does NOT publish,
+   * and why. Membership is a decision the same way the overrides above
+   * are: a table that simply went missing from `export.ts` still fails,
+   * because the only way past this assertion is an entry here with a
+   * reason.
+   */
+  const NOT_EXPORTED: Readonly<Record<string, string>> = {
+    // The job queue (0072, ADR-0011). It is operational state about work
+    // in flight, not a record of the organisation's business, and it does
+    // not survive its own jobs — an export containing it would publish
+    // rows that are meaningless a minute later. It is also unreadable from
+    // here in the literal sense: the export runs as the application role,
+    // which holds no privilege on this table at all, so publishing it
+    // would require widening exactly the grant the ADR refused.
+    worker_jobs: 'operational queue state, unreadable by the application role',
+  };
+
   function sectionNameOf(table: string): string {
     const override = SECTION_NAME_OVERRIDES[table];
     if (override !== undefined) return override;
@@ -609,7 +627,9 @@ describe('export completeness is catalog-driven', () => {
     const exported: Record<string, unknown> = response.json();
 
     const missing = tenantTables.filter(
-      (table) => exported[sectionNameOf(table)] === undefined,
+      (table) =>
+        !Object.prototype.hasOwnProperty.call(NOT_EXPORTED, table) &&
+        exported[sectionNameOf(table)] === undefined,
     );
     expect(
       missing,

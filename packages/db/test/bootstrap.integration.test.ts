@@ -6,6 +6,7 @@ import type { Sql } from '../src/index.js';
 import { createDatabasePool, runMigrations } from '../src/index.js';
 import {
   TABLE_PRIVILEGES,
+  UNGRANTED_BY_DESIGN,
   applyGrants,
   ensureApplicationRole,
   verifyApplicationConnection,
@@ -66,6 +67,11 @@ beforeAll(async () => {
     'app_private.current_user_id()',
     'app_private.create_organisation_with_owner(text, text, uuid)',
     'app_private.bind_tenant(uuid, text)',
+    'app_private.enqueue_job(text, jsonb)',
+    'app_private.claim_next_job(text, integer)',
+    'app_private.complete_job(uuid, uuid, jsonb)',
+    'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
+    'app_private.release_job(uuid, uuid, text)',
   ]) {
     await bootAdmin.unsafe(`alter function ${fn} owner to auto_mb_owner`);
   }
@@ -136,10 +142,11 @@ describe('production bootstrap', () => {
       where n.nspname = 'app_private'
         and p.proname in (
           'current_organisation_id', 'current_user_id',
-          'create_organisation_with_owner', 'bind_tenant'
+          'create_organisation_with_owner', 'bind_tenant',
+          'enqueue_job', 'claim_next_job', 'complete_job', 'fail_job', 'release_job'
         )
     `;
-    expect(owners).toHaveLength(4);
+    expect(owners).toHaveLength(9);
     for (const row of owners) {
       expect(row.owner, row.proname).toBe('auto_mb_definer');
     }
@@ -163,13 +170,21 @@ describe('production bootstrap', () => {
  */
 describe('privilege matrix drift', () => {
   /**
-   * Every table the migrations create carries an entry in the matrix. The
-   * migration ledger used to be the single exception; it is now declared
+   * Every table the migrations create carries an entry in the matrix, or
+   * an entry in the ungranted-by-design set with its reason. The migration
+   * ledger used to be the single exception; it is now declared
    * `SELECT`-only, because the `/api/ready` schema-version gate reads it to
    * refuse traffic when the image is ahead of the database. Writing it is
    * still administrator-only, which the read-only proof below enforces.
+   *
+   * The ungranted set is no longer empty: `worker_jobs` (0072) is reached
+   * only through SECURITY DEFINER functions and holds no application
+   * privilege at all (ADR-0011). It is read from `bootstrap.ts` rather
+   * than restated here, so the decision lives in one place — the same
+   * discipline that keeps TABLE_PRIVILEGES from being shadowed by a second
+   * hand-kept list.
    */
-  const UNGRANTED_BY_DESIGN = new Set<string>();
+  const ungrantedByDesign = new Set(Object.keys(UNGRANTED_BY_DESIGN));
 
   it('declares every table the migrations create', async () => {
     const rows = await bootAdmin<{ table_name: string }[]>`
@@ -183,7 +198,7 @@ describe('privilege matrix drift', () => {
 
     const missing = tables.filter(
       (table) =>
-        !UNGRANTED_BY_DESIGN.has(table) &&
+        !ungrantedByDesign.has(table) &&
         !Object.prototype.hasOwnProperty.call(TABLE_PRIVILEGES, table),
     );
     expect(

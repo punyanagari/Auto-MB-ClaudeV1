@@ -9,7 +9,8 @@ import type { LoaDocumentDetail } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
-import { loadTrustAnchors } from '../src/pdf-signature.js';
+import { createFileSystemStorage, loadTrustAnchors } from '@auto-mb/documents';
+import { runQueuedJobs } from './helpers/worker-jobs.js';
 import {
   appendSignature,
   createTestPki,
@@ -153,15 +154,46 @@ afterAll(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
+/**
+ * Uploads a letter and then runs the reading the upload enqueued.
+ *
+ * Since pack P18 the verdict is not in the upload response: the route
+ * accepts the bytes and the worker verifies them, so the document is born
+ * `not_checked` and reaches a real verdict a job later. Every assertion
+ * below is about the verdict that is finally STORED, which is what it was
+ * always about — only the moment it exists has moved.
+ */
+async function uploadAndVerify(
+  bytes: Buffer,
+  filename: string,
+): Promise<LoaDocumentDetail> {
+  const response = await upload(bytes, filename);
+  expect(response.statusCode, response.body).toBe(201);
+  const accepted = response.json<LoaDocumentDetail>();
+  expect(accepted.signatureStatus).toBe('not_checked');
+
+  await runQueuedJobs(
+    admin,
+    createFileSystemStorage(storageDir),
+    await loadTrustAnchors(path.join(workspace, 'anchors')),
+  );
+
+  const detail = await authed({
+    method: 'GET',
+    url: `/api/loa-documents/${accepted.id}`,
+    organisationId,
+  });
+  expect(detail.statusCode, detail.body).toBe(200);
+  return detail.json<LoaDocumentDetail>();
+}
+
 describe('signature verdicts are stored with the document', () => {
   it('records a trusted verdict at upload time and returns it', async () => {
     const bytes = appendSignature(unsignedPdf('Letter of Acceptance 11 of 22-23'), {
       pki,
       reason: 'Variation Signing By SSE/Tele',
     });
-    const response = await upload(bytes, 'signed-loa.pdf');
-    expect(response.statusCode, response.body).toBe(201);
-    const detail = response.json<LoaDocumentDetail>();
+    const detail = await uploadAndVerify(bytes, 'signed-loa.pdf');
 
     expect(detail.signatureStatus).toBe('signed_and_intact');
     expect(detail.signatureVerdict?.signatures).toHaveLength(1);
@@ -197,12 +229,10 @@ describe('signature verdicts are stored with the document', () => {
   });
 
   it('records an unsigned upload as unsigned, and accepts it', async () => {
-    const response = await upload(
+    const detail = await uploadAndVerify(
       unsignedPdf('Letter of Acceptance with no signature'),
       'plain-loa.pdf',
     );
-    expect(response.statusCode, response.body).toBe(201);
-    const detail = response.json<LoaDocumentDetail>();
     // Nothing is gated on the verdict in this change: an unsigned letter
     // is still the letter the organisation was sent, and turning a bad
     // verdict into a refusal is the owner's decision per document type.
@@ -218,9 +248,7 @@ describe('signature verdicts are stored with the document', () => {
       signed,
       Buffer.from('\n% added later\n', 'latin1'),
     ]);
-    const response = await upload(tampered, 'appended-loa.pdf');
-    expect(response.statusCode, response.body).toBe(201);
-    const detail = response.json<LoaDocumentDetail>();
+    const detail = await uploadAndVerify(tampered, 'appended-loa.pdf');
     expect(detail.signatureStatus).toBe('signed_but_modified_after_signing');
     expect(detail.signatureVerdict?.unsignedTrailingBytes).toBe(15);
     expect(detail.signatureVerdict?.signatures[0]?.integrity).toBe('intact');
@@ -230,7 +258,7 @@ describe('signature verdicts are stored with the document', () => {
     const bytes = appendSignature(unsignedPdf('Letter whose verdict is evidence'), {
       pki,
     });
-    const detail = (await upload(bytes, 'append-once.pdf')).json<LoaDocumentDetail>();
+    const detail = await uploadAndVerify(bytes, 'append-once.pdf');
     expect(detail.signatureStatus).toBe('signed_and_intact');
 
     // Straight at the database, with the owning role — the guard is not a
@@ -323,7 +351,7 @@ describe('signature verdicts are stored with the document', () => {
 
   it('carries the verdict into the organisation export', async () => {
     const bytes = appendSignature(unsignedPdf('Exported letter'), { pki });
-    const detail = (await upload(bytes, 'exported.pdf')).json<LoaDocumentDetail>();
+    const detail = await uploadAndVerify(bytes, 'exported.pdf');
 
     const exported = await authed({
       method: 'GET',

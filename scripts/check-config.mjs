@@ -131,7 +131,7 @@ const CCA_INDIA_ROOTS = {
   },
 };
 
-// Extensions the loader in apps/server/src/pdf-signature/trust-anchors.ts
+// Extensions the loader in packages/documents/src/pdf-signature/trust-anchors.ts
 // actually reads. A README.md alongside the certificates is invisible to
 // it and must stay invisible here too.
 const ANCHOR_EXTENSIONS = ['.pem', '.crt', '.cer'];
@@ -230,6 +230,66 @@ const isAnchorFile = (name) =>
     errors.push(
       'deploy/Dockerfile.server no longer sets AUTO_MB_PDF_TRUST_ANCHORS; the ' +
         'copied bundle would be inert.',
+    );
+  }
+}
+
+/**
+ * ADR-0011 guard (e): the worker is deployed, and ADR-0008's tripwire is
+ * retired rather than left standing over a decision that has been taken.
+ *
+ * ADR-0008 kept `apps/worker` as an empty boundary and recorded that the
+ * scaffold was NOT deployed, with a corollary the tripwire depended on:
+ * the first pull request to land a real asynchronous workflow must also
+ * give the worker a deployment, because otherwise nothing would run it.
+ * Pack P18 landed that workflow. This check is what stops the two halves
+ * drifting apart again — a worker service that is deleted from compose
+ * while jobs keep being enqueued would leave every LOA stuck in `pending`
+ * with nothing to say so, and an ADR still claiming the scaffold is
+ * undeployed would be the only written record.
+ */
+{
+  const compose = await readFile(
+    new URL('../deploy/docker-compose.prod.yml', import.meta.url),
+    'utf8',
+  );
+  if (!/^ {2}worker:$/m.test(compose)) {
+    errors.push(
+      'deploy/docker-compose.prod.yml no longer defines the `worker` service. ' +
+        'The queue (migration 0072) is enqueued from the request path, so ' +
+        'without a worker every LOA upload parks in `pending` for ever. If ' +
+        'asynchronous execution is genuinely being withdrawn, replace ' +
+        'ADR-0011 and take the enqueue out of the routes in the same change.',
+    );
+  }
+  if (!compose.includes('apps/worker/dist/worker.mjs')) {
+    errors.push(
+      'deploy/docker-compose.prod.yml no longer runs the compiled worker ' +
+        'entry point; the worker service would start the API instead.',
+    );
+  }
+
+  const workerDockerfile = await readFile(
+    new URL('../deploy/Dockerfile.server', import.meta.url),
+    'utf8',
+  );
+  if (!workerDockerfile.includes('apps/worker/dist/worker.mjs')) {
+    errors.push(
+      'deploy/Dockerfile.server no longer builds apps/worker/dist/worker.mjs; ' +
+        'the compose service would have no entry point to run.',
+    );
+  }
+
+  const scaffoldAdr = await readFile(
+    new URL('../adr/0008-worker-scaffold.md', import.meta.url),
+    'utf8',
+  );
+  if (!/Superseded|retired by pack P18/i.test(scaffoldAdr)) {
+    errors.push(
+      'adr/0008-worker-scaffold.md no longer records that its tripwire was ' +
+        'retired by pack P18. The ADR would then still claim the worker is ' +
+        'not deployed while deploy/docker-compose.prod.yml deploys it, and ' +
+        'the decision record would be the wrong one to read.',
     );
   }
 }

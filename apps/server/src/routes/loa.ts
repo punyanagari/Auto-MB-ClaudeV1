@@ -26,13 +26,12 @@ import {
 } from '@auto-mb/contracts';
 import {
   parseDecimalToMinorUnits,
-  reviewLoaLetter,
   type LoaReviewPayload,
   type PerformanceGuaranteeField,
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
+import { enqueueJob, jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { auditDiff } from '../audit-diff.js';
 import {
@@ -46,7 +45,6 @@ import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { assertExtractedValuesUnmodified } from '../loa-extracted-values.js';
-import { extractLoaPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { canonicalRateText } from '../rate-text.js';
 import {
@@ -61,10 +59,8 @@ import {
   closeSupersessionOnDiscard,
   readOpenSupersession,
 } from '../work-supersede.js';
-import { verifyUploadedPdf } from '../document-signature-evidence.js';
 import { assertAmcStagePercentages } from './payment.js';
-import type { TrustAnchorStore } from '../pdf-signature.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -696,7 +692,6 @@ export function registerLoaRoutes(
   database: Sql,
   storage: ObjectStorage,
   scanner: MalwareScanner,
-  pdfTrustAnchors: TrustAnchorStore,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
   tenantRoute(
@@ -726,56 +721,28 @@ export function registerLoaRoutes(
         await requireWriterRole(tx, user.id);
         await assertNotDuplicateUpload(tx, sha256);
       });
+      // The malware scan STAYS on the request path, and pack P18 moved the
+      // other three operations off it. That asymmetry is a decision, not
+      // an oversight: this scan is an ADMISSION GATE, not post-processing.
+      // Nothing is written to object storage and no row exists until it
+      // passes, so "unscanned bytes are never stored" is true by
+      // construction. Making it asynchronous would require storing
+      // attacker-supplied bytes first and then holding the much wider
+      // invariant "unscanned bytes are never SERVED" across every read,
+      // download, render and export path — a strictly weaker property
+      // guarded in strictly more places, bought with latency on a 25 MB
+      // ceiling. See docs/ARCHITECTURE.md §12.
       await assertNotMalware(scanner, body);
-
-      // Signature verification runs on the bytes as received, before
-      // anything else touches them, and its verdict is stored with the
-      // row it describes (migration 0060). It never refuses the upload:
-      // an unsigned or badly-signed letter is still the letter the
-      // organisation was sent, and refusing it here would take the
-      // decision away from the owner, who has to make it per document
-      // type. Pure CPU, so it runs outside the transaction.
-      const signature = verifyUploadedPdf(body, pdfTrustAnchors, request.log);
 
       const documentId = crypto.randomUUID();
       const objectKey = `${organisationId}/loa/${documentId}.pdf`;
 
-      // Storage write and extraction run OUTSIDE the tenant transaction:
-      // pdftotext may take tens of seconds and must not hold a pooled
-      // connection. A failure here leaves at worst an orphan object under
-      // a UUID key, never a database row without its document.
+      // The storage write runs OUTSIDE the tenant transaction, as it always
+      // has: a failure here leaves at worst an orphan object under a UUID
+      // key, never a database row without its document. Extraction and
+      // signature verification no longer run here at all — the row is born
+      // `pending` and the worker fills it in.
       await storage.put(objectKey, body);
-      let status: LoaDocument['extractionStatus'];
-      let payload: ExtractionPayload | { error: string };
-      try {
-        const { layoutText: sourceText, rawText: rawSourceText } =
-          await extractLoaPdfText(body);
-        payload = {
-          sourceText,
-          rawSourceText,
-          review: reviewLoaLetter(sourceText, { rawItemText: rawSourceText }),
-        };
-        status = 'review';
-      } catch (error) {
-        // A misconfigured extraction binary would otherwise persist a
-        // permanently 'failed' document for a perfectly good letter, and
-        // hide an operator fault as a per-document one. Refuse the upload
-        // instead: nothing is written, and re-uploading after the server is
-        // fixed succeeds. (The stored object is orphaned under its UUID key,
-        // the same tolerated outcome as any other post-storage failure.)
-        if (error instanceof PdfToTextConfigurationError) {
-          throw httpError(
-            503,
-            'PDF_TEXT_EXTRACTION_UNAVAILABLE',
-            'PDF text extraction is not correctly configured on the server. The letter was not stored for review; contact your administrator.',
-            { reason: error.message },
-          );
-        }
-        payload = {
-          error: error instanceof Error ? error.message : 'extraction failed',
-        };
-        status = 'failed';
-      }
 
       const stored = await tenant(async (tx) => {
         // Re-checked inside the writing transaction: the role could have
@@ -793,9 +760,8 @@ export function registerLoaRoutes(
             )
             values (
               ${documentId}, ${organisationId}, ${objectKey}, ${filename},
-              ${sha256}, 'application/pdf', ${body.length}, ${status},
-              ${jsonb(tx, payload)}, ${user.id}, ${signature.status},
-              ${jsonb(tx, signature.verdict)}, ${signature.verifiedAt}
+              ${sha256}, 'application/pdf', ${body.length}, 'pending',
+              null, ${user.id}, 'not_checked', null, null
             )
             returning id, original_filename, sha256, size_bytes,
                       extraction_status, confirmed_work_id, created_at,
@@ -814,20 +780,28 @@ export function registerLoaRoutes(
                 filename,
                 sha256,
                 sizeBytes: body.length,
-                extractionStatus: status,
-                signatureStatus: signature.status,
+                extractionStatus: 'pending',
+                signatureStatus: 'not_checked',
               })}
             )
           `;
-        // Computed in the same transaction that inserted the row, so the
-        // reviewer is warned about a colliding letter number from the
-        // moment the upload answers.
-        const letterNumberMatches = await loadLetterNumberMatches(
-          tx,
-          documentId,
-          parsedLetterNumber(payload),
-        );
-        return { inserted, letterNumberMatches };
+
+        // The job is enqueued INSIDE this transaction, which is what makes
+        // the row and its work atomic in both directions: an insert that
+        // rolls back takes its job with it, and a committed document never
+        // lacks the job that fills it in. `enqueueJob` takes no
+        // organisation and no user — migration 0072 stamps both from the
+        // binding this transaction already proved, so the queue row cannot
+        // name a tenant the uploader does not hold (ADR-0011 §2).
+        await enqueueJob(tx, 'loa_document_intake', { documentId });
+
+        // No letter number to collide with yet: the parse that would find
+        // one has not run. The reviewer is warned when the extraction
+        // lands and the detail view reloads, rather than at upload — the
+        // honest cost of moving the parse off the request path, and the
+        // reason `pending` is a state the UI states plainly rather than a
+        // spinner over an empty answer.
+        return { inserted, letterNumberMatches: [] };
       });
       return reply
         .status(201)

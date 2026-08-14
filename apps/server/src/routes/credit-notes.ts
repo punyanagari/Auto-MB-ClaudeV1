@@ -47,7 +47,7 @@ import {
   renderNumberTemplate,
 } from '../number-series.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import type { TaxInvoiceIrpRenderEvidence } from '../tax-invoice-html.js';
 import {
   EInvoiceB2cUnsupportedError,

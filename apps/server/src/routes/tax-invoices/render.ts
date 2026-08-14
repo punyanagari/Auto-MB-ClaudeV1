@@ -4,7 +4,7 @@ import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../../auth.js';
 import { httpError } from '../../http.js';
 import { parseJsonbColumn } from '../../jsonb-column.js';
-import type { ObjectStorage } from '../../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import {
   renderTaxInvoiceHtml,
   TAX_INVOICE_PDF_TEMPLATE_VERSION,

@@ -164,7 +164,11 @@ Every pack below traces to one of these.
   gap is harmless because the runner applies any unapplied id regardless of
   relative order. **0071** → P19, taken at the time that pack finalised
   rather than reserved here: its row carried no migration, and it turned out
-  to need one.
+  to need one. **0072** → P18, on the same footing and for the same reason:
+  its row carried no migration either, and the queue table needed one. P18
+  chose 0072 while 0071 (P19) and 0067 (P15) were still open pull requests,
+  so the rule it followed was "the next id no other pack holds", not "the
+  next id on disk" — which would have collided with both.
 
 ### 2.2 Wave 1 — guards and closures (all seven packs runnable in parallel)
 

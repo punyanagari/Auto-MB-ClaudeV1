@@ -181,6 +181,30 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   auth_two_factors: 'SELECT, INSERT, UPDATE, DELETE',
 };
 
+/**
+ * Tables that deliberately hold NO privilege for the application role, and
+ * the reason each one holds none. Membership here is a decision, exactly
+ * like membership in `TABLE_PRIVILEGES`; the drift test in
+ * `test/bootstrap.integration.test.ts` requires every base table to be in
+ * one set or the other, so a new table cannot end up ungranted by
+ * forgetfulness and then be read as ungranted by design.
+ *
+ * `applyGrants` REVOKEs on these and grants nothing, which is what makes
+ * the state converge on a database where somebody once added a grant by
+ * hand.
+ */
+export const UNGRANTED_BY_DESIGN: Record<string, string> = {
+  // The job queue (0072, ADR-0011). Inherently cross-tenant — the worker
+  // must claim a job before it knows whose it is, so no tenant policy can
+  // express the read — and therefore reachable only through the four
+  // SECURITY DEFINER functions. A direct SELECT grant here would turn any
+  // SQL-injection foothold into an enumeration oracle over every
+  // organisation's job metadata, which is precisely the exposure ADR-0011
+  // refused. The zero-grant state is asserted against the catalog in
+  // packages/db/test/worker-queue.integration.test.ts (ADR guard (a)).
+  worker_jobs: 'reachable only through app_private definer functions (ADR-0011)',
+};
+
 const FUNCTION_GRANTS = [
   'app_private.current_organisation_id()',
   'app_private.current_user_id()',
@@ -193,6 +217,15 @@ const FUNCTION_GRANTS = [
   // it reads organisation_memberships through RLS and finds nothing, and
   // every bind fails 28000.
   'app_private.bind_tenant(uuid, text)',
+  // The job queue (0072). Same restore hazard as the four above, and a
+  // worse failure if it is missed: these functions are the ONLY access to
+  // `worker_jobs`, so a fresh-cluster restore that left them owned by the
+  // restoring role would stop the worker dead rather than degrading it.
+  'app_private.enqueue_job(text, jsonb)',
+  'app_private.claim_next_job(text, integer)',
+  'app_private.complete_job(uuid, uuid, jsonb)',
+  'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
+  'app_private.release_job(uuid, uuid, text)',
 ];
 
 /** Functions that MUST be owned by the BYPASSRLS definer role: they are
@@ -249,6 +282,13 @@ export async function applyGrants(admin: Sql): Promise<void> {
     await admin.unsafe(`REVOKE ALL ON ${table} FROM auto_mb_app`);
     await admin.unsafe(`GRANT ${privileges} ON ${table} TO auto_mb_app`);
   }
+  // The revoke half alone, for the tables whose canonical state is no
+  // privilege at all. Without this the matrix could only ever widen
+  // access: a grant added by hand to `worker_jobs` would survive every
+  // bootstrap, because a table outside the loop above is never revoked.
+  for (const table of Object.keys(UNGRANTED_BY_DESIGN)) {
+    await admin.unsafe(`REVOKE ALL ON ${table} FROM auto_mb_app`);
+  }
   // Definer posture (mirrors migration 0004): schema usage, the tables
   // the definer functions touch, and — critically after a fresh-cluster
   // restore — ownership of the SECURITY DEFINER functions themselves.
@@ -256,6 +296,24 @@ export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(
     `GRANT SELECT, INSERT ON organisations, organisation_memberships, audit_events
      TO auto_mb_definer`,
+  );
+  // Migration 0072: `reconcile_terminal_job` moves an LOA document out of
+  // its in-flight state when the job reading it dies. Narrow on purpose —
+  // no INSERT, no DELETE — and repaired here for the same reason the rest
+  // of the matrix is: a fresh-cluster restore brings the function back
+  // without the grant, and reconciliation would then fail silently at the
+  // exact moment a job was already failing.
+  await admin.unsafe(`GRANT SELECT, UPDATE ON loa_documents TO auto_mb_definer`);
+  // 0072's enqueue_job runs as auto_mb_definer and reads the binding
+  // through these two. They are definer-OWNED after the loop below, which
+  // makes the grant redundant here — but only after it, and only while
+  // that stays true, so it is stated rather than inferred.
+  await admin.unsafe(
+    `GRANT EXECUTE ON FUNCTION app_private.current_user_id(),
+       app_private.current_organisation_id() TO auto_mb_definer`,
+  );
+  await admin.unsafe(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
   );
   for (const fn of DEFINER_FUNCTIONS) {
     await admin.unsafe(`ALTER FUNCTION ${fn} OWNER TO auto_mb_definer`);

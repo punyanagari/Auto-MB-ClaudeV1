@@ -39,7 +39,7 @@ import {
   FieldError,
   Hint,
 } from '../ui/form.js';
-import { ErrorState, LoadingState } from '../ui/state.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { TenderTermsReview } from './TenderTermsReview.js';
 import {
   asExtractionPayload,
@@ -488,8 +488,21 @@ export function ReviewLoa({
         setDocument(loaded);
         const payload = asExtractionPayload(loaded.extractionPayload);
         if (payload === null) {
+          // Two different absences, and they must not read the same. Since
+          // pack P18 the letter is read by the worker after the upload is
+          // accepted, so a document can legitimately have no payload YET —
+          // saying it "produced no reviewable content" would tell the
+          // reviewer the letter is unusable when it has simply not been
+          // read. There is no progress to report and no spinner to invent:
+          // the honest statement is that the reading is still to happen,
+          // and reopening the document shows the result.
+          const stillReading =
+            loaded.extractionStatus === 'pending' ||
+            loaded.extractionStatus === 'processing';
           setExtractionArrival(
-            `Extraction for ${loaded.originalFilename} produced no reviewable content.`,
+            stillReading
+              ? `${loaded.originalFilename} has been stored and is still being read. Its items and dates appear here once the reading finishes; open it again in a moment.`
+              : `Extraction for ${loaded.originalFilename} produced no reviewable content.`,
           );
           return;
         }
@@ -949,6 +962,35 @@ export function ReviewLoa({
           Review LOA
         </h1>
         <LoadingState label="the document" rows={6} columns={3} />
+      </Card>
+    );
+  }
+
+  // A letter that has not been read YET is not a letter that failed, and
+  // this branch used to say it was: since pack P18 the reading happens in
+  // the worker, so a `pending` or `processing` document reaches here with
+  // no payload perfectly normally — through the duplicate-refusal card's
+  // "open the document" action, or any deep link — and was told extraction
+  // had produced nothing and to upload a clearer copy. That is false, and
+  // acting on it (re-uploading) would be refused as a duplicate.
+  //
+  // No spinner and no progress: there is nothing honest to show, and the
+  // P8 conventions do not invent one. A plain sentence and the way back.
+  const stillBeingRead =
+    document.extractionStatus === 'pending' ||
+    document.extractionStatus === 'processing';
+
+  if (stillBeingRead) {
+    return (
+      <Card aria-labelledby="review-title">
+        {arrivals}
+        <h1 id="review-title" tabIndex={-1}>
+          Review LOA
+        </h1>
+        <EmptyState action={{ label: 'Back to Works', onClick: onBack }}>
+          {document.originalFilename} has been stored and is still being read. Its items
+          and dates appear here once the reading finishes; open it again in a moment.
+        </EmptyState>
       </Card>
     );
   }

@@ -14,7 +14,8 @@ Fastify modular API
       ├── private S3-compatible object storage
       └── Gotenberg (private HTML-to-PDF service)
 
-Worker (reserved boundary; no asynchronous jobs currently run)
+Worker (asynchronous jobs; claims from the PostgreSQL queue,
+        binds the requesting user's tenant, then does the work)
 ```
 
 Deploy as a modular monolith: one web build, one API service, one worker service, one PostgreSQL database.
@@ -23,7 +24,22 @@ Deploy as a modular monolith: one web build, one API service, one worker service
 
 - `apps/web`: React UI; no authoritative money or quantity logic.
 - `apps/server`: HTTP routes and product modules.
-- `apps/worker`: asynchronous execution.
+- `apps/worker`: asynchronous execution. Claims jobs from `worker_jobs` and runs each one under the tenant binding of the user who caused it (ADR-0011).
+
+The worker **polls** for work — a `FOR UPDATE SKIP LOCKED` claim every
+second when the queue is idle, and back-to-back while it is not. The
+alternative considered and rejected was PostgreSQL `LISTEN`/`NOTIFY`: it
+would cut idle latency from up to a second to near zero, and it would cost
+a dedicated long-lived connection per worker outside the pool, a
+reconnect-and-resynchronise path for every dropped connection, and a
+fallback poll anyway — because `NOTIFY` is delivered at most once and is
+lost entirely if the listener is not connected, so a notification-only
+worker silently drops the jobs enqueued while it was restarting. Polling
+is one query against a partial index on a queue that receives a few rows
+per upload, and a second of latency is invisible against a job that takes
+tens of seconds. `LISTEN`/`NOTIFY` becomes worth its complexity if a job
+kind ever needs sub-second dispatch; none does.
+
 - `packages/db`: SQL migrations, DB connection, organisation-scoped transactions.
 - `packages/contracts`: TypeBox schemas shared by server and web.
 - `packages/loa-parser`: pure parser and real regression corpus.
@@ -90,7 +106,7 @@ Money uses `numeric`. Dates use `date`. IDs use opaque UUIDs. Indexes begin with
 ## 6. Document architecture
 
 Original uploads and generated PDFs live in private object storage. The
-storage boundary is an interface (`apps/server/src/storage.ts`); the
+storage boundary is an interface (`packages/documents/src/storage.ts`); the
 current implementation is filesystem-backed with server-generated,
 tenant-prefixed keys — the same prefix rule the database enforces on
 `loa_documents.object_key` — and an S3-compatible implementation slots in

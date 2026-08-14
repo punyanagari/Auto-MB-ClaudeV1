@@ -686,6 +686,59 @@ outstanding — on insert as well as on update, because a bill row may be
 created in any of its three states. The server owns authority, work scope, the
 audit trail, and saying all of it in a sentence rather than a SQLSTATE.
 
+### 5.8 A letter is read after it is accepted, not before
+
+Uploading an award letter used to wait for the whole of its reading:
+Poppler extracting the text, the parser reviewing it, and the digital
+signatures being verified, all before the upload answered. On a large
+scanned letter that was tens of seconds during which the uploader saw
+nothing and a request thread, a database connection and a browser tab were
+all held open.
+
+Since pack P18 the upload answers as soon as the letter is **accepted**,
+and the reading happens behind it:
+
+1. the bytes are proven to be a PDF by their signature, not their declared
+   type;
+2. they are scanned for malware, and a letter that fails is refused —
+   nothing is stored;
+3. they are written to object storage and the document row is created in
+   the **`Pending`** state;
+4. a job is enqueued, and the worker extracts the text, runs the parser
+   review and verifies the signatures, moving the document to
+   **`Review`** (or `Failed`, if the letter has no readable text).
+
+**Pending is a state the product states, not a spinner.** The document
+appears in the register immediately, its own screen says the letter is
+being read rather than showing an empty review, and nothing offers to
+confirm a Work from a letter that has not been read yet. That is the
+honest shape: the letter genuinely is in the product, and its contents
+genuinely are not known yet.
+
+**Two things arrive later than they used to**, and both are stated rather
+than hidden. The warning that another document already carries the same
+letter number now appears with the extraction instead of with the upload,
+because the parse that finds the number has not run at upload time. And
+the signature verdict — who signed, and whether the file was modified
+after signing — arrives with it, for the same reason.
+
+**The malware scan deliberately did not move.** It is the one operation of
+the four that is an admission gate rather than post-processing. Today
+nothing unscanned is ever written to object storage, because the scan
+happens before the write; an asynchronous scan would have to store the
+bytes first and then hold the much wider promise that nothing unscanned is
+ever _served_ — across every download, render and export path in the
+product. That is a weaker property guarded in more places, and the reason
+it was not taken.
+
+**A job runs as the person who caused it.** The worker holds no authority
+of its own: it re-proves, in the database, that the uploader still belongs
+to the organisation before it touches anything. A user removed from the
+organisation between uploading a letter and the letter being read leaves
+the job parked and visible rather than silently run on their behalf; an
+administrator re-requests the reading under a live user. This is ADR-0011,
+and it is why there is no service account anywhere in the product.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.

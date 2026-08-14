@@ -16,16 +16,16 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { extractPdfText, PdfToTextConfigurationError } from '../loa-extract.js';
+import { extractPdfText, PdfToTextConfigurationError } from '@auto-mb/documents';
 import type { MalwareScanner } from '../malware-scan.js';
-import type { ObjectStorage } from '../storage.js';
+import type { ObjectStorage } from '@auto-mb/documents';
 import {
   assertNotMalware,
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
-import { verifyUploadedPdf } from '../document-signature-evidence.js';
-import type { TrustAnchorStore } from '../pdf-signature.js';
+import { verifyUploadedPdf } from '@auto-mb/documents';
+import type { TrustAnchorStore } from '@auto-mb/documents';
 import {
   parseReceivedRailwayBill,
   RailwayBillParseError,

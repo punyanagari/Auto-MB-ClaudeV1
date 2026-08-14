@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadTrustAnchors, verifyPdfSignatures } from '../src/pdf-signature.js';
+import { loadTrustAnchors, verifyPdfSignatures } from '@auto-mb/documents';
 
 /**
  * Evidence run against the REAL Indian Railways corpus.

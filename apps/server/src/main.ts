@@ -1,7 +1,7 @@
 import { assertProductionSecret, buildApp, SERVER_LIMITS } from './app.js';
 import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
 import { assertProductionMfaEnforcement } from './mfa-policy.js';
-import { TRUST_ANCHOR_PATH_ENV, loadTrustAnchors } from './pdf-signature.js';
+import { TRUST_ANCHOR_PATH_ENV, loadTrustAnchors } from '@auto-mb/documents';
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? '3000');

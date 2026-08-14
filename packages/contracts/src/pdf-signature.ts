@@ -6,7 +6,7 @@ import { Type, type Static } from '@sinclair/typebox';
  * Shared vocabulary, not a per-document-type one: variation orders,
  * Railway-generated Measurement Book copies, tax invoices, bill copies and
  * agreements all arrive as signed PDFs and are all described with these
- * words. The verifier lives in `apps/server/src/pdf-signature.ts`; this is
+ * words. The verifier lives in `packages/documents/src/pdf-signature.ts`; this is
  * the shape it is transported and stored in.
  *
  * Every field here exists so that "we could not check this" never reads

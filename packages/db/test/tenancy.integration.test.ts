@@ -32,6 +32,25 @@ const userB = 'integration-user-b';
 /** Every tenant-owned table, children after parents. Additions to the
  * schema must be added here so the isolation proofs stay complete; the
  * completeness test below fails if this list drifts from the database. */
+/**
+ * Tables that carry an `organisation_id` column and are nonetheless NOT
+ * tenant-scoped in the sense this suite proves — so they are excluded from
+ * the completeness census above rather than being quietly missing from it.
+ *
+ * `worker_jobs` (0072) is the only one, and the exclusion is load-bearing
+ * in both directions. Its `organisation_id` is real and is exactly what
+ * the worker binds before touching anything, but the ROW is not reachable
+ * by the application role at all: ADR-0011 gives the table no grant and no
+ * policy, so every proof in this suite — which drives reads and writes
+ * through `auto_mb_app` — would fail with `permission denied` rather than
+ * demonstrating isolation. The isolation that matters for the queue is
+ * proved where it actually lives, in
+ * `packages/db/test/worker-queue.integration.test.ts`: that the table is
+ * unreadable, that `enqueue_job` takes its organisation from the binding
+ * and not from its arguments, and that execution re-proves the membership.
+ */
+const NOT_TENANT_SCOPED = new Set(['worker_jobs']);
+
 const TENANT_TABLES = [
   'organisations',
   'organisation_memberships',
@@ -1201,7 +1220,10 @@ describe('application role security posture', () => {
       order by c.table_name
     `;
     const expected = TENANT_TABLES.filter((table) => table !== 'organisations');
-    expect(rows.map((row) => row.table_name).sort()).toEqual([...expected].sort());
+    const found = rows
+      .map((row) => row.table_name)
+      .filter((table) => !NOT_TENANT_SCOPED.has(table));
+    expect(found.sort()).toEqual([...expected].sort());
   });
 
   it('keeps the consignee_masters compatibility view invoker-scoped over contacts', async () => {
